@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>用户登录与配置</title>
+  <!-- 引入 Vue 3 核心库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- 引入 Element Plus 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <!-- 引入 Element Plus 核心组件库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <!-- 引入 Element Plus 图标库 -->
+  <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+
+  <style>
+    /* 全局背景与布局重置 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311042 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    /* 结合 Element Plus 卡片的高颜值玻璃拟态容器 */
+    .login-card {
+      width: 380px;
+      border-radius: 16px !important;
+      background: rgba(255, 255, 255, 0.08) !important;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.15) !important;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5) !important;
+      padding: 10px 10px 20px 10px;
+    }
+
+    .header-title {
+      text-align: center;
+      margin-bottom: 24px;
+      color: #ffffff;
+    }
+
+    .header-title .logo {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 50px;
+      height: 50px;
+      background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+      border-radius: 14px;
+      margin-bottom: 10px;
+      box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4);
+    }
+
+    .header-title h2 {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .header-title p {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+
+    /* 覆写 Element Plus 内部深色表单控件样式 */
+    .el-form-item__label {
+      color: #cbd5e1 !important;
+      font-size: 13px !important;
+    }
+
+    .el-input__wrapper {
+      background-color: rgba(15, 23, 42, 0.7) !important;
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15) inset !important;
+      border-radius: 8px !important;
+    }
+
+    .el-input__wrapper.is-focus {
+      box-shadow: 0 0 0 1.5px #818cf8 inset !important;
+    }
+
+    .el-input__inner {
+      color: #ffffff !important;
+    }
+
+    .el-checkbox__label {
+      color: #94a3b8 !important;
+      font-size: 13px !important;
+    }
+
+    .el-checkbox__input.is-checked .el-checkbox__inner {
+      background-color: #6366f1 !important;
+      border-color: #6366f1 !important;
+    }
+
+    /* 自定义 Element Plus 渐变提交按钮 */
+    .submit-btn {
+      width: 100%;
+      height: 44px !important;
+      border-radius: 8px !important;
+      font-size: 15px !important;
+      font-weight: 600 !important;
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%) !important;
+      border: none !important;
+      box-shadow: 0 4px 14px rgba(79, 70, 229, 0.4) !important;
+      transition: all 0.25s ease !important;
+    }
+
+    .submit-btn:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(79, 70, 229, 0.6) !important;
+    }
+
+    .alert-notice {
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Vue 挂载根节点 -->
+  <div id="app"></div>
+
+  <!-- 组件模板块定义 -->
+  <script type="text/x-template" id="login-template">
+    <el-card class="login-card" :body-style="{ padding: '24px' }">
+      <!-- 头部 LOGO 与标题 -->
+      <div class="header-title">
+        <div class="logo">
+          <el-icon :size="28" color="#ffffff"><UserFilled /></el-icon>
+        </div>
+        <h2>鑫壬成套服务</h2>
+        <p>系统用户配置与身份认证登录</p>
+      </div>
+
+      <!-- 反馈提示信息 -->
+      <el-alert
+        v-if="alertMessage"
+        :title="alertMessage"
+        :type="alertType"
+        show-icon
+        :closable="false"
+        class="alert-notice"
+      />
+
+      <!-- Element Plus 表单组件 -->
+      <el-form
+        ref="loginFormRef"
+        :model="formData"
+        :rules="formRules"
+        label-position="top"
+        @submit.prevent="handleLogin"
+      >
+        <el-form-item label="账号 / 用户名" prop="username">
+          <el-input
+            v-model="formData.username"
+            placeholder="请输入登录用户名"
+            :prefix-icon="User"
+            size="large"
+            :disabled="loading"
+          />
+        </el-form-item>
+
+        <el-form-item label="登录密码" prop="password">
+          <el-input
+            v-model="formData.password"
+            type="password"
+            placeholder="请输入登录密码"
+            :prefix-icon="Lock"
+            show-password
+            size="large"
+            :disabled="loading"
+          />
+        </el-form-item>
+
+        <el-form-item>
+          <el-checkbox v-model="formData.rememberMe" :disabled="loading">
+            记住登录配置信息
+          </el-checkbox>
+        </el-form-item>
+
+        <el-form-item>
+          <el-button
+            type="primary"
+            class="submit-btn"
+            :loading="loading"
+            @click="handleLogin"
+          >
+            {{ loading ? '身份验证中...' : '立即登录' }}
+          </el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
+  </script>
+
+  <!-- 原生支持 Vue 3 <script setup> 脚本语法 -->
+  <script setup>
+    const { ref, reactive, onMounted } = Vue;
+    const { User, Lock, UserFilled } = ElementPlusIconsVue;
+
+    // 表单引用句柄
+    const loginFormRef = ref(null);
+
+    // 声明响应式表单数据
+    const formData = reactive({
+      username: '',
+      password: '',
+      rememberMe: true
+    });
+
+    // 声明表单校验规则
+    const formRules = reactive({
+      username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+      password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+    });
+
+    // 声明界面交互状态
+    const loading = ref(false);
+    const alertMessage = ref('');
+    const alertType = ref('error');
+
+    // 生命周期函数：注册 WebView2 C# 消息回调
+    onMounted(() => {
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.addEventListener('message', (event) => {
+          const res = event.data;
+          loading.value = false;
+          if (res.Success) {
+            alertType.value = 'success';
+            alertMessage.value = res.Message || '登录成功！';
+          } else {
+            alertType.value = 'error';
+            alertMessage.value = res.Message || '登录认证失败，请重试。';
+          }
+        });
+      }
+    });
+
+    // 登录提交事件处理逻辑
+    const handleLogin = () => {
+      if (!loginFormRef.value) return;
+
+      loginFormRef.value.validate((valid) => {
+        if (!valid) return;
+
+        alertMessage.value = '';
+        loading.value = true;
+
+        const payload = {
+          action: 'login',
+          username: formData.username,
+          password: formData.password,
+          rememberMe: formData.rememberMe
+        };
+
+        if (window.chrome && window.chrome.webview) {
+          window.chrome.webview.postMessage(payload);
+        } else {
+          // 本地浏览器调试模拟
+          setTimeout(() => {
+            loading.value = false;
+            alertType.value = 'success';
+            alertMessage.value = '测试环境 script setup 登录成功！';
+          }, 600);
+        }
+      });
+    };
+  </script>
+
+  <!-- 浏览器解析绑定 setup 逻辑与 Element Plus -->
+  <script>
+    (function() {
+      // 获取内联模板内容与 <script setup> 脚本块内容
+      const templateText = document.getElementById('login-template').innerHTML;
+      const setupScriptText = document.querySelector('script[setup]').textContent;
+
+      // 动态构造 Component 对象并解析 setup
+      const Component = {
+        template: templateText,
+        components: { UserFilled: ElementPlusIconsVue.UserFilled },
+        setup() {
+          const setupFunc = new Function('Vue', 'ElementPlusIconsVue', `
+            ${setupScriptText}
+            return { loginFormRef, formData, formRules, loading, alertMessage, alertType, handleLogin, User, Lock, UserFilled };
+          `);
+          return setupFunc(Vue, ElementPlusIconsVue);
+        }
+      };
+
+      // 初始化并挂载 Vue 应用
+      const app = Vue.createApp(Component);
+      app.use(ElementPlus);
+      app.mount('#app');
+    })();
+  </script>
+</body>
+</html>

@@ -18,10 +18,25 @@
   <ItemGroup>
     <!-- 引入 Microsoft.CSharp 以支持 dynamic 绑定 Excel COM 对象 -->
     <Reference Include="Microsoft.CSharp" />
+    <!-- 引入 System.Windows.Forms 支持窗体与 WebView2 宿主容器 -->
+    <Reference Include="System.Windows.Forms" />
+    <!-- 引入 System.Drawing 支持窗体与界面绘制 -->
+    <Reference Include="System.Drawing" />
     <!-- 引入 Excel-DNA 核心整合包，用于支持 C# 与 Excel COM 及函数交互 -->
     <PackageReference Include="ExcelDna.Integration" Version="1.6.0" />
     <!-- 引入 Excel-DNA 自动构建打包工具，构建时会自动生成 .xll 文件 -->
     <PackageReference Include="ExcelDna.AddIn" Version="1.6.0" />
+    <!-- 引入 WebView2 组件包用于支持 Vue 3 现代界面 -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+    <!-- 引入 System.Text.Json 依赖包用于 net48 下的 JSON 序列化 -->
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 自动将前端 Vue 3 登录与配置页面复制至构建输出路径中 -->
+    <None Include="Resources\login.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

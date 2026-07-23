@@ -15,6 +15,57 @@ namespace ExcelAddInDemo
         // 缓存编辑框中用户输入的自定义字符串
         private static string _customMessageText = "来自鑫壬成套服务的示例消息";
 
+        // 保存用户认证通过后的 Token 授权密钥串
+        private static string _currentToken = string.Empty;
+
+        // 保存当前登录用户的显示名称
+        private static string _currentUserDisplayName = "未登录";
+
+        /// <summary>
+        /// 获取或设置授权 Token 密钥串
+        /// </summary>
+        public static string CurrentToken
+        {
+            // 读取最新的 Token 凭据
+            get => _currentToken;
+            // 更新并保存 Token 凭据
+            set => _currentToken = value ?? string.Empty;
+        }
+
+        /// <summary>
+        /// 获取或设置当前登录用户显示的名称
+        /// </summary>
+        public static string CurrentUserDisplayName
+        {
+            // 读取用户显示的名称
+            get => _currentUserDisplayName;
+            // 更新用户显示名称
+            set => _currentUserDisplayName = value ?? string.Empty;
+        }
+
+        /// <summary>
+        /// 启动并弹出基于 WebView2 + Vue 3 的登录配置窗口
+        /// </summary>
+        public static void ShowLoginDialog()
+        {
+            // 创建单独的 STA 线程以防止阻塞 Excel UI 渲染主线程
+            var thread = new System.Threading.Thread(() =>
+            {
+                // 开启 Windows 窗体视觉样式支持
+                System.Windows.Forms.Application.EnableVisualStyles();
+                // 实例化基于 WebView2 的登录窗口容器
+                using var form = new LoginForm();
+                // 模态弹出显示登录配置窗体
+                System.Windows.Forms.Application.Run(form);
+            });
+
+            // 设置线程单元模式为 Single Threaded Apartment (STA)
+            thread.SetApartmentState(System.Threading.ApartmentState.STA);
+
+            // 启动线程运行窗体消息循环
+            thread.Start();
+        }
+
         /// <summary>
         /// 获取或设置自动高亮状态
         /// </summary>
