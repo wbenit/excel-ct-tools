@@ -1,0 +1,14 @@
+# 忽略编译产生的文件与目录
+bin/
+obj/
+
+# 忽略 IDE 产生的临时文件和配置
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# 忽略构建产物
+*.log

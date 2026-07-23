@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- 设置目标框架为 .NET Framework 4.8 以保证最广 Excel 兼容性 -->
+    <TargetFramework>net48</TargetFramework>
+    <!-- 指定生成动态链接库 assemblies -->
+    <OutputType>Library</OutputType>
+    <!-- 设置 C# 语言版本支持 Nullable 与最新语法特性 -->
+    <LangVersion>10.0</LangVersion>
+    <!-- 设置生成的程序集文件名称 -->
+    <AssemblyName>ExcelAddInDemo</AssemblyName>
+    <!-- 开启隐式全局引用 -->
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- 开启空值警告检查 -->
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 引入 Microsoft.CSharp 以支持 dynamic 绑定 Excel COM 对象 -->
+    <Reference Include="Microsoft.CSharp" />
+    <!-- 引入 Excel-DNA 核心整合包，用于支持 C# 与 Excel COM 及函数交互 -->
+    <PackageReference Include="ExcelDna.Integration" Version="1.6.0" />
+    <!-- 引入 Excel-DNA 自动构建打包工具，构建时会自动生成 .xll 文件 -->
+    <PackageReference Include="ExcelDna.AddIn" Version="1.6.0" />
+  </ItemGroup>
+
+</Project>
