@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>我的企业设置</title>
+  <!-- 引入 Element Plus CSS 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+  <!-- 引入 Vue 3 核心库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入 Element Plus 组件库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <style>
+    /* 注入绿蓝相间主题，主色调定义为 #009688 */
+    :root {
+      --el-color-primary: #009688;
+      --el-color-primary-light-3: #4db6ac;
+      --el-color-primary-light-5: #80cbd4;
+      --el-color-primary-light-7: #b2dfdb;
+      --el-color-primary-light-9: #e0f2f1;
+      --el-color-primary-dark-2: #00796b;
+    }
+
+    /* 全局重置与 Element-Plus 样式自适应适配 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+    }
+
+    body {
+      background-color: #f8fafc;
+      color: #334155;
+      font-size: 13px;
+      padding: 16px;
+      user-select: none;
+      overflow-x: hidden;
+    }
+
+    /* 顶部两列布局：表单输入区 + 图例预览卡片区 */
+    .setting-card {
+      background: #ffffff;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      padding: 16px;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+    }
+
+    .top-container {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 12px;
+    }
+
+    .left-form-box {
+      flex: 1.1;
+    }
+
+    .right-preview-box {
+      flex: 0.9;
+      background-color: #ffffff;
+      border: 1px dashed #cbd5e1;
+      border-radius: 6px;
+      padding: 10px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Logo 上传区域控件组合样式 */
+    .logo-uploader-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-tip-text {
+      font-size: 11px;
+      color: #64748b;
+      line-height: 1.3;
+    }
+
+    .logo-preview-card {
+      width: 100%;
+      height: 56px;
+      border: 1px solid #dcdfe6;
+      border-radius: 4px;
+      margin-top: 6px;
+      background-color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .logo-preview-card img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .logo-bottom-hint {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 4px;
+    }
+
+    /* 表格图例预览区域内部样式 */
+    .mock-title {
+      font-size: 13px;
+      font-weight: bold;
+      color: #b91c1c;
+      text-align: center;
+      margin-bottom: 2px;
+    }
+
+    .mock-subtitle {
+      font-size: 10px;
+      color: #1e3a8a;
+      text-align: center;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .mock-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10px;
+    }
+
+    .mock-table th, .mock-table td {
+      border: 1px solid #cbd5e1;
+      padding: 3px 4px;
+      text-align: center;
+    }
+
+    .mock-table th {
+      background-color: #f1f5f9;
+      font-weight: 600;
+    }
+
+    /* 示例设置水印标词 */
+    .watermark {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(-15deg);
+      font-size: 30px;
+      font-weight: 900;
+      color: rgba(100, 116, 139, 0.25);
+      letter-spacing: 4px;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    /* 参数说明高亮标签 */
+    .param-info-bar {
+      font-size: 11px;
+      color: #475569;
+      margin: 4px 0 6px 0;
+    }
+
+    /* 底部功能控制栏 */
+    .footer-action-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid #f1f5f9;
+    }
+
+    .cloud-btn-hint {
+      font-size: 10px;
+      opacity: 0.8;
+      margin-left: 2px;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="app">
+    <div class="setting-card">
+      <el-form :model="form" label-width="84px" size="small">
+        
+        <!-- 顶部区域：基础资料与 Logo 设置 + 图例预览 -->
+        <div class="top-container">
+          <!-- 左侧输入栏 -->
+          <div class="left-form-box">
+            <el-form-item label="企业名称：">
+              <el-input v-model="form.companyName" placeholder="请输入企业名称，例如：扬州华科智能科技有限公司" />
+            </el-form-item>
+            
+            <el-form-item label="英文名称：">
+              <el-input v-model="form.englishName" placeholder="请输入企业英文名称" />
+            </el-form-item>
+
+            <el-form-item label="logo设置：">
+              <div style="width: 100%;">
+                <div class="logo-uploader-row">
+                  <el-button type="default" size="small" @click="selectLogo">选择图片</el-button>
+                  <div class="logo-tip-text">
+                    支持gif、jpg、bmp、png 格式<br>
+                    建议宽高小于250*70像素。
+                  </div>
+                  <el-button type="danger" link size="small" v-if="form.logoBase64" @click="removeLogo" style="margin-left: auto;">删除</el-button>
+                </div>
+
+                <!-- Logo 图形预览框 -->
+                <div class="logo-preview-card">
+                  <img v-if="form.logoBase64" :src="form.logoBase64" alt="Logo预览" />
+                </div>
+                <div class="logo-bottom-hint">以上用于报价文件表头显示，如右图示例。</div>
+              </div>
+            </el-form-item>
+          </div>
+
+          <!-- 右侧表格样式视效预览框 -->
+          <div class="right-preview-box">
+            <div class="mock-title">{{ form.companyName || 'XX高压开关厂有限公司' }}</div>
+            <div class="mock-subtitle">{{ form.englishName || 'XX HIGH VOLTAGE SWITCHGEAR CO.,LTD.' }}</div>
+            <table class="mock-table">
+              <thead>
+                <tr>
+                  <th>序号</th>
+                  <th>柜号</th>
+                  <th>箱柜名称</th>
+                  <th>型号</th>
+                  <th>数量</th>
+                  <th>单价</th>
+                  <th>总价</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>1</td>
+                  <td>1AA,11</td>
+                  <td>进线柜</td>
+                  <td>GCK</td>
+                  <td>2</td>
+                  <td>164953.22</td>
+                  <td>329906.44</td>
+                </tr>
+                <tr>
+                  <td>2</td>
+                  <td>2AA</td>
+                  <td>联络柜</td>
+                  <td>GCK</td>
+                  <td>1</td>
+                  <td>99432.58</td>
+                  <td>99432.58</td>
+                </tr>
+              </tbody>
+            </table>
+            <!-- 水印标示 -->
+            <div class="watermark">示例设置</div>
+          </div>
+        </div>
+
+        <!-- 中部联系人及报价信息布局 -->
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="报 价 人：">
+              <el-input v-model="form.quoter" placeholder="请输入报价人" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="联 系 人：">
+              <el-input v-model="form.contactPerson" placeholder="请输入联系人" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="联系电话：">
+              <el-input v-model="form.contactPhone" placeholder="请输入联系电话" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="销售地区：">
+              <el-input v-model="form.salesRegion" placeholder="请输入销售地区" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <!-- 报价说明及模板选择 -->
+        <el-form-item label="报价说明：">
+          <div style="width: 100%;">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px;">
+              <el-button type="danger" link size="small" @click="applyTemplate" style="font-weight: bold;">套用示例</el-button>
+              <el-radio-group v-model="form.quoteTemplate" size="small">
+                <el-radio label="说明1">说明1</el-radio>
+                <el-radio label="说明2">说明2</el-radio>
+                <el-radio label="说明3">说明3</el-radio>
+                <el-radio label="说明4">说明4</el-radio>
+                <el-radio label="说明5">说明5</el-radio>
+              </el-radio-group>
+            </div>
+
+            <!-- VIP 动态参数替换提示 -->
+            <div class="param-info-bar">
+              (VIP可用参数: [箱柜数量]、[项目总价]、[大写总价]、[器件名称]、[器件厂家]，输出报表显示实际值)
+            </div>
+
+            <!-- 详细说明多行输入域 -->
+            <el-input
+              type="textarea"
+              :rows="4"
+              v-model="form.quoteDescription"
+              placeholder="请输入具体的报价说明文本..."
+            />
+          </div>
+        </el-form-item>
+
+        <!-- 底部功能按钮与选择框 -->
+        <div class="footer-action-bar">
+          <el-checkbox v-model="form.syncOpenProject">保存以上设置时，同步更新当前打开的已选中项目</el-checkbox>
+
+          <div style="display: flex; gap: 8px;">
+            <el-button size="small" @click="recoverShare">恢复分享</el-button>
+            <el-button size="small" @click="cancel">取消</el-button>
+            <el-button type="primary" size="small" @click="saveSettings">
+              保存 <span class="cloud-btn-hint">(自动备份至云端)</span>
+            </el-button>
+          </div>
+        </div>
+
+      </el-form>
+    </div>
+  </div>
+
+  <!-- 使用 Vue 3 Script Setup 架构模式配置 Vue 组件 -->
+  <script setup>
+    // 引入 Vue 响应式 API 组合函数
+    const { reactive, onMounted } = Vue;
+
+    // 声明绑定的表单响应式数据对象
+    const form = reactive({
+      companyName: '扬州华科智能科技有限公司',
+      englishName: '',
+      logoBase64: '',
+      quoter: '吴磊',
+      contactPerson: '',
+      contactPhone: '',
+      salesRegion: '',
+      quoteTemplate: '说明2',
+      quoteDescription: '123444',
+      syncOpenProject: false
+    });
+
+    // 挂载加载回调：初始化时向 C# 宿主发送请求读取本地保存的数据反显
+    onMounted(() => {
+      // 判断 WebView2 全局通信接口是否存在
+      if (window.chrome && window.chrome.webview) {
+        // 向 C# 发送数据反显加载动作请求
+        window.chrome.webview.postMessage(JSON.stringify({ action: 'loadSettings' }));
+
+        // 监听 C# 宿主回发的消息通知
+        window.chrome.webview.addEventListener('message', (event) => {
+          try {
+            // 解析回发的 JSON 消息对象
+            const res = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+
+            // 若响应动作为 renderSettings，更新数据反显绑定
+            if (res && res.action === 'renderSettings') {
+              // 属性合并回 form 响应式模型
+              Object.assign(form, res.data);
+            } 
+            // 若响应动作为 setLogo，更新图片 base64
+            else if (res && res.action === 'setLogo') {
+              // 更新 Logo 数据
+              form.logoBase64 = res.logoBase64;
+            }
+          } catch (e) {
+            // 捕获打印异常 log
+            console.error('解析后端反显数据发生异常:', e);
+          }
+        });
+      }
+    });
+
+    // 触发弹出本地图片选择框
+    const selectLogo = () => {
+      // 判断 WebView2 接口有效性
+      if (window.chrome && window.chrome.webview) {
+        // 发送选择 Logo 请求
+        window.chrome.webview.postMessage(JSON.stringify({ action: 'selectLogo' }));
+      }
+    };
+
+    // 移除已选择的 Logo 图形
+    const removeLogo = () => {
+      // 重置清空图片串
+      form.logoBase64 = '';
+    };
+
+    // 一键套用示例模版
+    const applyTemplate = () => {
+      // 填入示例文本
+      form.quoteDescription = '套用示例模版：本项目报价有效期为30天。包含[箱柜数量]台设备，项目总价：[项目总价]元。';
+    };
+
+    // 点击保存企业设置数据
+    const saveSettings = () => {
+      // 判断通信管道有效性
+      if (window.chrome && window.chrome.webview) {
+        // 发送 saveSettings 消息及表单最新数据
+        window.chrome.webview.postMessage(JSON.stringify({
+          action: 'saveSettings',
+          data: form
+        }));
+      }
+    };
+
+    // 恢复分享配置
+    const recoverShare = () => {
+      // 消息提示
+      ElementPlus.ElMessage.info('正在恢复分享配置数据...');
+    };
+
+    // 取消并关闭当前设置窗体
+    const cancel = () => {
+      // 判断通信管道有效性
+      if (window.chrome && window.chrome.webview) {
+        // 发送取消动作给 C# 宿主关闭窗体
+        window.chrome.webview.postMessage(JSON.stringify({ action: 'cancel' }));
+      }
+    };
+  </script>
+
+  <!-- 挂载 Vue 3 & Element Plus 应用根组件 -->
+  <script>
+    // 实例化 Vue 3 App 并注入 Element Plus 组件库支持
+    const app = Vue.createApp({
+      // 挂载 setup 逻辑
+      setup() {
+        // 返回 script setup 中定义的所有变量与响应式函数句柄
+        return setupLogic();
+      }
+    });
+
+    // 适配 script setup 函数提炼
+    function setupLogic() {
+      // 获取 script setup 内部构建逻辑上下文
+      const { reactive, onMounted } = Vue;
+
+      // 声明绑定的表单响应式数据对象
+      const form = reactive({
+        companyName: '扬州华科智能科技有限公司',
+        englishName: '',
+        logoBase64: '',
+        quoter: '吴磊',
+        contactPerson: '',
+        contactPhone: '',
+        salesRegion: '',
+        quoteTemplate: '说明2',
+        quoteDescription: '123444',
+        syncOpenProject: false
+      });
+
+      // 挂载初始化：发送请求读取反显数据
+      onMounted(() => {
+        if (window.chrome && window.chrome.webview) {
+          window.chrome.webview.postMessage(JSON.stringify({ action: 'loadSettings' }));
+          window.chrome.webview.addEventListener('message', (event) => {
+            try {
+              const res = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+              if (res && res.action === 'renderSettings' && res.data) {
+                const d = res.data;
+                // 精准解析并绑定每一个输入控件字段，兼容驼峰与 PascalCase
+                form.companyName = d.companyName !== undefined ? d.companyName : (d.CompanyName || '');
+                form.englishName = d.englishName !== undefined ? d.englishName : (d.EnglishName || '');
+                form.logoBase64 = d.logoBase64 !== undefined ? d.logoBase64 : (d.LogoBase64 || '');
+                form.quoter = d.quoter !== undefined ? d.quoter : (d.Quoter || '');
+                form.contactPerson = d.contactPerson !== undefined ? d.contactPerson : (d.ContactPerson || '');
+                form.contactPhone = d.contactPhone !== undefined ? d.contactPhone : (d.ContactPhone || '');
+                form.salesRegion = d.salesRegion !== undefined ? d.salesRegion : (d.SalesRegion || '');
+                form.quoteTemplate = d.quoteTemplate !== undefined ? d.quoteTemplate : (d.QuoteTemplate || '说明2');
+                form.quoteDescription = d.quoteDescription !== undefined ? d.quoteDescription : (d.QuoteDescription || '');
+                form.syncOpenProject = d.syncOpenProject !== undefined ? d.syncOpenProject : (d.SyncOpenProject !== undefined ? d.SyncOpenProject : false);
+              } else if (res && res.action === 'setLogo') {
+                form.logoBase64 = res.logoBase64;
+              }
+            } catch (e) {
+              console.error('反显解析异常', e);
+            }
+          });
+        }
+      });
+
+      // 选择 Logo
+      const selectLogo = () => {
+        if (window.chrome && window.chrome.webview) {
+          window.chrome.webview.postMessage(JSON.stringify({ action: 'selectLogo' }));
+        }
+      };
+
+      // 移除 Logo
+      const removeLogo = () => {
+        form.logoBase64 = '';
+      };
+
+      // 套用示例
+      const applyTemplate = () => {
+        form.quoteDescription = '套用示例模版：本项目报价有效期为30天。包含[箱柜数量]台设备，项目总价：[项目总价]元。';
+      };
+
+      // 保存设置
+      const saveSettings = () => {
+        if (window.chrome && window.chrome.webview) {
+          window.chrome.webview.postMessage(JSON.stringify({
+            action: 'saveSettings',
+            data: form
+          }));
+        }
+      };
+
+      // 恢复分享
+      const recoverShare = () => {
+        ElementPlus.ElMessage.info('正在恢复分享配置数据...');
+      };
+
+      // 取消并关闭
+      const cancel = () => {
+        if (window.chrome && window.chrome.webview) {
+          window.chrome.webview.postMessage(JSON.stringify({ action: 'cancel' }));
+        }
+      };
+
+      return {
+        form,
+        selectLogo,
+        removeLogo,
+        applyTemplate,
+        saveSettings,
+        recoverShare,
+        cancel
+      };
+    }
+
+    // 全局注册 Element Plus 组件库
+    app.use(ElementPlus);
+    // 挂载应用到 #app 容器
+    app.mount('#app');
+  </script>
+</body>
+</html>

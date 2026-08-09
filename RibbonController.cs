@@ -21,22 +21,161 @@ namespace ExcelAddInDemo
     /// </summary>
     public override string GetCustomUI(string ribbonId)
     {
-      // 定义包含选项卡 (Tab)、分组 (Group)、按钮 (Button)、复选框 (CheckBox) 及编辑框 (EditBox) 的 XML
-      return @"<customUI xmlns='http://schemas.microsoft.com/office/2009/07/customui' onLoad='OnRibbonLoad'>
+      // 返回 100% 符合 Office CustomUI 规范的标准 Ribbon UI XML 定义
+      return @"<customUI xmlns='http://schemas.microsoft.com/office/2006/01/customui' onLoad='OnRibbonLoad'>
   <ribbon>
     <tabs>
       <tab id='tabDemo' label='鑫壬'>
-        <group id='grpData' label='数据写入操作'>
-          <button id='btnInsert' label='插入当前时间' imageMso='DateInsert' size='large' onAction='OnInsertDataClicked' />
-          <button id='btnClear' label='清空选中区域' imageMso='EditClear' size='large' onAction='OnClearRangeClicked' />
+        <!-- 账户控件分组 -->
+        <group id='grpAccount' label='账户'>
+          <!-- “我的” 下拉菜单控件 -->
+          <menu id='menuUser' label='我的' imageMso='UserKey' size='large'>
+            <!-- 企业设置按钮 -->
+            <button id='btnEnterprise' label='企业设置' imageMso='Properties' onAction='OnMenuAction' />
+            <!-- 上传头像按钮 -->
+            <button id='btnUploadAvatar' label='上传头像' imageMso='ContactCard' onAction='OnMenuAction' />
+            <!-- 我的资料按钮 -->
+            <button id='btnProfile' label='我的资料' imageMso='ContactCard' onAction='OnMenuAction' />
+            <!-- 一周小结按钮 -->
+            <button id='btnWeekly' label='一周小结' imageMso='TableProperties' onAction='OnMenuAction' />
+            <!-- 查看排行榜按钮 -->
+            <button id='btnRanking' label='查看排行榜' imageMso='Rating' onAction='OnMenuAction' />
+            <!-- 会员中心(订单发票) 按钮 -->
+            <button id='btnVip' label='会员中心(订单发票)' imageMso='Currency' onAction='OnMenuAction' />
+            <!-- ExWinner官网 按钮 -->
+            <button id='btnOfficialSite' label='ExWinner官网' imageMso='WebPagePreview' onAction='OnMenuAction' />
+            <!-- 分享 菜单项 -->
+            <menu id='menuShare' label='分享' imageMso='Share'>
+              <!-- 分享链接按钮 -->
+              <button id='btnShareLink' label='分享链接' onAction='OnMenuAction' />
+            </menu>
+            <!-- 退出登录按钮 -->
+            <button id='btnLogout' label='退出' imageMso='CloseWindow' onAction='OnMenuAction' />
+          </menu>
         </group>
-        <group id='grpConfig' label='交互与格式'>
-          <checkBox id='chkHighlight' label='开启自动高亮' getPressed='GetAutoHighlightPressed' onAction='OnAutoHighlightToggled' />
-          <editBox id='txtMessage' label='自定义内容:' getText='GetCustomMessageText' onChange='OnCustomMessageChanged' />
-          <button id='btnApply' label='批量填充文本' imageMso='FontColorPicker' size='large' onAction='OnApplyCustomTextClicked' />
+        <!-- “我的项目” 功能分组 -->
+        <group id='grpProjects' label='我的项目'>
+          <!-- 本机项目下拉菜单 -->
+          <menu id='menuLocalProject' label='本机项目' imageMso='TableProperties' size='large'>
+            <!-- 本机项目列表项 -->
+            <button id='btnLocalProj1' label='默认本机项目' onAction='OnMenuAction' />
+          </menu>
+          <!-- 云项目下拉菜单 -->
+          <menu id='menuCloudProject' label='云项目' imageMso='ServerProperties' size='large'>
+            <!-- 云项目列表项 -->
+            <button id='btnCloudProj1' label='默认云项目' onAction='OnMenuAction' />
+          </menu>
         </group>
-        <group id='grpAuth' label='账户与配置'>
-          <button id='btnLogin' label='用户登录' imageMso='UserKey' size='large' onAction='OnShowLoginClicked' />
+        <!-- ①建项目→ 功能分组 -->
+        <group id='grpBuildProject' label='①建项目→'>
+          <!-- 新建项目按钮 -->
+          <button id='btnNewProject' label='新建项目' imageMso='FileNew' size='large' onAction='OnMenuAction' />
+          <!-- 自动组价下拉菜单 -->
+          <menu id='menuAutoPrice' label='自动组价' imageMso='TableStyles' size='large'>
+            <!-- 自动组价项 -->
+            <button id='btnAutoPriceSub' label='自动组价' onAction='OnMenuAction' />
+          </menu>
+          <!-- 国网报价下拉菜单 -->
+          <menu id='menuStateGridQuote' label='国网报价' imageMso='WebPagePreview' size='large'>
+            <!-- 国网报价项 -->
+            <button id='btnStateGridQuoteSub' label='国网报价' onAction='OnMenuAction' />
+          </menu>
+          <!-- 分类下拉菜单 -->
+          <menu id='menuCategory' label='分类' imageMso='GroupOutline' size='large'>
+            <!-- 分类列表项 -->
+            <button id='btnCategorySub' label='新建分类' onAction='OnMenuAction' />
+          </menu>
+          <!-- 箱柜下拉菜单 -->
+          <menu id='menuCabinet' label='箱柜' imageMso='CreateForm' size='large'>
+            <!-- 1. 新建箱柜按钮 -->
+            <button id='btnNewCabinet' label='新建箱柜' imageMso='CreateForm' onAction='OnMenuAction' />
+            <!-- 2. 新建无明细箱柜按钮 -->
+            <button id='btnNewCabinetNoDetail' label='新建无明细箱柜' onAction='OnMenuAction' />
+            <!-- 3. 批建箱柜按钮 -->
+            <button id='btnBatchNewCabinet' label='批建箱柜' onAction='OnMenuAction' />
+            <!-- 4. 编辑箱柜信息按钮 -->
+            <button id='btnEditCabinet' label='编辑箱柜信息' imageMso='EditPage' onAction='OnMenuAction' />
+            <!-- 5. 剪切箱柜按钮 -->
+            <button id='btnCutCabinet' label='剪切箱柜' imageMso='Cut' onAction='OnMenuAction' />
+            <!-- 6. 复制箱柜按钮 -->
+            <button id='btnCopyCabinet' label='复制箱柜' imageMso='Copy' onAction='OnMenuAction' />
+            <!-- 7. 插入复制的箱柜按钮 -->
+            <button id='btnInsertCopiedCabinet' label='插入复制的箱柜' imageMso='Paste' onAction='OnMenuAction' />
+            <!-- 8. 删除箱柜按钮 -->
+            <button id='btnDeleteCabinet' label='删除箱柜' imageMso='Delete' onAction='OnMenuAction' />
+            <!-- 9. 箱柜调序按钮 -->
+            <button id='btnReorderCabinet' label='箱柜调序' imageMso='SortAscending' onAction='OnMenuAction' />
+            <!-- 10. 导入箱柜BOM按钮 -->
+            <button id='btnImportCabinetBOM' label='导入箱柜BOM' imageMso='ImportTextFile' onAction='OnMenuAction' />
+            <!-- 11. 智能导入箱柜BOM按钮 -->
+            <button id='btnSmartImportCabinetBOM' label='智能导入箱柜BOM' imageMso='ImportXml' onAction='OnMenuAction' />
+          </menu>
+        </group>
+        <!-- ②录元件 功能分组 -->
+        <group id='grpInputComponents' label='②录元件'>
+          <!-- 智能识图下拉菜单 -->
+          <menu id='menuSmartOCR' label='智能识图' imageMso='FindDialog' size='large'>
+            <!-- 智能识图项 -->
+            <button id='btnSmartOCRSub' label='智能识图' onAction='OnMenuAction' />
+          </menu>
+          <!-- 云方案按钮 -->
+          <button id='btnCloudSolution' label='云方案' imageMso='ServerProperties' size='large' onAction='OnMenuAction' />
+          <!-- 云物料下拉菜单 -->
+          <menu id='menuCloudMaterial' label='云物料' imageMso='TableProperties' size='large'>
+            <!-- 云物料库项 -->
+            <button id='btnCloudMaterialSub' label='云物料库' onAction='OnMenuAction' />
+          </menu>
+        </group>
+        <!-- ③调价格→ 功能分组 -->
+        <group id='grpAdjustPrice' label='③调价格→'>
+          <!-- 元件批调下拉菜单 -->
+          <menu id='menuBatchAdjust' label='元件批调' imageMso='AutoSum' size='large'>
+            <!-- 元件批调项 -->
+            <button id='btnBatchAdjustSub' label='元件批调' onAction='OnMenuAction' />
+          </menu>
+          <!-- 费用设定下拉菜单 -->
+          <menu id='menuFeeSetting' label='费用设定' imageMso='Currency' size='large'>
+            <!-- 费用设定项 -->
+            <button id='btnFeeSettingSub' label='费用设定' onAction='OnMenuAction' />
+          </menu>
+          <!-- 撤销/还原下拉菜单 -->
+          <menu id='menuUndoRedo' label='撤销/还原' imageMso='Undo' size='large'>
+            <!-- 撤销/还原项 -->
+            <button id='btnUndoRedoSub' label='撤销/还原' onAction='OnMenuAction' />
+          </menu>
+        </group>
+        <!-- ④出报表 功能分组 -->
+        <group id='grpExportReports' label='④出报表'>
+          <!-- 标书报表下拉菜单 -->
+          <menu id='menuTenderReport' label='标书报表' imageMso='PrintPreviewAndPrint' size='large'>
+            <!-- 标书报表项 -->
+            <button id='btnTenderReportSub' label='标书报表' onAction='OnMenuAction' />
+          </menu>
+          <!-- 材料统计下拉菜单 -->
+          <menu id='menuMaterialStat' label='材料统计' imageMso='ChartInsert' size='large'>
+            <!-- 材料统计项 -->
+            <button id='btnMaterialStatSub' label='材料统计' onAction='OnMenuAction' />
+          </menu>
+        </group>
+        <!-- 辅助项 功能分组 -->
+        <group id='grpAuxiliary' label='辅助项'>
+          <!-- 项目工具下拉菜单 -->
+          <menu id='menuProjectTools' label='项目工具' imageMso='Tools' size='large'>
+            <!-- 项目工具项 -->
+            <button id='btnProjectToolsSub' label='项目工具' onAction='OnMenuAction' />
+          </menu>
+          <!-- 企业DHub按钮 -->
+          <button id='btnEnterpriseDHub' label='企业DHub' imageMso='ServerProperties' size='large' onAction='OnMenuAction' />
+          <!-- 设置按钮 -->
+          <button id='btnSettings' label='设置' imageMso='OptionButton' size='large' onAction='OnMenuAction' />
+        </group>
+        <!-- 服务 功能分组 -->
+        <group id='grpService' label='服务'>
+          <!-- 服务下拉菜单 -->
+          <menu id='menuService' label='服务中心' imageMso='Help' size='large'>
+            <!-- 在线客服按钮 -->
+            <button id='btnServiceSub' label='在线客服' onAction='OnMenuAction' />
+          </menu>
         </group>
       </tab>
     </tabs>
@@ -117,12 +256,30 @@ namespace ExcelAddInDemo
     }
 
     /// <summary>
-    /// 按钮回调：批量将编辑框文本应用填入选中单元格区域
+    /// Ribbon 下拉菜单及菜单按钮通用响应回调
     /// </summary>
-    public void OnApplyCustomTextClicked(IRibbonControl control)
+    public void OnMenuAction(IRibbonControl control)
     {
-      // 调用业务逻辑批量写入选中的单元格
-      ExcelServices.ApplyCustomTextToSelection();
+      // 读取触发响应的控件唯一标识 ID
+      string controlId = control.Id;
+      // 点击“企业设置”按钮
+      if (controlId == "btnEnterprise")
+      {
+        // 弹出基于 WebView2 + Vue 3 的“我的企业设置”窗口
+        ExcelServices.ShowEnterpriseSettingsDialog();
+      }
+      // 点击“新建项目”按钮
+      else if (controlId == "btnNewProject")
+      {
+        // 弹出基于 WebView2 + Vue 3 的“新建项目”窗口
+        ExcelServices.ShowCreateProjectDialog();
+      }
+      // 点击“我的资料”按钮
+      else if (controlId == "btnProfile")
+      {
+        // 弹出用户登录与配置窗体
+        ExcelServices.ShowLoginDialog();
+      }
     }
   }
 }

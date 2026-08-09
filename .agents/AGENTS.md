@@ -18,7 +18,8 @@
 ---
 
 1，项目使用 Excel-DNA 框架
-2，项目中如果需要新建的窗口，使用C# (Excel-DNA) + WebView2 + Vue 3框架
+2，项目中如果需要新建的窗口，使用C# (Excel-DNA) + WebView2 + Vue3框架+element-plusUI组件库，并且使用<scrip setup>结构，主题颜色使用绿蓝相间，主色调为 #009688
+3，所有对excel内容的操作，写在公共文件ExcelServices.cs中，不要写在窗口类中
 
 ---
 

@@ -44,26 +44,50 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// Excel 主窗口 Win32 句柄包装类
+        /// </summary>
+        private class ExcelWin32Window : System.Windows.Forms.IWin32Window
+        {
+            // 存储 Win32 句柄
+            public IntPtr Handle { get; }
+
+            // 构造函数初始化句柄
+            public ExcelWin32Window(IntPtr handle) => Handle = handle;
+        }
+
+        /// <summary>
         /// 启动并弹出基于 WebView2 + Vue 3 的登录配置窗口
         /// </summary>
         public static void ShowLoginDialog()
         {
-            // 创建单独的 STA 线程以防止阻塞 Excel UI 渲染主线程
-            var thread = new System.Threading.Thread(() =>
+            try
             {
                 // 开启 Windows 窗体视觉样式支持
                 System.Windows.Forms.Application.EnableVisualStyles();
+
                 // 实例化基于 WebView2 的登录窗口容器
                 using var form = new LoginForm();
-                // 模态弹出显示登录配置窗体
-                System.Windows.Forms.Application.Run(form);
-            });
 
-            // 设置线程单元模式为 Single Threaded Apartment (STA)
-            thread.SetApartmentState(System.Threading.ApartmentState.STA);
+                // 获取 Excel Application 主句柄
+                IntPtr excelHwnd = ExcelDnaUtil.WindowHandle;
 
-            // 启动线程运行窗体消息循环
-            thread.Start();
+                // 依据句柄是否存在选择安全的弹出模式
+                if (excelHwnd != IntPtr.Zero)
+                {
+                    // 模态附着至 Excel 主窗口弹出，防止独立线程闪退
+                    form.ShowDialog(new ExcelWin32Window(excelHwnd));
+                }
+                else
+                {
+                    // 模态弹出
+                    form.ShowDialog();
+                }
+            }
+            catch (Exception ex)
+            {
+                // 捕获弹窗异常防止 Excel 崩溃闪退
+                System.Windows.Forms.MessageBox.Show($"弹出登录配置窗口发生异常: {ex.Message}", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+            }
         }
 
         /// <summary>
@@ -155,6 +179,175 @@ namespace ExcelAddInDemo
                 // 设置字体颜色为深蓝色以增强视效
                 selection.Font.Color = ColorTranslator.ToOle(Color.FromArgb(0, 51, 102));
             }
+        }
+
+        /// <summary>
+        /// 启动并弹出基于 WebView2 + Vue 3 的“我的企业设置”窗口
+        /// </summary>
+        public static void ShowEnterpriseSettingsDialog()
+        {
+            try
+            {
+                // 启用视觉样式效果
+                System.Windows.Forms.Application.EnableVisualStyles();
+
+                // 实例化企业设置 Form 窗体
+                using var form = new EnterpriseSettingsForm();
+
+                // 获取 Excel 主窗口的 HWND 句柄
+                IntPtr excelHwnd = ExcelDnaUtil.WindowHandle;
+
+                // 判断句柄有效性并选择 Safe 模式
+                if (excelHwnd != IntPtr.Zero)
+                {
+                    // 将 WinForms 绑定为 Excel 的 Owner 模态显示，绝不闪退
+                    form.ShowDialog(new ExcelWin32Window(excelHwnd));
+                }
+                else
+                {
+                    // 普通模态弹出
+                    form.ShowDialog();
+                }
+            }
+            catch (Exception ex)
+            {
+                // 全局捕获异常防止程序闪退
+                System.Windows.Forms.MessageBox.Show($"弹出企业设置窗口失败: {ex.Message}", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// 启动并弹出基于 WebView2 + Vue 3 的“新建项目”窗口
+        /// </summary>
+        public static void ShowCreateProjectDialog()
+        {
+            try
+            {
+                // 重置上一次创建的目标工作簿路径缓存
+                Controllers.ProjectController.LastCreatedTargetFilePath = string.Empty;
+
+                // 启用 Windows 窗体视觉样式效果
+                System.Windows.Forms.Application.EnableVisualStyles();
+
+                // 实例化新建项目 Form 窗体
+                using var form = new CreateProjectForm();
+
+                // 获取 Excel 主窗口 HWND 句柄
+                IntPtr excelHwnd = ExcelDnaUtil.WindowHandle;
+
+                // 依据句柄有效性安全弹出
+                if (excelHwnd != IntPtr.Zero)
+                {
+                    // 模态附着至 Excel 主窗口，避免闪退与层级穿透
+                    form.ShowDialog(new ExcelWin32Window(excelHwnd));
+                }
+                else
+                {
+                    // 普通模态显示
+                    form.ShowDialog();
+                }
+
+                // 重点：当 ShowDialog 模态弹窗关闭后，Windows 消息队列会自动向父窗口发送焦点复位消息
+                // 立即执行同步激活，并在 50 毫秒后通过 QueueAsMacro 再次进行 Win32 操作系统级置顶
+                if (!string.IsNullOrEmpty(Controllers.ProjectController.LastCreatedTargetFilePath))
+                {
+                    string targetPath = Controllers.ProjectController.LastCreatedTargetFilePath;
+
+                    // 1. 立即同步激活
+                    ActivateCreatedWorkbook(targetPath);
+
+                    // 2. 延迟 50ms 避开 OS 消息队列处置期，在 Excel 主线程宏回调中再次强力置顶
+                    // System.Threading.Tasks.Task.Delay(50).ContinueWith(_ =>
+                    // {
+                    //     ExcelDna.Integration.ExcelAsyncUtil.QueueAsMacro(() =>
+                    //     {
+                    //         ActivateCreatedWorkbook(targetPath);
+                    //     });
+                    // });
+                }
+            }
+            catch (Exception ex)
+            {
+                // 全局捕获异常防止程序闪退
+                System.Windows.Forms.MessageBox.Show($"弹出新建项目窗口失败: {ex.Message}", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+            }
+        }
+
+        // Win32 API 导入：将目标窗口强制置顶到 Desktop 最前台
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        // Win32 API 导入：还原与展示指定窗口
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        /// <summary>
+        /// 激活指定的项目工作簿及其视口窗口（包含 Win32 操作系统级硬置顶）
+        /// </summary>
+        public static void ActivateCreatedWorkbook(string targetFilePath)
+        {
+            try
+            {
+                // 获取 Excel Application COM 对象
+                dynamic app = ExcelDnaUtil.Application;
+                // 校验 app 句柄有效性
+                if (app == null) return;
+
+                // 获取目标物理文件名
+                string targetFileName = System.IO.Path.GetFileName(targetFilePath);
+
+                // 遍历当前运行的所有 Workbooks
+                foreach (dynamic wb in app.Workbooks)
+                {
+                    // 安全转为 string 进行匹配
+                    string wbName = Convert.ToString(wb.Name) ?? "";
+                    string wbFullName = Convert.ToString(wb.FullName) ?? "";
+
+                    // 精确与包含双重匹配
+                    if (string.Equals(wbName, targetFileName, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(wbFullName, targetFilePath, StringComparison.OrdinalIgnoreCase) ||
+                        (!string.IsNullOrEmpty(targetFileName) && wbName.IndexOf(targetFileName, StringComparison.OrdinalIgnoreCase) >= 0))
+                    {
+                        // 1. 激活工作簿
+                        wb.Activate();
+
+                        // 2. 强力显化视口窗口
+                        if (wb.Windows.Count > 0)
+                        {
+                            dynamic win = wb.Windows[1];
+                            // 设为可见视口
+                            win.Visible = true;
+                            // 设为 xlMaximized 最大化 (-4137)
+                            win.WindowState = -4137;
+                            // 激活视口
+                            win.Activate();
+
+                            // 3. Win32 操作系统级置顶与最大化：获取该工作簿独立 Window 句柄 HWND 并硬性置顶最大化
+                            try
+                            {
+                                long hwndVal = Convert.ToInt64(win.Hwnd);
+                                IntPtr winHwnd = new IntPtr(hwndVal);
+                                // nCmdShow = 3 即 SW_SHOWMAXIMIZED (SW_MAXIMIZE)，强力强制操作系统最大化展现实体窗口
+                                ShowWindow(winHwnd, 3);
+                                // 强制提拉至最前台
+                                SetForegroundWindow(winHwnd);
+                            }
+                            catch { }
+                        }
+
+                        // 4. 选中并激活“项目信息”工作表
+                        try
+                        {
+                            wb.Sheets["项目信息"].Activate();
+                        }
+                        catch { }
+
+                        // 成功聚焦即退出
+                        break;
+                    }
+                }
+            }
+            catch { }
         }
     }
 }

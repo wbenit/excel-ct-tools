@@ -37,6 +37,32 @@
     <None Include="Resources\login.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将企业设置前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\enterprise_settings.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- 自动将新建项目前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\create_project.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
+
+  <!-- 自动将项目依赖 DLL 以及 WebView2 原生 runtimes 文件和 Resources 发布至 publish 目录 -->
+  <Target Name="CopyDependenciesToPublish" AfterTargets="ExcelDnaPack">
+    <ItemGroup>
+      <!-- 获取输出路径中的所有 DLL 程序集 -->
+      <PublishDependencies Include="$(TargetDir)*.dll" Exclude="$(TargetDir)$(TargetFileName)" />
+      <!-- 获取原生 WebView2 runtimes 架构动态链接库文件 -->
+      <RuntimeFiles Include="$(TargetDir)runtimes\**\*.*" />
+      <!-- 获取 Resources 前端 HTML 资源文件 -->
+      <ResourceFiles Include="$(TargetDir)Resources\**\*.*" />
+    </ItemGroup>
+    <!-- 自动复制依赖 DLL 至 publish 发布目录 -->
+    <Copy SourceFiles="@(PublishDependencies)" DestinationFolder="$(TargetDir)publish\" SkipUnchangedFiles="true" />
+    <!-- 自动复制 runtimes 目录至 publish 发布目录 -->
+    <Copy SourceFiles="@(RuntimeFiles)" DestinationFolder="$(TargetDir)publish\runtimes\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <!-- 自动复制 Resources 资源目录至 publish 发布目录 -->
+    <Copy SourceFiles="@(ResourceFiles)" DestinationFolder="$(TargetDir)publish\Resources\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>

@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>新建项目</title>
+    <!-- 引入 Element Plus CSS 样式库 -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/element-plus/dist/index.css"
+    />
+    <!-- 引入 Vue 3 核心构建库 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- 引入 Element Plus 组件库 -->
+    <script src="https://unpkg.com/element-plus"></script>
+    <style>
+      /* 注入绿蓝相间主题，主色调定义为 #009688 */
+      :root {
+        --el-color-primary: #009688;
+        --el-color-primary-light-3: #4db6ac;
+        --el-color-primary-light-5: #80cbd4;
+        --el-color-primary-light-7: #b2dfdb;
+        --el-color-primary-light-9: #e0f2f1;
+        --el-color-primary-dark-2: #00796b;
+      }
+
+      /* 全局基础重置与字体设定，禁用垂直与水平滚动条 */
+      html,
+      body {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+        overflow: hidden !important;
+        height: 100%;
+      }
+
+      body {
+        background-color: #ffffff;
+        color: #334155;
+        font-size: 12px;
+        padding: 10px 16px;
+        user-select: none;
+      }
+
+      /* 优化 Element Plus 表单行外边距，防止超高溢出 */
+      .el-form-item {
+        margin-bottom: 8px !important;
+      }
+
+      /* 直接修饰保存目录行 Element Plus 内容容器，保证百分百水平排列 */
+      .save-dir-item .el-form-item__content {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 8px !important;
+      }
+
+      /* 更改目录输入框采用弹性宽度，避免固定 360px 宽度将右侧“更改目录”按钮挤出视口外 */
+      .dir-input {
+        flex: 1 !important;
+        min-width: 0 !important;
+      }
+
+      /* 保证右侧更改目录按钮固定展示，绝不缩小或遮挡 */
+      .dir-btn {
+        flex-shrink: 0 !important;
+        white-space: nowrap !important;
+      }
+
+      /* 顶栏标题与绿蓝相间饰条样式，支持鼠标按住拖拽 */
+      .title-bar {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        padding-bottom: 8px;
+        margin-bottom: 12px;
+        cursor: move;
+      }
+
+      .title-text {
+        font-size: 15px;
+        font-weight: bold;
+        color: #0f172a;
+      }
+
+      .title-divider {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: linear-gradient(
+          90deg,
+          #009688 0%,
+          #0284c7 50%,
+          #009688 100%
+        );
+      }
+
+      .top-actions {
+        position: absolute;
+        right: 0;
+        top: 0;
+        display: flex;
+        gap: 10px;
+        color: #64748b;
+        font-size: 14px;
+        cursor: pointer;
+      }
+
+      .top-actions span:hover {
+        color: #009688;
+      }
+
+      /* 日期选择域布局 */
+      .date-row {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 10px;
+      }
+
+      .date-label {
+        font-size: 12px;
+        color: #475569;
+      }
+
+      /* 快捷操作链接样式 (主色调 #009688) */
+      .link-btn {
+        color: #009688;
+        cursor: pointer;
+        text-decoration: underline;
+        margin-left: 8px;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      .link-btn:hover {
+        color: #00796b;
+      }
+
+      .link-btn-theme {
+        color: #0284c7;
+        cursor: pointer;
+        text-decoration: underline;
+        margin-left: 8px;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      .link-btn-theme:hover {
+        color: #0369a1;
+      }
+
+      /* 折叠与展开触发按钮 */
+      .toggle-more-btn {
+        color: #009688;
+        cursor: pointer;
+        font-weight: bold;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin: 6px 0 10px 0;
+        font-size: 12px;
+      }
+
+      .toggle-more-btn:hover {
+        color: #00796b;
+      }
+
+      /* 分割小标题 (本企业信息、客户信息) */
+      .section-subtitle {
+        font-size: 12px;
+        color: #0284c7;
+        font-weight: bold;
+        margin: 8px 0 6px 0;
+        padding-left: 4px;
+        border-left: 3px solid #009688;
+      }
+
+      /* 底部开始报价按钮栏 */
+      .bottom-action-bar {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        margin-top: 14px;
+        padding-top: 10px;
+        border-top: 1px dashed #e2e8f0;
+      }
+
+      .start-btn {
+        background: linear-gradient(
+          135deg,
+          #009688 0%,
+          #0284c7 100%
+        ) !important;
+        border: none !important;
+        color: #ffffff !important;
+        font-size: 14px !important;
+        font-weight: bold !important;
+        padding: 8px 32px !important;
+        height: 38px !important;
+        border-radius: 6px !important;
+        box-shadow: 0 2px 6px rgba(0, 150, 136, 0.25);
+      }
+
+      .start-btn:hover {
+        background: linear-gradient(
+          135deg,
+          #00796b 0%,
+          #0369a1 100%
+        ) !important;
+        box-shadow: 0 4px 10px rgba(0, 150, 136, 0.35);
+      }
+
+      /* 下划线 Input 表单风格 */
+      .underline-input .el-input__wrapper {
+        box-shadow: none !important;
+        border-bottom: 1px solid #cbd5e1 !important;
+        border-radius: 0 !important;
+        padding-left: 4px !important;
+      }
+
+      .underline-input .el-input__wrapper.is-focus {
+        border-bottom-color: #009688 !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <!-- 顶栏标题：使用 @mousedown 支持无边框窗体拖拽，右上角按钮严格阻止 mousedown/click 事件冒泡 -->
+      <div class="title-bar" @mousedown="startDrag">
+        <span class="title-text">新建项目</span>
+        <div class="top-actions" @mousedown.stop @click.stop>
+          <span title="刷新" @click.stop.prevent="refreshData" @mousedown.stop.prevent>↻</span>
+          <span title="关闭" @click.stop.prevent="cancel" @mousedown.stop.prevent>✕</span>
+        </div>
+        <div class="title-divider"></div>
+      </div>
+
+      <el-form :model="form" label-width="76px" size="small">
+        <!-- 日期选择域 -->
+        <div class="date-row">
+          <span class="date-label">日期：</span>
+          <el-date-picker
+            v-model="form.projectDate"
+            type="date"
+            format="YYYY年MM月DD日"
+            value-format="YYYY年MM月DD日"
+            placeholder="选择日期"
+            style="width: 140px"
+          />
+        </div>
+
+        <!-- 基础输入字段区域 -->
+        <el-form-item label="项目名称：">
+          <div style="display: flex; align-items: center; width: 100%">
+            <el-input
+              class="underline-input"
+              v-model="form.projectName"
+              placeholder="请输入项目名称"
+              @input="updateFileName"
+            ></el-input>
+            <span class="link-btn" @click="handleTodo">* 待办</span>
+          </div>
+        </el-form-item>
+
+        <el-form-item label="报价单号：">
+          <div style="display: flex; align-items: center; width: 100%">
+            <el-input
+              class="underline-input"
+              v-model="form.quoteNumber"
+              placeholder="自动生成单号"
+              @input="updateFileName"
+            ></el-input>
+            <span class="link-btn-theme" @click="refreshQuoteNumber"
+              >* 重置</span
+            >
+          </div>
+        </el-form-item>
+
+        <el-form-item label="项目备注：">
+          <el-input
+            class="underline-input"
+            v-model="form.projectRemark"
+            placeholder=""
+          />
+        </el-form-item>
+
+        <el-form-item label="项目编号：">
+          <el-input
+            class="underline-input"
+            v-model="form.projectCode"
+            placeholder=""
+          />
+        </el-form-item>
+
+        <!-- 展开 / 折叠 控制按钮 -->
+        <div class="toggle-more-btn" @click="toggleExpand">
+          <span>{{ isExpanded ? '▼ 收起' : '▶ 更多...' }}</span>
+        </div>
+
+        <!-- 展开控制区域（本企业信息 & 客户信息） -->
+        <div v-show="isExpanded">
+          <!-- 本企业信息面板 -->
+          <div class="section-subtitle">本企业信息</div>
+
+          <el-form-item label="单位名称：">
+            <el-input
+              class="underline-input"
+              v-model="form.companyName"
+              placeholder="例如：扬州华科智能科技有限公司"
+            />
+          </el-form-item>
+
+          <el-form-item label="英文名称：">
+            <el-input
+              class="underline-input"
+              v-model="form.englishName"
+              placeholder=""
+            />
+          </el-form-item>
+
+          <el-form-item label="报 价 人：">
+            <el-input
+              class="underline-input"
+              v-model="form.quoter"
+              placeholder=""
+              @input="updateFileName"
+            />
+          </el-form-item>
+
+          <el-row :gutter="12">
+            <el-col :span="12">
+              <el-form-item label="联 系 人：">
+                <el-input
+                  class="underline-input"
+                  v-model="form.companyContact"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="联系电话：">
+                <el-input class="underline-input" v-model="form.companyPhone" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <!-- 客户信息面板 -->
+          <div class="section-subtitle">客户信息</div>
+
+          <el-form-item label="客户名称：">
+            <el-input
+              class="underline-input"
+              v-model="form.customerName"
+              placeholder="输入客户名称，回车查找历史客户......"
+            />
+          </el-form-item>
+
+          <el-form-item label="客户地址：">
+            <el-input
+              class="underline-input"
+              v-model="form.customerAddress"
+              placeholder=""
+            />
+          </el-form-item>
+
+          <el-row :gutter="12">
+            <el-col :span="12">
+              <el-form-item label="联 系 人：">
+                <el-input
+                  class="underline-input"
+                  v-model="form.customerContact"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="联系电话：">
+                <el-input
+                  class="underline-input"
+                  v-model="form.customerPhone"
+                  close
+                />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </div>
+
+        <!-- 通用底部字段（文件名称、保存目录） -->
+        <el-form-item label="文件名称：">
+          <el-input
+            class="underline-input"
+            v-model="form.fileName"
+            placeholder="自动拼接生成文件名称"
+          />
+        </el-form-item>
+
+        <!-- 保存目录表单项：使用显式闭合标签 </el-input> 防止 HTML 解析器误将同级 el-button 当作子元素吞掉 -->
+        <el-form-item label="保存目录：" class="save-dir-item">
+          <el-input
+            class="underline-input dir-input"
+            v-model="form.savePath"
+            placeholder="选择保存目录"
+          ></el-input>
+          <el-button
+            type="primary"
+            size="small"
+            class="dir-btn"
+            @click.stop="selectFolder"
+            @mousedown.stop
+            >更改目录</el-button
+          >
+        </el-form-item>
+
+        <el-form-item label="项目类型：">
+          <el-radio-group v-model="form.projectType">
+            <el-radio label="常规项目">常规项目</el-radio>
+            <el-radio label="国网项目">国网项目</el-radio>
+          </el-radio-group>
+        </el-form-item>
+
+        <!-- 底部控制与操作按钮栏 -->
+        <div class="bottom-action-bar">
+          <el-checkbox v-model="form.batchCabinet">批建箱柜</el-checkbox>
+          <el-button class="start-btn" @click="startQuotation"
+            >开始报价</el-button
+          >
+        </div>
+      </el-form>
+    </div>
+
+    <!-- 挂载 Vue 3 & Element Plus 应用根节点 -->
+    <script>
+      const { createApp, reactive, ref, onMounted } = Vue;
+
+      const app = createApp({
+        setup() {
+          const isExpanded = ref(false);
+
+          const form = reactive({
+            projectDate: "2026年08月09日",
+            projectName: "新建项目",
+            quoteNumber: "WB202608090130",
+            projectRemark: "",
+            projectCode: "",
+            fileName: "WB202608090130-新建项目-吴磊",
+            savePath: "C:\\Users\\Desktop",
+            projectType: "常规项目",
+            batchCabinet: false,
+            companyName: "扬州华科智能科技有限公司",
+            englishName: "",
+            quoter: "吴磊",
+            companyContact: "",
+            companyPhone: "",
+            customerName: "",
+            customerAddress: "",
+            customerContact: "",
+            customerPhone: "",
+          });
+
+          const updateFileName = () => {
+            const qNum = form.quoteNumber || "";
+            const pName = form.projectName || "";
+            const qUser = form.quoter || "";
+            form.fileName = `${qNum}-${pName}-${qUser}`;
+          };
+
+          onMounted(() => {
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.postMessage(
+                JSON.stringify({ action: "getInitData" }),
+              );
+              window.chrome.webview.addEventListener("message", (event) => {
+                try {
+                  const res =
+                    typeof event.data === "string"
+                      ? JSON.parse(event.data)
+                      : event.data;
+                  if (res && res.action === "renderInitData") {
+                    if (res.quoteNumber) form.quoteNumber = res.quoteNumber;
+                    if (res.savePath) form.savePath = res.savePath;
+                    if (res.companyName) form.companyName = res.companyName;
+                    if (res.quoter) form.quoter = res.quoter;
+                    updateFileName();
+                  } else if (res && res.action === "setQuoteNumber") {
+                    form.quoteNumber = res.quoteNumber;
+                    updateFileName();
+                  } else if (res && res.action === "setSavePath") {
+                    form.savePath = res.savePath;
+                  }
+                } catch (e) {
+                  console.error("初始化通信数据解析异常:", e);
+                }
+              });
+            }
+          });
+
+          const toggleExpand = () => {
+            isExpanded.value = !isExpanded.value;
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.postMessage(
+                JSON.stringify({
+                  action: "toggleExpand",
+                  expanded: isExpanded.value,
+                }),
+              );
+            }
+          };
+
+          const refreshQuoteNumber = () => {
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.postMessage(
+                JSON.stringify({ action: "refreshQuoteNumber" }),
+              );
+            }
+          };
+
+          const selectFolder = () => {
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.postMessage(
+                JSON.stringify({ action: "selectFolder" }),
+              );
+            }
+          };
+
+          const handleTodo = () => {
+            ElementPlus.ElMessage.success("已将该项目加入待办任务列表");
+          };
+
+          const refreshData = () => {
+            refreshQuoteNumber();
+          };
+
+          // 关闭取消事件处理：显式调用 stopPropagation 彻底切断事件向 title-bar 冒泡
+          const cancel = (e) => {
+            if (e && typeof e.stopPropagation === 'function') {
+              e.stopPropagation();
+            }
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.postMessage(
+                JSON.stringify({ action: "cancel" }),
+              );
+            }
+          };
+
+          const startQuotation = () => {
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.postMessage(
+                JSON.stringify({
+                  action: "startQuotation",
+                  data: form,
+                }),
+              );
+            }
+          };
+
+          const startDrag = () => {
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.postMessage(
+                JSON.stringify({ action: "dragWindow" }),
+              );
+            }
+          };
+
+          return {
+            isExpanded,
+            form,
+            updateFileName,
+            toggleExpand,
+            refreshQuoteNumber,
+            selectFolder,
+            handleTodo,
+            refreshData,
+            cancel,
+            startQuotation,
+            startDrag,
+          };
+        },
+      });
+
+      // 注册 Element Plus 组件
+      app.use(ElementPlus);
+      app.mount("#app");
+    </script>
+  </body>
+</html>
