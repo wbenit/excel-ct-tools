@@ -45,7 +45,12 @@
      - **解决公式绝对路径与焦点切回旧工作簿**：将模板复制方式重构为直接 `SaveAs` 打开的 `CabinetTemplate.xlsx` 模板文件，并自动清洗 `[CabinetTemplate.xlsx]` 与外部文件路径前缀，确保公式与模板 100% 一致且不含外部绝对路径。
      - **解决 Excel 视口空白与焦点恢复**：在 `ProjectController.cs` 中精简移除了弹窗关闭前提前激活工作簿的冗余代码，统一由 `ExcelServices.cs` 在弹窗关闭后通过 `ActivateCreatedWorkbook` 显式设置 `newWb.Windows[1].Visible = true` 以及 `newWb.Windows[1].WindowState = -4137 (xlMaximized)`，确保新建工作簿窗口最大化高亮展现在用户面前。
      - 支持 `报价单号-项目名称-报价人` 的实时文件名联动与自动弹窗扩展。
-  5. **箱柜下拉菜单（menuCabinet）**：
-     - 已根据设计图更新 Ribbon XML 配置文件 [RibbonController.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/RibbonController.cs)，完整配置了包含 11 个子菜单项的箱柜功能列表（新建箱柜、新建无明细箱柜、批建箱柜、编辑箱柜信息、剪切箱柜、复制箱柜、插入复制的箱柜、删除箱柜、箱柜调序、导入箱柜BOM、智能导入箱柜BOM）。
-     - 正确设置了对应的 imageMso 图标样式与缩进规范。
+   5. **箱柜下拉菜单与“新建箱柜”功能实施**：
+      - 已根据设计图更新 Ribbon XML 配置文件 [RibbonController.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/RibbonController.cs)，完整配置了包含 11 个子菜单项的箱柜功能列表，并将 `btnNewCabinet`（新建箱柜按钮）的事件分支显式绑定链接至 `ExcelServices.CreateNewCabinetFromSelection()`。
+      - 在 [ExcelServices.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/ExcelServices.cs) 中重构并实现了 `CreateNewCabinetFromSelection()`：
+        1. **顶部空行复用**：自动检测当前选中行是否为空位置，若为空则直接复用填入，否则从模板 `CabinetTemplate.xlsx` 复制 Row 7 在当前行上方 Insert 插入。
+        2. **序号公式保留**：A 列完全保留/继承原生的 `=ROW()-ROW(A$6)` 公式，不手动硬编码写入数字。
+        3. **底部明细块特征搜索插入**：完全消除硬编码，动态直接读取模板文件第 41 行 A 列（`templateSheet.Cells[41, 1]`）的特征文本，在下半部分动态搜索，精准定位第 K 个明细块插槽，复制模板 41~72 行（32 行明细块）进行整块插入，并完成顶底求和公式与箱柜名称的联动更新。
+        4. **定义名称锚点超链接**：自动在顶部与底部单元格注册工作簿定义名称（`Cab_Sum_K` 与 `Cab_Det_K`），并创建基于定义名称的超链接，确保中间插入/删除行后点击跳转 100% 绝对精准不偏移。
+        5. **QueueAsMacro COM 线程延迟挂载 + 强制解绑/重新绑定注册**：定位并修复了事件未触发的根本原因（`AutoOpen` 阶段 COM 句柄未准备就绪以及 `_isEventsInitialized` 拦截导致未能真正挂载）。在 [AddInMain.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/AddInMain.cs) 中通过 `ExcelAsyncUtil.QueueAsMacro` 延迟至 Excel COM 消息循环完全就绪后注册，并在 [ExcelServices.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/ExcelServices.cs) 中解除布尔拦截，显式开启 `EnableEvents = true` 并先 `-=` 后 `+=` 强行重新订阅 `SheetChange` 事件，确保事件 100% 触发并实现箱柜名称纯文本双向实时同步。
 - **最新构建状态**：`dotnet build` 构建通过，生成 `0 个警告，0 个错误`。

@@ -262,19 +262,25 @@ namespace ExcelAddInDemo
     {
       // 读取触发响应的控件唯一标识 ID
       string controlId = control.Id;
-      // 点击“企业设置”按钮
-      if (controlId == "btnEnterprise")
+      // 点击“新建箱柜”按钮 --硬编码--
+      if (controlId == "btnNewCabinet")
+      {
+        // 调用业务层服务：直接在顶部“成套产品报价清单”插入行并复制模板明细
+        ExcelServices.CreateNewCabinetFromSelection();
+      }
+      // 点击“企业设置”按钮 --硬编码--
+      else if (controlId == "btnEnterprise")
       {
         // 弹出基于 WebView2 + Vue 3 的“我的企业设置”窗口
         ExcelServices.ShowEnterpriseSettingsDialog();
       }
-      // 点击“新建项目”按钮
+      // 点击“新建项目”按钮 --硬编码--
       else if (controlId == "btnNewProject")
       {
         // 弹出基于 WebView2 + Vue 3 的“新建项目”窗口
         ExcelServices.ShowCreateProjectDialog();
       }
-      // 点击“我的资料”按钮
+      // 点击“我的资料”按钮 --硬编码--
       else if (controlId == "btnProfile")
       {
         // 弹出用户登录与配置窗体

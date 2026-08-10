@@ -349,5 +349,488 @@ namespace ExcelAddInDemo
             }
             catch { }
         }
+
+        /// <summary>
+        /// 检索物理磁盘上的 CabinetTemplate.xlsx 模板路径
+        /// </summary>
+        private static string GetCabinetTemplatePath()
+        {
+            // 获取应用程序运行基准路径
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            // 配置多重备选路径列表
+            string[] candidates = new string[]
+            {
+                System.IO.Path.Combine(baseDir, "Resources", "CabinetTemplate.xlsx"),
+                System.IO.Path.Combine(baseDir, "CabinetTemplate.xlsx"),
+                System.IO.Path.Combine(Directory.GetCurrentDirectory(), "Resources", "CabinetTemplate.xlsx"),
+                System.IO.Path.Combine(Directory.GetCurrentDirectory(), "CabinetTemplate.xlsx"),
+                @"C:\Users\15262\Desktop\CabinetTemplate.xlsx"
+            };
+
+            // 循环遍历检索文件存在性
+            foreach (string path in candidates)
+            {
+                // 判断物理路径是否存在
+                if (System.IO.File.Exists(path))
+                {
+                    // 返回匹配成功的模板路径
+                    return path;
+                }
+            }
+            // 返回默认候选路径
+            return candidates[0];
+        }
+
+        /// <summary>
+        /// 点击“新建箱柜”业务逻辑：
+        /// 1. 顶部汇总行：若有空位置则复用，否则从模板复制第7行在选中位置上方插入。
+        /// 2. 序号列（A列）：保持原有的 =ROW()-ROW(A$6) 公式，不手动赋值。
+        /// 3. 底部明细块：基于模板第41行特征在下半部分动态搜索，插入第41-72行（32行明细）。
+        /// </summary>
+        public static void CreateNewCabinetFromSelection()
+        {
+            try
+            {
+                // 获取 Excel Application COM 全局对象
+                dynamic app = ExcelDnaUtil.Application;
+                // 校验全局 app 句柄有效性
+                if (app == null) return;
+
+                // 获取当前激活的项目工作簿对象
+                dynamic wb = app.ActiveWorkbook;
+                // 校验工作簿对象有效性
+                if (wb == null) return;
+
+                // 获取当前正在编辑的活动工作表
+                dynamic activeSheet = app.ActiveSheet;
+                // 获取用户当前选中的焦点单元格
+                dynamic activeCell = app.ActiveCell;
+
+                // 暂停屏幕刷新以提升性能
+                app.ScreenUpdating = false;
+                // 屏蔽 Excel 系统操作对话框与警告弹窗
+                app.DisplayAlerts = false;
+
+                // 声明模板工作簿句柄
+                dynamic? templateWb = null;
+                // 声明插入/复用行号变量 insertRow
+                int insertRow = 7;
+
+                try
+                {
+                    // 获取 CabinetTemplate.xlsx 的物理路径
+                    string templatePath = GetCabinetTemplatePath();
+                    // 只读模式打开模板工作簿
+                    if (System.IO.File.Exists(templatePath))
+                    {
+                        // 打开模板工作簿句柄
+                        templateWb = app.Workbooks.Open(templatePath, ReadOnly: true);
+                    }
+
+                    // 获取模板工作簿中的“分类1”工作表
+                    dynamic templateSheet = (templateWb != null) ? templateWb.Sheets["分类1"] : activeSheet;
+
+                    // 1. 确定顶部汇总行的插入/复用位置 insertRow --硬编码--
+                    // 若焦点单元格有效且行号大于6
+                    if (activeCell != null)
+                    {
+                        // 安全转为整型行号
+                        int cRow = Convert.ToInt32(activeCell.Row);
+                        // 若有效行号大于等于7
+                        if (cRow >= 7) insertRow = cRow;
+                    }
+
+                    // 判断当前 insertRow 的 B 列（箱柜名称）是否为空位置
+                    string nameInCell = Convert.ToString(activeSheet.Cells[insertRow, 2].Text) ?? "";
+                    // 标记当前位置是否为空白行
+                    bool isBlankRow = string.IsNullOrWhiteSpace(nameInCell);
+
+                    // 若当前位置已有箱柜数据，则需在当前行上方插入一行
+                    if (!isBlankRow)
+                    {
+                        // 复制模板工作表第 7 行整行
+                        if (templateSheet != null)
+                        {
+                            // 复制模板第 7 行
+                            templateSheet.Rows[7].Copy();
+                        }
+                        else
+                        {
+                            // 复制当前工作表第 7 行
+                            activeSheet.Rows[7].Copy();
+                        }
+                        // 在当前 insertRow 上方插入整行 (xlShiftDown = -4121)
+                        activeSheet.Rows[insertRow].Insert(-4121);
+                    }
+
+                    // 2. 计算新箱柜在清单中的顺序位置 cabinetK (即第几个箱柜)
+                    int cabinetK = 0;
+                    // 从第 7 行开始向下扫描至 insertRow，统计有效的箱柜数量
+                    for (int r = 7; r <= insertRow; r++)
+                    {
+                        // 读取该行 B 列的文本
+                        string bText = Convert.ToString(activeSheet.Cells[r, 2].Text) ?? "";
+                        // 若不为空，说明为一个有效箱柜节点
+                        if (!string.IsNullOrWhiteSpace(bText) || r == insertRow)
+                        {
+                            // 箱柜计数加 1
+                            cabinetK++;
+                        }
+                    }
+                    // 兜底保障 cabinetK 至少为 1
+                    if (cabinetK < 1) cabinetK = 1;
+
+                    // 生成新箱柜名称
+                    string cabinetName = $"箱柜{cabinetK}";
+
+                    // 3. 填入顶部汇总行的数据 (注意：绝对不写 A 列，保留 =ROW()-ROW(A$6) 公式)
+                    // 在 B 列写入箱柜名称
+                    activeSheet.Cells[insertRow, 2].Value = cabinetName;
+                    // 在 E 列写入单位“台”
+                    activeSheet.Cells[insertRow, 5].Value = "台";
+                    // 在 F 列写入默认数量 1
+                    activeSheet.Cells[insertRow, 6].Value = 1;
+
+                    // 4. 底部明细块搜索算法：基于模板第 41 行特征在下半部分动态搜索
+                    // 动态从模板文件第 41 行 A 列获取特征文本，消除硬编码
+                    string signature = string.Empty;
+                    // 若模板有效则读取模板 A41 的文本作为匹配特征值
+                    if (templateSheet != null)
+                    {
+                        // 动态读取模板 A41 单元格文本内容 --硬编码--
+                        signature = Convert.ToString(templateSheet.Cells[41, 1].Text) ?? "";
+                    }
+                    // 若从模板未读取到特征文本，则兜底尝试读取当前工作表第 41 行 A 列内容
+                    if (string.IsNullOrWhiteSpace(signature))
+                    {
+                        // 读取当前工作表第 41 行 A 列内容作为特征值
+                        signature = Convert.ToString(activeSheet.Cells[41, 1].Text) ?? "";
+                    }
+
+                    // 存储搜索到的明细块起始行号列表
+                    System.Collections.Generic.List<int> detailStartRows = new System.Collections.Generic.List<int>();
+                    // 获取当前工作表已使用的最大行数
+                    int usedRowCount = 300;
+                    // 从第 40 行开始向下扫描 A 列查找匹配标志
+                    for (int r = 40; r <= usedRowCount; r++)
+                    {
+                        // 读取 A 列文本
+                        string cellText = Convert.ToString(activeSheet.Cells[r, 1].Text) ?? "";
+                        // 若包含标志特征文本
+                        if (!string.IsNullOrWhiteSpace(cellText) && cellText.Contains(signature))
+                        {
+                            // 记录匹配的起始行号
+                            detailStartRows.Add(r);
+                        }
+                    }
+
+                    // 确定目标明细块的插入行号 targetDetailRow
+                    int targetDetailRow = 41;
+                    // 若找到的特征块数量大于等于所需位置 cabinetK
+                    if (detailStartRows.Count >= cabinetK)
+                    {
+                        // 在第 cabinetK 个特征行上方插入
+                        targetDetailRow = detailStartRows[cabinetK - 1];
+                    }
+                    else if (detailStartRows.Count > 0)
+                    {
+                        // 若已有的特征块少于所需位置，放置在最后一个特征块下方 32 行处
+                        targetDetailRow = detailStartRows[detailStartRows.Count - 1] + 32;
+                    }
+                    else
+                    {
+                        // 若一个特征块都没找到，默认从第 41 行开始
+                        targetDetailRow = 41;
+                    }
+
+                    // 5. 从模板复制第 41-72 行 (32 行明细) 并在 targetDetailRow 位置插入
+                    if (templateSheet != null)
+                    {
+                        // 复制模板的 41:72 行区域
+                        templateSheet.Range["41:72"].Copy();
+                    }
+                    else
+                    {
+                        // 复制当前表的 41:72 行区域
+                        activeSheet.Range["41:72"].Copy();
+                    }
+                    // 在目标行位置插入 32 行明细块 (xlShiftDown = -4121)
+                    activeSheet.Rows[targetDetailRow].Insert(-4121);
+
+                    // 6. 同步明细表头箱柜名称与顶底公式关联
+                    // 在新明细块的表头 (targetDetailRow + 3 行) B 列同步单元格
+                    dynamic detHeaderCell = activeSheet.Cells[targetDetailRow + 3, 2];
+                    // 顶部汇总行 B 列单元格
+                    dynamic sumHeaderCell = activeSheet.Cells[insertRow, 2];
+
+                    // 写入顶部汇总行箱柜名称初始值 (使用纯文本，不依赖公式)
+                    sumHeaderCell.Value = cabinetName;
+                    // 写入底部明细表头箱柜名称初始值 (使用纯文本，不依赖公式)
+                    detHeaderCell.Value = cabinetName;
+
+                    // 设置顶部汇总行 G 列 (单价) 的关联公式：指向明细块中单台合计 (targetDetailRow + 27 行) H 列
+                    int subtotalRow = targetDetailRow + 27;
+                    // 写入 G 列单价联动公式
+                    activeSheet.Cells[insertRow, 7].Formula = $"=H{subtotalRow}";
+                    // 写入 H 列总价联动公式 (=F{insertRow}*G{insertRow})
+                    activeSheet.Cells[insertRow, 8].Formula = $"=F{insertRow}*G{insertRow}";
+
+                    // 绑定定义名称 (Defined Names) 实现无偏移超链接与双向修改
+                    string sumNameTag = $"Cab_Sum_{cabinetK}"; // --硬编码--
+                    string detNameTag = $"Cab_Det_{cabinetK}"; // --硬编码--
+
+                    try
+                    {
+                        // 在工作簿中定义顶部单元格名称
+                        wb.Names.Add(Name: sumNameTag, RefersTo: $"='{activeSheet.Name}'!$B${insertRow}");
+                        // 在工作簿中定义底部单元格名称
+                        wb.Names.Add(Name: detNameTag, RefersTo: $"='{activeSheet.Name}'!$B${targetDetailRow + 3}");
+
+                        // 为顶部单元格添加指向底部定义名称的超链接
+                        activeSheet.Hyperlinks.Add(Anchor: sumHeaderCell, Address: "", SubAddress: $"'{activeSheet.Name}'!{detNameTag}", TextToDisplay: cabinetName);
+                        // 为底部单元格添加指向顶部定义名称的超链接
+                        activeSheet.Hyperlinks.Add(Anchor: detHeaderCell, Address: "", SubAddress: $"'{activeSheet.Name}'!{sumNameTag}", TextToDisplay: cabinetName);
+                    }
+                    catch { }
+
+                    // 自动注册工作表修改双向同步事件
+                    RegisterSheetChangeEvent();
+
+                    // 7. 焦点定位：激活原工作表并安全选中新插入的单元格
+                    try
+                    {
+                        // 确保激活目标工作簿
+                        wb.Activate();
+                        // 确保激活目标工作表
+                        activeSheet.Activate();
+                        // 安全选中 B 列单元格
+                        activeSheet.Cells[insertRow, 2].Select();
+                    }
+                    catch { }
+                }
+                finally
+                {
+                    // 若打开了模板工作簿，进行安全关闭
+                    if (templateWb != null)
+                    {
+                        // 关闭模板工作簿，不保存修改
+                        try { templateWb.Close(false); } catch { }
+                    }
+
+                    // 恢复 Excel 屏幕实时刷新功能
+                    app.ScreenUpdating = true;
+                    // 恢复 Excel 系统操作对话框与警告弹窗
+                    app.DisplayAlerts = true;
+
+                    // 兜底再次尝试激活工作表与选中单元格
+                    try
+                    {
+                        // 激活目标工作表
+                        activeSheet.Activate();
+                        // 选中单元格
+                        activeSheet.Cells[insertRow, 2].Select();
+                    }
+                    catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 弹出捕获的异常信息提示
+                System.Windows.Forms.MessageBox.Show($"新建箱柜异常: {ex.Message}", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+            }
+        }
+
+        // 保持对 Excel Application 实例的静态强引用，防止 GC 回收 COM 事件下沉节点
+        private static Microsoft.Office.Interop.Excel.Application? _excelApp = null;
+
+        /// <summary>
+        /// 注册 Excel 全局 SheetChange 事件，拦截箱柜名称双向修改
+        /// </summary>
+        public static void RegisterSheetChangeEvent()
+        {
+            try
+            {
+                // 获取并保持 Excel Application 静态引用，避免被 GC 回收
+                _excelApp = (Microsoft.Office.Interop.Excel.Application)ExcelDnaUtil.Application;
+
+                // 校验 _excelApp 对象有效性
+                if (_excelApp == null) return;
+
+                // 强行开启 Excel 系统级 EnableEvents 选项
+                _excelApp.EnableEvents = true;
+
+                // 先解除已有委托绑定，避免叠加；再重新绑定 SheetChange 事件处理函数 --硬编码--
+                _excelApp.SheetChange -= OnSheetChange;
+                _excelApp.SheetChange += OnSheetChange;
+            }
+            catch (Exception ex)
+            {
+                // 弹出注册异常提示帮助诊断
+                System.Windows.Forms.MessageBox.Show($"注册 SheetChange 事件失败: {ex.Message}", "系统提示");
+            }
+        }
+
+        /// <summary>
+        /// 响应单元格修改事件，实现箱柜名称在顶部与底部的纯文本双向同步更新
+        /// </summary>
+        private static void OnSheetChange(object shObj, Microsoft.Office.Interop.Excel.Range target)
+        {
+            try
+            {
+                // 校验 app 与 target 句柄有效性
+                if (_excelApp == null || target == null) return;
+
+                // 转换目标 Sheet 工作表对象
+                Microsoft.Office.Interop.Excel.Worksheet? sh = shObj as Microsoft.Office.Interop.Excel.Worksheet;
+                // 校验 sh 对象有效性
+                if (sh == null) return;
+
+                // 安全获取改动单元格所在工作簿对象
+                Microsoft.Office.Interop.Excel.Workbook? wb = sh.Parent as Microsoft.Office.Interop.Excel.Workbook;
+                // 校验 wb 句柄有效性
+                if (wb == null) return;
+
+                // 读取改动单元格的新纯文本内容
+                string newName = Convert.ToString(target.Value) ?? "";
+                // 若新文本为空白则直接退出
+                if (string.IsNullOrWhiteSpace(newName)) return;
+
+                // 校验当前修改单元格是否包含超链接锚点
+                if (target.Hyperlinks != null && target.Hyperlinks.Count > 0)
+                {
+                    // 获取超链接跳转目标子地址 (SubAddress)
+                    string subAddr = "";
+                    try { subAddr = target.Hyperlinks[1].SubAddress ?? ""; } catch { }
+
+                    // 若超链接指向 Cab_Det_ (表明当前修改的是顶部汇总行) --硬编码--
+                    if (subAddr.Contains("Cab_Det_"))
+                    {
+                        // 提取对应的目标定义名称标签 (例如 Cab_Det_1) --硬编码--
+                        string targetTag = extractTag(subAddr, "Cab_Det_");
+                        if (!string.IsNullOrEmpty(targetTag))
+                        {
+                            // 查找对应的底部明细单元格 Range
+                            Microsoft.Office.Interop.Excel.Range? detRange = FindRangeByTag(wb, sh, targetTag);
+                            if (detRange != null)
+                            {
+                                // 暂停事件触发防止无限递归
+                                _excelApp.EnableEvents = false;
+                                try
+                                {
+                                    // 1. 同步更新底部明细表头纯文本数值
+                                    detRange.Value = newName;
+                                    // 2. 刷新顶部单元格超链接显示的 DisplayText
+                                    try { target.Hyperlinks[1].TextToDisplay = newName; } catch { }
+                                    // 3. 刷新底部单元格超链接显示的 DisplayText
+                                    try { detRange.Hyperlinks[1].TextToDisplay = newName; } catch { }
+                                }
+                                catch { }
+                                finally
+                                {
+                                    // 恢复事件触发机制
+                                    _excelApp.EnableEvents = true;
+                                }
+                                return;
+                            }
+                        }
+                    }
+                    // 若超链接指向 Cab_Sum_ (表明当前修改的是底部明细行) --硬编码--
+                    else if (subAddr.Contains("Cab_Sum_"))
+                    {
+                        // 提取对应的目标定义名称标签 (例如 Cab_Sum_1) --硬编码--
+                        string targetTag = extractTag(subAddr, "Cab_Sum_");
+                        if (!string.IsNullOrEmpty(targetTag))
+                        {
+                            // 查找对应的顶部汇总单元格 Range
+                            Microsoft.Office.Interop.Excel.Range? sumRange = FindRangeByTag(wb, sh, targetTag);
+                            if (sumRange != null)
+                            {
+                                // 暂停事件触发防止无限递归
+                                _excelApp.EnableEvents = false;
+                                try
+                                {
+                                    // 1. 反向同步更新顶部汇总行纯文本数值
+                                    sumRange.Value = newName;
+                                    // 2. 刷新底部单元格超链接显示的 DisplayText
+                                    try { target.Hyperlinks[1].TextToDisplay = newName; } catch { }
+                                    // 3. 刷新顶部单元格超链接显示的 DisplayText
+                                    try { sumRange.Hyperlinks[1].TextToDisplay = newName; } catch { }
+                                }
+                                catch { }
+                                finally
+                                {
+                                    // 恢复事件触发机制
+                                    _excelApp.EnableEvents = true;
+                                }
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 从超链接子地址中截取精准的定义名称标签字符串
+        /// </summary>
+        private static string extractTag(string subAddr, string prefix)
+        {
+            try
+            {
+                // 定位前缀关键字位置
+                int idx = subAddr.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
+                if (idx >= 0)
+                {
+                    // 截取前缀及其之后的所有字符串
+                    string tag = subAddr.Substring(idx);
+                    // 清理单引号分隔符
+                    int endIdx = tag.IndexOf('\'');
+                    if (endIdx > 0) tag = tag.Substring(0, endIdx);
+                    // 返回修剪后的纯净标签名
+                    return tag.Trim();
+                }
+            }
+            catch { }
+            return "";
+        }
+
+        /// <summary>
+        /// 依据定义名称标签精准获取 Range 对象，带多层 Safe-Lookup 兜底
+        /// </summary>
+        private static Microsoft.Office.Interop.Excel.Range? FindRangeByTag(Microsoft.Office.Interop.Excel.Workbook wb, Microsoft.Office.Interop.Excel.Worksheet sh, string tagName)
+        {
+            try
+            {
+                // 方式 1：直接通过 wb.Names.Item 按标签名提取
+                try
+                {
+                    Microsoft.Office.Interop.Excel.Name n1 = wb.Names.Item(tagName);
+                    if (n1 != null && n1.RefersToRange != null) return n1.RefersToRange;
+                }
+                catch { }
+
+                // 方式 2：通过带有工作表前缀的 Full Name 提取
+                try
+                {
+                    string fullName = $"'{sh.Name}'!{tagName}";
+                    Microsoft.Office.Interop.Excel.Name n2 = wb.Names.Item(fullName);
+                    if (n2 != null && n2.RefersToRange != null) return n2.RefersToRange;
+                }
+                catch { }
+
+                // 方式 3：遍历工作簿中的定义名称进行后缀匹配
+                foreach (Microsoft.Office.Interop.Excel.Name n in wb.Names)
+                {
+                    string nStr = n.Name ?? "";
+                    if (nStr.EndsWith(tagName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return n.RefersToRange;
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
     }
 }

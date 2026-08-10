@@ -17,6 +17,12 @@ namespace ExcelAddInDemo
         {
             // 注册全局程序集动态解析句柄，防止单文件加载项找不到依赖 DLL
             AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;
+
+            // 使用 QueueAsMacro 延迟注册事件，确保 Excel COM 消息循环完全就绪后挂载
+            ExcelAsyncUtil.QueueAsMacro(() =>
+            {
+                ExcelServices.RegisterSheetChangeEvent();
+            });
         }
 
         /// <summary>

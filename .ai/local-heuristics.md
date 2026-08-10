@@ -54,6 +54,13 @@
 - **原因**：在 WebView2 异步消息回调执行时直接使用 `this.Invoke`，若此时窗体未完成句柄创建（`IsHandleCreated == false`）或者已被 `this.Close()` 销毁（`IsDisposed == true`），WinForms 会强制抛出 `InvalidOperationException`。
 - **解决**：封装 `SafeInvoke(Action action)` 方法，先判断 `!IsDisposed && IsHandleCreated`；再判断 `InvokeRequired`，若为主线程则直接同步运行 `action()`，避免盲目调用 `Control.Invoke`。
 
-
-
-
+### 11. Excel-DNA XLL 插件中 SheetChange 等 COM 全局事件响应失效/未触发的结晶解法
+- **现象**：在 `IExcelAddIn.AutoOpen()` 中通过 `((Application)ExcelDnaUtil.Application).SheetChange += ...` 注册全局事件后，修改 Excel 单元格没有任何响应，诊断发现事件根本没有被触发。
+- **原因**：
+  1. **COM 消息循环未就绪**：在 `AutoOpen()` 触发时刻，Excel 主线程的 COM 消息循环（Message Loop）与 COM 连接点（Connection Point）尚处于初始化未就绪状态，在此节点同步访问 `ExcelDnaUtil.Application` 并绑定事件，导致 COM 订阅接口被 Excel 内部静默丢弃。
+  2. **过度防御布尔标志位的拦截陷阱**：在注册代码中使用 `if (!_isEventsInitialized)` 布尔变量防护，由于 `AutoOpen` 阶段已将其误设为 `true`，后续用户操作（如新建文件或运行业务逻辑）再次尝试补救注册时，被该标志位直接拦截返回，导致事件永远无法真正绑定。
+  3. **Excel 系统级 `EnableEvents` 被隐式关闭**：在发生任何 COM 异常或在多线程/代码崩溃后，Excel 系统级的 `EnableEvents` 可能残留为 `false`，导致 Excel 引擎停止广播一切 `SheetChange` 事件。
+- **结晶解法（终极规范）**：
+  1. **延迟就绪注册**：在 `AutoOpen()` 中严禁直接挂载事件，必须使用 `ExcelAsyncUtil.QueueAsMacro(() => { ... })` 将事件注册延迟推迟到 Excel 消息循环完全准备完毕后再进行。
+  2. **强制开启系统事件**：在注册函数入口处显式调用 `app.EnableEvents = true;`，强制拉高 Excel 事件引擎的开启状态。
+  3. **解绑-重绑模式**：彻底废弃 `_isEventsInitialized` 布尔拦截，采用 `app.SheetChange -= OnSheetChange;` 先解绑旧委托，再 `app.SheetChange += OnSheetChange;` 重新强行挂载，确保 COM Connection Point 随时保持 100% 活着且唯一。

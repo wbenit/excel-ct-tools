@@ -24,6 +24,8 @@
     <Reference Include="System.Drawing" />
     <!-- 引入 Excel-DNA 核心整合包，用于支持 C# 与 Excel COM 及函数交互 -->
     <PackageReference Include="ExcelDna.Integration" Version="1.6.0" />
+    <!-- 引入 Microsoft.Office.Interop.Excel 强类型 COM 支持包 -->
+    <PackageReference Include="Microsoft.Office.Interop.Excel" Version="15.0.4795.1001" />
     <!-- 引入 Excel-DNA 自动构建打包工具，构建时会自动生成 .xll 文件 -->
     <PackageReference Include="ExcelDna.AddIn" Version="1.6.0" />
     <!-- 引入 WebView2 组件包用于支持 Vue 3 现代界面 -->
