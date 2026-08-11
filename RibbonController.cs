@@ -5,24 +5,24 @@ using ExcelDna.Integration.CustomUI;
 
 namespace ExcelAddInDemo
 {
-  /// <summary>
-  /// Ribbon GUI 界面控制器，负责自定义选项卡与 Excel 菜单回调交互
-  /// </summary>
-  [ComVisible(true)]
-  // 特别标注加壳特性：排除类与回调方法的名称重命名混淆，确保商业加壳后 Ribbon XML 反射调用不受影响
-  [Obfuscation(Exclude = true, ApplyToMembers = true)]
-  public class RibbonController : ExcelRibbon
-  {
-    // 缓存 Ribbon UI 控制接口句柄
-    private IRibbonUI? _ribbon;
-
     /// <summary>
-    /// 重写 GetCustomUI 方法，返回 Excel 选项卡 UI 结构的 XML 源码
+    /// Ribbon GUI 界面控制器，负责自定义选项卡与 Excel 菜单回调交互
     /// </summary>
-    public override string GetCustomUI(string ribbonId)
+    [ComVisible(true)]
+    // 特别标注加壳特性：排除类与回调方法的名称重命名混淆，确保商业加壳后 Ribbon XML 反射调用不受影响
+    [Obfuscation(Exclude = true, ApplyToMembers = true)]
+    public class RibbonController : ExcelRibbon
     {
-      // 返回 100% 符合 Office CustomUI 规范的标准 Ribbon UI XML 定义
-      return @"<customUI xmlns='http://schemas.microsoft.com/office/2006/01/customui' onLoad='OnRibbonLoad'>
+        // 缓存 Ribbon UI 控制接口句柄
+        private IRibbonUI? _ribbon;
+
+        /// <summary>
+        /// 重写 GetCustomUI 方法，返回 Excel 选项卡 UI 结构的 XML 源码
+        /// </summary>
+        public override string GetCustomUI(string ribbonId)
+        {
+            // 返回 100% 符合 Office CustomUI 规范的标准 Ribbon UI XML 定义
+            return @"<customUI xmlns='http://schemas.microsoft.com/office/2006/01/customui' onLoad='OnRibbonLoad'>
   <ribbon>
     <tabs>
       <tab id='tabDemo' label='鑫壬'>
@@ -181,111 +181,112 @@ namespace ExcelAddInDemo
     </tabs>
   </ribbon>
 </customUI>";
-    }
+        }
 
-    /// <summary>
-    /// 按钮回调：弹出基于 WebView2 + Vue 3 的用户登录与配置窗口
-    /// </summary>
-    public void OnShowLoginClicked(IRibbonControl control)
-    {
-      // 调用业务层服务在独立 STA 线程中弹出登录窗体
-      ExcelServices.ShowLoginDialog();
-    }
+        /// <summary>
+        /// 按钮回调：弹出基于 WebView2 + Vue 3 的用户登录与配置窗口
+        /// </summary>
+        public void OnShowLoginClicked(IRibbonControl control)
+        {
+            // 调用业务层服务在独立 STA 线程中弹出登录窗体
+            ExcelServices.ShowLoginDialog();
+        }
 
-    /// <summary>
-    /// Ribbon 加载完成后的回调函数
-    /// </summary>
-    public void OnRibbonLoad(IRibbonUI ribbon)
-    {
-      // 保存 Ribbon UI 对象引用以便需要时刷新 UI
-      _ribbon = ribbon;
-    }
+        /// <summary>
+        /// Ribbon 加载完成后的回调函数
+        /// </summary>
+        public void OnRibbonLoad(IRibbonUI ribbon)
+        {
+            // 保存 Ribbon UI 对象引用以便需要时刷新 UI
+            _ribbon = ribbon;
+        }
 
-    /// <summary>
-    /// 按钮回调：插入当前时间戳
-    /// </summary>
-    public void OnInsertDataClicked(IRibbonControl control)
-    {
-      // 执行业务层逻辑，在活动单元格填入时间数据
-      ExcelServices.InsertTimestampAndData();
-    }
+        /// <summary>
+        /// 按钮回调：插入当前时间戳
+        /// </summary>
+        public void OnInsertDataClicked(IRibbonControl control)
+        {
+            // 执行业务层逻辑，在活动单元格填入时间数据
+            ExcelServices.InsertTimestampAndData();
+        }
 
-    /// <summary>
-    /// 按钮回调：清空当前选中区域
-    /// </summary>
-    public void OnClearRangeClicked(IRibbonControl control)
-    {
-      // 执行业务层逻辑，清除选中单元格的格式与内容
-      ExcelServices.ClearActiveRange();
-    }
+        /// <summary>
+        /// 按钮回调：清空当前选中区域
+        /// </summary>
+        public void OnClearRangeClicked(IRibbonControl control)
+        {
+            // 执行业务层逻辑，清除选中单元格的格式与内容
+            ExcelServices.ClearActiveRange();
+        }
 
-    /// <summary>
-    /// 复选框状态获取回调：加载复选框是否选中的初始化状态
-    /// </summary>
-    public bool GetAutoHighlightPressed(IRibbonControl control)
-    {
-      // 读取业务服务类中高亮标识状态
-      return ExcelServices.IsAutoHighlightEnabled;
-    }
+        /// <summary>
+        /// 复选框状态获取回调：加载复选框是否选中的初始化状态
+        /// </summary>
+        public bool GetAutoHighlightPressed(IRibbonControl control)
+        {
+            // 读取业务服务类中高亮标识状态
+            return ExcelServices.IsAutoHighlightEnabled;
+        }
 
-    /// <summary>
-    /// 复选框状态改变回调：响应用户勾选/取消勾选操作
-    /// </summary>
-    public void OnAutoHighlightToggled(IRibbonControl control, bool pressed)
-    {
-      // 将最新的勾选状态同步给业务服务类
-      ExcelServices.IsAutoHighlightEnabled = pressed;
-    }
+        /// <summary>
+        /// 复选框状态改变回调：响应用户勾选/取消勾选操作
+        /// </summary>
+        public void OnAutoHighlightToggled(IRibbonControl control, bool pressed)
+        {
+            // 将最新的勾选状态同步给业务服务类
+            ExcelServices.IsAutoHighlightEnabled = pressed;
+        }
 
-    /// <summary>
-    /// 编辑框默认文本获取回调：加载文本框初始显示内容
-    /// </summary>
-    public string GetCustomMessageText(IRibbonControl control)
-    {
-      // 读取业务服务类中保存的文本框值
-      return ExcelServices.CustomMessageText;
-    }
+        /// <summary>
+        /// 编辑框默认文本获取回调：加载文本框初始显示内容
+        /// </summary>
+        public string GetCustomMessageText(IRibbonControl control)
+        {
+            // 读取业务服务类中保存的文本框值
+            return ExcelServices.CustomMessageText;
+        }
 
-    /// <summary>
-    /// 编辑框内容修改回调：响应用户在界面输入新文本
-    /// </summary>
-    public void OnCustomMessageChanged(IRibbonControl control, string text)
-    {
-      // 更新保存自定义消息文本
-      ExcelServices.CustomMessageText = text;
-    }
+        /// <summary>
+        /// 编辑框内容修改回调：响应用户在界面输入新文本
+        /// </summary>
+        public void OnCustomMessageChanged(IRibbonControl control, string text)
+        {
+            // 更新保存自定义消息文本
+            ExcelServices.CustomMessageText = text;
+        }
 
-    /// <summary>
-    /// Ribbon 下拉菜单及菜单按钮通用响应回调
-    /// </summary>
-    public void OnMenuAction(IRibbonControl control)
-    {
-      // 读取触发响应的控件唯一标识 ID
-      string controlId = control.Id;
-      // 点击“新建箱柜”按钮 --硬编码--
-      if (controlId == "btnNewCabinet")
-      {
-        // 调用业务层服务：直接在顶部“成套产品报价清单”插入行并复制模板明细
-        ExcelServices.CreateNewCabinetFromSelection();
-      }
-      // 点击“企业设置”按钮 --硬编码--
-      else if (controlId == "btnEnterprise")
-      {
-        // 弹出基于 WebView2 + Vue 3 的“我的企业设置”窗口
-        ExcelServices.ShowEnterpriseSettingsDialog();
-      }
-      // 点击“新建项目”按钮 --硬编码--
-      else if (controlId == "btnNewProject")
-      {
-        // 弹出基于 WebView2 + Vue 3 的“新建项目”窗口
-        ExcelServices.ShowCreateProjectDialog();
-      }
-      // 点击“我的资料”按钮 --硬编码--
-      else if (controlId == "btnProfile")
-      {
-        // 弹出用户登录与配置窗体
-        ExcelServices.ShowLoginDialog();
-      }
+        /// <summary>
+        /// Ribbon 下拉菜单及菜单按钮通用响应回调
+        /// </summary>
+        public void OnMenuAction(IRibbonControl control)
+        {
+            // 读取触发响应的控件唯一标识 ID
+            string controlId = control.Id;
+
+            // 响应“新建箱柜”按钮指令
+            if (controlId == "btnNewCabinet")
+            {
+                // 调用业务层服务：直接在顶部“成套产品报价清单”插入行并复制模板明细
+                ExcelServices.CreateNewCabinetFromSelection();
+            }
+            // 响应“企业设置”按钮指令
+            else if (controlId == "btnEnterprise")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“企业设置”窗口
+                ExcelServices.ShowEnterpriseSettingsDialog();
+            }
+            // 响应“新建项目”按钮指令
+            else if (controlId == "btnNewProject")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“新建项目”窗口
+                ExcelServices.ShowCreateProjectDialog();
+            }
+            // 响应“我的资料”按钮指令
+            else if (controlId == "btnProfile")
+            {
+                // 弹出用户登录与配置窗体
+                ExcelServices.ShowLoginDialog();
+            }
+        }
     }
-  }
 }

@@ -47,6 +47,10 @@
     <None Include="Resources\create_project.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将 JSON 配置文件复制至构建输出路径中 -->
+    <None Include="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <!-- 自动将项目依赖 DLL 以及 WebView2 原生 runtimes 文件和 Resources 发布至 publish 目录 -->
@@ -58,6 +62,8 @@
       <RuntimeFiles Include="$(TargetDir)runtimes\**\*.*" />
       <!-- 获取 Resources 前端 HTML 资源文件 -->
       <ResourceFiles Include="$(TargetDir)Resources\**\*.*" />
+      <!-- 获取 appsettings.json 配置文件 -->
+      <ConfigFile Include="$(TargetDir)appsettings.json" />
     </ItemGroup>
     <!-- 自动复制依赖 DLL 至 publish 发布目录 -->
     <Copy SourceFiles="@(PublishDependencies)" DestinationFolder="$(TargetDir)publish\" SkipUnchangedFiles="true" />
@@ -65,6 +71,8 @@
     <Copy SourceFiles="@(RuntimeFiles)" DestinationFolder="$(TargetDir)publish\runtimes\%(RecursiveDir)" SkipUnchangedFiles="true" />
     <!-- 自动复制 Resources 资源目录至 publish 发布目录 -->
     <Copy SourceFiles="@(ResourceFiles)" DestinationFolder="$(TargetDir)publish\Resources\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <!-- 自动复制 appsettings.json 配置文件至 publish 发布目录 -->
+    <Copy SourceFiles="@(ConfigFile)" DestinationFolder="$(TargetDir)publish\" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

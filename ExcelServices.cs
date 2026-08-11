@@ -427,17 +427,26 @@ namespace ExcelAddInDemo
                         templateWb = app.Workbooks.Open(templatePath, ReadOnly: true);
                     }
 
-                    // 获取模板工作簿中的“分类1”工作表
-                    dynamic templateSheet = (templateWb != null) ? templateWb.Sheets["分类1"] : activeSheet;
+                    // 【配置文件替代硬编码列举】
+                    // 1. 原硬编码: "分类1" (模板默认引用的工作表名称)
+                    // 2. 替代配置项: ConfigManager.Instance.Current.Excel.DefaultTemplateSheet
+                    string templateSheetName = ConfigManager.Instance.Current.Excel.DefaultTemplateSheet;
+                    // 获取模板工作簿中的目标工作表
+                    dynamic templateSheet = (templateWb != null) ? templateWb.Sheets[templateSheetName] : activeSheet;
 
-                    // 1. 确定顶部汇总行的插入/复用位置 insertRow --硬编码--
-                    // 若焦点单元格有效且行号大于6
+                    // 【配置文件替代硬编码列举】
+                    // 1. 原硬编码: 行号 7 (成套产品汇总行默认模板行号及起始有效行号)
+                    // 2. 替代配置项: ConfigManager.Instance.Current.Excel.TemplateSumRowIndex
+                    int headerRowIndex = ConfigManager.Instance.Current.Excel.TemplateSumRowIndex;
+
+                    // 1. 确定顶部汇总行的插入/复用位置 insertRow
+                    // 若焦点单元格有效且行号大于等于模板汇总行号
                     if (activeCell != null)
                     {
                         // 安全转为整型行号
                         int cRow = Convert.ToInt32(activeCell.Row);
-                        // 若有效行号大于等于7
-                        if (cRow >= 7) insertRow = cRow;
+                        // 若有效行号大于等于模板汇总行号
+                        if (cRow >= headerRowIndex) insertRow = cRow;
                     }
 
                     // 判断当前 insertRow 的 B 列（箱柜名称）是否为空位置
@@ -448,16 +457,16 @@ namespace ExcelAddInDemo
                     // 若当前位置已有箱柜数据，则需在当前行上方插入一行
                     if (!isBlankRow)
                     {
-                        // 复制模板工作表第 7 行整行
+                        // 复制模板工作表汇总行整行
                         if (templateSheet != null)
                         {
-                            // 复制模板第 7 行
-                            templateSheet.Rows[7].Copy();
+                            // 复制模板指定汇总行号
+                            templateSheet.Rows[headerRowIndex].Copy();
                         }
                         else
                         {
-                            // 复制当前工作表第 7 行
-                            activeSheet.Rows[7].Copy();
+                            // 复制当前工作表指定汇总行号
+                            activeSheet.Rows[headerRowIndex].Copy();
                         }
                         // 在当前 insertRow 上方插入整行 (xlShiftDown = -4121)
                         activeSheet.Rows[insertRow].Insert(-4121);
@@ -465,8 +474,8 @@ namespace ExcelAddInDemo
 
                     // 2. 计算新箱柜在清单中的顺序位置 cabinetK (即第几个箱柜)
                     int cabinetK = 0;
-                    // 从第 7 行开始向下扫描至 insertRow，统计有效的箱柜数量
-                    for (int r = 7; r <= insertRow; r++)
+                    // 从模板汇总起始行开始向下扫描至 insertRow，统计有效的箱柜数量
+                    for (int r = headerRowIndex; r <= insertRow; r++)
                     {
                         // 读取该行 B 列的文本
                         string bText = Convert.ToString(activeSheet.Cells[r, 2].Text) ?? "";
@@ -491,28 +500,41 @@ namespace ExcelAddInDemo
                     // 在 F 列写入默认数量 1
                     activeSheet.Cells[insertRow, 6].Value = 1;
 
-                    // 4. 底部明细块搜索算法：基于模板第 41 行特征在下半部分动态搜索
-                    // 动态从模板文件第 41 行 A 列获取特征文本，消除硬编码
+                    // 【配置文件替代硬编码列举】
+                    // 1. 原硬编码: 起始行 41，终止行 72 (模板明细块复制范围 "41:72")
+                    // 2. 原硬编码列号: 1 (A列) (模板用于特征识别匹配的列号)
+                    // 3. 替代配置项: ConfigManager.Instance.Current.Excel.TemplateDetailStartRowIndex / TemplateDetailEndRowIndex / FeatureColumnIndex
+                    int featureRow = ConfigManager.Instance.Current.Excel.TemplateDetailStartRowIndex;
+                    int detailEndRow = ConfigManager.Instance.Current.Excel.TemplateDetailEndRowIndex;
+                    int featureCol = ConfigManager.Instance.Current.Excel.FeatureColumnIndex;
+
+                    // 动态计算单个明细块所包含的总行数 (例如 72 - 41 + 1 = 32 行)
+                    int detailRowCount = detailEndRow - featureRow + 1;
+                    // 构造明细块复制的全局行区域字符串 (例如 "41:72")
+                    string copyRangeText = $"{featureRow}:{detailEndRow}";
+
                     string signature = string.Empty;
-                    // 若模板有效则读取模板 A41 的文本作为匹配特征值
+                    // 若模板有效则读取模板指定特征单元格的文本作为匹配特征值
                     if (templateSheet != null)
                     {
-                        // 动态读取模板 A41 单元格文本内容 --硬编码--
-                        signature = Convert.ToString(templateSheet.Cells[41, 1].Text) ?? "";
+                        // 动态读取模板特征单元格文本内容
+                        signature = Convert.ToString(templateSheet.Cells[featureRow, featureCol].Text) ?? "";
                     }
-                    // 若从模板未读取到特征文本，则兜底尝试读取当前工作表第 41 行 A 列内容
+                    // 若从模板未读取到特征文本，则兜底尝试读取当前工作表对应特征位置内容
                     if (string.IsNullOrWhiteSpace(signature))
                     {
-                        // 读取当前工作表第 41 行 A 列内容作为特征值
-                        signature = Convert.ToString(activeSheet.Cells[41, 1].Text) ?? "";
+                        // 读取当前工作表对应特征位置内容作为特征值
+                        signature = Convert.ToString(activeSheet.Cells[featureRow, featureCol].Text) ?? "";
                     }
 
                     // 存储搜索到的明细块起始行号列表
-                    System.Collections.Generic.List<int> detailStartRows = new System.Collections.Generic.List<int>();
-                    // 获取当前工作表已使用的最大行数
-                    int usedRowCount = 300;
-                    // 从第 40 行开始向下扫描 A 列查找匹配标志
-                    for (int r = 40; r <= usedRowCount; r++)
+                    List<int> detailStartRows = new List<int>();
+                    // 动态计算获取当前工作表已使用的最大行号 (UsedRange)，消除硬编码 300
+                    int usedRowCount = activeSheet.UsedRange.Row + activeSheet.UsedRange.Rows.Count - 1;
+                    // 若当前工作表已使用最大行数小于基准行，则兜底设为基准行前一行
+                    if (usedRowCount < featureRow - 1) usedRowCount = featureRow - 1;
+                    // 从明细起始前一行开始向下扫描 A 列查找匹配标志
+                    for (int r = featureRow - 1; r <= usedRowCount; r++)
                     {
                         // 读取 A 列文本
                         string cellText = Convert.ToString(activeSheet.Cells[r, 1].Text) ?? "";
@@ -525,7 +547,7 @@ namespace ExcelAddInDemo
                     }
 
                     // 确定目标明细块的插入行号 targetDetailRow
-                    int targetDetailRow = 41;
+                    int targetDetailRow = featureRow;
                     // 若找到的特征块数量大于等于所需位置 cabinetK
                     if (detailStartRows.Count >= cabinetK)
                     {
@@ -534,34 +556,39 @@ namespace ExcelAddInDemo
                     }
                     else if (detailStartRows.Count > 0)
                     {
-                        // 若已有的特征块少于所需位置，放置在最后一个特征块下方 32 行处
-                        targetDetailRow = detailStartRows[detailStartRows.Count - 1] + 32;
+                        // 若已有的特征块少于所需位置，放置在最后一个特征块下方明细总行数处
+                        targetDetailRow = detailStartRows[detailStartRows.Count - 1] + detailRowCount;
                     }
                     else
                     {
-                        // 若一个特征块都没找到，默认从第 41 行开始
-                        targetDetailRow = 41;
+                        // 若一个特征块都没找到，默认从明细起始行开始
+                        targetDetailRow = featureRow;
                     }
 
-                    // 5. 从模板复制第 41-72 行 (32 行明细) 并在 targetDetailRow 位置插入
+                    // 5. 从模板复制指定明细行区域并在 targetDetailRow 位置插入
                     if (templateSheet != null)
                     {
-                        // 复制模板的 41:72 行区域
-                        templateSheet.Range["41:72"].Copy();
+                        // 复制模板动态计算的明细行区域
+                        templateSheet.Range[copyRangeText].Copy();
                     }
                     else
                     {
-                        // 复制当前表的 41:72 行区域
-                        activeSheet.Range["41:72"].Copy();
+                        // 复制当前表动态计算的明细行区域
+                        activeSheet.Range[copyRangeText].Copy();
                     }
-                    // 在目标行位置插入 32 行明细块 (xlShiftDown = -4121)
+                    // 在目标行位置插入明细块 (xlShiftDown = -4121)
                     activeSheet.Rows[targetDetailRow].Insert(-4121);
 
                     // 6. 同步明细表头箱柜名称与顶底公式关联
-                    // 在新明细块的表头 (targetDetailRow + 3 行) B 列同步单元格
+                    // 在新明细块的表头 (targetDetailRow + 3 行) B 列名称单元格
                     dynamic detHeaderCell = activeSheet.Cells[targetDetailRow + 3, 2];
-                    // 顶部汇总行 B 列单元格
+                    // 顶部汇总行 B 列名称单元格
                     dynamic sumHeaderCell = activeSheet.Cells[insertRow, 2];
+
+                    // 顶部汇总行 A 列跳转锚点单元格
+                    dynamic sumAnchorCell = activeSheet.Cells[insertRow, 1];
+                    // 底部明细表头 A 列跳转锚点单元格
+                    dynamic detAnchorCell = activeSheet.Cells[targetDetailRow + 3, 1];
 
                     // 写入顶部汇总行箱柜名称初始值 (使用纯文本，不依赖公式)
                     sumHeaderCell.Value = cabinetName;
@@ -576,20 +603,33 @@ namespace ExcelAddInDemo
                     activeSheet.Cells[insertRow, 8].Formula = $"=F{insertRow}*G{insertRow}";
 
                     // 绑定定义名称 (Defined Names) 实现无偏移超链接与双向修改
-                    string sumNameTag = $"Cab_Sum_{cabinetK}"; // --硬编码--
-                    string detNameTag = $"Cab_Det_{cabinetK}"; // --硬编码--
+                    // 【配置文件替代硬编码列举】
+                    // 1. 原硬编码: "Cab_Sum_" (顶部汇总行定义名称前缀)
+                    // 2. 原硬编码: "Cab_Det_" (底部明细块定义名称前缀)
+                    // 3. 替代配置项: ConfigManager.Instance.Current.Excel.SumNamePrefix / DetNamePrefix
+                    string sumPrefix = ConfigManager.Instance.Current.Excel.SumNamePrefix;
+                    string detPrefix = ConfigManager.Instance.Current.Excel.DetNamePrefix;
+                    string sumNameTag = $"{sumPrefix}{cabinetK}";
+                    string detNameTag = $"{detPrefix}{cabinetK}";
 
                     try
                     {
-                        // 在工作簿中定义顶部单元格名称
-                        wb.Names.Add(Name: sumNameTag, RefersTo: $"='{activeSheet.Name}'!$B${insertRow}");
-                        // 在工作簿中定义底部单元格名称
-                        wb.Names.Add(Name: detNameTag, RefersTo: $"='{activeSheet.Name}'!$B${targetDetailRow + 3}");
+                        // 在工作簿中定义顶部 A列单元格名称
+                        wb.Names.Add(Name: sumNameTag, RefersTo: $"='{activeSheet.Name}'!$A${insertRow}");
+                        // 在工作簿中定义底部 A列单元格名称
+                        wb.Names.Add(Name: detNameTag, RefersTo: $"='{activeSheet.Name}'!$A${targetDetailRow + 3}");
 
-                        // 为顶部单元格添加指向底部定义名称的超链接
-                        activeSheet.Hyperlinks.Add(Anchor: sumHeaderCell, Address: "", SubAddress: $"'{activeSheet.Name}'!{detNameTag}", TextToDisplay: cabinetName);
-                        // 为底部单元格添加指向顶部定义名称的超链接
-                        activeSheet.Hyperlinks.Add(Anchor: detHeaderCell, Address: "", SubAddress: $"'{activeSheet.Name}'!{sumNameTag}", TextToDisplay: cabinetName);
+                        // 获取顶部及底部 A 列原有的文本，防止覆盖序号或标识
+                        string sumAnchorText = Convert.ToString(sumAnchorCell.Text) ?? "";
+                        string detAnchorText = Convert.ToString(detAnchorCell.Text) ?? "";
+                        // 若 A列文本为空，则使用默认名称
+                        if (string.IsNullOrWhiteSpace(sumAnchorText)) sumAnchorText = cabinetName;
+                        if (string.IsNullOrWhiteSpace(detAnchorText)) detAnchorText = cabinetName;
+
+                        // 为顶部 A列单元格添加指向底部定义名称的超链接
+                        activeSheet.Hyperlinks.Add(Anchor: sumAnchorCell, Address: "", SubAddress: $"'{activeSheet.Name}'!{detNameTag}", TextToDisplay: sumAnchorText);
+                        // 为底部 A列单元格添加指向顶部定义名称的超链接
+                        activeSheet.Hyperlinks.Add(Anchor: detAnchorCell, Address: "", SubAddress: $"'{activeSheet.Name}'!{sumNameTag}", TextToDisplay: detAnchorText);
                     }
                     catch { }
 
@@ -690,39 +730,50 @@ namespace ExcelAddInDemo
                 // 校验 wb 句柄有效性
                 if (wb == null) return;
 
+                // 限制仅处理第 2 列 (B列) 的修改
+                if (target.Column != 2) return;
+
                 // 读取改动单元格的新纯文本内容
                 string newName = Convert.ToString(target.Value) ?? "";
                 // 若新文本为空白则直接退出
                 if (string.IsNullOrWhiteSpace(newName)) return;
 
-                // 校验当前修改单元格是否包含超链接锚点
-                if (target.Hyperlinks != null && target.Hyperlinks.Count > 0)
+                // 获取改动单元格所在行第 1 列 (A列) 单元格
+                Microsoft.Office.Interop.Excel.Range aCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[target.Row, 1];
+
+                // 校验 A列单元格是否包含超链接锚点
+                if (aCell != null && aCell.Hyperlinks != null && aCell.Hyperlinks.Count > 0)
                 {
                     // 获取超链接跳转目标子地址 (SubAddress)
                     string subAddr = "";
-                    try { subAddr = target.Hyperlinks[1].SubAddress ?? ""; } catch { }
+                    try { subAddr = aCell.Hyperlinks[1].SubAddress ?? ""; } catch { }
 
-                    // 若超链接指向 Cab_Det_ (表明当前修改的是顶部汇总行) --硬编码--
-                    if (subAddr.Contains("Cab_Det_"))
+                    // 【配置文件替代硬编码列举】
+                    // 1. 原硬编码前缀校验: "Cab_Sum_" (汇总标签检测) 和 "Cab_Det_" (明细标签检测)
+                    // 2. 替代配置项: ConfigManager.Instance.Current.Excel.SumNamePrefix / DetNamePrefix
+                    string sumPrefix = ConfigManager.Instance.Current.Excel.SumNamePrefix;
+                    string detPrefix = ConfigManager.Instance.Current.Excel.DetNamePrefix;
+
+                    // 若超链接指向明细前缀 (表明当前修改的是顶部汇总行的 B列名称)
+                    if (subAddr.Contains(detPrefix))
                     {
-                        // 提取对应的目标定义名称标签 (例如 Cab_Det_1) --硬编码--
-                        string targetTag = extractTag(subAddr, "Cab_Det_");
+                        // 提取对应的目标明细定义名称标签 (例如 Cab_Det_1)
+                        string targetTag = extractTag(subAddr, detPrefix);
                         if (!string.IsNullOrEmpty(targetTag))
                         {
-                            // 查找对应的底部明细单元格 Range
-                            Microsoft.Office.Interop.Excel.Range? detRange = FindRangeByTag(wb, sh, targetTag);
-                            if (detRange != null)
+                            // 查找对应的底部明细 A列单元格 Range
+                            Microsoft.Office.Interop.Excel.Range? detAnchorA = FindRangeByTag(wb, sh, targetTag);
+                            if (detAnchorA != null)
                             {
+                                // 获取底部明细 B列名称单元格 (右移1列)
+                                Microsoft.Office.Interop.Excel.Range detNameB = (Microsoft.Office.Interop.Excel.Range)detAnchorA.Offset[0, 1];
+
                                 // 暂停事件触发防止无限递归
                                 _excelApp.EnableEvents = false;
                                 try
                                 {
-                                    // 1. 同步更新底部明细表头纯文本数值
-                                    detRange.Value = newName;
-                                    // 2. 刷新顶部单元格超链接显示的 DisplayText
-                                    try { target.Hyperlinks[1].TextToDisplay = newName; } catch { }
-                                    // 3. 刷新底部单元格超链接显示的 DisplayText
-                                    try { detRange.Hyperlinks[1].TextToDisplay = newName; } catch { }
+                                    // 1. 同步更新底部明细表头 B列纯文本数值
+                                    detNameB.Value = newName;
                                 }
                                 catch { }
                                 finally
@@ -734,27 +785,26 @@ namespace ExcelAddInDemo
                             }
                         }
                     }
-                    // 若超链接指向 Cab_Sum_ (表明当前修改的是底部明细行) --硬编码--
-                    else if (subAddr.Contains("Cab_Sum_"))
+                    // 若超链接指向汇总前缀 (表明当前修改的是底部明细行的 B列名称)
+                    else if (subAddr.Contains(sumPrefix))
                     {
-                        // 提取对应的目标定义名称标签 (例如 Cab_Sum_1) --硬编码--
-                        string targetTag = extractTag(subAddr, "Cab_Sum_");
+                        // 提取对应的目标汇总定义名称标签 (例如 Cab_Sum_1)
+                        string targetTag = extractTag(subAddr, sumPrefix);
                         if (!string.IsNullOrEmpty(targetTag))
                         {
-                            // 查找对应的顶部汇总单元格 Range
-                            Microsoft.Office.Interop.Excel.Range? sumRange = FindRangeByTag(wb, sh, targetTag);
-                            if (sumRange != null)
+                            // 查找对应的顶部汇总 A列单元格 Range
+                            Microsoft.Office.Interop.Excel.Range? sumAnchorA = FindRangeByTag(wb, sh, targetTag);
+                            if (sumAnchorA != null)
                             {
+                                // 获取顶部汇总 B列名称单元格 (右移1列)
+                                Microsoft.Office.Interop.Excel.Range sumNameB = (Microsoft.Office.Interop.Excel.Range)sumAnchorA.Offset[0, 1];
+
                                 // 暂停事件触发防止无限递归
                                 _excelApp.EnableEvents = false;
                                 try
                                 {
-                                    // 1. 反向同步更新顶部汇总行纯文本数值
-                                    sumRange.Value = newName;
-                                    // 2. 刷新底部单元格超链接显示的 DisplayText
-                                    try { target.Hyperlinks[1].TextToDisplay = newName; } catch { }
-                                    // 3. 刷新顶部单元格超链接显示的 DisplayText
-                                    try { sumRange.Hyperlinks[1].TextToDisplay = newName; } catch { }
+                                    // 1. 反向同步更新顶部汇总行 B列纯文本数值
+                                    sumNameB.Value = newName;
                                 }
                                 catch { }
                                 finally
