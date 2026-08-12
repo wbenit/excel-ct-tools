@@ -64,3 +64,23 @@
   1. **延迟就绪注册**：在 `AutoOpen()` 中严禁直接挂载事件，必须使用 `ExcelAsyncUtil.QueueAsMacro(() => { ... })` 将事件注册延迟推迟到 Excel 消息循环完全准备完毕后再进行。
   2. **强制开启系统事件**：在注册函数入口处显式调用 `app.EnableEvents = true;`，强制拉高 Excel 事件引擎的开启状态。
   3. **解绑-重绑模式**：彻底废弃 `_isEventsInitialized` 布尔拦截，采用 `app.SheetChange -= OnSheetChange;` 先解绑旧委托，再 `app.SheetChange += OnSheetChange;` 重新强行挂载，确保 COM Connection Point 随时保持 100% 活着且唯一。
+
+### 12. Excel COM 动态调用（dynamic）与模板文件生命周期引起的定义名称（Defined Names）绑定丢失与失效结晶
+- **现象**：
+  1. 通过 COM `wb.Names.Add` 添加定义名称时无报错，但在 Excel 名称管理器（`Ctrl + F3`）中根本看不到新建的名称，超链接跳转提示“引用无效”。
+  2. 弹窗提示创建成功且引用带有双引号（如 `引用：="'[Workbook]Sheet'!$A$9"`），但点击超链接无法跳转。
+  3. 执行操作时 Excel 窗口暂存并跳转到了模板工作簿的 Sheet（如“项目信息”）。
+- **原因**：
+  1. **模板句柄未及时关闭**：通过 `app.Workbooks.Open(templatePath)` 打开模板工作簿后，在整个逻辑未结束前一直维持 open 状态。当 Excel COM 处于活跃模板句柄上下文时，定义名称被误挂载到了只读模板 `templateWb` 或其他上下文，导致挂载失效。
+  2. **RefersTo 公式格式缺失等号**：`Address(..., External:=true)` 生成的引用字符串开头缺少 `=` 符号（如 `'Sheet'!$A$9`），Excel `Names.Add` 将其误解析为**纯文本字符串常量** `="'Sheet'!$A$9"`，而非**单元格区域公式引用**。
+  3. **Hyperlink `SubAddress` 缺少工作表前缀**：在 Excel 超链接中，`SubAddress` 如果只有纯名称标签（如 `Cab_Det_1`），点击时 Excel 会因缺失工作表限定符而无法寻址跳转。
+  4. **模板预存名称与多作用域重复绑定**：跨 Workbook `Copy` 模板行时 Excel COM 会将模板中的定义名称复制带入目标工作簿，若名称冲突则会自动重命名/覆盖；同时代码中混用了不同 `Names.Add` 作用域。
+  5. **基于行数计算 cabinetK 导致已有同名标签被覆盖**：按扫描行数计算 `cabinetK` 时，中间插入行会导致算出的 `cabinetK` 与现存名称同名冲突，调用 `Delete()` / `Add()` 时误删并覆盖了已有的同名定义名称。
+  6. **ScreenUpdating=false 下 Range.Text 返回空串引发 cabinetK 恒等于 1**：在 Excel COM 中，设置 `app.ScreenUpdating = false;` 暂停渲染时，调用 `Range.Text` 属性会直接返回 `""`（空串）。如果使用 `Range.Text` 扫描 B 列箱柜名称，会导致 `maxK` 恒为 0，每次计算 `cabinetK` 均返回 `1`，进而固定命名为 `Cab_Sum_1` 循环覆写旧的 `Cab_Sum_1`！
+- **结晶解法**：
+  1. **绝对禁用于打开模板后遍历 Delete 模板 Names**：在 Excel COM 中，对刚打开的 `templateWb.Names` 或 `sh.Names` 执行 `.Delete()` 循环，会由于 COM Dispatch 的共享下沉机制将当前项目工作簿中已存在的所有定义名称瞬间全盘抹除！必须彻底删去该循环代码，且模板复制完成后**立即**执行 `templateWb.Close(false)`。
+  2. **工作簿作用域直接传入 Range COM 对象绑定**：使用 `targetWb.Names.Add(Name: sumNameTag, RefersTo: sumAnchorCell, Visible: true)` 直接将强类型 `Range` 对象作为 `RefersTo` 参数传入，绝对避开中文 Excel COM 对 `$"='分类1'!$A$7"` 等字符串公式在某些环境下解析异常导致的 `0x800A03EC` 挂载失败问题。
+  3. **超链接带工作表前缀与 ScrollRow 偏移行数修正**：为 `Hyperlinks.Add` 的 `SubAddress` 补齐工作表名称前缀（如 `$"'{excelActiveSheet.Name}'!{detNameTag}"`），省略 `TextToDisplay` 参数以保留 A 列原有的 `=ROW()-ROW(A$6)` 公式；在 `SheetFollowHyperlink` 事件中使用 `ConfigManager.Instance.Current.Excel.ScrollRowOffset` 修正 `win.ScrollRow`。
+  4. **全作用域动态最大序号增量与彻底取消 Delete**：同时扫描 `targetWb.Names`、`activeSheet.Names` 与 B 列“箱柜X”提取 `maxK` 并分配 `cabinetK = maxK + 1`；彻底抹除代码中所有的 `Delete()` 盲目删除逻辑，由纯递增 `cabinetK` 保证定义名称唯一性，彻底解决旧名称被擦除的问题。
+  5. **绝对禁用 Cell.Text 校验，改用 Cell.Value2 / Cell.Value 读取内存数据**：在 `ScreenUpdating = false` 下，读取单元格必须使用 `Cell.Value2` 或 `Cell.Value`，确保不受视口渲染暂停影响，精准解析 B 列 "箱柜X" 文本并正确计算增量序号 `maxK + 1`；同时搭配 `ExtractIndexFromName` 安全助手清洗包含引号/等号的 Name 字符串。
+  6. **取消打开外部 templateWb，直接使用当前工作表 activeSheet 内部行复制**：由于项目工作簿本身即是由 CabinetTemplate.xlsx 复制建立，模板行原本就存在于当前工作表中。直接在 `activeSheet` 内部执行 `Rows.Copy()` 与 `Rows.Insert(-4121)`，无需打开任何外部文件，彻底根除跨工作簿句柄关闭丢弃定义名称的致命问题。

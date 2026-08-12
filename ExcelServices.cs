@@ -418,21 +418,8 @@ namespace ExcelAddInDemo
 
                 try
                 {
-                    // 获取 CabinetTemplate.xlsx 的物理路径
-                    string templatePath = GetCabinetTemplatePath();
-                    // 只读模式打开模板工作簿
-                    if (System.IO.File.Exists(templatePath))
-                    {
-                        // 打开模板工作簿句柄
-                        templateWb = app.Workbooks.Open(templatePath, ReadOnly: true);
-                    }
-
-                    // 【配置文件替代硬编码列举】
-                    // 1. 原硬编码: "分类1" (模板默认引用的工作表名称)
-                    // 2. 替代配置项: ConfigManager.Instance.Current.Excel.DefaultTemplateSheet
-                    string templateSheetName = ConfigManager.Instance.Current.Excel.DefaultTemplateSheet;
-                    // 获取模板工作簿中的目标工作表
-                    dynamic templateSheet = (templateWb != null) ? templateWb.Sheets[templateSheetName] : activeSheet;
+                    // 直接使用当前活动工作表 activeSheet 作为复制基准模板表，无需打开外部 CabinetTemplate.xlsx 文件
+                    dynamic templateSheet = activeSheet;
 
                     // 【配置文件替代硬编码列举】
                     // 1. 原硬编码: 行号 7 (成套产品汇总行默认模板行号及起始有效行号)
@@ -449,8 +436,8 @@ namespace ExcelAddInDemo
                         if (cRow >= headerRowIndex) insertRow = cRow;
                     }
 
-                    // 判断当前 insertRow 的 B 列（箱柜名称）是否为空位置
-                    string nameInCell = Convert.ToString(activeSheet.Cells[insertRow, 2].Text) ?? "";
+                    // 判断当前 insertRow 的 B 列（箱柜名称）是否为空位置 (使用 Value2 读取底层内存数据，绝对不使用受 ScreenUpdating 影响的 Text 属性)
+                    string nameInCell = Convert.ToString(activeSheet.Cells[insertRow, 2].Value2) ?? Convert.ToString(activeSheet.Cells[insertRow, 2].Value) ?? "";
                     // 标记当前位置是否为空白行
                     bool isBlankRow = string.IsNullOrWhiteSpace(nameInCell);
 
@@ -472,24 +459,14 @@ namespace ExcelAddInDemo
                         activeSheet.Rows[insertRow].Insert(-4121);
                     }
 
-                    // 2. 计算新箱柜在清单中的顺序位置 cabinetK (即第几个箱柜)
-                    int cabinetK = 0;
-                    // 从模板汇总起始行开始向下扫描至 insertRow，统计有效的箱柜数量
-                    for (int r = headerRowIndex; r <= insertRow; r++)
-                    {
-                        // 读取该行 B 列的文本
-                        string bText = Convert.ToString(activeSheet.Cells[r, 2].Text) ?? "";
-                        // 若不为空，说明为一个有效箱柜节点
-                        if (!string.IsNullOrWhiteSpace(bText) || r == insertRow)
-                        {
-                            // 箱柜计数加 1
-                            cabinetK++;
-                        }
-                    }
-                    // 兜底保障 cabinetK 至少为 1
-                    if (cabinetK < 1) cabinetK = 1;
+                    // 2. 动态提取全表中下一个全新的箱柜序号 cabinetK (保障原有的定义名称完全保留不被删除/覆盖)
+                    Microsoft.Office.Interop.Excel.Worksheet excelSheetForK = (Microsoft.Office.Interop.Excel.Worksheet)activeSheet;
+                    Microsoft.Office.Interop.Excel.Workbook excelWbForK = (Microsoft.Office.Interop.Excel.Workbook)excelSheetForK.Parent;
 
-                    // 生成新箱柜名称
+                    // 获取下一个独立增量序号 K
+                    int cabinetK = GetNextCabinetIndex(excelWbForK, excelSheetForK);
+
+                    // 生成新箱柜名称 (如 箱柜3)
                     string cabinetName = $"箱柜{cabinetK}";
 
                     // 3. 填入顶部汇总行的数据 (注意：绝对不写 A 列，保留 =ROW()-ROW(A$6) 公式)
@@ -517,14 +494,14 @@ namespace ExcelAddInDemo
                     // 若模板有效则读取模板指定特征单元格的文本作为匹配特征值
                     if (templateSheet != null)
                     {
-                        // 动态读取模板特征单元格文本内容
-                        signature = Convert.ToString(templateSheet.Cells[featureRow, featureCol].Text) ?? "";
+                        // 动态读取模板特征单元格内存数据内容
+                        signature = Convert.ToString(templateSheet.Cells[featureRow, featureCol].Value2) ?? Convert.ToString(templateSheet.Cells[featureRow, featureCol].Value) ?? "";
                     }
                     // 若从模板未读取到特征文本，则兜底尝试读取当前工作表对应特征位置内容
                     if (string.IsNullOrWhiteSpace(signature))
                     {
                         // 读取当前工作表对应特征位置内容作为特征值
-                        signature = Convert.ToString(activeSheet.Cells[featureRow, featureCol].Text) ?? "";
+                        signature = Convert.ToString(activeSheet.Cells[featureRow, featureCol].Value2) ?? Convert.ToString(activeSheet.Cells[featureRow, featureCol].Value) ?? "";
                     }
 
                     // 存储搜索到的明细块起始行号列表
@@ -536,8 +513,8 @@ namespace ExcelAddInDemo
                     // 从明细起始前一行开始向下扫描 A 列查找匹配标志
                     for (int r = featureRow - 1; r <= usedRowCount; r++)
                     {
-                        // 读取 A 列文本
-                        string cellText = Convert.ToString(activeSheet.Cells[r, 1].Text) ?? "";
+                        // 读取 A 列内存值
+                        string cellText = Convert.ToString(activeSheet.Cells[r, 1].Value2) ?? Convert.ToString(activeSheet.Cells[r, 1].Value) ?? "";
                         // 若包含标志特征文本
                         if (!string.IsNullOrWhiteSpace(cellText) && cellText.Contains(signature))
                         {
@@ -578,17 +555,23 @@ namespace ExcelAddInDemo
                     }
                     // 在目标行位置插入明细块 (xlShiftDown = -4121)
                     activeSheet.Rows[targetDetailRow].Insert(-4121);
+                    // 清空剪贴板缓存，避免复制操作干扰名称写入
+                    app.CutCopyMode = (Microsoft.Office.Interop.Excel.XlCutCopyMode)0;
+                    // 触发 Excel 重新计算
+                    app.Calculate();
+
+                    // 复制完成，立即关闭模板工作簿，防止后续名称操作挂载到模板文件
+                    if (templateWb != null)
+                    {
+                        try { templateWb.Close(false); } catch { }
+                        templateWb = null;
+                    }
 
                     // 6. 同步明细表头箱柜名称与顶底公式关联
                     // 在新明细块的表头 (targetDetailRow + 3 行) B 列名称单元格
                     dynamic detHeaderCell = activeSheet.Cells[targetDetailRow + 3, 2];
                     // 顶部汇总行 B 列名称单元格
                     dynamic sumHeaderCell = activeSheet.Cells[insertRow, 2];
-
-                    // 顶部汇总行 A 列跳转锚点单元格
-                    dynamic sumAnchorCell = activeSheet.Cells[insertRow, 1];
-                    // 底部明细表头 A 列跳转锚点单元格
-                    dynamic detAnchorCell = activeSheet.Cells[targetDetailRow + 3, 1];
 
                     // 写入顶部汇总行箱柜名称初始值 (使用纯文本，不依赖公式)
                     sumHeaderCell.Value = cabinetName;
@@ -612,26 +595,56 @@ namespace ExcelAddInDemo
                     string sumNameTag = $"{sumPrefix}{cabinetK}";
                     string detNameTag = $"{detPrefix}{cabinetK}";
 
+                    // 将 activeSheet 转为强类型 Worksheet
+                    Microsoft.Office.Interop.Excel.Worksheet excelActiveSheet = (Microsoft.Office.Interop.Excel.Worksheet)activeSheet;
+                    // 从当前工作表所属的 Parent 获取确切的目标工作簿句柄
+                    Microsoft.Office.Interop.Excel.Workbook targetWb = (Microsoft.Office.Interop.Excel.Workbook)excelActiveSheet.Parent;
+
+                    // 确保目标工作簿与工作表处于激活状态
+                    try { targetWb.Activate(); } catch { }
+                    try { excelActiveSheet.Activate(); } catch { }
+
+                    // ========== 强类型单元格获取标准引用与 Range 对象 ==========
+                    // 获取顶部汇总行 A 列跳转锚点单元格 Range 对象
+                    Microsoft.Office.Interop.Excel.Range sumAnchorCell = (Microsoft.Office.Interop.Excel.Range)excelActiveSheet.Cells[insertRow, 1];
+                    // 获取底部明细表头 A 列跳转锚点单元格 Range 对象
+                    Microsoft.Office.Interop.Excel.Range detAnchorCell = (Microsoft.Office.Interop.Excel.Range)excelActiveSheet.Cells[targetDetailRow + 3, 1];
+
+                    // 生成标准 Excel 公式引用字符串 (如 ='分类1'!$A$9)
+                    string sumRef = $"='{excelActiveSheet.Name}'!$A${insertRow}";
+                    // 生成标准 Excel 公式引用字符串 (如 ='分类1'!$A$110)
+                    string detRef = $"='{excelActiveSheet.Name}'!$A${targetDetailRow + 3}";
+
                     try
                     {
-                        // 在工作簿中定义顶部 A列单元格名称
-                        wb.Names.Add(Name: sumNameTag, RefersTo: $"='{activeSheet.Name}'!$A${insertRow}");
-                        // 在工作簿中定义底部 A列单元格名称
-                        wb.Names.Add(Name: detNameTag, RefersTo: $"='{activeSheet.Name}'!$A${targetDetailRow + 3}");
+                        // ========== 强类型Add，直接传入 Range COM 对象在工作簿作用域唯一添加全新定义的增量名称 ==========
+                        Microsoft.Office.Interop.Excel.Name nameSum = targetWb.Names.Add(Name: sumNameTag, RefersTo: sumAnchorCell, Visible: true);
+                        // 添加工作簿级底部定义名称
+                        Microsoft.Office.Interop.Excel.Name nameDet = targetWb.Names.Add(Name: detNameTag, RefersTo: detAnchorCell, Visible: true);
 
-                        // 获取顶部及底部 A 列原有的文本，防止覆盖序号或标识
-                        string sumAnchorText = Convert.ToString(sumAnchorCell.Text) ?? "";
-                        string detAnchorText = Convert.ToString(detAnchorCell.Text) ?? "";
-                        // 若 A列文本为空，则使用默认名称
-                        if (string.IsNullOrWhiteSpace(sumAnchorText)) sumAnchorText = cabinetName;
-                        if (string.IsNullOrWhiteSpace(detAnchorText)) detAnchorText = cabinetName;
+                        // 强制刷新 Excel 计算引擎
+                        app.CalculateFull();
 
-                        // 为顶部 A列单元格添加指向底部定义名称的超链接
-                        activeSheet.Hyperlinks.Add(Anchor: sumAnchorCell, Address: "", SubAddress: $"'{activeSheet.Name}'!{detNameTag}", TextToDisplay: sumAnchorText);
-                        // 为底部 A列单元格添加指向顶部定义名称的超链接
-                        activeSheet.Hyperlinks.Add(Anchor: detAnchorCell, Address: "", SubAddress: $"'{activeSheet.Name}'!{sumNameTag}", TextToDisplay: detAnchorText);
+                        // 为顶部 A列单元格添加指向底部定义名称的超链接 (带工作表前缀如 '分类1'!Cab_Det_3) (--硬编码: ScreenTip提示文本 "跳转至明细块"--)
+                        excelActiveSheet.Hyperlinks.Add(
+                            Anchor: sumAnchorCell,
+                            Address: "",
+                            SubAddress: $"'{excelActiveSheet.Name}'!{detNameTag}",
+                            ScreenTip: "跳转至明细块"
+                        );
+                        // 为底部 A列单元格添加指向顶部定义名称的超链接 (带工作表前缀如 '分类1'!Cab_Sum_3) (--硬编码: ScreenTip提示文本 "返回汇总行"--)
+                        excelActiveSheet.Hyperlinks.Add(
+                            Anchor: detAnchorCell,
+                            Address: "",
+                            SubAddress: $"'{excelActiveSheet.Name}'!{sumNameTag}",
+                            ScreenTip: "返回汇总行"
+                        );
                     }
-                    catch { }
+                    catch (Exception nameEx)
+                    {
+                        // 捕获定义名称异常提示 (--硬编码: 弹窗标题与提示文本--)
+                        System.Windows.Forms.MessageBox.Show($"创建定义名称异常：{nameEx.Message}", "名称创建提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                    }
 
                     // 自动注册工作表修改双向同步事件
                     RegisterSheetChangeEvent();
@@ -684,7 +697,7 @@ namespace ExcelAddInDemo
         private static Microsoft.Office.Interop.Excel.Application? _excelApp = null;
 
         /// <summary>
-        /// 注册 Excel 全局 SheetChange 事件，拦截箱柜名称双向修改
+        /// 注册 Excel 全局 SheetChange 与 SheetFollowHyperlink 事件，拦截箱柜名称双向修改与超链接跳转滚动定位
         /// </summary>
         public static void RegisterSheetChangeEvent()
         {
@@ -699,15 +712,54 @@ namespace ExcelAddInDemo
                 // 强行开启 Excel 系统级 EnableEvents 选项
                 _excelApp.EnableEvents = true;
 
-                // 先解除已有委托绑定，避免叠加；再重新绑定 SheetChange 事件处理函数 --硬编码--
+                // 先解除已有委托绑定，避免叠加；再重新绑定 SheetChange 事件处理函数
                 _excelApp.SheetChange -= OnSheetChange;
                 _excelApp.SheetChange += OnSheetChange;
+
+                // 解除已有的 SheetFollowHyperlink 事件处理委托绑定
+                _excelApp.SheetFollowHyperlink -= OnSheetFollowHyperlink;
+                // 重新绑定 SheetFollowHyperlink 事件处理委托，实现跳转后的 ScrollRow 偏移定位
+                _excelApp.SheetFollowHyperlink += OnSheetFollowHyperlink;
             }
             catch (Exception ex)
             {
-                // 弹出注册异常提示帮助诊断
-                System.Windows.Forms.MessageBox.Show($"注册 SheetChange 事件失败: {ex.Message}", "系统提示");
+                // 弹出注册异常提示帮助诊断 (--硬编码: 弹窗标题与提示文本--)
+                System.Windows.Forms.MessageBox.Show($"注册 Sheet 事件失败: {ex.Message}", "系统提示");
             }
+        }
+
+        /// <summary>
+        /// 响应点击超链接事件，实现跳转后视图 ScrollRow 偏移定位
+        /// </summary>
+        private static void OnSheetFollowHyperlink(object shObj, Microsoft.Office.Interop.Excel.Hyperlink target)
+        {
+            try
+            {
+                // 校验全局 _excelApp 句柄有效性
+                if (_excelApp == null) return;
+
+                // 获取当前活动窗口强类型对象
+                Microsoft.Office.Interop.Excel.Window win = (Microsoft.Office.Interop.Excel.Window)_excelApp.ActiveWindow;
+                // 校验窗口句柄有效性
+                if (win == null) return;
+
+                // 获取跳转后选中的焦点单元格 Range 强类型对象
+                Microsoft.Office.Interop.Excel.Range activeCell = (Microsoft.Office.Interop.Excel.Range)_excelApp.ActiveCell;
+                // 校验焦点单元格句柄有效性
+                if (activeCell == null) return;
+
+                // 获取目标单元格的物理行号
+                int targetRow = activeCell.Row;
+                // 从 ConfigManager 全局配置中读取 ScrollRowOffset 偏移行数修正值 (默认 -3)
+                int scrollOffset = ConfigManager.Instance.Current.Excel.ScrollRowOffset;
+
+                // 使用 config 中的 ScrollRowOffset 修正计算视图首行行号 (兜底保障行号不小于 1)
+                int targetScrollRow = Math.Max(1, targetRow + scrollOffset);
+
+                // 将计算后的修正行号赋予窗口可视起始行 ScrollRow
+                win.ScrollRow = targetScrollRow;
+            }
+            catch { }
         }
 
         /// <summary>
@@ -852,35 +904,115 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 方式 1：直接通过 wb.Names.Item 按标签名提取
-                try
-                {
-                    Microsoft.Office.Interop.Excel.Name n1 = wb.Names.Item(tagName);
-                    if (n1 != null && n1.RefersToRange != null) return n1.RefersToRange;
-                }
-                catch { }
-
-                // 方式 2：通过带有工作表前缀的 Full Name 提取
-                try
-                {
-                    string fullName = $"'{sh.Name}'!{tagName}";
-                    Microsoft.Office.Interop.Excel.Name n2 = wb.Names.Item(fullName);
-                    if (n2 != null && n2.RefersToRange != null) return n2.RefersToRange;
-                }
-                catch { }
-
-                // 方式 3：遍历工作簿中的定义名称进行后缀匹配
+                // 安全遍历工作簿中的定义名称进行精确名称比对与后缀匹配
                 foreach (Microsoft.Office.Interop.Excel.Name n in wb.Names)
                 {
-                    string nStr = n.Name ?? "";
-                    if (nStr.EndsWith(tagName, StringComparison.OrdinalIgnoreCase))
+                    string nStr = Convert.ToString(n.Name) ?? "";
+                    if (nStr.Contains("!"))
                     {
-                        return n.RefersToRange;
+                        nStr = nStr.Substring(nStr.IndexOf("!") + 1);
+                    }
+                    nStr = nStr.Trim('\'', '=', ' ', '"');
+                    if (string.Equals(nStr, tagName, StringComparison.OrdinalIgnoreCase) || nStr.EndsWith(tagName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (n.RefersToRange != null) return n.RefersToRange;
                     }
                 }
             }
             catch { }
             return null;
+        }
+
+        /// <summary>
+        /// 动态计算下一个全新的独立箱柜序号 K，保障所有已存在的定义名称 100% 完整保留不被覆盖
+        /// </summary>
+        private static int GetNextCabinetIndex(Microsoft.Office.Interop.Excel.Workbook targetWb, Microsoft.Office.Interop.Excel.Worksheet activeSheet)
+        {
+            int maxK = 0;
+
+            // 读取配置的前缀
+            string sumPrefix = ConfigManager.Instance.Current.Excel.SumNamePrefix;
+            string detPrefix = ConfigManager.Instance.Current.Excel.DetNamePrefix;
+
+            try
+            {
+                // 1. 扫描当前工作簿中所有的工作簿级定义名称，提取最大序号 K
+                if (targetWb != null && targetWb.Names != null)
+                {
+                    foreach (Microsoft.Office.Interop.Excel.Name n in targetWb.Names)
+                    {
+                        string nName = Convert.ToString(n.Name) ?? "";
+                        int k = ExtractIndexFromName(nName, sumPrefix, detPrefix);
+                        if (k > maxK) maxK = k;
+                    }
+                }
+
+                // 2. 扫描当前工作表中所有的工作表级定义名称，提取最大序号 K
+                if (activeSheet != null && activeSheet.Names != null)
+                {
+                    foreach (Microsoft.Office.Interop.Excel.Name n in activeSheet.Names)
+                    {
+                        string nName = Convert.ToString(n.Name) ?? "";
+                        int k = ExtractIndexFromName(nName, sumPrefix, detPrefix);
+                        if (k > maxK) maxK = k;
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                // 3. 扫描 B 列中以 "箱柜" 开头的文本单元格 (使用 Value2 绝对避开 ScreenUpdating=false 导致的 Text 为空)
+                if (activeSheet != null && activeSheet.UsedRange != null)
+                {
+                    int headerRowIndex = ConfigManager.Instance.Current.Excel.TemplateSumRowIndex;
+                    int usedRowCount = activeSheet.UsedRange.Row + activeSheet.UsedRange.Rows.Count - 1;
+                    for (int r = headerRowIndex; r <= usedRowCount; r++)
+                    {
+                        Microsoft.Office.Interop.Excel.Range cellB = (Microsoft.Office.Interop.Excel.Range)activeSheet.Cells[r, 2];
+                        string bText = Convert.ToString(cellB.Value2) ?? Convert.ToString(cellB.Value) ?? "";
+                        bText = bText.Trim();
+                        if (bText.StartsWith("箱柜", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string numStr = bText.Substring(2).Trim();
+                            if (int.TryParse(numStr, out int k) && k > maxK) maxK = k;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // 返回增量序号 (确保全新不重名)
+            return maxK + 1;
+        }
+
+        /// <summary>
+        /// 从定义名称全名中安全解析提取箱柜序号数字
+        /// </summary>
+        private static int ExtractIndexFromName(string fullName, string sumPrefix, string detPrefix)
+        {
+            if (string.IsNullOrWhiteSpace(fullName)) return 0;
+
+            // 清理可能存在的工作表前缀与单引号/等号 (例如 ='分类1'!Cab_Sum_2 -> Cab_Sum_2)
+            string cleanName = fullName;
+            if (cleanName.Contains("!"))
+            {
+                cleanName = cleanName.Substring(cleanName.IndexOf("!") + 1);
+            }
+            cleanName = cleanName.Trim('\'', '=', ' ', '"');
+
+            if (cleanName.StartsWith(sumPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                string numStr = cleanName.Substring(sumPrefix.Length);
+                if (int.TryParse(numStr, out int k)) return k;
+            }
+            else if (cleanName.StartsWith(detPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                string numStr = cleanName.Substring(detPrefix.Length);
+                if (int.TryParse(numStr, out int k)) return k;
+            }
+
+            return 0;
         }
     }
 }
