@@ -63,5 +63,8 @@ namespace ExcelAddInDemo
 
         // 模板及工作表汇总行的基准行号
         public int TemplateSumRowIndex { get; set; } = 7;
+
+        // 超链接跳转时视口首行滚动的行号修正值 (偏移量，默认为 0)
+        public int ScrollRowOffset { get; set; } = 0;
     }
 }

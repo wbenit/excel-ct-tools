@@ -23,77 +23,75 @@ namespace ExcelAddInDemo
         // 私有构造函数，完成本地配置路径判定并读取配置文件
         private ConfigManager()
         {
-            // 获取当前系统 AppData 目录下的插件专属配置目录
-            string appDataDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "ExcelAddInDemo"
-            );
+            // 通过 Tool 工具类获取 AppData 插件专属目录
+            string appDataDir = Tool.GetAppDataDirectory();
 
-            // 检查配置存储文件夹是否存在，不存在则自动创建
-            if (!Directory.Exists(appDataDir))
-            {
-                Directory.CreateDirectory(appDataDir);
-            }
-
-            // 组合生成完整的配置文件 appsettings.json 绝对路径
+            // 组合生成 AppData 中的配置文件 appsettings.json 绝对路径
             _configFilePath = Path.Combine(appDataDir, "appsettings.json");
 
             // 执行配置加载初始化
             Current = LoadConfig();
         }
 
-        // 从磁盘读取 JSON 配置，遇到异常或文件缺失时启用兜底机制
+        // 从磁盘读取 JSON 配置，优先读取 DLL/XLL 所在物理目录 (如 publish 文件夹) 中的 appsettings.json
         private AppConfig LoadConfig()
         {
             try
             {
-                // 首先判断本地 AppData 目录是否存在自定义配置文件
+                // 通过公共工具类 Tool 安全获取当前插件 DLL/XLL 运行的物理目录
+                string currentDir = Tool.GetAppDirectory();
+
+                // 判断是否成功获取到有效目录
+                if (!string.IsNullOrWhiteSpace(currentDir))
+                {
+                    // 拼接 DLL/XLL 同级目录下的 appsettings.json 全路径
+                    string localConfigPath = Path.Combine(currentDir, "appsettings.json");
+
+                    // 判断同级目录下是否存在 appsettings.json
+                    if (File.Exists(localConfigPath))
+                    {
+                        try
+                        {
+                            // 读取同级目录下的配置 JSON 文本
+                            string localJson = File.ReadAllText(localConfigPath);
+
+                            // 反序列化为 AppConfig 强类型对象
+                            var localConfig = JsonSerializer.Deserialize<AppConfig>(localJson);
+
+                            // 若解析成功，优先使用同级目录下的配置对象
+                            if (localConfig != null)
+                            {
+                                return localConfig;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
+                // 若 DLL 同级目录无配置文件，回退读取 AppData 用户专属配置目录
                 if (File.Exists(_configFilePath))
                 {
-                    // 读取本地配置文件的文本内容
-                    string json = File.ReadAllText(_configFilePath);
-
-                    // 反序列化 JSON 文本为 AppConfig 强类型对象
-                    var config = JsonSerializer.Deserialize<AppConfig>(json);
-
-                    // 校验解析结果，不为空则作为当前配置使用
-                    if (config != null)
+                    try
                     {
-                        return config;
-                    }
-                }
-                
-                // 若 AppData 中无文件，尝试读取程序同级目录打包的 appsettings.json 默认文件
-                string baseConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
-                if (File.Exists(baseConfigPath))
-                {
-                    // 读取打包在程序同级目录的默认配置文件内容
-                    string baseJson = File.ReadAllText(baseConfigPath);
+                        // 读取 AppData 目录下的配置 JSON 文本
+                        string json = File.ReadAllText(_configFilePath);
 
-                    // 反序列化默认配置文件内容
-                    var baseConfig = JsonSerializer.Deserialize<AppConfig>(baseJson);
+                        // 反序列化 JSON 文本为 AppConfig 强类型对象
+                        var config = JsonSerializer.Deserialize<AppConfig>(json);
 
-                    // 解析成功时更新并写回本地 AppData 存储目录
-                    if (baseConfig != null)
-                    {
-                        SaveConfig(baseConfig);
-                        return baseConfig;
+                        // 校验解析结果，不为空则作为当前配置使用
+                        if (config != null)
+                        {
+                            return config;
+                        }
                     }
+                    catch { }
                 }
             }
-            catch (Exception ex)
-            {
-                // 捕获反序列化或文件 IO 过程中的异常并输出调试日志
-                System.Diagnostics.Debug.WriteLine($"加载配置文件遇到异常，启用默认配置: {ex.Message}");
-            }
+            catch { }
 
             // 当上述方式均未成功加载时，生成全新的内置默认配置实例
             var defaultConfig = new AppConfig();
-
-            // 将默认配置写回本地 AppData 存储路径
-            SaveConfig(defaultConfig);
-
-            // 返回默认配置对象
             return defaultConfig;
         }
 
