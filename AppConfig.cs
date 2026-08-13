@@ -45,18 +45,8 @@ namespace ExcelAddInDemo
         // 导出的 Excel 表头文字默认字号
         public int HeaderFontSize { get; set; } = 11;
 
-        // 模板明细块起始行号（默认 41）
-        public int TemplateDetailStartRowIndex { get; set; } = 41;
-
-        // 模板明细块终止行号（默认 72）
-        public int TemplateDetailEndRowIndex { get; set; } = 72;
-
-        // 模板用于特征识别匹配的基准行号（兼容返回明细起始行）
-        public int FeatureRowIndex
-        {
-            get => TemplateDetailStartRowIndex;
-            set => TemplateDetailStartRowIndex = value;
-        }
+        // 模板用于特征识别匹配的基准行号
+        public int FeatureRowIndex { get; set; } = 41;
 
         // 模板用于特征识别匹配的基准列号
         public int FeatureColumnIndex { get; set; } = 1;

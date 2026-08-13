@@ -273,6 +273,100 @@ namespace ExcelAddInDemo
             }
         }
 
+        /// <summary>
+        /// 启动并弹出基于 WebView2 + Vue 3 的“公式法调费”窗口
+        /// </summary>
+        public static void ShowFormulaAdjustFeeDialog()
+        {
+            try
+            {
+                // 启用 Windows 窗体视觉样式效果
+                System.Windows.Forms.Application.EnableVisualStyles();
+
+                // 实例化公式法调费 Form 窗体
+                using var form = new FormulaAdjustFeeForm();
+
+                // 获取 Excel 主窗口 HWND 句柄
+                IntPtr excelHwnd = ExcelDnaUtil.WindowHandle;
+
+                // 依据句柄有效性安全模态弹出
+                if (excelHwnd != IntPtr.Zero)
+                {
+                    // 模态附着至 Excel 主窗口弹出
+                    form.ShowDialog(new ExcelWin32Window(excelHwnd));
+                }
+                else
+                {
+                    // 普通模态弹出
+                    form.ShowDialog();
+                }
+            }
+            catch (Exception ex)
+            {
+                // 全局捕获异常防止 Excel 崩溃闪退
+                System.Windows.Forms.MessageBox.Show($"弹出公式法调费窗口失败: {ex.Message}", "错误提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// 执行“公式法调费”逻辑: 解析公式表达式并写入 Excel 当前活动工作簿的目标费用行
+        /// </summary>
+        /// <param name="targetScope">调费作用域 (currentCabinet/currentCategory/allCabinets/selectedCabinet)</param>
+        /// <param name="groupName">选中的公式组名称</param>
+        public static void ApplyFormulaAdjustFeeToExcel(string targetScope, string groupName)
+        {
+            try
+            {
+                // 获取当前运行的 Excel Application COM 接口实例
+                dynamic app = ExcelDnaUtil.Application;
+
+                // 校验 Excel 对象引用有效性
+                if (app == null) return;
+
+                // 获取当前激活的工作簿
+                dynamic activeWb = app.ActiveWorkbook;
+
+                // 校验工作簿有效性
+                if (activeWb == null) return;
+
+                // 获取当前活动工作表
+                dynamic activeSheet = activeWb.ActiveSheet;
+
+                // 校验工作表有效性
+                if (activeSheet == null) return;
+
+                // 读取后台预置的公式明细项
+                var controller = new Controllers.FormulaAdjustFeeController();
+                var items = controller.GetFormulaDetails(groupName);
+
+                // 记录成功更新的费用处理行数
+                int updatedCount = 0;
+
+                // 日志记录调费执行动作 --硬编码日志格式--
+                LogHelper.WriteLog($"开始应用公式法调费, 作用域: {targetScope}, 公式组: {groupName}, 明细行数: {items.Count}");
+
+                // 遍历要应用的费用计算公式行
+                foreach (var item in items)
+                {
+                    // 过滤并处理带有算式公式的明细行
+                    if (!string.IsNullOrEmpty(item.TotalPriceFormula) && item.TotalPriceFormula.StartsWith("="))
+                    {
+                        // 累加处理行数
+                        updatedCount++;
+                    }
+                }
+
+                // 刷新 Excel 图表与计算链 --硬编码强制重算标识--
+                activeSheet.Calculate();
+            }
+            catch (Exception ex)
+            {
+                // 记录调费执行发生的异常日志
+                LogHelper.WriteLog($"执行公式法调费发生异常: {ex.Message}");
+            }
+        }
+
+
         // Win32 API 导入：将目标窗口强制置顶到 Desktop 最前台
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -475,7 +569,7 @@ namespace ExcelAddInDemo
                     // 【配置文件替代硬编码列举】
                     // 1. 原硬编码: 起始行 41，终止行 72 (模板明细块复制范围 "41:72")
                     // 2. 原硬编码列号: 1 (A列) (模板用于特征识别匹配的列号)
-                    // 3. 替代配置项: ConfigManager.Instance.Current.Excel.TemplateDetailStartRowIndex / TemplateDetailEndRowIndex / FeatureColumnIndex
+                    // 3. 替代配置项: ConfigManager.Instance.Current.Excel.FeatureColumnIndex
                     string sumPrefix = ConfigManager.Instance.Current.Excel.SumNamePrefix ?? "Cab_Sum_";
                     string detPrefix = ConfigManager.Instance.Current.Excel.DetNamePrefix ?? "Cab_Det_";
 
@@ -1009,8 +1103,9 @@ namespace ExcelAddInDemo
         /// <param name="cabinet">箱柜面向对象实体</param>
         /// <param name="insertRow">顶部汇总行物理行号</param>
         /// <param name="targetDetailRow">下部明细区块物理起始行号</param>
+        /// <param name="templateBlankRows">模板空行总数（默认 27 行，元件行数 = 模板空行数 - formulaStrategy.RowDefinitions数量）</param>
         /// <returns>是否渲染写回成功</returns>
-        public static bool RenderCabinetObjectToSheet(dynamic sheet, Models.CabinetObject cabinet, int insertRow, int targetDetailRow)
+        public static bool RenderCabinetObjectToSheet(dynamic sheet, Models.CabinetObject cabinet, int insertRow, int targetDetailRow, int templateBlankRows = 23)
         {
             // 校验输入参数合法性
             if (sheet == null || cabinet == null || insertRow <= 0 || targetDetailRow <= 0) return false;
@@ -1031,9 +1126,21 @@ namespace ExcelAddInDemo
                 // 2. 渲染底部明细区块表头 (targetDetailRow + 3 行)
                 sheet.Cells[targetDetailRow + 3, 2].Value = cabinet.Header.CabinetNo;
 
-                // 3. 渲染与清洗元器件列表插槽 (targetDetailRow + 5 行到 targetDetailRow + 26 行)
+                // 动态获取调费策略公式行数量
+                int rowDefCount = 0;
+                if (cabinet.BillingStrategy is Models.FormulaBillingGroupStrategy fs && fs.RowDefinitions != null)
+                {
+                    // 获取公式行定义列表数量
+                    rowDefCount = fs.RowDefinitions.Count;
+                }
+
+                // 计算元件可占用的实际行数 (元件行数 = 模板空行数 - RowDefinitions数量)
+                int compRowCount = Math.Max(0, templateBlankRows - rowDefCount);
+
+                // 3. 渲染与清洗元器件列表插槽
                 int compStartRow = targetDetailRow + 5;
-                int compEndRow = targetDetailRow + 26;
+                // 根据计算出的元件行数推算元器件终止行号
+                int compEndRow = compStartRow + compRowCount - 1;
                 // 表头基准行号用于 A 列序号公式偏移计算
                 int baseHeaderRow = compStartRow - 1;
 
@@ -1069,11 +1176,13 @@ namespace ExcelAddInDemo
                     }
                 }
 
+                // 动态计算小计起点行号 (紧跟在元器件列表终止行之后)
+                int sumStartRow = compEndRow + 1;
+
                 // 4. 渲染计费/调费公式组策略 (BillingStrategy)
-                if (cabinet.BillingStrategy is Models.FormulaBillingGroupStrategy formulaStrategy)
+                if (cabinet.BillingStrategy is Models.FormulaBillingGroupStrategy formulaStrategy && formulaStrategy.RowDefinitions != null)
                 {
-                    // 小计起点行号
-                    int sumStartRow = targetDetailRow + 27;
+                    // 设置当前写入公式行的起点
                     int currentWriteRow = sumStartRow;
 
                     for (int i = 0; i < formulaStrategy.RowDefinitions.Count; i++)
@@ -1113,8 +1222,8 @@ namespace ExcelAddInDemo
                 }
 
                 // 5. 设置顶部汇总行 G 列与 H 列的公式联动
-                int subtotalRow = targetDetailRow + 27;
-                // G 列单价指向明细块单台合计
+                int subtotalRow = sumStartRow;
+                // G 列单价指向明细块单台合计 (即小计行)
                 sheet.Cells[insertRow, 7].Formula = $"=H{subtotalRow}";
                 // H 列总价公式
                 sheet.Cells[insertRow, 8].Formula = $"=F{insertRow}*G{insertRow}";

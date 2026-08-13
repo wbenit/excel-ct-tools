@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <!-- 设置字符编码为 UTF-8 -->
+    <meta charset="UTF-8" />
+    <!-- 适配移动端及响应式视口 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 窗口标题名称 -->
+    <title>公式法调费</title>
+    <!-- 引入 Element Plus CSS 样式库 -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/element-plus/dist/index.css"
+    />
+    <!-- 引入 FontAwesome 图标库支持钥匙与操作图标 -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <!-- 引入 Vue 3 核心构建库 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- 引入 Element Plus 组件库 -->
+    <script src="https://unpkg.com/element-plus"></script>
+    <style>
+      /* 注入绿蓝相间主题，主色调定义为 #009688 --规则主色调-- */
+      :root {
+        --el-color-primary: #009688;
+        --el-color-primary-light-3: #4db6ac;
+        --el-color-primary-light-5: #80cbd4;
+        --el-color-primary-light-7: #b2dfdb;
+        --el-color-primary-light-9: #e0f2f1;
+        --el-color-primary-dark-2: #00796b;
+      }
+
+      /* 全局基础重置与字体设定，禁用垂直与水平外滚动条 */
+      html,
+      body {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+        overflow: hidden !important;
+        height: 100%;
+        background-color: #f8fafc;
+        user-select: none;
+      }
+
+      /* 主容器无边框样式布局 */
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100vw;
+        background-color: #ffffff;
+      }
+
+      /* 顶部窗口拖拽与标题栏 */
+      .window-header {
+        height: 32px;
+        background: linear-gradient(135deg, #009688, #00796b);
+        color: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 12px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      /* 右侧关闭与控制按钮集 */
+      .window-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      /* 控制按钮小图标 Hover 效果 */
+      .control-btn {
+        cursor: pointer;
+        opacity: 0.85;
+        font-size: 12px;
+        padding: 2px 6px;
+      }
+      .control-btn:hover {
+        opacity: 1;
+      }
+      .control-btn.close:hover {
+        color: #ef4444;
+      }
+
+      /* 主体三段式内容区块 */
+      .main-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        padding: 10px 12px;
+        gap: 8px;
+        box-sizing: border-box;
+        overflow: hidden;
+      }
+
+      /* 区域1：上半部分（公式组选择 + 右侧工具栏） */
+      .top-section {
+        display: flex;
+        gap: 12px;
+        height: 200px;
+      }
+
+      /* 左侧公式组表格容器 */
+      .group-table-card {
+        flex: 1;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        background-color: #ffffff;
+      }
+
+      /* Element Plus 表格内选定行高亮 */
+      .el-table .active-group-row {
+        background-color: #009688 !important;
+        color: #ffffff !important;
+      }
+
+      /* 钥匙图标样式 */
+      .key-icon {
+        color: #f59e0b;
+        font-size: 16px;
+      }
+
+      /* 右侧操作按钮组面板 */
+      .action-panel {
+        width: 135px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: stretch;
+      }
+
+      /* 大字文本功能按钮强样式 --匹配图一按钮设计-- */
+      .action-btn {
+        height: 36px;
+        font-size: 12px;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        background-color: #f1f5f9;
+        color: #334155;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      /* Hover 时触发绿蓝主色高亮 */
+      .action-btn:hover {
+        background-color: #e0f2f1;
+        border-color: #009688;
+        color: #00796b;
+      }
+
+      /* Excel 图标按钮个性风格 */
+      .excel-btn {
+        color: #15803d;
+      }
+
+      /* 云端/导出按钮底栏 */
+      .bottom-icon-bar {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+        margin-top: auto;
+      }
+
+      /* 区域2：中间 VIP 参数提示栏 */
+      .info-bar {
+        background-color: #f8fafc;
+        border-top: 1px solid #e2e8f0;
+        border-bottom: 1px solid #e2e8f0;
+        padding: 4px 8px;
+        font-size: 12px;
+        color: #334155;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      /* 强调调价参数标红 */
+      .highlight-vip {
+        color: #dc2626;
+        font-weight: 500;
+      }
+
+      /* 区域3：下半部分（公式明细表格） */
+      .detail-section {
+        flex: 1;
+        border: 1px solid #cbd5e1;
+        border-radius: 2px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* 表头双层效果与单元格文字靠左居中 */
+      .detail-table-header th {
+        background-color: #e2e8f0 !important;
+        color: #1e293b !important;
+        font-weight: bold !important;
+        font-size: 11px !important;
+        padding: 2px 4px !important;
+      }
+
+      /* 明细表格单元格重置内边距，给输入框留出完整高度 */
+      .detail-section .el-table td.el-table__cell {
+        padding: 1px 0 !important;
+      }
+
+      /* 明细表格单元格内部 flex 垂直居中 */
+      .detail-section .el-table td.el-table__cell .cell {
+        padding: 0 2px !important;
+        overflow: visible !important;
+        display: flex !important;
+        align-items: center !important;
+      }
+
+      /* 序号列单元格特殊显示标红 */
+      .red-no-text {
+        color: #dc2626;
+        font-weight: bold;
+      }
+
+      /* 区域4：底部红字警示说明 */
+      .bottom-warning {
+        font-size: 11px;
+        color: #dc2626;
+        line-height: 1.5;
+        padding: 2px 8px;
+        background-color: #ffffff;
+      }
+
+      /* 右键上下文菜单精致弹出卡片 */
+      .context-menu {
+        position: fixed;
+        z-index: 9999;
+        background-color: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        padding: 4px 0;
+        min-width: 150px;
+        font-size: 12px;
+        user-select: none;
+      }
+
+      /* 右键菜单列表项 */
+      .context-menu-item {
+        padding: 6px 14px;
+        color: #334155;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: background-color 0.15s ease;
+      }
+
+      /* Hover 时触发绿蓝主色高亮 --符合全局主色-- */
+      .context-menu-item:hover {
+        background-color: #e0f2f1;
+        color: #00796b;
+      }
+
+      /* 危险删除操作 Hover 标红 */
+      .context-menu-item.danger:hover {
+        background-color: #fef2f2;
+        color: #dc2626;
+      }
+
+      /* 菜单分割线 */
+      .context-menu-divider {
+        height: 1px;
+        background-color: #f1f5f9;
+        margin: 4px 0;
+      }
+
+      /* Excel 样式的无缝可编辑单元格输入框修饰 */
+      .table-cell-input {
+        width: 100% !important;
+        height: 24px !important;
+      }
+
+      .table-cell-input .el-input__wrapper {
+        box-shadow: none !important;
+        background-color: transparent !important;
+        padding: 0 4px !important;
+        border-radius: 2px !important;
+        height: 24px !important;
+        box-sizing: border-box !important;
+        transition: all 0.15s ease !important;
+      }
+
+      /* 单元格 Hover 悬停态内阴影绿蓝高亮框 */
+      .table-cell-input .el-input__wrapper:hover {
+        box-shadow: inset 0 0 0 1px #b2dfdb !important;
+        background-color: #f0fdf4 !important;
+      }
+
+      /* 单元格 Focus 焦点激活态内阴影主色调框 --主色调 #009688，使用 inset 保证 100% 完整显示不截断-- */
+      .table-cell-input.is-focus .el-input__wrapper,
+      .table-cell-input .el-input__wrapper:focus-within {
+        box-shadow: inset 0 0 0 1.5px #009688 !important;
+        background-color: #ffffff !important;
+      }
+
+      /* 输入框文本居中与字号规范 */
+      .table-cell-input .el-input__inner {
+        font-size: 11px !important;
+        height: 24px !important;
+        line-height: 24px !important;
+        color: #1e293b !important;
+        box-sizing: border-box !important;
+      }
+
+      /* 特殊公式文本红字标识 */
+      .formula-text-red .el-input__inner {
+        color: #dc2626 !important;
+        font-weight: 600 !important;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Vue 3 前端应用挂载节点 -->
+    <div id="app" @click="hideContextMenu">
+      <!-- 窗口顶部无边框拖拽标题栏 -->
+      <div class="window-header" @mousedown="handleHeaderMouseDown">
+        <span style="pointer-events: none;"><i class="fa-solid fa-calculator"></i> 公式法调费</span>
+        <!-- 右侧控制按钮图标组件 -->
+        <div class="window-controls" @mousedown.stop>
+          <span class="control-btn" @click.stop="handleMinimize"><i class="fa-solid fa-minus"></i></span>
+          <span class="control-btn close" @click.stop="handleClose"><i class="fa-solid fa-xmark"></i></span>
+        </div>
+      </div>
+
+      <!-- 主内容包裹容器 -->
+      <div class="main-body">
+        <!-- 上半部分：公式组表格与右侧按钮 -->
+        <div class="top-section">
+          <!-- 左侧公式组选择列表卡片 -->
+          <div class="group-table-card">
+            <el-table
+              :data="groupList"
+              height="100%"
+              style="width: 100%"
+              size="small"
+              highlight-current-row
+              @current-change="handleGroupSelect"
+            >
+              <!-- 列1：公式组名称 -->
+              <el-table-column prop="name" label="公式组名称" min-width="180">
+                <template #default="scope">
+                  <span>{{ scope.row.name }}</span>
+                </template>
+              </el-table-column>
+
+              <!-- 列2：系统默认公式与行操作内嵌按钮 -->
+              <el-table-column label="系统默认公式" min-width="260" align="center">
+                <template #default="scope">
+                  <!-- 若为系统默认，显示黄金钥匙图标 -->
+                  <i v-if="scope.row.isSystemDefault" class="fa-solid fa-key key-icon"></i>
+                  
+                  <!-- 当前选择行显示功能按钮组件 -->
+                  <div v-else-if="selectedGroup && selectedGroup.id === scope.row.id" style="display: flex; gap: 4px; justify-content: center;">
+                    <el-button size="small" type="primary" plain @click.stop="setDefaultGroup(scope.row)">设为默认</el-button>
+                    <el-button size="small" plain @click.stop="copyGroup(scope.row)">复制</el-button>
+                    <el-button size="small" type="danger" plain @click.stop="deleteGroup(scope.row)">删除</el-button>
+                  </div>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+
+          <!-- 右侧动作按钮栏面板 (匹配图一右侧图标与功能按钮) -->
+          <div class="action-panel">
+            <button class="action-btn" @click="applyFormula('currentCabinet')">
+              <i class="fa-solid fa-list-check"></i> 更新当前箱柜
+            </button>
+            <button class="action-btn" @click="applyFormula('currentCategory')">
+              <i class="fa-solid fa-sliders"></i> 更新当前分类
+            </button>
+            <button class="action-btn excel-btn" @click="applyFormula('allCabinets')">
+              <i class="fa-solid fa-file-excel"></i> 更新所有箱柜
+            </button>
+            <button class="action-btn" @click="applyFormula('selectedCabinet')">
+              <i class="fa-solid fa-arrow-pointer"></i> 选择箱柜更新
+            </button>
+
+            <!-- 云端/导出操作小图标按钮列 -->
+            <div class="bottom-icon-bar">
+              <el-button-group>
+                <el-button size="small"><i class="fa-solid fa-cloud-arrow-up"></i> <i class="fa-solid fa-caret-down"></i></el-button>
+                <el-button size="small"><i class="fa-solid fa-share-from-square"></i> <i class="fa-solid fa-caret-down"></i></el-button>
+              </el-button-group>
+            </div>
+          </div>
+        </div>
+
+        <!-- 中间 VIP 参数提示栏 -->
+        <div class="info-bar">
+          <span>公式组明细</span>
+          <span class="highlight-vip">VIP可用调价参数: [人工定额]、[辅料定额]</span>
+          <i class="fa-regular fa-circle-question" style="color: #64748b; cursor: pointer;"></i>
+        </div>
+
+        <!-- 下半部分：公式明细 11 列表格（双向绑定可编辑单元格 + 右键菜单） -->
+        <div class="detail-section">
+          <el-table
+            :data="detailList"
+            height="100%"
+            style="width: 100%"
+            size="small"
+            border
+            header-row-class-name="detail-table-header"
+            @row-contextmenu="handleRowContextMenu"
+          >
+            <!-- A 列：序号 (只读标识/可双击改动) -->
+            <el-table-column label="A" align="center" width="60">
+              <template #header>
+                <div>A</div>
+                <div>序号</div>
+              </template>
+              <template #default="scope">
+                <el-input v-model="scope.row.no" class="table-cell-input formula-text-red" size="small"></el-input>
+              </template>
+            </el-table-column>
+
+            <!-- B 列：元件名称 -->
+            <el-table-column label="B" min-width="90">
+              <template #header>
+                <div>B</div>
+                <div>元件名称</div>
+              </template>
+              <template #default="scope">
+                <el-input v-model="scope.row.name" class="table-cell-input" size="small"></el-input>
+              </template>
+            </el-table-column>
+
+            <!-- C 列：型号规格 -->
+            <el-table-column label="C" min-width="90">
+              <template #header>
+                <div>C</div>
+                <div>型号规格</div>
+              </template>
+              <template #default="scope">
+                <el-input v-model="scope.row.model" class="table-cell-input" size="small" placeholder="为空不修改"></el-input>
+              </template>
+            </el-table-column>
+
+            <!-- D 列：生产厂家 -->
+            <el-table-column label="D" min-width="90">
+              <template #header>
+                <div>D</div>
+                <div>生产厂家</div>
+              </template>
+              <template #default="scope">
+                <el-input v-model="scope.row.manufacturer" class="table-cell-input" size="small" placeholder="为空不修改"></el-input>
+              </template>
+            </el-table-column>
+
+            <!-- E 列：单位 -->
+            <el-table-column label="E" width="50" align="center">
+              <template #header>
+                <div>E</div>
+                <div>单位</div>
+              </template>
+              <template #default="scope">
+                <el-input v-model="scope.row.unit" class="table-cell-input" size="small"></el-input>
+              </template>
+            </el-table-column>
+
+            <!-- F 列：数量 -->
+            <el-table-column label="F" width="80" align="right">
+              <template #header>
+                <div>F</div>
+                <div>数量</div>
+              </template>
+              <template #default="scope">
+                <el-input v-model="scope.row.quantity" class="table-cell-input" size="small"></el-input>
+              </template>
+            </el-table-column>
+
+            <!-- G 列：单价 -->
+            <el-table-column label="G" width="80" align="right">
+              <template #header>
+                <div>G</div>
+                <div>单价</div>
+              </template>
+              <template #default="scope">
+                <el-input v-model="scope.row.price" class="table-cell-input" size="small"></el-input>
+              </template>
+            </el-table-column>
+
+            <!-- H 列：总价 (支持修饰算式公式如 =ROUND(H2*0.12, 2)) -->
+            <el-table-column label="H" min-width="160">
+              <template #header>
+                <div>H</div>
+                <div>总价</div>
+              </template>
+              <template #default="scope">
+                <el-input
+                  v-model="scope.row.totalPriceFormula"
+                  class="table-cell-input"
+                  :class="{'formula-text-red': !scope.row.totalPriceFormula.startsWith('=')}"
+                  size="small"
+                ></el-input>
+              </template>
+            </el-table-column>
+
+            <!-- J 列：成本单价 -->
+            <el-table-column label="J" min-width="80">
+              <template #header>
+                <div>J</div>
+                <div>成本单价</div>
+              </template>
+              <template #default="scope">
+                <el-input v-model="scope.row.costPrice" class="table-cell-input" size="small"></el-input>
+              </template>
+            </el-table-column>
+
+            <!-- K 列：成本总价 (支持算式公式如 =ROUND(SUM(K2:K5), 2)) -->
+            <el-table-column label="K" min-width="140">
+              <template #header>
+                <div>K</div>
+                <div>成本总价</div>
+              </template>
+              <template #default="scope">
+                <el-input
+                  v-model="scope.row.costTotalPriceFormula"
+                  class="table-cell-input"
+                  :class="{'formula-text-red': !scope.row.costTotalPriceFormula.startsWith('=')}"
+                  size="small"
+                ></el-input>
+              </template>
+            </el-table-column>
+
+            <!-- Q 列：类别 -->
+            <el-table-column label="Q" width="60" align="center">
+              <template #header>
+                <div>Q</div>
+                <div>类别</div>
+              </template>
+              <template #default="scope">
+                <el-input v-model="scope.row.category" class="table-cell-input" size="small"></el-input>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+
+        <!-- 底部红字警告与操作提示说明 -->
+        <div class="bottom-warning">
+          <div>*1. 公式中C、D列单元格：为空，调价后不修改项目内容；有值，调价后同步修改项目。</div>
+          <div>*2. 添加、删除公式行，请选中后鼠标右键进行。···了解更多内容，请参见《快速入门》第6.2章节。</div>
+        </div>
+      </div>
+
+      <!-- 表格右键弹出菜单卡片组件 -->
+      <div
+        v-if="contextMenuVisible"
+        class="context-menu"
+        :style="{ top: contextMenuY + 'px', left: contextMenuX + 'px' }"
+        @click.stop
+      >
+        <div class="context-menu-item" @click="insertRowAbove">
+          <i class="fa-solid fa-arrow-up-short-wide" style="color: #009688;"></i> 向上插入公式行
+        </div>
+        <div class="context-menu-item" @click="insertRowBelow">
+          <i class="fa-solid fa-arrow-down-short-wide" style="color: #009688;"></i> 向下插入公式行
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item danger" @click="deleteCurrentRow">
+          <i class="fa-solid fa-trash-can" style="color: #ef4444;"></i> 删除选中公式行
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Vue 3 应用逻辑定义
+      const { createApp, ref, onMounted } = Vue;
+
+      createApp({
+        setup() {
+          // 定义公式组列表响应式变量
+          const groupList = ref([
+            { id: "1", name: "简易费用公式", isSystemDefault: true, isDefault: false },
+            { id: "2", name: "多费用公式", isSystemDefault: false, isDefault: true },
+            { id: "3", name: "其它样式费用公式", isSystemDefault: false, isDefault: false },
+            { id: "4", name: "国网报价费用公式", isSystemDefault: false, isDefault: false },
+            { id: "5", name: "人工辅料定额公式", isSystemDefault: false, isDefault: false }
+          ]);
+
+          // 当前选中的公式组对象 --硬编码默认选中多费用公式--
+          const selectedGroup = ref(groupList.value[1]);
+
+          // 公式明细表格数据列表
+          const detailList = ref([
+            { no: "[序号]", name: "小计", model: "", manufacturer: "", unit: "", quantity: "", price: "", totalPriceFormula: "[总价小计]", costPrice: "", costTotalPriceFormula: "[成本总价小计]", category: "" },
+            { no: "[序号]", name: "管理费", model: "", manufacturer: "", unit: "", quantity: "", price: "", totalPriceFormula: "=ROUND(H2*0.12, 2)", costPrice: "", costTotalPriceFormula: "", category: "费用" },
+            { no: "[序号]", name: "利润", model: "", manufacturer: "", unit: "", quantity: "", price: "", totalPriceFormula: "=ROUND(SUM(H2:H3)*0.15, 2)", costPrice: "", costTotalPriceFormula: "", category: "费用" },
+            { no: "[序号]", name: "税金", model: "", manufacturer: "", unit: "", quantity: "", price: "", totalPriceFormula: "=ROUND(SUM(H2:H4)*0.13, 2)", costPrice: "", costTotalPriceFormula: "", category: "费用" },
+            { no: "[序号]", name: "单台合计", model: "", manufacturer: "", unit: "", quantity: "", price: "", totalPriceFormula: "=ROUND(SUM(H2:H5), 2)", costPrice: "", costTotalPriceFormula: "=ROUND(SUM(K2:K5), 2)", category: "" },
+            { no: "7", name: "总计", model: "", manufacturer: "", unit: "台", quantity: "=ROUND(H6, 2)", price: "=ROUND(F7*G7, 2)", totalPriceFormula: "", costPrice: "", costTotalPriceFormula: "=ROUND(K6*F7, 2)", category: "" }
+          ]);
+
+          // 选择公式组处理函数
+          const handleGroupSelect = (row) => {
+            if (row) {
+              selectedGroup.value = row;
+            }
+          };
+
+          // 设为默认公式组
+          const setDefaultGroup = (row) => {
+            groupList.value.forEach(g => g.isDefault = (g.id === row.id));
+            ElementPlus.ElMessage.success(`已将【${row.name}】设为默认公式组`);
+          };
+
+          // 复制公式组
+          const copyGroup = (row) => {
+            const newG = { id: Date.now().toString(), name: `${row.name}_副本`, isSystemDefault: false, isDefault: false };
+            groupList.value.push(newG);
+            ElementPlus.ElMessage.success(`已创建副本【${newG.name}】`);
+          };
+
+          // 删除公式组
+          const deleteGroup = (row) => {
+            if (row.isSystemDefault) {
+              ElementPlus.ElMessage.warning("系统默认公式组不允许删除");
+              return;
+            }
+            groupList.value = groupList.value.filter(g => g.id !== row.id);
+            if (selectedGroup.value && selectedGroup.value.id === row.id) {
+              selectedGroup.value = groupList.value[0];
+            }
+            ElementPlus.ElMessage.success("已成功删除公式组");
+          };
+
+          // 统一向 C# 宿主发送 JSON 字符串消息辅助函数
+          const sendMessageToHost = (msgObj) => {
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.postMessage(JSON.stringify(msgObj));
+            }
+          };
+
+          // 应用调费指令 (向 C# WebView2 后端发送 postMessage)
+          const applyFormula = (targetScope) => {
+            sendMessageToHost({
+              action: "applyFormula",
+              targetScope: targetScope,
+              groupName: selectedGroup.value ? selectedGroup.value.name : "多费用公式"
+            });
+          };
+
+          // 拖拽无边框窗口
+          const handleHeaderMouseDown = () => {
+            sendMessageToHost({ action: "dragWindow" });
+          };
+
+          // 最小化窗口
+          const handleMinimize = () => {
+            sendMessageToHost({ action: "minimize" });
+          };
+
+          // 关闭窗口
+          const handleClose = () => {
+            sendMessageToHost({ action: "close" });
+          };
+
+          // 定义表格右键上下文菜单坐标与显隐状态
+          const contextMenuVisible = ref(false);
+          const contextMenuX = ref(0);
+          const contextMenuY = ref(0);
+          const targetContextMenuRow = ref(null);
+
+          // 响应表格行右键点击事件
+          const handleRowContextMenu = (row, column, event) => {
+            // 阻止浏览器默认右键快捷菜单弹出
+            event.preventDefault();
+            // 保存右键点击目标行引用
+            targetContextMenuRow.value = row;
+            // 获取当前鼠标指针像素坐标
+            contextMenuX.value = event.clientX;
+            contextMenuY.value = event.clientY;
+            // 显示自定义上下文菜单卡片
+            contextMenuVisible.value = true;
+          };
+
+          // 隐藏表格右键上下文菜单
+          const hideContextMenu = () => {
+            contextMenuVisible.value = false;
+          };
+
+          // 向上插入公式行
+          const insertRowAbove = () => {
+            hideContextMenu();
+            if (!targetContextMenuRow.value) return;
+            const idx = detailList.value.indexOf(targetContextMenuRow.value);
+            const newRow = {
+              no: "[序号]",
+              name: "自定义费用",
+              model: "",
+              manufacturer: "",
+              unit: "",
+              quantity: "",
+              price: "",
+              totalPriceFormula: "=ROUND(H2*0.05, 2)",
+              costPrice: "",
+              costTotalPriceFormula: "",
+              category: "费用"
+            };
+            if (idx >= 0) {
+              detailList.value.splice(idx, 0, newRow);
+            } else {
+              detailList.value.push(newRow);
+            }
+            ElementPlus.ElMessage.success("已向上插入新公式行");
+          };
+
+          // 向下插入公式行
+          const insertRowBelow = () => {
+            hideContextMenu();
+            if (!targetContextMenuRow.value) return;
+            const idx = detailList.value.indexOf(targetContextMenuRow.value);
+            const newRow = {
+              no: "[序号]",
+              name: "自定义费用",
+              model: "",
+              manufacturer: "",
+              unit: "",
+              quantity: "",
+              price: "",
+              totalPriceFormula: "=ROUND(H2*0.05, 2)",
+              costPrice: "",
+              costTotalPriceFormula: "",
+              category: "费用"
+            };
+            if (idx >= 0) {
+              detailList.value.splice(idx + 1, 0, newRow);
+            } else {
+              detailList.value.push(newRow);
+            }
+            ElementPlus.ElMessage.success("已向下插入新公式行");
+          };
+
+          // 删除选中的公式行
+          const deleteCurrentRow = () => {
+            hideContextMenu();
+            if (!targetContextMenuRow.value) return;
+            const idx = detailList.value.indexOf(targetContextMenuRow.value);
+            if (idx >= 0) {
+              detailList.value.splice(idx, 1);
+              ElementPlus.ElMessage.success("已删除选中的公式行");
+            }
+          };
+
+          // 挂载加载回调处理
+          onMounted(() => {
+            // 向宿主 C# 请求初始化公式数据
+            sendMessageToHost({ action: "getInitFormulaData" });
+
+            // 全局挂载 click 事件自动隐藏右键菜单
+            document.addEventListener("click", hideContextMenu);
+
+            // 挂载来自 C# 回发消息的监听器
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.addEventListener("message", (event) => {
+                const data = event.data;
+                if (data && data.action === "renderFormulaData") {
+                  if (data.groups) groupList.value = data.groups;
+                  if (data.details) detailList.value = data.details;
+                }
+              });
+            }
+          });
+
+          // 返回绑定变量给 Vue 视图层
+          return {
+            groupList,
+            selectedGroup,
+            detailList,
+            contextMenuVisible,
+            contextMenuX,
+            contextMenuY,
+            handleRowContextMenu,
+            hideContextMenu,
+            insertRowAbove,
+            insertRowBelow,
+            deleteCurrentRow,
+            handleGroupSelect,
+            setDefaultGroup,
+            copyGroup,
+            deleteGroup,
+            applyFormula,
+            handleHeaderMouseDown,
+            handleMinimize,
+            handleClose
+          };
+        }
+      }).use(ElementPlus).mount("#app");
+    </script>
+  </body>
+</html>

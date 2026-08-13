@@ -1,0 +1,301 @@
+using System;
+using System.Drawing;
+using System.IO;
+using System.Text.Json;
+using System.Windows.Forms;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
+using ExcelAddInDemo.Controllers;
+
+namespace ExcelAddInDemo
+{
+    /// <summary>
+    /// 基于 WebView2 + Vue 3 的“公式法调费”无边框宿主窗口
+    /// </summary>
+    public class FormulaAdjustFeeForm : Form
+    {
+        // 声明 WebView2 浏览器主控件
+        private readonly WebView2 _webView;
+
+        // 声明公式法调费后端 WebAPI 控制器句柄
+        private readonly FormulaAdjustFeeController _controller;
+
+        // 导入 Windows 原生 user32.dll 接口用于拖拽窗口
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool ReleaseCapture();
+
+        // 导入 SendMessage 原生消息接口
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        // 常量定义: 标题栏拖拽消息标识
+        private const int WM_NCLBUTTONDOWN = 0xA1;
+        private const int HTCAPTION = 0x2;
+
+        // 通用 JSON 序列化配置结构
+        private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            PropertyNameCaseInsensitive = true,
+            WriteIndented = true
+        };
+
+        /// <summary>
+        /// 构造函数: 初始化控制器与 WebView2 控件属性
+        /// </summary>
+        public FormulaAdjustFeeForm()
+        {
+            // 实例化 WebAPI 风格控制器
+            _controller = new FormulaAdjustFeeController();
+
+            // 实例化 WebView2 控件
+            _webView = new WebView2();
+
+            // 设置 Form 窗体尺寸与显示几何外观
+            InitializeFormProperties();
+
+            // 配置并挂载 WebView2 控件
+            InitializeWebViewControl();
+        }
+
+        /// <summary>
+        /// 配置窗体基本外观与尺寸 (880x640 像素)
+        /// </summary>
+        private void InitializeFormProperties()
+        {
+            // 设置窗体标题文本
+            this.Text = "公式法调费";
+
+            // 依据图一物理布局设定尺寸为 880x640 像素
+            this.ClientSize = new Size(880, 640);
+
+            // 设置屏幕中央弹出
+            this.StartPosition = FormStartPosition.CenterScreen;
+
+            // 设为无边框样式样式
+            this.FormBorderStyle = FormBorderStyle.None;
+
+            // 禁用 WinForm 原生最大化
+            this.MaximizeBox = false;
+
+            // 启用最小化
+            this.MinimizeBox = true;
+
+            // 设置窗口背景填充色
+            this.BackColor = Color.White;
+        }
+
+        /// <summary>
+        /// 初始化 WebView2 控件并注册加载回调
+        /// </summary>
+        private void InitializeWebViewControl()
+        {
+            // 控件满框充满 Form
+            _webView.Dock = DockStyle.Fill;
+
+            // 挂载至 Controls 控件集
+            this.Controls.Add(_webView);
+
+            // 绑定 Form Load 异步加载监听
+            this.Load += OnFormLoadAsync;
+        }
+
+        /// <summary>
+        /// Form 加载事件: 初始化 WebView2 环境并导航至 Resources/formula_adjust_fee.html
+        /// </summary>
+        private async void OnFormLoadAsync(object? sender, EventArgs e)
+        {
+            try
+            {
+                // 窗体已被销毁则退出
+                if (this.IsDisposed || this.Disposing) return;
+
+                // 设置本地 AppData 中的 WebView2 缓存生成路径
+                string userDataFolder = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "ExcelAddInDemo",
+                    "WebView2Data"
+                );
+
+                // 创建缓存文件夹
+                Directory.CreateDirectory(userDataFolder);
+
+                // 异步创建 WebView2 核心环境
+                var webViewEnv = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
+
+                // 判断窗体有效性
+                if (this.IsDisposed || this.Disposing) return;
+
+                // 初始化 CoreWebView2 核心对象
+                await _webView.EnsureCoreWebView2Async(webViewEnv);
+
+                // 挂载前端交互消息回调
+                if (_webView.CoreWebView2 != null)
+                {
+                    _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+                }
+
+                // 寻找目标 HTML 资源文件路径
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+
+                // 配置多级备选路径集 --避免调试与打包执行环境差异--
+                string[] candidatePaths = new string[]
+                {
+                    Path.Combine(baseDir, "Resources", "formula_adjust_fee.html"),
+                    Path.Combine(baseDir, "..", "Resources", "formula_adjust_fee.html"),
+                    Path.Combine(baseDir, "publish", "Resources", "formula_adjust_fee.html"),
+                    Path.Combine(Directory.GetCurrentDirectory(), "Resources", "formula_adjust_fee.html")
+                };
+
+                // 保存匹配的目标文件路径
+                string htmlPath = string.Empty;
+
+                // 循环查找首个存在的目标文件
+                foreach (string candidate in candidatePaths)
+                {
+                    if (File.Exists(candidate))
+                    {
+                        htmlPath = candidate;
+                        break;
+                    }
+                }
+
+                // 导航至目标 HTML 资源
+                if (!string.IsNullOrEmpty(htmlPath) && File.Exists(htmlPath))
+                {
+                    _webView.Source = new Uri(htmlPath);
+                }
+                else
+                {
+                    MessageBox.Show($"未找到公式法调费界面资源文件: {htmlPath}", "警告", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"初始化 WebView2 控件失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// 响应来自前端 Vue 3 发来的 JSON 交互消息
+        /// </summary>
+        private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+        {
+            try
+            {
+                // 获取前端传递的消息字符串（优先读取 String，备选读取 Raw JSON）
+                string messageJson = "";
+                try
+                {
+                    // 尝试读取直接传入的字符串消息
+                    messageJson = e.TryGetWebMessageAsString();
+                }
+                catch { }
+
+                // 若尝试读取为空，则直接获取原生 WebMessageAsJson 内容
+                if (string.IsNullOrEmpty(messageJson))
+                {
+                    messageJson = e.WebMessageAsJson;
+                }
+
+                // 若解析文本仍然为空则退出
+                if (string.IsNullOrEmpty(messageJson)) return;
+
+                // 解析 JSON 数据文档
+                using var doc = JsonDocument.Parse(messageJson);
+
+                // 获取 Root 根属性节点
+                var root = doc.RootElement;
+
+                // 获取 action 指令
+                string action = root.TryGetProperty("action", out var actProp) ? actProp.GetString() ?? "" : "";
+
+                // 根据指令分支处理
+                switch (action)
+                {
+                    // 获取初始化公式数据集
+                    case "getInitFormulaData":
+                        // 调用后端 WebAPI 控制器获取公式组
+                        var groups = _controller.GetFormulaGroups();
+
+                        // 读取默认选中的“多费用公式”明细数据
+                        var details = _controller.GetFormulaDetails("多费用公式");
+
+                        // 构造发送给 Vue 前端的数据包
+                        var resData = new
+                        {
+                            action = "renderFormulaData",
+                            groups = groups,
+                            details = details
+                        };
+
+                        // 回发数据包给 Vue 前端
+                        _webView.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(resData, JsonOptions));
+                        break;
+
+                    // 执行应用公式调费
+                    case "applyFormula":
+                        // 获取调费作用域
+                        string scope = root.TryGetProperty("targetScope", out var scProp) ? scProp.GetString() ?? "currentCabinet" : "currentCabinet";
+
+                        // 获取所选公式组名称
+                        string gName = root.TryGetProperty("groupName", out var gnProp) ? gnProp.GetString() ?? "多费用公式" : "多费用公式";
+
+                        // 跨线程安全委托给公共 Excel 服务层执行具体计算与写入
+                        ExcelServices.ApplyFormulaAdjustFeeToExcel(scope, gName);
+
+                        // 弹出操作完成友好提示
+                        MessageBox.Show($"公式调费应用成功！范围: {scope}, 公式组: {gName}", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        break;
+
+                    // 最小化窗口
+                    case "minimize":
+                        SafeInvoke(() => this.WindowState = FormWindowState.Minimized);
+                        break;
+
+                    // 关闭窗口
+                    case "close":
+                        SafeInvoke(() => this.Close());
+                        break;
+
+                    // 响应 HTML 顶栏拖拽指令，移动无边框窗体
+                    case "dragWindow":
+                        SafeInvoke(() =>
+                        {
+                            // 释放当前鼠标捕获句柄
+                            ReleaseCapture();
+
+                            // 发送 WM_NCLBUTTONDOWN (0xA1) 消息触发原生无边框窗口拖拽
+                            SendMessage(this.Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
+                        });
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"处理公式法调费前端消息异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 安全跨线程调度 UI 动作，防止在句柄未创建或窗体已被释放时调用抛出异常
+        /// </summary>
+        private void SafeInvoke(Action action)
+        {
+            // 校验窗体句柄有效性与释放状态
+            if (this.IsDisposed || !this.IsHandleCreated) return;
+
+            // 根据是否跨线程选择 Invoke 或直接执行
+            if (this.InvokeRequired)
+            {
+                // 跨线程安全调度
+                this.Invoke(action);
+            }
+            else
+            {
+                // 主 UI 线程直接同步执行
+                action();
+            }
+        }
+    }
+}

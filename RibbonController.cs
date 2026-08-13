@@ -135,7 +135,19 @@ namespace ExcelAddInDemo
           </menu>
           <!-- 费用设定下拉菜单 -->
           <menu id='menuFeeSetting' label='费用设定' imageMso='Currency' size='large'>
-            <!-- 费用设定项 -->
+            <!-- 1. 公式法调费按钮 (对应图二样式与提示) -->
+            <button id='btnFormulaAdjustFee' label='公式法调费' imageMso='Calculator' screentip='公式法调费' supertip='按明细总价，套用公式算成套费(管理费、利润等)。' onAction='OnMenuAction' />
+            <!-- 2. 系数法调费按钮 -->
+            <button id='btnCoefficientAdjustFee' label='系数法调费' imageMso='PercentSymbol' onAction='OnMenuAction' />
+            <!-- 3. 智能算料按钮 -->
+            <button id='btnSmartMaterial' label='智能算料' imageMso='AutoSum' onAction='OnMenuAction' />
+            <!-- 4. 费用公式转值按钮 -->
+            <button id='btnFormulaToValue' label='费用公式转值' imageMso='PasteValues' onAction='OnMenuAction' />
+            <!-- 5. 总价一键调整按钮 -->
+            <button id='btnOneKeyAdjustTotal' label='总价一键调整' imageMso='Gauge' onAction='OnMenuAction' />
+            <!-- 6. 总价高级调整按钮 -->
+            <button id='btnAdvancedAdjustTotal' label='总价高级调整' imageMso='Diamond' onAction='OnMenuAction' />
+            <!-- 默认费用设定子菜单选项 -->
             <button id='btnFeeSettingSub' label='费用设定' onAction='OnMenuAction' />
           </menu>
           <!-- 撤销/还原下拉菜单 -->
@@ -286,6 +298,12 @@ namespace ExcelAddInDemo
             {
                 // 弹出用户登录与配置窗体
                 ExcelServices.ShowLoginDialog();
+            }
+            // 响应“公式法调费”及“费用设定”按钮指令
+            else if (controlId == "btnFormulaAdjustFee" || controlId == "btnFeeSettingSub")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“公式法调费”窗口
+                ExcelServices.ShowFormulaAdjustFeeDialog();
             }
         }
     }

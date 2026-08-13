@@ -47,6 +47,10 @@
     <None Include="Resources\create_project.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将公式法调费前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\formula_adjust_fee.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将 JSON 配置文件复制至构建输出路径中 -->
     <None Include="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
