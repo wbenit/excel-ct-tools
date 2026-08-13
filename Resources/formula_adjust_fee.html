@@ -38,7 +38,8 @@
         box-sizing: border-box;
         margin: 0;
         padding: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
         overflow: hidden !important;
         height: 100%;
@@ -329,6 +330,24 @@
         color: #dc2626 !important;
         font-weight: 600 !important;
       }
+
+      /* 表格最左侧行标记索引列 (1, 2, 3, 4, 5...) 专属样式 */
+      .row-index-cell {
+        background-color: #eff6ff;
+        color: #1d4ed8;
+        font-weight: 600;
+        font-size: 11px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+      }
+
+      /* 总计行所在的最左侧行标记特殊黄底 */
+      .row-index-cell.total-row-bg {
+        background-color: #fef08a;
+      }
     </style>
   </head>
   <body>
@@ -336,11 +355,17 @@
     <div id="app" @click="hideContextMenu">
       <!-- 窗口顶部无边框拖拽标题栏 -->
       <div class="window-header" @mousedown="handleHeaderMouseDown">
-        <span style="pointer-events: none;"><i class="fa-solid fa-calculator"></i> 公式法调费</span>
+        <span style="pointer-events: none"
+          ><i class="fa-solid fa-calculator"></i> 公式法调费</span
+        >
         <!-- 右侧控制按钮图标组件 -->
         <div class="window-controls" @mousedown.stop>
-          <span class="control-btn" @click.stop="handleMinimize"><i class="fa-solid fa-minus"></i></span>
-          <span class="control-btn close" @click.stop="handleClose"><i class="fa-solid fa-xmark"></i></span>
+          <span class="control-btn" @click.stop="handleMinimize"
+            ><i class="fa-solid fa-minus"></i
+          ></span>
+          <span class="control-btn close" @click.stop="handleClose"
+            ><i class="fa-solid fa-xmark"></i
+          ></span>
         </div>
       </div>
 
@@ -366,16 +391,43 @@
               </el-table-column>
 
               <!-- 列2：系统默认公式与行操作内嵌按钮 -->
-              <el-table-column label="系统默认公式" min-width="260" align="center">
+              <el-table-column
+                label="系统默认公式"
+                min-width="260"
+                align="center"
+              >
                 <template #default="scope">
                   <!-- 若为系统默认，显示黄金钥匙图标 -->
-                  <i v-if="scope.row.isSystemDefault" class="fa-solid fa-key key-icon"></i>
-                  
+                  <i
+                    v-if="scope.row.isSystemDefault"
+                    class="fa-solid fa-key key-icon"
+                  ></i>
+
                   <!-- 当前选择行显示功能按钮组件 -->
-                  <div v-else-if="selectedGroup && selectedGroup.id === scope.row.id" style="display: flex; gap: 4px; justify-content: center;">
-                    <el-button size="small" type="primary" plain @click.stop="setDefaultGroup(scope.row)">设为默认</el-button>
-                    <el-button size="small" plain @click.stop="copyGroup(scope.row)">复制</el-button>
-                    <el-button size="small" type="danger" plain @click.stop="deleteGroup(scope.row)">删除</el-button>
+                  <div
+                    v-else-if="selectedGroup && selectedGroup.id === scope.row.id"
+                    style="display: flex; gap: 4px; justify-content: center"
+                  >
+                    <el-button
+                      size="small"
+                      type="primary"
+                      plain
+                      @click.stop="setDefaultGroup(scope.row)"
+                      >设为默认</el-button
+                    >
+                    <el-button
+                      size="small"
+                      plain
+                      @click.stop="copyGroup(scope.row)"
+                      >复制</el-button
+                    >
+                    <el-button
+                      size="small"
+                      type="danger"
+                      plain
+                      @click.stop="deleteGroup(scope.row)"
+                      >删除</el-button
+                    >
                   </div>
                 </template>
               </el-table-column>
@@ -390,7 +442,10 @@
             <button class="action-btn" @click="applyFormula('currentCategory')">
               <i class="fa-solid fa-sliders"></i> 更新当前分类
             </button>
-            <button class="action-btn excel-btn" @click="applyFormula('allCabinets')">
+            <button
+              class="action-btn excel-btn"
+              @click="applyFormula('allCabinets')"
+            >
               <i class="fa-solid fa-file-excel"></i> 更新所有箱柜
             </button>
             <button class="action-btn" @click="applyFormula('selectedCabinet')">
@@ -400,8 +455,14 @@
             <!-- 云端/导出操作小图标按钮列 -->
             <div class="bottom-icon-bar">
               <el-button-group>
-                <el-button size="small"><i class="fa-solid fa-cloud-arrow-up"></i> <i class="fa-solid fa-caret-down"></i></el-button>
-                <el-button size="small"><i class="fa-solid fa-share-from-square"></i> <i class="fa-solid fa-caret-down"></i></el-button>
+                <el-button size="small"
+                  ><i class="fa-solid fa-cloud-arrow-up"></i>
+                  <i class="fa-solid fa-caret-down"></i
+                ></el-button>
+                <el-button size="small"
+                  ><i class="fa-solid fa-share-from-square"></i>
+                  <i class="fa-solid fa-caret-down"></i
+                ></el-button>
               </el-button-group>
             </div>
           </div>
@@ -410,8 +471,13 @@
         <!-- 中间 VIP 参数提示栏 -->
         <div class="info-bar">
           <span>公式组明细</span>
-          <span class="highlight-vip">VIP可用调价参数: [人工定额]、[辅料定额]</span>
-          <i class="fa-regular fa-circle-question" style="color: #64748b; cursor: pointer;"></i>
+          <span class="highlight-vip"
+            >VIP可用调价参数: [人工定额]、[辅料定额]</span
+          >
+          <i
+            class="fa-regular fa-circle-question"
+            style="color: #64748b; cursor: pointer"
+          ></i>
         </div>
 
         <!-- 下半部分：公式明细 11 列表格（双向绑定可编辑单元格 + 右键菜单） -->
@@ -425,6 +491,33 @@
             header-row-class-name="detail-table-header"
             @row-contextmenu="handleRowContextMenu"
           >
+            <!-- 行标记索引列 (最左侧 1, 2, 3, 4, 5... 序号) -->
+            <el-table-column width="36" align="center">
+              <template #header>
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 100%;
+                  "
+                >
+                  <i
+                    class="fa-solid fa-caret-down"
+                    style="color: #64748b; font-size: 10px"
+                  ></i>
+                </div>
+              </template>
+              <template #default="scope">
+                <div
+                  class="row-index-cell"
+                  :class="{'total-row-bg': scope.row.name === '总计'}"
+                >
+                  {{ scope.$index + 1 }}
+                </div>
+              </template>
+            </el-table-column>
+
             <!-- A 列：序号 (只读标识/可双击改动) -->
             <el-table-column label="A" align="center" width="60">
               <template #header>
@@ -432,7 +525,11 @@
                 <div>序号</div>
               </template>
               <template #default="scope">
-                <el-input v-model="scope.row.no" class="table-cell-input formula-text-red" size="small"></el-input>
+                <el-input
+                  v-model="scope.row.no"
+                  class="table-cell-input formula-text-red"
+                  size="small"
+                ></el-input>
               </template>
             </el-table-column>
 
@@ -443,7 +540,11 @@
                 <div>元件名称</div>
               </template>
               <template #default="scope">
-                <el-input v-model="scope.row.name" class="table-cell-input" size="small"></el-input>
+                <el-input
+                  v-model="scope.row.name"
+                  class="table-cell-input"
+                  size="small"
+                ></el-input>
               </template>
             </el-table-column>
 
@@ -454,7 +555,12 @@
                 <div>型号规格</div>
               </template>
               <template #default="scope">
-                <el-input v-model="scope.row.model" class="table-cell-input" size="small" placeholder="为空不修改"></el-input>
+                <el-input
+                  v-model="scope.row.model"
+                  class="table-cell-input"
+                  size="small"
+                  placeholder="为空不修改"
+                ></el-input>
               </template>
             </el-table-column>
 
@@ -465,7 +571,12 @@
                 <div>生产厂家</div>
               </template>
               <template #default="scope">
-                <el-input v-model="scope.row.manufacturer" class="table-cell-input" size="small" placeholder="为空不修改"></el-input>
+                <el-input
+                  v-model="scope.row.manufacturer"
+                  class="table-cell-input"
+                  size="small"
+                  placeholder="为空不修改"
+                ></el-input>
               </template>
             </el-table-column>
 
@@ -476,7 +587,11 @@
                 <div>单位</div>
               </template>
               <template #default="scope">
-                <el-input v-model="scope.row.unit" class="table-cell-input" size="small"></el-input>
+                <el-input
+                  v-model="scope.row.unit"
+                  class="table-cell-input"
+                  size="small"
+                ></el-input>
               </template>
             </el-table-column>
 
@@ -487,7 +602,11 @@
                 <div>数量</div>
               </template>
               <template #default="scope">
-                <el-input v-model="scope.row.quantity" class="table-cell-input" size="small"></el-input>
+                <el-input
+                  v-model="scope.row.quantity"
+                  class="table-cell-input"
+                  size="small"
+                ></el-input>
               </template>
             </el-table-column>
 
@@ -498,7 +617,11 @@
                 <div>单价</div>
               </template>
               <template #default="scope">
-                <el-input v-model="scope.row.price" class="table-cell-input" size="small"></el-input>
+                <el-input
+                  v-model="scope.row.price"
+                  class="table-cell-input"
+                  size="small"
+                ></el-input>
               </template>
             </el-table-column>
 
@@ -525,7 +648,11 @@
                 <div>成本单价</div>
               </template>
               <template #default="scope">
-                <el-input v-model="scope.row.costPrice" class="table-cell-input" size="small"></el-input>
+                <el-input
+                  v-model="scope.row.costPrice"
+                  class="table-cell-input"
+                  size="small"
+                ></el-input>
               </template>
             </el-table-column>
 
@@ -552,7 +679,11 @@
                 <div>类别</div>
               </template>
               <template #default="scope">
-                <el-input v-model="scope.row.category" class="table-cell-input" size="small"></el-input>
+                <el-input
+                  v-model="scope.row.category"
+                  class="table-cell-input"
+                  size="small"
+                ></el-input>
               </template>
             </el-table-column>
           </el-table>
@@ -560,8 +691,14 @@
 
         <!-- 底部红字警告与操作提示说明 -->
         <div class="bottom-warning">
-          <div>*1. 公式中C、D列单元格：为空，调价后不修改项目内容；有值，调价后同步修改项目。</div>
-          <div>*2. 添加、删除公式行，请选中后鼠标右键进行。···了解更多内容，请参见《快速入门》第6.2章节。</div>
+          <div>
+            *1.
+            公式中C、D列单元格：为空，调价后不修改项目内容；有值，调价后同步修改项目。
+          </div>
+          <div>
+            *2.
+            添加、删除公式行，请选中后鼠标右键进行。···了解更多内容，请参见《快速入门》第6.2章节。
+          </div>
         </div>
       </div>
 
@@ -573,14 +710,20 @@
         @click.stop
       >
         <div class="context-menu-item" @click="insertRowAbove">
-          <i class="fa-solid fa-arrow-up-short-wide" style="color: #009688;"></i> 向上插入公式行
+          <i class="fa-solid fa-arrow-up-short-wide" style="color: #009688"></i>
+          向上插入公式行
         </div>
         <div class="context-menu-item" @click="insertRowBelow">
-          <i class="fa-solid fa-arrow-down-short-wide" style="color: #009688;"></i> 向下插入公式行
+          <i
+            class="fa-solid fa-arrow-down-short-wide"
+            style="color: #009688"
+          ></i>
+          向下插入公式行
         </div>
         <div class="context-menu-divider"></div>
         <div class="context-menu-item danger" @click="deleteCurrentRow">
-          <i class="fa-solid fa-trash-can" style="color: #ef4444;"></i> 删除选中公式行
+          <i class="fa-solid fa-trash-can" style="color: #ef4444"></i>
+          删除选中公式行
         </div>
       </div>
     </div>
@@ -593,11 +736,36 @@
         setup() {
           // 定义公式组列表响应式变量
           const groupList = ref([
-            { id: "1", name: "简易费用公式", isSystemDefault: true, isDefault: false },
-            { id: "2", name: "多费用公式", isSystemDefault: false, isDefault: true },
-            { id: "3", name: "其它样式费用公式", isSystemDefault: false, isDefault: false },
-            { id: "4", name: "国网报价费用公式", isSystemDefault: false, isDefault: false },
-            { id: "5", name: "人工辅料定额公式", isSystemDefault: false, isDefault: false }
+            {
+              id: "1",
+              name: "简易费用公式",
+              isSystemDefault: true,
+              isDefault: false,
+            },
+            {
+              id: "2",
+              name: "多费用公式",
+              isSystemDefault: false,
+              isDefault: true,
+            },
+            {
+              id: "3",
+              name: "其它样式费用公式",
+              isSystemDefault: false,
+              isDefault: false,
+            },
+            {
+              id: "4",
+              name: "国网报价费用公式",
+              isSystemDefault: false,
+              isDefault: false,
+            },
+            {
+              id: "5",
+              name: "人工辅料定额公式",
+              isSystemDefault: false,
+              isDefault: false,
+            },
           ]);
 
           // 当前选中的公式组对象 --硬编码默认选中多费用公式--
@@ -605,12 +773,84 @@
 
           // 公式明细表格数据列表
           const detailList = ref([
-            { no: "[序号]", name: "小计", model: "", manufacturer: "", unit: "", quantity: "", price: "", totalPriceFormula: "[总价小计]", costPrice: "", costTotalPriceFormula: "[成本总价小计]", category: "" },
-            { no: "[序号]", name: "管理费", model: "", manufacturer: "", unit: "", quantity: "", price: "", totalPriceFormula: "=ROUND(H2*0.12, 2)", costPrice: "", costTotalPriceFormula: "", category: "费用" },
-            { no: "[序号]", name: "利润", model: "", manufacturer: "", unit: "", quantity: "", price: "", totalPriceFormula: "=ROUND(SUM(H2:H3)*0.15, 2)", costPrice: "", costTotalPriceFormula: "", category: "费用" },
-            { no: "[序号]", name: "税金", model: "", manufacturer: "", unit: "", quantity: "", price: "", totalPriceFormula: "=ROUND(SUM(H2:H4)*0.13, 2)", costPrice: "", costTotalPriceFormula: "", category: "费用" },
-            { no: "[序号]", name: "单台合计", model: "", manufacturer: "", unit: "", quantity: "", price: "", totalPriceFormula: "=ROUND(SUM(H2:H5), 2)", costPrice: "", costTotalPriceFormula: "=ROUND(SUM(K2:K5), 2)", category: "" },
-            { no: "7", name: "总计", model: "", manufacturer: "", unit: "台", quantity: "=ROUND(H6, 2)", price: "=ROUND(F7*G7, 2)", totalPriceFormula: "", costPrice: "", costTotalPriceFormula: "=ROUND(K6*F7, 2)", category: "" }
+            {
+              no: "[序号]",
+              name: "小计",
+              model: "",
+              manufacturer: "",
+              unit: "",
+              quantity: "",
+              price: "",
+              totalPriceFormula: "[总价小计]",
+              costPrice: "",
+              costTotalPriceFormula: "[成本总价小计]",
+              category: "",
+            },
+            {
+              no: "[序号]",
+              name: "管理费",
+              model: "",
+              manufacturer: "",
+              unit: "",
+              quantity: "",
+              price: "",
+              totalPriceFormula: "=ROUND(H2*0.12, 2)",
+              costPrice: "",
+              costTotalPriceFormula: "",
+              category: "费用",
+            },
+            {
+              no: "[序号]",
+              name: "利润",
+              model: "",
+              manufacturer: "",
+              unit: "",
+              quantity: "",
+              price: "",
+              totalPriceFormula: "=ROUND(SUM(H2:H3)*0.15, 2)",
+              costPrice: "",
+              costTotalPriceFormula: "",
+              category: "费用",
+            },
+            {
+              no: "[序号]",
+              name: "税金",
+              model: "",
+              manufacturer: "",
+              unit: "",
+              quantity: "",
+              price: "",
+              totalPriceFormula: "=ROUND(SUM(H2:H4)*0.13, 2)",
+              costPrice: "",
+              costTotalPriceFormula: "",
+              category: "费用",
+            },
+            {
+              no: "[序号]",
+              name: "单台合计",
+              model: "",
+              manufacturer: "",
+              unit: "",
+              quantity: "",
+              price: "",
+              totalPriceFormula: "=ROUND(SUM(H2:H5), 2)",
+              costPrice: "",
+              costTotalPriceFormula: "=ROUND(SUM(K2:K5), 2)",
+              category: "",
+            },
+            {
+              no: "总计",
+              name: "",
+              model: "",
+              manufacturer: "",
+              unit: "台",
+              quantity: "=ROUND(H6, 2)",
+              price: "=ROUND(F7*G7, 2)",
+              totalPriceFormula: "",
+              costPrice: "",
+              costTotalPriceFormula: "=ROUND(K6*F7, 2)",
+              category: "",
+            },
           ]);
 
           // 选择公式组处理函数
@@ -622,13 +862,18 @@
 
           // 设为默认公式组
           const setDefaultGroup = (row) => {
-            groupList.value.forEach(g => g.isDefault = (g.id === row.id));
+            groupList.value.forEach((g) => (g.isDefault = g.id === row.id));
             ElementPlus.ElMessage.success(`已将【${row.name}】设为默认公式组`);
           };
 
           // 复制公式组
           const copyGroup = (row) => {
-            const newG = { id: Date.now().toString(), name: `${row.name}_副本`, isSystemDefault: false, isDefault: false };
+            const newG = {
+              id: Date.now().toString(),
+              name: `${row.name}_副本`,
+              isSystemDefault: false,
+              isDefault: false,
+            };
             groupList.value.push(newG);
             ElementPlus.ElMessage.success(`已创建副本【${newG.name}】`);
           };
@@ -639,7 +884,7 @@
               ElementPlus.ElMessage.warning("系统默认公式组不允许删除");
               return;
             }
-            groupList.value = groupList.value.filter(g => g.id !== row.id);
+            groupList.value = groupList.value.filter((g) => g.id !== row.id);
             if (selectedGroup.value && selectedGroup.value.id === row.id) {
               selectedGroup.value = groupList.value[0];
             }
@@ -658,7 +903,10 @@
             sendMessageToHost({
               action: "applyFormula",
               targetScope: targetScope,
-              groupName: selectedGroup.value ? selectedGroup.value.name : "多费用公式"
+              groupName: selectedGroup.value
+                ? selectedGroup.value.name
+                : "多费用公式",
+              details: detailList.value,
             });
           };
 
@@ -717,7 +965,7 @@
               totalPriceFormula: "=ROUND(H2*0.05, 2)",
               costPrice: "",
               costTotalPriceFormula: "",
-              category: "费用"
+              category: "费用",
             };
             if (idx >= 0) {
               detailList.value.splice(idx, 0, newRow);
@@ -743,7 +991,7 @@
               totalPriceFormula: "=ROUND(H2*0.05, 2)",
               costPrice: "",
               costTotalPriceFormula: "",
-              category: "费用"
+              category: "费用",
             };
             if (idx >= 0) {
               detailList.value.splice(idx + 1, 0, newRow);
@@ -804,10 +1052,12 @@
             applyFormula,
             handleHeaderMouseDown,
             handleMinimize,
-            handleClose
+            handleClose,
           };
-        }
-      }).use(ElementPlus).mount("#app");
+        },
+      })
+        .use(ElementPlus)
+        .mount("#app");
     </script>
   </body>
 </html>

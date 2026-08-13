@@ -241,8 +241,15 @@ namespace ExcelAddInDemo
                         // 获取所选公式组名称
                         string gName = root.TryGetProperty("groupName", out var gnProp) ? gnProp.GetString() ?? "多费用公式" : "多费用公式";
 
+                        // 反序列化前端编辑传入的公式明细数据列表
+                        List<FormulaItemModel>? items = null;
+                        if (root.TryGetProperty("details", out var dtProp))
+                        {
+                            items = JsonSerializer.Deserialize<List<FormulaItemModel>>(dtProp.GetRawText(), JsonOptions);
+                        }
+
                         // 跨线程安全委托给公共 Excel 服务层执行具体计算与写入
-                        ExcelServices.ApplyFormulaAdjustFeeToExcel(scope, gName);
+                        ExcelServices.ApplyFormulaAdjustFeeToExcel(scope, gName, items);
 
                         // 弹出操作完成友好提示
                         MessageBox.Show($"公式调费应用成功！范围: {scope}, 公式组: {gName}", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);

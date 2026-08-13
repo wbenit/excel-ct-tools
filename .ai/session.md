@@ -45,5 +45,5 @@
      - **GetNextCabinetIndex 序号动态增量**：将读取逻辑全面切换为 `Cell.Value2` 内存数据，配合 `ExtractIndexFromName` 清洗助手，实现 100% 递增 `maxK + 1` 与历史定义名称永久保留。
      - **SheetFollowHyperlink 视图定位**：监听超链接跳转，读取全局配置 `ScrollRowOffset` (如 `-3`) 修正 `win.ScrollRow`。
 - **最新构建状态**：`ExcelAddInDemo.dll` 编译完全通过（0 警告 0 错误）。已彻底解决历史定义名称丢失问题。
-- **当前任务状态 [公式法调费]**：已完成所有功能开发（含快捷右键菜单及无缝类似 Excel 单元格在轨编辑 In-cell Editing 机制），`dotnet build` 编译 0 警告 0 错误通过，打包已生成最新的 `ExcelAddInDemo-AddIn64-packed.xll`。
+- **当前任务状态 [公式法调费]**：已完成所有功能开发（含快捷右键菜单、无缝类似 Excel 单元格在轨编辑 In-cell Editing 机制、公式行号正则映射平移算法与未绑定定义名称时的智能降级兜底方案），彻底解决“未找到有效箱柜定义锚点”警示，`dotnet build` 编译 0 警告 0 错误通过，打包已生成最新的 `ExcelAddInDemo-AddIn64-packed.xll`。
 

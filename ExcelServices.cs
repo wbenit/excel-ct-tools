@@ -309,11 +309,12 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 执行“公式法调费”逻辑: 解析公式表达式并写入 Excel 当前活动工作簿的目标费用行
+        /// 执行“公式法调费”逻辑: 解析公式表达式并精准更新写回 Excel 目标箱柜的费用行
         /// </summary>
         /// <param name="targetScope">调费作用域 (currentCabinet/currentCategory/allCabinets/selectedCabinet)</param>
         /// <param name="groupName">选中的公式组名称</param>
-        public static void ApplyFormulaAdjustFeeToExcel(string targetScope, string groupName)
+        /// <param name="items">前端编辑传递的公式明细项</param>
+        public static void ApplyFormulaAdjustFeeToExcel(string targetScope, string groupName, System.Collections.Generic.List<Controllers.FormulaItemModel>? items = null)
         {
             try
             {
@@ -335,35 +336,255 @@ namespace ExcelAddInDemo
                 // 校验工作表有效性
                 if (activeSheet == null) return;
 
-                // 读取后台预置的公式明细项
-                var controller = new Controllers.FormulaAdjustFeeController();
-                var items = controller.GetFormulaDetails(groupName);
-
-                // 记录成功更新的费用处理行数
-                int updatedCount = 0;
-
-                // 日志记录调费执行动作 --硬编码日志格式--
-                LogHelper.WriteLog($"开始应用公式法调费, 作用域: {targetScope}, 公式组: {groupName}, 明细行数: {items.Count}");
-
-                // 遍历要应用的费用计算公式行
-                foreach (var item in items)
+                // 若前端未显式传递 items，则从控制器读取预置公式明细
+                if (items == null || items.Count == 0)
                 {
-                    // 过滤并处理带有算式公式的明细行
-                    if (!string.IsNullOrEmpty(item.TotalPriceFormula) && item.TotalPriceFormula.StartsWith("="))
+                    var controller = new Controllers.FormulaAdjustFeeController();
+                    items = controller.GetFormulaDetails(groupName);
+                }
+
+                // 校验公式明细项有效性
+                if (items == null || items.Count == 0) return;
+
+                // 读取前缀配置项
+                string sumPrefix = ConfigManager.Instance.Current.Excel.SumNamePrefix ?? "Cab_Sum_";
+                string detPrefix = ConfigManager.Instance.Current.Excel.DetNamePrefix ?? "Cab_Det_";
+
+                // 扫描全表已绑定的箱柜定义名称
+                var cabinetMap = new System.Collections.Generic.Dictionary<int, (dynamic det, dynamic sum)>();
+                foreach (dynamic name in activeSheet.Names)
+                {
+                    string nName = Convert.ToString(name.Name) ?? "";
+                    int k = ExtractIndexFromName(nName, sumPrefix, detPrefix);
+                    if (k <= 0) continue;
+                    if (!cabinetMap.ContainsKey(k)) cabinetMap[k] = (null, null);
+
+                    string clean = nName.Contains("!") ? nName.Substring(nName.IndexOf("!") + 1) : nName;
+                    clean = clean.Trim('\'', '=', ' ', '"');
+
+                    if (clean.StartsWith(detPrefix, StringComparison.OrdinalIgnoreCase))
                     {
-                        // 累加处理行数
-                        updatedCount++;
+                        cabinetMap[k] = (name.RefersToRange, cabinetMap[k].sum);
+                    }
+                    else if (clean.StartsWith(sumPrefix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        cabinetMap[k] = (cabinetMap[k].det, name.RefersToRange);
                     }
                 }
 
-                // 刷新 Excel 图表与计算链 --硬编码强制重算标识--
-                activeSheet.Calculate();
+                // 过滤出拥有完整 det 和 sum 的有效箱柜集合
+                var validCabinets = cabinetMap.Where(x => x.Value.det != null && x.Value.sum != null)
+                                            .OrderBy(x => (int)x.Value.sum.Row)
+                                            .ToList();
+
+                // 读取当前活动光标所在的物理行号
+                dynamic activeCell = app.ActiveCell;
+                int activeRow = activeCell != null ? Convert.ToInt32(activeCell.Row) : 0;
+
+                // 筛选要执行更新的目标箱柜列表
+                var targetCabinets = new System.Collections.Generic.List<(dynamic det, dynamic sum)>();
+
+                // 若未识别到箱柜定义名称，启动智能降级兜底方案 (按标准模板结构自动构造物理行号)
+                if (validCabinets.Count == 0)
+                {
+                    // 默认模板中顶部汇总行物理行号为 7
+                    int fallbackSumRow = 7;
+
+                    // 默认模板中下部明细区块起始物理行号为 41
+                    int fallbackDetRow = 41;
+
+                    // 自动尝试为当前工作表补充绑定 Cab_Sum_1 与 Cab_Det_1 定义名称锚点
+                    try
+                    {
+                        // 获取当前工作表名称
+                        string sheetName = activeSheet.Name;
+
+                        // 绑定 Cab_Sum_1 锚点
+                        activeWb.Names.Add($"{sumPrefix}1", $"='{sheetName}'!$A${fallbackSumRow}");
+
+                        // 绑定 Cab_Det_1 锚点
+                        activeWb.Names.Add($"{detPrefix}1", $"='{sheetName}'!$A${fallbackDetRow}");
+                    }
+                    catch { }
+
+                    // 将智能构造的降级锚点加入更新目标列表
+                    targetCabinets.Add((activeSheet.Range[$"A{fallbackDetRow}"], activeSheet.Range[$"A{fallbackSumRow}"]));
+                }
+                else if (targetScope == "currentCabinet")
+                {
+                    // 寻觅光标落点所在的箱柜
+                    var matched = validCabinets.FirstOrDefault(c =>
+                    {
+                        int sumRow = c.Value.sum.Row;
+                        int detRow = c.Value.det.Row;
+                        return (activeRow == sumRow) || (activeRow >= detRow && activeRow <= detRow + 35);
+                    });
+
+                    if (matched.Key > 0)
+                    {
+                        targetCabinets.Add(matched.Value);
+                    }
+                    else
+                    {
+                        // 若光标不在箱柜内部，默认使用第一个有效箱柜
+                        targetCabinets.Add(validCabinets.First().Value);
+                    }
+                }
+                else
+                {
+                    // "allCabinets", "currentCategory", "selectedCabinet" 均覆盖更新当前全表所有箱柜
+                    foreach (var kvp in validCabinets)
+                    {
+                        targetCabinets.Add(kvp.Value);
+                    }
+                }
+
+                // 暂停屏刷提效
+                bool prevUpdating = app.ScreenUpdating;
+                app.ScreenUpdating = false;
+
+                try
+                {
+                    // 遍历每一个目标箱柜，逐一渲染写回公式明细
+                    foreach (var cab in targetCabinets)
+                    {
+                        int sumRow = cab.sum.Row;
+                        int detRow = cab.det.Row;
+
+                        // 找到小计行 (即明细块中元件部分之后的小计行物理行号)
+                        int subtotalRow = detRow + 27;
+
+                        // 写入明细块公式调费行
+                        for (int i = 0; i < items.Count; i++)
+                        {
+                            var item = items[i];
+                            int currentRow = subtotalRow + i;
+
+                            // A 列写入序号
+                            activeSheet.Cells[currentRow, 1].Value = item.No;
+
+                            // B 列写入元件/费用名称
+                            activeSheet.Cells[currentRow, 2].Value = item.Name;
+
+                            // C 列 (只有用户填写了非空值才覆写项目内容)
+                            if (!string.IsNullOrWhiteSpace(item.Model))
+                            {
+                                activeSheet.Cells[currentRow, 3].Value = item.Model;
+                            }
+
+                            // D 列 (只有用户填写了非空值才覆写项目内容)
+                            if (!string.IsNullOrWhiteSpace(item.Manufacturer))
+                            {
+                                activeSheet.Cells[currentRow, 4].Value = item.Manufacturer;
+                            }
+
+                            // E 列单位
+                            activeSheet.Cells[currentRow, 5].Value = item.Unit;
+
+                            // F 列数量 (若以 = 开头写公式，否则写值)
+                            if (!string.IsNullOrEmpty(item.Quantity))
+                            {
+                                if (item.Quantity.StartsWith("="))
+                                    activeSheet.Cells[currentRow, 6].Formula = TransformFormulaRowOffset(item.Quantity, subtotalRow);
+                                else
+                                    activeSheet.Cells[currentRow, 6].Value = item.Quantity;
+                            }
+
+                            // G 列单价
+                            if (!string.IsNullOrEmpty(item.Price))
+                            {
+                                if (item.Price.StartsWith("="))
+                                    activeSheet.Cells[currentRow, 7].Formula = TransformFormulaRowOffset(item.Price, subtotalRow);
+                                else
+                                    activeSheet.Cells[currentRow, 7].Value = item.Price;
+                            }
+
+                            // H 列总价公式 (转换模板相对行号为当前箱柜实际物理行号)
+                            if (!string.IsNullOrEmpty(item.TotalPriceFormula))
+                            {
+                                if (item.TotalPriceFormula.StartsWith("="))
+                                {
+                                    activeSheet.Cells[currentRow, 8].Formula = TransformFormulaRowOffset(item.TotalPriceFormula, subtotalRow);
+                                }
+                                else
+                                {
+                                    activeSheet.Cells[currentRow, 8].Value = item.TotalPriceFormula;
+                                }
+                            }
+
+                            // J 列成本单价
+                            if (!string.IsNullOrEmpty(item.CostPrice))
+                            {
+                                activeSheet.Cells[currentRow, 10].Value = item.CostPrice;
+                            }
+
+                            // K 列成本总价公式
+                            if (!string.IsNullOrEmpty(item.CostTotalPriceFormula))
+                            {
+                                if (item.CostTotalPriceFormula.StartsWith("="))
+                                {
+                                    activeSheet.Cells[currentRow, 11].Formula = TransformFormulaRowOffset(item.CostTotalPriceFormula, subtotalRow);
+                                }
+                                else
+                                {
+                                    activeSheet.Cells[currentRow, 11].Value = item.CostTotalPriceFormula;
+                                }
+                            }
+
+                            // Q 列类别 (列号 17)
+                            if (!string.IsNullOrEmpty(item.Category))
+                            {
+                                activeSheet.Cells[currentRow, 17].Value = item.Category;
+                            }
+                        }
+
+                        // 重新设置顶部汇总行 G 列与 H 列公式联动
+                        activeSheet.Cells[sumRow, 7].Formula = $"=H{subtotalRow}";
+                        activeSheet.Cells[sumRow, 8].Formula = $"=F{sumRow}*G{sumRow}";
+                    }
+
+                    // 刷新计算全表
+                    activeSheet.Calculate();
+                }
+                finally
+                {
+                    // 恢复屏刷
+                    app.ScreenUpdating = prevUpdating;
+                }
+
+                // 日志记录调费完成
+                LogHelper.WriteLog($"成功完成公式法调费应用, 目标箱柜数: {targetCabinets.Count}, 作用域: {targetScope}");
             }
             catch (Exception ex)
             {
                 // 记录调费执行发生的异常日志
                 LogHelper.WriteLog($"执行公式法调费发生异常: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 动态平移公式表达式中的相对行号，将其映射到箱柜物理小计行 (如将 H2 转换为 H{subtotalRow})
+        /// </summary>
+        private static string TransformFormulaRowOffset(string formula, int subtotalRow)
+        {
+            if (string.IsNullOrWhiteSpace(formula) || !formula.StartsWith("=")) return formula;
+
+            // 示例模板基准行: 小计=2, 管理费=3, 利润=4, 税金=5, 单台合计=6, 总计=7
+            // 正则匹配公式中的单元格引用与行号 (如 H2, H3, H4, H5, H6, K2, K5, F7, G7 等)
+            return System.Text.RegularExpressions.Regex.Replace(formula, @"([A-Z]+)(\d+)", match =>
+            {
+                string col = match.Groups[1].Value;
+                if (int.TryParse(match.Groups[2].Value, out int rowNum))
+                {
+                    // 若模板中行号在 2~10 之间，平移偏移量 (rowNum - 2)
+                    if (rowNum >= 2 && rowNum <= 10)
+                    {
+                        int realRow = subtotalRow + (rowNum - 2);
+                        return $"{col}{realRow}";
+                    }
+                }
+                return match.Value;
+            });
         }
 
 
