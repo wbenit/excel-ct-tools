@@ -119,6 +119,32 @@
         background-color: #ffffff;
       }
 
+      /* 当前选中行的高亮背景色 (绿蓝淡雅色调) */
+      .group-table-card .el-table__body tr.current-row > td.el-table__cell {
+        background-color: #e0f2f1 !important;
+      }
+
+      /* 公式组名称就地编辑输入框样式 */
+      .group-name-input {
+        width: 100%;
+      }
+      .group-name-input .el-input__wrapper {
+        box-shadow: none !important;
+        background-color: transparent !important;
+        padding: 0 4px !important;
+        border-radius: 2px;
+      }
+      .group-name-input .el-input__wrapper:hover,
+      .group-name-input .el-input__wrapper.is-focus {
+        box-shadow: 0 0 0 1px #009688 inset !important;
+        background-color: #ffffff !important;
+      }
+      .group-name-input .el-input__inner {
+        color: #1e293b;
+        font-size: 12px;
+        font-weight: 500;
+      }
+
       /* Element Plus 表格内选定行高亮 */
       .el-table .active-group-row {
         background-color: #009688 !important;
@@ -383,51 +409,58 @@
               highlight-current-row
               @current-change="handleGroupSelect"
             >
-              <!-- 列1：公式组名称 -->
+              <!-- 列1：公式组名称 (支持就地编辑，带默认标记) -->
               <el-table-column prop="name" label="公式组名称" min-width="180">
                 <template #default="scope">
-                  <span>{{ scope.row.name }}</span>
+                  <div style="display: flex; align-items: center; gap: 6px; width: 100%;">
+                    <el-input
+                      v-model="scope.row.name"
+                      class="group-name-input"
+                      size="small"
+                      @change="saveAllToHost"
+                      placeholder="公式组名称"
+                    ></el-input>
+                    <el-tag v-if="scope.row.isDefault" size="small" type="success" effect="plain" style="flex-shrink: 0; padding: 0 4px; height: 20px; line-height: 18px;">默认</el-tag>
+                  </div>
                 </template>
               </el-table-column>
 
               <!-- 列2：系统默认公式与行操作内嵌按钮 -->
               <el-table-column
                 label="系统默认公式"
-                min-width="260"
+                min-width="240"
                 align="center"
               >
                 <template #default="scope">
-                  <!-- 若为系统默认，显示黄金钥匙图标 -->
-                  <i
-                    v-if="scope.row.isSystemDefault"
-                    class="fa-solid fa-key key-icon"
-                  ></i>
-
-                  <!-- 当前选择行显示功能按钮组件 -->
-                  <div
-                    v-else-if="selectedGroup && selectedGroup.id === scope.row.id"
-                    style="display: flex; gap: 4px; justify-content: center"
-                  >
-                    <el-button
-                      size="small"
-                      type="primary"
-                      plain
-                      @click.stop="setDefaultGroup(scope.row)"
-                      >设为默认</el-button
+                  <div style="display: flex; align-items: center; justify-content: center; width: 100%;">
+                    <!-- 当前选择行显示功能按钮组件 -->
+                    <div
+                      v-if="selectedGroup && selectedGroup.id === scope.row.id"
+                      style="display: flex; gap: 4px; justify-content: center"
                     >
-                    <el-button
-                      size="small"
-                      plain
-                      @click.stop="copyGroup(scope.row)"
-                      >复制</el-button
-                    >
-                    <el-button
-                      size="small"
-                      type="danger"
-                      plain
-                      @click.stop="deleteGroup(scope.row)"
-                      >删除</el-button
-                    >
+                      <el-button
+                        v-if="!scope.row.isDefault"
+                        size="small"
+                        type="primary"
+                        plain
+                        @click.stop="setDefaultGroup(scope.row)"
+                        >设为默认</el-button
+                      >
+                      <el-button
+                        size="small"
+                        plain
+                        @click.stop="copyGroup(scope.row)"
+                        >复制</el-button
+                      >
+                      <el-button
+                        v-if="!scope.row.isSystemDefault"
+                        size="small"
+                        type="danger"
+                        plain
+                        @click.stop="deleteGroup(scope.row)"
+                        >删除</el-button
+                      >
+                    </div>
                   </div>
                 </template>
               </el-table-column>
@@ -511,7 +544,7 @@
               <template #default="scope">
                 <div
                   class="row-index-cell"
-                  :class="{'total-row-bg': scope.row.name === '总计'}"
+                  :class="{'total-row-bg': scope.row.no === '总计'}"
                 >
                   {{ scope.$index + 1 }}
                 </div>
@@ -529,6 +562,7 @@
                   v-model="scope.row.no"
                   class="table-cell-input formula-text-red"
                   size="small"
+                  @change="saveAllToHost"
                 ></el-input>
               </template>
             </el-table-column>
@@ -544,6 +578,7 @@
                   v-model="scope.row.name"
                   class="table-cell-input"
                   size="small"
+                  @change="saveAllToHost"
                 ></el-input>
               </template>
             </el-table-column>
@@ -560,6 +595,7 @@
                   class="table-cell-input"
                   size="small"
                   placeholder="为空不修改"
+                  @change="saveAllToHost"
                 ></el-input>
               </template>
             </el-table-column>
@@ -576,6 +612,7 @@
                   class="table-cell-input"
                   size="small"
                   placeholder="为空不修改"
+                  @change="saveAllToHost"
                 ></el-input>
               </template>
             </el-table-column>
@@ -591,6 +628,7 @@
                   v-model="scope.row.unit"
                   class="table-cell-input"
                   size="small"
+                  @change="saveAllToHost"
                 ></el-input>
               </template>
             </el-table-column>
@@ -606,6 +644,7 @@
                   v-model="scope.row.quantity"
                   class="table-cell-input"
                   size="small"
+                  @change="saveAllToHost"
                 ></el-input>
               </template>
             </el-table-column>
@@ -621,6 +660,7 @@
                   v-model="scope.row.price"
                   class="table-cell-input"
                   size="small"
+                  @change="saveAllToHost"
                 ></el-input>
               </template>
             </el-table-column>
@@ -637,6 +677,7 @@
                   class="table-cell-input"
                   :class="{'formula-text-red': !scope.row.totalPriceFormula.startsWith('=')}"
                   size="small"
+                  @change="saveAllToHost"
                 ></el-input>
               </template>
             </el-table-column>
@@ -652,12 +693,13 @@
                   v-model="scope.row.costPrice"
                   class="table-cell-input"
                   size="small"
+                  @change="saveAllToHost"
                 ></el-input>
               </template>
             </el-table-column>
 
-            <!-- K 列：成本总价 (支持算式公式如 =ROUND(SUM(K2:K5), 2)) -->
-            <el-table-column label="K" min-width="140">
+            <!-- K 列：成本总价 (支持修饰算式公式如 =ROUND(SUM(K2:K5), 2)) -->
+            <el-table-column label="K" min-width="160">
               <template #header>
                 <div>K</div>
                 <div>成本总价</div>
@@ -668,14 +710,14 @@
                   class="table-cell-input"
                   :class="{'formula-text-red': !scope.row.costTotalPriceFormula.startsWith('=')}"
                   size="small"
+                  @change="saveAllToHost"
                 ></el-input>
               </template>
             </el-table-column>
 
-            <!-- Q 列：类别 -->
-            <el-table-column label="Q" width="60" align="center">
+            <!-- 类别列：项目分类标记 -->
+            <el-table-column label="类别" width="60" align="center">
               <template #header>
-                <div>Q</div>
                 <div>类别</div>
               </template>
               <template #default="scope">
@@ -683,6 +725,7 @@
                   v-model="scope.row.category"
                   class="table-cell-input"
                   size="small"
+                  @change="saveAllToHost"
                 ></el-input>
               </template>
             </el-table-column>
@@ -735,134 +778,53 @@
       createApp({
         setup() {
           // 定义公式组列表响应式变量
-          const groupList = ref([
-            {
-              id: "1",
-              name: "简易费用公式",
-              isSystemDefault: true,
-              isDefault: false,
-            },
-            {
-              id: "2",
-              name: "多费用公式",
-              isSystemDefault: false,
-              isDefault: true,
-            },
-            {
-              id: "3",
-              name: "其它样式费用公式",
-              isSystemDefault: false,
-              isDefault: false,
-            },
-            {
-              id: "4",
-              name: "国网报价费用公式",
-              isSystemDefault: false,
-              isDefault: false,
-            },
-            {
-              id: "5",
-              name: "人工辅料定额公式",
-              isSystemDefault: false,
-              isDefault: false,
-            },
-          ]);
+          const groupList = ref([]);
 
-          // 当前选中的公式组对象 --硬编码默认选中多费用公式--
-          const selectedGroup = ref(groupList.value[1]);
+          // 当前选中的公式组对象
+          const selectedGroup = ref(null);
 
           // 公式明细表格数据列表
-          const detailList = ref([
-            {
-              no: "[序号]",
-              name: "小计",
-              model: "",
-              manufacturer: "",
-              unit: "",
-              quantity: "",
-              price: "",
-              totalPriceFormula: "[总价小计]",
-              costPrice: "",
-              costTotalPriceFormula: "[成本总价小计]",
-              category: "",
-            },
-            {
-              no: "[序号]",
-              name: "管理费",
-              model: "",
-              manufacturer: "",
-              unit: "",
-              quantity: "",
-              price: "",
-              totalPriceFormula: "=ROUND(H2*0.12, 2)",
-              costPrice: "",
-              costTotalPriceFormula: "",
-              category: "费用",
-            },
-            {
-              no: "[序号]",
-              name: "利润",
-              model: "",
-              manufacturer: "",
-              unit: "",
-              quantity: "",
-              price: "",
-              totalPriceFormula: "=ROUND(SUM(H2:H3)*0.15, 2)",
-              costPrice: "",
-              costTotalPriceFormula: "",
-              category: "费用",
-            },
-            {
-              no: "[序号]",
-              name: "税金",
-              model: "",
-              manufacturer: "",
-              unit: "",
-              quantity: "",
-              price: "",
-              totalPriceFormula: "=ROUND(SUM(H2:H4)*0.13, 2)",
-              costPrice: "",
-              costTotalPriceFormula: "",
-              category: "费用",
-            },
-            {
-              no: "[序号]",
-              name: "单台合计",
-              model: "",
-              manufacturer: "",
-              unit: "",
-              quantity: "",
-              price: "",
-              totalPriceFormula: "=ROUND(SUM(H2:H5), 2)",
-              costPrice: "",
-              costTotalPriceFormula: "=ROUND(SUM(K2:K5), 2)",
-              category: "",
-            },
-            {
-              no: "总计",
-              name: "",
-              model: "",
-              manufacturer: "",
-              unit: "台",
-              quantity: "=ROUND(H6, 2)",
-              price: "=ROUND(F7*G7, 2)",
-              totalPriceFormula: "",
-              costPrice: "",
-              costTotalPriceFormula: "=ROUND(K6*F7, 2)",
-              category: "",
-            },
-          ]);
+          const detailList = ref([]);
 
-          // 选择公式组处理函数
+          // 统一向 C# 宿主发送 JSON 字符串消息辅助函数
+          const sendMessageToHost = (msgObj) => {
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.postMessage(JSON.stringify(msgObj));
+            }
+          };
+
+          // 保存所有公式组与明细配置至本地 JSON 文件
+          const saveAllToHost = () => {
+            // 将当前明细同步写回选中公式组中
+            if (selectedGroup.value) {
+              selectedGroup.value.details = JSON.parse(JSON.stringify(detailList.value));
+            }
+            // 向后端发送全量持久化指令
+            sendMessageToHost({
+              action: "saveFormulaData",
+              groups: groupList.value,
+            });
+          };
+
+          // 选择公式组处理函数 (联动切换下方明细表)
           const handleGroupSelect = (row) => {
             if (row) {
+              // 切换前先保存当前明细
+              if (selectedGroup.value && selectedGroup.value.id !== row.id) {
+                selectedGroup.value.details = JSON.parse(JSON.stringify(detailList.value));
+              }
+
               selectedGroup.value = row;
+              // 赋予新选公式组绑定的明细项
+              detailList.value = row.details ? JSON.parse(JSON.stringify(row.details)) : [];
             }
           };
 
           // 设为默认公式组
           const setDefaultGroup = (row) => {
             groupList.value.forEach((g) => (g.isDefault = g.id === row.id));
+            // 立即保存配置
+            saveAllToHost();
             ElementPlus.ElMessage.success(`已将【${row.name}】设为默认公式组`);
           };
 
@@ -873,8 +835,13 @@
               name: `${row.name}_副本`,
               isSystemDefault: false,
               isDefault: false,
+              details: JSON.parse(JSON.stringify(row.details || detailList.value || [])),
             };
             groupList.value.push(newG);
+            // 选中新复制的公式组
+            handleGroupSelect(newG);
+            // 立即存盘
+            saveAllToHost();
             ElementPlus.ElMessage.success(`已创建副本【${newG.name}】`);
           };
 
@@ -886,20 +853,20 @@
             }
             groupList.value = groupList.value.filter((g) => g.id !== row.id);
             if (selectedGroup.value && selectedGroup.value.id === row.id) {
-              selectedGroup.value = groupList.value[0];
+              const nextGroup = groupList.value[0] || null;
+              if (nextGroup) {
+                handleGroupSelect(nextGroup);
+              }
             }
+            // 立即存盘
+            saveAllToHost();
             ElementPlus.ElMessage.success("已成功删除公式组");
-          };
-
-          // 统一向 C# 宿主发送 JSON 字符串消息辅助函数
-          const sendMessageToHost = (msgObj) => {
-            if (window.chrome && window.chrome.webview) {
-              window.chrome.webview.postMessage(JSON.stringify(msgObj));
-            }
           };
 
           // 应用调费指令 (向 C# WebView2 后端发送 postMessage)
           const applyFormula = (targetScope) => {
+            // 先保存配置
+            saveAllToHost();
             sendMessageToHost({
               action: "applyFormula",
               targetScope: targetScope,
@@ -972,6 +939,7 @@
             } else {
               detailList.value.push(newRow);
             }
+            saveAllToHost();
             ElementPlus.ElMessage.success("已向上插入新公式行");
           };
 
@@ -998,6 +966,7 @@
             } else {
               detailList.value.push(newRow);
             }
+            saveAllToHost();
             ElementPlus.ElMessage.success("已向下插入新公式行");
           };
 
@@ -1025,8 +994,21 @@
               window.chrome.webview.addEventListener("message", (event) => {
                 const data = event.data;
                 if (data && data.action === "renderFormulaData") {
-                  if (data.groups) groupList.value = data.groups;
-                  if (data.details) detailList.value = data.details;
+                  if (data.groups && data.groups.length > 0) {
+                    groupList.value = data.groups;
+                    // 确定激活的公式组
+                    const target = groupList.value.find((g) => g.id === data.defaultGroupId) ||
+                                   groupList.value.find((g) => g.isDefault) ||
+                                   groupList.value[0];
+                    if (target) {
+                      selectedGroup.value = target;
+                      detailList.value = target.details && target.details.length > 0
+                        ? JSON.parse(JSON.stringify(target.details))
+                        : (data.details || []);
+                    }
+                  } else if (data.details) {
+                    detailList.value = data.details;
+                  }
                 }
               });
             }
@@ -1049,6 +1031,7 @@
             setDefaultGroup,
             copyGroup,
             deleteGroup,
+            saveAllToHost,
             applyFormula,
             handleHeaderMouseDown,
             handleMinimize,

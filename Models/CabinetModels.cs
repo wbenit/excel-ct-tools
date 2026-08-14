@@ -337,6 +337,12 @@ namespace ExcelAddInDemo.Models
         // 汇总小计锚点在 Excel 中的真实绝对行号 (Cab_Sum_k.Row)
         public int SumAnchorRow { get; set; }
 
+        // 明细小计锚点在 Excel 中的真实绝对行号 (Cab_Subsum_k.Row)
+        public int SubsumAnchorRow { get; set; }
+
+        // 明细总计锚点在 Excel 中的真实绝对行号 (Cab_Tolsum_k.Row)
+        public int TolsumAnchorRow { get; set; }
+
         // 顶部固定信息对象
         public CabinetHeader Header { get; set; } = new CabinetHeader();
 

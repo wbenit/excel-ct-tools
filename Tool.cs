@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using ExcelAddInDemo.Controllers;
 
 namespace ExcelAddInDemo
 {
@@ -85,6 +87,188 @@ namespace ExcelAddInDemo
 
             // 返回 AppData 目录全路径
             return appDataDir;
+        }
+
+        /// <summary>
+        /// 将计费公式配置项集合转换为可直接批量写入 Excel 的二维数据矩阵 (规则 6 & 规则 7)
+        /// </summary>
+        /// <param name="items">公式配置项列表</param>
+        /// <param name="cabDetRow">箱柜信息行物理行号 (Cab_Det)</param>
+        /// <param name="subsumRow">计费小计起始物理行号 (Cab_Subsum)</param>
+        /// <param name="compStartRow">元器件起始物理行号</param>
+        /// <param name="compEndRow">元器件终止物理行号</param>
+        /// <param name="totalCols">输出矩阵总列数 (默认 17 列，对应 A 列至 Q 列)</param>
+        /// <returns>构建完成的二维数据与公式矩阵</returns>
+        public static object[,] BuildFeeMatrix(
+            List<FormulaItemModel> items,
+            int cabDetRow,
+            int subsumRow,
+            int compStartRow,
+            int compEndRow,
+            int totalCols = 17)
+        {
+            // 若入参为空，返回空矩阵
+            if (items == null || items.Count == 0) return new object[0, 0];
+
+            int n = items.Count;
+            // 构建 N 行 totalCols 列的二维数据矩阵
+            object[,] feeMatrix = new object[n, totalCols];
+
+            // 遍历每个配置项逐行转换
+            for (int i = 0; i < n; i++)
+            {
+                var item = items[i];
+
+                // A 列 (索引 0): 序号处理
+                if (item.No == "总计" || i == n - 1)
+                {
+                    // 总计行标记为“总计”
+                    feeMatrix[i, 0] = "总计";
+                }
+                else if (item.No == "[序号]" || string.IsNullOrWhiteSpace(item.No))
+                {
+                    // 动态序号公式: =ROW()-ROW(A${cabDetRow+1})
+                    feeMatrix[i, 0] = $"=ROW()-ROW(A${cabDetRow + 1})";
+                }
+                else if (item.No.StartsWith("="))
+                {
+                    // 自定义公式
+                    feeMatrix[i, 0] = item.No;
+                }
+                else
+                {
+                    // 普通文本序号
+                    feeMatrix[i, 0] = item.No;
+                }
+
+                // B 列 (索引 1): 元件/费用名称
+                feeMatrix[i, 1] = item.Name ?? string.Empty;
+
+                // C 列 (索引 2): 规格型号
+                feeMatrix[i, 2] = item.Model ?? string.Empty;
+
+                // D 列 (索引 3): 生产厂家
+                feeMatrix[i, 3] = item.Manufacturer ?? string.Empty;
+
+                // E 列 (索引 4): 单位
+                feeMatrix[i, 4] = item.Unit ?? string.Empty;
+
+                // F 列 (索引 5): 数量 (支持公式行号平移)
+                if (!string.IsNullOrEmpty(item.Quantity))
+                {
+                    if (item.Quantity.StartsWith("="))
+                        feeMatrix[i, 5] = TransformFormulaRowOffset(item.Quantity, subsumRow);
+                    else
+                        feeMatrix[i, 5] = item.Quantity;
+                }
+                else
+                {
+                    feeMatrix[i, 5] = string.Empty;
+                }
+
+                // G 列 (索引 6): 单价 (支持公式行号平移)
+                if (!string.IsNullOrEmpty(item.Price))
+                {
+                    if (item.Price.StartsWith("="))
+                        feeMatrix[i, 6] = TransformFormulaRowOffset(item.Price, subsumRow);
+                    else
+                        feeMatrix[i, 6] = item.Price;
+                }
+                else
+                {
+                    feeMatrix[i, 6] = string.Empty;
+                }
+
+                // H 列 (索引 7): 销售总价公式转换
+                if (!string.IsNullOrEmpty(item.TotalPriceFormula))
+                {
+                    if (item.TotalPriceFormula == "[总价小计]")
+                    {
+                        // 动态汇总元器件区域
+                        feeMatrix[i, 7] = $"=SUM(H{compStartRow}:H{compEndRow})";
+                    }
+                    else if (item.TotalPriceFormula.StartsWith("="))
+                    {
+                        // 相对公式平移
+                        feeMatrix[i, 7] = TransformFormulaRowOffset(item.TotalPriceFormula, subsumRow);
+                    }
+                    else
+                    {
+                        feeMatrix[i, 7] = item.TotalPriceFormula;
+                    }
+                }
+                else
+                {
+                    feeMatrix[i, 7] = string.Empty;
+                }
+
+                // I 列 (索引 8): 备注 (保留空字符串)
+                feeMatrix[i, 8] = string.Empty;
+
+                // J 列 (索引 9): 成本单价
+                feeMatrix[i, 9] = item.CostPrice ?? string.Empty;
+
+                // K 列 (索引 10): 成本总价公式转换
+                if (!string.IsNullOrEmpty(item.CostTotalPriceFormula))
+                {
+                    if (item.CostTotalPriceFormula == "[成本总价小计]")
+                    {
+                        // 动态汇总元器件成本区域
+                        feeMatrix[i, 10] = $"=SUM(K{compStartRow}:K{compEndRow})";
+                    }
+                    else if (item.CostTotalPriceFormula.StartsWith("="))
+                    {
+                        // 相对成本公式平移
+                        feeMatrix[i, 10] = TransformFormulaRowOffset(item.CostTotalPriceFormula, subsumRow);
+                    }
+                    else
+                    {
+                        feeMatrix[i, 10] = item.CostTotalPriceFormula;
+                    }
+                }
+                else
+                {
+                    feeMatrix[i, 10] = string.Empty;
+                }
+
+                // 若有超过 16 列的输出，Q 列 (索引 16): 类别
+                if (totalCols > 16)
+                {
+                    feeMatrix[i, 16] = item.Category ?? string.Empty;
+                }
+            }
+
+            // 返回构建完成的二维矩阵
+            return feeMatrix;
+        }
+
+        /// <summary>
+        /// 动态平移公式表达式中的相对行号，将其映射到箱柜物理小计行 (如将 H2 转换为 H{subtotalRow})
+        /// </summary>
+        /// <param name="formula">待平移的公式字符串</param>
+        /// <param name="subtotalRow">箱柜小计行实际物理行号</param>
+        /// <returns>平移修正后的公式字符串</returns>
+        public static string TransformFormulaRowOffset(string formula, int subtotalRow)
+        {
+            // 校验公式格式是否以等号开头
+            if (string.IsNullOrWhiteSpace(formula) || !formula.StartsWith("=")) return formula;
+
+            // 正则匹配公式中的单元格引用与行号 (如 H2, H3, H4, H5, H6, K2, K5, F7, G7 等)
+            return System.Text.RegularExpressions.Regex.Replace(formula, @"([A-Z]+)(\d+)", match =>
+            {
+                string col = match.Groups[1].Value;
+                if (int.TryParse(match.Groups[2].Value, out int rowNum))
+                {
+                    // 若模板中行号在 2~10 之间，平移偏移量 (rowNum - 2)
+                    if (rowNum >= 1 && rowNum <= 10)
+                    {
+                        // 计算实际物理行号
+                        int realRow = subtotalRow + (rowNum - 1);
+                        return $"{col}{realRow}";
+                    }
+                }
+                return match.Value;
+            });
         }
 
         /// <summary>

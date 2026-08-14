@@ -164,33 +164,10 @@ namespace ExcelAddInDemo.Controllers
                             }
                         }
 
-                        // 9. 选中新工作簿中的 "项目信息" 工作表并填写对应的表单内容
-                        dynamic infoSheet = newWb.Sheets["项目信息"];
+                        // 8. 调用 ExcelServices 统一完成【项目信息】与【分类1】工作表的完整回填、公式联动与定义名称锚点绑定
+                        ExcelServices.InitializeCreatedProjectWorkbook(newWb, model);
 
-                        // 顶栏单位名称 (Row 1)
-                        infoSheet.Range["B1"].Value = model.CompanyName;
-
-                        // 【工程信息】区域填值 (Row 5 - Row 12)
-                        infoSheet.Range["B5"].Value = model.ProjectName;      // 项目名称 (Cell B5)
-                        infoSheet.Range["B6"].Value = model.ProjectRemark;    // 描述 (Cell B6)
-                        infoSheet.Range["B7"].Value = model.QuoteNumber;      // 报价单号 (Cell B7)
-                        infoSheet.Range["B8"].Value = model.Quoter;           // 报价人 (Cell B8)
-                        infoSheet.Range["B9"].Value = model.ProjectDate;      // 创建日期 (Cell B9)
-                        infoSheet.Range["B12"].Value = model.ProjectRemark;   // 项目备注 (Cell B12)
-
-                        // 【客户信息】区域填值 (Row 14 - Row 17)
-                        infoSheet.Range["B14"].Value = model.CustomerName;    // 客户名称 (Cell B14)
-                        infoSheet.Range["B15"].Value = model.CustomerContact; // 联系人 (Cell B15)
-                        infoSheet.Range["B16"].Value = model.CustomerPhone;   // 联系电话 (Cell B16)
-                        infoSheet.Range["B17"].Value = model.CustomerAddress; // 客户地址 (Cell B17)
-
-                        // 【本企业信息】区域填值 (Row 22 - Row 25)
-                        infoSheet.Range["B22"].Value = model.CompanyName;    // 单位名称 (Cell B22)
-                        infoSheet.Range["B23"].Value = model.EnglishName;     // 英文名称 (Cell B23)
-                        infoSheet.Range["B24"].Value = model.CompanyContact;  // 联系人 (Cell B24)
-                        infoSheet.Range["B25"].Value = model.CompanyPhone;    // 联系电话 (Cell B25)
-
-                        // 10. 保存修改后的新工作簿
+                        // 9. 保存修改后的新工作簿
                         newWb.Save();
 
                         // 记录最近一次成功创建的目标文件路径

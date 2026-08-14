@@ -215,22 +215,43 @@ namespace ExcelAddInDemo
                 {
                     // 获取初始化公式数据集
                     case "getInitFormulaData":
-                        // 调用后端 WebAPI 控制器获取公式组
+                        // 调用后端 WebAPI 控制器获取所有公式组 (含各自独立的明细数据)
                         var groups = _controller.GetFormulaGroups();
 
-                        // 读取默认选中的“多费用公式”明细数据
-                        var details = _controller.GetFormulaDetails("多费用公式");
+                        // 找到默认选中的公式组，若无则取第一个
+                        var defaultGroup = groups.FirstOrDefault(g => g.IsDefault) ?? groups.FirstOrDefault();
+                        // 获取当前选中的公式明细
+                        var details = defaultGroup != null && defaultGroup.Details != null && defaultGroup.Details.Count > 0
+                            ? defaultGroup.Details
+                            : _controller.GetFormulaDetails(defaultGroup?.Name ?? "多费用公式");
 
                         // 构造发送给 Vue 前端的数据包
                         var resData = new
                         {
                             action = "renderFormulaData",
                             groups = groups,
+                            defaultGroupId = defaultGroup?.Id,
                             details = details
                         };
 
                         // 回发数据包给 Vue 前端
                         _webView.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(resData, JsonOptions));
+                        break;
+
+                    // 保存公式组配置至 JSON 文件
+                    case "saveFormulaData":
+                        // 反序列化前端提交的最新公式组完整列表
+                        if (root.TryGetProperty("groups", out var groupsProp))
+                        {
+                            // 解析公式组集合
+                            var updatedGroups = JsonSerializer.Deserialize<List<FormulaGroupModel>>(groupsProp.GetRawText(), JsonOptions);
+                            // 若数据非空则调用控制器持久化至本地 JSON 文件
+                            if (updatedGroups != null && updatedGroups.Count > 0)
+                            {
+                                // 保存至磁盘
+                                _controller.SaveAllFormulaGroups(updatedGroups);
+                            }
+                        }
                         break;
 
                     // 执行应用公式调费

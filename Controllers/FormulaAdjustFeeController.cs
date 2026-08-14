@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace ExcelAddInDemo.Controllers
@@ -16,11 +19,14 @@ namespace ExcelAddInDemo.Controllers
         // 公式组名称 (例如: 简易费用公式、多费用公式、其它样式费用公式等)
         public string Name { get; set; } = string.Empty;
 
-        // 是否为系统默认公式组 (图标显示钥匙标志)
+        // 是否为系统默认公式组 (图标显示黄金钥匙标志，系统默认不可删除)
         public bool IsSystemDefault { get; set; } = false;
 
         // 是否被用户设为当前激活的默认公式组
         public bool IsDefault { get; set; } = false;
+
+        // 公式组包含的具体表格明细行数据列表
+        public List<FormulaItemModel> Details { get; set; } = new List<FormulaItemModel>();
     }
 
     /// <summary>
@@ -28,10 +34,10 @@ namespace ExcelAddInDemo.Controllers
     /// </summary>
     public class FormulaItemModel
     {
-        // 行序号 (如 1, 2, [序号])
+        // 行序号 (如 1, 2, [序号], 总计)
         public string No { get; set; } = string.Empty;
 
-        // 元件/项目名称 (如 小计, 管理费, 利润, 税金, 单台合计, 总计)
+        // 元件/项目名称 (如 小计, 管理费, 利润, 税金, 单台合计)
         public string Name { get; set; } = string.Empty;
 
         // 型号规格
@@ -75,33 +81,157 @@ namespace ExcelAddInDemo.Controllers
     }
 
     /// <summary>
-    /// 公式法调费 WebAPI 风格控制器，负责公式模板获取与调度处理
+    /// 公式法调费全局 JSON 配置文件数据根结构
+    /// </summary>
+    public class FormulaFeeConfig
+    {
+        // 所有的公式组集合列表
+        public List<FormulaGroupModel> Groups { get; set; } = new List<FormulaGroupModel>();
+    }
+
+    /// <summary>
+    /// 公式法调费 WebAPI 风格控制器，负责公式模板获取、调度与 JSON 存盘处理
     /// </summary>
     public class FormulaAdjustFeeController
     {
-        // 内存中保存的默认公式组列表 --硬编码初始数据，后续可从配置文件扩展--
-        private static readonly List<FormulaGroupModel> _formulaGroups = new List<FormulaGroupModel>
+        // 配置文件物理保存路径
+        private readonly string _configFilePath;
+
+        // JSON 序列化与反序列化选项 (格式化缩进与中文转义支持)
+        private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
-            // 预置简易费用公式组
-            new FormulaGroupModel { Id = "1", Name = "简易费用公式", IsSystemDefault = true, IsDefault = false },
-            // 预置多费用公式组 (图一默认选中)
-            new FormulaGroupModel { Id = "2", Name = "多费用公式", IsSystemDefault = false, IsDefault = true },
-            // 预置其它样式费用公式组
-            new FormulaGroupModel { Id = "3", Name = "其它样式费用公式", IsSystemDefault = false, IsDefault = false },
-            // 预置国网报价费用公式组
-            new FormulaGroupModel { Id = "4", Name = "国网报价费用公式", IsSystemDefault = false, IsDefault = false },
-            // 预置人工辅料定额公式组
-            new FormulaGroupModel { Id = "5", Name = "人工辅料定额公式", IsSystemDefault = false, IsDefault = false }
+            WriteIndented = true,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            PropertyNameCaseInsensitive = true
         };
 
+        // 线程安全互斥锁
+        private static readonly object _fileLock = new object();
+
+        // 内存中缓存的公式组列表
+        private List<FormulaGroupModel> _formulaGroups;
+
         /// <summary>
-        /// 后端 WebAPI 接口: 获取所有公式组列表
+        /// 构造函数：初始化配置文件存储路径并从 JSON 文件加载
+        /// </summary>
+        public FormulaAdjustFeeController()
+        {
+            // 通过 Tool 工具类获取 AppData 插件专属目录
+            string appDataDir = Tool.GetAppDirectory();
+            // 拼接得到 formula_fee_settings.json 存储文件路径
+            _configFilePath = Path.Combine(appDataDir, "formula_fee_settings.json");
+
+            // 从本地磁盘加载配置数据
+            _formulaGroups = LoadConfigFromDisk();
+        }
+
+        /// <summary>
+        /// 从本地磁盘加载公式组配置文件
+        /// </summary>
+        private List<FormulaGroupModel> LoadConfigFromDisk()
+        {
+            lock (_fileLock)
+            {
+                try
+                {
+                    // 若 AppData 中存在配置文件则优先读取
+                    if (File.Exists(_configFilePath))
+                    {
+                        // 读取磁盘文件中的 JSON 文本
+                        string json = File.ReadAllText(_configFilePath);
+                        // 反序列化为配置对象
+                        var config = JsonSerializer.Deserialize<FormulaFeeConfig>(json, JsonOptions);
+                        // 若反序列化成功且包含有效分组
+                        if (config != null && config.Groups != null && config.Groups.Count > 0)
+                        {
+                            // 返回加载的公式组集合
+                            return config.Groups;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // 记录加载失败异常日志
+                    LogHelper.WriteLog($"加载 formula_fee_settings.json 失败: {ex.Message}");
+                }
+
+                // 若磁盘无文件或解析失败，生成默认内置公式组配置
+                var defaultGroups = CreateDefaultFormulaGroups();
+                // 立即持久化保存至本地磁盘
+                SaveConfigToDisk(defaultGroups);
+                // 返回默认配置项
+                return defaultGroups;
+            }
+        }
+
+        /// <summary>
+        /// 将当前所有公式组持久化写入本地 JSON 文件
+        /// </summary>
+        public bool SaveConfigToDisk(List<FormulaGroupModel> groups)
+        {
+            lock (_fileLock)
+            {
+                try
+                {
+                    // 更新内部内存缓存引用
+                    _formulaGroups = groups;
+                    // 构造待序列化的配置根对象
+                    var config = new FormulaFeeConfig { Groups = groups };
+                    // 序列化为格式化 JSON 字符串
+                    string json = JsonSerializer.Serialize(config, JsonOptions);
+                    // 确保目标目录存在
+                    string? dir = Path.GetDirectoryName(_configFilePath);
+                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                    {
+                        // 递归创建所在文件夹
+                        Directory.CreateDirectory(dir);
+                    }
+                    // 将 JSON 内容安全写入物理文件
+                    File.WriteAllText(_configFilePath, json);
+                    // 返回写入成功
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    // 记录写入错误日志
+                    LogHelper.WriteLog($"保存 formula_fee_settings.json 失败: {ex.Message}");
+                    // 返回写入失败
+                    return false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 后端 WebAPI 接口: 获取所有公式组列表 (包含其绑定的明细项)
         /// </summary>
         /// <returns>公式组集合</returns>
         public List<FormulaGroupModel> GetFormulaGroups()
         {
-            // 直接返回已配置的公式组数据列表
+            // 返回当前加载的所有公式组列表
             return _formulaGroups;
+        }
+
+        /// <summary>
+        /// 后端 WebAPI 接口: 获取当前激活的默认公式组
+        /// </summary>
+        /// <returns>默认公式组对象</returns>
+        public FormulaGroupModel GetDefaultGroup()
+        {
+            // 查找标记为默认的公式组
+            var def = _formulaGroups?.FirstOrDefault(g => g.IsDefault);
+            // 兜底返回第一个公式组或内置默认组
+            return def ?? _formulaGroups?.FirstOrDefault() ?? CreateDefaultFormulaGroups().First();
+        }
+
+        /// <summary>
+        /// 后端 WebAPI 接口: 保存全部公式组数据 (由前端编辑后整体提交)
+        /// </summary>
+        public bool SaveAllFormulaGroups(List<FormulaGroupModel> groups)
+        {
+            // 校验入参合法性
+            if (groups == null || groups.Count == 0) return false;
+            // 写入本地磁盘持久化
+            return SaveConfigToDisk(groups);
         }
 
         /// <summary>
@@ -117,12 +247,12 @@ namespace ExcelAddInDemo.Controllers
                 // 若 ID 匹配则设为默认，否则置为 false
                 g.IsDefault = (g.Id == groupId);
             }
-            // 返回设为默认成功的状态
-            return true;
+            // 立即持久化保存更新
+            return SaveConfigToDisk(_formulaGroups);
         }
 
         /// <summary>
-        /// 后端 WebAPI 接口: 复制指定的公式组
+        /// 后端 WebAPI 接口: 复制指定的公式组及其明细列表
         /// </summary>
         /// <param name="groupId">源公式组 ID</param>
         /// <returns>新建的公式组对象</returns>
@@ -133,7 +263,31 @@ namespace ExcelAddInDemo.Controllers
             // 若源不存在则返回空
             if (source == null) return null!;
 
-            // 构造新的复制实体 --硬编码名称后缀--
+            // 深度克隆其包含的明细行集合
+            var clonedDetails = new List<FormulaItemModel>();
+            if (source.Details != null)
+            {
+                // 循环克隆每一个公式明细行
+                foreach (var item in source.Details)
+                {
+                    clonedDetails.Add(new FormulaItemModel
+                    {
+                        No = item.No,
+                        Name = item.Name,
+                        Model = item.Model,
+                        Manufacturer = item.Manufacturer,
+                        Unit = item.Unit,
+                        Quantity = item.Quantity,
+                        Price = item.Price,
+                        TotalPriceFormula = item.TotalPriceFormula,
+                        CostPrice = item.CostPrice,
+                        CostTotalPriceFormula = item.CostTotalPriceFormula,
+                        Category = item.Category
+                    });
+                }
+            }
+
+            // 构造新的复制实体 --名称加上副本后缀--
             var newGroup = new FormulaGroupModel
             {
                 // 生成新唯一标识
@@ -143,11 +297,15 @@ namespace ExcelAddInDemo.Controllers
                 // 新副本非系统默认
                 IsSystemDefault = false,
                 // 非默认激活
-                IsDefault = false
+                IsDefault = false,
+                // 赋予深克隆后的明细项
+                Details = clonedDetails
             };
 
-            // 追加至全局内存集合中
+            // 追加至全局集合中
             _formulaGroups.Add(newGroup);
+            // 持久化保存
+            SaveConfigToDisk(_formulaGroups);
             // 返回新创建的公式组对象
             return newGroup;
         }
@@ -170,6 +328,8 @@ namespace ExcelAddInDemo.Controllers
 
             // 从列表中移除目标公式组
             _formulaGroups.Remove(target);
+            // 持久化写入磁盘
+            SaveConfigToDisk(_formulaGroups);
             // 返回删除成功标志
             return true;
         }
@@ -181,107 +341,231 @@ namespace ExcelAddInDemo.Controllers
         /// <returns>明细列表行数据集合</returns>
         public List<FormulaItemModel> GetFormulaDetails(string groupName)
         {
-            // 初始化返回的明细行列表
-            var items = new List<FormulaItemModel>();
-
-            // 图一中默认显示的“多费用公式”明细表 --硬编码示例公式明细，符合标准规则--
-            items.Add(new FormulaItemModel
+            // 根据名称查找对应的公式组
+            var group = _formulaGroups.FirstOrDefault(g => g.Name == groupName);
+            // 若命中且明细不为空
+            if (group != null && group.Details != null && group.Details.Count > 0)
             {
-                No = "[序号]",
-                Name = "小计",
-                Model = "",
-                Manufacturer = "",
-                Unit = "",
-                Quantity = "",
-                Price = "",
-                TotalPriceFormula = "[总价小计]",
-                CostPrice = "",
-                CostTotalPriceFormula = "[成本总价小计]",
-                Category = ""
-            });
+                // 返回该公式组配置的明细表
+                return group.Details;
+            }
 
-            // 添加管理费计算公式行
-            items.Add(new FormulaItemModel
+            // 若未找到，回退返回默认的“多费用公式”明细模板
+            return CreateStandardMultiFeeDetails();
+        }
+
+        /// <summary>
+        /// 创建系统内置的默认公式组集合
+        /// </summary>
+        private List<FormulaGroupModel> CreateDefaultFormulaGroups()
+        {
+            // 构造默认公式组列表
+            return new List<FormulaGroupModel>
             {
-                No = "[序号]",
-                Name = "管理费",
-                Model = "",
-                Manufacturer = "",
-                Unit = "",
-                Quantity = "",
-                Price = "",
-                TotalPriceFormula = "=ROUND(H2*0.12, 2)",
-                CostPrice = "",
-                CostTotalPriceFormula = "",
-                Category = "费用"
-            });
+                // 1. 简易费用公式 (系统默认，带钥匙图标)
+                new FormulaGroupModel
+                {
+                    Id = "1",
+                    Name = "简易费用公式",
+                    IsSystemDefault = true,
+                    IsDefault = false,
+                    Details = CreateStandardSimpleFeeDetails()
+                },
+                // 2. 多费用公式 (默认激活)
+                new FormulaGroupModel
+                {
+                    Id = "2",
+                    Name = "多费用公式",
+                    IsSystemDefault = false,
+                    IsDefault = true,
+                    Details = CreateStandardMultiFeeDetails()
+                },
+                // 3. 其它样式费用公式
+                new FormulaGroupModel
+                {
+                    Id = "3",
+                    Name = "其它样式费用公式",
+                    IsSystemDefault = false,
+                    IsDefault = false,
+                    Details = CreateStandardOtherFeeDetails()
+                },
+                // 4. 国网报价费用公式
+                new FormulaGroupModel
+                {
+                    Id = "4",
+                    Name = "国网报价费用公式",
+                    IsSystemDefault = false,
+                    IsDefault = false,
+                    Details = CreateStandardStateGridFeeDetails()
+                },
+                // 5. 人工辅料定额公式
+                new FormulaGroupModel
+                {
+                    Id = "5",
+                    Name = "人工辅料定额公式",
+                    IsSystemDefault = false,
+                    IsDefault = false,
+                    Details = CreateStandardLaborMaterialFeeDetails()
+                }
+            };
+        }
 
-            // 添加利润计算公式行
-            items.Add(new FormulaItemModel
+        /// <summary>
+        /// 创建标准“多费用公式”明细列表 (总计行在 A 列为总计)
+        /// </summary>
+        private static List<FormulaItemModel> CreateStandardMultiFeeDetails()
+        {
+            return new List<FormulaItemModel>
             {
-                No = "[序号]",
-                Name = "利润",
-                Model = "",
-                Manufacturer = "",
-                Unit = "",
-                Quantity = "",
-                Price = "",
-                TotalPriceFormula = "=ROUND(SUM(H2:H3)*0.15, 2)",
-                CostPrice = "",
-                CostTotalPriceFormula = "",
-                Category = "费用"
-            });
+                // 1. 小计行
+                new FormulaItemModel
+                {
+                    No = "[序号]",
+                    Name = "小计",
+                    Model = "",
+                    Manufacturer = "",
+                    Unit = "",
+                    Quantity = "",
+                    Price = "",
+                    TotalPriceFormula = "[总价小计]",
+                    CostPrice = "",
+                    CostTotalPriceFormula = "[成本总价小计]",
+                    Category = ""
+                },
+                // 2. 管理费
+                new FormulaItemModel
+                {
+                    No = "[序号]",
+                    Name = "管理费",
+                    Model = "",
+                    Manufacturer = "",
+                    Unit = "",
+                    Quantity = "",
+                    Price = "",
+                    TotalPriceFormula = "=ROUND(H2*0.12, 2)",
+                    CostPrice = "",
+                    CostTotalPriceFormula = "",
+                    Category = "费用"
+                },
+                // 3. 利润
+                new FormulaItemModel
+                {
+                    No = "[序号]",
+                    Name = "利润",
+                    Model = "",
+                    Manufacturer = "",
+                    Unit = "",
+                    Quantity = "",
+                    Price = "",
+                    TotalPriceFormula = "=ROUND(SUM(H2:H3)*0.15, 2)",
+                    CostPrice = "",
+                    CostTotalPriceFormula = "",
+                    Category = "费用"
+                },
+                // 4. 税金
+                new FormulaItemModel
+                {
+                    No = "[序号]",
+                    Name = "税金",
+                    Model = "",
+                    Manufacturer = "",
+                    Unit = "",
+                    Quantity = "",
+                    Price = "",
+                    TotalPriceFormula = "=ROUND(SUM(H2:H4)*0.13, 2)",
+                    CostPrice = "",
+                    CostTotalPriceFormula = "",
+                    Category = "费用"
+                },
+                // 5. 单台合计
+                new FormulaItemModel
+                {
+                    No = "[序号]",
+                    Name = "单台合计",
+                    Model = "",
+                    Manufacturer = "",
+                    Unit = "",
+                    Quantity = "",
+                    Price = "",
+                    TotalPriceFormula = "=ROUND(SUM(H2:H5), 2)",
+                    CostPrice = "",
+                    CostTotalPriceFormula = "=ROUND(SUM(K2:K5), 2)",
+                    Category = ""
+                },
+                // 6. 总计 (A 列写“总计”，B 列为空)
+                new FormulaItemModel
+                {
+                    No = "总计",
+                    Name = "",
+                    Model = "",
+                    Manufacturer = "",
+                    Unit = "台",
+                    Quantity = "=ROUND(H6, 2)",
+                    Price = "=ROUND(F7*G7, 2)",
+                    TotalPriceFormula = "",
+                    CostPrice = "",
+                    CostTotalPriceFormula = "=ROUND(K6*F7, 2)",
+                    Category = ""
+                }
+            };
+        }
 
-            // 添加税金计算公式行
-            items.Add(new FormulaItemModel
+        /// <summary>
+        /// 创建“简易费用公式”明细列表
+        /// </summary>
+        private static List<FormulaItemModel> CreateStandardSimpleFeeDetails()
+        {
+            return new List<FormulaItemModel>
             {
-                No = "[序号]",
-                Name = "税金",
-                Model = "",
-                Manufacturer = "",
-                Unit = "",
-                Quantity = "",
-                Price = "",
-                TotalPriceFormula = "=ROUND(SUM(H2:H4)*0.13, 2)",
-                CostPrice = "",
-                CostTotalPriceFormula = "",
-                Category = "费用"
-            });
+                // 小计
+                new FormulaItemModel { No = "[序号]", Name = "小计", TotalPriceFormula = "[总价小计]", CostTotalPriceFormula = "[成本总价小计]" },
+                // 综合费率
+                new FormulaItemModel { No = "[序号]", Name = "综合成套费", TotalPriceFormula = "=ROUND(H2*0.25, 2)", Category = "费用" },
+                // 单台合计
+                new FormulaItemModel { No = "[序号]", Name = "单台合计", TotalPriceFormula = "=ROUND(SUM(H2:H3), 2)", CostTotalPriceFormula = "=ROUND(SUM(K2:K3), 2)" },
+                // 总计行
+                new FormulaItemModel { No = "总计", Name = "", Unit = "台", Quantity = "=ROUND(H4, 2)", Price = "=ROUND(F5*G5, 2)", CostTotalPriceFormula = "=ROUND(K4*F5, 2)" }
+            };
+        }
 
-            // 添加单台合计计算公式行
-            items.Add(new FormulaItemModel
+        /// <summary>
+        /// 创建“其它样式费用公式”明细列表
+        /// </summary>
+        private static List<FormulaItemModel> CreateStandardOtherFeeDetails()
+        {
+            return CreateStandardMultiFeeDetails();
+        }
+
+        /// <summary>
+        /// 创建“国网报价费用公式”明细列表
+        /// </summary>
+        private static List<FormulaItemModel> CreateStandardStateGridFeeDetails()
+        {
+            return CreateStandardMultiFeeDetails();
+        }
+
+        /// <summary>
+        /// 创建“人工辅料定额公式”明细列表
+        /// </summary>
+        private static List<FormulaItemModel> CreateStandardLaborMaterialFeeDetails()
+        {
+            return new List<FormulaItemModel>
             {
-                No = "[序号]",
-                Name = "单台合计",
-                Model = "",
-                Manufacturer = "",
-                Unit = "",
-                Quantity = "",
-                Price = "",
-                TotalPriceFormula = "=ROUND(SUM(H2:H5), 2)",
-                CostPrice = "",
-                CostTotalPriceFormula = "=ROUND(SUM(K2:K5), 2)",
-                Category = ""
-            });
-
-            // 添加总计行公式
-            items.Add(new FormulaItemModel
-            {
-                No = "7",
-                Name = "总计",
-                Model = "",
-                Manufacturer = "",
-                Unit = "台",
-                Quantity = "=ROUND(H6, 2)",
-                Price = "=ROUND(F7*G7, 2)",
-                TotalPriceFormula = "",
-                CostPrice = "",
-                CostTotalPriceFormula = "=ROUND(K6*F7, 2)",
-                Category = ""
-            });
-
-            // 返回公式明细表集合
-            return items;
+                // 小计
+                new FormulaItemModel { No = "[序号]", Name = "小计", TotalPriceFormula = "[总价小计]", CostTotalPriceFormula = "[成本总价小计]" },
+                // 人工定额
+                new FormulaItemModel { No = "[序号]", Name = "人工费", TotalPriceFormula = "=ROUND(H2*0.08, 2)", Category = "费用" },
+                // 辅料定额
+                new FormulaItemModel { No = "[序号]", Name = "辅料费", TotalPriceFormula = "=ROUND(H2*0.05, 2)", Category = "费用" },
+                // 利润
+                new FormulaItemModel { No = "[序号]", Name = "利润", TotalPriceFormula = "=ROUND(SUM(H2:H4)*0.10, 2)", Category = "费用" },
+                // 税金
+                new FormulaItemModel { No = "[序号]", Name = "税金", TotalPriceFormula = "=ROUND(SUM(H2:H5)*0.13, 2)", Category = "费用" },
+                // 单台合计
+                new FormulaItemModel { No = "[序号]", Name = "单台合计", TotalPriceFormula = "=ROUND(SUM(H2:H6), 2)", CostTotalPriceFormula = "=ROUND(SUM(K2:K6), 2)" },
+                // 总计行
+                new FormulaItemModel { No = "总计", Name = "", Unit = "台", Quantity = "=ROUND(H7, 2)", Price = "=ROUND(F8*G8, 2)", CostTotalPriceFormula = "=ROUND(K7*F8, 2)" }
+            };
         }
     }
 }

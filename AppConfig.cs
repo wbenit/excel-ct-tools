@@ -39,6 +39,12 @@ namespace ExcelAddInDemo
         // 底部明细块使用的 Excel 定义名称前缀
         public string DetNamePrefix { get; set; } = "Cab_Det_";
 
+        // 底部明细小计行使用的 Excel 定义名称前缀
+        public string SubsumNamePrefix { get; set; } = "Cab_Subsum_";
+
+        // 底部明细总计行使用的 Excel 定义名称前缀
+        public string TolsumNamePrefix { get; set; } = "Cab_Tolsum_";
+
         // UI 界面及表头强调的默认主题颜色（主色调为 #009688）
         public string DefaultThemeColor { get; set; } = "#009688";
 
@@ -51,8 +57,18 @@ namespace ExcelAddInDemo
         // 模板用于特征识别匹配的基准列号
         public int FeatureColumnIndex { get; set; } = 1;
 
-        // 模板及工作表汇总行的基准行号
-        public int TemplateSumRowIndex { get; set; } = 7;
+        // 初始明细中顶部汇总行 (Cab_Sum) 的物理行号
+        public int CabSumRowIndex { get; set; } = 7;
+
+        // 初始明细中箱柜信息行 (Cab_Det) 的物理行号
+        public int CabDetRowIndex { get; set; } = 44;
+
+        // 初始明细中总计行 (Cab_Tolsum) 的物理行号
+        public int CabTolsumRowIndex { get; set; } = 71;
+
+        // 模板箱柜明细包含总计行的总行数 A (通过 CabTolsumRowIndex - CabDetRowIndex + 1 动态计算得出)
+        [JsonIgnore]
+        public int TemplateDetailTotalRows => CabTolsumRowIndex >= CabDetRowIndex ? (CabTolsumRowIndex - CabDetRowIndex + 1) : 25;
 
         // 超链接跳转时视口首行滚动的行号修正值 (偏移量，默认为 0)
         public int ScrollRowOffset { get; set; } = 0;

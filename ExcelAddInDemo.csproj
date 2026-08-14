@@ -51,6 +51,10 @@
     <None Include="Resources\formula_adjust_fee.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将箱柜模板 Excel 文件复制至构建输出路径中 -->
+    <None Include="Resources\CabinetTemplate.xlsx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将 JSON 配置文件复制至构建输出路径中 -->
     <None Include="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
