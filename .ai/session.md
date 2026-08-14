@@ -44,12 +44,12 @@
      - **强类型定义名称与超链接**：直接在 `activeSheet` 内部复制模板行，彻底取消打开/关闭外部 `CabinetTemplate.xlsx` 文件，根除跨工作簿句柄清理导致定义名称丢失的致命隐患；以强类型 `Range` 对象直接调用 `targetWb.Names.Add`；带工作表前缀绑定超链接 `SubAddress`。
      - **GetNextCabinetIndex 序号动态增量**：将读取逻辑全面切换为 `Cell.Value2` 内存数据，配合 `ExtractIndexFromName` 清洗助手，实现 100% 递增 `maxK + 1` 与历史定义名称永久保留。
      - **SheetFollowHyperlink 视图定位**：监听超链接跳转，读取全局配置 `ScrollRowOffset` (如 `-3`) 修正 `win.ScrollRow`。
-- **最新构建状态**：`ExcelAddInDemo.dll` 编译完全通过（0 警告 0 错误）。已彻底解决历史定义名称丢失问题。
-- **当前任务状态 [新建箱柜重构]**：
-  1. **配置驱动模板总行数 A**：在 `appsettings.json` 与 `AppConfig.cs` 的 `ExcelSettings` 中维护 `TemplateDetailTotalRows`（默认 32 行），彻底杜绝行数硬编码。
-  2. **整块复制与行数动态对齐**：根据当前活动位置选择插队或末尾追加，复制本表已有箱柜明细整块（行数 B）；动态比较 B 与 A，在元器件区域自动删除多余行（$B > A$）或插入补齐行（$B < A$ 并复制格式），确保新箱柜总行数严格等于 A。
-  3. **元器件区域智能清洗**：采用内存二维数组批量读取与写回（规则 7），精准识别并**原样保留以 '=' 开头的计算公式**（如序号公式、总价公式、成本总价公式等），仅对常量数据（元件名称、规格型号、厂家、数量、单价等）执行置空清洗。
-  4. **4 个定义名称与超链接重新绑定**：严格遵循规则 6 架构，更新箱柜信息行名称，强类型注册 `Cab_Sum_K`, `Cab_Det_K`, `Cab_Subsum_K`, `Cab_Tolsum_K`，并完成双向超链接跳转与汇总行公式联动。
-  5. **构建与打包**：`dotnet build` 编译 0 警告 0 错误通过，打包已生成最新的 `ExcelAddInDemo-AddIn64-packed.xll`。
+- **最新构建状态**：`ExcelAddInDemo.dll` 编译完全通过（0 错误，打包生成最新 packed.xll）。
+- **当前任务状态 [公式法调费与箱柜重构完成]**：
+  1. **公式法调费批量写入重构**：将 `ApplyFormulaAdjustFeeToExcel` 内部原先逐单元格循环赋值彻底重构为调用 `Tool.BuildFeeMatrix` 构建 $N\times 17$ 二维数据矩阵，通过 `Range[$"A{subsumRow}:Q{tolsumRow}"].Formula = feeMatrix` 一次性批量写入 Excel，严格遵循规则 6 与规则 7，性能成倍提升。
+  2. **双作用域定义名称检索修复**：所有定义名称扫描逻辑（`CreateNewCabinetFromSelection`、`ApplyFormulaAdjustFeeToExcel`、`ParseSheetToCabinetObjects`）全面支持工作簿级别（`wb.Names`）与工作表级别（`sheet.Names`），并严格校验 `refRange.Worksheet.Name` 防止跨表误取。
+  3. **箱柜复制与数据清洗**：支持中间插队（方案 A）与末尾追加模式，精确界定 `srcDet - 3` 至 `nextDet - 4` 或 `usedMaxRow`，保护落款区与计费区，按配置标准行数 A 动态伸缩对齐。
+
+
 
 
