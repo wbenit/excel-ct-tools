@@ -68,24 +68,25 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 获取当前 Windows 系统 AppData 目录下本插件专属的数据与配置存储目录路径
+        /// 获取当前插件运行目录下的 data 专属数据与配置存储目录路径
         /// </summary>
-        /// <returns>%AppData%\ExcelAddInDemo 专属目录全路径</returns>
+        /// <returns>插件运行目录/data 专属目录全路径</returns>
         public static string GetAppDataDirectory()
         {
-            // 拼接 AppData 专用数据与配置文件保存目录
-            string appDataDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "ExcelAddInDemo"
-            );
+            // 获取插件当前运行的根物理目录
+            string appDir = GetAppDirectory();
+
+            // 拼接插件目录下的 data 专用数据与配置文件保存目录
+            string appDataDir = Path.Combine(appDir, "data");
 
             // 检查文件夹是否存在，不存在则自动创建
             if (!Directory.Exists(appDataDir))
             {
+                // 创建 data 文件夹
                 Directory.CreateDirectory(appDataDir);
             }
 
-            // 返回 AppData 目录全路径
+            // 返回 data 目录全路径
             return appDataDir;
         }
 

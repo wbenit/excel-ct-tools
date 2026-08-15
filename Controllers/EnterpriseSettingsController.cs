@@ -65,15 +65,8 @@ namespace ExcelAddInDemo.Controllers
         /// </summary>
         public EnterpriseSettingsController()
         {
-            // 获取当前系统 AppData/Local 本地数据存放目录
-            string appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ExcelAddInDemo");
-
-            // 如果配置文件夹不存在，则自动创建该目录
-            if (!Directory.Exists(appDataDir))
-            {
-                // 创建文件夹
-                Directory.CreateDirectory(appDataDir);
-            }
+            // 获取插件运行目录下的 data 专属数据目录
+            string appDataDir = Tool.GetAppDataDirectory();
 
             // 拼接 EnterpriseSettings.json 的完整保存路径
             _settingsFilePath = Path.Combine(appDataDir, "EnterpriseSettings.json");
