@@ -117,7 +117,7 @@ namespace ExcelAddInDemo.Controllers
         public FormulaAdjustFeeController()
         {
             // 通过 Tool 工具类获取 AppData 插件专属目录
-            string appDataDir = Tool.GetAppDirectory();
+            string appDataDir = Tool.GetAppDataDirectory();
             // 拼接得到 formula_fee_settings.json 存储文件路径
             _configFilePath = Path.Combine(appDataDir, "formula_fee_settings.json");
 

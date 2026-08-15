@@ -462,6 +462,33 @@ namespace ExcelAddInDemo.Models
             return cab;
         }
     }
+
+    /// <summary>
+    /// 箱柜在 Excel 工作表中的 4 个定义名称 Range 锚点强类型模型 (Cab_Det, Cab_Sum, Cab_Subsum, Cab_Tolsum)
+    /// </summary>
+    public class CabinetAnchorModel
+    {
+        // 箱柜信息行 Range (Cab_Det)
+        public dynamic Det { get; set; }
+
+        // 顶部汇总行 Range (Cab_Sum)
+        public dynamic Sum { get; set; }
+
+        // 底部明细小计行 Range (Cab_Subsum)
+        public dynamic Subsum { get; set; }
+
+        // 底部明细总计行 Range (Cab_Tolsum)
+        public dynamic Tolsum { get; set; }
+
+        // 构造函数
+        public CabinetAnchorModel(dynamic det = null, dynamic sum = null, dynamic subsum = null, dynamic tolsum = null)
+        {
+            Det = det;
+            Sum = sum;
+            Subsum = subsum;
+            Tolsum = tolsum;
+        }
+    }
 }
 
 
