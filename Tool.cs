@@ -7,9 +7,9 @@ using ExcelAddInDemo.Controllers;
 namespace ExcelAddInDemo
 {
     /// <summary>
-    /// 系统公共工具类，提供全局通用的路径获取、目录检索等工具方法
+    /// 系统通用工具类，提供全局通用的路径获取、目录检索等工具方法
     /// </summary>
-    public static class Tool
+    internal static class Tool
     {
         /// <summary>
         /// 安全获取当前插件 DLL / XLL 文件所在的实际物理目录路径 (支持 publish 及 bin 输出目录)
@@ -88,6 +88,96 @@ namespace ExcelAddInDemo
 
             // 返回 data 目录全路径
             return appDataDir;
+        }
+
+        /// <summary>
+        /// 提取定义名称中的纯标识文本 (清理可能存在的工作表前缀、单引号、等号与空格)
+        /// </summary>
+        /// <param name="rawName">原始定义名称字符串</param>
+        /// <returns>清洗后的纯定义名称标识</returns>
+        public static string ExtractCleanNameStr(string rawName)
+        {
+            // 校验入参有效性
+            if (string.IsNullOrWhiteSpace(rawName)) return string.Empty;
+            string clean = rawName;
+            // 剔除可能包含的工作表前缀 (例如 '分类1'!Cab_Sum_1 -> Cab_Sum_1)
+            if (clean.Contains("!"))
+            {
+                // 提取感叹号之后的纯名称标识
+                clean = clean.Substring(clean.IndexOf("!") + 1);
+            }
+            // 修剪首尾可能存在的单引号、等号、空格与双引号
+            return clean.Trim('\'', '=', ' ', '"');
+        }
+
+        /// <summary>
+        /// 从定义名称全名中安全解析提取箱柜序号数字 (支持 Cab_Sum_ / Cab_Det_ / Cab_Subsum_ / Cab_Tolsum_)
+        /// </summary>
+        /// <param name="fullName">定义名称全称</param>
+        /// <param name="sumPrefix">汇总行前缀 (可选)</param>
+        /// <param name="detPrefix">信息行前缀 (可选)</param>
+        /// <param name="subsumPrefix">小计行前缀 (可选)</param>
+        /// <param name="tolsumPrefix">总计行前缀 (可选)</param>
+        /// <returns>提取出的箱柜数字序号，失败返回 0</returns>
+        public static int ExtractIndexFromName(string fullName, string? sumPrefix = null, string? detPrefix = null, string? subsumPrefix = null, string? tolsumPrefix = null)
+        {
+            // 校验输入字符串是否为空
+            if (string.IsNullOrWhiteSpace(fullName)) return 0;
+
+            // 提取或回退默认前缀
+            sumPrefix = sumPrefix ?? ConfigManager.Instance.Current.Excel.SumNamePrefix ?? "Cab_Sum_";
+            detPrefix = detPrefix ?? ConfigManager.Instance.Current.Excel.DetNamePrefix ?? "Cab_Det_";
+            subsumPrefix = subsumPrefix ?? ConfigManager.Instance.Current.Excel.SubsumNamePrefix ?? "Cab_Subsum_";
+            tolsumPrefix = tolsumPrefix ?? ConfigManager.Instance.Current.Excel.TolsumNamePrefix ?? "Cab_Tolsum_";
+
+            // 清理可能存在的工作表前缀与单引号/等号
+            string cleanName = ExtractCleanNameStr(fullName);
+
+            // 遍历 4 个前缀进行匹配提取序号
+            string[] prefixes = new[] { sumPrefix, detPrefix, subsumPrefix, tolsumPrefix };
+            foreach (var prefix in prefixes)
+            {
+                // 若匹配以前缀开头
+                if (!string.IsNullOrEmpty(prefix) && cleanName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    // 截取前缀后的数字文本
+                    string numStr = cleanName.Substring(prefix.Length);
+                    // 解析数字
+                    if (int.TryParse(numStr, out int k)) return k;
+                }
+            }
+
+            // 未匹配到返回 0
+            return 0;
+        }
+
+        /// <summary>
+        /// 动态平移公式表达式中的相对行号，将其映射到箱柜物理小计行 (如将 H2 转换为 H{subtotalRow})
+        /// </summary>
+        /// <param name="formula">待平移的公式字符串</param>
+        /// <param name="subtotalRow">箱柜小计行实际物理行号</param>
+        /// <returns>平移修正后的公式字符串</returns>
+        public static string TransformFormulaRowOffset(string formula, int subtotalRow)
+        {
+            // 校验公式格式是否以等号开头
+            if (string.IsNullOrWhiteSpace(formula) || !formula.StartsWith("=")) return formula;
+
+            // 正则匹配公式中的单元格引用与行号 (如 H2, H3, H4, H5, H6, K2, K5, F7, G7 等)
+            return System.Text.RegularExpressions.Regex.Replace(formula, @"([A-Z]+)(\d+)", match =>
+            {
+                string col = match.Groups[1].Value;
+                if (int.TryParse(match.Groups[2].Value, out int rowNum))
+                {
+                    // 若模板中行号在 1~10 之间，平移偏移量 (rowNum - 1)
+                    if (rowNum >= 1 && rowNum <= 10)
+                    {
+                        // 计算实际物理行号
+                        int realRow = subtotalRow + (rowNum - 1);
+                        return $"{col}{realRow}";
+                    }
+                }
+                return match.Value;
+            });
         }
 
         /// <summary>
@@ -244,35 +334,6 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 动态平移公式表达式中的相对行号，将其映射到箱柜物理小计行 (如将 H2 转换为 H{subtotalRow})
-        /// </summary>
-        /// <param name="formula">待平移的公式字符串</param>
-        /// <param name="subtotalRow">箱柜小计行实际物理行号</param>
-        /// <returns>平移修正后的公式字符串</returns>
-        public static string TransformFormulaRowOffset(string formula, int subtotalRow)
-        {
-            // 校验公式格式是否以等号开头
-            if (string.IsNullOrWhiteSpace(formula) || !formula.StartsWith("=")) return formula;
-
-            // 正则匹配公式中的单元格引用与行号 (如 H2, H3, H4, H5, H6, K2, K5, F7, G7 等)
-            return System.Text.RegularExpressions.Regex.Replace(formula, @"([A-Z]+)(\d+)", match =>
-            {
-                string col = match.Groups[1].Value;
-                if (int.TryParse(match.Groups[2].Value, out int rowNum))
-                {
-                    // 若模板中行号在 2~10 之间，平移偏移量 (rowNum - 2)
-                    if (rowNum >= 1 && rowNum <= 10)
-                    {
-                        // 计算实际物理行号
-                        int realRow = subtotalRow + (rowNum - 1);
-                        return $"{col}{realRow}";
-                    }
-                }
-                return match.Value;
-            });
-        }
-
-        /// <summary>
         /// 清洗指定单元格区域内公式中包含的模板外部文件绝对路径引用 (如 [CabinetTemplate.xlsx])
         /// 显式跳过 A 列 (锚点列)，在 100% 擦除公式物理路径的同时，绝对保护名称管理器与超链接
         /// </summary>
@@ -347,63 +408,43 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 提取定义名称中的纯标识文本 (清理可能存在的工作表前缀、单引号、等号与空格)
+        /// 对比区域现有行数与目标行数，在指定起始物理行位置自动完成插行或删行对齐
+        /// 遵循规则 6 紧凑无空行原则
         /// </summary>
-        /// <param name="rawName">原始定义名称字符串</param>
-        /// <returns>清洗后的纯定义名称标识</returns>
-        public static string ExtractCleanNameStr(string rawName)
+        /// <param name="sheet">目标工作表 COM 引用</param>
+        /// <param name="startRow">插删行的基准起始物理行号</param>
+        /// <param name="currentCount">当前现有行数</param>
+        /// <param name="targetCount">目标所需行数</param>
+        /// <returns>行数变化差值 (targetCount - currentCount，正数表示插入行数，负数表示删除行数)</returns>
+        public static int AlignRowRangeCount(dynamic sheet, int startRow, int currentCount, int targetCount)
         {
-            // 校验入参有效性
-            if (string.IsNullOrWhiteSpace(rawName)) return string.Empty;
-            string clean = rawName;
-            // 剔除可能包含的工作表前缀 (例如 '分类1'!Cab_Sum_1 -> Cab_Sum_1)
-            if (clean.Contains("!"))
+            // 校验工作表与行号参数有效性
+            if (sheet == null || startRow <= 0) return 0;
+
+            // 计算行数差值
+            int diff = targetCount - currentCount;
+
+            // 1. 若目标行数多于现有行数：在起始行处向下插入差值行
+            if (diff > 0)
             {
-                clean = clean.Substring(clean.IndexOf("!") + 1);
+                // 获取待插入行的 Range 区域
+                dynamic insertRange = sheet.Rows[$"{startRow}:{startRow + diff - 1}"];
+                // 执行向下位移插入新行
+                insertRange.Insert(Microsoft.Office.Interop.Excel.XlInsertShiftDirection.xlShiftDown);
             }
-            // 修剪首尾可能存在的单引号、等号、空格与双引号
-            return clean.Trim('\'', '=', ' ', '"');
-        }
-
-        /// <summary>
-        /// 从定义名称全名中安全解析提取箱柜序号数字 (支持 Cab_Sum_ / Cab_Det_ / Cab_Subsum_ / Cab_Tolsum_)
-        /// </summary>
-        /// <param name="fullName">定义名称全称</param>
-        /// <param name="sumPrefix">汇总行前缀 (可选)</param>
-        /// <param name="detPrefix">信息行前缀 (可选)</param>
-        /// <param name="subsumPrefix">小计行前缀 (可选)</param>
-        /// <param name="tolsumPrefix">总计行前缀 (可选)</param>
-        /// <returns>提取出的箱柜数字序号，失败返回 0</returns>
-        public static int ExtractIndexFromName(string fullName, string sumPrefix = null, string detPrefix = null, string subsumPrefix = null, string tolsumPrefix = null)
-        {
-            // 校验输入字符串是否为空
-            if (string.IsNullOrWhiteSpace(fullName)) return 0;
-
-            // 提取或回退默认前缀
-            sumPrefix = sumPrefix ?? ConfigManager.Instance.Current.Excel.SumNamePrefix ?? "Cab_Sum_";
-            detPrefix = detPrefix ?? ConfigManager.Instance.Current.Excel.DetNamePrefix ?? "Cab_Det_";
-            subsumPrefix = subsumPrefix ?? ConfigManager.Instance.Current.Excel.SubsumNamePrefix ?? "Cab_Subsum_";
-            tolsumPrefix = tolsumPrefix ?? ConfigManager.Instance.Current.Excel.TolsumNamePrefix ?? "Cab_Tolsum_";
-
-            // 清理可能存在的工作表前缀与单引号/等号
-            string cleanName = ExtractCleanNameStr(fullName);
-
-            // 遍历 4 个前缀进行匹配提取序号
-            string[] prefixes = new[] { sumPrefix, detPrefix, subsumPrefix, tolsumPrefix };
-            foreach (var prefix in prefixes)
+            // 2. 若目标行数少于现有行数：从起始行起向上删除多余行
+            else if (diff < 0)
             {
-                // 若匹配以前缀开头
-                if (!string.IsNullOrEmpty(prefix) && cleanName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    // 截取前缀后的数字文本
-                    string numStr = cleanName.Substring(prefix.Length);
-                    // 解析数字
-                    if (int.TryParse(numStr, out int k)) return k;
-                }
+                // 计算需要删除的行数
+                int deleteCount = -diff;
+                // 获取待删除行的 Range 区域
+                dynamic deleteRange = sheet.Rows[$"{startRow}:{startRow + deleteCount - 1}"];
+                // 执行向上位移删除行
+                deleteRange.Delete(Microsoft.Office.Interop.Excel.XlDeleteShiftDirection.xlShiftUp);
             }
 
-            // 未匹配到返回 0
-            return 0;
+            // 返回行数变化差值
+            return diff;
         }
 
         /// <summary>
@@ -417,12 +458,11 @@ namespace ExcelAddInDemo
         /// <param name="subsumPrefix">小计行定义名称前缀</param>
         /// <param name="tolsumPrefix">总计行定义名称前缀</param>
         /// <returns>按汇总行物理行号升序排列的有效箱柜锚点强类型列表</returns>
-        public static List<KeyValuePair<int, Models.CabinetAnchorModel>>
-            BuildCabinetMap(
-                IEnumerable<dynamic> allNames,
-                string currentSheetName,
-                string sumPrefix, string detPrefix,
-                string subsumPrefix, string tolsumPrefix)
+        public static List<KeyValuePair<int, Models.CabinetAnchorModel>> BuildCabinetMap(
+            IEnumerable<dynamic> allNames,
+            string currentSheetName,
+            string sumPrefix, string detPrefix,
+            string subsumPrefix, string tolsumPrefix)
         {
             // 构建中间字典，Key 为箱柜序号，Value 为强类型锚点模型
             var cabinetDict = new Dictionary<int, Models.CabinetAnchorModel>();
@@ -440,7 +480,7 @@ namespace ExcelAddInDemo
                     if (k <= 0) continue;
 
                     // 安全读取定义名称所指向的单元格 Range 引用
-                    dynamic refRange = null;
+                    dynamic? refRange = null;
                     try { refRange = name.RefersToRange; } catch { }
                     if (refRange == null) continue;
 
@@ -583,8 +623,8 @@ namespace ExcelAddInDemo
                 if (totalRows <= 0) return 0;
 
                 // 规则 7: 一次性读取已用区域的数值与公式数组到内存
-                object[,] valArray = null;
-                object[,] formulaArray = null;
+                object[,]? valArray = null;
+                object[,]? formulaArray = null;
                 try { valArray = usedRange.Value2 as object[,]; } catch { }
                 try { formulaArray = usedRange.Formula as object[,]; } catch { }
                 if (valArray == null) return 0;
@@ -734,7 +774,7 @@ namespace ExcelAddInDemo
         /// <summary>
         /// 安全设置/校准工作表级别的定义名称（若已存在则覆盖）
         /// </summary>
-        private static void SafeSetSheetName(dynamic sheet, string sheetName, string tagName, int row)
+        public static void SafeSetSheetName(dynamic sheet, string sheetName, string tagName, int row)
         {
             try
             {
@@ -753,43 +793,116 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 对比区域现有行数与目标行数，在指定起始物理行位置自动完成插行或删行对齐
-        /// 遵循规则 6 紧凑无空行原则
+        /// 动态扫描工作表，智能探测并返回首台箱柜的标准行号分布 (避免硬编码行号因不同模板产生偏移与 +1 错误)
         /// </summary>
-        /// <param name="sheet">目标工作表 COM 引用</param>
-        /// <param name="startRow">插删行的基准起始物理行号</param>
-        /// <param name="currentCount">当前现有行数</param>
-        /// <param name="targetCount">目标所需行数</param>
-        /// <returns>行数变化差值 (targetCount - currentCount，正数表示插入行数，负数表示删除行数)</returns>
-        public static int AlignRowRangeCount(dynamic sheet, int startRow, int currentCount, int targetCount)
+        /// <param name="sheet">目标工作表对象</param>
+        /// <returns>首台箱柜汇总行、明细信息行、小计行、总计行元组 (cabSumRow, cabDetRow, cabSubsumRow, cabTolsumRow)</returns>
+        public static (int cabSumRow, int cabDetRow, int cabSubsumRow, int cabTolsumRow) FindStandardCategoryRowIndexes(dynamic sheet)
         {
-            // 校验工作表与行号参数有效性
-            if (sheet == null || startRow <= 0) return 0;
+            // 读取配置中的默认兜底值
+            var cfg = ConfigManager.Instance.Current.Excel;
+            int defSum = cfg.CabSumRowIndex;
+            int defDet = cfg.CabDetRowIndex;
+            int defTol = cfg.CabTolsumRowIndex;
+            int defSub = defTol - 5;
 
-            // 计算行数差值
-            int diff = targetCount - currentCount;
+            if (sheet == null) return (defSum, defDet, defSub, defTol);
 
-            // 1. 若目标行数多于现有行数：在起始行处向下插入差值行
-            if (diff > 0)
+            try
             {
-                // 获取待插入行的 Range 区域
-                dynamic insertRange = sheet.Rows[$"{startRow}:{startRow + diff - 1}"];
-                // 执行向下位移插入新行
-                insertRange.Insert(Microsoft.Office.Interop.Excel.XlInsertShiftDirection.xlShiftDown);
-            }
-            // 2. 若目标行数少于现有行数：从起始行起向上删除多余行
-            else if (diff < 0)
-            {
-                // 计算需要删除的行数
-                int deleteCount = -diff;
-                // 获取待删除行的 Range 区域
-                dynamic deleteRange = sheet.Rows[$"{startRow}:{startRow + deleteCount - 1}"];
-                // 执行向上位移删除行
-                deleteRange.Delete(Microsoft.Office.Interop.Excel.XlDeleteShiftDirection.xlShiftUp);
-            }
+                // 获取工作表已用区域
+                dynamic usedRange = sheet.UsedRange;
+                if (usedRange == null) return (defSum, defDet, defSub, defTol);
 
-            // 返回行数变化差值
-            return diff;
+                // 提取已用区域起始行与总行数
+                int startRow = Convert.ToInt32(usedRange.Row);
+                int rowCount = Convert.ToInt32(usedRange.Rows.Count);
+                int endRow = startRow + rowCount - 1;
+
+                // 读取数值二维数组
+                object[,]? valArray = usedRange.Value2 as object[,];
+                if (valArray == null) return (defSum, defDet, defSub, defTol);
+
+                int arrRows = valArray.GetLength(0);
+                int arrCols = valArray.GetLength(1);
+
+                // 本地快速文本获取辅助函数
+                string GetText(int r, int c)
+                {
+                    int ar = r - startRow + 1;
+                    if (ar < 1 || ar > arrRows || c < 1 || c > arrCols) return "";
+                    return Convert.ToString(valArray[ar, c])?.Trim() ?? "";
+                }
+
+                int foundSumRow = 0;
+                int foundDetRow = 0;
+                int foundSubsumRow = 0;
+                int foundTolsumRow = 0;
+
+                // 1. 扫描顶部汇总表表头 (寻找包含 "序号" 且第2列包含 "柜号" 或 "箱柜" 的行)
+                for (int r = startRow; r <= endRow; r++)
+                {
+                    string c1 = GetText(r, 1);
+                    string c2 = GetText(r, 2);
+                    if (c1.Contains("序号") && (c2.Contains("柜号") || c2.Contains("箱柜") || c2.Contains("产品")))
+                    {
+                        // 首个箱柜汇总行位于表头下一行
+                        foundSumRow = r + 1;
+                        break;
+                    }
+                }
+
+                // 2. 扫描底部明细表箱柜信息行 (寻找 A 列包含 "柜号" 且下一行 A 列包含 "序号" 的行)
+                for (int r = (foundSumRow > 0 ? foundSumRow + 1 : startRow + 1); r <= endRow; r++)
+                {
+                    string aText = GetText(r, 1);
+                    string nextAText = GetText(r + 1, 1);
+                    if ((aText.Contains("柜号") || aText.Contains("箱柜") || aText.Contains("设备")) &&
+                        (nextAText.Contains("序号") || nextAText.Contains("编号") || nextAText.Contains("元件")))
+                    {
+                        foundDetRow = r;
+                        break;
+                    }
+                }
+
+                // 3. 在明细块内部寻找小计行与总计行
+                if (foundDetRow > 0)
+                {
+                    for (int r = foundDetRow + 2; r <= Math.Min(endRow, foundDetRow + 60); r++)
+                    {
+                        string aText = GetText(r, 1);
+                        string bText = GetText(r, 2);
+
+                        // 识别小计行
+                        if (foundSubsumRow == 0 && (aText.Contains("小计") || bText.Contains("小计")))
+                        {
+                            foundSubsumRow = r;
+                        }
+
+                        // 识别总计行
+                        if (foundTolsumRow == 0 && (aText.Contains("总计") || bText.Contains("总计")))
+                        {
+                            foundTolsumRow = r;
+                            break;
+                        }
+                    }
+                }
+
+                // 兜底与有效性校验
+                if (foundSumRow <= 0) foundSumRow = defSum;
+                if (foundDetRow <= 0) foundDetRow = defDet;
+                if (foundTolsumRow <= 0) foundTolsumRow = defTol;
+                if (foundSubsumRow <= 0) foundSubsumRow = foundTolsumRow - 5;
+
+                // 返回识别出的 4 个基准行号
+                return (foundSumRow, foundDetRow, foundSubsumRow, foundTolsumRow);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常并回退默认值
+                LogHelper.WriteLog($"探测分类标准行号分布异常: {ex.Message}");
+                return (defSum, defDet, defSub, defTol);
+            }
         }
     }
 }

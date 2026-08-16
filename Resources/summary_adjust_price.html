@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>汇总调价</title>
+  <!-- 引入 Element Plus 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <!-- 引入 Vue 3 核心库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入 Element Plus 组件库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <!-- 引入 Element Plus 图标库 -->
+  <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+  <!-- 引入公共绿蓝相间主题样式 (主色调 #009688) -->
+  <link rel="stylesheet" href="theme.css">
+  <style>
+
+    /* 全局基础重置与无滚动条设定 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+      user-select: none;
+      background-color: #ffffff;
+      color: #333333;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      border: 1px solid #dcdfe6;
+      background-color: #ffffff;
+    }
+
+    /* 顶部无边框窗体拖拽标题栏 (严格统一为与公式法调费一致的深绿蓝风格) */
+    .window-header {
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px 0 12px;
+      background: linear-gradient(135deg, #009688, #00796b);
+      color: #ffffff;
+      cursor: move;
+    }
+
+    .window-title-box {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #ffffff;
+      letter-spacing: 0.5px;
+    }
+
+    .window-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .action-btn {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 3px;
+      color: #ffffff;
+      opacity: 0.85;
+      font-size: 13px;
+      transition: all 0.2s ease;
+    }
+
+    .action-btn:hover {
+      opacity: 1;
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .action-btn.close-btn:hover {
+      background-color: #ef4444;
+      color: #ffffff;
+    }
+
+    /* 顶部引导与操作区 */
+    .top-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px 10px 20px;
+    }
+
+    .banner-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .banner-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 2px solid var(--theme-main);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--theme-main);
+      font-size: 22px;
+      background-color: var(--theme-main-light);
+    }
+
+    .banner-text-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #303133;
+      margin-bottom: 3px;
+    }
+
+    .banner-text-sub {
+      font-size: 12px;
+      color: #606266;
+    }
+
+    /* 立即生成主按钮 */
+    .generate-btn {
+      background: linear-gradient(135deg, #009688 0%, #00796b 100%) !important;
+      border-color: #00796b !important;
+      color: #ffffff !important;
+      font-size: 15px !important;
+      font-weight: bold !important;
+      padding: 10px 28px !important;
+      height: 42px !important;
+      border-radius: 6px !important;
+      letter-spacing: 1px !important;
+      box-shadow: 0 2px 8px rgba(0, 150, 136, 0.35);
+      transition: all 0.2s ease;
+    }
+
+    .generate-btn:hover {
+      background: linear-gradient(135deg, #26a69a 0%, #00897b 100%) !important;
+      border-color: #00897b !important;
+      box-shadow: 0 4px 12px rgba(0, 150, 136, 0.45);
+      transform: translateY(-1px);
+    }
+
+    .generate-btn:active {
+      transform: translateY(0);
+    }
+
+    /* 中部分类列表区 */
+    .content-area {
+      flex: 1;
+      padding: 6px 20px 10px 20px;
+      overflow-y: auto;
+      border-top: 1px solid #f0f0f0;
+    }
+
+    /* 自定义滚动条 */
+    .content-area::-webkit-scrollbar {
+      width: 6px;
+    }
+    .content-area::-webkit-scrollbar-thumb {
+      background: #b2dfdb;
+      border-radius: 3px;
+    }
+    .content-area::-webkit-scrollbar-thumb:hover {
+      background: #80cbc4;
+    }
+
+    .category-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-top: 4px;
+    }
+
+    .category-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+    }
+
+    .category-item:hover {
+      background-color: #f0fdfa;
+      border-color: #ccfbf1;
+    }
+
+    .category-item-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .category-name {
+      font-size: 13px;
+      color: #303133;
+      font-weight: 500;
+    }
+
+    .category-count {
+      font-size: 12px;
+      color: #00796b;
+      background-color: #e0f2f1;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-weight: 600;
+    }
+
+    .empty-tip {
+      text-align: center;
+      padding: 40px 0;
+      color: #909399;
+      font-size: 13px;
+    }
+
+    /* 底部配置栏 */
+    .bottom-panel {
+      border-top: 1px solid #e0f2f1;
+      padding: 12px 20px;
+      background-color: #f7faf9;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .select-all-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .custom-summary-link {
+      font-size: 12px;
+      color: var(--theme-main);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-weight: 500;
+    }
+
+    .custom-summary-link:hover {
+      text-decoration: underline;
+    }
+
+    .config-row {
+      display: flex;
+      align-items: center;
+      font-size: 12px;
+      color: #303133;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .config-label {
+      font-weight: 600;
+      color: #00796b;
+      white-space: nowrap;
+      min-width: 62px;
+    }
+
+    .config-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .el-checkbox, .el-radio {
+      margin-right: 10px !important;
+      font-size: 12px !important;
+      height: 22px !important;
+    }
+
+    .el-checkbox__label, .el-radio__label {
+      font-size: 12px !important;
+      padding-left: 5px !important;
+    }
+
+    /* 覆盖勾选框主色调 #009688 */
+    .theme-checkbox .el-checkbox__input.is-checked .el-checkbox__inner,
+    .theme-checkbox .el-checkbox__input.is-indeterminate .el-checkbox__inner {
+      background-color: var(--theme-main) !important;
+      border-color: var(--theme-main) !important;
+    }
+
+    .theme-checkbox .el-checkbox__input.is-checked + .el-checkbox__label {
+      color: #00796b !important;
+    }
+
+    .theme-radio .el-radio__input.is-checked .el-radio__inner {
+      border-color: var(--theme-main) !important;
+      background-color: var(--theme-main) !important;
+    }
+
+    .theme-radio .el-radio__input.is-checked + .el-radio__label {
+      color: #00796b !important;
+    }
+
+    .disabled-tag {
+      color: #909399;
+    }
+
+    .link-setting {
+      color: var(--theme-main);
+      cursor: pointer;
+      margin-left: 2px;
+      font-weight: 500;
+    }
+
+    .link-setting:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部标题栏，支持鼠标拖拽与控制 -->
+    <div class="window-header" @mousedown="handleHeaderMouseDown">
+      <div class="window-title-box">
+        <el-icon :size="15"><Tickets /></el-icon>
+        <span>汇总调价</span>
+      </div>
+      <div class="window-actions">
+        <!-- 最小化按钮 -->
+        <div class="action-btn" title="最小化" @mousedown.stop @click.stop="minimizeWindow">
+          <el-icon :size="14"><Minus /></el-icon>
+        </div>
+        <!-- 刷新按钮 -->
+        <div class="action-btn" title="刷新工作表列表" @mousedown.stop @click.stop="refreshData">
+          <el-icon :size="14"><Refresh /></el-icon>
+        </div>
+        <!-- 关闭按钮 -->
+        <div class="action-btn close-btn" title="关闭窗口" @mousedown.stop @click.stop="closeWindow">
+          <el-icon :size="14"><Close /></el-icon>
+        </div>
+      </div>
+    </div>
+
+    <!-- 顶部引导与操作区 -->
+    <div class="top-banner">
+      <div class="banner-left">
+        <div class="banner-icon">
+          <el-icon><Tickets /></el-icon>
+        </div>
+        <div>
+          <div class="banner-text-title">选择分类生成元件汇总表</div>
+          <div class="banner-text-sub">请选择要汇总的分类:</div>
+        </div>
+      </div>
+      <!-- 立即生成按钮 -->
+      <el-button 
+        class="generate-btn" 
+        :loading="generating" 
+        @click="handleGenerate">
+        立即生成
+      </el-button>
+    </div>
+
+    <!-- 中部分类工作表列表区 -->
+    <div class="content-area">
+      <div v-if="categories.length > 0" class="category-list">
+        <div 
+          v-for="item in categories" 
+          :key="item.sheetName" 
+          class="category-item">
+          <div class="category-item-left">
+            <!-- 分类勾选框 (使用显式闭合标签) -->
+            <el-checkbox 
+              class="theme-checkbox"
+              v-model="item.isSelected" 
+              @change="handleItemCheckChange">
+              <span class="category-name">{{ item.sheetName }}</span>
+            </el-checkbox>
+          </div>
+          <!-- 右侧台数展示 -->
+          <span class="category-count">{{ item.cabinetCount }}台</span>
+        </div>
+      </div>
+      <div v-else class="empty-tip">
+        <span v-if="loading">正在读取工作簿分类与箱柜数据...</span>
+        <span v-else>未在当前工作簿中检测到分类工作表</span>
+      </div>
+    </div>
+
+    <!-- 底部配置控制栏 -->
+    <div class="bottom-panel">
+      <!-- 全选与自定义汇总行 -->
+      <div class="select-all-row">
+        <!-- 全选复选框 (显式闭合) -->
+        <el-checkbox 
+          class="theme-checkbox"
+          v-model="isAllSelected" 
+          :indeterminate="isIndeterminate" 
+          @change="handleSelectAllChange">
+          <span style="font-weight: 500;">全选</span>
+        </el-checkbox>
+        <span class="custom-summary-link" @click="toggleCustomSummary">
+          <span>▼ 自定义汇总</span>
+        </span>
+      </div>
+
+      <!-- 合并条件 -->
+      <div class="config-row">
+        <span class="config-label">合并条件:</span>
+        <div class="config-group">
+          <!-- 固定必选项：名称 -->
+          <el-checkbox class="theme-checkbox" v-model="mergeOpts.byName" disabled>名称</el-checkbox>
+          <span style="color: #909399;">+</span>
+          <!-- 固定必选项：型号 -->
+          <el-checkbox class="theme-checkbox" v-model="mergeOpts.byModel" disabled>型号</el-checkbox>
+          <span style="color: #909399;">+</span>
+          <!-- 厂家 -->
+          <el-checkbox class="theme-checkbox" v-model="mergeOpts.byManufacturer">
+            厂家 (
+          </el-checkbox>
+          <!-- 无厂家选项 -->
+          <el-checkbox class="theme-checkbox" v-model="mergeOpts.includeNoManufacturer" style="margin-left: -5px; margin-right: 2px !important;">无厂家</el-checkbox>
+          <span style="margin-right: 5px;">) +</span>
+          <!-- 价格 -->
+          <el-checkbox class="theme-checkbox" v-model="mergeOpts.byPrice">价格</el-checkbox>
+          <span style="color: #909399;">+</span>
+          <!-- 备注 -->
+          <el-checkbox class="theme-checkbox" v-model="mergeOpts.byRemark">备注</el-checkbox>
+          <span style="color: #909399;">+</span>
+          <!-- 原图型号 -->
+          <el-checkbox class="theme-checkbox" v-model="mergeOpts.byOriginalModel">原图型号</el-checkbox>
+          <span style="font-size: 12px; color: #606266; margin-left: 2px;">相同合并</span>
+        </div>
+      </div>
+
+      <!-- 显示设置 -->
+      <div class="config-row">
+        <span class="config-label">显示设置:</span>
+        <div class="config-group">
+          <el-checkbox class="theme-checkbox" v-model="displayOpts.splitAccessoryAndDiscount">附件表价、折扣分列</el-checkbox>
+          <el-checkbox class="theme-checkbox" v-model="displayOpts.freezeUnitPrice">冻结单价列</el-checkbox>
+        </div>
+      </div>
+
+      <!-- 排序设置 -->
+      <div class="config-row" style="align-items: flex-start;">
+        <span class="config-label" style="margin-top: 2px;">排序设置:</span>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <!-- 单选选项1: 按厂家、名称、型号 -->
+          <el-radio 
+            class="theme-radio" 
+            v-model="sortType" 
+            label="mfg_name_model">
+            按(厂家、名称、型号) 排序
+          </el-radio>
+          
+          <!-- 单选选项2: 按类别+位置、名称、厂家、型号 -->
+          <div style="display: flex; align-items: center;">
+            <el-radio 
+              class="theme-radio" 
+              v-model="sortType" 
+              label="category_pos_mfg" 
+              style="margin-right: 0px !important;">
+              按(
+            </el-radio>
+            <el-checkbox 
+              class="theme-checkbox" 
+              v-model="sortOpts.byCategory" 
+              style="margin-right: 4px !important;">
+              类别
+            </el-checkbox>
+            <span style="color: #909399; margin-right: 4px;">+</span>
+            <el-checkbox 
+              class="theme-checkbox" 
+              v-model="sortOpts.byPosition" 
+              style="margin-right: 4px !important;">
+              位置、名称、厂家、型号
+            </el-checkbox>
+            <span>) 排序</span>
+          </div>
+
+          <!-- 单选选项3: 自定义排序 -->
+          <div style="display: flex; align-items: center;">
+            <el-radio 
+              class="theme-radio" 
+              v-model="sortType" 
+              label="custom">
+              自定义排序
+            </el-radio>
+            <span class="link-setting" @click="handleCustomSortSetting">(设置)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue;
+    const { ElMessage } = ElementPlus;
+
+    const app = createApp({
+      setup() {
+        // 状态定义: 分类列表与加载状态
+        const categories = ref([]);
+        const loading = ref(false);
+        const generating = ref(false);
+
+        // 合并条件配置
+        const mergeOpts = ref({
+          byName: true,
+          byModel: true,
+          byManufacturer: true,
+          includeNoManufacturer: false,
+          byPrice: false,
+          byRemark: false,
+          byOriginalModel: false
+        });
+
+        // 显示设置配置
+        const displayOpts = ref({
+          splitAccessoryAndDiscount: true,
+          freezeUnitPrice: false
+        });
+
+        // 排序规则选择
+        const sortType = ref('mfg_name_model');
+        const sortOpts = ref({
+          byCategory: false,
+          byPosition: true
+        });
+
+        // 计算属性: 全选与半选状态计算
+        const isAllSelected = computed({
+          get: () => {
+            if (categories.value.length === 0) return false;
+            return categories.value.every(item => item.isSelected);
+          },
+          set: (val) => {
+            categories.value.forEach(item => item.isSelected = val);
+          }
+        });
+
+        const isIndeterminate = computed(() => {
+          const selectedCount = categories.value.filter(item => item.isSelected).length;
+          return selectedCount > 0 && selectedCount < categories.value.length;
+        });
+
+        // 全选复选框切换处理
+        const handleSelectAllChange = (val) => {
+          categories.value.forEach(item => item.isSelected = val);
+        };
+
+        // 单项勾选改变处理
+        const handleItemCheckChange = () => {
+          // 触发计算属性更新
+        };
+
+        // 窗口拖拽处理
+        const handleHeaderMouseDown = (e) => {
+          // 排除点击在控制按钮上的情况
+          if (e.target.closest('.action-btn')) return;
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ action: 'dragWindow' }));
+          }
+        };
+
+        // 最小化窗口
+        const minimizeWindow = () => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ action: 'minimize' }));
+          }
+        };
+
+        // 关闭窗口
+        const closeWindow = () => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ action: 'close' }));
+          }
+        };
+
+        // 自定义汇总点击
+        const toggleCustomSummary = () => {
+          ElMessage.info('当前已展示全部汇总条件');
+        };
+
+        // 自定义排序设置点击
+        const handleCustomSortSetting = () => {
+          ElMessage.info('可在生成后根据各列标题自由排序');
+        };
+
+        // 向后端获取分类工作表与箱柜统计数据
+        const refreshData = () => {
+          loading.value = true;
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({
+              action: 'getCategories'
+            }));
+          } else {
+            // 浏览器本地测试模拟数据
+            setTimeout(() => {
+              categories.value = [
+                { sheetName: '高压配电室', cabinetCount: 29, isSelected: true },
+                { sheetName: '1、2#箱变(美变单台单柜报价)', cabinetCount: 2, isSelected: true },
+                { sheetName: '低压配电室', cabinetCount: 13, isSelected: true },
+                { sheetName: '配电箱', cabinetCount: 36, isSelected: true }
+              ];
+              loading.value = false;
+            }, 300);
+          }
+        };
+
+        // 点击“立即生成”按钮响应
+        const handleGenerate = () => {
+          const selectedSheets = categories.value.filter(item => item.isSelected).map(item => item.sheetName);
+          if (selectedSheets.length === 0) {
+            ElMessage.warning('请至少选择一个要汇总的分类工作表！');
+            return;
+          }
+
+          generating.value = true;
+          const payload = {
+            action: 'generateSummary',
+            selectedSheets: selectedSheets,
+            mergeConditions: {
+              byName: mergeOpts.value.byName,
+              byModel: mergeOpts.value.byModel,
+              byManufacturer: mergeOpts.value.byManufacturer,
+              includeNoManufacturer: mergeOpts.value.includeNoManufacturer,
+              byPrice: mergeOpts.value.byPrice,
+              byRemark: mergeOpts.value.byRemark,
+              byOriginalModel: mergeOpts.value.byOriginalModel
+            },
+            displaySettings: {
+              splitAccessoryAndDiscount: displayOpts.value.splitAccessoryAndDiscount,
+              freezeUnitPrice: displayOpts.value.freezeUnitPrice
+            },
+            sortSettings: {
+              sortType: sortType.value,
+              byCategory: sortOpts.value.byCategory,
+              byPosition: sortOpts.value.byPosition
+            }
+          };
+
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify(payload));
+          } else {
+            // 离线模拟
+            setTimeout(() => {
+              generating.value = false;
+              ElMessage.success('元件汇总表生成成功！');
+            }, 1000);
+          }
+        };
+
+        // 监听 C# WebView2 发送过来的消息
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (event) => {
+              try {
+                const response = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                
+                // 分类数据返回
+                if (response.action === 'onCategoriesLoaded') {
+                  loading.value = false;
+                  if (response.success && response.data) {
+                    categories.value = response.data.map(item => ({
+                      sheetName: item.sheetName || item.SheetName || '',
+                      cabinetCount: item.cabinetCount !== undefined ? item.cabinetCount : (item.CabinetCount !== undefined ? item.CabinetCount : 0),
+                      isSelected: item.isSelected !== undefined ? item.isSelected : (item.IsSelected !== undefined ? item.IsSelected : true)
+                    }));
+                  } else {
+                    ElMessage.error(response.message || '获取分类列表失败');
+                  }
+                }
+                // 汇总生成结果返回
+                else if (response.action === 'onSummaryGenerated') {
+                  generating.value = false;
+                  if (response.success) {
+                    ElMessage.success(response.message || '元件汇总表生成成功！');
+                    // 生成成功后稍作延时自动关闭窗口
+                    setTimeout(() => {
+                      closeWindow();
+                    }, 800);
+                  } else {
+                    ElMessage.error(response.message || '汇总表生成失败');
+                  }
+                }
+              } catch (err) {
+                console.error('解析后端消息异常:', err);
+              }
+            });
+          }
+
+          // 初始化读取分类（立即触发 + 延时触发确保 WebView2 桥接稳固）
+          refreshData();
+          setTimeout(() => {
+            if (categories.value.length === 0) {
+              refreshData();
+            }
+          }, 150);
+        });
+
+        return {
+          categories,
+          loading,
+          generating,
+          mergeOpts,
+          displayOpts,
+          sortType,
+          sortOpts,
+          isAllSelected,
+          isIndeterminate,
+          handleSelectAllChange,
+          handleItemCheckChange,
+          handleHeaderMouseDown,
+          minimizeWindow,
+          closeWindow,
+          refreshData,
+          handleGenerate,
+          toggleCustomSummary,
+          handleCustomSortSetting
+        };
+      }
+    });
+
+    // 注册所有 Element Plus 图标
+    for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+      app.component(key, component);
+    }
+
+    app.use(ElementPlus);
+    app.mount('#app');
+  </script>
+</body>
+</html>

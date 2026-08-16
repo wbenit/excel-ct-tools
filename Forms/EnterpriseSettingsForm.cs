@@ -207,8 +207,8 @@ namespace ExcelAddInDemo
                         // 序列化回发 JSON 文本 (传入 JsonOptions 实现驼峰转换)
                         string renderJson = JsonSerializer.Serialize(renderMsg, JsonOptions);
 
-                        // 发送给 Vue 3 前端实现反显绑定
-                        _webView.CoreWebView2.PostWebMessageAsJson(renderJson);
+                        // 发送给 Vue 3 前端实现反显绑定 (跨线程安全)
+                        PostWebMessageSafe(renderJson);
                         break;
 
                     // 选择本地 Logo 图片
@@ -231,20 +231,23 @@ namespace ExcelAddInDemo
                                 // 异步保存至本地磁盘文件
                                 bool success = await _controller.SaveSettingsAsync(saveModel);
 
-                                // 判断保存结果
-                                if (success)
+                                // 判断保存结果 (切回 UI 线程执行提示与关闭)
+                                SafeInvoke(() =>
                                 {
-                                    // 弹出成功保存提示消息框
-                                    MessageBox.Show("企业设置数据已成功保存至本地！", "保存成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                                    if (success)
+                                    {
+                                        // 弹出成功保存提示消息框
+                                        MessageBox.Show("企业设置数据已成功保存至本地！", "保存成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
-                                    // 保存成功后关闭当前配置窗口
-                                    SafeInvoke(() => this.Close());
-                                }
-                                else
-                                {
-                                    // 保存失败时提示消息
-                                    MessageBox.Show("保存数据到本地失败，请检查文件写入权限。", "保存失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                                }
+                                        // 保存成功后关闭当前配置窗口
+                                        this.Close();
+                                    }
+                                    else
+                                    {
+                                        // 保存失败时提示消息
+                                        MessageBox.Show("保存数据到本地失败，请检查文件写入权限。", "保存失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                                    }
+                                });
                             }
                         }
                         break;
@@ -258,9 +261,29 @@ namespace ExcelAddInDemo
             }
             catch (Exception ex)
             {
-                // 捕获前端消息处理中的异常并弹窗
-                MessageBox.Show($"处理消息发生错误: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                SafeInvoke(() =>
+                {
+                    // 捕获前端消息处理中的异常并弹窗
+                    MessageBox.Show($"处理消息发生错误: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                });
             }
+        }
+
+        /// <summary>
+        /// 跨线程安全向 WebView2 发送 JSON 消息
+        /// </summary>
+        private void PostWebMessageSafe(string json)
+        {
+            // 在 UI 线程中调度发送
+            SafeInvoke(() =>
+            {
+                // 确保 WebView2 控件及其内核有效
+                if (!this.IsDisposed && _webView?.CoreWebView2 != null)
+                {
+                    // 向前端页面发送 JSON 消息
+                    _webView.CoreWebView2.PostWebMessageAsJson(json);
+                }
+            });
         }
 
         /// <summary>
@@ -321,8 +344,8 @@ namespace ExcelAddInDemo
                         // 构造回发给前端更新 Logo 的 JSON 消息
                         var msg = new { action = "setLogo", logoBase64 = base64Str };
 
-                        // 发送 Base64 图片消息给 Vue 3 预览
-                        _webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(msg));
+                        // 发送 Base64 图片消息给 Vue 3 预览 (跨线程安全)
+                        PostWebMessageSafe(JsonSerializer.Serialize(msg));
                     }
                     catch (Exception ex)
                     {

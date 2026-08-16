@@ -217,8 +217,8 @@ namespace ExcelAddInDemo
                             quoter = settingData.Quoter
                         };
 
-                        // 回发 JSON 给 Vue 3 前端
-                        _webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(initMsg, JsonOptions));
+                        // 回发 JSON 给 Vue 3 前端 (跨线程安全)
+                        PostWebMessageSafe(JsonSerializer.Serialize(initMsg, JsonOptions));
                         break;
 
                     // 重新生成报价单号
@@ -226,9 +226,9 @@ namespace ExcelAddInDemo
                         // 生成新单号
                         string newQNum = _projectController.GenerateQuoteNumber();
 
-                        // 回发 setQuoteNumber
+                        // 回发 setQuoteNumber (跨线程安全)
                         var qMsg = new { action = "setQuoteNumber", quoteNumber = newQNum };
-                        _webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(qMsg, JsonOptions));
+                        PostWebMessageSafe(JsonSerializer.Serialize(qMsg, JsonOptions));
                         break;
 
                     // 动态调整窗口高度 (收起 vs 展开)
@@ -261,8 +261,17 @@ namespace ExcelAddInDemo
 
                                 if (success)
                                 {
-                                    // 显式关闭当前新建项目弹窗
-                                    SafeInvoke(() => this.Close());
+                                    // 显式关闭当前新建项目弹窗并激活工作簿 (UI 线程执行)
+                                    SafeInvoke(() =>
+                                    {
+                                        this.Close();
+                                        // 检查是否记录了新建的目标工作簿路径
+                                        if (!string.IsNullOrEmpty(ProjectController.LastCreatedTargetFilePath))
+                                        {
+                                            // 立即同步激活新创建的目标工作簿
+                                            ExcelServices.ActivateCreatedWorkbook(ProjectController.LastCreatedTargetFilePath);
+                                        }
+                                    });
                                 }
                             }
                         }
@@ -288,8 +297,28 @@ namespace ExcelAddInDemo
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"处理消息发生错误: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                SafeInvoke(() =>
+                {
+                    MessageBox.Show($"处理消息发生错误: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                });
             }
+        }
+
+        /// <summary>
+        /// 跨线程安全向 WebView2 发送 JSON 消息
+        /// </summary>
+        private void PostWebMessageSafe(string json)
+        {
+            // 在 UI 线程中调度发送
+            SafeInvoke(() =>
+            {
+                // 确保 WebView2 控件及其内核有效
+                if (!this.IsDisposed && _webView?.CoreWebView2 != null)
+                {
+                    // 向前端页面发送 JSON 消息
+                    _webView.CoreWebView2.PostWebMessageAsJson(json);
+                }
+            });
         }
 
         /// <summary>
@@ -326,7 +355,7 @@ namespace ExcelAddInDemo
                 if (dialog.ShowDialog() == DialogResult.OK)
                 {
                     var msg = new { action = "setSavePath", savePath = dialog.SelectedPath };
-                    _webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(msg, JsonOptions));
+                    PostWebMessageSafe(JsonSerializer.Serialize(msg, JsonOptions));
                 }
             });
         }

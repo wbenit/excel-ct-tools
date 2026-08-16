@@ -21,7 +21,8 @@ namespace ExcelAddInDemo
             // 使用 QueueAsMacro 延迟注册事件，确保 Excel COM 消息循环完全就绪后挂载
             ExcelAsyncUtil.QueueAsMacro(() =>
             {
-                ExcelServices.RegisterSheetChangeEvent();
+                // 统一注册 Excel 全局事件与右键菜单
+                ExcelEventManager.RegisterEvents();
             });
         }
 
@@ -32,6 +33,9 @@ namespace ExcelAddInDemo
         {
             // 注销全局程序集动态解析句柄
             AppDomain.CurrentDomain.AssemblyResolve -= OnAssemblyResolve;
+
+            // 统一注销 Excel 全局事件并清理注册的右键菜单控件，保障环境整洁
+            ExcelEventManager.UnregisterEvents();
         }
 
         /// <summary>

@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>新建分类</title>
+  <!-- 引入 Element Plus 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <!-- 引入 Font Awesome 图标库 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- 引入 Vue 3 核心库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入 Element Plus 组件库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <!-- 引入公共绿蓝相间主题样式 (主色调 #009688) -->
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    /* 全局重置与基础设定 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+      user-select: none;
+      background-color: #ffffff;
+      color: #333333;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      border: 1px solid #dcdfe6;
+      background-color: #ffffff;
+    }
+
+    /* 顶部拖拽标题栏 */
+    .window-header {
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px 0 12px;
+      background: var(--theme-gradient, linear-gradient(135deg, #009688 0%, #00796b 100%));
+      color: #ffffff;
+      cursor: move;
+      flex-shrink: 0;
+    }
+
+    .window-title-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .window-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .action-btn {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 3px;
+      color: #ffffff;
+      opacity: 0.85;
+      font-size: 13px;
+      transition: all 0.2s ease;
+    }
+
+    .action-btn:hover {
+      opacity: 1;
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .action-btn.close-btn:hover {
+      background-color: #ef4444;
+      color: #ffffff;
+    }
+
+    /* 中部表单内容区 */
+    .form-container {
+      flex: 1;
+      padding: 24px 28px 16px 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .tip-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #e0f2f1;
+      border: 1px solid #b2dfdb;
+      border-radius: 4px;
+      padding: 8px 12px;
+      margin-bottom: 18px;
+      color: #00796b;
+      font-size: 12px;
+    }
+
+    .tip-banner i {
+      font-size: 14px;
+      color: #009688;
+    }
+
+    .el-form-item {
+      margin-bottom: 18px !important;
+    }
+
+    .el-form-item__label {
+      font-weight: 500 !important;
+      color: #374151 !important;
+    }
+
+    .error-tip {
+      color: #ef4444;
+      font-size: 12px;
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* 底部按钮栏 */
+    .footer-bar {
+      height: 52px;
+      padding: 0 24px;
+      background: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .btn-create {
+      background-color: #009688 !important;
+      border-color: #009688 !important;
+      color: #ffffff !important;
+      font-weight: 500 !important;
+    }
+
+    .btn-create:hover {
+      background-color: #00796b !important;
+      border-color: #00796b !important;
+    }
+
+    .btn-create:disabled {
+      background-color: #b2dfdb !important;
+      border-color: #b2dfdb !important;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部拖拽标题栏 -->
+    <div class="window-header" @mousedown="startDrag">
+      <div class="window-title-box">
+        <svg viewBox="0 0 1024 1024" width="16" height="16" style="fill: currentColor;">
+          <path d="M880 298.4H521L437 138H144c-17.7 0-32 14.3-32 32v684c0 17.7 14.3 32 32 32h736c17.7 0 32-14.3 32-32V330.4c0-17.7-14.3-32-32-32zM848 822H176V202h237l84 160.4h351V822z m-304-376h-64v104H376v64h104v104h64V614h104v-64H544z"></path>
+        </svg>
+        <span>新建分类工作表</span>
+      </div>
+      <div class="window-actions" @mousedown.stop>
+        <div class="action-btn close-btn" title="关闭" @mousedown.stop @click.stop="closeWindow">
+          <svg viewBox="0 0 1024 1024" width="13" height="13" style="fill: currentColor;">
+            <path d="M764.288 214.592 512 466.88 259.712 214.592a31.936 31.936 0 0 0-45.12 45.12L466.88 512 214.592 764.288a31.936 31.936 0 0 0 45.12 45.12L512 557.12l252.288 252.288a31.936 31.936 0 0 0 45.12-45.12L557.12 512l252.288-252.288a31.936 31.936 0 0 0-45.12-45.12z"></path>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- 中部表单配置区 -->
+    <div class="form-container">
+      <div class="tip-banner">
+        <i class="fa-solid fa-circle-info"></i>
+        <span>新建分类将自动创建标准分类工作表，并挂载首台箱柜与公式计费矩阵。</span>
+      </div>
+
+      <el-form label-position="right" label-width="100px">
+        <!-- 分类名称输入项 -->
+        <el-form-item label="分类名称" required>
+          <el-input
+            v-model="form.categoryName"
+            placeholder="请输入分类名称 (例如: 分类2, 变电所A)"
+            clearable
+            @input="checkDuplicate"
+          ></el-input>
+          <div v-if="isDuplicate" class="error-tip">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span>当前工作簿已存在名为【{{ form.categoryName }}】的工作表</span>
+          </div>
+        </el-form-item>
+
+        <!-- 初始箱柜名称输入项 -->
+        <el-form-item label="初始箱柜">
+          <el-input
+            v-model="form.initialCabinetName"
+            placeholder="首台箱柜名称 (默认: 箱柜1)"
+            clearable
+          ></el-input>
+        </el-form-item>
+
+        <!-- 调费公式组模板选择项 -->
+        <el-form-item label="费用模板">
+          <el-select
+            v-model="form.formulaGroupId"
+            placeholder="请选择计费公式组"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in formulaGroups"
+              :key="item.id"
+              :label="item.name + (item.isDefault ? ' (默认)' : '')"
+              :value="item.id"
+            ></el-option>
+          </el-select>
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <!-- 底部操作按钮栏 -->
+    <div class="footer-bar">
+      <el-button @click="closeWindow">取消</el-button>
+      <el-button
+        type="primary"
+        class="btn-create"
+        :loading="submitting"
+        :disabled="isDuplicate || !form.categoryName.trim()"
+        @click="submitCreate"
+      >
+        <i class="fa-solid fa-check" style="margin-right: 4px"></i>
+        确定创建
+      </el-button>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, onMounted } = Vue;
+
+    const app = createApp({
+      setup() {
+        // 表单响应式数据
+        const form = reactive({
+          categoryName: '',
+          initialCabinetName: '箱柜1',
+          formulaGroupId: ''
+        });
+
+        // 已有分类列表
+        const existingCategories = ref([]);
+        // 调费公式组选项列表
+        const formulaGroups = ref([]);
+        // 是否重复重名标识
+        const isDuplicate = ref(false);
+        // 提交中状态
+        const submitting = ref(false);
+
+        // 统一向 C# 宿主发送消息辅助函数
+        const sendMessage = (action, data = null) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ action, data }));
+          }
+        };
+
+        // 拖拽窗口
+        const startDrag = () => {
+          sendMessage('dragWindow');
+        };
+
+        // 关闭窗口
+        const closeWindow = () => {
+          sendMessage('close');
+        };
+
+        // 查重校验
+        const checkDuplicate = () => {
+          const name = form.categoryName.trim().toLowerCase();
+          if (!name) {
+            isDuplicate.value = false;
+            return;
+          }
+          isDuplicate.value = existingCategories.value.some(
+            cat => cat.trim().toLowerCase() === name
+          );
+        };
+
+        // 提交新建分类
+        const submitCreate = () => {
+          if (!form.categoryName.trim()) {
+            ElementPlus.ElMessage.warning('请输入分类名称');
+            return;
+          }
+          if (isDuplicate.value) {
+            ElementPlus.ElMessage.error('分类名称不能与已有工作表重名');
+            return;
+          }
+
+          submitting.value = true;
+          sendMessage('createCategory', {
+            categoryName: form.categoryName.trim(),
+            initialCabinetName: form.initialCabinetName.trim() || '箱柜1',
+            formulaGroupId: form.formulaGroupId
+          });
+        };
+
+        // 页面挂载生命周期
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            // 请求建议分类与公式组数据
+            sendMessage('getSuggestInfo');
+
+            // 监听 C# 回发的消息
+            window.chrome.webview.addEventListener('message', (event) => {
+              try {
+                const res = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                if (!res) return;
+
+                if (res.action === 'renderSuggestInfo' && res.data) {
+                  // 填充推荐分类名
+                  if (res.data.suggestedName) {
+                    form.categoryName = res.data.suggestedName;
+                  }
+                  // 记录已有分类
+                  existingCategories.value = res.data.existingCategories || [];
+                  // 填充公式组列表
+                  formulaGroups.value = res.data.formulaGroups || [];
+                  // 默认选中标记为默认的公式组
+                  const defGroup = formulaGroups.value.find(g => g.isDefault);
+                  if (defGroup) {
+                    form.formulaGroupId = defGroup.id;
+                  } else if (formulaGroups.value.length > 0) {
+                    form.formulaGroupId = formulaGroups.value[0].id;
+                  }
+                  // 执行一次查重
+                  checkDuplicate();
+                } else if (res.action === 'createCategoryResult') {
+                  submitting.value = false;
+                  if (res.data && res.data.success) {
+                    ElementPlus.ElMessage.success(res.data.message || '分类创建成功！');
+                  } else {
+                    ElementPlus.ElMessage.error(res.data ? res.data.message : '创建分类失败');
+                  }
+                }
+              } catch (e) {
+                console.error('解析宿主回发消息异常:', e);
+                submitting.value = false;
+              }
+            });
+          }
+        });
+
+        return {
+          form,
+          existingCategories,
+          formulaGroups,
+          isDuplicate,
+          submitting,
+          startDrag,
+          closeWindow,
+          checkDuplicate,
+          submitCreate
+        };
+      }
+    });
+
+    app.use(ElementPlus);
+    app.mount('#app');
+  </script>
+</body>
+</html>

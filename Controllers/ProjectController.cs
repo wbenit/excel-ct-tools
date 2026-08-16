@@ -202,7 +202,7 @@ namespace ExcelAddInDemo.Controllers
         /// <summary>
         /// 检索 CabinetTemplate.xlsx 模板文件路径，若磁盘不存在则动态构建标准模板
         /// </summary>
-        private string EnsureCabinetTemplate(dynamic app)
+        public static string EnsureCabinetTemplate(dynamic app)
         {
             // 获取基准运行目录
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;

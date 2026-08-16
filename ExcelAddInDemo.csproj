@@ -51,6 +51,18 @@
     <None Include="Resources\formula_adjust_fee.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将汇总调价前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\summary_adjust_price.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- 自动将新建分类前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\category.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- 自动将公共主题样式 CSS 文件复制至构建输出路径中 -->
+    <None Include="Resources\theme.css">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将箱柜模板 Excel 文件复制至构建输出路径中 -->
     <None Include="Resources\CabinetTemplate.xlsx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

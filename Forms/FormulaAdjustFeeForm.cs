@@ -234,8 +234,8 @@ namespace ExcelAddInDemo
                             details = details
                         };
 
-                        // 回发数据包给 Vue 前端
-                        _webView.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(resData, JsonOptions));
+                        // 回发数据包给 Vue 前端 (跨线程安全)
+                        PostWebMessageSafe(JsonSerializer.Serialize(resData, JsonOptions));
                         break;
 
                     // 保存公式组配置至 JSON 文件
@@ -272,8 +272,11 @@ namespace ExcelAddInDemo
                         // 跨线程安全委托给公共 Excel 服务层执行具体计算与写入
                         ExcelServices.ApplyFormulaAdjustFeeToExcel(scope, gName, items);
 
-                        // 弹出操作完成友好提示
-                        MessageBox.Show($"公式调费应用成功！范围: {scope}, 公式组: {gName}", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        // 弹出操作完成友好提示 (UI 线程执行)
+                        SafeInvoke(() =>
+                        {
+                            MessageBox.Show($"公式调费应用成功！范围: {scope}, 公式组: {gName}", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        });
                         break;
 
                     // 最小化窗口
@@ -303,6 +306,23 @@ namespace ExcelAddInDemo
             {
                 LogHelper.WriteLog($"处理公式法调费前端消息异常: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 跨线程安全向 WebView2 发送 JSON 消息
+        /// </summary>
+        private void PostWebMessageSafe(string json)
+        {
+            // 在 UI 线程中调度发送
+            SafeInvoke(() =>
+            {
+                // 确保 WebView2 控件及其内核有效
+                if (!this.IsDisposed && _webView?.CoreWebView2 != null)
+                {
+                    // 向前端页面发送 JSON 消息
+                    _webView.CoreWebView2.PostWebMessageAsJson(json);
+                }
+            });
         }
 
         /// <summary>

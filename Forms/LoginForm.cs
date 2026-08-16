@@ -171,6 +171,12 @@ namespace ExcelAddInDemo
                     // 调用 Backend WebAPI 控制器接口执行异步校验
                     LoginResponse response = await _authController.LoginAsync(request);
 
+                    // 将包含状态信息的响应结果发回给 Vue 3 界面显示 (跨线程安全)
+                    string responseJson = JsonSerializer.Serialize(response);
+
+                    // 使用 PostWebMessageSafe 发送给 Vue 3 页面
+                    PostWebMessageSafe(responseJson);
+
                     // 若登录校验成功，保存当前用户登录凭据与状态
                     if (response.Success)
                     {
@@ -184,19 +190,13 @@ namespace ExcelAddInDemo
                         await System.Threading.Tasks.Task.Delay(800);
 
                         // 登录完成后在主线程关闭当前登录配置窗口
-                        this.Invoke(new Action(() => this.Close()));
+                        SafeInvoke(() => this.Close());
                     }
-
-                    // 将包含状态信息的响应结果发回给 Vue 3 界面显示
-                    string responseJson = JsonSerializer.Serialize(response);
-
-                    // 使用 PostWebMessageAsJson 发送给 Vue 3 页面
-                    _webView.CoreWebView2.PostWebMessageAsJson(responseJson);
                 }
             }
             catch (Exception ex)
             {
-                // 异常时提示失败信息给前端
+                // 异常时提示失败信息给前端 (跨线程安全)
                 var errResponse = new LoginResponse
                 {
                     Success = false,
@@ -204,7 +204,45 @@ namespace ExcelAddInDemo
                 };
 
                 // 将异常响应序列化并回发
-                _webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(errResponse));
+                PostWebMessageSafe(JsonSerializer.Serialize(errResponse));
+            }
+        }
+
+        /// <summary>
+        /// 跨线程安全向 WebView2 发送 JSON 消息
+        /// </summary>
+        private void PostWebMessageSafe(string json)
+        {
+            // 在 UI 线程中调度发送
+            SafeInvoke(() =>
+            {
+                // 确保 WebView2 控件及其内核有效
+                if (!this.IsDisposed && _webView?.CoreWebView2 != null)
+                {
+                    // 向前端页面发送 JSON 消息
+                    _webView.CoreWebView2.PostWebMessageAsJson(json);
+                }
+            });
+        }
+
+        /// <summary>
+        /// 安全跨线程调度 UI 动作，防止在句柄未创建或窗体已被释放时调用 Invoke 抛出 InvalidOperationException
+        /// </summary>
+        private void SafeInvoke(Action action)
+        {
+            // 校验窗体句柄有效性与释放状态
+            if (this.IsDisposed || !this.IsHandleCreated) return;
+
+            // 根据是否跨线程选择 Invoke 或直接执行
+            if (this.InvokeRequired)
+            {
+                // 跨线程安全调度
+                this.Invoke(action);
+            }
+            else
+            {
+                // 主 UI 线程直接同步执行
+                action();
             }
         }
     }

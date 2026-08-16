@@ -72,5 +72,11 @@ namespace ExcelAddInDemo
 
         // 超链接跳转时视口首行滚动的行号修正值 (偏移量，默认为 0)
         public int ScrollRowOffset { get; set; } = 0;
+
+        // 右键菜单“新建箱柜”按钮的显示文本 (默认: 新建箱柜)
+        public string NewCabinetMenuCaption { get; set; } = "新建箱柜";
+
+        // 右键菜单“新建箱柜”按钮的唯一 Tag 标识 (默认: CT_BTN_NEW_CABINET)
+        public string NewCabinetMenuTag { get; set; } = "CT_BTN_NEW_CABINET";
     }
 }

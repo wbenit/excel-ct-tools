@@ -21,17 +21,9 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <!-- 引入 Element Plus 组件库 -->
     <script src="https://unpkg.com/element-plus"></script>
+    <!-- 引入公共绿蓝相间主题样式 (主色调 #009688) -->
+    <link rel="stylesheet" href="theme.css" />
     <style>
-      /* 注入绿蓝相间主题，主色调定义为 #009688 --规则主色调-- */
-      :root {
-        --el-color-primary: #009688;
-        --el-color-primary-light-3: #4db6ac;
-        --el-color-primary-light-5: #80cbd4;
-        --el-color-primary-light-7: #b2dfdb;
-        --el-color-primary-light-9: #e0f2f1;
-        --el-color-primary-dark-2: #00796b;
-      }
-
       /* 全局基础重置与字体设定，禁用垂直与水平外滚动条 */
       html,
       body {

@@ -130,8 +130,30 @@ namespace ExcelAddInDemo
         <group id='grpAdjustPrice' label='③调价格→'>
           <!-- 元件批调下拉菜单 -->
           <menu id='menuBatchAdjust' label='元件批调' imageMso='AutoSum' size='large'>
-            <!-- 元件批调项 -->
-            <button id='btnBatchAdjustSub' label='元件批调' onAction='OnMenuAction' />
+            <!-- 1. 汇总调价按钮 -->
+            <button id='btnSummaryAdjustPrice' label='汇总调价' imageMso='AutoSum' screentip='汇总调价' supertip='汇总项目元件，快速调改名称、型号、...、价格...' onAction='OnMenuAction' />
+            <!-- 2. 分布调价按钮 -->
+            <button id='btnDistributedAdjustPrice' label='分布调价' imageMso='PivotTableInsert' onAction='OnMenuAction' />
+            <!-- 3. 筛选调价按钮 -->
+            <button id='btnFilterAdjustPrice' label='筛选调价' imageMso='Filter' onAction='OnMenuAction' />
+            <!-- 4. 一键匹配价格按钮 -->
+            <button id='btnAutoMatchPrice' label='一键匹配价格' imageMso='Pointer' onAction='OnMenuAction' />
+            <!-- 5. 母排用量一键预估按钮 -->
+            <button id='btnEstimateBusbarUsage' label='母排用量一键预估' imageMso='ChartInsert' onAction='OnMenuAction' />
+            <!-- 6. 箱体尺寸一键预估级联菜单 -->
+            <menu id='menuEstimateCabinetSize' label='箱体尺寸一键预估' imageMso='FlashFill'>
+              <!-- 箱体尺寸一键预估子项 -->
+              <button id='btnEstimateCabinetSizeSub' label='箱体尺寸一键预估' onAction='OnMenuAction' />
+            </menu>
+            <!-- 7. 母排一键改价按钮 -->
+            <button id='btnBusbarBatchPrice' label='母排一键改价' imageMso='TableInsertRowsAbove' onAction='OnMenuAction' />
+            <!-- 8. 箱体一键改价按钮 -->
+            <button id='btnCabinetBatchPrice' label='箱体一键改价' imageMso='ShapeCube' onAction='OnMenuAction' />
+            <!-- 9. 多方案报价级联菜单 -->
+            <menu id='menuMultiPlanQuote' label='多方案报价' imageMso='FileNew'>
+              <!-- 多方案报价子项 -->
+              <button id='btnMultiPlanQuoteSub' label='多方案报价' onAction='OnMenuAction' />
+            </menu>
           </menu>
           <!-- 费用设定下拉菜单 -->
           <menu id='menuFeeSetting' label='费用设定' imageMso='Currency' size='large'>
@@ -304,6 +326,18 @@ namespace ExcelAddInDemo
             {
                 // 弹出基于 WebView2 + Vue 3 的“公式法调费”窗口
                 ExcelServices.ShowFormulaAdjustFeeDialog();
+            }
+            // 响应“新建分类”按钮指令
+            else if (controlId == "btnCategorySub")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“新建分类”窗口
+                ExcelServices.ShowCategoryDialog();
+            }
+            // 响应“汇总调价”按钮指令
+            else if (controlId == "btnSummaryAdjustPrice")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“汇总调价”窗口
+                ExcelServices.ShowSummaryAdjustPriceDialog();
             }
         }
     }
