@@ -310,16 +310,14 @@ namespace ExcelAddInDemo
                         dynamic feeRange = catSheet.Range[$"A{subsumRow}:Q{cabTolsumRow}"];
                         feeRange.Formula = feeMatrix;
 
-                        // 为元器件区域 (compStartRow 到 compEndRow) 批量写入 A 列动态序号公式
+                        // 为元器件区域 (compStartRow 到 compEndRow) 批量写入 A~Q 列自适应公式矩阵 (规则 6 & 规则 7)
                         int compRowCount = compEndRow - compStartRow + 1;
                         if (compRowCount > 0)
                         {
-                            object[,] compNoMatrix = new object[compRowCount, 1];
-                            for (int r = 0; r < compRowCount; r++)
-                            {
-                                compNoMatrix[r, 0] = $"=ROW()-ROW(A${cabDetRow + 1})";
-                            }
-                            catSheet.Range[$"A{compStartRow}:A{compEndRow}"].Formula = compNoMatrix;
+                            // 生成 17 列包含 F/G/H/J/K/L/N/Q 自适应判断公式的二维数据矩阵
+                            object[,] compMatrix = Tool.BuildComponentRowsMatrix(compStartRow, compEndRow, cabDetRow, 17);
+                            // 一次性批量覆盖写入元器件完整区域 (覆盖 A 列至 Q 列)
+                            catSheet.Range[$"A{compStartRow}:Q{compEndRow}"].Formula = compMatrix;
                         }
                     }
 
@@ -355,7 +353,7 @@ namespace ExcelAddInDemo
                     // 填入箱柜名称
                     catSheet.Cells[cabSumRow, 2].Value = safeCabName;
                     // G 列单价公式指向明细总计行的销售总价 (H 列)
-                    catSheet.Cells[cabSumRow, 7].Formula = $"=H{cabTolsumRow}";
+                    catSheet.Cells[cabSumRow, 7].Formula = $"=H{cabTolsumRow - 1}";
                     // H 列总价公式 = 数量(F列) * 单价(G列)
                     catSheet.Cells[cabSumRow, 8].Formula = $"=F{cabSumRow}*G{cabSumRow}";
                     // J 列成本总价公式指向明细总计行的成本总价 (K 列)

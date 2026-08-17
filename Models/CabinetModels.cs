@@ -280,15 +280,15 @@ namespace ExcelAddInDemo.Models
             // 替换 [总价小计] 动态范围公式
             if (rawFormula.Contains("[总价小计]"))
             {
-                // 生成 Excel SUM 公式 (如 =SUM(H8:H25))
-                return $"=SUM(H{componentStartRow}:H{componentEndRow})";
+                // 生成自适应动态求和公式并保留两位小数 (如 =ROUND(SUM(H8:INDEX(H:H,ROW()-1)),2))
+                return $"=ROUND(SUM(H{componentStartRow}:INDEX(H:H,ROW()-1)),2)";
             }
 
-            // 替换 [成本总价] 动态范围公式
-            if (rawFormula.Contains("[成本总价]"))
+            // 替换 [成本总价] 或 [成本总价小计] 动态范围公式
+            if (rawFormula.Contains("[成本总价]") || rawFormula.Contains("[成本总价小计]"))
             {
-                // 生成 Excel SUM 成本公式 (如 =SUM(K8:K25))
-                return $"=SUM(K{componentStartRow}:K{componentEndRow})";
+                // 生成自适应成本动态求和公式并保留两位小数 (如 =ROUND(SUM(K8:INDEX(K:K,ROW()-1)),2))
+                return $"=ROUND(SUM(K{componentStartRow}:INDEX(K:K,ROW()-1)),2)";
             }
 
             // 若不是以等号开头的表达式，原样返回文本

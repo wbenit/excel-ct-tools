@@ -118,8 +118,10 @@ namespace ExcelAddInDemo
                         }
                     }
 
-                    int templateStartRow = cfg.CabDetRowIndex - 3; // 模板明细块大标题物理行
-                    int templateRowCount = 32; // 标准模板明细块行数
+                    // 4. 定位底部明细块插入位置 (结合配置的 CabDetRowIndex 与 CabTolsumRowIndex 动态计算明细块总行数)
+                    int templateStartRow = cfg.CabDetRowIndex - 3; // 模板明细块大标题物理行 (如 44 - 3 = 41)
+                    // 结合 CabTolsumRowIndex 与 CabDetRowIndex 计算明细整块行数 (如 71 - 41 + 1 = 31 行)
+                    int templateRowCount = cfg.TemplateDetailBlockTotalRows;
 
                     int newDetailStartRow = lastDetBlockEnd > 0 ? lastDetBlockEnd + 2 : templateStartRow + templateRowCount;
 
@@ -128,12 +130,48 @@ namespace ExcelAddInDemo
                     dynamic targetRange = activeSheet.Rows[$"{newDetailStartRow}:{newDetailStartRow + templateRowCount - 1}"];
                     copyRange.Copy(targetRange);
 
-                    // 6. 计算新箱柜的 4 个关键行号
-                    int newDetRow = newDetailStartRow + 3;
-                    int newTolsumRow = newDetailStartRow + templateRowCount - 1;
-                    int newSubsumRow = newTolsumRow - 5; // 兜底小计行
+                    // 6. 结合 CabDetRowIndex 与 CabTolsumRowIndex 计算新箱柜的 4 个关键行号
+                    int newDetRow = newDetailStartRow + 3; // 箱柜信息行
+                    int newTolsumRow = newDetailStartRow + templateRowCount - 1; // 总计行
 
-                    // 7. 注册规则 6 要求的 4 个定义名称
+                    // 动态获取计费区域行数 (优先读取当前表已有箱柜或公式调费组)
+                    int feeSpan = 6;
+                    if (validCabinets.Count > 0)
+                    {
+                        var firstCab = validCabinets[0].Value;
+                        if (firstCab.Subsum != null && firstCab.Tolsum != null)
+                        {
+                            int fSub = Convert.ToInt32(firstCab.Subsum.Row);
+                            int fTol = Convert.ToInt32(firstCab.Tolsum.Row);
+                            if (fTol >= fSub) feeSpan = fTol - fSub + 1;
+                        }
+                    }
+
+                    // 结合 CabTolsumRowIndex 与计费项数向上对齐计算小计行
+                    int newSubsumRow = newTolsumRow - feeSpan + 1;
+                    // 元器件起始行 (规则 6: Cab_Det + 2)
+                    int newCompStartRow = newDetRow + 2;
+                    // 元器件终止行 (规则 6: Cab_Subsum - 1)
+                    int newCompEndRow = newSubsumRow - 1;
+
+                    // 7. 规则 7: 调用公共方法一次性批量重写新箱柜的元器件区域 (覆盖 A~Q 列自适应空行公式)
+                    if (newCompEndRow >= newCompStartRow)
+                    {
+                        object[,] compMatrix = Tool.BuildComponentRowsMatrix(newCompStartRow, newCompEndRow, newDetRow, 17);
+                        activeSheet.Range[$"A{newCompStartRow}:Q{newCompEndRow}"].Formula = compMatrix;
+                    }
+
+                    // 8. 刷新计费区域小计行公式为自适应求和公式 (H 列与 K 列)
+                    try
+                    {
+                        // 销售总价小计自适应求和公式
+                        activeSheet.Cells[newSubsumRow, 8].Formula = $"=ROUND(SUM(H{newCompStartRow}:INDEX(H:H,ROW()-1)),2)";
+                        // 成本总价小计自适应求和公式
+                        activeSheet.Cells[newSubsumRow, 11].Formula = $"=ROUND(SUM(K{newCompStartRow}:INDEX(K:K,ROW()-1)),2)";
+                    }
+                    catch { }
+
+                    // 9. 注册规则 6 要求的 4 个定义名称
                     string sumNameTag = $"{sumPrefix}{cabinetK}";
                     string detNameTag = $"{detPrefix}{cabinetK}";
                     string subsumNameTag = $"{subsumPrefix}{cabinetK}";
@@ -144,7 +182,7 @@ namespace ExcelAddInDemo
                     Microsoft.Office.Interop.Excel.Range subsumAnchorCell = (Microsoft.Office.Interop.Excel.Range)excelSheet.Cells[newSubsumRow, 1];
                     Microsoft.Office.Interop.Excel.Range tolsumAnchorCell = (Microsoft.Office.Interop.Excel.Range)excelSheet.Cells[newTolsumRow, 1];
 
-                    // 7. 注册工作表级别的 4 个定义名称锚点 (规则 6)
+                    // 注册工作表级别的 4 个定义名称锚点 (规则 6)
                     // 设置箱柜汇总行定义名称
                     Tool.SafeSetSheetName(excelSheet, excelSheet.Name, sumNameTag, insertRow);
                     // 设置箱柜信息行定义名称
@@ -154,7 +192,7 @@ namespace ExcelAddInDemo
                     // 设置箱柜总计行定义名称
                     Tool.SafeSetSheetName(excelSheet, excelSheet.Name, tolsumNameTag, newTolsumRow);
 
-                    // 8. 建立双向超链接绑定 (规则 6)
+                    // 10. 建立双向超链接绑定 (规则 6)
                     // 汇总行 A 列超链接跳转至明细行并显示箱柜序号
                     excelSheet.Hyperlinks.Add(
                         Anchor: sumAnchorCell,
@@ -179,7 +217,7 @@ namespace ExcelAddInDemo
 
                     // 汇总行公式绑定至明细总计行
                     // G 列单价公式指向明细总计行的销售总价 (H 列)
-                    activeSheet.Cells[insertRow, 7].Formula = $"=H{newTolsumRow}";
+                    activeSheet.Cells[insertRow, 7].Formula = $"=H{newTolsumRow - 1}";
                     // H 列总价公式 = 数量(F列) * 单价(G列)
                     activeSheet.Cells[insertRow, 8].Formula = $"=F{insertRow}*G{insertRow}";
                     // J 列成本总价公式指向明细总计行的成本总价 (K 列)
@@ -320,47 +358,21 @@ namespace ExcelAddInDemo
                 int tolsumRow = feeRowCount > 0 ? subsumRow + feeRowCount - 1 : subsumRow;
                 cabinet.TolsumAnchorRow = tolsumRow;
 
-                // 5. 规则 7：元器件区域采用二维数组一次性批量写入内存与 Excel
-                int totalCompCols = 11;
-                object[,] compArray = new object[compRowCount, totalCompCols];
+                // 5. 规则 7：元器件区域采用二维数组一次性批量写入内存与 Excel (覆盖 A 列至 Q 列)
                 int baseHeaderRow = compStartRow - 1;
+                int cabDetRow = baseHeaderRow - 1;
+                // 调用公共工具方法构建包含 F/G/H/J/K/L/N/Q 自适应公式与已有元件属性的 17 列矩阵
+                object[,] compArray = Tool.BuildComponentRowsMatrix(compStartRow, compEndRow, cabDetRow, 17, cabinet.Components);
 
-                for (int i = 0; i < compRowCount; i++)
-                {
-                    // A 列 (索引 0)：写入动态相对序号公式
-                    compArray[i, 0] = $"=ROW()-ROW(A${baseHeaderRow})";
-
-                    if (cabinet.Components != null && i < cabinet.Components.Count)
-                    {
-                        var comp = cabinet.Components[i];
-                        compArray[i, 1] = comp.Name ?? string.Empty;
-                        compArray[i, 2] = comp.Specification ?? string.Empty;
-                        compArray[i, 3] = comp.Manufacturer ?? string.Empty;
-                        compArray[i, 4] = comp.Unit ?? string.Empty;
-                        compArray[i, 5] = comp.Quantity > 0 ? (object)comp.Quantity : string.Empty;
-                        compArray[i, 6] = comp.UnitPrice > 0 ? (object)comp.UnitPrice : string.Empty;
-                        compArray[i, 9] = comp.CostUnitPrice > 0 ? (object)comp.CostUnitPrice : string.Empty;
-                    }
-                    else
-                    {
-                        compArray[i, 1] = string.Empty;
-                        compArray[i, 2] = string.Empty;
-                        compArray[i, 3] = string.Empty;
-                        compArray[i, 4] = string.Empty;
-                        compArray[i, 5] = string.Empty;
-                        compArray[i, 6] = string.Empty;
-                        compArray[i, 9] = string.Empty;
-                    }
-                }
-
-                // 批量回写元器件二维数组
-                dynamic compRange = sheet.Range[$"A{compStartRow}:K{compEndRow}"];
+                // 批量一次性回写元器件二维数组至 A~Q 列
+                dynamic compRange = sheet.Range[$"A{compStartRow}:Q{compEndRow}"];
                 compRange.Formula = compArray;
 
                 // 6. 规则 7：计费区域（从 Cab_Subsum_k.Row 至 Cab_Tolsum_k.Row）批量写入
                 if (feeRowCount > 0)
                 {
-                    object[,] feeArray = new object[feeRowCount, totalCompCols];
+                    // 计费区域二维数组 (覆盖 A 列至 Q 列共 17 列)
+                    object[,] feeArray = new object[feeRowCount, 17];
 
                     for (int j = 0; j < feeRowCount; j++)
                     {
@@ -399,7 +411,8 @@ namespace ExcelAddInDemo
                         }
                     }
 
-                    dynamic feeRange = sheet.Range[$"A{subsumRow}:K{tolsumRow}"];
+                    // 覆盖写入 A 列至 Q 列完整计费二维矩阵 (规则 7)
+                    dynamic feeRange = sheet.Range[$"A{subsumRow}:Q{tolsumRow}"];
                     feeRange.Formula = feeArray;
                 }
 

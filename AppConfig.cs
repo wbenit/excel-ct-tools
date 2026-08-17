@@ -68,7 +68,15 @@ namespace ExcelAddInDemo
 
         // 模板箱柜明细包含总计行的总行数 A (通过 CabTolsumRowIndex - CabDetRowIndex + 1 动态计算得出)
         [JsonIgnore]
-        public int TemplateDetailTotalRows => CabTolsumRowIndex >= CabDetRowIndex ? (CabTolsumRowIndex - CabDetRowIndex + 1) : 25;
+        public int TemplateDetailTotalRows => CabTolsumRowIndex >= CabDetRowIndex ? (CabTolsumRowIndex - CabDetRowIndex + 1) : 28;
+
+        // 模板箱柜明细整块（含大标题至总计行）的总行数 (通过 CabTolsumRowIndex - (CabDetRowIndex - 3) + 1 结合计算得出)
+        [JsonIgnore]
+        public int TemplateDetailBlockTotalRows => CabTolsumRowIndex >= (CabDetRowIndex - 3) ? (CabTolsumRowIndex - (CabDetRowIndex - 3) + 1) : 31;
+
+        // 模板箱柜元器件预留行数 (结合 CabTolsumRowIndex 与 CabDetRowIndex，减去表头2行与默认计费6行得出)
+        [JsonIgnore]
+        public int DefaultComponentRowCount => Math.Max(1, (CabTolsumRowIndex - CabDetRowIndex) - 7);
 
         // 超链接跳转时视口首行滚动的行号修正值 (偏移量，默认为 0)
         public int ScrollRowOffset { get; set; } = 0;

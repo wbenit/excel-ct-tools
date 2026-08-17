@@ -101,8 +101,25 @@
             - 在配置窗口中提供物料候选模糊检索、双击一键填入当前活动行的录入助手面板。
        - **代码规范**：新增 `Models/SmartInputModels.cs`、`Controllers/SmartInputController.cs`、`Services/ExcelServices.SmartInput.cs`、`Forms/SmartInputForm.cs`、`Resources/smart_input.html`，严格遵循每 3 行包含一行中文注释与 `#009688` 绿蓝相间主题规范。
 
-   9. **通用计算与底层辅助方法统一沉淀到 Tool.cs (internal)**：
-      - **架构定位与分层**：
-        1. [Tool.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/Tool.cs) 声明为 `internal static class Tool`，定位为**通用工具与纯计算/数据转换层**。涵盖路径获取、名称提取与清洗（`ExtractCleanNameStr`, `ExtractIndexFromName`）、公式平移（`TransformFormulaRowOffset`）、计费矩阵二维数组转换（`BuildFeeMatrix`）、公式路径清洗（`CleanRangeFormulas`）、行对齐（`AlignRowRangeCount`）、定义名称字典构建（`BuildCabinetMap`）以及名称自动校准补齐等。通过 `internal` 访问级别，彻底隔离 Excel-DNA 自动扫描，避免函数误注册与 UDF 重名弹窗。
-        2. [Services/ExcelServices.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/Services/ExcelServices.cs) 系列分部类定位为 **业务服务与 Excel COM 流程调度层**，通过直接调用 `Tool.***` 完成底层计算与转换，职责清晰解耦。
-      - **代码规范**：所有新增与重构代码严格遵循每 3 行包含中文注释规范，无重复方法定义。
+    13. **元器件行自适应空行判断公式矩阵升级（覆盖 F/G/H/J/K/L/N/Q 列）**：
+        - **业务与架构**：
+          1. 在 [Tool.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/Tool.cs) 中新增 `BuildComponentRowsMatrix(compStartRow, compEndRow, cabDetRow, 17, components)` 公共静态方法，采用规则 7 二维数组一次性构建 17 列完整元器件数据与公式矩阵。
+          2. **公式规范落地**：
+             - **F 列 (数量)**：`=IF(AND(B{row}="",C{row}=""),"",1)`
+             - **G 列 (销售单价)**：`=IF(AND(B{row}="",C{row}=""),"",ROUND(M{row}*L{row}*N{row},2))`
+             - **H 列 (销售总价)**：`=IF(AND(B{row}="",C{row}=""),"",ROUND(F{row}*G{row},2))`
+             - **J 列 (成本单价)**：`=IF(AND(B{row}="",C{row}=""),"",ROUND(M{row}*N{row},2))`
+             - **K 列 (成本总价)**：`=IF(AND(B{row}="",C{row}=""),"",ROUND(J{row}*F{row},2))`
+             - **L 列 (加价系数)**：`=IF(AND(B{row}="",C{row}=""),"",1)`
+             - **N 列 (采购折扣)**：`=IF(AND(B{row}="",C{row}=""),"",1)`
+             - **Q 列 (类别)**：`=IF(AND(B{row}="",C{row}=""),"","元件")`
+          3. 在 [Services/ExcelServices.Category.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/Services/ExcelServices.Category.cs) 的 `InitializeCategorySheet` 以及 [Services/ExcelServices.Cabinet.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/Services/ExcelServices.Cabinet.cs) 的 `RenderCabinetObjectToSheet` 中统一调用 `BuildComponentRowsMatrix` 批量写入。
+    14. **新建箱柜行数与元器件行数完全基于 CabDetRowIndex 与 CabTolsumRowIndex 动态推导**：
+        - **优化背景**：消除原有代码中写死的固定 32 行明细与 -5 偏移，严格基于配置文件的基准参数进行几何推导。
+        - **落地实现**：
+          1. 在 [AppConfig.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/AppConfig.cs) 中新增 `TemplateDetailBlockTotalRows`（明细块总行数 = `CabTolsumRowIndex - (CabDetRowIndex - 3) + 1`，如 71 - 41 + 1 = 31 行）与 `DefaultComponentRowCount` 计算属性。
+          2. 在 [Services/ExcelServices.Cabinet.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/Services/ExcelServices.Cabinet.cs) 的 `CreateNewCabinet` 中，使用 `templateRowCount = cfg.TemplateDetailBlockTotalRows`，并结合计费项数量向上对齐得出 `newSubsumRow`、`newTolsumRow` 以及元器件有效行 `newCompStartRow ~ newCompEndRow`。
+        - **构建状态**：编译完全通过（0 错误）。
+
+
+

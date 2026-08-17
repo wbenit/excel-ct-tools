@@ -275,8 +275,8 @@ namespace ExcelAddInDemo
                 {
                     if (item.TotalPriceFormula == "[总价小计]")
                     {
-                        // 动态汇总元器件区域
-                        feeMatrix[i, 7] = $"=SUM(H{compStartRow}:H{compEndRow})";
+                        // 动态汇总元器件销售总价区域 (自适应插入行并保留两位小数)
+                        feeMatrix[i, 7] = $"=ROUND(SUM(H{compStartRow - 1}:INDEX(H:H,ROW()-1)),2)";
                     }
                     else if (item.TotalPriceFormula.StartsWith("="))
                     {
@@ -304,8 +304,8 @@ namespace ExcelAddInDemo
                 {
                     if (item.CostTotalPriceFormula == "[成本总价小计]")
                     {
-                        // 动态汇总元器件成本区域
-                        feeMatrix[i, 10] = $"=SUM(K{compStartRow}:K{compEndRow})";
+                        // 动态汇总元器件成本总价区域 (自适应插入行并保留两位小数)
+                        feeMatrix[i, 10] = $"=ROUND(SUM(K{compStartRow - 1}:INDEX(K:K,ROW()-1)),2)";
                     }
                     else if (item.CostTotalPriceFormula.StartsWith("="))
                     {
@@ -331,6 +331,108 @@ namespace ExcelAddInDemo
 
             // 返回构建完成的二维矩阵
             return feeMatrix;
+        }
+
+        /// <summary>
+        /// 构建元器件区域的二维公式与数据矩阵 (17 列，覆盖 A 列至 Q 列)
+        /// 遵循规则 6 与规则 7，并根据要求动态填充 F、G、H、J、K、L、N、Q 列的自适应空行判断公式
+        /// </summary>
+        /// <param name="compStartRow">元器件起始物理行号</param>
+        /// <param name="compEndRow">元器件终止物理行号</param>
+        /// <param name="cabDetRow">箱柜明细信息行物理行号 (用于 A 列序号偏移)</param>
+        /// <param name="totalCols">矩阵总列数 (默认 17 列，对应 A 列至 Q 列)</param>
+        /// <param name="components">可选的已有元器件实体数据列表</param>
+        /// <returns>构建完成的元器件二维数据与公式矩阵</returns>
+        public static object[,] BuildComponentRowsMatrix(
+            int compStartRow,
+            int compEndRow,
+            int cabDetRow,
+            int totalCols = 17,
+            List<Models.ComponentItem>? components = null)
+        {
+            // 校验行号区间有效性
+            if (compEndRow < compStartRow || compStartRow <= 0) return new object[0, 0];
+
+            int rowCount = compEndRow - compStartRow + 1;
+            // 确保总列数至少为 17 列
+            int cols = Math.Max(totalCols, 17);
+            object[,] matrix = new object[rowCount, cols];
+
+            // 遍历元器件区域每一行填充数据与自适应公式
+            for (int r = 0; r < rowCount; r++)
+            {
+                // 当前单元格的绝对物理行号
+                int currPhysicalRow = compStartRow + r;
+
+                // A 列 (索引 0): 动态序号公式
+                matrix[r, 0] = $"=ROW()-ROW(A${cabDetRow + 1})";
+
+                // B 列 (索引 1): 元件名称
+                string name = string.Empty;
+                // C 列 (索引 2): 规格型号
+                string spec = string.Empty;
+                // D 列 (索引 3): 生产厂家
+                string mfr = string.Empty;
+                // E 列 (索引 4): 计量单位
+                string unit = string.Empty;
+                // M 列 (索引 12): 面价/基准价
+                object mVal = string.Empty;
+
+                // 若传入了元器件实体且当前行索引在范围内
+                if (components != null && r < components.Count)
+                {
+                    var comp = components[r];
+                    name = comp.Name ?? string.Empty;
+                    spec = comp.Specification ?? string.Empty;
+                    mfr = comp.Manufacturer ?? string.Empty;
+                    unit = comp.Unit ?? string.Empty;
+                    if (comp.UnitPrice > 0) mVal = comp.UnitPrice;
+                }
+
+                matrix[r, 1] = name;
+                matrix[r, 2] = spec;
+                matrix[r, 3] = mfr;
+                matrix[r, 4] = unit;
+
+                // F 列 (索引 5): 数量 =IF(AND(B{row}="",C{row}=""),"",1)
+                matrix[r, 5] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",1)";
+
+                // G 列 (索引 6): 销售单价 =IF(AND(B{row}="",C{row}=""),"",ROUND(M{row}*L{row}*N{row},2))
+                matrix[r, 6] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",ROUND(M{currPhysicalRow}*L{currPhysicalRow}*N{currPhysicalRow},2))";
+
+                // H 列 (索引 7): 销售总价 =IF(AND(B{row}="",C{row}=""),"",ROUND(F{row}*G{row},2))
+                matrix[r, 7] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",ROUND(F{currPhysicalRow}*G{currPhysicalRow},2))";
+
+                // I 列 (索引 8): 备注 (保留空字符串)
+                matrix[r, 8] = string.Empty;
+
+                // J 列 (索引 9): 成本单价 =IF(AND(B{row}="",C{row}=""),"",ROUND(M{row}*N{row},2))
+                matrix[r, 9] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",ROUND(M{currPhysicalRow}*N{currPhysicalRow},2))";
+
+                // K 列 (索引 10): 成本总价 =IF(AND(B{row}="",C{row}=""),"",ROUND(J{row}*F{row},2))
+                matrix[r, 10] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",ROUND(J{currPhysicalRow}*F{currPhysicalRow},2))";
+
+                // L 列 (索引 11): 加价系数 =IF(AND(B{row}="",C{row}=""),"",1)
+                matrix[r, 11] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",1)";
+
+                // M 列 (索引 12): 面价/基准单价
+                matrix[r, 12] = mVal;
+
+                // N 列 (索引 13): 折扣/采购系数 =IF(AND(B{row}="",C{row}=""),"",1)
+                matrix[r, 13] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",1)";
+
+                // O 列 (索引 14): 预留
+                matrix[r, 14] = string.Empty;
+
+                // P 列 (索引 15): 预留
+                matrix[r, 15] = string.Empty;
+
+                // Q 列 (索引 16): 类别 =IF(AND(B{row}="",C{row}=""),"","元件")
+                matrix[r, 16] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",\"元件\")";
+            }
+
+            // 返回构建完成的元器件二维矩阵
+            return matrix;
         }
 
         /// <summary>
