@@ -104,6 +104,10 @@ namespace ExcelAddInDemo
 
                     if (catSheet != null)
                     {
+                        // 提取实际工作表名称
+                        string actualCategoryName = Convert.ToString(catSheet.Name) ?? defaultSheetName;
+                        // 先在【项目信息】表中登记分类汇总行 (Row 29)
+                        UpdateProjectInfoCategorySummary(newWb, actualCategoryName);
                         // 调用公共通用分类初始化方法 (新建项目与新建分类共用)
                         InitializeCategorySheet(newWb, catSheet, 1, "箱柜1", "");
                     }

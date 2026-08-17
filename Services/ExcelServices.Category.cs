@@ -204,12 +204,12 @@ namespace ExcelAddInDemo
                     Microsoft.Office.Interop.Excel.Worksheet excelSheet = (Microsoft.Office.Interop.Excel.Worksheet)newSheet;
                     int cabinetK = GetNextCabinetIndex(excelWb, excelSheet);
 
-                    // 5. 调用公共通用分类初始化方法 (新建项目与新建分类 100% 共用此逻辑)
+                    // 5. 联动更新【项目信息】工作表中的【分类汇总】区域 (优先注册以获取正确的分类序号物理行号)
+                    UpdateProjectInfoCategorySummary(activeWb, newCategoryName);
+
+                    // 6. 调用公共通用分类初始化方法 (新建项目与新建分类 100% 共用此逻辑)
                     string initCabName = string.IsNullOrWhiteSpace(request.InitialCabinetName) ? "箱柜1" : request.InitialCabinetName.Trim();
                     InitializeCategorySheet(activeWb, newSheet, cabinetK, initCabName, request.FormulaGroupId);
-
-                    // 6. 联动更新【项目信息】工作表中的【分类汇总】区域
-                    UpdateProjectInfoCategorySummary(activeWb, newCategoryName);
 
                     // 返回操作成功结果
                     return new CategoryOperationResult
@@ -323,11 +323,15 @@ namespace ExcelAddInDemo
                         }
                     }
 
-                    // 3. 注册绑定 4 个强类型定义名称锚点 (规则 6)
-                    targetWb.Names.Add($"{sumPrefix}{cabinetIndex}", $"='{sheetName}'!$A${cabSumRow}");
-                    targetWb.Names.Add($"{detPrefix}{cabinetIndex}", $"='{sheetName}'!$A${cabDetRow}");
-                    targetWb.Names.Add($"{subsumPrefix}{cabinetIndex}", $"='{sheetName}'!$A${subsumRow}");
-                    targetWb.Names.Add($"{tolsumPrefix}{cabinetIndex}", $"='{sheetName}'!$A${cabTolsumRow}");
+                    // 3. 注册绑定 4 个工作表级别定义名称锚点 (规则 6)
+                    // 绑定箱柜汇总行工作表级定义名称
+                    Tool.SafeSetSheetName(catSheet, sheetName, $"{sumPrefix}{cabinetIndex}", cabSumRow);
+                    // 绑定箱柜信息行工作表级定义名称
+                    Tool.SafeSetSheetName(catSheet, sheetName, $"{detPrefix}{cabinetIndex}", cabDetRow);
+                    // 绑定箱柜小计行工作表级定义名称
+                    Tool.SafeSetSheetName(catSheet, sheetName, $"{subsumPrefix}{cabinetIndex}", subsumRow);
+                    // 绑定箱柜总计行工作表级定义名称
+                    Tool.SafeSetSheetName(catSheet, sheetName, $"{tolsumPrefix}{cabinetIndex}", cabTolsumRow);
                 }
                 catch (Exception exNames)
                 {
@@ -337,9 +341,10 @@ namespace ExcelAddInDemo
                 // 4. 顶部汇总行 (cabSumRow) 公式与超链接联动
                 try
                 {
+                    // 获取安全的箱柜名称
                     string safeCabName = string.IsNullOrWhiteSpace(cabinetName) ? "箱柜1" : cabinetName.Trim();
 
-                    // A 列超链接跳转至明细信息行定义名称 (Cab_Det_K)
+                    // A 列超链接跳转至明细信息行定义名称 (Cab_Det_K) 并显示箱柜序号
                     catSheet.Hyperlinks.Add(
                         Anchor: catSheet.Range[$"A{cabSumRow}"],
                         Address: "",
@@ -365,6 +370,7 @@ namespace ExcelAddInDemo
                 // 5. 底部明细信息行 (cabDetRow) 联动与超链接
                 try
                 {
+                    // 获取安全的箱柜名称
                     string safeCabName = string.IsNullOrWhiteSpace(cabinetName) ? "箱柜1" : cabinetName.Trim();
 
                     // A 列超链接跳转回顶部汇总行定义名称 (Cab_Sum_K)
@@ -383,13 +389,16 @@ namespace ExcelAddInDemo
                 // 6. 激活当前分类工作表为当前主视口
                 try
                 {
+                    // 激活工作表
                     catSheet.Activate();
+                    // 默认选中 A1 单元格
                     catSheet.Range["A1"].Select();
                 }
                 catch { }
             }
             catch (Exception ex)
             {
+                // 记录异常日志
                 LogHelper.WriteLog($"初始化分类工作表异常: {ex.Message}");
             }
         }
@@ -401,29 +410,39 @@ namespace ExcelAddInDemo
         /// <param name="categorySheetName">分类工作表名称</param>
         public static void UpdateProjectInfoCategorySummary(dynamic targetWb, string categorySheetName)
         {
+            // 基础参数校验
             if (targetWb == null || string.IsNullOrWhiteSpace(categorySheetName)) return;
 
             try
             {
+                // 获取【项目信息】工作表
                 dynamic infoSheet = null;
                 try { infoSheet = targetWb.Sheets["项目信息"]; } catch { }
                 if (infoSheet == null) return;
 
-                // 寻找【分类汇总】区域的下一个可用行 (从 Row 29 开始向下扫描)
-                int targetInfoRow = 29;
-                while (true)
+                // 读取配置中的分类汇总起始物理行号与最大扫描数
+                var cfg = ConfigManager.Instance.Current.Excel;
+                int startRow = cfg.ProjectInfoCategorySummaryStartRow;
+                int maxScan = cfg.ProjectInfoCategorySummaryMaxScanRows;
+
+                // 寻找【分类汇总】区域的下一个可用行 (从配置的 startRow 开始向下扫描)
+                int targetInfoRow = startRow;
+                int maxRow = startRow + maxScan;
+                while (targetInfoRow < maxRow)
                 {
+                    // 读取 B 列单元格分类名称
                     string cellB = Convert.ToString(infoSheet.Cells[targetInfoRow, 2].Value)?.Trim() ?? "";
                     // 找到空白行或同名分类行
                     if (string.IsNullOrEmpty(cellB) || string.Equals(cellB, categorySheetName, StringComparison.OrdinalIgnoreCase))
                     {
                         break;
                     }
+                    // 行号递增
                     targetInfoRow++;
                 }
 
-                // 写入分类序号 (相对序号)
-                infoSheet.Cells[targetInfoRow, 1].Value = targetInfoRow - 28;
+                // 写入分类序号 (相对序号: 当前物理行号 - (起始物理行号 - 1))
+                infoSheet.Cells[targetInfoRow, 1].Value = targetInfoRow - (startRow - 1);
 
                 // 写入分类名称并绑定工作表 A1 跳转超链接
                 infoSheet.Hyperlinks.Add(

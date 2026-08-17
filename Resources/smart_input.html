@@ -1,0 +1,802 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <!-- 设置字符编码为 UTF-8 -->
+    <meta charset="UTF-8" />
+    <!-- 视口宽度自适应 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 窗口标题 -->
+    <title>智能填写配置</title>
+    <!-- 引入 Element Plus CSS 样式库 (优先国内高速 npmmirror 镜像，失败降级 unpkg) -->
+    <link
+      rel="stylesheet"
+      href="https://registry.npmmirror.com/element-plus/2.4.4/files/dist/index.css"
+      onerror="this.onerror=null;this.href='https://unpkg.com/element-plus/dist/index.css'"
+    />
+    <!-- 引入 FontAwesome 图标库 -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <!-- 引入 Vue 3 核心库 (优先国内高速镜像，失败降级 unpkg) -->
+    <script
+      src="https://registry.npmmirror.com/vue/3.3.4/files/dist/vue.global.prod.js"
+      onerror="this.onerror=null;this.src='https://unpkg.com/vue@3/dist/vue.global.js'"
+    ></script>
+    <!-- 引入 Element Plus 核心组件库 (优先国内高速镜像，失败降级 unpkg) -->
+    <script
+      src="https://registry.npmmirror.com/element-plus/2.4.4/files/dist/index.full.min.js"
+      onerror="this.onerror=null;this.src='https://unpkg.com/element-plus'"
+    ></script>
+    <!-- 引入公共绿蓝相间主题样式 (主色调 #009688) -->
+    <link rel="stylesheet" href="theme.css" />
+    <style>
+      /* 防止 Vue 模板在初始化前闪现插值表达式 */
+      [v-cloak] {
+        display: none !important;
+      }
+
+      /* 全局基础重置与字体样式 */
+      html,
+      body {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+        overflow: hidden !important;
+        height: 100%;
+        background-color: #f8fafc;
+        user-select: none;
+      }
+
+      /* 主容器布局 */
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100vw;
+        background-color: #ffffff;
+      }
+
+      /* 顶部无边框拖拽标题栏 */
+      .window-header {
+        height: 34px;
+        background: linear-gradient(135deg, #009688, #00796b);
+        color: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 12px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: move;
+      }
+
+      /* 标题栏右侧控制按钮 */
+      .window-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: default;
+      }
+
+      .control-btn {
+        cursor: pointer;
+        opacity: 0.85;
+        font-size: 13px;
+        padding: 2px 6px;
+        border-radius: 3px;
+        transition: all 0.2s;
+      }
+      .control-btn:hover {
+        opacity: 1;
+        background: rgba(255, 255, 255, 0.18);
+      }
+      .control-btn.close:hover {
+        background: #ef4444;
+        color: #ffffff;
+      }
+
+      /* 主体内容滚动区 */
+      .main-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        padding: 10px 14px;
+        gap: 10px;
+        box-sizing: border-box;
+        overflow: hidden;
+      }
+
+      /* 顶部全局操作栏 */
+      .action-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: #f1f5f9;
+        padding: 8px 12px;
+        border-radius: 6px;
+        border: 1px solid #e2e8f0;
+      }
+
+      .action-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .action-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      /* 中部配置卡片区域 */
+      .config-cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .card-box {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+      }
+
+      .card-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: #1e293b;
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid #f1f5f9;
+        padding-bottom: 5px;
+      }
+
+      .card-title-left {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .card-title-icon {
+        color: #009688;
+      }
+
+      /* 工作表多选列表容器 */
+      .sheet-list-container {
+        max-height: 90px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 4px 0;
+      }
+
+      .sheet-item-label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+      }
+
+      .sheet-count-tag {
+        font-size: 11px;
+        color: #64748b;
+        background: #f1f5f9;
+        padding: 1px 6px;
+        border-radius: 10px;
+      }
+
+      /* 字段范围复选框排布 */
+      .fields-group {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        padding: 6px 0;
+      }
+
+      /* 下部物料列表预览与快速填入区 */
+      .preview-section {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+      }
+
+      .preview-header {
+        padding: 6px 12px;
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .search-box {
+        width: 260px;
+      }
+
+      .preview-table-box {
+        flex: 1;
+        overflow: hidden;
+      }
+
+      /* 底部状态提示条 */
+      .status-footer {
+        height: 26px;
+        background: #f1f5f9;
+        border-top: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 12px;
+        font-size: 11px;
+        color: #64748b;
+      }
+
+      /* Element Plus 主题定制 */
+      .el-button--primary {
+        background-color: #009688 !important;
+        border-color: #009688 !important;
+      }
+      .el-button--primary:hover {
+        background-color: #00796b !important;
+        border-color: #00796b !important;
+      }
+      .el-checkbox__input.is-checked .el-checkbox__inner {
+        background-color: #009688 !important;
+        border-color: #009688 !important;
+      }
+      .el-checkbox__input.is-checked + .el-checkbox__label {
+        color: #009688 !important;
+      }
+
+      /* 自定义精简滚动条 */
+      ::-webkit-scrollbar {
+        width: 5px;
+        height: 5px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 3px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f8fafc;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app" v-cloak>
+      <!-- 1. 顶部无边框标题栏 -->
+      <div class="window-header" @mousedown="handleHeaderMouseDown">
+        <div>
+          <i class="fa-solid fa-wand-magic-sparkles" style="margin-right: 6px"></i>
+          <span>智能填写模式配置</span>
+        </div>
+        <div class="window-controls">
+          <span class="control-btn" title="最小化" @click="handleMinimize">
+            <i class="fa-solid fa-minus"></i>
+          </span>
+          <span class="control-btn close" title="关闭" @click="handleClose">
+            <i class="fa-solid fa-xmark"></i>
+          </span>
+        </div>
+      </div>
+
+      <!-- 2. 主体配置内容 -->
+      <div class="main-body">
+        <!-- 2.1 顶部全局操作栏 -->
+        <div class="action-bar">
+          <div class="action-left">
+            <!-- 刷新提取数据按钮 -->
+            <el-button
+              type="primary"
+              size="small"
+              :loading="refreshing"
+              @click="handleRefresh"
+            >
+              <i class="fa-solid fa-arrows-rotate" style="margin-right: 5px"></i>
+              刷新 (提取各表元器件)
+            </el-button>
+
+            <!-- 智能输入功能总开关 -->
+            <div style="display: inline-flex; align-items: center; gap: 8px; margin-left: 10px; padding: 2px 10px; background: #e0f2f1; border-radius: 4px; border: 1px solid #b2dfdb;">
+              <span style="font-size: 12px; font-weight: 600; color: #00796b;">
+                <i class="fa-solid fa-power-off" style="margin-right: 4px;"></i>
+                智能输入功能:
+              </span>
+              <el-switch
+                v-model="config.autoPopupFloatWindow"
+                active-text="已开启"
+                inactive-text="已关闭"
+                active-color="#009688"
+                inactive-color="#94a3b8"
+                inline-prompt
+                @change="autoSaveConfig"
+              />
+            </div>
+          </div>
+
+          <div class="action-right">
+            <!-- 保存配置按钮 (纯白色文字) -->
+            <el-button
+              size="small"
+              type="primary"
+              style="color: #ffffff !important; background-color: #009688; border-color: #009688;"
+              @click="handleSaveConfig"
+            >
+              <i class="fa-solid fa-floppy-disk" style="margin-right: 5px; color: #ffffff !important;"></i>
+              <span style="color: #ffffff !important;">保存配置</span>
+            </el-button>
+          </div>
+        </div>
+
+        <!-- 2.2 两列配置卡片 -->
+        <div class="config-cards">
+          <!-- 卡片 1: 数据源工作表选择 -->
+          <div class="card-box">
+            <div class="card-title">
+              <div class="card-title-left">
+                <i class="fa-solid fa-table-list card-title-icon"></i>
+                <span>1. 数据源工作表选择</span>
+              </div>
+              <div>
+                <el-link
+                  type="primary"
+                  :underline="false"
+                  style="font-size: 11px; margin-right: 8px"
+                  @click="selectAllSheets"
+                >全选</el-link>
+                <el-link
+                  type="info"
+                  :underline="false"
+                  style="font-size: 11px"
+                  @click="clearAllSheets"
+                >清空</el-link>
+              </div>
+            </div>
+
+            <!-- 工作表列表多选 -->
+            <div class="sheet-list-container">
+              <el-empty
+                v-if="!sheetList || sheetList.length === 0"
+                description="暂无工作表数据，请点击上方【刷新】提取"
+                :image-size="30"
+                style="padding: 10px 0"
+              ></el-empty>
+              <el-checkbox-group
+                v-else
+                v-model="config.selectedSheets"
+                @change="onSelectedSheetsChange"
+              >
+                <div
+                  v-for="sheet in sheetList"
+                  :key="sheet.sheetName"
+                  style="display: flex; align-items: center; margin-bottom: 2px"
+                >
+                  <el-checkbox :label="sheet.sheetName">
+                    <span style="font-size: 12px">{{ sheet.sheetName }}</span>
+                    <span class="sheet-count-tag" style="margin-left: 6px">
+                      {{ sheet.uniqueCount }} 种规格
+                    </span>
+                  </el-checkbox>
+                </div>
+              </el-checkbox-group>
+            </div>
+          </div>
+
+          <!-- 卡片 2: 回填字段范围设置 -->
+          <div class="card-box">
+            <div class="card-title">
+              <div class="card-title-left">
+                <i class="fa-solid fa-sliders card-title-icon"></i>
+                <span>2. 回填字段范围设置</span>
+              </div>
+              <span style="font-size: 11px; color: #94a3b8">C列输入时联动</span>
+            </div>
+
+            <!-- 回填字段多选 -->
+            <div class="fields-group">
+              <el-checkbox v-model="config.fillName" @change="autoSaveConfig">
+                <span style="font-size: 12px; font-weight: 500">B 列 (元件名称)</span>
+              </el-checkbox>
+
+              <el-checkbox v-model="config.fillManufacturer" @change="autoSaveConfig">
+                <span style="font-size: 12px; font-weight: 500">D 列 (生产厂家)</span>
+              </el-checkbox>
+
+              <el-checkbox v-model="config.fillUnit" @change="autoSaveConfig">
+                <span style="font-size: 12px; font-weight: 500">E 列 (计量单位)</span>
+              </el-checkbox>
+
+              <el-checkbox v-model="config.fillUnitPrice" @change="autoSaveConfig">
+                <span style="font-size: 12px; font-weight: 500">G 列 (销售单价)</span>
+              </el-checkbox>
+            </div>
+            <div style="font-size: 11px; color: #64748b; margin-top: 4px">
+              提示：在 Excel 中输入/选择 C 列型号后，将自动带出勾选的同行属性。
+            </div>
+          </div>
+        </div>
+
+        <!-- 2.3 下部物料候选预览与双击快捷填入区 -->
+        <div class="preview-section">
+          <div class="preview-header">
+            <div style="display: flex; align-items: center; gap: 8px">
+              <i class="fa-solid fa-list-check" style="color: #009688"></i>
+              <span style="font-size: 12px; font-weight: 600; color: #334155">
+                3. 物料候选预览 (已汇聚 {{ filteredComponents.length }} 条，支持双击回填当前行)
+              </span>
+            </div>
+
+            <!-- 搜索框 -->
+            <div class="search-box">
+              <el-input
+                v-model="searchKeyword"
+                placeholder="搜索型号/名称/厂家..."
+                size="small"
+                clearable
+              >
+                <template #prefix>
+                  <i class="fa-solid fa-magnifying-glass" style="color: #94a3b8"></i>
+                </template>
+              </el-input>
+            </div>
+          </div>
+
+          <!-- 表格展示 -->
+          <div class="preview-table-box">
+            <el-table
+              :data="filteredComponents"
+              size="small"
+              height="100%"
+              style="width: 100%"
+              empty-text="所选工作表中无匹配的元器件数据"
+              @row-dblclick="handleRowDoubleClick"
+            >
+              <el-table-column
+                prop="model"
+                label="规格型号 (C列)"
+                min-width="150"
+                show-overflow-tooltip
+              >
+                <template #default="{ row }">
+                  <span style="font-weight: 600; color: #009688">{{ row.model }}</span>
+                </template>
+              </el-table-column>
+
+              <el-table-column
+                prop="name"
+                label="元件名称 (B列)"
+                min-width="120"
+                show-overflow-tooltip
+              ></el-table-column>
+
+              <el-table-column
+                prop="manufacturer"
+                label="生产厂家 (D列)"
+                min-width="110"
+                show-overflow-tooltip
+              ></el-table-column>
+
+              <el-table-column
+                prop="unit"
+                label="单位 (E列)"
+                width="70"
+                align="center"
+              ></el-table-column>
+
+              <el-table-column
+                prop="unitPrice"
+                label="单价 (G列)"
+                width="85"
+                align="right"
+              >
+                <template #default="{ row }">
+                  <span>{{ row.unitPrice > 0 ? row.unitPrice.toFixed(2) : '-' }}</span>
+                </template>
+              </el-table-column>
+
+              <el-table-column
+                prop="sheetName"
+                label="来源表"
+                width="85"
+                align="center"
+              >
+                <template #default="{ row }">
+                  <el-tag size="small" type="info">{{ row.sheetName }}</el-tag>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="操作" width="95" align="center">
+                <template #default="{ row }">
+                  <el-button
+                    type="primary"
+                    size="small"
+                    style="color: #ffffff !important; background-color: #009688; border-color: #009688; padding: 4px 10px; font-weight: 500;"
+                    @click="handleFillRow(row)"
+                  >
+                    <i class="fa-solid fa-arrow-down-to-bracket" style="margin-right: 3px; color: #ffffff !important;"></i>
+                    <span style="color: #ffffff !important;">填入</span>
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. 底部状态栏 -->
+      <div class="status-footer">
+        <div>
+          <span>已勾选数据源：</span>
+          <strong style="color: #009688">{{ (config.selectedSheets || []).length }}</strong> / {{ sheetList.length }} 个工作表
+          <span style="margin: 0 8px">|</span>
+          <span>联动字段：</span>
+          <span>{{ activeFieldsText }}</span>
+        </div>
+        <div>
+          <span>最后提取时间：{{ lastUpdatedTime || '未提取' }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vue 3 业务逻辑脚本 -->
+    <script>
+      const { createApp, ref, computed, onMounted } = Vue;
+
+      const app = createApp({
+        setup() {
+          // 状态变量定义
+          const refreshing = ref(false);
+          const applying = ref(false);
+          const searchKeyword = ref("");
+          const lastUpdatedTime = ref("");
+
+          // 智能输入配置对象
+          const config = ref({
+            selectedSheets: [],
+            fillName: true,
+            fillManufacturer: true,
+            fillUnit: true,
+            fillUnitPrice: true,
+            autoDropdownEnabled: true,
+          });
+
+          // 工作表数据集列表
+          const sheetList = ref([]);
+
+          // 计算所有勾选表中的所有元器件去重列表
+          const allSelectedComponents = computed(() => {
+            if (!sheetList.value || sheetList.value.length === 0) return [];
+            const selected = config.value.selectedSheets || [];
+            const resultDict = new Map();
+
+            sheetList.value.forEach((sheet) => {
+              if (selected.includes(sheet.sheetName) && sheet.components) {
+                sheet.components.forEach((comp) => {
+                  if (comp.model && !resultDict.has(comp.model.toLowerCase())) {
+                    resultDict.set(comp.model.toLowerCase(), comp);
+                  }
+                });
+              }
+            });
+
+            return Array.from(resultDict.values());
+          });
+
+          // 根据搜索关键字过滤物料
+          const filteredComponents = computed(() => {
+            const list = allSelectedComponents.value;
+            const kw = (searchKeyword.value || "").trim().toLowerCase();
+            if (!kw) return list;
+
+            return list.filter(
+              (item) =>
+                (item.model && item.model.toLowerCase().includes(kw)) ||
+                (item.name && item.name.toLowerCase().includes(kw)) ||
+                (item.manufacturer && item.manufacturer.toLowerCase().includes(kw))
+            );
+          });
+
+          // 已激活联动字段描述文本
+          const activeFieldsText = computed(() => {
+            const fields = [];
+            if (config.value.fillName) fields.push("B列(名称)");
+            if (config.value.fillManufacturer) fields.push("D列(厂家)");
+            if (config.value.fillUnit) fields.push("E列(单位)");
+            if (config.value.fillUnitPrice) fields.push("G列(单价)");
+            return fields.length > 0 ? fields.join(", ") : "无 (仅填C列)";
+          });
+
+          // 安全向 C# 宿主发送 WebMessage 消息
+          const postToHost = (action, payload = {}) => {
+            if (window.chrome && window.chrome.webview) {
+              const msg = JSON.stringify({ action, ...payload });
+              window.chrome.webview.postMessage(msg);
+            }
+          };
+
+          // 刷新操作: 提取各表元器件
+          const handleRefresh = () => {
+            refreshing.value = true;
+            postToHost("refreshAndExtract");
+          };
+
+          // 应用数据有效性下拉列表
+          const handleApplyDropdown = () => {
+            if (!config.value.selectedSheets || config.value.selectedSheets.length === 0) {
+              ElementPlus.ElMessage.warning("请先在上方勾选至少一个数据源工作表！");
+              return;
+            }
+            applying.value = true;
+            postToHost("applyDropdown", { config: config.value });
+          };
+
+          // 保存配置
+          const handleSaveConfig = () => {
+            postToHost("saveConfig", { config: config.value });
+          };
+
+          // 配置改变时自动触发静默保存
+          const autoSaveConfig = () => {
+            postToHost("saveConfig", { config: config.value });
+          };
+
+          const onSelectedSheetsChange = () => {
+            autoSaveConfig();
+          };
+
+          // 全选工作表
+          const selectAllSheets = () => {
+            config.value.selectedSheets = sheetList.value.map((s) => s.sheetName);
+            autoSaveConfig();
+          };
+
+          // 清空工作表勾选
+          const clearAllSheets = () => {
+            config.value.selectedSheets = [];
+            autoSaveConfig();
+          };
+
+          // 点击单行填入当前 Excel 活动行
+          const handleFillRow = (row) => {
+            postToHost("fillToActiveRow", { item: row, config: config.value });
+          };
+
+          // 双击行快捷回填
+          const handleRowDoubleClick = (row) => {
+            handleFillRow(row);
+          };
+
+          // 窗口控制方法
+          const handleHeaderMouseDown = (e) => {
+            if (e.target.closest(".window-controls")) return;
+            postToHost("windowDrag");
+          };
+
+          const handleMinimize = () => {
+            postToHost("minimize");
+          };
+
+          const handleClose = () => {
+            postToHost("close");
+          };
+
+          // 挂载生命周期监听
+          onMounted(() => {
+            // 请求初始化数据
+            postToHost("getInitData");
+
+            // 监听 C# 回发的消息
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.addEventListener("message", (event) => {
+                try {
+                  const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+                  if (!data) return;
+
+                  // 1. 渲染初始化数据
+                  if (data.action === "renderInitData") {
+                    if (data.config) {
+                      config.value = { ...config.value, ...data.config };
+                    }
+                    if (data.storage) {
+                      sheetList.value = data.storage.sheets || [];
+                      lastUpdatedTime.value = data.storage.lastUpdatedTime || "";
+
+                      // 若尚未勾选且有表，默认全选
+                      if (!config.value.selectedSheets || config.value.selectedSheets.length === 0) {
+                        config.value.selectedSheets = sheetList.value.map((s) => s.sheetName);
+                      }
+                    }
+                  }
+                  // 2. 刷新结果回显
+                  else if (data.action === "renderRefreshResult") {
+                    refreshing.value = false;
+                    if (data.storage) {
+                      sheetList.value = data.storage.sheets || [];
+                      lastUpdatedTime.value = data.storage.lastUpdatedTime || "";
+                    }
+                    if (data.config) {
+                      config.value = { ...config.value, ...data.config };
+                    }
+                    ElementPlus.ElMessage.success(data.message || "刷新成功！");
+                  }
+                  // 3. 保存结果回显
+                  else if (data.action === "saveConfigResult") {
+                    if (data.success) {
+                      ElementPlus.ElMessage.success(data.message);
+                    } else {
+                      ElementPlus.ElMessage.error(data.message);
+                    }
+                  }
+                  // 4. 绑定下拉列表结果回显
+                  else if (data.action === "applyDropdownResult") {
+                    applying.value = false;
+                    if (data.success) {
+                      ElementPlus.ElMessage.success(data.message);
+                    } else {
+                      ElementPlus.ElMessage.warning(data.message);
+                    }
+                  }
+                  // 5. 填入结果回显
+                  else if (data.action === "fillResult") {
+                    if (data.success) {
+                      ElementPlus.ElMessage.success(data.message);
+                    } else {
+                      ElementPlus.ElMessage.warning(data.message);
+                    }
+                  }
+                } catch (err) {
+                  console.error("解析宿主回发消息异常:", err);
+                }
+              });
+            }
+          });
+
+          return {
+            refreshing,
+            applying,
+            searchKeyword,
+            lastUpdatedTime,
+            config,
+            sheetList,
+            allSelectedComponents,
+            filteredComponents,
+            activeFieldsText,
+            handleRefresh,
+            handleApplyDropdown,
+            handleSaveConfig,
+            autoSaveConfig,
+            onSelectedSheetsChange,
+            selectAllSheets,
+            clearAllSheets,
+            handleFillRow,
+            handleRowDoubleClick,
+            handleHeaderMouseDown,
+            handleMinimize,
+            handleClose,
+          };
+        },
+      });
+
+      app.use(ElementPlus);
+      app.mount("#app");
+    </script>
+  </body>
+</html>

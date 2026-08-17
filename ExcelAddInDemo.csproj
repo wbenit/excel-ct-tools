@@ -59,6 +59,10 @@
     <None Include="Resources\category.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将智能输入前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\smart_input.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将公共主题样式 CSS 文件复制至构建输出路径中 -->
     <None Include="Resources\theme.css">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

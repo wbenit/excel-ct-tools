@@ -123,10 +123,10 @@ namespace ExcelAddInDemo
 
                     int newDetailStartRow = lastDetBlockEnd > 0 ? lastDetBlockEnd + 2 : templateStartRow + templateRowCount;
 
-                    // 5. 复制模板明细区块并插入到新位置
+                    // 5. 复制模板明细区块直接写入目标新位置 (避免剪贴板模式冲突)
                     dynamic copyRange = activeSheet.Rows[$"{templateStartRow}:{templateStartRow + templateRowCount - 1}"];
-                    dynamic targetInsertRow = activeSheet.Rows[$"{newDetailStartRow}:{newDetailStartRow}"];
-                    targetInsertRow.Insert(-4121, copyRange.Copy());
+                    dynamic targetRange = activeSheet.Rows[$"{newDetailStartRow}:{newDetailStartRow + templateRowCount - 1}"];
+                    copyRange.Copy(targetRange);
 
                     // 6. 计算新箱柜的 4 个关键行号
                     int newDetRow = newDetailStartRow + 3;
@@ -144,19 +144,26 @@ namespace ExcelAddInDemo
                     Microsoft.Office.Interop.Excel.Range subsumAnchorCell = (Microsoft.Office.Interop.Excel.Range)excelSheet.Cells[newSubsumRow, 1];
                     Microsoft.Office.Interop.Excel.Range tolsumAnchorCell = (Microsoft.Office.Interop.Excel.Range)excelSheet.Cells[newTolsumRow, 1];
 
-                    excelWb.Names.Add(Name: sumNameTag, RefersTo: sumAnchorCell, Visible: true);
-                    excelWb.Names.Add(Name: detNameTag, RefersTo: detAnchorCell, Visible: true);
-                    excelWb.Names.Add(Name: subsumNameTag, RefersTo: subsumAnchorCell, Visible: true);
-                    excelWb.Names.Add(Name: tolsumNameTag, RefersTo: tolsumAnchorCell, Visible: true);
+                    // 7. 注册工作表级别的 4 个定义名称锚点 (规则 6)
+                    // 设置箱柜汇总行定义名称
+                    Tool.SafeSetSheetName(excelSheet, excelSheet.Name, sumNameTag, insertRow);
+                    // 设置箱柜信息行定义名称
+                    Tool.SafeSetSheetName(excelSheet, excelSheet.Name, detNameTag, newDetRow);
+                    // 设置箱柜小计行定义名称
+                    Tool.SafeSetSheetName(excelSheet, excelSheet.Name, subsumNameTag, newSubsumRow);
+                    // 设置箱柜总计行定义名称
+                    Tool.SafeSetSheetName(excelSheet, excelSheet.Name, tolsumNameTag, newTolsumRow);
 
                     // 8. 建立双向超链接绑定 (规则 6)
+                    // 汇总行 A 列超链接跳转至明细行并显示箱柜序号
                     excelSheet.Hyperlinks.Add(
                         Anchor: sumAnchorCell,
                         Address: "",
                         SubAddress: $"'{excelSheet.Name}'!{detNameTag}",
-                        ScreenTip: "跳转至明细块"
+                        TextToDisplay: Convert.ToString(cabinetK)
                     );
 
+                    // 明细行 A 列超链接返回顶部汇总行
                     excelSheet.Hyperlinks.Add(
                         Anchor: detAnchorCell,
                         Address: "",
@@ -165,15 +172,21 @@ namespace ExcelAddInDemo
                     );
 
                     // 9. 写入初始箱柜名称并同步公式
+                    // 设置初始箱柜名称
                     string cabDisplayName = $"箱柜{cabinetK}";
                     activeSheet.Cells[insertRow, 2].Value = cabDisplayName;
                     activeSheet.Cells[newDetRow, 2].Value = cabDisplayName;
 
                     // 汇总行公式绑定至明细总计行
+                    // G 列单价公式指向明细总计行的销售总价 (H 列)
                     activeSheet.Cells[insertRow, 7].Formula = $"=H{newTolsumRow}";
+                    // H 列总价公式 = 数量(F列) * 单价(G列)
                     activeSheet.Cells[insertRow, 8].Formula = $"=F{insertRow}*G{insertRow}";
+                    // J 列成本总价公式指向明细总计行的成本总价 (K 列)
                     activeSheet.Cells[insertRow, 10].Formula = $"=K{newTolsumRow}";
+                    // K 列毛利公式 = 总价 - 成本总价
                     activeSheet.Cells[insertRow, 11].Formula = $"=H{insertRow}-J{insertRow}";
+                    // L 列毛利率公式
                     activeSheet.Cells[insertRow, 12].Formula = $"=IF(H{insertRow}=0,0,K{insertRow}/H{insertRow})";
 
                     // 10. 激活原工作表并选中新插入的汇总行
@@ -210,25 +223,41 @@ namespace ExcelAddInDemo
 
             try
             {
-                // 1. 扫描当前工作簿中所有的工作簿级定义名称，提取最大序号 K
-                if (targetWb != null && targetWb.Names != null)
-                {
-                    foreach (Microsoft.Office.Interop.Excel.Name n in targetWb.Names)
-                    {
-                        string nName = Convert.ToString(n.Name) ?? "";
-                        int k = ExtractIndexFromName(nName, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
-                        if (k > maxK) maxK = k;
-                    }
-                }
-
-                // 2. 扫描当前工作表中所有的工作表级定义名称，提取最大序号 K
+                // 1. 优先扫描当前工作表中所有的工作表级定义名称，提取当前表最大序号 K
                 if (activeSheet != null && activeSheet.Names != null)
                 {
                     foreach (Microsoft.Office.Interop.Excel.Name n in activeSheet.Names)
                     {
+                        // 提取定义名称字符串
                         string nName = Convert.ToString(n.Name) ?? "";
+                        // 解析其中的数字序号
                         int k = ExtractIndexFromName(nName, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                        // 更新当前表最大序号
                         if (k > maxK) maxK = k;
+                    }
+                }
+
+                // 2. 兼容扫描历史残留的工作簿级定义名称（仅提取指向当前工作表的名称）
+                if (targetWb != null && targetWb.Names != null)
+                {
+                    string currentSheetName = Convert.ToString(activeSheet?.Name) ?? "";
+                    foreach (Microsoft.Office.Interop.Excel.Name n in targetWb.Names)
+                    {
+                        try
+                        {
+                            // 校验定义名称是否属于当前工作表
+                            if (n.RefersToRange != null && n.RefersToRange.Worksheet != null &&
+                                string.Equals(Convert.ToString(n.RefersToRange.Worksheet.Name), currentSheetName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                // 提取定义名称文本
+                                string nName = Convert.ToString(n.Name) ?? "";
+                                // 解析序号
+                                int k = ExtractIndexFromName(nName, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                                // 更新最大序号
+                                if (k > maxK) maxK = k;
+                            }
+                        }
+                        catch { }
                     }
                 }
             }

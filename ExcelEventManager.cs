@@ -45,6 +45,11 @@ namespace ExcelAddInDemo
                 _excelApp.SheetBeforeRightClick -= OnSheetBeforeRightClick;
                 // 重新绑定 SheetBeforeRightClick 事件处理委托，实现在第一个 Cab_Det 上方右击添加“新建箱柜”按钮
                 _excelApp.SheetBeforeRightClick += OnSheetBeforeRightClick;
+
+                // 解除已有的 SheetSelectionChange 事件处理委托绑定，避免重复挂载
+                _excelApp.SheetSelectionChange -= OnSheetSelectionChange;
+                // 重新绑定 SheetSelectionChange 事件处理委托，实现进入 C 列元器件行自动触发覆盖式智能输入 (方案 B)
+                _excelApp.SheetSelectionChange += OnSheetSelectionChange;
             }
             catch (Exception ex)
             {
@@ -68,12 +73,46 @@ namespace ExcelAddInDemo
                     _excelApp.SheetFollowHyperlink -= OnSheetFollowHyperlink;
                     // 解除 SheetBeforeRightClick 事件绑定
                     _excelApp.SheetBeforeRightClick -= OnSheetBeforeRightClick;
+                    // 解除 SheetSelectionChange 事件绑定
+                    _excelApp.SheetSelectionChange -= OnSheetSelectionChange;
                 }
+
+                // 隐藏方案 B 覆盖输入框
+                ExcelServices.HideSmartInputOverlay();
 
                 // 彻底清理注册的右键菜单控件
                 RemoveContextMenuControls();
             }
             catch { }
+        }
+
+        /// <summary>
+        /// 响应工作表单元格焦点切换事件，实现选中 C 列元器件行时自动激活覆盖式智能输入 (方案 B / 对应 ZhiNengEn.ShuRu)
+        /// </summary>
+        private static void OnSheetSelectionChange(object shObj, Microsoft.Office.Interop.Excel.Range target)
+        {
+            try
+            {
+                // 校验目标单元格与全局 Application
+                if (target == null || _excelApp == null) return;
+
+                // 若选中的是单个单元格
+                if (target.Rows.Count == 1 && target.Columns.Count == 1)
+                {
+                    // 尝试激活覆盖式智能输入框 (内部自动校验 C 列与箱柜元器件行区间)
+                    ExcelServices.ShuRu(target);
+                }
+                else
+                {
+                    // 选中多单元格区域时隐藏覆盖输入框
+                    ExcelServices.HideSmartInputOverlay();
+                }
+            }
+            catch
+            {
+                // 异常时安全兜底隐藏覆盖输入框
+                ExcelServices.HideSmartInputOverlay();
+            }
         }
 
         /// <summary>
@@ -129,6 +168,80 @@ namespace ExcelAddInDemo
                 Microsoft.Office.Interop.Excel.Workbook? wb = sh.Parent as Microsoft.Office.Interop.Excel.Workbook;
                 // 校验 wb 句柄有效性
                 if (wb == null) return;
+
+                // 处理第 3 列 (C列 - 规格型号) 修改时的智能属性联动回填
+                if (target.Column == 3 && target.Cells.Count == 1)
+                {
+                    // 读取 C 列最新输入的规格型号字符串
+                    string newModel = Convert.ToString(target.Value)?.Trim() ?? "";
+                    if (!string.IsNullOrWhiteSpace(newModel))
+                    {
+                        // 异步安全触发或同步读取智能输入控制器配置
+                        var ctrl = new ExcelAddInDemo.Controllers.SmartInputController();
+                        var config = ctrl.GetConfig();
+
+                        // 若未勾选任何回填字段则不进行联动
+                        if (config != null && (config.FillName || config.FillManufacturer || config.FillUnit || config.FillUnitPrice))
+                        {
+                            // 读取元器件缓存数据
+                            var storage = ctrl.GetStoredComponents();
+                            if (storage != null && storage.Sheets != null)
+                            {
+                                // 筛选已选工作表中的元器件
+                                var selectedSheets = config.SelectedSheets != null && config.SelectedSheets.Count > 0
+                                    ? config.SelectedSheets
+                                    : storage.Sheets.Select(s => s.SheetName).ToList();
+
+                                // 查找匹配的规格型号
+                                ExcelAddInDemo.Models.SmartComponentItem? matchedItem = null;
+                                foreach (var sData in storage.Sheets.Where(s => selectedSheets.Contains(s.SheetName)))
+                                {
+                                    matchedItem = sData.Components?.FirstOrDefault(c => string.Equals(c.Model, newModel, StringComparison.OrdinalIgnoreCase));
+                                    if (matchedItem != null) break;
+                                }
+
+                                // 若找到了对应的物料属性
+                                if (matchedItem != null)
+                                {
+                                    // 暂停事件触发避免循环调用
+                                    _excelApp.EnableEvents = false;
+                                    try
+                                    {
+                                        int r = target.Row;
+                                        dynamic dynSh = sh;
+                                        // 联动 B列 (元件名称)
+                                        if (config.FillName && !string.IsNullOrEmpty(matchedItem.Name))
+                                        {
+                                            dynSh.Cells[r, 2].Value = matchedItem.Name;
+                                        }
+                                        // 联动 D列 (生产厂家)
+                                        if (config.FillManufacturer && !string.IsNullOrEmpty(matchedItem.Manufacturer))
+                                        {
+                                            dynSh.Cells[r, 4].Value = matchedItem.Manufacturer;
+                                        }
+                                        // 联动 E列 (计量单位)
+                                        if (config.FillUnit && !string.IsNullOrEmpty(matchedItem.Unit))
+                                        {
+                                            dynSh.Cells[r, 5].Value = matchedItem.Unit;
+                                        }
+                                        // 联动 G列 (销售单价)
+                                        if (config.FillUnitPrice && matchedItem.UnitPrice > 0)
+                                        {
+                                            dynSh.Cells[r, 7].Value = matchedItem.UnitPrice;
+                                        }
+                                    }
+                                    catch { }
+                                    finally
+                                    {
+                                        // 恢复事件触发机制
+                                        _excelApp.EnableEvents = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return;
+                }
 
                 // 限制仅处理第 2 列 (B列) 的修改
                 if (target.Column != 2) return;

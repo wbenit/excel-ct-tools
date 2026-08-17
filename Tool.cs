@@ -728,7 +728,7 @@ namespace ExcelAddInDemo
                             {
                                 string f = GetFormula(r, c);
                                 // 判定公式中是否含有 SUM
-                                if (!string.IsNullOrEmpty(f) && f.IndexOf("SUM", StringComparison.OrdinalIgnoreCase) >= 0)
+                                if (!string.IsNullOrEmpty(f) && f.IndexOf("SUM", StringComparison.OrdinalIgnoreCase) >= 0 && f.IndexOf("INDEX", StringComparison.OrdinalIgnoreCase) >= 0)
                                 {
                                     curSubsumRow = r;
                                     break;
@@ -736,10 +736,22 @@ namespace ExcelAddInDemo
                             }
                         }
 
-                        // 检查总计行 (A 列含“总计”)
-                        if (curTolsumRow == 0 && aText.Contains("总计"))
+                        // 检查总计行 (判断条件: 自身 A 列不含公式，且上一行 A 列公式包含 "ROW()-ROW(")
+                        if (curTolsumRow == 0)
                         {
-                            curTolsumRow = r;
+                            // 获取当前行 A 列公式文本
+                            string curAFormula = GetFormula(r, 1);
+                            // 获取上一行 A 列公式文本
+                            string prevAFormula = GetFormula(r - 1, 1);
+
+                            // 判断当前行 A 列无公式且上一行包含 ROW()-ROW(
+                            if (string.IsNullOrEmpty(curAFormula) &&
+                                !string.IsNullOrEmpty(prevAFormula) &&
+                                prevAFormula.IndexOf("ROW()-ROW(", StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                // 记录当前识别到的总计行物理行号
+                                curTolsumRow = r;
+                            }
                         }
 
                         // 若小计与总计行均已确定，可提前结束当前箱柜区间的扫描

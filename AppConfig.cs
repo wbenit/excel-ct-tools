@@ -78,5 +78,11 @@ namespace ExcelAddInDemo
 
         // 右键菜单“新建箱柜”按钮的唯一 Tag 标识 (默认: CT_BTN_NEW_CABINET)
         public string NewCabinetMenuTag { get; set; } = "CT_BTN_NEW_CABINET";
+
+        // 【项目信息】工作表中【分类汇总】区域的起始物理行号 (默认: 29)
+        public int ProjectInfoCategorySummaryStartRow { get; set; } = 29;
+
+        // 扫描【项目信息】工作表【分类汇总】区域时的最大扫描行数限制 (默认: 100)
+        public int ProjectInfoCategorySummaryMaxScanRows { get; set; } = 100;
     }
 }

@@ -184,11 +184,12 @@ namespace ExcelAddInDemo
                         dynamic feeRange = activeSheet.Range[$"A{newSubsumRow}:Q{newTolsumRow}"];
                         feeRange.Formula = feeMatrix;
 
-                        // 更新定义名称锚点
-                        dynamic targetWb = activeSheet.Parent;
+                        // 更新工作表级别的定义名称锚点 (规则 6)
                         string sheetName = Convert.ToString(activeSheet.Name) ?? "";
-                        targetWb.Names.Add($"{subsumPrefix}{k}", $"='{sheetName}'!$A${newSubsumRow}");
-                        targetWb.Names.Add($"{tolsumPrefix}{k}", $"='{sheetName}'!$A${newTolsumRow}");
+                        // 覆盖更新当前箱柜小计行定义名称
+                        Tool.SafeSetSheetName(activeSheet, sheetName, $"{subsumPrefix}{k}", newSubsumRow);
+                        // 覆盖更新当前箱柜总计行定义名称
+                        Tool.SafeSetSheetName(activeSheet, sheetName, $"{tolsumPrefix}{k}", newTolsumRow);
 
                         // 同步更新顶部汇总行公式
                         if (cab.Value.Sum != null)

@@ -80,30 +80,6 @@
   2. **全局 UI 主题规范**：根据规则要求统一升级所有 Web 窗口为**绿蓝相间主题，主色调为 `#009688`**。
   3. **“我的企业设置”窗口**：基于 C# + WebView2 + Vue 3 (Element Plus, `<script setup>`)，反显解析正常。
   4. **“新建项目”窗口与控制器**：支持项目创建、 SaveAs 模板清洗、 Win32 强力置顶与视口最大化。
-  5. **“新建箱柜”功能与定义名称/超链接联动**：
-     - 顶部空行复用与序号 `=ROW()-ROW(A$6)` 公式保留。
-     - 底部明细块（32 行插槽）特征文本搜索与整块插入。
-     - **强类型定义名称与超链接**：直接在 `activeSheet` 内部复制模板行，彻底取消打开/关闭外部 `CabinetTemplate.xlsx` 文件，根除跨工作簿句柄清理导致定义名称丢失的致命隐患；以强类型 `Range` 对象直接调用 `targetWb.Names.Add`；带工作表前缀绑定超链接 `SubAddress`。
-     - **GetNextCabinetIndex 序号动态增量**：将读取逻辑全面切换为 `Cell.Value2` 内存数据，配合 `ExtractIndexFromName` 清洗助手，实现 100% 递增 `maxK + 1` 与历史定义名称永久保留。
-     - **SheetFollowHyperlink 视图定位**：监听超链接跳转，读取全局配置 `ScrollRowOffset` (如 `-3`) 修正 `win.ScrollRow`。
-  6. **“公式法调费”与“汇总调价”窗口与核心计算**：
-     - 标准 32px 绿蓝渐变标题栏、无边框原生拖拽、最小化与关闭安全调度。
-     - 内存二维数组批量计算与回写、分类表与箱柜台数智能双轨识别。
-- **当前任务状态 [ExcelServices 架构模块化拆分全部完成]**：
-  - 成功将 2,350 行单文件平滑重构为 `Services/` 目录下的 6 个分部类（`partial class ExcelServices`）：
-    1. `Services/ExcelServices.cs`（核心基础、认证状态、通用工具助手与窗口包装）
-    2. `Services/ExcelServices.Project.cs`（对应 create_project.html，新建项目与模板初始化）
-    3. `Services/ExcelServices.Cabinet.cs`（对应新建箱柜、序号递增、定义名称注册与对象模型渲染）
-    4. `Services/ExcelServices.FormulaAdjustFee.cs`（对应 formula_adjust_fee.html，公式法调费与计费矩阵写入）
-    5. `Services/ExcelServices.SummaryAdjustPrice.cs`（对应 summary_adjust_price.html，分类读取与元件汇总表生成）
-    6. `Services/ExcelServices.HeaderSync.cs`（对应箱柜表头编辑与双向同步）
-  - **最新构建状态**：`ExcelAddInDemo.dll` 编译完全通过（0 错误）。
-  7. **前端主题样式集中统一（theme.css）**：
-     - 新建 [Resources/theme.css](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/Resources/theme.css)，统一收敛 Element Plus 主题色变量（主色调 `#009688`）、通用绿蓝渐变标题栏（`.window-header`）与控制按钮、全局滚动条及基础工具样式。
-     - 在各页面中统一通过 `<link rel="stylesheet" href="theme.css">` 引入，消除了各页面的分散硬编码。
-   8. **“新建分类”与“新建项目”分类初始化共用重构**：
-      - **后端与控制器**：创建 [Models/CategoryModels.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/Models/CategoryModels.cs) 与 [Controllers/CategoryController.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/Controllers/CategoryController.cs)，支持分类名探测建议、重名校验与新建分类核心调度。
-      - **公共通用初始化抽离**：在 [Services/ExcelServices.Category.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/Services/ExcelServices.Category.cs) 中提炼公共方法 `InitializeCategorySheet` 与 `UpdateProjectInfoCategorySummary`，供【新建项目】（[ExcelServices.Project.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/Services/ExcelServices.Project.cs)）与【新建分类】100% 共享复用，消除 120+ 行重复代码。
       - **前端与宿主窗体**：创建 [Forms/CategoryForm.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/Forms/CategoryForm.cs) 与 [Resources/category.html](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/Resources/category.html)，基于 WebView2 + Vue 3 (`<script setup>`) + Element Plus 构建，包含实时重名提示、公式组选择与绿蓝相间主题（`#009688`），并修复了 `@mousedown.stop` 拖拽冒泡吞点击的隐患。
     - **最新构建状态**：`ExcelAddInDemo.dll` 编译完全通过（0 错误）。
    10. **分类工作表标准行号智能动态探测（彻底杜绝硬编码行号 +1 偏移与 #REF! 异常）**：
@@ -112,6 +88,18 @@
          1. 在 [Tool.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/Tool.cs) 中新增 `FindStandardCategoryRowIndexes(dynamic sheet)`，通过内存二维数组扫描表头特征（“序号”、“柜号”、“设备”、“小计”、“总计”）智能计算并返回 `cabSumRow`、`cabDetRow`、`cabSubsumRow`、`cabTolsumRow`。
          2. 在 [Services/ExcelServices.Category.cs](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/Services/ExcelServices.Category.cs) 的 `InitializeCategorySheet` 中直接接入动态探测结果，精准回填首台箱柜与计费矩阵，自动适配任何模板布局。
          3. 修正 [appsettings.json](file:///c:/Users/ADMIN/.gemini/antigravity/scratch/ExcelAddInCTtools/appsettings.json) 中 `CabTolsumRowIndex` 为标准 71。
+
+    11. **“智能输入模式”与选择表联动（元器件去重词库与属性联动回填）**：
+       - **业务与架构**：
+         1. 在 Ribbon【辅助项】->【项目工具】下拉菜单中新增【智能输入】按钮（`btnSmartInput`），点击非模态弹出基于 WebView2 + Vue 3 的智能输入配置窗口。
+         2. **刷新提取**：基于箱柜定义名称（`Cab_Det_X` 至 `Cab_Subsum_X`）与规则 6/7，采用内存二维数组一次性读取所有工作表的元器件插槽（`Cab_Det + 2` 至 `Cab_Subsum - 1`），以 C 列规格型号去重，将结构化数据存储于 `data/smart_components.json`。
+         3. **数据源表多选**：界面支持多选数据源工作表（展示各表去重条目数，支持全选/清空），配置自动持久化于 `data/smart_input_config.json`。
+         4. **回填字段范围设置**：支持用户多选 B 列(名称)、D 列(厂家)、E 列(单位)、G 列(单价) 的联动勾选框。
+         5. **双模选择与联动**：
+            - 支持一键为当前工作表各箱柜 C 列批量生成并绑定 Excel 原生下拉列表数据验证（引用自动维护的 `选择表` 独立工作表）；
+            - 在 `ExcelEventManager.OnSheetChange` 中挂载 C 列单元格监听，当用户下拉选择或输入规格型号时，自动按勾选字段联动回填同行的 B/D/E/G 列；
+            - 在配置窗口中提供物料候选模糊检索、双击一键填入当前活动行的录入助手面板。
+       - **代码规范**：新增 `Models/SmartInputModels.cs`、`Controllers/SmartInputController.cs`、`Services/ExcelServices.SmartInput.cs`、`Forms/SmartInputForm.cs`、`Resources/smart_input.html`，严格遵循每 3 行包含一行中文注释与 `#009688` 绿蓝相间主题规范。
 
    9. **通用计算与底层辅助方法统一沉淀到 Tool.cs (internal)**：
       - **架构定位与分层**：

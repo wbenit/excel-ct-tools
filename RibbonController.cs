@@ -195,6 +195,8 @@ namespace ExcelAddInDemo
         <group id='grpAuxiliary' label='辅助项'>
           <!-- 项目工具下拉菜单 -->
           <menu id='menuProjectTools' label='项目工具' imageMso='Tools' size='large'>
+            <!-- 智能输入按钮 -->
+            <button id='btnSmartInput' label='智能输入' imageMso='SmartArtInsert' screentip='智能输入' supertip='配置元器件去重词库与C列输入智能联动选项' onAction='OnMenuAction' />
             <!-- 项目工具项 -->
             <button id='btnProjectToolsSub' label='项目工具' onAction='OnMenuAction' />
           </menu>
@@ -338,6 +340,12 @@ namespace ExcelAddInDemo
             {
                 // 弹出基于 WebView2 + Vue 3 的“汇总调价”窗口
                 ExcelServices.ShowSummaryAdjustPriceDialog();
+            }
+            // 响应“智能输入”按钮指令
+            else if (controlId == "btnSmartInput")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“智能输入配置”窗口
+                ExcelServices.ShowSmartInputDialog();
             }
         }
     }
