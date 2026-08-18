@@ -81,8 +81,8 @@ namespace ExcelAddInDemo
                 // 创建窗体实例
                 formInstance = factory();
 
-                // 获取 Excel 主窗口 HWND 句柄
-                IntPtr excelHwnd = ExcelDnaUtil.WindowHandle;
+                // 获取 Excel 主窗口 HWND 句柄 (安全调用)
+                IntPtr excelHwnd = ExcelDnaSafeAccessor.GetWindowHandle();
 
                 // 判断句柄有效性并以非模态方式展示，保持 Excel 可直接编辑
                 if (excelHwnd != IntPtr.Zero)
@@ -157,8 +157,9 @@ namespace ExcelAddInDemo
         /// </summary>
         public static void InsertTimestampAndData()
         {
-            // 获取 Excel 的 COM Application 对象
-            dynamic app = ExcelDnaUtil.Application;
+            // 获取 Excel 的 COM Application 对象 (安全调用)
+            dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+            if (app == null) return;
             // 获取当前选中的活动单元格
             dynamic activeCell = app.ActiveCell;
 
@@ -183,8 +184,9 @@ namespace ExcelAddInDemo
         /// </summary>
         public static void ClearActiveRange()
         {
-            // 获取 Excel Application COM 引用
-            dynamic app = ExcelDnaUtil.Application;
+            // 获取 Excel Application COM 引用 (安全调用)
+            dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+            if (app == null) return;
             // 获取当前用户框选的单元格区域
             dynamic selection = app.Selection;
 
@@ -200,8 +202,9 @@ namespace ExcelAddInDemo
         /// </summary>
         public static void ApplyCustomTextToSelection()
         {
-            // 获取全局 Excel Application 实例
-            dynamic app = ExcelDnaUtil.Application;
+            // 获取全局 Excel Application 实例 (安全调用)
+            dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+            if (app == null) return;
             // 获取选中的 Range 单元格集合
             dynamic selection = app.Selection;
 
@@ -245,8 +248,8 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 获取 Excel Application COM 接口
-                dynamic app = ExcelDnaUtil.Application;
+                // 获取 Excel Application COM 接口 (安全调用)
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null || string.IsNullOrEmpty(targetPath)) return;
 
                 // 遍历已打开的工作簿

@@ -9,7 +9,7 @@ namespace ExcelAddInDemo
     /// <summary>
     /// 系统通用工具类，提供全局通用的路径获取、目录检索等工具方法
     /// </summary>
-    internal static class Tool
+    public static class Tool
     {
         /// <summary>
         /// 安全获取当前插件 DLL / XLL 文件所在的实际物理目录路径 (支持 publish 及 bin 输出目录)
@@ -34,13 +34,13 @@ namespace ExcelAddInDemo
             }
             catch { }
 
-            // 2. 若 Location 为空 (例如打包内存加载情况)，尝试获取 Excel-DNA 的 XLL 文件物理路径
+            // 2. 若 Location 为空 (例如打包内存加载情况)，尝试安全获取 Excel-DNA 的 XLL 文件物理路径
             if (string.IsNullOrWhiteSpace(currentDir))
             {
                 try
                 {
-                    // 获取 XLL 文件的绝对物理路径
-                    string xllPath = ExcelDna.Integration.ExcelDnaUtil.XllPath;
+                    // 安全获取 XLL 文件的绝对物理路径 (不触发 JIT 强制加载 ExcelDna.Integration)
+                    string? xllPath = ExcelDnaSafeAccessor.GetXllPath();
 
                     // 判断 XLL 路径有效性
                     if (!string.IsNullOrWhiteSpace(xllPath))
@@ -394,8 +394,16 @@ namespace ExcelAddInDemo
                 matrix[r, 3] = mfr;
                 matrix[r, 4] = unit;
 
-                // F 列 (索引 5): 数量 =IF(AND(B{row}="",C{row}=""),"",1)
-                matrix[r, 5] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",1)";
+                // F 列 (索引 5): 数量 (若有实体按真实数量赋值，否则采用空行自适应公式)
+                if (components != null && r < components.Count)
+                {
+                    decimal qty = components[r].Quantity > 0 ? components[r].Quantity : 1;
+                    matrix[r, 5] = qty;
+                }
+                else
+                {
+                    matrix[r, 5] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",1)";
+                }
 
                 // G 列 (索引 6): 销售单价 =IF(AND(B{row}="",C{row}=""),"",ROUND(M{row}*L{row}*N{row},2))
                 matrix[r, 6] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",ROUND(M{currPhysicalRow}*L{currPhysicalRow}*N{currPhysicalRow},2))";
@@ -407,7 +415,14 @@ namespace ExcelAddInDemo
                 matrix[r, 8] = string.Empty;
 
                 // J 列 (索引 9): 成本单价 =IF(AND(B{row}="",C{row}=""),"",ROUND(M{row}*N{row},2))
-                matrix[r, 9] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",ROUND(M{currPhysicalRow}*N{currPhysicalRow},2))";
+                if (components != null && r < components.Count && components[r].CostUnitPrice > 0)
+                {
+                    matrix[r, 9] = components[r].CostUnitPrice;
+                }
+                else
+                {
+                    matrix[r, 9] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",ROUND(M{currPhysicalRow}*N{currPhysicalRow},2))";
+                }
 
                 // K 列 (索引 10): 成本总价 =IF(AND(B{row}="",C{row}=""),"",ROUND(J{row}*F{row},2))
                 matrix[r, 10] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",ROUND(J{currPhysicalRow}*F{currPhysicalRow},2))";
@@ -440,7 +455,7 @@ namespace ExcelAddInDemo
         /// 显式跳过 A 列 (锚点列)，在 100% 擦除公式物理路径的同时，绝对保护名称管理器与超链接
         /// </summary>
         /// <param name="targetRange">需要执行公式清洗的 Excel 单元格 Range 区域</param>
-        public static void CleanRangeFormulas(Microsoft.Office.Interop.Excel.Range targetRange)
+        public static void CleanRangeFormulas(dynamic targetRange)
         {
             try
             {
@@ -448,11 +463,11 @@ namespace ExcelAddInDemo
                 if (targetRange == null) return;
 
                 // 尝试提取区域内所有包含公式的单元格集合 (提升遍历效率)
-                Microsoft.Office.Interop.Excel.Range? formulaCells = null;
+                dynamic? formulaCells = null;
                 try
                 {
-                    // 获取包含公式的单元格区域
-                    formulaCells = targetRange.SpecialCells(Microsoft.Office.Interop.Excel.XlCellType.xlCellTypeFormulas);
+                    // 获取包含公式的单元格区域 (-4123 对应 xlCellTypeFormulas)
+                    formulaCells = targetRange.SpecialCells(-4123);
                 }
                 catch { }
 
@@ -463,7 +478,7 @@ namespace ExcelAddInDemo
                 }
 
                 // 遍历包含公式的每一个单元格
-                foreach (Microsoft.Office.Interop.Excel.Range cell in formulaCells)
+                foreach (dynamic cell in formulaCells)
                 {
                     try
                     {
@@ -642,8 +657,8 @@ namespace ExcelAddInDemo
             int totalFixedCabinets = 0;
             try
             {
-                // 获取 Excel 应用程序实例
-                dynamic app = ExcelDna.Integration.ExcelDnaUtil.Application;
+                // 获取 Excel 应用程序实例 (安全调用)
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null) return 0;
 
                 // 若未传入工作簿则获取当前激活的工作簿

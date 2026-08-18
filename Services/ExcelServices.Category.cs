@@ -24,8 +24,8 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 获取当前正在运行的 Excel Application 对象
-                dynamic app = ExcelDnaUtil.Application;
+                // 获取当前正在运行的 Excel Application 对象 (安全调用)
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null || app.ActiveWorkbook == null)
                 {
                     // 若无工作簿打开则提示用户
@@ -49,8 +49,8 @@ namespace ExcelAddInDemo
                 // 实例化新建分类宿主窗体
                 _categoryFormInstance = new Forms.CategoryForm();
 
-                // 获取 Excel 主窗口 Win32 句柄以模态附着弹出，防止下沉或异常
-                IntPtr excelHwnd = ExcelDnaUtil.WindowHandle;
+                // 获取 Excel 主窗口 Win32 句柄以模态附着弹出，防止下沉或异常 (安全调用)
+                IntPtr excelHwnd = ExcelDnaSafeAccessor.GetWindowHandle();
                 _categoryFormInstance.ShowDialog(new ExcelWin32Window(excelHwnd));
             }
             catch (Exception ex)
@@ -75,8 +75,8 @@ namespace ExcelAddInDemo
 
             try
             {
-                // 获取 Excel 应用实例
-                dynamic app = ExcelDnaUtil.Application;
+                // 获取 Excel 应用实例 (安全调用)
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null) return info;
 
                 // 获取当前活动工作簿
@@ -128,8 +128,9 @@ namespace ExcelAddInDemo
         /// 核心方法：执行新建分类工作表（克隆模板 -> 清洗公式 -> 调用通用分类初始化 -> 联动项目信息表）
         /// </summary>
         /// <param name="request">新建分类参数请求</param>
+        /// <param name="explicitApp">可选显式传入的 Excel COM Application 实例</param>
         /// <returns>操作结果对象</returns>
-        public static CategoryOperationResult CreateNewCategory(CreateCategoryRequest request)
+        public static CategoryOperationResult CreateNewCategory(CreateCategoryRequest request, dynamic? explicitApp = null)
         {
             // 校验请求对象
             if (request == null || string.IsNullOrWhiteSpace(request.CategoryName))
@@ -141,8 +142,8 @@ namespace ExcelAddInDemo
 
             try
             {
-                // 获取 Excel COM Application 接口
-                dynamic app = ExcelDnaUtil.Application;
+                // 获取 Excel COM Application 接口 (优先支持外部传入，回退 ExcelDnaSafeAccessor)
+                dynamic? app = explicitApp ?? ExcelDnaSafeAccessor.GetApplication();
                 if (app == null) return new CategoryOperationResult { Success = false, Message = "无法连接 Excel 实例" };
 
                 // 获取活动工作簿
@@ -197,12 +198,10 @@ namespace ExcelAddInDemo
                     newSheet.Name = newCategoryName;
 
                     // 3. 清洗跨工作簿公式引用 (将 [CabinetTemplate.xlsx] 转换为当前工作簿本地公式，保护 A 列定义名称)
-                    Tool.CleanRangeFormulas((Microsoft.Office.Interop.Excel.Range)newSheet.UsedRange);
+                    Tool.CleanRangeFormulas(newSheet.UsedRange);
 
                     // 4. 动态计算下一个全局唯一的箱柜序号 K
-                    Microsoft.Office.Interop.Excel.Workbook excelWb = (Microsoft.Office.Interop.Excel.Workbook)activeWb;
-                    Microsoft.Office.Interop.Excel.Worksheet excelSheet = (Microsoft.Office.Interop.Excel.Worksheet)newSheet;
-                    int cabinetK = GetNextCabinetIndex(excelWb, excelSheet);
+                    int cabinetK = GetNextCabinetIndex(activeWb, newSheet);
 
                     // 5. 联动更新【项目信息】工作表中的【分类汇总】区域 (优先注册以获取正确的分类序号物理行号)
                     UpdateProjectInfoCategorySummary(activeWb, newCategoryName);

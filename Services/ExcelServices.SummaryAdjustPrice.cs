@@ -40,7 +40,7 @@ namespace ExcelAddInDemo
 
             try
             {
-                dynamic app = ExcelDnaUtil.Application;
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null) return result;
 
                 dynamic activeWb = app.ActiveWorkbook;
@@ -234,7 +234,7 @@ namespace ExcelAddInDemo
 
             try
             {
-                dynamic app = ExcelDnaUtil.Application;
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null) return false;
 
                 dynamic activeWb = app.ActiveWorkbook;
@@ -478,7 +478,7 @@ namespace ExcelAddInDemo
             {
                 try
                 {
-                    dynamic app = ExcelDnaUtil.Application;
+                    dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                     if (app != null)
                     {
                         app.ScreenUpdating = true;

@@ -21,14 +21,23 @@ namespace ExcelAddInDemo.Models
         // 备注信息
         public string Remark { get; set; } = string.Empty;
 
+        // 安装方式 (如: 暗装, 明装, 落地式)
+        public string InstallMode { get; set; } = string.Empty;
+
+        // 箱柜数量
+        public int Quantity { get; set; } = 1;
+
         // 箱柜尺寸 (宽*高*深)
         public string Dimensions { get; set; } = string.Empty;
 
-        // 箱柜类别
+        // 箱柜类别 / 所属分类表名称 (如: 1F强电井)
         public string Category { get; set; } = string.Empty;
 
         // 图纸编号
         public string DrawingNo { get; set; } = string.Empty;
+
+        // CAD 图元句柄/坐标范围
+        public List<string> MinMaxPoints { get; set; } = new List<string>();
     }
 
     /// <summary>
@@ -50,6 +59,9 @@ namespace ExcelAddInDemo.Models
 
         // 计量单位 (如: 台、个)
         public string Unit { get; set; } = string.Empty;
+
+        // CAD 图元句柄
+        public string Handle { get; set; } = string.Empty;
 
         // 数量
         public decimal Quantity { get; set; }

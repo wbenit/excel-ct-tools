@@ -23,8 +23,8 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 获取并保持 Excel Application 静态引用，避免被 GC 回收
-                _excelApp = (Microsoft.Office.Interop.Excel.Application)ExcelDnaUtil.Application;
+                // 获取并保持 Excel Application 静态引用，避免被 GC 回收 (安全调用)
+                _excelApp = (Microsoft.Office.Interop.Excel.Application)ExcelDnaSafeAccessor.GetApplication();
 
                 // 校验 _excelApp 对象有效性
                 if (_excelApp == null) return;

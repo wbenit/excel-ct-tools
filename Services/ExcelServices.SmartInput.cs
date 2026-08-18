@@ -47,8 +47,8 @@ namespace ExcelAddInDemo
 
             try
             {
-                // 获取 Excel Application COM 接口实例
-                dynamic app = ExcelDnaUtil.Application;
+                // 获取 Excel Application COM 接口实例 (安全调用)
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null) return storage;
 
                 // 获取当前活动工作簿
@@ -345,8 +345,8 @@ namespace ExcelAddInDemo
 
             try
             {
-                // 获取 Excel Application COM 接口
-                dynamic app = ExcelDnaUtil.Application;
+                // 获取 Excel Application COM 接口 (安全调用)
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null) return false;
 
                 // 获取当前活动工作簿与工作表
@@ -488,8 +488,8 @@ namespace ExcelAddInDemo
 
             try
             {
-                // 获取 Excel Application
-                dynamic app = ExcelDnaUtil.Application;
+                // 获取 Excel Application (安全调用)
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null) return false;
 
                 // 获取当前活动单元格及所在工作表
@@ -601,7 +601,7 @@ namespace ExcelAddInDemo
                 }
 
                 // 4. 判定当前单元格行是否处于当前表箱柜元器件插槽行 (Cab_Det+2 至 Cab_Subsum-1)
-                dynamic app = ExcelDnaUtil.Application;
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null) return;
                 dynamic wb = app.ActiveWorkbook;
                 if (wb == null) return;

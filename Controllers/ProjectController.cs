@@ -127,8 +127,8 @@ namespace ExcelAddInDemo.Controllers
                     // 拼接得到目标保存路径
                     string targetFilePath = Path.Combine(model.SavePath, fileName);
 
-                    // 3. 获取 Excel Application COM 对象
-                    dynamic app = ExcelDnaUtil.Application;
+                    // 3. 获取 Excel Application COM 对象 (安全调用)
+                    dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                     // 校验 Application 是否获取成功
                     if (app == null) return false;
 

@@ -40,8 +40,8 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 获取当前运行的 Excel Application COM 接口实例
-                dynamic app = ExcelDnaUtil.Application;
+                // 获取当前运行的 Excel Application COM 接口实例 (安全调用)
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null) return;
 
                 // 获取当前激活的工作簿
