@@ -27,8 +27,8 @@ namespace ExcelAddInDemo
         /// <param name="explicitApp">可选显式传入的 Excel COM Application 实例</param>
         /// <param name="explicitSheet">可选显式传入的 Worksheet 实例</param>
         /// <param name="initialCabName">可选显式传入的箱柜名称</param>
-        /// <returns>新建箱柜的核心行号及序号元组，失败返回 null</returns>
-        public static (int cabinetK, int sumRow, int detRow, int subsumRow, int tolsumRow)? CreateNewCabinet(
+        /// <returns>新建箱柜的核心行号及序号对象，失败返回 null</returns>
+        public static Models.CabinetCreatedInfo? CreateNewCabinet(
             dynamic? explicitApp = null,
             dynamic? explicitSheet = null,
             string? initialCabName = null)
@@ -255,8 +255,15 @@ namespace ExcelAddInDemo
                     activeSheet.Activate();
                     activeSheet.Cells[insertRow, 2].Select();
 
-                    // 返回新建箱柜的关键信息元组
-                    return (cabinetK, insertRow, newDetRow, newSubsumRow, newTolsumRow);
+                    // 返回新建箱柜的关键信息实体对象
+                    return new Models.CabinetCreatedInfo
+                    {
+                        CabinetK = cabinetK,
+                        SumRow = insertRow,
+                        DetRow = newDetRow,
+                        SubsumRow = newSubsumRow,
+                        TolsumRow = newTolsumRow
+                    };
                 }
                 finally
                 {
@@ -551,16 +558,34 @@ namespace ExcelAddInDemo
             List<Models.CabinetObject> cabinets,
             Action<int, string>? progressCallback = null)
         {
+            // 记录批量导出入口日志及箱柜总数
+            LogHelper.WriteLog($"[BatchExport] 开始批量导出，传入待导出箱柜总数: {cabinets?.Count ?? 0}");
+
             // 校验待导出集合是否有效
-            if (cabinets == null || cabinets.Count == 0) return 0;
+            if (cabinets == null || cabinets.Count == 0)
+            {
+                // 记录入参为空警告日志
+                LogHelper.WriteLog("[BatchExport] 待导出箱柜列表为空，终止导出流程");
+                return 0;
+            }
 
             // 获取 Excel COM Application 接口 (优先支持外部传入，回退 ExcelDnaSafeAccessor)
             dynamic? app = explicitApp ?? ExcelDnaSafeAccessor.GetApplication();
-            if (app == null) return 0;
+            if (app == null)
+            {
+                // 记录获取 Excel Application 失败日志
+                LogHelper.WriteLog("[BatchExport] 获取 Excel Application COM 实例失败，终止导出");
+                return 0;
+            }
 
             // 获取活动工作簿
             dynamic? activeWb = app.ActiveWorkbook;
-            if (activeWb == null) return 0;
+            if (activeWb == null)
+            {
+                // 记录获取活动工作簿失败日志
+                LogHelper.WriteLog("[BatchExport] 获取活动工作簿 ActiveWorkbook 失败，终止导出");
+                return 0;
+            }
 
             // 临时保存 Excel 环境状态以支持还原
             bool prevUpdating = app.ScreenUpdating;
@@ -594,12 +619,22 @@ namespace ExcelAddInDemo
                         ? string.Empty
                         : cab.Header.Category.Trim();
 
+                    // 记录当前箱柜的处理开始信息
+                    LogHelper.WriteLog($"[BatchExport] 处理箱柜 [{i + 1}/{cabinets.Count}]: 名称='{cab.Header.Name}', 分类='{targetCategory}', 元件数={cab.Components?.Count ?? 0}");
+
                     // 1. 分类表路由与新建：智能获取已有表或新建分类工作表
                     currentSheet = ResolveCategorySheet(app, activeWb, targetCategory, lastSheetName, ref lastSheetName);
-                    if (currentSheet == null) continue;
+                    if (currentSheet == null)
+                    {
+                        // 记录分类表解析失败日志
+                        LogHelper.WriteLog($"[BatchExport] 箱柜【{cab.Header.Name}】路由分类表【{targetCategory}】失败，跳过该箱柜");
+                        continue;
+                    }
 
                     // 2. 在目标分类工作表中渲染并写入单个箱柜
                     bool ok = ExportSingleCabinetObject(app, activeWb, currentSheet, cab);
+                    // 记录单个箱柜导出结果日志
+                    LogHelper.WriteLog($"[BatchExport] 箱柜【{cab.Header.Name}】写入工作表【{lastSheetName}】结果: {(ok ? "成功" : "失败")}");
                     if (ok) successCount++;
                 }
 
@@ -608,11 +643,14 @@ namespace ExcelAddInDemo
                 {
                     try { currentSheet.Activate(); } catch { }
                 }
+
+                // 记录批量导出完成汇总日志
+                LogHelper.WriteLog($"[BatchExport] 批量导出全部完成，成功导出 {successCount}/{cabinets.Count} 个箱柜");
             }
             catch (Exception ex)
             {
                 // 记录批量导出异常日志
-                LogHelper.WriteLog($"BatchExportCabinets 异常: {ex.Message}");
+                LogHelper.WriteLog($"[BatchExport] BatchExportCabinets 异常: {ex.Message}");
             }
             finally
             {
@@ -757,23 +795,32 @@ namespace ExcelAddInDemo
 
                 if (!isFirstSlotEmpty)
                 {
-                    // 首个槽位已有数据，调用 CreateNewCabinet 创建新箱柜结构
-                    var createdInfo = CreateNewCabinet(app, sheet, safeBoxName);
-                    if (createdInfo.HasValue)
+                    // 记录首槽位已占用并准备新建箱柜结构日志
+                    LogHelper.WriteLog($"[ExportSingle] 表【{sheetName}】首槽位已占用，开始为箱柜【{safeBoxName}】调用 CreateNewCabinet 创建新行结构...");
+                    // 调用 CreateNewCabinet 获取新建箱柜实体对象 (Class 引用类型彻底消除 dynamic 拆箱异常)
+                    var createdInfo = CreateNewCabinet((object)app, (object)sheet, safeBoxName);
+                    if (createdInfo != null)
                     {
                         // 提取新建箱柜的关键行号与序号
-                        cabinetK = createdInfo.Value.cabinetK;
-                        sumRow = createdInfo.Value.sumRow;
-                        detRow = createdInfo.Value.detRow;
-                        subsumRow = createdInfo.Value.subsumRow;
-                        tolsumRow = createdInfo.Value.tolsumRow;
+                        cabinetK = createdInfo.CabinetK;
+                        sumRow = createdInfo.SumRow;
+                        detRow = createdInfo.DetRow;
+                        subsumRow = createdInfo.SubsumRow;
+                        tolsumRow = createdInfo.TolsumRow;
+                        // 记录新建箱柜结构成功的关键行号日志
+                        LogHelper.WriteLog($"[ExportSingle] 箱柜【{safeBoxName}】创建新结构成功: K={cabinetK}, sumRow={sumRow}, detRow={detRow}, subsumRow={subsumRow}, tolsumRow={tolsumRow}");
                     }
                     else
                     {
                         // 记录失败日志并中断，防止覆盖首台箱柜
-                        LogHelper.WriteLog($"为箱柜【{safeBoxName}】新建箱柜结构失败，跳过写入以保护已有箱柜！");
+                        LogHelper.WriteLog($"[ExportSingle] 为箱柜【{safeBoxName}】新建箱柜结构失败(CreateNewCabinet返回null)，跳过写入以保护已有箱柜！");
                         return false;
                     }
+                }
+                else
+                {
+                    // 记录使用首个空白预留槽位日志
+                    LogHelper.WriteLog($"[ExportSingle] 表【{sheetName}】首槽位为空，直接使用模板首个槽位写入箱柜【{safeBoxName}】: K=1, sumRow={sumRow}, detRow={detRow}");
                 }
 
                 // 2. 计算元器件起始行与默认容量，并按规则 6 在小计行前插入行

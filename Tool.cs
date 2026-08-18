@@ -11,6 +11,56 @@ namespace ExcelAddInDemo
     /// </summary>
     public static class Tool
     {
+        // 静态构造函数：注册全局程序集动态解析，确保在 CAD (acad.exe) 等外部宿主调用时能自动定位加载依赖 DLL
+        static Tool()
+        {
+            try
+            {
+                // 挂载全局 AssemblyResolve 事件监听
+                AppDomain.CurrentDomain.AssemblyResolve += CurrentDomain_AssemblyResolve;
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 全局程序集动态解析处理函数，优先从插件物理目录及应用基目录加载
+        /// </summary>
+        private static Assembly? CurrentDomain_AssemblyResolve(object? sender, ResolveEventArgs args)
+        {
+            try
+            {
+                // 提取缺失程序集的 DLL 文件名
+                string dllName = new AssemblyName(args.Name).Name + ".dll";
+                // 获取插件实际安装/运行物理目录
+                string appDir = GetAppDirectory();
+                if (!string.IsNullOrWhiteSpace(appDir))
+                {
+                    // 拼接插件目录下的目标路径
+                    string target = Path.Combine(appDir, dllName);
+                    if (File.Exists(target))
+                    {
+                        // 从插件目录动态加载
+                        return Assembly.LoadFrom(target);
+                    }
+                }
+
+                // 回退尝试从当前应用域基目录查找
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                if (!string.IsNullOrWhiteSpace(baseDir))
+                {
+                    // 拼接基目录下的目标路径
+                    string target = Path.Combine(baseDir, dllName);
+                    if (File.Exists(target))
+                    {
+                        // 从基目录动态加载
+                        return Assembly.LoadFrom(target);
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
         /// <summary>
         /// 安全获取当前插件 DLL / XLL 文件所在的实际物理目录路径 (支持 publish 及 bin 输出目录)
         /// </summary>

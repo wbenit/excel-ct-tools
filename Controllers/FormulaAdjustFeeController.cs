@@ -97,13 +97,38 @@ namespace ExcelAddInDemo.Controllers
         // 配置文件物理保存路径
         private readonly string _configFilePath;
 
-        // JSON 序列化与反序列化选项 (格式化缩进与中文转义支持)
-        private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
+        // JSON 序列化与反序列化选项缓存对象
+        private static JsonSerializerOptions? _jsonOptions;
+        // 属性获取器：支持懒加载与依赖异常降级兜底，避免静态字段初始化引发 TypeInitializationException
+        private static JsonSerializerOptions JsonOptions
         {
-            WriteIndented = true,
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            PropertyNameCaseInsensitive = true
-        };
+            get
+            {
+                if (_jsonOptions == null)
+                {
+                    try
+                    {
+                        // 优先使用带非转义字符编码器的配置
+                        _jsonOptions = new JsonSerializerOptions
+                        {
+                            WriteIndented = true,
+                            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                            PropertyNameCaseInsensitive = true
+                        };
+                    }
+                    catch
+                    {
+                        // 降级兜底使用基础配置
+                        _jsonOptions = new JsonSerializerOptions
+                        {
+                            WriteIndented = true,
+                            PropertyNameCaseInsensitive = true
+                        };
+                    }
+                }
+                return _jsonOptions;
+            }
+        }
 
         // 线程安全互斥锁
         private static readonly object _fileLock = new object();

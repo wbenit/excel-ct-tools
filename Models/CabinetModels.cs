@@ -41,6 +41,24 @@ namespace ExcelAddInDemo.Models
     }
 
     /// <summary>
+    /// 新建箱柜关键行号与序号返回结果实体
+    /// 替代可空 ValueTuple，防止在 DLR 动态调用上下文中发生 HasValue 拆箱异常
+    /// </summary>
+    public class CabinetCreatedInfo
+    {
+        // 新箱柜序号 K
+        public int CabinetK { get; set; }
+        // 顶部汇总行物理行号
+        public int SumRow { get; set; }
+        // 底部明细箱柜信息行物理行号
+        public int DetRow { get; set; }
+        // 底部明细小计行物理行号
+        public int SubsumRow { get; set; }
+        // 底部明细总计行物理行号
+        public int TolsumRow { get; set; }
+    }
+
+    /// <summary>
     /// 元器件明细项实体对象
     /// </summary>
     public class ComponentItem
