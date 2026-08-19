@@ -305,6 +305,12 @@ namespace ExcelAddInDemo
                 // 调用业务层服务：直接在顶部“成套产品报价清单”插入行并复制模板明细
                 ExcelServices.CreateNewCabinetFromSelection();
             }
+            // 响应“删除箱柜”按钮指令
+            else if (controlId == "btnDeleteCabinet")
+            {
+                // 调用业务层服务：删除当前选中的箱柜及其明细数据
+                ExcelServices.DeleteCabinetFromSelection();
+            }
             // 响应“企业设置”按钮指令
             else if (controlId == "btnEnterprise")
             {

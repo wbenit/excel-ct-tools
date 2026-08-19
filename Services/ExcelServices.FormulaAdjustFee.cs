@@ -67,78 +67,35 @@ namespace ExcelAddInDemo
                 string subsumPrefix = ConfigManager.Instance.Current.Excel.SubsumNamePrefix ?? "Cab_Subsum_";
                 string tolsumPrefix = ConfigManager.Instance.Current.Excel.TolsumNamePrefix ?? "Cab_Tolsum_";
 
-                // 收集工作簿级别和工作表级别的所有定义名称
-                var allNames = new List<dynamic>();
-                dynamic parentWb = null;
-                try { parentWb = activeSheet.Parent; } catch { }
-
-                if (parentWb != null && parentWb.Names != null)
-                {
-                    try { foreach (dynamic n in parentWb.Names) allNames.Add(n); } catch { }
-                }
-                if (activeSheet != null && activeSheet.Names != null)
-                {
-                    try { foreach (dynamic n in activeSheet.Names) allNames.Add(n); } catch { }
-                }
-
-                // 扫描定义名称并构建箱柜锚点字典
-                var validCabinets = Tool.BuildCabinetMap(
-                    allNames,
-                    Convert.ToString(activeSheet.Name) ?? "",
-                    sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
-
-                dynamic activeCell = app.ActiveCell;
-                int activeRow = activeCell != null ? Convert.ToInt32(activeCell.Row) : 0;
+                // 构建当前工作表有效箱柜映射 (显式强类型复用 Tool 公共方法)
+                List<KeyValuePair<int, Models.CabinetAnchorModel>> validCabinets = Tool.GetSheetValidCabinets(activeSheet);
 
                 var targetCabinets = new System.Collections.Generic.List<KeyValuePair<int, Models.CabinetAnchorModel>>();
 
                 // 自动补齐定义名称
                 if (validCabinets.Count == 0)
                 {
+                    // 补齐定义名称
                     Tool.FixAndFillCabinetNamesForSheet(activeSheet);
-                    allNames.Clear();
-                    if (parentWb != null && parentWb.Names != null)
-                    {
-                        try { foreach (dynamic n in parentWb.Names) allNames.Add(n); } catch { }
-                    }
-                    if (activeSheet != null && activeSheet.Names != null)
-                    {
-                        try { foreach (dynamic n in activeSheet.Names) allNames.Add(n); } catch { }
-                    }
-                    validCabinets = Tool.BuildCabinetMap(
-                        allNames,
-                        Convert.ToString(activeSheet.Name) ?? "",
-                        sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                    // 重新扫描有效箱柜
+                    validCabinets = Tool.GetSheetValidCabinets(activeSheet);
                 }
 
                 // 作用域筛选
                 if (targetScope == "currentCabinet")
                 {
-                    KeyValuePair<int, Models.CabinetAnchorModel> matched = default;
-                    foreach (var c in validCabinets)
+                    // 智能匹配当前光标所属箱柜 (显式强类型声明)
+                    KeyValuePair<int, Models.CabinetAnchorModel>? matched = Tool.GetActiveCabinet(app, validCabinets, fallbackSingle: true);
+                    // 校验是否命中箱柜 (强类型 HasValue 判定)
+                    if (matched.HasValue)
                     {
-                        int sumRow = Convert.ToInt32(c.Value.Sum.Row);
-                        int detRow = Convert.ToInt32(c.Value.Det.Row);
-                        int tolsumRow = Convert.ToInt32(c.Value.Tolsum.Row);
-
-                        if (activeRow == sumRow || (activeRow >= detRow - 3 && activeRow <= tolsumRow))
-                        {
-                            matched = c;
-                            break;
-                        }
-                    }
-
-                    if (matched.Key != 0)
-                    {
-                        targetCabinets.Add(matched);
-                    }
-                    else if (validCabinets.Count > 0)
-                    {
-                        targetCabinets.Add(validCabinets[0]);
+                        // 加入目标箱柜列表
+                        targetCabinets.Add(matched.Value);
                     }
                 }
                 else
                 {
+                    // 包含所有箱柜
                     targetCabinets.AddRange(validCabinets);
                 }
 

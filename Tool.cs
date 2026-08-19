@@ -696,6 +696,344 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 安全获取当前 Excel 活动运行环境上下文 (Application, ActiveWorkbook, ActiveSheet)
+        /// 支持外部显式传入指定对象以进行覆盖
+        /// </summary>
+        /// <param name="explicitApp">外部显式传入的 Application 实例 (可选)</param>
+        /// <param name="explicitSheet">外部显式传入的 Worksheet 实例 (可选)</param>
+        /// <returns>包含 app, wb, sheet 的强类型上下文实体，任一关键对象获取失败时返回 null</returns>
+        public static Models.ExcelContext? GetActiveExcelContext(
+            dynamic? explicitApp = null,
+            dynamic? explicitSheet = null)
+        {
+            // 获取当前运行的 Excel Application COM 接口实例 (优先使用传入实例，回退 ExcelDnaSafeAccessor)
+            dynamic? app = explicitApp ?? ExcelDnaSafeAccessor.GetApplication();
+            if (app == null) return null;
+
+            // 获取当前激活的工作簿对象
+            dynamic? wb = app.ActiveWorkbook;
+            if (wb == null) return null;
+
+            // 获取目标工作表对象 (优先使用传入工作表，回退活动工作表)
+            dynamic? sheet = explicitSheet ?? wb.ActiveSheet;
+            if (sheet == null) return null;
+
+            // 返回包装完成的强类型上下文实体对象
+            return new Models.ExcelContext(app, wb, sheet);
+        }
+
+        /// <summary>
+        /// 安全收集指定工作簿与工作表中的所有定义名称 dynamic COM 对象 (双作用域完整扫描)
+        /// 若初次扫描未获取到任何定义名称且指定了有效工作表，将自动触发智能识别并重新构建定义名称
+        /// </summary>
+        /// <param name="wb">目标工作簿 COM 对象 (可选)</param>
+        /// <param name="sheet">目标工作表 COM 对象 (可选)</param>
+        /// <param name="autoRebuildIfEmpty">若定义名称为空是否自动触发重新构建 (默认 true)</param>
+        /// <returns>合并后的定义名称列表</returns>
+        public static List<dynamic> CollectAllDefinedNames(
+            dynamic? wb,
+            dynamic? sheet,
+            bool autoRebuildIfEmpty = true)
+        {
+            // 创建定义名称列表容器
+            var allNames = new List<dynamic>();
+
+            // 内部辅助局部方法：执行双作用域扫描
+            void ScanNames()
+            {
+                // 1. 尝试遍历收集工作簿级定义名称
+                if (wb != null)
+                {
+                    try
+                    {
+                        // 遍历工作簿名称集合
+                        if (wb.Names != null)
+                        {
+                            foreach (dynamic n in wb.Names) allNames.Add(n);
+                        }
+                    }
+                    catch { }
+                }
+
+                // 2. 尝试遍历收集工作表级定义名称
+                if (sheet != null)
+                {
+                    try
+                    {
+                        // 遍历工作表名称集合
+                        if (sheet.Names != null)
+                        {
+                            foreach (dynamic n in sheet.Names) allNames.Add(n);
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            // 执行初次名称扫描
+            ScanNames();
+
+            // 若扫描结果为空且允许自动重建且工作表对象有效
+            if ((allNames == null || allNames.Count == 0) && autoRebuildIfEmpty && sheet != null)
+            {
+                // 自动触发单表智能识别与定义名称补齐重建
+                FixAndFillCabinetNamesForSheet(sheet);
+
+                // 清空后重新执行名称扫描
+                allNames?.Clear();
+                ScanNames();
+            }
+
+            // 返回最终合并收集的所有定义名称集合 (保障非空)
+            return allNames ?? new List<dynamic>();
+        }
+
+        /// <summary>
+        /// 快捷公共方法：获取指定工作表中按汇总行物理行号升序排列的有效箱柜映射列表
+        /// 内部自动读取系统配置前缀、自动聚合双作用域定义名称并完成锚点结构化构建
+        /// 若定义名称缺失或为空，底层 CollectAllDefinedNames 自动触发智能重建补齐
+        /// </summary>
+        /// <param name="sheet">目标工作表 COM 对象</param>
+        /// <param name="wb">所属工作簿 COM 对象 (可选，若为空自动通过 sheet.Parent 向上获取)</param>
+        /// <returns>按汇总行物理行号升序排列的有效箱柜映射列表</returns>
+        public static List<KeyValuePair<int, Models.CabinetAnchorModel>> GetSheetValidCabinets(
+            object sheet,
+            object? wb = null)
+        {
+            // 校验工作表对象有效性
+            if (sheet == null) return new List<KeyValuePair<int, Models.CabinetAnchorModel>>();
+
+            // 转换为 dynamic 方便调用 COM 属性
+            dynamic dSheet = sheet;
+            dynamic? dWb = wb;
+
+            // 若工作簿为空尝试向上从 sheet.Parent 获取
+            if (dWb == null)
+            {
+                // 向上追溯所属工作簿
+                try { dWb = dSheet.Parent; } catch { }
+            }
+
+            // 读取全局配置中的 4 个定义名称前缀
+            var cfg = ConfigManager.Instance.Current.Excel;
+            string sumPrefix = cfg.SumNamePrefix ?? "Cab_Sum_";
+            string detPrefix = cfg.DetNamePrefix ?? "Cab_Det_";
+            string subsumPrefix = cfg.SubsumNamePrefix ?? "Cab_Subsum_";
+            string tolsumPrefix = cfg.TolsumNamePrefix ?? "Cab_Tolsum_";
+
+            // 提取当前工作表纯文本名称
+            string sheetName = Convert.ToString(dSheet.Name) ?? "";
+
+            // 收集双作用域所有定义名称 (若为空底层自动触发智能重建)
+            var allNames = CollectAllDefinedNames(dWb, dSheet, autoRebuildIfEmpty: true);
+
+            // 调用 BuildCabinetMap 构建有效箱柜列表
+            var validCabinets = BuildCabinetMap(allNames, sheetName, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+
+            // 若构建结果仍为空，进行二次容错重建与重新构建
+            if (validCabinets == null || validCabinets.Count == 0)
+            {
+                // 强制触发定义名称补齐重建
+                FixAndFillCabinetNamesForSheet(dSheet);
+                // 再次收集定义名称
+                allNames = CollectAllDefinedNames(dWb, dSheet, autoRebuildIfEmpty: false);
+                // 再次构建有效箱柜列表
+                validCabinets = BuildCabinetMap(allNames, sheetName, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+            }
+
+            // 返回构建结果 (保障非空)
+            return validCabinets ?? new List<KeyValuePair<int, Models.CabinetAnchorModel>>();
+        }
+
+
+        /// <summary>
+        /// 根据指定的物理行号智能匹配其所属的箱柜锚点对象 (命中汇总行或明细大标题至总计行区间)
+        /// 遵循规则 6 架构标准
+        /// </summary>
+        /// <param name="validCabinets">有效箱柜映射集合</param>
+        /// <param name="row">待匹配的物理行号</param>
+        /// <returns>匹配命中的箱柜键值对实体，未命中返回 null</returns>
+        public static KeyValuePair<int, Models.CabinetAnchorModel>? FindCabinetByRow(
+            IEnumerable<KeyValuePair<int, Models.CabinetAnchorModel>> validCabinets,
+            int row)
+        {
+            // 校验入参与行号有效性
+            if (validCabinets == null || row <= 0) return null;
+
+            // 遍历所有有效箱柜进行区间命中判定
+            foreach (var cab in validCabinets)
+            {
+                // 读取汇总行行号
+                int sumR = cab.Value.Sum != null ? Convert.ToInt32(cab.Value.Sum.Row) : 0;
+                // 读取箱柜信息行行号
+                int detR = cab.Value.Det != null ? Convert.ToInt32(cab.Value.Det.Row) : 0;
+                // 读取总计行行号 (若总计行为空按默认 27 行估算)
+                int tolR = cab.Value.Tolsum != null ? Convert.ToInt32(cab.Value.Tolsum.Row) : (detR + 27);
+
+                // 判定行号是否命中汇总行，或落在明细大标题至总计行下方3行报价人信息完整区间 (规则 6 扩展)
+                if (row == sumR || (detR > 0 && row >= (detR - 3) && row <= (tolR + 3)))
+                {
+                    // 返回命中的箱柜键值对
+                    return cab;
+                }
+            }
+
+            // 未命中返回 null
+            return null;
+        }
+
+        /// <summary>
+        /// 从 Excel Application 当前选区 (Selection) 智能扫描并提取所有命中的箱柜实体列表 (支持单选、跨行选区及离散 Areas)
+        /// 遵循规则 6 架构标准，按汇总行物理行号升序排列并去重
+        /// </summary>
+        /// <param name="app">Excel Application COM 接口实例</param>
+        /// <param name="validCabinets">当前工作表有效箱柜映射列表</param>
+        /// <param name="fallbackActiveCell">当选区未匹配到任何箱柜时，是否尝试回退检查 ActiveCell (默认 true)</param>
+        /// <param name="fallbackSingle">当仍未命中且当前工作表仅有 1 台箱柜时是否自动回退该箱柜 (默认 true)</param>
+        /// <returns>命中的有效箱柜键值对集合 (保证非空，按行号升序排列)</returns>
+        public static List<KeyValuePair<int, Models.CabinetAnchorModel>> GetSelectedCabinets(
+            object app,
+            List<KeyValuePair<int, Models.CabinetAnchorModel>> validCabinets,
+            bool fallbackActiveCell = true,
+            bool fallbackSingle = true)
+        {
+            // 校验入参有效性
+            if (app == null || validCabinets == null || validCabinets.Count == 0)
+            {
+                // 返回空列表
+                return new List<KeyValuePair<int, Models.CabinetAnchorModel>>();
+            }
+
+            // 存储用户选区覆盖的所有物理行号集合 (使用 HashSet 防重复)
+            var selectedRows = new HashSet<int>();
+            try
+            {
+                // 转换 COM 句柄
+                dynamic dApp = app;
+                // 获取当前活动工作表的选区对象
+                dynamic? selection = dApp.Selection;
+                if (selection != null)
+                {
+                    // 获取 Areas 区域集合 (支持 Ctrl 离散多选与多区域)
+                    dynamic areas = selection.Areas;
+                    int areaCount = 1;
+                    try { areaCount = Convert.ToInt32(areas.Count); } catch { }
+
+                    // 遍历所有选区 Area
+                    for (int a = 1; a <= areaCount; a++)
+                    {
+                        // 获取单个 Area 对象
+                        dynamic area = areaCount > 1 ? areas[a] : selection;
+                        int startRow = Convert.ToInt32(area.Row);
+                        int rowCount = Convert.ToInt32(area.Rows.Count);
+
+                        // 将该区域覆盖的所有行号加入集合
+                        for (int r = startRow; r < startRow + rowCount; r++)
+                        {
+                            selectedRows.Add(r);
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // 存储命中匹配的箱柜字典 (以箱柜序号 K 作为键去重)
+            var matchedDict = new Dictionary<int, KeyValuePair<int, Models.CabinetAnchorModel>>();
+
+            // 1. 若提取到了选区行号，逐行调用 FindCabinetByRow 匹配箱柜
+            if (selectedRows.Count > 0)
+            {
+                // 遍历所有选中的物理行号
+                foreach (int row in selectedRows)
+                {
+                    // 查找命中的箱柜实体
+                    var matched = FindCabinetByRow(validCabinets, row);
+                    if (matched.HasValue && !matchedDict.ContainsKey(matched.Value.Key))
+                    {
+                        // 记录命中的箱柜
+                        matchedDict.Add(matched.Value.Key, matched.Value);
+                    }
+                }
+            }
+
+            // 2. 若选区未匹配到任何箱柜且允许回退 ActiveCell 光标
+            if (matchedDict.Count == 0 && fallbackActiveCell)
+            {
+                int activeRow = 0;
+                try
+                {
+                    // 获取活动焦点单元格行号
+                    dynamic dApp = app;
+                    dynamic? activeCell = dApp.ActiveCell;
+                    if (activeCell != null) activeRow = Convert.ToInt32(activeCell.Row);
+                }
+                catch { }
+
+                // 若活动行号有效进行匹配
+                if (activeRow > 0)
+                {
+                    // 查找当前光标命中的箱柜
+                    var matched = FindCabinetByRow(validCabinets, activeRow);
+                    if (matched.HasValue && !matchedDict.ContainsKey(matched.Value.Key))
+                    {
+                        // 加入字典
+                        matchedDict.Add(matched.Value.Key, matched.Value);
+                    }
+                }
+            }
+
+            // 3. 若仍未匹配到且允许单箱柜自动回退 (当且仅当当前表仅有 1 台箱柜)
+            if (matchedDict.Count == 0 && fallbackSingle && validCabinets.Count == 1)
+            {
+                // 回退返回当前唯一的箱柜
+                return new List<KeyValuePair<int, Models.CabinetAnchorModel>> { validCabinets[0] };
+            }
+
+            // 4. 将命中箱柜集合按汇总行物理行号从上到下升序排序输出
+            var resultList = new List<KeyValuePair<int, Models.CabinetAnchorModel>>(matchedDict.Values);
+            resultList.Sort((a, b) =>
+            {
+                int rowA = a.Value.Sum != null ? Convert.ToInt32(a.Value.Sum.Row) : 0;
+                int rowB = b.Value.Sum != null ? Convert.ToInt32(b.Value.Sum.Row) : 0;
+                return rowA.CompareTo(rowB);
+            });
+
+            // 返回排序后的箱柜列表
+            return resultList;
+        }
+
+        /// <summary>
+        /// 从 Excel Application 活动单元格光标或选区智能匹配所属箱柜 (支持单箱柜自动兜底)
+        /// </summary>
+        /// <param name="app">Excel Application COM 接口实例</param>
+        /// <param name="validCabinets">当前工作表有效箱柜映射列表</param>
+        /// <param name="fallbackSingle">当未命中且当前表仅有 1 台箱柜时是否自动回退该箱柜 (默认 true)</param>
+        /// <returns>匹配到的箱柜实体，未命中返回 null</returns>
+        public static KeyValuePair<int, Models.CabinetAnchorModel>? GetActiveCabinet(
+            object app,
+            List<KeyValuePair<int, Models.CabinetAnchorModel>> validCabinets,
+            bool fallbackSingle = true)
+        {
+            // 校验入参有效性
+            if (app == null || validCabinets == null || validCabinets.Count == 0) return null;
+
+            // 调用通用选区与光标扫描方法
+            var list = GetSelectedCabinets(app, validCabinets, fallbackActiveCell: true, fallbackSingle: fallbackSingle);
+
+            // 若命中返回首个匹配的箱柜
+            if (list != null && list.Count > 0)
+            {
+                // 返回首个命中实体
+                return list[0];
+            }
+
+            // 未匹配到返回 null
+            return null;
+        }
+
+
+
+        /// <summary>
         /// 遍历当前工作簿中的所有工作表，根据顶部汇总与明细特征自动校准补齐 4 个定义名称
         /// 遵循规则 6 架构与规则 7 内存批量读入
         /// </summary>
@@ -970,6 +1308,50 @@ namespace ExcelAddInDemo
             }
             catch { }
         }
+
+        /// <summary>
+        /// 安全从工作表与工作簿中删除指定的定义名称
+        /// </summary>
+        /// <param name="sheet">目标工作表 COM 对象</param>
+        /// <param name="wb">目标工作簿 COM 对象 (可选)</param>
+        /// <param name="tagName">待删除的定义名称字符串 (如 Cab_Sum_2)</param>
+        public static void SafeDeleteName(dynamic sheet, dynamic? wb, string tagName)
+        {
+            // 校验待删除标签名是否有效
+            if (string.IsNullOrWhiteSpace(tagName)) return;
+            try
+            {
+                // 1. 尝试从工作表级定义名称集合中删除
+                if (sheet != null && sheet.Names != null)
+                {
+                    // 查找工作表同名定义名称
+                    try
+                    {
+                        // 获取工作表级名称项
+                        dynamic existingSheetName = sheet.Names.Item(tagName);
+                        // 若存在则执行删除
+                        if (existingSheetName != null) existingSheetName.Delete();
+                    }
+                    catch { }
+                }
+
+                // 2. 尝试从工作簿级定义名称集合中删除
+                if (wb != null && wb.Names != null)
+                {
+                    // 查找工作簿同名定义名称
+                    try
+                    {
+                        // 获取工作簿级名称项
+                        dynamic existingWbName = wb.Names.Item(tagName);
+                        // 若存在则执行删除
+                        if (existingWbName != null) existingWbName.Delete();
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
 
         /// <summary>
         /// 动态扫描工作表，智能探测并返回首台箱柜的标准行号分布 (避免硬编码行号因不同模板产生偏移与 +1 错误)

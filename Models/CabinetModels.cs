@@ -59,6 +59,31 @@ namespace ExcelAddInDemo.Models
     }
 
     /// <summary>
+    /// Excel 活动运行环境上下文实体对象
+    /// 封装当前 Application、ActiveWorkbook 及 ActiveSheet 的 COM 句柄
+    /// </summary>
+    public class ExcelContext
+    {
+        // Excel 应用程序 COM 实例
+        public dynamic App { get; set; }
+
+        // 活动工作簿 COM 实例
+        public dynamic Wb { get; set; }
+
+        // 目标工作表 COM 实例
+        public dynamic Sheet { get; set; }
+
+        // 构造函数初始化上下文对象
+        public ExcelContext(dynamic app, dynamic wb, dynamic sheet)
+        {
+            App = app;
+            Wb = wb;
+            Sheet = sheet;
+        }
+    }
+
+
+    /// <summary>
     /// 元器件明细项实体对象
     /// </summary>
     public class ComponentItem

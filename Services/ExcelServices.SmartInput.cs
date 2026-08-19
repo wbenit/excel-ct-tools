@@ -77,44 +77,8 @@ namespace ExcelAddInDemo
                     // 收集当前工作表中的所有箱柜元器件有效行区间 (startRow, endRow)
                     var cabinetRanges = new List<(int startRow, int endRow)>();
 
-                    // 1. 【第一级保障：合并收集工作簿级与工作表级的所有定义名称 (双作用域扫描)】
-                    var allNames = new List<dynamic>();
-                    if (activeWb.Names != null)
-                    {
-                        try { foreach (dynamic n in activeWb.Names) allNames.Add(n); } catch { }
-                    }
-                    if (sheet.Names != null)
-                    {
-                        try { foreach (dynamic n in sheet.Names) allNames.Add(n); } catch { }
-                    }
-
-                    // 扫描定义名称并构建当前工作表的箱柜锚点字典
-                    var validCabinets = Tool.BuildCabinetMap(
-                        allNames,
-                        sheetName,
-                        sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
-
-                    // 2. 【第二级保障：若未检测到有效定义名称，尝试自动识别并补齐工作表名称】
-                    if (validCabinets.Count == 0)
-                    {
-                        Tool.FixAndFillCabinetNamesForSheet(sheet);
-
-                        // 重新收集定义名称
-                        allNames.Clear();
-                        if (activeWb.Names != null)
-                        {
-                            try { foreach (dynamic n in activeWb.Names) allNames.Add(n); } catch { }
-                        }
-                        if (sheet.Names != null)
-                        {
-                            try { foreach (dynamic n in sheet.Names) allNames.Add(n); } catch { }
-                        }
-
-                        validCabinets = Tool.BuildCabinetMap(
-                            allNames,
-                            sheetName,
-                            sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
-                    }
+                    // 1. 获取当前工作表有效箱柜映射 (复用 Tool 公共方法，内置空值自动智能补齐重建)
+                    var validCabinets = Tool.GetSheetValidCabinets(sheet, activeWb);
 
                     // 若解析到有效箱柜锚点，计算各箱柜元器件有效插槽行 (规则 6)
                     if (validCabinets.Count > 0)
@@ -398,41 +362,8 @@ namespace ExcelAddInDemo
                 string tolsumPrefix = ConfigManager.Instance.Current.Excel.TolsumNamePrefix ?? "Cab_Tolsum_";
                 string currentSheetName = Convert.ToString(activeSheet.Name) ?? "";
 
-                // 收集工作簿级与工作表级所有定义名称 (双作用域)
-                var allNames = new List<dynamic>();
-                if (wb.Names != null)
-                {
-                    try { foreach (dynamic n in wb.Names) allNames.Add(n); } catch { }
-                }
-                if (activeSheet.Names != null)
-                {
-                    try { foreach (dynamic n in activeSheet.Names) allNames.Add(n); } catch { }
-                }
-
-                // 扫描定义名称并构建当前活动工作表的箱柜锚点字典
-                var validCabinets = Tool.BuildCabinetMap(
-                    allNames,
-                    currentSheetName,
-                    sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
-
-                // 若未识别到定义名称，尝试自动补齐
-                if (validCabinets.Count == 0)
-                {
-                    Tool.FixAndFillCabinetNamesForSheet(activeSheet);
-                    allNames.Clear();
-                    if (wb.Names != null)
-                    {
-                        try { foreach (dynamic n in wb.Names) allNames.Add(n); } catch { }
-                    }
-                    if (activeSheet.Names != null)
-                    {
-                        try { foreach (dynamic n in activeSheet.Names) allNames.Add(n); } catch { }
-                    }
-                    validCabinets = Tool.BuildCabinetMap(
-                        allNames,
-                        currentSheetName,
-                        sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
-                }
+                // 构建当前活动工作表的箱柜锚点字典 (复用 Tool 公共方法，内置空值自动智能补齐重建)
+                var validCabinets = Tool.GetSheetValidCabinets(activeSheet, wb);
 
                 // 扫描当前活动工作表中的所有箱柜元器件区域
                 var cabinetRanges = new List<(int startRow, int endRow)>();
@@ -611,22 +542,8 @@ namespace ExcelAddInDemo
                 string subsumPrefix = ConfigManager.Instance.Current.Excel.SubsumNamePrefix ?? "Cab_Subsum_";
                 string tolsumPrefix = ConfigManager.Instance.Current.Excel.TolsumNamePrefix ?? "Cab_Tolsum_";
 
-                // 收集双作用域定义名称
-                var allNames = new List<dynamic>();
-                if (wb.Names != null)
-                {
-                    try { foreach (dynamic n in wb.Names) allNames.Add(n); } catch { }
-                }
-                if (sheet.Names != null)
-                {
-                    try { foreach (dynamic n in sheet.Names) allNames.Add(n); } catch { }
-                }
-
-                // 构建当前工作表箱柜字典
-                var validCabinets = Tool.BuildCabinetMap(
-                    allNames,
-                    sheetName,
-                    sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                // 构建当前工作表箱柜字典 (复用 Tool 公共方法，内置空值自动智能补齐重建)
+                var validCabinets = Tool.GetSheetValidCabinets(sheet, wb);
 
                 // 判断是否落在某个箱柜的元器件行区间内
                 bool isComponentRow = false;

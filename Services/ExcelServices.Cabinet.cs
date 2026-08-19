@@ -20,6 +20,406 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 供 Ribbon 菜单调用的删除箱柜入口
+        /// 智能识别用户光标当前所在的箱柜或顶部汇总选中的多个箱柜，弹出确认提示后执行精准批量删除
+        /// </summary>
+        public static void DeleteCabinetFromSelection()
+        {
+            try
+            {
+                // 获取当前 Excel 活动运行上下文 (安全调用)
+                var context = Tool.GetActiveExcelContext();
+                if (context == null) return;
+                dynamic app = context.App;
+                dynamic activeWb = context.Wb;
+                dynamic activeSheet = context.Sheet;
+
+                // 构建当前工作表有效箱柜映射集合 (显式强类型接收，避免隐式 dynamic 传染)
+                List<KeyValuePair<int, Models.CabinetAnchorModel>> validCabinets = Tool.GetSheetValidCabinets(activeSheet, activeWb);
+
+                // 校验当前工作表是否存在有效箱柜
+                if (validCabinets == null || validCabinets.Count == 0)
+                {
+                    // 弹出提示：未识别到箱柜
+                    System.Windows.Forms.MessageBox.Show(
+                        "当前工作表未识别到任何箱柜定义，无法执行删除操作。",
+                        "删除箱柜提示",
+                        System.Windows.Forms.MessageBoxButtons.OK,
+                        System.Windows.Forms.MessageBoxIcon.Information);
+                    return;
+                }
+
+                // 智能查找当前选区或光标命中的所有目标箱柜 (支持单选与多选)
+                var selectedCabinets = Tool.GetSelectedCabinets(app, validCabinets, fallbackActiveCell: true, fallbackSingle: true);
+
+                // 若未命中任何箱柜
+                if (selectedCabinets == null || selectedCabinets.Count == 0)
+                {
+                    // 弹出友好提示引导用户点击或框选目标箱柜
+                    System.Windows.Forms.MessageBox.Show(
+                        "请先在工作表中将光标移至或框选要删除的箱柜汇总行或明细区域，然后再次点击【删除箱柜】。",
+                        "删除箱柜提示",
+                        System.Windows.Forms.MessageBoxButtons.OK,
+                        System.Windows.Forms.MessageBoxIcon.Information);
+                    return;
+                }
+
+                // 准备确认提示信息与待删除的序号列表
+                var targetKs = new List<int>();
+                string confirmMsg = string.Empty;
+
+                // 区分单选与多选交互场景
+                if (selectedCabinets.Count == 1)
+                {
+                    // 单箱柜场景
+                    var targetCab = selectedCabinets[0];
+                    int targetK = targetCab.Key;
+                    targetKs.Add(targetK);
+                    var anchor = targetCab.Value;
+                    int sumRow = anchor.Sum != null ? Convert.ToInt32(anchor.Sum.Row) : 0;
+                    int detRow = anchor.Det != null ? Convert.ToInt32(anchor.Det.Row) : 0;
+
+                    // 读取箱柜名称 (优先从汇总行 B 列获取，回退从明细行 B 列获取)
+                    string cabName = string.Empty;
+                    if (sumRow > 0)
+                    {
+                        try { cabName = Convert.ToString(activeSheet.Cells[sumRow, 2].Value)?.Trim() ?? ""; } catch { }
+                    }
+                    if (string.IsNullOrWhiteSpace(cabName) && detRow > 0)
+                    {
+                        try { cabName = Convert.ToString(activeSheet.Cells[detRow, 2].Value)?.Trim() ?? ""; } catch { }
+                    }
+                    if (string.IsNullOrWhiteSpace(cabName)) cabName = $"箱柜{targetK}";
+
+                    // 构造单箱柜提示语
+                    confirmMsg = validCabinets.Count > 1
+                        ? $"确定要删除【{cabName}】(序号: {targetK}) 吗？\n\n此操作将删除该箱柜的顶部汇总行及底部完整明细区块，且不可恢复。"
+                        : $"当前分类表仅有 1 台箱柜【{cabName}】。\n\n确定要清空并重置该箱柜为初始空白状态吗？";
+                }
+                else
+                {
+                    // 多箱柜批量场景：搜集所有选中箱柜的显示名称
+                    var cabNames = new List<string>();
+                    foreach (var cab in selectedCabinets)
+                    {
+                        targetKs.Add(cab.Key);
+                        int sumRow = cab.Value.Sum != null ? Convert.ToInt32(cab.Value.Sum.Row) : 0;
+                        int detRow = cab.Value.Det != null ? Convert.ToInt32(cab.Value.Det.Row) : 0;
+                        string cabName = string.Empty;
+                        if (sumRow > 0)
+                        {
+                            try { cabName = Convert.ToString(activeSheet.Cells[sumRow, 2].Value)?.Trim() ?? ""; } catch { }
+                        }
+                        if (string.IsNullOrWhiteSpace(cabName) && detRow > 0)
+                        {
+                            try { cabName = Convert.ToString(activeSheet.Cells[detRow, 2].Value)?.Trim() ?? ""; } catch { }
+                        }
+                        if (string.IsNullOrWhiteSpace(cabName)) cabName = $"箱柜{cab.Key}";
+                        cabNames.Add($"【{cabName}】(序号: {cab.Key})");
+                    }
+
+                    // 拼接箱柜名称列表
+                    string namesListStr = string.Join("\n", cabNames);
+
+                    // 若全选了当前表的所有箱柜
+                    if (selectedCabinets.Count >= validCabinets.Count)
+                    {
+                        confirmMsg = $"检测到您选中了当前工作表的全部 {selectedCabinets.Count} 台箱柜：\n\n{namesListStr}\n\n确定要清空并重置为初始的 1 台空白箱柜吗？";
+                    }
+                    else
+                    {
+                        confirmMsg = $"确定要批量删除以下 {selectedCabinets.Count} 台箱柜吗？\n\n{namesListStr}\n\n此操作将删除所选箱柜的顶部汇总行及底部完整明细区块，且不可恢复。";
+                    }
+                }
+
+                // 弹出删除确认对话框
+                var dialogRes = System.Windows.Forms.MessageBox.Show(
+                    confirmMsg,
+                    "删除箱柜确认",
+                    System.Windows.Forms.MessageBoxButtons.YesNo,
+                    System.Windows.Forms.MessageBoxIcon.Question);
+
+                // 若用户取消则直接退出
+                if (dialogRes != System.Windows.Forms.DialogResult.Yes) return;
+
+                // 执行核心批量删除业务逻辑
+                DeleteCabinets(app, activeSheet, targetKs);
+            }
+            catch (Exception ex)
+            {
+                // 弹出异常提示
+                System.Windows.Forms.MessageBox.Show(
+                    $"删除箱柜失败: {ex.Message}",
+                    "系统提示",
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// 核心方法：在当前分类表中批量删除指定序号的箱柜集合
+        /// 遵循方案 A（自底向上精准删除明细块与汇总行，清理 4 个定义名称，全删保护机制）
+        /// 支持外部显式传入 Excel COM Application 与 Worksheet
+        /// </summary>
+        /// <param name="explicitApp">可选显式传入的 Excel COM Application 实例</param>
+        /// <param name="explicitSheet">可选显式传入的 Worksheet 实例</param>
+        /// <param name="cabinetKs">待删除的箱柜序号列表</param>
+        /// <returns>删除是否成功</returns>
+        public static bool DeleteCabinets(
+            dynamic? explicitApp,
+            dynamic? explicitSheet,
+            List<int> cabinetKs)
+        {
+            // 校验待删除序号列表有效性
+            if (cabinetKs == null || cabinetKs.Count == 0) return false;
+
+            try
+            {
+                // 获取当前运行的 Excel Application COM 接口实例与工作簿工作表 (复用 Tool 公共方法)
+                var context = Tool.GetActiveExcelContext(explicitApp, explicitSheet);
+                if (context == null) return false;
+                dynamic app = context.App;
+                dynamic wb = context.Wb;
+                dynamic activeSheet = context.Sheet;
+
+                // 读取全局配置参数
+                var cfg = ConfigManager.Instance.Current.Excel;
+                string sumPrefix = cfg.SumNamePrefix ?? "Cab_Sum_";
+                string detPrefix = cfg.DetNamePrefix ?? "Cab_Det_";
+                string subsumPrefix = cfg.SubsumNamePrefix ?? "Cab_Subsum_";
+                string tolsumPrefix = cfg.TolsumNamePrefix ?? "Cab_Tolsum_";
+
+                // 关闭屏幕刷新与系统弹窗以提升执行性能
+                app.ScreenUpdating = false;
+                app.DisplayAlerts = false;
+                app.EnableEvents = false;
+
+                try
+                {
+                    // 1. 扫描当前工作表有效箱柜映射 (复用 Tool 公共方法)
+                    var validCabinets = Tool.GetSheetValidCabinets(activeSheet, wb);
+                    if (validCabinets == null || validCabinets.Count == 0) return false;
+
+                    // 匹配所有待删除的目标箱柜实体 (使用 HashSet 去重检索)
+                    var targetKSet = new HashSet<int>(cabinetKs);
+                    var toDeleteList = new List<KeyValuePair<int, Models.CabinetAnchorModel>>();
+                    foreach (var cab in validCabinets)
+                    {
+                        if (targetKSet.Contains(cab.Key))
+                        {
+                            toDeleteList.Add(cab);
+                        }
+                    }
+
+                    // 校验是否存在命中的待删除箱柜
+                    if (toDeleteList.Count == 0) return false;
+
+                    // 2. 特殊情况：若全选了所有箱柜（即删除后工作表将无箱柜），执行首台箱柜重置保护
+                    if (toDeleteList.Count >= validCabinets.Count)
+                    {
+                        // 若原表有多台箱柜，保留第 1 台箱柜，删除其余第 2~N 台箱柜
+                        if (validCabinets.Count > 1)
+                        {
+                            // 提取从第 2 台开始的其余箱柜序号进行物理删除
+                            var otherKs = new List<int>();
+                            for (int i = 1; i < validCabinets.Count; i++)
+                            {
+                                otherKs.Add(validCabinets[i].Key);
+                            }
+
+                            // 递归调用删除其余箱柜
+                            DeleteCabinets(app, activeSheet, otherKs);
+                        }
+
+                        // 重新获取并重置保留下来的第 1 台箱柜
+                        var remainingCabinets = Tool.GetSheetValidCabinets(activeSheet, wb);
+                        if (remainingCabinets.Count > 0)
+                        {
+                            var firstCab = remainingCabinets[0];
+                            int firstK = firstCab.Key;
+                            var firstAnchor = firstCab.Value;
+                            int sumR = firstAnchor.Sum != null ? Convert.ToInt32(firstAnchor.Sum.Row) : 0;
+                            int detR = firstAnchor.Det != null ? Convert.ToInt32(firstAnchor.Det.Row) : 0;
+                            int subsumR = firstAnchor.Subsum != null ? Convert.ToInt32(firstAnchor.Subsum.Row) : (detR + 24);
+
+                            // 清空汇总行数据与属性
+                            if (sumR > 0)
+                            {
+                                activeSheet.Cells[sumR, 2].Value = "箱柜1";
+                                activeSheet.Cells[sumR, 3].Value = string.Empty;
+                                activeSheet.Cells[sumR, 4].Value = string.Empty;
+                                activeSheet.Cells[sumR, 5].Value = string.Empty;
+                                activeSheet.Cells[sumR, 6].Value = 1;
+                                activeSheet.Cells[sumR, 13].Value = string.Empty;
+                            }
+
+                            // 清空明细表头
+                            if (detR > 0)
+                            {
+                                activeSheet.Cells[detR, 2].Value = "箱柜1";
+                                activeSheet.Cells[detR, 3].Value = string.Empty;
+                                activeSheet.Cells[detR, 9].Value = string.Empty;
+
+                                // 重新构建标准空白元器件矩阵 (规则 6 & 规则 7)
+                                int compStartRow = detR + 2;
+                                int compEndRow = subsumR - 1;
+                                if (compEndRow >= compStartRow)
+                                {
+                                    object[,] compMatrix = Tool.BuildComponentRowsMatrix(compStartRow, compEndRow, detR, 17);
+                                    activeSheet.Range[$"A{compStartRow}:Q{compEndRow}"].Formula = compMatrix;
+                                }
+                            }
+
+                            // 激活并选中汇总行
+                            activeSheet.Activate();
+                            if (sumR > 0) activeSheet.Cells[sumR, 2].Select();
+                        }
+                        return true;
+                    }
+
+                    // 3. 部分删除模式：搜集每个待删除箱柜的物理行号范围
+                    var deleteBlocks = new List<CabinetDeleteInfo>();
+                    foreach (var cab in toDeleteList)
+                    {
+                        var anchor = cab.Value;
+                        int sumRow = anchor.Sum != null ? Convert.ToInt32(anchor.Sum.Row) : 0;
+                        int detRow = anchor.Det != null ? Convert.ToInt32(anchor.Det.Row) : 0;
+                        int tolsumRow = anchor.Tolsum != null ? Convert.ToInt32(anchor.Tolsum.Row) : (detRow + 27);
+
+                        // 计算明细区块行范围 [detailStartRow, detailEndRow] (从大标题到总计行下方3行报价人信息)
+                        int detailStartRow = detRow - 3;
+                        // 若起始行小于 1 则兜底使用 detRow
+                        if (detailStartRow < 1) detailStartRow = detRow;
+                        // 结束行包含总计行及紧随其后的 3 行报价人信息 (完整明细块)
+                        int detailEndRow = tolsumRow + 3;
+
+                        // 检查明细块下方是否包含 1 行分隔空行，若有连同空行一起删除保持整洁
+                        try
+                        {
+                            string nextRowCellA = Convert.ToString(activeSheet.Cells[detailEndRow + 1, 1].Value) ?? "";
+                            string nextRowCellB = Convert.ToString(activeSheet.Cells[detailEndRow + 1, 2].Value) ?? "";
+                            if (string.IsNullOrWhiteSpace(nextRowCellA) && string.IsNullOrWhiteSpace(nextRowCellB))
+                            {
+                                detailEndRow += 1;
+                            }
+                        }
+                        catch { }
+
+                        deleteBlocks.Add(new CabinetDeleteInfo
+                        {
+                            CabinetK = cab.Key,
+                            SumRow = sumRow,
+                            DetailStartRow = detailStartRow,
+                            DetailEndRow = detailEndRow
+                        });
+                    }
+
+                    // 4. 执行物理删除第一阶段：按明细块起始行号降序（自底向上，从大到小）删除所有明细区块
+                    // 由于明细行全部位于汇总行下方，从下往上删除明细块不会改变上方任何明细行与汇总行的物理行号
+                    deleteBlocks.Sort((a, b) => b.DetailStartRow.CompareTo(a.DetailStartRow));
+                    foreach (var block in deleteBlocks)
+                    {
+                        if (block.DetailStartRow > 0 && block.DetailEndRow >= block.DetailStartRow)
+                        {
+                            // 删除底部明细行 (-4162 对应 xlShiftUp 向上移)
+                            activeSheet.Rows[$"{block.DetailStartRow}:{block.DetailEndRow}"].Delete(-4162);
+                        }
+                    }
+
+                    // 5. 执行物理删除第二阶段：按汇总行行号降序（自底向上，从大到小）删除所有顶部汇总行
+                    // 明细块删除完毕后汇总行原始行号完好无损，从下往上删除汇总行不会改变上方汇总行的行号
+                    deleteBlocks.Sort((a, b) => b.SumRow.CompareTo(a.SumRow));
+                    foreach (var block in deleteBlocks)
+                    {
+                        if (block.SumRow > 0)
+                        {
+                            // 删除顶部汇总行 (-4162 对应 xlShiftUp)
+                            activeSheet.Rows[$"{block.SumRow}:{block.SumRow}"].Delete(-4162);
+                        }
+                    }
+
+                    // 6. 安全清理所有被删除箱柜的 4 个定义名称 (方案 A)
+                    foreach (var block in deleteBlocks)
+                    {
+                        string sumNameTag = $"{sumPrefix}{block.CabinetK}";
+                        string detNameTag = $"{detPrefix}{block.CabinetK}";
+                        string subsumNameTag = $"{subsumPrefix}{block.CabinetK}";
+                        string tolsumNameTag = $"{tolsumPrefix}{block.CabinetK}";
+
+                        Tool.SafeDeleteName(activeSheet, wb, sumNameTag);
+                        Tool.SafeDeleteName(activeSheet, wb, detNameTag);
+                        Tool.SafeDeleteName(activeSheet, wb, subsumNameTag);
+                        Tool.SafeDeleteName(activeSheet, wb, tolsumNameTag);
+                    }
+
+                    // 7. 激活当前工作表并聚焦光标至合理的汇总区域
+                    activeSheet.Activate();
+                    try
+                    {
+                        // 尝试重新扫描剩余的首个箱柜汇总行并选中
+                        var remaining = Tool.GetSheetValidCabinets(activeSheet, wb);
+                        if (remaining.Count > 0 && remaining[0].Value.Sum != null)
+                        {
+                            int firstSumR = Convert.ToInt32(remaining[0].Value.Sum.Row);
+                            activeSheet.Cells[firstSumR, 2].Select();
+                        }
+                    }
+                    catch { }
+
+                    return true;
+                }
+                finally
+                {
+                    // 恢复屏幕刷新与系统事件响应
+                    app.ScreenUpdating = true;
+                    app.DisplayAlerts = true;
+                    app.EnableEvents = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录日志并报错
+                LogHelper.WriteLog($"DeleteCabinets 异常: {ex.Message}");
+                System.Windows.Forms.MessageBox.Show(
+                    $"批量删除箱柜发生异常: {ex.Message}",
+                    "系统提示",
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Error);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 内部辅助结构：记录待删除箱柜的物理坐标与序号
+        /// </summary>
+        private struct CabinetDeleteInfo
+        {
+            public int CabinetK;
+            public int SumRow;
+            public int DetailStartRow;
+            public int DetailEndRow;
+        }
+
+        /// <summary>
+        /// 核心方法：在当前分类表中删除指定序号的箱柜
+        /// 遵循方案 A（轻量精准删除，先删底部明细块再删顶部汇总行，清理 4 个定义名称）
+        /// 支持外部显式传入 Excel COM Application 与 Worksheet
+        /// </summary>
+        /// <param name="explicitApp">可选显式传入的 Excel COM Application 实例</param>
+        /// <param name="explicitSheet">可选显式传入的 Worksheet 实例</param>
+        /// <param name="cabinetK">待删除的箱柜序号 K</param>
+        /// <returns>删除是否成功</returns>
+        public static bool DeleteCabinet(
+            dynamic? explicitApp,
+            dynamic? explicitSheet,
+            int cabinetK)
+        {
+            // 重定向调用批量删除方法
+            return DeleteCabinets(explicitApp, explicitSheet, new List<int> { cabinetK });
+        }
+
+
+        /// <summary>
         /// 核心方法：在当前分类表中新建箱柜
         /// 遵循规则 6（顶部汇总行、底部明细块、4 个定义名称及超链接）与规则 7（内存二维数组批量操作）
         /// 支持显式传入外部 COM Application 与 Worksheet（方便 AutoCAD / TuFan 等外部模块直接调用）
@@ -35,17 +435,12 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 获取当前运行的 Excel Application COM 接口实例 (优先使用传入实例，回退 ExcelDnaSafeAccessor)
-                dynamic? app = explicitApp ?? ExcelDnaSafeAccessor.GetApplication();
-                if (app == null) return null;
-
-                // 获取当前激活的工作簿
-                dynamic wb = app.ActiveWorkbook;
-                if (wb == null) return null;
-
-                // 获取目标工作表 (优先使用传入工作表，回退活动工作表)
-                dynamic activeSheet = explicitSheet ?? wb.ActiveSheet;
-                if (activeSheet == null) return null;
+                // 获取当前运行的 Excel Application COM 接口实例与工作簿工作表 (复用 Tool 公共方法)
+                var context = Tool.GetActiveExcelContext(explicitApp, explicitSheet);
+                if (context == null) return null;
+                dynamic app = context.App;
+                dynamic wb = context.Wb;
+                dynamic activeSheet = context.Sheet;
 
                 // 读取全局配置参数
                 var cfg = ConfigManager.Instance.Current.Excel;
@@ -62,92 +457,133 @@ namespace ExcelAddInDemo
                 int insertRow = 0;
                 try
                 {
-                    // 1. 扫描当前工作表所有定义名称并构建有效箱柜映射 (规则 6)
-                    var allNames = new List<dynamic>();
-                    if (wb.Names != null)
-                    {
-                        try { foreach (dynamic n in wb.Names) allNames.Add(n); } catch { }
-                    }
-                    if (activeSheet.Names != null)
-                    {
-                        try { foreach (dynamic n in activeSheet.Names) allNames.Add(n); } catch { }
-                    }
-
-                    var validCabinets = Tool.BuildCabinetMap(
-                        allNames,
-                        Convert.ToString(activeSheet.Name) ?? "",
-                        sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                    // 1. 扫描当前工作表有效箱柜映射 (复用 Tool 公共方法)
+                    var validCabinets = Tool.GetSheetValidCabinets(activeSheet, wb);
 
                     // 探测工作表基准行号分布
                     var baseIndexes = Tool.FindStandardCategoryRowIndexes((object)activeSheet);
+
 
                     // 2. 动态计算下一个全新的独立箱柜序号 K
                     int cabinetK = GetNextCabinetIndex(wb, activeSheet);
 
                     // 3. 定位顶部汇总行插入位置 (空行复用或插入新行)
                     int maxExistingSumRow = 0;
+                    // 遍历已识别的有效箱柜获取最大汇总行
                     if (validCabinets.Count > 0)
                     {
+                        // 循环比对每个箱柜的 Sum 锚点行号
                         foreach (var c in validCabinets)
                         {
+                            // 校验 Sum 锚点是否存在
                             if (c.Value.Sum != null)
                             {
+                                // 转换为整型行号
                                 int r = Convert.ToInt32(c.Value.Sum.Row);
+                                // 刷新最大汇总行号
                                 if (r > maxExistingSumRow) maxExistingSumRow = r;
                             }
                         }
                     }
 
+                    // 根据最大汇总行确定目标插入行
                     if (maxExistingSumRow > 0)
                     {
+                        // 紧随最后一个已有汇总行之后
                         insertRow = maxExistingSumRow + 1;
                     }
                     else
                     {
+                        // 首个箱柜使用基准起始行
                         insertRow = baseIndexes.cabSumRow + 1;
                     }
 
-                    // 判断是否需要物理插入行
-                    string checkCellVal = Convert.ToString(activeSheet.Cells[insertRow, 2].Value) ?? "";
-                    if (!string.IsNullOrWhiteSpace(checkCellVal))
+                    // 检查目标行 A 列与 B 列是否包含内容或公式，防止误覆盖“合计”行或下部表头
+                    string checkCellValA = Convert.ToString(activeSheet.Cells[insertRow, 1].Value)?.Trim() ?? "";
+                    // 获取 B 列单元格纯文本
+                    string checkCellValB = Convert.ToString(activeSheet.Cells[insertRow, 2].Value)?.Trim() ?? "";
+                    // 只要 A 列或 B 列有内容则判定需要物理插入行
+                    bool needInsertSumRow = !string.IsNullOrWhiteSpace(checkCellValA) || !string.IsNullOrWhiteSpace(checkCellValB);
+
+                    // 记录顶部汇总行是否触发了物理插行
+                    bool didInsertSumRow = false;
+                    // 若需要插行则调用 Excel COM API 插入整行
+                    if (needInsertSumRow)
                     {
+                        // 物理插入 1 行 (-4121 对应 xlShiftDown)
                         activeSheet.Rows[$"{insertRow}:{insertRow}"].Insert(-4121);
+                        // 标记已执行物理插行
+                        didInsertSumRow = true;
                     }
 
-                    // 4. 定位底部明细块插入位置 (搜索明细大标题并整块复制)
-                    int lastDetBlockEnd = 0;
+                    // 4. 定位底部明细块插入位置 (搜索明细大标题并整块复制，包含总计行下方的3行报价人信息)
+                    int maxExistingTolsumRow = 0;
+                    // 遍历有效箱柜获取最后一个明细块的总计行
                     if (validCabinets.Count > 0)
                     {
+                        // 循环比对 Tolsum 锚点行号
                         foreach (var c in validCabinets)
                         {
+                            // 校验 Tolsum 锚点是否存在
                             if (c.Value.Tolsum != null)
                             {
+                                // 提取总计行整型行号
                                 int r = Convert.ToInt32(c.Value.Tolsum.Row);
-                                if (r > lastDetBlockEnd) lastDetBlockEnd = r;
+                                // 记录最大总计行
+                                if (r > maxExistingTolsumRow) maxExistingTolsumRow = r;
                             }
                         }
                     }
 
-                    if (lastDetBlockEnd == 0)
+                    // 若未识别到则使用基准总计行作为兜底
+                    if (maxExistingTolsumRow == 0)
                     {
-                        lastDetBlockEnd = baseIndexes.cabTolsumRow;
+                        // 读取基准总计行
+                        maxExistingTolsumRow = baseIndexes.cabTolsumRow;
                     }
 
-                    // 动态计算模板明细块大标题物理行与整块行数
-                    int templateStartRow = baseIndexes.cabDetRow - 3;
-                    int templateRowCount = baseIndexes.cabTolsumRow - templateStartRow + 1;
-                    if (templateRowCount <= 0) templateRowCount = cfg.TemplateDetailBlockTotalRows;
+                    // 上一台箱柜明细块的真正结束行位于总计行下方的第 3 行报价人信息
+                    int lastDetBlockEnd = maxExistingTolsumRow + 3;
 
+                    // 暂存模板基准明细行与总计行
+                    int templateDetRow = baseIndexes.cabDetRow;
+                    // 暂存基准总计行
+                    int templateTolsumRow = baseIndexes.cabTolsumRow;
+
+                    // 若顶部汇总行执行了物理插入，下方原本扫描到的所有明细与总计行号均已在 Excel 中物理下移 1 行，执行同步补偿
+                    if (didInsertSumRow)
+                    {
+                        // 补偿最后一个明细块结束行号
+                        lastDetBlockEnd += 1;
+                        // 补偿模板明细信息行号
+                        templateDetRow += 1;
+                        // 补偿模板总计行号
+                        templateTolsumRow += 1;
+                    }
+
+                    // 动态计算模板明细块大标题物理行 (Cab_Det_1 上方 3 行) 与完整结束行 (包含3行报价人信息)
+                    int templateStartRow = templateDetRow - 3;
+                    // 模板明细块结束行位于总计行下方第 3 行报价人信息
+                    int templateEndRow = templateTolsumRow + 3;
+                    // 计算模板明细区块总行数 (从大标题到报价人信息第3行)
+                    int templateRowCount = templateEndRow - templateStartRow + 1;
+                    // 异常兜底校验行数有效性 --硬编码--
+                    if (templateRowCount <= 0) templateRowCount = cfg.TemplateDetailBlockTotalRows + 3;
+
+                    // 新明细块目标起始行：位于上一台箱柜明细块末尾之后空 1 行 (保留分隔空间)
                     int newDetailStartRow = lastDetBlockEnd + 2;
 
-                    // 5. 复制模板明细区块直接写入目标新位置 (避免剪贴板模式冲突)
-                    dynamic copyRange = activeSheet.Rows[$"{templateStartRow}:{templateStartRow + templateRowCount - 1}"];
+                    // 5. 复制模板明细区块直接写入目标新位置 (包含大标题、表头、元件区、计费区、总计行与3行报价人信息)
+                    dynamic copyRange = activeSheet.Rows[$"{templateStartRow}:{templateEndRow}"];
+                    // 提取目标空白区域范围
                     dynamic targetRange = activeSheet.Rows[$"{newDetailStartRow}:{newDetailStartRow + templateRowCount - 1}"];
+                    // 将纯净且包含3行报价人信息的模板明细区块完整复制到新位置 (保留格式、公式与边框)
                     copyRange.Copy(targetRange);
 
                     // 6. 结合 CabDetRowIndex 与 CabTolsumRowIndex 计算新箱柜的 4 个关键行号
-                    int newDetRow = newDetailStartRow + 3; // 箱柜信息行
-                    int newTolsumRow = newDetailStartRow + templateRowCount - 1; // 总计行
+                    int newDetRow = newDetailStartRow + 3; // 箱柜信息行 (大标题后第 3 行)
+                    // 计算新箱柜的总计行号 (位于倒数第 4 行，即新明细块中总计行的相对位置与模板一致)
+                    int newTolsumRow = newDetailStartRow + (templateTolsumRow - templateStartRow); // 总计行
 
                     // 动态获取计费区域行数 (优先读取当前表已有箱柜或公式调费组)
                     int feeSpan = 6;
