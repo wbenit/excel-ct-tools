@@ -1,0 +1,6 @@
+{
+    // 指定当前工作区默认解决方案，辅助 C# Language Server 快速定位并加载全局符号
+    "dotnet.defaultSolution": "ExcelAddInDemo.sln",
+    // 启用完整的解决方案分析
+    "csharp.lsp.analyzers.enable": true
+}

@@ -1354,11 +1354,13 @@ namespace ExcelAddInDemo
 
 
         /// <summary>
-        /// 动态扫描工作表，智能探测并返回首台箱柜的标准行号分布 (避免硬编码行号因不同模板产生偏移与 +1 错误)
+        /// 动态扫描工作表，根据箱柜序号 K 智能探测并返回该箱柜的标准行号分布 (优先匹配指定 K，未完整覆盖时直接回退取最后一个 K)
+        /// 避免硬编码行号因不同模板产生偏移与 +1 错误
         /// </summary>
         /// <param name="sheet">目标工作表对象</param>
-        /// <returns>首台箱柜汇总行、明细信息行、小计行、总计行元组 (cabSumRow, cabDetRow, cabSubsumRow, cabTolsumRow)</returns>
-        public static (int cabSumRow, int cabDetRow, int cabSubsumRow, int cabTolsumRow) FindStandardCategoryRowIndexes(dynamic sheet)
+        /// <param name="cabinetK">目标箱柜序号 (默认 1)</param>
+        /// <returns>指定箱柜的汇总行、明细信息行、小计行、总计行元组 (cabSumRow, cabDetRow, cabSubsumRow, cabTolsumRow)</returns>
+        public static (int cabSumRow, int cabDetRow, int cabSubsumRow, int cabTolsumRow) FindStandardCategoryRowIndexes(dynamic sheet, int cabinetK = 1)
         {
             // 读取配置中的默认兜底值
             var cfg = ConfigManager.Instance.Current.Excel;
@@ -1367,101 +1369,61 @@ namespace ExcelAddInDemo
             int defTol = cfg.CabTolsumRowIndex;
             int defSub = defTol - 5;
 
+            // 若工作表为空直接返回兜底默认值
             if (sheet == null) return (defSum, defDet, defSub, defTol);
 
             try
             {
-                // 获取工作表已用区域
-                dynamic usedRange = sheet.UsedRange;
-                if (usedRange == null) return (defSum, defDet, defSub, defTol);
-
-                // 提取已用区域起始行与总行数
-                int startRow = Convert.ToInt32(usedRange.Row);
-                int rowCount = Convert.ToInt32(usedRange.Rows.Count);
-                int endRow = startRow + rowCount - 1;
-
-                // 读取数值二维数组
-                object[,]? valArray = usedRange.Value2 as object[,];
-                if (valArray == null) return (defSum, defDet, defSub, defTol);
-
-                int arrRows = valArray.GetLength(0);
-                int arrCols = valArray.GetLength(1);
-
-                // 本地快速文本获取辅助函数
-                string GetText(int r, int c)
+                // 1. 获取工作表中已识别的所有有效箱柜集合 (显式强类型接收，避免 dynamic 传染)
+                List<KeyValuePair<int, Models.CabinetAnchorModel>> validCabinets = GetSheetValidCabinets((object)sheet);
+                // 校验是否存在有效箱柜
+                if (validCabinets != null && validCabinets.Count > 0)
                 {
-                    int ar = r - startRow + 1;
-                    if (ar < 1 || ar > arrRows || c < 1 || c > arrCols) return "";
-                    return Convert.ToString(valArray[ar, c])?.Trim() ?? "";
-                }
-
-                int foundSumRow = 0;
-                int foundDetRow = 0;
-                int foundSubsumRow = 0;
-                int foundTolsumRow = 0;
-
-                // 1. 扫描顶部汇总表表头 (寻找包含 "序号" 且第2列包含 "柜号" 或 "箱柜" 的行)
-                for (int r = startRow; r <= endRow; r++)
-                {
-                    string c1 = GetText(r, 1);
-                    string c2 = GetText(r, 2);
-                    if (c1.Contains("序号") && (c2.Contains("柜号") || c2.Contains("箱柜") || c2.Contains("产品")))
+                    Models.CabinetAnchorModel? targetAnchor = null;
+                    // 若传入了有效的正数序号，优先精确匹配
+                    if (cabinetK > 0)
                     {
-                        // 首个箱柜汇总行位于表头下一行
-                        foundSumRow = r + 1;
-                        break;
-                    }
-                }
-
-                // 2. 扫描底部明细表箱柜信息行 (寻找 A 列包含 "柜号" 且下一行 A 列包含 "序号" 的行)
-                for (int r = (foundSumRow > 0 ? foundSumRow + 1 : startRow + 1); r <= endRow; r++)
-                {
-                    string aText = GetText(r, 1);
-                    string nextAText = GetText(r + 1, 1);
-                    if ((aText.Contains("柜号") || aText.Contains("箱柜") || aText.Contains("设备")) &&
-                        (nextAText.Contains("序号") || nextAText.Contains("编号") || nextAText.Contains("元件")))
-                    {
-                        foundDetRow = r;
-                        break;
-                    }
-                }
-
-                // 3. 在明细块内部寻找小计行与总计行
-                if (foundDetRow > 0)
-                {
-                    for (int r = foundDetRow + 2; r <= Math.Min(endRow, foundDetRow + 60); r++)
-                    {
-                        string aText = GetText(r, 1);
-                        string bText = GetText(r, 2);
-
-                        // 识别小计行
-                        if (foundSubsumRow == 0 && (aText.Contains("小计") || bText.Contains("小计")))
+                        foreach (var pair in validCabinets)
                         {
-                            foundSubsumRow = r;
+                            if (pair.Key == cabinetK)
+                            {
+                                targetAnchor = pair.Value;
+                                break;
+                            }
                         }
+                    }
 
-                        // 识别总计行
-                        if (foundTolsumRow == 0 && (aText.Contains("总计") || bText.Contains("总计")))
+                    // 若传入 -1 (或 <=0 表示取末尾箱柜)，或者指定 cabinetK 未完整覆盖，直接取工作表最后一个有效箱柜 K
+                    if (targetAnchor == null || targetAnchor.Sum == null || targetAnchor.Det == null || targetAnchor.Tolsum == null)
+                    {
+                        // 提取最后一个有效箱柜实体
+                        targetAnchor = validCabinets[validCabinets.Count - 1].Value;
+                    }
+
+                    // 提取目标箱柜的 4 个物理行号
+                    if (targetAnchor != null)
+                    {
+                        int sumR = targetAnchor.Sum != null ? Convert.ToInt32(targetAnchor.Sum.Row) : 0;
+                        int detR = targetAnchor.Det != null ? Convert.ToInt32(targetAnchor.Det.Row) : 0;
+                        int tolR = targetAnchor.Tolsum != null ? Convert.ToInt32(targetAnchor.Tolsum.Row) : 0;
+                        int subR = targetAnchor.Subsum != null ? Convert.ToInt32(targetAnchor.Subsum.Row) : (tolR > 0 ? tolR - 5 : 0);
+
+                        // 校验提取结果有效性
+                        if (sumR > 0 && detR > 0 && tolR > 0)
                         {
-                            foundTolsumRow = r;
-                            break;
+                            if (subR <= 0) subR = tolR - 5;
+                            return (sumR, detR, subR, tolR);
                         }
                     }
                 }
 
-                // 兜底与有效性校验
-                if (foundSumRow <= 0) foundSumRow = defSum;
-                if (foundDetRow <= 0) foundDetRow = defDet;
-                if (foundTolsumRow <= 0) foundTolsumRow = defTol;
-                if (foundSubsumRow <= 0) foundSubsumRow = foundTolsumRow - 5;
-
-                // 返回识别出的 4 个基准行号
-                return (foundSumRow, foundDetRow, foundSubsumRow, foundTolsumRow);
+                // 2. 若未识别到任何有效箱柜定义，直接回退配置默认基准值
+                return (defSum, defDet, defSub, defTol);
             }
             catch (Exception ex)
             {
                 // 记录异常并回退默认值
-                LogHelper.WriteLog($"探测分类标准行号分布异常: {ex.Message}");
+                LogHelper.WriteLog($"探测箱柜 {cabinetK} 标准行号分布异常: {ex.Message}");
                 return (defSum, defDet, defSub, defTol);
             }
         }
