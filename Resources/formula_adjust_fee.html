@@ -815,9 +815,19 @@
           // 设为默认公式组
           const setDefaultGroup = (row) => {
             groupList.value.forEach((g) => (g.isDefault = g.id === row.id));
+            if (selectedGroup.value && selectedGroup.value.id === row.id) {
+              row.details = JSON.parse(JSON.stringify(detailList.value));
+            }
             // 立即保存配置
             saveAllToHost();
-            ElementPlus.ElMessage.success(`已将【${row.name}】设为默认公式组`);
+            // 向 C# 宿主发送同步写入模板计费行指令
+            sendMessageToHost({
+              action: "setDefaultFormulaGroup",
+              groupId: row.id,
+              groupName: row.name,
+              details: row.details || detailList.value || [],
+            });
+            ElementPlus.ElMessage.success(`已将【${row.name}】设为默认公式组并同步更新模板计费行`);
           };
 
           // 复制公式组

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using ExcelDna.Integration;
+using ExcelAddInDemo.Models;
 using static ExcelAddInDemo.Tool;
 
 namespace ExcelAddInDemo
@@ -49,11 +50,8 @@ namespace ExcelAddInDemo
                 int cabDetRow = ConfigManager.Instance.Current.Excel.CabDetRowIndex;
                 int cabTolsumRow = ConfigManager.Instance.Current.Excel.CabTolsumRowIndex;
 
-                // 读取 4 种名称前缀配置
-                string sumPrefix = ConfigManager.Instance.Current.Excel.SumNamePrefix ?? "Cab_Sum_";
-                string detPrefix = ConfigManager.Instance.Current.Excel.DetNamePrefix ?? "Cab_Det_";
-                string subsumPrefix = ConfigManager.Instance.Current.Excel.SubsumNamePrefix ?? "Cab_Subsum_";
-                string tolsumPrefix = ConfigManager.Instance.Current.Excel.TolsumNamePrefix ?? "Cab_Tolsum_";
+                // 读取 4 种名称前缀配置 (零堆分配)
+                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
                 string defaultSheetName = ConfigManager.Instance.Current.Excel.DefaultTemplateSheet ?? "分类1";
 
                 // 2. 填写【项目信息】工作表

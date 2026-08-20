@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using ExcelDna.Integration;
+using ExcelAddInDemo.Models;
 using static ExcelAddInDemo.Tool;
 
 namespace ExcelAddInDemo
@@ -46,11 +47,8 @@ namespace ExcelAddInDemo
                 dynamic activeWb = app.ActiveWorkbook;
                 if (activeWb == null) return result;
 
-                var cfg = ConfigManager.Instance.Current.Excel;
-                string sumPrefix = cfg.SumNamePrefix ?? "Cab_Sum_";
-                string detPrefix = cfg.DetNamePrefix ?? "Cab_Det_";
-                string subsumPrefix = cfg.SubsumNamePrefix ?? "Cab_Subsum_";
-                string tolsumPrefix = cfg.TolsumNamePrefix ?? "Cab_Tolsum_";
+                // 读取箱柜定义名称前缀值对象 (零堆分配)
+                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
 
                 var allNames = new List<dynamic>();
                 if (activeWb.Names != null)
@@ -243,11 +241,8 @@ namespace ExcelAddInDemo
                 app.ScreenUpdating = false;
                 app.DisplayAlerts = false;
 
-                var cfg = ConfigManager.Instance.Current.Excel;
-                string sumPrefix = cfg.SumNamePrefix ?? "Cab_Sum_";
-                string detPrefix = cfg.DetNamePrefix ?? "Cab_Det_";
-                string subsumPrefix = cfg.SubsumNamePrefix ?? "Cab_Subsum_";
-                string tolsumPrefix = cfg.TolsumNamePrefix ?? "Cab_Tolsum_";
+                // 读取箱柜定义名称前缀值对象 (零堆分配)
+                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
 
                 var allWbNames = new List<dynamic>();
                 if (activeWb.Names != null)
@@ -461,11 +456,19 @@ namespace ExcelAddInDemo
                     summarySheet.Cells[totalRow, 8].Formula = $"=SUM(H{startDataRow}:H{endDataRow})";
                     summarySheet.Cells[totalRow, 8].Font.Bold = true;
 
+                    // 设置表格全区域实线边框
                     dynamic tableRange = summarySheet.Range[$"A3:I{totalRow}"];
                     tableRange.Borders.LineStyle = 1; // 实线 --硬编码--
+
+                    // 设置单价列与合价列的标准数值格式
+                    summarySheet.Range[$"G{startDataRow}:H{totalRow}"].NumberFormat = "#,##0.00"; // 两位小数货币格式 --硬编码--
+                    // 设置总数量列数值格式
+                    summarySheet.Range[$"F{startDataRow}:F{endDataRow}"].NumberFormat = "0.##"; // 数量格式 --硬编码--
                 }
 
+                // 自动对齐列宽
                 summarySheet.Columns["A:I"].AutoFit();
+                // 激活并高亮显示元件汇总表
                 summarySheet.Activate();
                 return true;
             }
@@ -486,6 +489,53 @@ namespace ExcelAddInDemo
                     }
                 }
                 catch { }
+            }
+        }
+
+        /// <summary>
+        /// 一键更新：从“元件汇总表”将修改后的白色列（名称、型号、厂家、单价、备注等）反向同步更新至各分类表箱柜明细块（预留）
+        /// </summary>
+        public static bool UpdateFromComponentSummarySheet()
+        {
+            try
+            {
+                // 获取当前活动 Excel Application 实例
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                if (app == null) return false;
+
+                // 获取当前活动工作簿
+                dynamic activeWb = app.ActiveWorkbook;
+                if (activeWb == null) return false;
+
+                // 目标汇总表名称 --硬编码--
+                string summarySheetName = "元件汇总表";
+
+                // 探测工作簿中是否存在“元件汇总表”
+                dynamic? summarySheet = null;
+                try
+                {
+                    summarySheet = activeWb.Worksheets[summarySheetName];
+                }
+                catch
+                {
+                    // 未找到汇总表直接返回
+                    LogHelper.WriteLog("未找到【元件汇总表】工作表，无法执行一键更新");
+                    return false;
+                }
+
+                if (summarySheet == null) return false;
+
+                // 记录日志：一键更新预留通路已打通
+                LogHelper.WriteLog("执行一键更新预留处理流程：已校验元件汇总表存在，等待后续细化批量回填算法");
+
+                // 当前阶段返回成功，提示前端已就绪
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"UpdateFromComponentSummarySheet 异常: {ex.Message}");
+                return false;
             }
         }
     }

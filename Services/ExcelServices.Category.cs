@@ -267,11 +267,8 @@ namespace ExcelAddInDemo
                 int detectedSubsumRow = rowIndexes.cabSubsumRow;
                 int cabTolsumRow = rowIndexes.cabTolsumRow;
 
-                var cfg = ConfigManager.Instance.Current.Excel;
-                string sumPrefix = cfg.SumNamePrefix ?? "Cab_Sum_";
-                string detPrefix = cfg.DetNamePrefix ?? "Cab_Det_";
-                string subsumPrefix = cfg.SubsumNamePrefix ?? "Cab_Subsum_";
-                string tolsumPrefix = cfg.TolsumNamePrefix ?? "Cab_Tolsum_";
+                // 读取箱柜定义名称前缀值对象 (零堆分配)
+                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
 
                 // 2. 加载调费公式组明细项并计算计费矩阵 (规则 6 & 7)
                 int subsumRow = detectedSubsumRow; // 动态探测得到的小计行物理行号

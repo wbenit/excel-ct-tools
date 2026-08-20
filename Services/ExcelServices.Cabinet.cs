@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using ExcelDna.Integration;
+using ExcelAddInDemo.Models;
 using static ExcelAddInDemo.Tool;
 
 namespace ExcelAddInDemo
@@ -54,14 +55,8 @@ namespace ExcelAddInDemo
 
                 // 3. 读取配置参数与前缀
                 var cfg = ConfigManager.Instance.Current.Excel;
-                // 汇总行前缀
-                string sumPrefix = cfg.SumNamePrefix ?? "Cab_Sum_";
-                // 明细信息行前缀
-                string detPrefix = cfg.DetNamePrefix ?? "Cab_Det_";
-                // 小计行前缀
-                string subsumPrefix = cfg.SubsumNamePrefix ?? "Cab_Subsum_";
-                // 总计行前缀
-                string tolsumPrefix = cfg.TolsumNamePrefix ?? "Cab_Tolsum_";
+                // 读取箱柜定义名称前缀值对象 (零堆分配)
+                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = cfg.Prefixes;
                 // 默认模板工作表名称
                 string defaultTemplateSheet = cfg.DefaultTemplateSheet ?? "分类1";
 
@@ -98,7 +93,7 @@ namespace ExcelAddInDemo
                     }
                     else
                     {
-                        // 使用基准汇总行下一行
+                        // 使用汇总行最大值 +1
                         insertSumRow = lastIndexes.cabSumRow + 1;
                     }
 
@@ -455,12 +450,8 @@ namespace ExcelAddInDemo
                 dynamic wb = context.Wb;
                 dynamic activeSheet = context.Sheet;
 
-                // 读取全局配置参数
-                var cfg = ConfigManager.Instance.Current.Excel;
-                string sumPrefix = cfg.SumNamePrefix ?? "Cab_Sum_";
-                string detPrefix = cfg.DetNamePrefix ?? "Cab_Det_";
-                string subsumPrefix = cfg.SubsumNamePrefix ?? "Cab_Subsum_";
-                string tolsumPrefix = cfg.TolsumNamePrefix ?? "Cab_Tolsum_";
+                // 读取箱柜定义名称前缀值对象 (零堆分配)
+                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
 
                 // 关闭屏幕刷新与系统弹窗以提升执行性能
                 app.ScreenUpdating = false;
@@ -717,10 +708,8 @@ namespace ExcelAddInDemo
 
                 // 读取全局配置参数
                 var cfg = ConfigManager.Instance.Current.Excel;
-                string sumPrefix = cfg.SumNamePrefix ?? "Cab_Sum_";
-                string detPrefix = cfg.DetNamePrefix ?? "Cab_Det_";
-                string subsumPrefix = cfg.SubsumNamePrefix ?? "Cab_Subsum_";
-                string tolsumPrefix = cfg.TolsumNamePrefix ?? "Cab_Tolsum_";
+                // 读取箱柜定义名称前缀值对象 (零堆分配)
+                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = cfg.Prefixes;
 
                 // 关闭屏幕刷新与系统弹窗以提升执行性能
                 app.ScreenUpdating = false;
@@ -988,11 +977,8 @@ namespace ExcelAddInDemo
         {
             int maxK = 0;
 
-            var cfg = ConfigManager.Instance.Current.Excel;
-            string sumPrefix = cfg.SumNamePrefix ?? "Cab_Sum_";
-            string detPrefix = cfg.DetNamePrefix ?? "Cab_Det_";
-            string subsumPrefix = cfg.SubsumNamePrefix ?? "Cab_Subsum_";
-            string tolsumPrefix = cfg.TolsumNamePrefix ?? "Cab_Tolsum_";
+            // 读取箱柜定义名称前缀值对象 (零堆分配)
+            var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
 
             try
             {
@@ -1174,12 +1160,12 @@ namespace ExcelAddInDemo
 
             try
             {
-                var cfg = ConfigManager.Instance.Current.Excel;
-                string sumPrefix = cfg.SumNamePrefix ?? "Cab_Sum_";
-                string detPrefix = cfg.DetNamePrefix ?? "Cab_Det_";
-
-                string detTagName = $"{detPrefix}{cabinetIndex}";
-                string sumTagName = $"{sumPrefix}{cabinetIndex}";
+                // 读取箱柜定义名称前缀值对象 (零堆分配)
+                var prefixes = CabinetPrefixConfig.Current;
+                // 获取明细信息行定义名称
+                string detTagName = prefixes.GetDetName(cabinetIndex);
+                // 获取汇总行定义名称
+                string sumTagName = prefixes.GetSumName(cabinetIndex);
 
                 dynamic sumRange = null;
                 dynamic detRange = null;
@@ -1249,6 +1235,11 @@ namespace ExcelAddInDemo
         /// 支持跨分类表自动路由（基于 Category 新建或切换分类表）、箱柜插入、17列公式矩阵批量回写及定义名称管理
         /// 严格遵循规则 6（4个定义名称及超链接）与规则 7（内存二维数组批量操作）
         /// </summary>
+        /// <summary>
+        /// 批量导入/导出箱柜集合至 Excel 活动工作簿 (极速优化版)
+        /// 支持跨分类表自动路由（基于 Category 新建或切换分类表）、箱柜插入、17列公式矩阵批量回写及定义名称管理
+        /// 严格遵循规则 6（4个定义名称及超链接）与规则 7（内存二维数组批量操作）
+        /// </summary>
         /// <param name="explicitApp">Excel Application COM 接口实例（可选，为空时回退 ExcelDnaUtil）</param>
         /// <param name="cabinets">待导出的箱柜对象集合</param>
         /// <param name="progressCallback">进度回调 (progressPercentage, cabinetName)</param>
@@ -1269,8 +1260,37 @@ namespace ExcelAddInDemo
                 return 0;
             }
 
-            // 获取 Excel COM Application 接口 (优先支持外部传入，回退 ExcelDnaSafeAccessor)
-            dynamic? app = explicitApp ?? ExcelDnaSafeAccessor.GetApplication();
+            // 获取 Excel COM Application 接口 (带存活探测与自动重连保护)
+            dynamic? app = null;
+            if (explicitApp != null)
+            {
+                try
+                {
+                    // 探测传入的 COM 句柄是否依然存活有效
+                    var _ = explicitApp.Version;
+                    app = explicitApp;
+                }
+                catch
+                {
+                    // 记录传入句柄断开日志
+                    LogHelper.WriteLog("[BatchExport] 传入的 explicitApp COM 句柄已断开(0x80010114)，尝试重新获取当前运行中的 Excel 实例");
+                }
+            }
+            if (app == null)
+            {
+                try
+                {
+                    // 重新从 ROT 获取活动 Excel 实例
+                    app = System.Runtime.InteropServices.Marshal.GetActiveObject("Excel.Application");
+                }
+                catch { }
+            }
+            if (app == null)
+            {
+                // 回退 ExcelDnaSafeAccessor
+                app = ExcelDnaSafeAccessor.GetApplication();
+            }
+
             if (app == null)
             {
                 // 记录获取 Excel Application 失败日志
@@ -1279,7 +1299,16 @@ namespace ExcelAddInDemo
             }
 
             // 获取活动工作簿
-            dynamic? activeWb = app.ActiveWorkbook;
+            dynamic? activeWb = null;
+            try
+            {
+                activeWb = app.ActiveWorkbook;
+            }
+            catch (Exception exWb)
+            {
+                LogHelper.WriteLog($"[BatchExport] 获取 ActiveWorkbook 异常: {exWb.Message}");
+            }
+
             if (activeWb == null)
             {
                 // 记录获取活动工作簿失败日志
@@ -1287,65 +1316,141 @@ namespace ExcelAddInDemo
                 return 0;
             }
 
+            // 1. 前向填充空白 Category，确保子箱柜准确继承父分类工作表名称
+            string runningCategory = string.Empty;
+            foreach (var c in cabinets)
+            {
+                if (c?.Header == null) continue;
+                if (!string.IsNullOrWhiteSpace(c.Header.Category))
+                {
+                    runningCategory = c.Header.Category.Trim();
+                }
+                else
+                {
+                    c.Header.Category = runningCategory;
+                }
+            }
+
             // 临时保存 Excel 环境状态以支持还原
-            bool prevUpdating = app.ScreenUpdating;
-            bool prevAlerts = app.DisplayAlerts;
-            bool prevEvents = app.EnableEvents;
+            bool prevUpdating = true;
+            bool prevAlerts = true;
+            bool prevEvents = true;
+            int prevCalculation = -4105; // 默认 xlCalculationAutomatic (-4105)
+            try { prevUpdating = app.ScreenUpdating; } catch { }
+            try { prevAlerts = app.DisplayAlerts; } catch { }
+            try { prevEvents = app.EnableEvents; } catch { }
+            try { prevCalculation = Convert.ToInt32(app.Calculation); } catch { }
 
             int successCount = 0;
 
             try
             {
-                // 关闭屏幕刷新与事件调度以大幅提升批量写入性能
-                app.ScreenUpdating = false;
-                app.DisplayAlerts = false;
-                app.EnableEvents = false;
+                // 2. 关闭屏幕刷新与事件调度，锁定手动计算模式以大幅提升批量写入性能
+                try { app.ScreenUpdating = false; } catch { }
+                try { app.DisplayAlerts = false; } catch { }
+                try { app.EnableEvents = false; } catch { }
+                try { app.Calculation = -4135; /* xlCalculationManual */ } catch { }
 
-                // 记录上一个箱柜所绑定的分类工作表名称
+                // 3. 按 Category 分组处理箱柜列表，消除工作表频繁交替切换开销
+                var categoryGroups = cabinets
+                    .GroupBy(c => string.IsNullOrWhiteSpace(c.Header.Category) ? string.Empty : c.Header.Category.Trim())
+                    .ToList();
+
+                // 维护每个分类工作表的内存状态上下文字典
+                var sheetContextMap = new Dictionary<string, BatchCategorySheetContext>(StringComparer.OrdinalIgnoreCase);
                 string lastSheetName = string.Empty;
-                // 当前操作的目标工作表引用
-                dynamic? currentSheet = null;
+                dynamic? lastSheet = null;
+                int totalProcessed = 0;
 
-                // 循环处理所有待导出的箱柜实体
-                for (int i = 0; i < cabinets.Count; i++)
+                // 4. 遍历所有分类分组
+                foreach (var grp in categoryGroups)
                 {
-                    var cab = cabinets[i];
-                    // 计算进度百分比并触发回调
-                    int progress = (int)((i + 1) * 100.0 / cabinets.Count);
-                    progressCallback?.Invoke(progress, cab.Header.Name);
+                    string targetCategory = grp.Key;
+                    var cabListInGroup = grp.ToList();
+                    int cabCountInGroup = cabListInGroup.Count;
+                    if (cabCountInGroup == 0) continue;
 
-                    // 提取箱柜归属的分类表名称 (Category)
-                    string targetCategory = string.IsNullOrWhiteSpace(cab.Header.Category)
-                        ? string.Empty
-                        : cab.Header.Category.Trim();
-
-                    // 记录当前箱柜的处理开始信息
-                    LogHelper.WriteLog($"[BatchExport] 处理箱柜 [{i + 1}/{cabinets.Count}]: 名称='{cab.Header.Name}', 分类='{targetCategory}', 元件数={cab.Components?.Count ?? 0}");
-
-                    // 1. 分类表路由与新建：智能获取已有表或新建分类工作表
-                    currentSheet = ResolveCategorySheet(app, activeWb, targetCategory, lastSheetName, ref lastSheetName);
+                    // 分类表路由与新建：智能获取已有表或新建分类工作表
+                    dynamic? currentSheet = ResolveCategorySheet(app, activeWb, targetCategory, lastSheetName, ref lastSheetName);
                     if (currentSheet == null)
                     {
-                        // 记录分类表解析失败日志
-                        LogHelper.WriteLog($"[BatchExport] 箱柜【{cab.Header.Name}】路由分类表【{targetCategory}】失败，跳过该箱柜");
+                        // 记录解析工作表失败日志
+                        LogHelper.WriteLog($"[BatchExport] 分类【{targetCategory}】解析工作表失败，跳过该分类下 {cabCountInGroup} 个箱柜");
                         continue;
                     }
+                    lastSheet = currentSheet;
 
-                    // 2. 在目标分类工作表中渲染并写入单个箱柜
-                    bool ok = ExportSingleCabinetObject(app, activeWb, currentSheet, cab);
-                    // 记录单个箱柜导出结果日志
-                    LogHelper.WriteLog($"[BatchExport] 箱柜【{cab.Header.Name}】写入工作表【{lastSheetName}】结果: {(ok ? "成功" : "失败")}");
-                    if (ok) successCount++;
+                    // 获取或初始化该分类工作表的内存状态上下文
+                    string actualSheetName = Convert.ToString(currentSheet.Name) ?? lastSheetName;
+                    if (!sheetContextMap.TryGetValue(actualSheetName, out var sheetCtx))
+                    {
+                        // 首次进入该分类表，初始化纯净母版与预扩容
+                        sheetCtx = InitCategorySheetContext(app, activeWb, currentSheet, actualSheetName, cabCountInGroup);
+                        sheetContextMap[actualSheetName] = sheetCtx;
+                    }
+
+                    // 5. 顺序遍历写入当前分类下的所有箱柜
+                    for (int gIdx = 0; gIdx < cabListInGroup.Count; gIdx++)
+                    {
+                        var cab = cabListInGroup[gIdx];
+                        totalProcessed++;
+                        // 触发进度回调通知
+                        int progress = (int)(totalProcessed * 100.0 / cabinets.Count);
+                        progressCallback?.Invoke(progress, cab.Header.Name);
+
+                        // 调用纯净母版克隆版写入单个箱柜
+                        bool ok = ExportSingleCabinetOptimized(
+                            app,
+                            activeWb,
+                            currentSheet,
+                            cab,
+                            sheetCtx);
+
+                        if (ok) successCount++;
+                        else
+                        {
+                            // 记录单箱柜导出失败日志
+                            LogHelper.WriteLog($"[BatchExport] 箱柜【{cab.Header.Name}】写入失败，分类【{actualSheetName}】");
+                        }
+                    }
+                }
+
+                // 6. 统一静默清理各分类工作表中的纯净母版占位 (自底向上物理删除，触发 Excel 自动平移无缝对接)
+                foreach (var kvp in sheetContextMap)
+                {
+                    var sheetCtx = kvp.Value;
+                    if (sheetCtx == null || !sheetCtx.HasTemplateToClean) continue;
+
+                    dynamic ws = sheetCtx.Sheet;
+                    try
+                    {
+                        // 先删除纯净母表明细块 (34 行) --硬编码--
+                        int tmplDetStart = sheetCtx.TemplateDetailBlockStartRow;
+                        int tmplDetCount = 34; // --硬编码--
+                        ws.Rows[$"{tmplDetStart}:{tmplDetStart + tmplDetCount - 1}"].Delete(-4119); // -4119 对应 xlShiftUp
+
+                        // 若存在母版汇总行 (全新表场景)，再删除母版汇总行 (1 行)
+                        if (sheetCtx.TemplateSumRow > 0)
+                        {
+                            int tmplSumRow = sheetCtx.TemplateSumRow;
+                            ws.Rows[$"{tmplSumRow}:{tmplSumRow}"].Delete(-4119); // -4119 对应 xlShiftUp
+                        }
+                    }
+                    catch (Exception exClean)
+                    {
+                        // 记录清理母版异常日志
+                        LogHelper.WriteLog($"[BatchExport] 清理分类【{kvp.Key}】临时母版异常: {exClean.Message}");
+                    }
                 }
 
                 // 激活最终操作的分类工作表
-                if (currentSheet != null)
+                if (lastSheet != null)
                 {
-                    try { currentSheet.Activate(); } catch { }
+                    try { lastSheet.Activate(); } catch { }
                 }
 
                 // 记录批量导出完成汇总日志
-                LogHelper.WriteLog($"[BatchExport] 批量导出全部完成，成功导出 {successCount}/{cabinets.Count} 个箱柜");
+                LogHelper.WriteLog($"[BatchExport] 极速批量导出全部完成，成功导出 {successCount}/{cabinets.Count} 个箱柜");
             }
             catch (Exception ex)
             {
@@ -1354,14 +1459,312 @@ namespace ExcelAddInDemo
             }
             finally
             {
-                // 恢复 Excel 原有环境配置
-                app.ScreenUpdating = prevUpdating;
-                app.DisplayAlerts = prevAlerts;
-                app.EnableEvents = prevEvents;
+                // 7. 一次性触发全局重算并恢复原有 Excel 计算与显示环境
+                try { app.Calculate(); } catch { }
+                try { app.Calculation = prevCalculation; } catch { }
+                try { app.ScreenUpdating = prevUpdating; } catch { }
+                try { app.DisplayAlerts = prevAlerts; } catch { }
+                try { app.EnableEvents = prevEvents; } catch { }
             }
 
             // 返回成功导出的箱柜数量
             return successCount;
+        }
+
+        /// <summary>
+        /// 批量导入分类工作表内存状态上下文模型
+        /// </summary>
+        private class BatchCategorySheetContext
+        {
+            // 目标工作表 COM 引用
+            public dynamic Sheet { get; set; }
+            // 工作表名称
+            public string SheetName { get; set; } = string.Empty;
+            // 汇总表插入下一行的物理行号
+            public int NextSumRow { get; set; }
+            // 底部明细块下一行的起始物理行号
+            public int NextDetailStartRow { get; set; }
+            // 纯净母版明细块的起始物理行号 (34行纯净模板) --硬编码--
+            public int TemplateDetailBlockStartRow { get; set; } = 41;
+            // 纯净母版汇总行的物理行号 (<=0 表示无母版汇总行)
+            public int TemplateSumRow { get; set; } = 0;
+            // 是否有纯净母版需要在批量导出完成后统一物理删除
+            public bool HasTemplateToClean { get; set; }
+            // 下一个递增箱柜序号 K
+            public int NextCabinetK { get; set; }
+
+            public BatchCategorySheetContext(dynamic sheet, string sheetName)
+            {
+                Sheet = sheet;
+                SheetName = sheetName;
+            }
+        }
+
+        /// <summary>
+        /// 首次进入分类工作表时初始化内存状态上下文
+        /// 严格实施“纯净母版槽位隔离”策略：首槽位绝不填写数据，专供克隆，导出完毕后统一物理清除
+        /// </summary>
+        private static BatchCategorySheetContext InitCategorySheetContext(
+            dynamic app,
+            dynamic activeWb,
+            dynamic sheet,
+            string sheetName,
+            int cabCountInGroup)
+        {
+            var ctx = new BatchCategorySheetContext(sheet, sheetName);
+
+            // 智能探测当前分类表的基准行号分布
+            var baseIndexes = Tool.FindStandardCategoryRowIndexes((object)sheet);
+            int baseSumRow = baseIndexes.cabSumRow;
+            int baseDetRow = baseIndexes.cabDetRow;
+            int baseTolsumRow = baseIndexes.cabTolsumRow;
+
+            // 读取首台箱柜汇总行与明细行名称及首行元件，精准判定首个槽位是否为未使用的空白预留位置
+            string sumBText = Convert.ToString(sheet.Cells[baseSumRow, 2].Value)?.Trim() ?? "";
+            string detBText = Convert.ToString(sheet.Cells[baseDetRow, 2].Value)?.Trim() ?? "";
+            string comp1BText = Convert.ToString(sheet.Cells[baseDetRow + 2, 2].Value)?.Trim() ?? "";
+            string comp1CText = Convert.ToString(sheet.Cells[baseDetRow + 2, 3].Value)?.Trim() ?? "";
+
+            // 首个槽位已被占用的判定条件：元器件首行有数据，或者箱柜名已非空且不为纯模板占位
+            bool isFirstSlotOccupied = (!string.IsNullOrWhiteSpace(comp1BText) || !string.IsNullOrWhiteSpace(comp1CText))
+                || (!string.IsNullOrWhiteSpace(sumBText) && sumBText != "箱柜1")
+                || (!string.IsNullOrWhiteSpace(detBText) && detBText != "箱柜1");
+
+            if (!isFirstSlotOccupied)
+            {
+                // 【场景 1：全新工作表或首槽位为空】
+                // 保留第 7 行汇总与 41:74 行明细作为纯净母版，绝不直接在上面写入数据
+                ctx.HasTemplateToClean = true;
+                ctx.TemplateSumRow = baseSumRow; // 默认 7 --硬编码--
+                ctx.TemplateDetailBlockStartRow = 41; // 模板首台明细块起始行 --硬编码--
+                ctx.NextCabinetK = 1;
+
+                // 汇总区一次性批量预扩容 N 行（插入在母版汇总行下方）
+                if (cabCountInGroup > 0)
+                {
+                    int insertStart = baseSumRow + 1;
+                    sheet.Rows[$"{insertStart}:{insertStart + cabCountInGroup - 1}"].Insert(-4121);
+                    // 汇总区扩容后，下方的母版明细块整体平移 cabCountInGroup 行
+                    ctx.TemplateDetailBlockStartRow += cabCountInGroup;
+                }
+
+                // 真实箱柜的汇总行起始位置：母版汇总行下方
+                ctx.NextSumRow = baseSumRow + 1;
+                // 真实箱柜的明细块起始位置：母版明细块（34行）下方
+                ctx.NextDetailStartRow = ctx.TemplateDetailBlockStartRow + 34; // --硬编码--
+            }
+            else
+            {
+                // 【场景 2：已有数据的旧分类表】
+                // 扫描末尾有效箱柜以确定插入点
+                var lastIndexes = Tool.FindStandardCategoryRowIndexes((object)sheet, -1);
+                int lastSumRow = lastIndexes.cabSumRow;
+                int lastTolsumRow = lastIndexes.cabTolsumRow > 0 ? lastIndexes.cabTolsumRow : 71;
+
+                int insertSumStart = lastSumRow + 1;
+                // 汇总区一次性批量预扩容 N 行
+                if (cabCountInGroup > 0)
+                {
+                    sheet.Rows[$"{insertSumStart}:{insertSumStart + cabCountInGroup - 1}"].Insert(-4121);
+                }
+
+                ctx.NextSumRow = insertSumStart;
+                ctx.TemplateSumRow = 0; // 旧表无需删除母版汇总行
+
+                // 计算表尾明细插入点 (受汇总扩容平移 cabCountInGroup 行)
+                int templatePos = lastTolsumRow + 4 + cabCountInGroup; // --硬编码--
+
+                // 从 CabinetTemplate.xlsx 外部模板只读复制 1 次 34 行标准明细块到表尾作为临时纯净母版
+                string templatePath = Controllers.ProjectController.EnsureCabinetTemplate(app);
+                dynamic templateWb = app.Workbooks.Open(templatePath, ReadOnly: true);
+                try
+                {
+                    // 默认模板工作表 --硬编码--
+                    dynamic templateSheet = templateWb.Sheets.Count >= 2 ? templateWb.Sheets[2] : templateWb.Sheets[1];
+                    dynamic srcTmplRange = templateSheet.Rows["41:74"]; // --硬编码--
+                    dynamic dstTmplRange = sheet.Rows[$"{templatePos}:{templatePos + 34 - 1}"]; // --硬编码--
+                    srcTmplRange.Copy(dstTmplRange);
+                }
+                finally
+                {
+                    // 立即关闭模板工作簿
+                    templateWb.Close(false);
+                }
+
+                ctx.HasTemplateToClean = true;
+                ctx.TemplateDetailBlockStartRow = templatePos;
+                ctx.NextDetailStartRow = templatePos + 34; // --硬编码--
+                ctx.NextCabinetK = GetNextCabinetIndex(activeWb, sheet);
+            }
+
+            return ctx;
+        }
+
+        /// <summary>
+        /// 极致极速版：在指定的分类工作表中渲染并写入单个箱柜对象（纯净母版直拷 + 内存推导 + 二维数组批量写入）
+        /// </summary>
+        private static bool ExportSingleCabinetOptimized(
+            dynamic app,
+            dynamic targetWb,
+            dynamic sheet,
+            Models.CabinetObject cab,
+            BatchCategorySheetContext ctx)
+        {
+            if (sheet == null || cab == null || ctx == null) return false;
+
+            try
+            {
+                string sheetName = ctx.SheetName;
+                string safeBoxName = string.IsNullOrWhiteSpace(cab.Header.Name)
+                    ? (string.IsNullOrWhiteSpace(cab.Header.CabinetNo) ? "箱柜" : cab.Header.CabinetNo)
+                    : cab.Header.Name.Trim();
+
+                // 提取安装方式 (优先读取 InstallMode，回退 Remark)
+                string installMode = string.IsNullOrWhiteSpace(cab.Header.InstallMode)
+                    ? (cab.Header.Remark ?? string.Empty)
+                    : cab.Header.InstallMode.Trim();
+
+                // 1. 为新箱柜分配独立序号与物理行
+                int cabinetK = ctx.NextCabinetK++;
+                int sumRow = ctx.NextSumRow++;
+                int targetDetailStartRow = ctx.NextDetailStartRow;
+
+                // 2. 纯净模板直拷：从纯净母版明细块复制 34 行到表尾目标区 (零平移开销，结构 100% 完整纯净)
+                int copyRowCount = 34; // --硬编码--
+                int srcStart = ctx.TemplateDetailBlockStartRow;
+                dynamic srcRange = sheet.Rows[$"{srcStart}:{srcStart + copyRowCount - 1}"];
+                dynamic dstRange = sheet.Rows[$"{targetDetailStartRow}:{targetDetailStartRow + copyRowCount - 1}"];
+                srcRange.Copy(dstRange);
+
+                // 计算新建箱柜的关键行号映射
+                int detRow = targetDetailStartRow + 3; // --硬编码--
+                int subsumRow = detRow + 22; // --硬编码--
+                int tolsumRow = detRow + 27; // --硬编码--
+
+                // 3. 计算元器件容量并根据规则 6 处理差额行
+                int compStartRow = detRow + 2;
+                int defaultCompCount = subsumRow - compStartRow;
+                int actualCompCount = cab.Components != null ? cab.Components.Count : 0;
+
+                if (actualCompCount > defaultCompCount)
+                {
+                    // 计算需要物理插入的差额行数
+                    int insertCount = actualCompCount - defaultCompCount;
+                    int insertRowStart = compStartRow + defaultCompCount;
+
+                    // 执行批量物理插行 (仅影响当前箱柜自身明细及后续，绝不影响上方的母版)
+                    sheet.Rows[$"{insertRowStart}:{insertRowStart + insertCount - 1}"].Insert(-4121);
+
+                    // 更新行号偏移
+                    subsumRow += insertCount;
+                    tolsumRow += insertCount;
+                }
+
+                // 更新上下文中的下一明细块起始物理行号 (总计行 + 3行报价人 + 1)
+                ctx.NextDetailStartRow = tolsumRow + 4;
+                int compEndRow = subsumRow - 1;
+
+                // 4. 规则 7：调用 Tool.BuildComponentRowsMatrix 一次性批量生成并写入 17 列元器件矩阵
+                if (compEndRow >= compStartRow)
+                {
+                    // 生成 17 列包含自适应公式与元件属性的二维矩阵
+                    object[,] compMatrix = Tool.BuildComponentRowsMatrix(compStartRow, compEndRow, detRow, 17, cab.Components);
+                    // 批量写入元器件完整区域
+                    sheet.Range[$"A{compStartRow}:Q{compEndRow}"].Formula = compMatrix;
+
+                    // 批量写入 AA 列 CAD 句柄扩展列
+                    int rowCount = compEndRow - compStartRow + 1;
+                    object[,] handleMatrix = new object[rowCount, 1];
+                    for (int r = 0; r < rowCount; r++)
+                    {
+                        if (cab.Components != null && r < cab.Components.Count && !string.IsNullOrWhiteSpace(cab.Components[r].Handle))
+                        {
+                            // 填充 CAD 实体句柄
+                            handleMatrix[r, 0] = cab.Components[r].Handle;
+                        }
+                        else
+                        {
+                            // 空句柄占位
+                            handleMatrix[r, 0] = string.Empty;
+                        }
+                    }
+                    sheet.Range[$"AA{compStartRow}:AA{compEndRow}"].Value2 = handleMatrix;
+                }
+
+                // 5. 批量组装汇总行 1 行 13 列数据矩阵 (A~M 列一次性单次 Range 批量写入)
+                object[,] sumRowMatrix = new object[1, 13];
+                sumRowMatrix[0, 0] = "=ROW()-ROW(A$6)"; // A 列: 序号 --硬编码--
+                sumRowMatrix[0, 1] = safeBoxName; // B 列: 箱柜名称
+                sumRowMatrix[0, 2] = string.IsNullOrWhiteSpace(cab.Header.Model) ? safeBoxName : cab.Header.Model; // C 列: 型号
+                sumRowMatrix[0, 3] = string.Empty; // D 列: 图号
+                sumRowMatrix[0, 4] = string.Empty; // E 列: 备注
+                sumRowMatrix[0, 5] = cab.Header.Quantity > 0 ? cab.Header.Quantity : 1; // F 列: 数量
+                sumRowMatrix[0, 6] = $"=H{tolsumRow - 1}"; // G 列: 单价公式 (指向单台合计行)
+                sumRowMatrix[0, 7] = $"=F{sumRow}*G{sumRow}"; // H 列: 总价公式
+                sumRowMatrix[0, 8] = string.Empty; // I 列
+                sumRowMatrix[0, 9] = $"=K{tolsumRow}"; // J 列: 成本总价公式 (指向总计行)
+                sumRowMatrix[0, 10] = $"=H{sumRow}-J{sumRow}"; // K 列: 毛利公式
+                sumRowMatrix[0, 11] = $"=IF(H{sumRow}=0,0,K{sumRow}/H{sumRow})"; // L 列: 毛利率公式
+                sumRowMatrix[0, 12] = installMode; // M 列: 安装方式备注
+                // 单次 COM 批量写入汇总行
+                sheet.Range[$"A{sumRow}:M{sumRow}"].Formula = sumRowMatrix;
+
+                // 6. 写入明细信息行表头属性
+                sheet.Cells[detRow, 2].Value2 = safeBoxName;
+                sheet.Cells[detRow, 9].Value2 = installMode;
+                if (cab.Header.MinMaxPoints != null && cab.Header.MinMaxPoints.Count > 0)
+                {
+                    // 记录图纸范围坐标
+                    sheet.Cells[detRow, 27].Value2 = string.Join("-", cab.Header.MinMaxPoints);
+                }
+
+                // 7. 极致加速：直接注册 4 个定义名称 (零异常抛接，消灭 400 次 COM 异常)
+                string sumNameTag = $"Cab_Sum_{cabinetK}";
+                string detNameTag = $"Cab_Det_{cabinetK}";
+                string subsumNameTag = $"Cab_Subsum_{cabinetK}";
+                string tolsumNameTag = $"Cab_Tolsum_{cabinetK}";
+
+                try { sheet.Names.Add(sumNameTag, $"='{sheetName}'!$A${sumRow}"); } catch { }
+                try { sheet.Names.Add(detNameTag, $"='{sheetName}'!$A${detRow}"); } catch { }
+                try { sheet.Names.Add(subsumNameTag, $"='{sheetName}'!$A${subsumRow}"); } catch { }
+                try { sheet.Names.Add(tolsumNameTag, $"='{sheetName}'!$A${tolsumRow}"); } catch { }
+
+                // 8. 建立双向超链接绑定 (规则 6)
+                try
+                {
+                    dynamic sumAnchorCell = sheet.Cells[sumRow, 1];
+                    dynamic detAnchorCell = sheet.Cells[detRow, 1];
+                    sheet.Hyperlinks.Add(
+                        Anchor: sumAnchorCell,
+                        Address: "",
+                        SubAddress: $"'{sheetName}'!{detNameTag}",
+                        TextToDisplay: Convert.ToString(cabinetK)
+                    );
+                    sheet.Hyperlinks.Add(
+                        Anchor: detAnchorCell,
+                        Address: "",
+                        SubAddress: $"'{sheetName}'!{sumNameTag}",
+                        ScreenTip: "返回汇总行"
+                    );
+                }
+                catch { }
+
+                // 9. 刷新小计行自适应求和公式
+                try
+                {
+                    sheet.Cells[subsumRow, 8].Formula = $"=ROUND(SUM(H{compStartRow}:INDEX(H:H,ROW()-1)),2)";
+                    sheet.Cells[subsumRow, 11].Formula = $"=ROUND(SUM(K{compStartRow}:INDEX(K:K,ROW()-1)),2)";
+                }
+                catch { }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // 记录单箱柜导出异常日志
+                LogHelper.WriteLog($"ExportSingleCabinetOptimized 异常: {ex.Message}");
+                return false;
+            }
         }
 
         /// <summary>
@@ -1444,213 +1847,5 @@ namespace ExcelAddInDemo
             return fallback;
         }
 
-        /// <summary>
-        /// 在指定的分类工作表中渲染并写入单个箱柜对象
-        /// </summary>
-        private static bool ExportSingleCabinetObject(
-            dynamic app,
-            dynamic targetWb,
-            dynamic sheet,
-            Models.CabinetObject cab)
-        {
-            if (sheet == null || cab == null) return false;
-
-            try
-            {
-                string sheetName = Convert.ToString(sheet.Name) ?? "";
-                string safeBoxName = string.IsNullOrWhiteSpace(cab.Header.Name)
-                    ? (string.IsNullOrWhiteSpace(cab.Header.CabinetNo) ? "箱柜" : cab.Header.CabinetNo)
-                    : cab.Header.Name.Trim();
-
-                // 提取安装方式 (优先读取 InstallMode，回退 Remark)
-                string installMode = string.IsNullOrWhiteSpace(cab.Header.InstallMode)
-                    ? (cab.Header.Remark ?? string.Empty)
-                    : cab.Header.InstallMode.Trim();
-
-                // 1. 智能探测当前分类表的基准行号分布
-                var baseIndexes = Tool.FindStandardCategoryRowIndexes((object)sheet);
-                int baseSumRow = baseIndexes.cabSumRow;
-                int baseDetRow = baseIndexes.cabDetRow;
-                int baseSubsumRow = baseIndexes.cabSubsumRow;
-                int baseTolsumRow = baseIndexes.cabTolsumRow;
-
-                // 读取首台箱柜汇总行与明细行名称及首行元件，精准判定首个槽位是否为未使用的空白预留位置
-                string sumBText = Convert.ToString(sheet.Cells[baseSumRow, 2].Value)?.Trim() ?? "";
-                string detBText = Convert.ToString(sheet.Cells[baseDetRow, 2].Value)?.Trim() ?? "";
-                string comp1BText = Convert.ToString(sheet.Cells[baseDetRow + 2, 2].Value)?.Trim() ?? "";
-                string comp1CText = Convert.ToString(sheet.Cells[baseDetRow + 2, 3].Value)?.Trim() ?? "";
-
-                // 首个槽位已被占用的判定条件：元器件首行有数据，或者箱柜名已非空且不为纯模板占位
-                bool isFirstSlotOccupied = (!string.IsNullOrWhiteSpace(comp1BText) || !string.IsNullOrWhiteSpace(comp1CText))
-                    || (!string.IsNullOrWhiteSpace(sumBText) && sumBText != "箱柜1")
-                    || (!string.IsNullOrWhiteSpace(detBText) && detBText != "箱柜1");
-
-                bool isFirstSlotEmpty = !isFirstSlotOccupied;
-
-                int cabinetK = 1;
-                int sumRow = baseSumRow;
-                int detRow = baseDetRow;
-                int subsumRow = baseSubsumRow;
-                int tolsumRow = baseTolsumRow;
-
-                if (!isFirstSlotEmpty)
-                {
-                    // 记录首槽位已占用并准备新建箱柜结构日志
-                    LogHelper.WriteLog($"[ExportSingle] 表【{sheetName}】首槽位已占用，开始为箱柜【{safeBoxName}】调用 CreateNewCabinet 创建新行结构...");
-                    // 调用 CreateNewCabinet 获取新建箱柜实体对象 (Class 引用类型彻底消除 dynamic 拆箱异常)
-                    var createdInfo = CreateNewCabinet((object)app, (object)sheet, safeBoxName);
-                    if (createdInfo != null)
-                    {
-                        // 提取新建箱柜的关键行号与序号
-                        cabinetK = createdInfo.CabinetK;
-                        sumRow = createdInfo.SumRow;
-                        detRow = createdInfo.DetRow;
-                        subsumRow = createdInfo.SubsumRow;
-                        tolsumRow = createdInfo.TolsumRow;
-                        // 记录新建箱柜结构成功的关键行号日志
-                        LogHelper.WriteLog($"[ExportSingle] 箱柜【{safeBoxName}】创建新结构成功: K={cabinetK}, sumRow={sumRow}, detRow={detRow}, subsumRow={subsumRow}, tolsumRow={tolsumRow}");
-                    }
-                    else
-                    {
-                        // 记录失败日志并中断，防止覆盖首台箱柜
-                        LogHelper.WriteLog($"[ExportSingle] 为箱柜【{safeBoxName}】新建箱柜结构失败(CreateNewCabinet返回null)，跳过写入以保护已有箱柜！");
-                        return false;
-                    }
-                }
-                else
-                {
-                    // 记录使用首个空白预留槽位日志
-                    LogHelper.WriteLog($"[ExportSingle] 表【{sheetName}】首槽位为空，直接使用模板首个槽位写入箱柜【{safeBoxName}】: K=1, sumRow={sumRow}, detRow={detRow}");
-                }
-
-                // 2. 计算元器件起始行与默认容量，并按规则 6 在小计行前插入行
-                int compStartRow = detRow + 2;
-                int defaultCompCount = subsumRow - compStartRow;
-                int actualCompCount = cab.Components != null ? cab.Components.Count : 0;
-
-                if (actualCompCount > defaultCompCount)
-                {
-                    // 计算需要物理插入的差额行数
-                    int insertCount = actualCompCount - defaultCompCount;
-                    int insertRowStart = compStartRow + defaultCompCount;
-
-                    // 执行批量物理插行
-                    sheet.Rows[$"{insertRowStart}:{insertRowStart + insertCount - 1}"].Insert(-4121);
-
-                    // 更新行号偏移
-                    subsumRow += insertCount;
-                    tolsumRow += insertCount;
-
-                    // 重新校准小计行与总计行定义名称
-                    Tool.SafeSetSheetName(sheet, sheetName, $"Cab_Subsum_{cabinetK}", subsumRow);
-                    Tool.SafeSetSheetName(sheet, sheetName, $"Cab_Tolsum_{cabinetK}", tolsumRow);
-                }
-
-                int compEndRow = subsumRow - 1;
-
-                // 3. 规则 7：调用 Tool.BuildComponentRowsMatrix 一次性批量生成并写入 17 列矩阵
-                if (compEndRow >= compStartRow)
-                {
-                    // 生成 17 列包含自适应公式与元件属性的二维矩阵 (detRow 对应箱柜信息行，使得起始序号为 1)
-                    object[,] compMatrix = Tool.BuildComponentRowsMatrix(compStartRow, compEndRow, detRow, 17, cab.Components);
-                    // 批量写入元器件完整区域
-                    sheet.Range[$"A{compStartRow}:Q{compEndRow}"].Formula = compMatrix;
-
-                    // 批量写入 AA 列 CAD 句柄扩展列 (用于反查联动)
-                    int rowCount = compEndRow - compStartRow + 1;
-                    object[,] handleMatrix = new object[rowCount, 1];
-                    for (int r = 0; r < rowCount; r++)
-                    {
-                        if (cab.Components != null && r < cab.Components.Count && !string.IsNullOrWhiteSpace(cab.Components[r].Handle))
-                        {
-                            handleMatrix[r, 0] = cab.Components[r].Handle;
-                        }
-                        else
-                        {
-                            handleMatrix[r, 0] = string.Empty;
-                        }
-                    }
-                    sheet.Range[$"AA{compStartRow}:AA{compEndRow}"].Value2 = handleMatrix;
-                }
-
-                // 4. 补充与更新箱柜基础信息（明细头行及汇总行）
-                // 明细信息行 B 列写入箱柜名称
-                sheet.Cells[detRow, 2].Value2 = safeBoxName;
-                // 规则落实：BoxInstallMode（安装方式）写入明细信息行 I 备注列（第 9 列）
-                sheet.Cells[detRow, 9].Value2 = installMode;
-
-                if (cab.Header.MinMaxPoints != null && cab.Header.MinMaxPoints.Count > 0)
-                {
-                    // 明细头 AA 列写入 CAD 图元句柄/坐标范围
-                    sheet.Cells[detRow, 27].Value2 = string.Join("-", cab.Header.MinMaxPoints);
-                }
-
-                // 汇总行更新箱柜属性
-                sheet.Cells[sumRow, 2].Value2 = safeBoxName;
-                sheet.Cells[sumRow, 3].Value2 = string.IsNullOrWhiteSpace(cab.Header.Model) ? safeBoxName : cab.Header.Model;
-                sheet.Cells[sumRow, 6].Value2 = cab.Header.Quantity > 0 ? cab.Header.Quantity : 1;
-                // 汇总行 M 列写入安装方式备注
-                sheet.Cells[sumRow, 13].Value2 = installMode;
-
-                // 5. 注册 4 个定义名称 (规则 6)
-                string sumNameTag = $"Cab_Sum_{cabinetK}";
-                string detNameTag = $"Cab_Det_{cabinetK}";
-                string subsumNameTag = $"Cab_Subsum_{cabinetK}";
-                string tolsumNameTag = $"Cab_Tolsum_{cabinetK}";
-
-                Tool.SafeSetSheetName(sheet, sheetName, sumNameTag, sumRow);
-                Tool.SafeSetSheetName(sheet, sheetName, detNameTag, detRow);
-                Tool.SafeSetSheetName(sheet, sheetName, subsumNameTag, subsumRow);
-                Tool.SafeSetSheetName(sheet, sheetName, tolsumNameTag, tolsumRow);
-
-                // 6. 建立双向超链接绑定 (规则 6)
-                try
-                {
-                    dynamic sumAnchorCell = sheet.Cells[sumRow, 1];
-                    dynamic detAnchorCell = sheet.Cells[detRow, 1];
-                    sheet.Hyperlinks.Add(
-                        Anchor: sumAnchorCell,
-                        Address: "",
-                        SubAddress: $"'{sheetName}'!{detNameTag}",
-                        TextToDisplay: Convert.ToString(cabinetK)
-                    );
-                    sheet.Hyperlinks.Add(
-                        Anchor: detAnchorCell,
-                        Address: "",
-                        SubAddress: $"'{sheetName}'!{sumNameTag}",
-                        ScreenTip: "返回汇总行"
-                    );
-                }
-                catch { }
-
-                // 7. 绑定汇总行公式指向明细总计行
-                try
-                {
-                    sheet.Cells[sumRow, 7].Formula = $"=H{tolsumRow - 1}";
-                    sheet.Cells[sumRow, 8].Formula = $"=F{sumRow}*G{sumRow}";
-                    sheet.Cells[sumRow, 10].Formula = $"=K{tolsumRow}";
-                    sheet.Cells[sumRow, 11].Formula = $"=H{sumRow}-J{sumRow}";
-                    sheet.Cells[sumRow, 12].Formula = $"=IF(H{sumRow}=0,0,K{sumRow}/H{sumRow})";
-                }
-                catch { }
-
-                // 8. 刷新小计行求和公式（H 列与 K 列）
-                try
-                {
-                    // 销售总价小计自适应求和公式
-                    sheet.Cells[subsumRow, 8].Formula = $"=ROUND(SUM(H{compStartRow}:INDEX(H:H,ROW()-1)),2)";
-                    // 成本总价小计自适应求和公式
-                    sheet.Cells[subsumRow, 11].Formula = $"=ROUND(SUM(K{compStartRow}:INDEX(K:K,ROW()-1)),2)";
-                }
-                catch { }
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                LogHelper.WriteLog($"ExportSingleCabinetObject 异常: {ex.Message}");
-                return false;
-            }
-        }
     }
 }

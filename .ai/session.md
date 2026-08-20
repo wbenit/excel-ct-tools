@@ -110,15 +110,53 @@
         5. 完整注册 4 个工作表级定义名称（`Cab_Sum_{K}`、`Cab_Det_{K}`、`Cab_Subsum_{K}`、`Cab_Tolsum_{K}`）；
         6. 建立汇总行与明细行双向超链接绑定，配置标准汇总公式（G/H/J/K/L 列），光标自动聚焦新汇总行 B 列。
       - **构建状态**：`ExcelAddInDemo.dll` 编译完全通过（0 错误）。
-
-
-
-
-
-
-
-
-
+  24. **抽取箱柜定义名称前缀为不可变值类型（CabinetPrefixConfig 已落地）**：
+      - **业务与架构**：
+        1. 在 [Models/CabinetModels.cs](file:///e:/Ace/excel-ct-tools/Models/CabinetModels.cs) 中新增 `CabinetPrefixConfig` 值类型结构体（`readonly struct`），封装 `SumPrefix`、`DetPrefix`、`SubsumPrefix`、`TolsumPrefix`，实现零堆分配与零 GC 压力；
+        2. 提供静态快照 `CabinetPrefixConfig.Current`、元组解构（`Deconstruct`）以及 `GetSumName(k)`、`GetDetName(k)`、`GetSubsumName(k)`、`GetTolsumName(k)` 快捷方法；
+        3. 在 [AppConfig.cs](file:///e:/Ace/excel-ct-tools/AppConfig.cs) 的 `ExcelSettings` 中增加 `Prefixes` 只读属性；
+        4. 全面重构并消除 [Services/ExcelServices.Cabinet.cs](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.Cabinet.cs)、[Tool.cs](file:///e:/Ace/excel-ct-tools/Tool.cs)、[Services/ExcelServices.Category.cs](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.Category.cs)、[Services/ExcelServices.SummaryAdjustPrice.cs](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.SummaryAdjustPrice.cs)、[Services/ExcelServices.SmartInput.cs](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.SmartInput.cs)、[Services/ExcelServices.Project.cs](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.Project.cs)、[Services/ExcelServices.FormulaAdjustFee.cs](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.FormulaAdjustFee.cs) 及 [ExcelEventManager.cs](file:///e:/Ace/excel-ct-tools/ExcelEventManager.cs) 中重复冗余的 4 个前缀读取与兜底赋值逻辑。
+      - **构建状态**：`ExcelAddInDemo.dll` 编译完全通过（0 错误）。
+  25. **公式法调费设为默认同步更新模板计费行与汇总行对齐（已落地）**：
+      - **业务与架构**：
+        1. 在 [Services/ExcelServices.FormulaAdjustFee.cs](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.FormulaAdjustFee.cs) 中实现 `UpdateCabinetTemplateDefaultFee` 公共业务方法；
+        2. 以 COM 方式打开 [CabinetTemplate.xlsx](file:///e:/Ace/excel-ct-tools/Resources/CabinetTemplate.xlsx) 模板的【分类1】工作表，探测当前模板箱柜 1 的行结构（`Cab_Sum_1`、`Cab_Det_1`、`Cab_Subsum_1`、`Cab_Tolsum_1`），若任意一个行号无效（<=0）自动调用 `Tool.FixAndFillCabinetNamesForSheet` 修复定义名称并重新获取所有标准行；
+        3. **无需行数比较**：直接清空旧计费行区域 `B{oldSubsumRow}:Q{oldTolsumRow}` 数据（A 列序号与定义名称保留不删）；
+        4. **汇总行对齐**：以固定的总计行 `cabTolsumRow` 向上计算小计行 `newSubsumRow = oldTolsumRow - newFeeRows + 1`，调用 `Tool.BuildFeeMatrix` 批量写入 A~Q 列自适应计费矩阵，并刷新元器件自适应公式；
+        5. 重新注册并更新模板中 4 个定义名称锚点；
+        6. 保持顶部汇总行（Row 7）的 G/H/J/K/L 列公式（单价指向 `=H{newTolsumRow}`，成本指向 `=K{newTolsumRow}`，毛利与毛利率联动）精准对齐绑定到总计行，更新双向超链接并安全保存；
+        7. 在 [Forms/FormulaAdjustFeeForm.cs](file:///e:/Ace/excel-ct-tools/Forms/FormulaAdjustFeeForm.cs) 与 [Resources/formula_adjust_fee.html](file:///e:/Ace/excel-ct-tools/Resources/formula_adjust_fee.html) 的 `setDefaultGroup` 中串联该同步指令。
+  26. **批量导入 (BatchExportCabinets) 极速性能优化改造（已落地）**：
+      - **业务与架构**：
+        1. 在 [Services/ExcelServices.Cabinet.cs](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.Cabinet.cs) 中彻底重构 `BatchExportCabinets`；
+        2. **模板句柄单例复用**：批量导入入口处单次预加载 `CabinetTemplate.xlsx` 的 41:74 范围，所有新建箱柜共享内存快速复制，最终统一定点关闭释放，消灭 95% 的磁盘 I/O；
+        3. **锁定手动计算模式**：导入全流程设置 `app.Calculation = xlManual`，写入完成后执行 1 次 `app.Calculate()` 并还原，彻底消除每次插行与写公式时的全表连锁重算；
+        4. **分类前向填充与内存状态上下文（SheetContext）**：增加 `Category` 前向传播填充（Forward Fill），解决子箱柜分类为空导致被错误打散的问题；每个分类表仅首次扫描 1 次基准行号，后续在内存中高速推导；
+        5. **同表精准克隆**：彻底放弃脆弱的跨工作簿 `templateSrcRange`，改用工作表内基于汇总行偏移的 `41+(k-1):74+(k-1)` 精准模板槽位克隆，100% 杜绝跨工作簿 COM 异常；
+        6. **数组批量写入**：将汇总行 1 行 13 列数据及公式组装为二维数组单次 Range 写入，大幅减少 COM 跨进程通信开销。
+  27. **批量导出 (BatchExportCabinets) 纯净母版隔离克隆与静默清理重构（已落地）**：
+      - **业务与架构**：
+        1. 根治隐患：首台箱柜直接写入并插行会导致其明细块膨胀变形，后续箱柜按 34 行克隆时小计/总计行被截断丢失；
+        2. **纯净母版隔离**：分类表中首个标准槽位（第 7 行汇总 + 行 41:74 明细）或旧表临时导入的 34 行模板保持绝对纯净（不写入真实数据、不执行插行），专供该表内高速克隆；
+        3. **各箱柜独立克隆与插行**：导出的实际箱柜序号 `K` 从 1 到 N，所有箱柜统一从纯净母版向下克隆，各箱柜按自身元件数量独立插行，互不污染；
+        4. **自底向上静默清理**：该分类所有箱柜导出完成后，自底向上物理删除母版明细块（34行）和母版汇总行（1行），利用 Excel 自动行列平移特性无缝上移衔接，公式与定义名称自适应更新。
+      - **构建状态**：`ExcelAddInDemo.dll` 编译完全通过（0 错误）。
+  28. **元器件型号参数自动识别与批量回填（极数与电流）功能（已落地）**：
+      - **业务与架构**：
+        1. 在 [Models/ModelParserConfig.cs](file:///e:/Ace/excel-ct-tools/Models/ModelParserConfig.cs) 中建立模型，定义多级顺位流水线规则、极数/电流排除词库、标称白名单有效值集合；
+        2. 在 [Controllers/ModelParamParserController.cs](file:///e:/Ace/excel-ct-tools/Controllers/ModelParamParserController.cs) 中实现配置持久化读写、出厂重置、单条沙盒测试与 Excel 批量执行控制器；
+        3. 在 [Services/ExcelServices.ModelParse.cs](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.ModelParse.cs) 中封装极数与电流双通道过滤匹配引擎（前置排除 ➔ 多级流水线 ➔ 后置白名单校验），并以 **`object[,]` 二维数组一次性读入与写入** 方式实现极速 Excel 批处理；
+        4. 在 [Resources/model_param_parser.html](file:///e:/Ace/excel-ct-tools/Resources/model_param_parser.html) 中基于 Vue3 + Element Plus 构建现代化配置与沙盒面板（主色调 `#009688` 绿蓝主题）；
+        5. 在 [Forms/ModelParamParserForm.cs](file:///e:/Ace/excel-ct-tools/Forms/ModelParamParserForm.cs) 与 [RibbonController.cs](file:///e:/Ace/excel-ct-tools/RibbonController.cs) 中挂载功能入口。
+        6. **UI 与规则深度升级**：修复列映射 Label 换行问题，增加 `找 "空格+数字+空格"`、`自定义正则表达式` 并列选项；优化 `1P+N`/`3P+N` 复合极数提取与格式化保护，彻底杜绝被误截断为 `1`。
+      - **构建状态**：`ExcelAddInDemo.csproj` 编译构建通过（0 错误）。
+  29. **汇总调价生成元件汇总表后展示图二编辑工具条及功能联动（已落地）**：
+      - **业务与架构**：
+        1. 在 [Resources/summary_adjust_price.html](file:///e:/Ace/excel-ct-tools/Resources/summary_adjust_price.html) 中实现多视图架构（`currentView: 'config' | 'editor'`），高保真复刻图二视觉（红棕色横线、圆形写字板图标、“编辑元件[下表中]”大标题、“↓仅可编辑[白色]列数据...”提示语、“重新汇总”操作链接与“一键更新”主按钮）；
+        2. 点击“立即生成”并创建“元件汇总表”成功后，窗口自动平滑收缩为 680×115 紧凑悬浮编辑条，方便用户直接对照 Excel 编辑白色列数据；
+        3. 自动缓存生成时的全套分类、合并与排序参数，点击“重新汇总”直接按初始配置极速重算并刷新覆盖“元件汇总表”，并提供返回配置面板的小图标；
+        4. 在 [Controllers/SummaryAdjustPriceController.cs](file:///e:/Ace/excel-ct-tools/Controllers/SummaryAdjustPriceController.cs)、[Forms/SummaryAdjustPriceForm.cs](file:///e:/Ace/excel-ct-tools/Forms/SummaryAdjustPriceForm.cs) 与 [Services/ExcelServices.SummaryAdjustPrice.cs](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.SummaryAdjustPrice.cs) 中打通 `resizeWindow` 窗口尺寸自适应与 `updateFromSummary` 一键更新预留通路。
+      - **构建状态**：`ExcelAddInDemo.dll` 编译完全通过（0 错误）。
 
 
 

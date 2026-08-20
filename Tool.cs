@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using ExcelAddInDemo.Controllers;
+using ExcelAddInDemo.Models;
 
 namespace ExcelAddInDemo
 {
@@ -174,11 +175,12 @@ namespace ExcelAddInDemo
             // 校验输入字符串是否为空
             if (string.IsNullOrWhiteSpace(fullName)) return 0;
 
-            // 提取或回退默认前缀
-            sumPrefix = sumPrefix ?? ConfigManager.Instance.Current.Excel.SumNamePrefix ?? "Cab_Sum_";
-            detPrefix = detPrefix ?? ConfigManager.Instance.Current.Excel.DetNamePrefix ?? "Cab_Det_";
-            subsumPrefix = subsumPrefix ?? ConfigManager.Instance.Current.Excel.SubsumNamePrefix ?? "Cab_Subsum_";
-            tolsumPrefix = tolsumPrefix ?? ConfigManager.Instance.Current.Excel.TolsumNamePrefix ?? "Cab_Tolsum_";
+            // 提取或回退默认前缀 (复用 CabinetPrefixConfig 值类型)
+            var currentPrefixes = CabinetPrefixConfig.Current;
+            sumPrefix = sumPrefix ?? currentPrefixes.SumPrefix;
+            detPrefix = detPrefix ?? currentPrefixes.DetPrefix;
+            subsumPrefix = subsumPrefix ?? currentPrefixes.SubsumPrefix;
+            tolsumPrefix = tolsumPrefix ?? currentPrefixes.TolsumPrefix;
 
             // 清理可能存在的工作表前缀与单引号/等号
             string cleanName = ExtractCleanNameStr(fullName);
@@ -814,12 +816,8 @@ namespace ExcelAddInDemo
                 try { dWb = dSheet.Parent; } catch { }
             }
 
-            // 读取全局配置中的 4 个定义名称前缀
-            var cfg = ConfigManager.Instance.Current.Excel;
-            string sumPrefix = cfg.SumNamePrefix ?? "Cab_Sum_";
-            string detPrefix = cfg.DetNamePrefix ?? "Cab_Det_";
-            string subsumPrefix = cfg.SubsumNamePrefix ?? "Cab_Subsum_";
-            string tolsumPrefix = cfg.TolsumNamePrefix ?? "Cab_Tolsum_";
+            // 读取全局配置中的 4 个定义名称前缀 (零堆分配)
+            var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
 
             // 提取当前工作表纯文本名称
             string sheetName = Convert.ToString(dSheet.Name) ?? "";
@@ -1108,11 +1106,8 @@ namespace ExcelAddInDemo
                 string sheetName = Convert.ToString(sheet.Name) ?? "";
                 if (string.IsNullOrWhiteSpace(sheetName)) return 0;
 
-                // 读取 4 种定义名称前缀配置项
-                string sumPrefix = ConfigManager.Instance.Current.Excel.SumNamePrefix ?? "Cab_Sum_";
-                string detPrefix = ConfigManager.Instance.Current.Excel.DetNamePrefix ?? "Cab_Det_";
-                string subsumPrefix = ConfigManager.Instance.Current.Excel.SubsumNamePrefix ?? "Cab_Subsum_";
-                string tolsumPrefix = ConfigManager.Instance.Current.Excel.TolsumNamePrefix ?? "Cab_Tolsum_";
+                // 读取 4 种定义名称前缀配置项 (零堆分配)
+                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
 
                 // 读取顶部汇总行基准起始物理行号配置项 (默认 7)
                 int cabSumStartRow = ConfigManager.Instance.Current.Excel.CabSumRowIndex;

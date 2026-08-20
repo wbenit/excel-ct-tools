@@ -42,7 +42,9 @@
       background-color: #ffffff;
     }
 
-    /* 顶部无边框窗体拖拽标题栏 (严格统一为与公式法调费一致的深绿蓝风格) */
+    /* ================= 图一：初始选择与配置视图样式 ================= */
+
+    /* 顶部无边框窗体拖拽标题栏 (绿蓝相间风格) */
     .window-header {
       height: 32px;
       display: flex;
@@ -313,10 +315,6 @@
       color: #00796b !important;
     }
 
-    .disabled-tag {
-      color: #909399;
-    }
-
     .link-setting {
       color: var(--theme-main);
       cursor: pointer;
@@ -327,183 +325,422 @@
     .link-setting:hover {
       text-decoration: underline;
     }
+
+    /* ================= 图二：生成后紧凑编辑条视图样式 (高保真还原) ================= */
+
+    .editor-mode-container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      width: 100%;
+      background-color: #ffffff;
+    }
+
+    /* 图二顶部浅色居中标题栏 */
+    .editor-header {
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      background: #ffffff;
+      color: #333333;
+      cursor: move;
+    }
+
+    .editor-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: #333333;
+      letter-spacing: 0.5px;
+    }
+
+    .editor-close-btn {
+      position: absolute;
+      right: 8px;
+      top: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      color: #909399;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+
+    .editor-close-btn:hover {
+      color: #f56c6c;
+      background-color: #fef0f0;
+      border-radius: 2px;
+    }
+
+    /* 图二中间红棕色横向渐变分割线 (高保真还原图二中间微红装饰横线) */
+    .editor-divider-line {
+      height: 2px;
+      width: 94%;
+      margin: 0 auto;
+      background: radial-gradient(ellipse at center, rgba(184, 59, 38, 0.85) 0%, rgba(184, 59, 38, 0.45) 45%, rgba(184, 59, 38, 0) 88%);
+    }
+
+    /* 图二主体内容行 */
+    .editor-body {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px 4px 20px;
+    }
+
+    .editor-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* 图二左侧红棕色圆形编辑图标 */
+    .editor-icon-box {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 2px solid #b83b26;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #b83b26;
+      background-color: #ffffff;
+      flex-shrink: 0;
+    }
+
+    .editor-text-group {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 2px;
+    }
+
+    .editor-main-title {
+      font-size: 15px;
+      font-weight: bold;
+      color: #333333;
+      letter-spacing: 0.5px;
+    }
+
+    .editor-sub-tip {
+      font-size: 12px;
+      color: #1e88e5; /* 提示蓝色 */
+      letter-spacing: 0.2px;
+    }
+
+    .editor-right {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    /* 重新汇总操作链接 */
+    .re-summary-link {
+      font-size: 14px;
+      color: #b83b26;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .re-summary-link:hover {
+      text-decoration: underline;
+      opacity: 0.85;
+    }
+
+    /* 一键更新红棕色胶囊主按钮 (高保真还原图二一键更新按钮) */
+    .quick-update-btn {
+      background: #b83b26 !important;
+      border-color: #a3321f !important;
+      color: #ffffff !important;
+      font-size: 15px !important;
+      font-weight: bold !important;
+      height: 38px !important;
+      padding: 0 24px !important;
+      border-radius: 6px !important;
+      box-shadow: 0 2px 6px rgba(184, 59, 38, 0.35);
+      transition: all 0.2s ease;
+      letter-spacing: 1px;
+    }
+
+    .quick-update-btn:hover {
+      background: #c9412a !important;
+      border-color: #b83b26 !important;
+      box-shadow: 0 4px 10px rgba(184, 59, 38, 0.45);
+      transform: translateY(-1px);
+    }
+
+    .quick-update-btn:active {
+      transform: translateY(0);
+    }
+
+    /* 重新配置小返回按钮 */
+    .reconfig-icon-btn {
+      cursor: pointer;
+      color: #909399;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      padding: 4px;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+
+    .reconfig-icon-btn:hover {
+      color: var(--theme-main);
+      background-color: #f0fdfa;
+    }
+
   </style>
 </head>
 <body>
   <div id="app">
-    <!-- 顶部标题栏，支持鼠标拖拽与控制 -->
-    <div class="window-header" @mousedown="handleHeaderMouseDown">
-      <div class="window-title-box">
-        <el-icon :size="15"><Tickets /></el-icon>
-        <span>汇总调价</span>
-      </div>
-      <div class="window-actions">
-        <!-- 最小化按钮 -->
-        <div class="action-btn" title="最小化" @mousedown.stop @click.stop="minimizeWindow">
-          <el-icon :size="14"><Minus /></el-icon>
-        </div>
-        <!-- 刷新按钮 -->
-        <div class="action-btn" title="刷新工作表列表" @mousedown.stop @click.stop="refreshData">
-          <el-icon :size="14"><Refresh /></el-icon>
-        </div>
-        <!-- 关闭按钮 -->
-        <div class="action-btn close-btn" title="关闭窗口" @mousedown.stop @click.stop="closeWindow">
-          <el-icon :size="14"><Close /></el-icon>
-        </div>
-      </div>
-    </div>
 
-    <!-- 顶部引导与操作区 -->
-    <div class="top-banner">
-      <div class="banner-left">
-        <div class="banner-icon">
-          <el-icon><Tickets /></el-icon>
+    <!-- ================= 视图 1：图一 分类选择与生成配置面板 ================= -->
+    <template v-if="currentView === 'config'">
+      <!-- 顶部标题栏，支持鼠标拖拽与控制 -->
+      <div class="window-header" @mousedown="handleHeaderMouseDown">
+        <div class="window-title-box">
+          <el-icon :size="15"><Tickets /></el-icon>
+          <span>汇总调价</span>
         </div>
-        <div>
-          <div class="banner-text-title">选择分类生成元件汇总表</div>
-          <div class="banner-text-sub">请选择要汇总的分类:</div>
-        </div>
-      </div>
-      <!-- 立即生成按钮 -->
-      <el-button 
-        class="generate-btn" 
-        :loading="generating" 
-        @click="handleGenerate">
-        立即生成
-      </el-button>
-    </div>
-
-    <!-- 中部分类工作表列表区 -->
-    <div class="content-area">
-      <div v-if="categories.length > 0" class="category-list">
-        <div 
-          v-for="item in categories" 
-          :key="item.sheetName" 
-          class="category-item">
-          <div class="category-item-left">
-            <!-- 分类勾选框 (使用显式闭合标签) -->
-            <el-checkbox 
-              class="theme-checkbox"
-              v-model="item.isSelected" 
-              @change="handleItemCheckChange">
-              <span class="category-name">{{ item.sheetName }}</span>
-            </el-checkbox>
+        <div class="window-actions">
+          <!-- 最小化按钮 -->
+          <div class="action-btn" title="最小化" @mousedown.stop @click.stop="minimizeWindow">
+            <el-icon :size="14"><Minus /></el-icon>
           </div>
-          <!-- 右侧台数展示 -->
-          <span class="category-count">{{ item.cabinetCount }}台</span>
+          <!-- 刷新按钮 -->
+          <div class="action-btn" title="刷新工作表列表" @mousedown.stop @click.stop="refreshData">
+            <el-icon :size="14"><Refresh /></el-icon>
+          </div>
+          <!-- 关闭按钮 -->
+          <div class="action-btn close-btn" title="关闭窗口" @mousedown.stop @click.stop="closeWindow">
+            <el-icon :size="14"><Close /></el-icon>
+          </div>
         </div>
       </div>
-      <div v-else class="empty-tip">
-        <span v-if="loading">正在读取工作簿分类与箱柜数据...</span>
-        <span v-else>未在当前工作簿中检测到分类工作表</span>
-      </div>
-    </div>
 
-    <!-- 底部配置控制栏 -->
-    <div class="bottom-panel">
-      <!-- 全选与自定义汇总行 -->
-      <div class="select-all-row">
-        <!-- 全选复选框 (显式闭合) -->
-        <el-checkbox 
-          class="theme-checkbox"
-          v-model="isAllSelected" 
-          :indeterminate="isIndeterminate" 
-          @change="handleSelectAllChange">
-          <span style="font-weight: 500;">全选</span>
-        </el-checkbox>
-        <span class="custom-summary-link" @click="toggleCustomSummary">
-          <span>▼ 自定义汇总</span>
-        </span>
+      <!-- 顶部引导与操作区 -->
+      <div class="top-banner">
+        <div class="banner-left">
+          <div class="banner-icon">
+            <el-icon><Tickets /></el-icon>
+          </div>
+          <div>
+            <div class="banner-text-title">选择分类生成元件汇总表</div>
+            <div class="banner-text-sub">请选择要汇总的分类:</div>
+          </div>
+        </div>
+        <!-- 立即生成按钮 (显式闭合标签) -->
+        <el-button 
+          class="generate-btn" 
+          :loading="generating" 
+          @click="handleGenerate">
+          立即生成
+        </el-button>
       </div>
 
-      <!-- 合并条件 -->
-      <div class="config-row">
-        <span class="config-label">合并条件:</span>
-        <div class="config-group">
-          <!-- 固定必选项：名称 -->
-          <el-checkbox class="theme-checkbox" v-model="mergeOpts.byName" disabled>名称</el-checkbox>
-          <span style="color: #909399;">+</span>
-          <!-- 固定必选项：型号 -->
-          <el-checkbox class="theme-checkbox" v-model="mergeOpts.byModel" disabled>型号</el-checkbox>
-          <span style="color: #909399;">+</span>
-          <!-- 厂家 -->
-          <el-checkbox class="theme-checkbox" v-model="mergeOpts.byManufacturer">
-            厂家 (
+      <!-- 中部分类工作表列表区 -->
+      <div class="content-area">
+        <div v-if="categories.length > 0" class="category-list">
+          <div 
+            v-for="item in categories" 
+            :key="item.sheetName" 
+            class="category-item">
+            <div class="category-item-left">
+              <!-- 分类勾选框 (使用显式闭合标签) -->
+              <el-checkbox 
+                class="theme-checkbox"
+                v-model="item.isSelected" 
+                @change="handleItemCheckChange">
+                <span class="category-name">{{ item.sheetName }}</span>
+              </el-checkbox>
+            </div>
+            <!-- 右侧台数展示 -->
+            <span class="category-count">{{ item.cabinetCount }}台</span>
+          </div>
+        </div>
+        <div v-else class="empty-tip">
+          <span v-if="loading">正在读取工作簿分类与箱柜数据...</span>
+          <span v-else>未在当前工作簿中检测到分类工作表</span>
+        </div>
+      </div>
+
+      <!-- 底部配置控制栏 -->
+      <div class="bottom-panel">
+        <!-- 全选与自定义汇总行 -->
+        <div class="select-all-row">
+          <!-- 全选复选框 (显式闭合) -->
+          <el-checkbox 
+            class="theme-checkbox"
+            v-model="isAllSelected" 
+            :indeterminate="isIndeterminate" 
+            @change="handleSelectAllChange">
+            <span style="font-weight: 500;">全选</span>
           </el-checkbox>
-          <!-- 无厂家选项 -->
-          <el-checkbox class="theme-checkbox" v-model="mergeOpts.includeNoManufacturer" style="margin-left: -5px; margin-right: 2px !important;">无厂家</el-checkbox>
-          <span style="margin-right: 5px;">) +</span>
-          <!-- 价格 -->
-          <el-checkbox class="theme-checkbox" v-model="mergeOpts.byPrice">价格</el-checkbox>
-          <span style="color: #909399;">+</span>
-          <!-- 备注 -->
-          <el-checkbox class="theme-checkbox" v-model="mergeOpts.byRemark">备注</el-checkbox>
-          <span style="color: #909399;">+</span>
-          <!-- 原图型号 -->
-          <el-checkbox class="theme-checkbox" v-model="mergeOpts.byOriginalModel">原图型号</el-checkbox>
-          <span style="font-size: 12px; color: #606266; margin-left: 2px;">相同合并</span>
+          <span class="custom-summary-link" @click="toggleCustomSummary">
+            <span>▼ 自定义汇总</span>
+          </span>
         </div>
-      </div>
 
-      <!-- 显示设置 -->
-      <div class="config-row">
-        <span class="config-label">显示设置:</span>
-        <div class="config-group">
-          <el-checkbox class="theme-checkbox" v-model="displayOpts.splitAccessoryAndDiscount">附件表价、折扣分列</el-checkbox>
-          <el-checkbox class="theme-checkbox" v-model="displayOpts.freezeUnitPrice">冻结单价列</el-checkbox>
+        <!-- 合并条件 -->
+        <div class="config-row">
+          <span class="config-label">合并条件:</span>
+          <div class="config-group">
+            <!-- 固定必选项：名称 -->
+            <el-checkbox class="theme-checkbox" v-model="mergeOpts.byName" disabled>名称</el-checkbox>
+            <span style="color: #909399;">+</span>
+            <!-- 固定必选项：型号 -->
+            <el-checkbox class="theme-checkbox" v-model="mergeOpts.byModel" disabled>型号</el-checkbox>
+            <span style="color: #909399;">+</span>
+            <!-- 厂家 -->
+            <el-checkbox class="theme-checkbox" v-model="mergeOpts.byManufacturer">
+              厂家 (
+            </el-checkbox>
+            <!-- 无厂家选项 -->
+            <el-checkbox class="theme-checkbox" v-model="mergeOpts.includeNoManufacturer" style="margin-left: -5px; margin-right: 2px !important;">无厂家</el-checkbox>
+            <span style="margin-right: 5px;">) +</span>
+            <!-- 价格 -->
+            <el-checkbox class="theme-checkbox" v-model="mergeOpts.byPrice">价格</el-checkbox>
+            <span style="color: #909399;">+</span>
+            <!-- 备注 -->
+            <el-checkbox class="theme-checkbox" v-model="mergeOpts.byRemark">备注</el-checkbox>
+            <span style="color: #909399;">+</span>
+            <!-- 原图型号 -->
+            <el-checkbox class="theme-checkbox" v-model="mergeOpts.byOriginalModel">原图型号</el-checkbox>
+            <span style="font-size: 12px; color: #606266; margin-left: 2px;">相同合并</span>
+          </div>
         </div>
-      </div>
 
-      <!-- 排序设置 -->
-      <div class="config-row" style="align-items: flex-start;">
-        <span class="config-label" style="margin-top: 2px;">排序设置:</span>
-        <div style="display: flex; flex-direction: column; gap: 4px;">
-          <!-- 单选选项1: 按厂家、名称、型号 -->
-          <el-radio 
-            class="theme-radio" 
-            v-model="sortType" 
-            label="mfg_name_model">
-            按(厂家、名称、型号) 排序
-          </el-radio>
-          
-          <!-- 单选选项2: 按类别+位置、名称、厂家、型号 -->
-          <div style="display: flex; align-items: center;">
+        <!-- 显示设置 -->
+        <div class="config-row">
+          <span class="config-label">显示设置:</span>
+          <div class="config-group">
+            <el-checkbox class="theme-checkbox" v-model="displayOpts.splitAccessoryAndDiscount">附件表价、折扣分列</el-checkbox>
+            <el-checkbox class="theme-checkbox" v-model="displayOpts.freezeUnitPrice">冻结单价列</el-checkbox>
+          </div>
+        </div>
+
+        <!-- 排序设置 -->
+        <div class="config-row" style="align-items: flex-start;">
+          <span class="config-label" style="margin-top: 2px;">排序设置:</span>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <!-- 单选选项1: 按厂家、名称、型号 -->
             <el-radio 
               class="theme-radio" 
               v-model="sortType" 
-              label="category_pos_mfg" 
-              style="margin-right: 0px !important;">
-              按(
+              label="mfg_name_model">
+              按(厂家、名称、型号) 排序
             </el-radio>
-            <el-checkbox 
-              class="theme-checkbox" 
-              v-model="sortOpts.byCategory" 
-              style="margin-right: 4px !important;">
-              类别
-            </el-checkbox>
-            <span style="color: #909399; margin-right: 4px;">+</span>
-            <el-checkbox 
-              class="theme-checkbox" 
-              v-model="sortOpts.byPosition" 
-              style="margin-right: 4px !important;">
-              位置、名称、厂家、型号
-            </el-checkbox>
-            <span>) 排序</span>
-          </div>
+            
+            <!-- 单选选项2: 按类别+位置、名称、厂家、型号 -->
+            <div style="display: flex; align-items: center;">
+              <el-radio 
+                class="theme-radio" 
+                v-model="sortType" 
+                label="category_pos_mfg" 
+                style="margin-right: 0px !important;">
+                按(
+              </el-radio>
+              <el-checkbox 
+                class="theme-checkbox" 
+                v-model="sortOpts.byCategory" 
+                style="margin-right: 4px !important;">
+                类别
+              </el-checkbox>
+              <span style="color: #909399; margin-right: 4px;">+</span>
+              <el-checkbox 
+                class="theme-checkbox" 
+                v-model="sortOpts.byPosition" 
+                style="margin-right: 4px !important;">
+                位置、名称、厂家、型号
+              </el-checkbox>
+              <span>) 排序</span>
+            </div>
 
-          <!-- 单选选项3: 自定义排序 -->
-          <div style="display: flex; align-items: center;">
-            <el-radio 
-              class="theme-radio" 
-              v-model="sortType" 
-              label="custom">
-              自定义排序
-            </el-radio>
-            <span class="link-setting" @click="handleCustomSortSetting">(设置)</span>
+            <!-- 单选选项3: 自定义排序 -->
+            <div style="display: flex; align-items: center;">
+              <el-radio 
+                class="theme-radio" 
+                v-model="sortType" 
+                label="custom">
+                自定义排序
+              </el-radio>
+              <span class="link-setting" @click="handleCustomSortSetting">(设置)</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </template>
+
+    <!-- ================= 视图 2：图二 紧凑编辑条 (高保真还原) ================= -->
+    <template v-else-if="currentView === 'editor'">
+      <div class="editor-mode-container">
+        <!-- 顶部浅色拖拽标题栏 -->
+        <div class="editor-header" @mousedown="handleHeaderMouseDown">
+          <div class="editor-title">汇总调价</div>
+          <!-- 右上角关闭按钮 -->
+          <div class="editor-close-btn" title="关闭窗口" @mousedown.stop @click.stop="closeWindow">
+            <el-icon><Close /></el-icon>
+          </div>
+        </div>
+
+        <!-- 中间红棕色微光渐变横线 -->
+        <div class="editor-divider-line"></div>
+
+        <!-- 主体操作内容行 -->
+        <div class="editor-body">
+          <!-- 左侧图标与提示文字 -->
+          <div class="editor-left">
+            <div class="editor-icon-box">
+              <!-- 精美编辑写字板图标 SVG -->
+              <svg viewBox="0 0 1024 1024" width="24" height="24" fill="currentColor">
+                <path d="M832 512v320H192V192h320V128H192c-35.3 0-64 28.7-64 64v640c0 35.3 28.7 64 64 64h640c35.3 0 64-28.7 64-64V512h-64z"/>
+                <path d="M885.3 138.7c-25-25-65.5-25-90.5 0L426.7 506.8l-37.4 127.9 127.9-37.4 368.1-368.1c25-25 25-65.5 0-90.5zM484.5 565.3l25.8-25.8 45.3 45.3-25.8 25.8-45.3-45.3zm290.7-290.7l-45.3-45.3 45.3-45.3 45.3 45.3-45.3 45.3z"/>
+              </svg>
+            </div>
+            <div class="editor-text-group">
+              <div class="editor-main-title">编辑元件[下表中]</div>
+              <div class="editor-sub-tip">↓仅可编辑[白色]列数据...</div>
+            </div>
+          </div>
+
+          <!-- 右侧操作区：重新配置、重新汇总与一键更新 -->
+          <div class="editor-right">
+            <!-- 返回重新配置选项 -->
+            <div class="reconfig-icon-btn" title="修改汇总配置" @click="switchToConfigView">
+              <el-icon :size="16"><Setting /></el-icon>
+            </div>
+
+            <!-- 重新汇总链接按钮 -->
+            <div 
+              class="re-summary-link" 
+              title="按当前配置重新提取各分类元件生成汇总表" 
+              @click="handleReGenerate">
+              <el-icon v-if="reGenerating" class="is-loading" style="margin-right: 2px;"><Loading /></el-icon>
+              <span>重新汇总</span>
+            </div>
+
+            <!-- 一键更新红棕色主按钮 (显式闭合标签) -->
+            <el-button 
+              class="quick-update-btn" 
+              :loading="updating" 
+              @click="handleQuickUpdate">
+              一键更新
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </template>
+
   </div>
 
   <script>
@@ -512,10 +749,18 @@
 
     const app = createApp({
       setup() {
+        // 当前视图模式: 'config' 为图一配置面板，'editor' 为图二紧凑编辑条
+        const currentView = ref('config');
+
         // 状态定义: 分类列表与加载状态
         const categories = ref([]);
         const loading = ref(false);
         const generating = ref(false);
+        const reGenerating = ref(false);
+        const updating = ref(false);
+
+        // 缓存上一次成功生成的完整配置参数
+        const lastSummaryConfig = ref(null);
 
         // 合并条件配置
         const mergeOpts = ref({
@@ -569,8 +814,8 @@
 
         // 窗口拖拽处理
         const handleHeaderMouseDown = (e) => {
-          // 排除点击在控制按钮上的情况
-          if (e.target.closest('.action-btn')) return;
+          // 排除点击在控制按钮和链接上的情况
+          if (e.target.closest('.action-btn') || e.target.closest('.editor-close-btn') || e.target.closest('.re-summary-link') || e.target.closest('.quick-update-btn') || e.target.closest('.reconfig-icon-btn')) return;
           if (window.chrome && window.chrome.webview) {
             window.chrome.webview.postMessage(JSON.stringify({ action: 'dragWindow' }));
           }
@@ -588,6 +833,31 @@
           if (window.chrome && window.chrome.webview) {
             window.chrome.webview.postMessage(JSON.stringify({ action: 'close' }));
           }
+        };
+
+        // 调整窗口尺寸向宿主 C# 发送指令
+        const sendResizeWindow = (w, h) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({
+              action: 'resizeWindow',
+              width: w,
+              height: h
+            }));
+          }
+        };
+
+        // 切换回图一配置面板
+        const switchToConfigView = () => {
+          currentView.value = 'config';
+          // 恢复 720x620 尺寸
+          sendResizeWindow(720, 620);
+        };
+
+        // 切换为图二紧凑编辑条
+        const switchToEditorView = () => {
+          currentView.value = 'editor';
+          // 切换为 680x115 紧凑悬浮尺寸
+          sendResizeWindow(680, 115);
         };
 
         // 自定义汇总点击
@@ -611,10 +881,9 @@
             // 浏览器本地测试模拟数据
             setTimeout(() => {
               categories.value = [
+                { sheetName: '分类1', cabinetCount: 24, isSelected: true },
                 { sheetName: '高压配电室', cabinetCount: 29, isSelected: true },
-                { sheetName: '1、2#箱变(美变单台单柜报价)', cabinetCount: 2, isSelected: true },
-                { sheetName: '低压配电室', cabinetCount: 13, isSelected: true },
-                { sheetName: '配电箱', cabinetCount: 36, isSelected: true }
+                { sheetName: '低压配电室', cabinetCount: 13, isSelected: true }
               ];
               loading.value = false;
             }, 300);
@@ -653,14 +922,64 @@
             }
           };
 
+          // 缓存本次配置
+          lastSummaryConfig.value = JSON.parse(JSON.stringify(payload));
+
           if (window.chrome && window.chrome.webview) {
             window.chrome.webview.postMessage(JSON.stringify(payload));
           } else {
             // 离线模拟
             setTimeout(() => {
               generating.value = false;
+              switchToEditorView();
               ElMessage.success('元件汇总表生成成功！');
-            }, 1000);
+            }, 800);
+          }
+        };
+
+        // 图二：点击“重新汇总”（按开始配置重新生成）
+        const handleReGenerate = () => {
+          if (reGenerating.value) return;
+
+          // 检查是否有缓存配置
+          if (!lastSummaryConfig.value) {
+            // 回退使用当前配置
+            handleGenerate();
+            return;
+          }
+
+          reGenerating.value = true;
+          const payload = {
+            ...lastSummaryConfig.value,
+            action: 'generateSummary'
+          };
+
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify(payload));
+          } else {
+            setTimeout(() => {
+              reGenerating.value = false;
+              ElMessage.success('已按开始配置重新生成元件汇总表！');
+            }, 600);
+          }
+        };
+
+        // 图二：点击“一键更新”（先预留功能）
+        const handleQuickUpdate = () => {
+          if (updating.value) return;
+          updating.value = true;
+
+          const payload = {
+            action: 'updateFromSummary'
+          };
+
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify(payload));
+          } else {
+            setTimeout(() => {
+              updating.value = false;
+              ElMessage.info('一键更新功能已准备就绪 (当前预留)');
+            }, 400);
           }
         };
 
@@ -671,7 +990,7 @@
               try {
                 const response = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
                 
-                // 分类数据返回
+                // 1. 分类数据返回
                 if (response.action === 'onCategoriesLoaded') {
                   loading.value = false;
                   if (response.success && response.data) {
@@ -684,17 +1003,25 @@
                     ElMessage.error(response.message || '获取分类列表失败');
                   }
                 }
-                // 汇总生成结果返回
+                // 2. 汇总生成结果返回
                 else if (response.action === 'onSummaryGenerated') {
                   generating.value = false;
+                  reGenerating.value = false;
                   if (response.success) {
                     ElMessage.success(response.message || '元件汇总表生成成功！');
-                    // 生成成功后稍作延时自动关闭窗口
-                    setTimeout(() => {
-                      closeWindow();
-                    }, 800);
+                    // 生成成功后切换至图二紧凑编辑条视图
+                    switchToEditorView();
                   } else {
                     ElMessage.error(response.message || '汇总表生成失败');
+                  }
+                }
+                // 3. 一键更新结果返回 (预留)
+                else if (response.action === 'onSummaryUpdated') {
+                  updating.value = false;
+                  if (response.success) {
+                    ElMessage.info(response.message || '一键更新功能已预留');
+                  } else {
+                    ElMessage.warning(response.message || '一键更新操作未完成');
                   }
                 }
               } catch (err) {
@@ -713,9 +1040,12 @@
         });
 
         return {
+          currentView,
           categories,
           loading,
           generating,
+          reGenerating,
+          updating,
           mergeOpts,
           displayOpts,
           sortType,
@@ -727,8 +1057,12 @@
           handleHeaderMouseDown,
           minimizeWindow,
           closeWindow,
+          switchToConfigView,
+          switchToEditorView,
           refreshData,
           handleGenerate,
+          handleReGenerate,
+          handleQuickUpdate,
           toggleCustomSummary,
           handleCustomSortSetting
         };

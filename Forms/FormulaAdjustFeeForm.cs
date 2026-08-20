@@ -254,6 +254,20 @@ namespace ExcelAddInDemo
                         }
                         break;
 
+                    // 设为默认公式组并同步写回 CabinetTemplate.xlsx 模板文件
+                    case "setDefaultFormulaGroup":
+                        // 获取公式组名称
+                        string defGroupName = root.TryGetProperty("groupName", out var dgnProp) ? dgnProp.GetString() ?? "" : "";
+                        // 解析当前明细列表
+                        List<FormulaItemModel>? defItems = null;
+                        if (root.TryGetProperty("details", out var defDtProp))
+                        {
+                            defItems = JsonSerializer.Deserialize<List<FormulaItemModel>>(defDtProp.GetRawText(), JsonOptions);
+                        }
+                        // 委托公共服务层执行模板更新与汇总行对齐 (删除旧计费行并汇总行对齐写入模板新计费行)
+                        ExcelServices.UpdateCabinetTemplateDefaultFee(defItems, defGroupName);
+                        break;
+
                     // 执行应用公式调费
                     case "applyFormula":
                         // 获取调费作用域

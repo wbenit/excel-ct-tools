@@ -185,5 +185,53 @@ namespace ExcelAddInDemo.Controllers
                 return JsonSerializer.Serialize(errorResponse, JsonOptions);
             }
         }
+
+        /// <summary>
+        /// 一键更新：从“元件汇总表”将修改后的数据同步回各分类表箱柜（当前先预留功能通路）
+        /// </summary>
+        public string UpdateFromSummary(string? payloadJson)
+        {
+            try
+            {
+                // 记录调用日志
+                LogHelper.WriteLog("触发汇总调价【一键更新】操作");
+
+                // 调用 ExcelServices 底层预留服务方法
+                bool success = ExcelServices.UpdateFromComponentSummarySheet();
+
+                // 封装标准结构化响应
+                var response = new
+                {
+                    // 对应前端监听 action
+                    action = "onSummaryUpdated",
+                    // 执行成功状态
+                    success = success,
+                    // 提示文本信息
+                    message = "一键更新功能已准备就绪，当前为预留状态"
+                };
+
+                // 序列化并返回 JSON
+                return JsonSerializer.Serialize(response, JsonOptions);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"UpdateFromSummary 异常: {ex.Message}");
+
+                // 封装失败报文
+                var errorResponse = new
+                {
+                    // 回发 action
+                    action = "onSummaryUpdated",
+                    // 失败标志
+                    success = false,
+                    // 异常提示说明
+                    message = $"一键更新遇到异常: {ex.Message}"
+                };
+
+                // 返回错误 JSON
+                return JsonSerializer.Serialize(errorResponse, JsonOptions);
+            }
+        }
     }
 }

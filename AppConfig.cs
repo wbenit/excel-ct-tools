@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using ExcelAddInDemo.Models;
 
 namespace ExcelAddInDemo
 {
@@ -44,6 +45,10 @@ namespace ExcelAddInDemo
 
         // 底部明细总计行使用的 Excel 定义名称前缀
         public string TolsumNamePrefix { get; set; } = "Cab_Tolsum_";
+
+        // 获取当前配置实例对应的箱柜定义名称前缀值对象 (零堆分配)
+        [JsonIgnore]
+        public CabinetPrefixConfig Prefixes => new CabinetPrefixConfig(this);
 
         // UI 界面及表头强调的默认主题颜色（主色调为 #009688）
         public string DefaultThemeColor { get; set; } = "#009688";

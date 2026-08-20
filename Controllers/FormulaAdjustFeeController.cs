@@ -362,7 +362,7 @@ namespace ExcelAddInDemo.Controllers
         /// <summary>
         /// 后端 WebAPI 接口: 根据公式组名称获取对应的明细计算公式表
         /// </summary>
-        /// <param name="groupName">公式组名称</param>
+        /// <param name="groupName">公式名称</param>
         /// <returns>明细列表行数据集合</returns>
         public List<FormulaItemModel> GetFormulaDetails(string groupName)
         {

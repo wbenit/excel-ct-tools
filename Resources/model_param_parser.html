@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <!-- 字符编码设置为 UTF-8 -->
+  <meta charset="UTF-8">
+  <!-- 视口设置 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>型号参数识别设置 (极数与电流)</title>
+  <!-- 引入 Element Plus CSS 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <!-- 引入 FontAwesome 图标库 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- 引入 Vue 3 核心构建库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入 Element Plus 组件库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <!-- 引入 Element Plus 图标库 -->
+  <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+  <!-- 引入项目公共主题样式 (主色调 #009688) -->
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    /* 全局重置 */
+    html, body {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      overflow: hidden !important;
+      height: 100%;
+      background-color: #f4f7f6;
+      user-select: none;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      background-color: #ffffff;
+    }
+
+    /* 顶部拖拽标题栏 */
+    .window-header {
+      height: 34px;
+      background: linear-gradient(135deg, #009688 0%, #00796b 100%);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      cursor: move;
+      user-select: none;
+      z-index: 1000;
+    }
+
+    .window-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .window-controls {
+      display: flex;
+      gap: 6px;
+    }
+
+    .ctrl-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: #ffffff;
+      transition: background-color 0.2s;
+    }
+
+    .ctrl-btn:hover {
+      background-color: rgba(255, 255, 255, 0.25);
+    }
+
+    .ctrl-btn.close:hover {
+      background-color: #f56c6c;
+    }
+
+    /* 主内容滚动区域 */
+    .main-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 18px;
+      background-color: #f8fafc;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* 配置卡片面板通用样式 */
+    .config-card {
+      background: #ffffff;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      padding: 12px 16px;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #edf2f7;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1e293b;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-title i {
+      color: #009688;
+    }
+
+    /* 表单 Label 字体与防换行 */
+    .label-text {
+      font-size: 12px;
+      color: #475569;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    /* 顺位流水线项目卡片 */
+    .pipeline-item {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-left: 3px solid #009688;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-bottom: 8px;
+      transition: all 0.2s;
+    }
+
+    .pipeline-item:hover {
+      border-color: #009688;
+      box-shadow: 0 2px 5px rgba(0, 150, 136, 0.08);
+    }
+
+    .pipeline-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .order-badge {
+      background: #009688;
+      color: #ffffff;
+      border-radius: 12px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-right: 6px;
+      flex-shrink: 0;
+    }
+
+    /* 映射表小型输入区 */
+    .mapping-table {
+      margin-top: 8px;
+      background: #ffffff;
+      border: 1px dashed #cbd5e1;
+      border-radius: 6px;
+      padding: 8px 12px;
+    }
+
+    .mapping-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    /* 标签组容器 */
+    .tag-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      margin-top: 6px;
+    }
+
+    /* 沙盒测试区 */
+    .sandbox-card {
+      background: linear-gradient(135deg, #f0fdfa 0%, #e6fffa 100%);
+      border: 1px solid #99f6e4;
+      border-radius: 8px;
+      padding: 12px 16px;
+    }
+
+    .sandbox-result {
+      margin-top: 10px;
+      padding: 10px 14px;
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid #ccfbf1;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+    }
+
+    .result-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .result-label {
+      font-size: 11px;
+      color: #64748b;
+    }
+
+    .result-value {
+      font-size: 15px;
+      font-weight: 700;
+      color: #009688;
+    }
+
+    /* 底部操作工具栏 */
+    .footer-bar {
+      height: 50px;
+      background: #ffffff;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.03);
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部拖拽标题栏 -->
+    <div class="window-header" @mousedown="onDragWindow">
+      <div class="window-title">
+        <i class="fa-solid fa-wand-magic-sparkles"></i>
+        <span>元器件型号参数识别设置 (极数与电流)</span>
+      </div>
+      <div class="window-controls" @mousedown.stop>
+        <div class="ctrl-btn" title="最小化" @click.stop="onMinimize"><i class="fa-solid fa-minus"></i></div>
+        <div class="ctrl-btn close" title="关闭" @click.stop="onClose"><i class="fa-solid fa-xmark"></i></div>
+      </div>
+    </div>
+
+    <!-- 主体内容区域 -->
+    <div class="main-body">
+      <!-- 1. Excel 列映射配置卡片 -->
+      <div class="config-card">
+        <div class="card-header">
+          <div class="card-title">
+            <i class="fa-solid fa-table-columns"></i>
+            <span>1. Excel 工作表列映射与格式</span>
+          </div>
+        </div>
+        
+        <!-- 一行紧凑排列，字号小，彻底杜绝换行 -->
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: nowrap;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span class="label-text">源型号列:</span>
+            <el-input v-model="config.sourceColumn" placeholder="C" size="small" style="width: 55px; text-transform: uppercase;"></el-input>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span class="label-text">电流输出列:</span>
+            <el-input v-model="config.currentColumn" placeholder="S" size="small" style="width: 55px; text-transform: uppercase;"></el-input>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span class="label-text">极数输出列:</span>
+            <el-input v-model="config.poleColumn" placeholder="T" size="small" style="width: 55px; text-transform: uppercase;"></el-input>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span class="label-text">起始数据行:</span>
+            <el-input-number v-model="config.startRow" :min="1" :max="10000" size="small" style="width: 90px;"></el-input-number>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 8px; border-top: 1px dashed #edf2f7; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="label-text">极数输出格式:</span>
+            <el-radio-group v-model="config.poleFormat" size="small">
+              <el-radio label="WithP">带 "P" 标识 (如 3P, 1P+N)</el-radio>
+              <el-radio label="NumberOnly">纯数字 (如 3)</el-radio>
+            </el-radio-group>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="label-text">电流输出格式:</span>
+            <el-radio-group v-model="config.currentFormat" size="small">
+              <el-radio label="NumberOnly">纯数字 (如 100)</el-radio>
+              <el-radio label="WithA">带单位 "A" (如 100A)</el-radio>
+            </el-radio-group>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 极数 (Poles) 识别流水线与双通道过滤 -->
+      <div class="config-card">
+        <div class="card-header">
+          <div class="card-title">
+            <i class="fa-solid fa-code-fork"></i>
+            <span>2. 极数 (Poles) 识别通道 (排除 ➔ 顺位流水线 ➔ 白名单)</span>
+          </div>
+          <el-button type="primary" size="small" plain @click="addPolePipelineItem">
+            <i class="fa-solid fa-plus" style="margin-right: 4px;"></i>添加极数顺位
+          </el-button>
+        </div>
+
+        <!-- 极数前置排除项 -->
+        <div style="margin-bottom: 8px;">
+          <span style="font-size: 12px; color: #475569; font-weight: 600;">🚫 极数前置必去项 (排除防护等级 IP、DPN 前缀等):</span>
+          <div class="tag-container">
+            <el-tag
+              v-for="(tag, idx) in config.poleExcludeKeywords"
+              :key="idx"
+              closable
+              type="danger"
+              size="small"
+              @close="removePoleExcludeTag(idx)"
+            >
+              {{ tag }}
+            </el-tag>
+            <el-input
+              v-if="poleTagInputVisible"
+              ref="poleTagInputRef"
+              v-model="newPoleTagValue"
+              size="small"
+              style="width: 80px;"
+              @keyup.enter="confirmAddPoleTag"
+              @blur="confirmAddPoleTag"
+            ></el-input>
+            <el-button v-else size="small" style="padding: 2px 8px; height: 24px;" @click="showAddPoleTagInput">
+              + 添加排除词
+            </el-button>
+          </div>
+        </div>
+
+        <!-- 极数多级顺位流水线列表 -->
+        <div v-for="(rule, index) in config.polePipeline" :key="rule.id" class="pipeline-item">
+          <div class="pipeline-header">
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
+              <span class="order-badge">第 {{ index + 1 }} 顺位</span>
+              <el-select v-model="rule.mode" size="small" style="width: 240px;" @change="onPoleModeChange(rule)">
+                <el-option label="找 '数字+P' (如 3P, 4P, 1P+N)" value="FindBeforeP"></el-option>
+                <el-option label="找 '空格+数字+空格' (如 3 , 4 )" value="SpaceNumberSpace"></el-option>
+                <el-option label="脱扣代号/特征映射 (如 /3300->3P)" value="CodeMapping"></el-option>
+                <el-option label="找中文 '极' 前面的数字 (如 3极)" value="FindBeforeJi"></el-option>
+                <el-option label="找斜杠后极数 (如 /3, /4)" value="FrameCode"></el-option>
+                <el-option label="固定极数值 (直接指定)" value="FixedValue"></el-option>
+                <el-option label="自定义正则表达式 (高级匹配)" value="CustomRegex"></el-option>
+              </el-select>
+              
+              <!-- 固定值输入框 -->
+              <el-input
+                v-if="rule.mode === 'FixedValue'"
+                v-model="rule.fixedValue"
+                placeholder="固定值(如 1P+N, 3P)"
+                size="small"
+                style="width: 140px;"
+              ></el-input>
+
+              <!-- 自定义正则输入框 -->
+              <el-input
+                v-if="rule.mode === 'CustomRegex'"
+                v-model="rule.customRegex"
+                placeholder="正则(如 (?<pole>[1-4]P(?:\+N)?))"
+                size="small"
+                style="width: 210px;"
+              ></el-input>
+            </div>
+            
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <el-switch v-model="rule.enabled" size="small" active-text="启用"></el-switch>
+              <el-button circle size="small" :disabled="index === 0" title="上移顺位" @click="movePoleRule(index, -1)">
+                <i class="fa-solid fa-arrow-up"></i>
+              </el-button>
+              <el-button circle size="small" :disabled="index === config.polePipeline.length - 1" title="下移顺位" @click="movePoleRule(index, 1)">
+                <i class="fa-solid fa-arrow-down"></i>
+              </el-button>
+              <el-button circle size="small" type="danger" plain title="删除此顺位" @click="deletePoleRule(index)">
+                <i class="fa-solid fa-trash-can"></i>
+              </el-button>
+            </div>
+          </div>
+
+          <!-- 代号对照表子模块 -->
+          <div v-if="rule.mode === 'CodeMapping'" class="mapping-table">
+            <div style="font-size: 11px; color: #64748b; margin-bottom: 6px; display: flex; justify-content: space-between;">
+              <span>包含代号 ➔ 映射输出极数对照表:</span>
+              <el-link type="primary" :underline="false" style="font-size: 11px;" @click="addMappingRow(rule)">+ 添加映射行</el-link>
+            </div>
+            <div v-for="(val, key) in rule.mapping" :key="key" class="mapping-row">
+              <el-input :model-value="key" size="small" placeholder="如 /3300" style="width: 120px;" @change="(newKey) => updateMappingKey(rule, key, newKey)"></el-input>
+              <span style="font-size: 12px; color: #94a3b8;">➔</span>
+              <el-select :model-value="val" size="small" style="width: 90px;" @change="(newVal) => rule.mapping[key] = newVal">
+                <el-option label="1P" value="1P"></el-option>
+                <el-option label="2P" value="2P"></el-option>
+                <el-option label="3P" value="3P"></el-option>
+                <el-option label="4P" value="4P"></el-option>
+                <el-option label="1P+N" value="1P+N"></el-option>
+                <el-option label="3P+N" value="3P+N"></el-option>
+              </el-select>
+              <el-button type="danger" link size="small" @click="deleteMappingRow(rule, key)"><i class="fa-solid fa-xmark"></i></el-button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 极数后置白名单校验 -->
+        <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed #e2e8f0;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 12px; color: #475569; font-weight: 600;">✅ 极数后置标称白名单 (非列表项自动判定无效并顺延):</span>
+            <el-switch v-model="config.enableStrictPoleWhitelist" size="small" active-text="严格白名单"></el-switch>
+          </div>
+          <div class="tag-container">
+            <el-tag
+              v-for="(tag, idx) in config.poleAllowedValues"
+              :key="idx"
+              closable
+              type="success"
+              size="small"
+              @close="removePoleAllowedTag(idx)"
+            >
+              {{ tag }}
+            </el-tag>
+            <el-input
+              v-if="poleAllowTagInputVisible"
+              ref="poleAllowTagInputRef"
+              v-model="newPoleAllowTagValue"
+              size="small"
+              style="width: 70px;"
+              @keyup.enter="confirmAddPoleAllowTag"
+              @blur="confirmAddPoleAllowTag"
+            ></el-input>
+            <el-button v-else size="small" style="padding: 2px 8px; height: 24px;" @click="showAddPoleAllowTagInput">
+              + 增加白名单值
+            </el-button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. 电流 (Current) 识别流水线与双通道过滤 -->
+      <div class="config-card">
+        <div class="card-header">
+          <div class="card-title">
+            <i class="fa-solid fa-bolt"></i>
+            <span>3. 电流 (Current) 识别通道 (排除 ➔ 顺位流水线 ➔ 标称范围校验)</span>
+          </div>
+          <el-button type="primary" size="small" plain @click="addCurrentPipelineItem">
+            <i class="fa-solid fa-plus" style="margin-right: 4px;"></i>添加电流顺位
+          </el-button>
+        </div>
+
+        <!-- 电流前置排除项 -->
+        <div style="margin-bottom: 8px;">
+          <span style="font-size: 12px; color: #475569; font-weight: 600;">🚫 电流前置必去项 (排除 100mA 漏电、10kA 分断、220V 电压等):</span>
+          <div class="tag-container">
+            <el-tag
+              v-for="(tag, idx) in config.currentExcludeKeywords"
+              :key="idx"
+              closable
+              type="danger"
+              size="small"
+              @close="removeCurrentExcludeTag(idx)"
+            >
+              {{ tag }}
+            </el-tag>
+            <el-input
+              v-if="curTagInputVisible"
+              ref="curTagInputRef"
+              v-model="newCurTagValue"
+              size="small"
+              style="width: 80px;"
+              @keyup.enter="confirmAddCurTag"
+              @blur="confirmAddCurTag"
+            ></el-input>
+            <el-button v-else size="small" style="padding: 2px 8px; height: 24px;" @click="showAddCurTagInput">
+              + 添加排除词
+            </el-button>
+          </div>
+        </div>
+
+        <!-- 电流多级顺位流水线列表 -->
+        <div v-for="(rule, index) in config.currentPipeline" :key="rule.id" class="pipeline-item">
+          <div class="pipeline-header">
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
+              <span class="order-badge">第 {{ index + 1 }} 顺位</span>
+              <el-select v-model="rule.mode" size="small" style="width: 250px;">
+                <el-option label="找带单位 'A' 的数字 (如 100A, 63A)" value="NumberWithA"></el-option>
+                <el-option label="找脱扣曲线 [C/D/K/Z] 后的数字 (如 C32)" value="CurveLetterNumber"></el-option>
+                <el-option label="找整定电流区间 (如 2.5-4A)" value="CurrentRange"></el-option>
+                <el-option label="找 '空格+数字+空格' (独立纯数字)" value="SpaceNumberSpace"></el-option>
+                <el-option label="找末尾纯数字 (如 NM1-125 100)" value="TrailingNumber"></el-option>
+                <el-option label="固定电流值 (直接指定)" value="FixedValue"></el-option>
+                <el-option label="自定义正则表达式 (高级匹配)" value="CustomRegex"></el-option>
+              </el-select>
+              
+              <!-- 固定值输入框 -->
+              <el-input
+                v-if="rule.mode === 'FixedValue'"
+                v-model="rule.fixedValue"
+                placeholder="固定值(如 100)"
+                size="small"
+                style="width: 120px;"
+              ></el-input>
+
+              <!-- 自定义正则输入框 -->
+              <el-input
+                v-if="rule.mode === 'CustomRegex'"
+                v-model="rule.customRegex"
+                placeholder="正则(如 (?<current>\d+)A)"
+                size="small"
+                style="width: 210px;"
+              ></el-input>
+            </div>
+            
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <el-switch v-model="rule.enabled" size="small" active-text="启用"></el-switch>
+              <el-button circle size="small" :disabled="index === 0" title="上移顺位" @click="moveCurrentRule(index, -1)">
+                <i class="fa-solid fa-arrow-up"></i>
+              </el-button>
+              <el-button circle size="small" :disabled="index === config.currentPipeline.length - 1" title="下移顺位" @click="moveCurrentRule(index, 1)">
+                <i class="fa-solid fa-arrow-down"></i>
+              </el-button>
+              <el-button circle size="small" type="danger" plain title="删除此顺位" @click="deleteCurrentRule(index)">
+                <i class="fa-solid fa-trash-can"></i>
+              </el-button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 电流后置标称范围白名单 -->
+        <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed #e2e8f0;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 12px; color: #475569; font-weight: 600;">✅ 电流标称范围白名单 (非标数字如 99 会被自动剔除):</span>
+            <el-switch v-model="config.enableStrictCurrentWhitelist" size="small" active-text="严格标称校验"></el-switch>
+          </div>
+          <div class="tag-container" style="max-height: 70px; overflow-y: auto;">
+            <el-tag
+              v-for="(tag, idx) in config.currentAllowedValues"
+              :key="idx"
+              closable
+              type="success"
+              size="small"
+              @close="removeCurrentAllowedTag(idx)"
+            >
+              {{ tag }}A
+            </el-tag>
+            <el-input
+              v-if="curAllowTagInputVisible"
+              ref="curAllowTagInputRef"
+              v-model="newCurAllowTagValue"
+              size="small"
+              style="width: 70px;"
+              @keyup.enter="confirmAddCurAllowTag"
+              @blur="confirmAddCurAllowTag"
+            ></el-input>
+            <el-button v-else size="small" style="padding: 2px 8px; height: 24px;" @click="showAddCurAllowTagInput">
+              + 增加标称值
+            </el-button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. 实时沙盒即时测试卡片 -->
+      <div class="sandbox-card">
+        <div class="card-title" style="margin-bottom: 8px;">
+          <i class="fa-solid fa-vial"></i>
+          <span>4. 实时沙盒即时测试 (Live Sandbox)</span>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <el-input v-model="testModelText" placeholder="在此输入测试型号，如 NXBLE-40 1P+N C16 0.03A 4.5kA" clearable @keyup.enter="runTestParse">
+            <template #append>
+              <el-button type="primary" @click="runTestParse"><i class="fa-solid fa-play" style="margin-right: 4px;"></i>测试识别</el-button>
+            </template>
+          </el-input>
+        </div>
+        <!-- 快速测试样例标签 -->
+        <div style="margin-top: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+          <span style="font-size: 11px; color: #0f766e;">快速填入样例:</span>
+          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('NXBLE-40 1P+N C16 0.03A 4.5kA')">1P+N漏电断路器</el-tag>
+          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('NM1-125S/3300 100A')">塑壳 3300 100A</el-tag>
+          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('iC65N-3P-C25A 30mA 6kA')">微断 3P 25A (含30mA/6kA)</el-tag>
+          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('ABC-99/3300 100A')">含非标数字99 (避开99)</el-tag>
+          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('GV2-M08C (2.5-4A)')">电机保护器 2.5-4A</el-tag>
+        </div>
+
+        <!-- 测试回显结果面板 -->
+        <div v-if="testResult" class="sandbox-result">
+          <div class="result-item">
+            <span class="result-label">极数识别结果</span>
+            <span class="result-value">{{ testResult.pole || '未识别' }}</span>
+            <el-tag v-if="testResult.hitPoleRule" size="small" type="info">{{ testResult.hitPoleRule }}</el-tag>
+          </div>
+          <el-divider direction="vertical" style="height: 36px;"></el-divider>
+          <div class="result-item">
+            <span class="result-label">电流识别结果</span>
+            <span class="result-value">{{ testResult.current || '未识别' }}</span>
+            <el-tag v-if="testResult.hitCurrentRule" size="small" type="info">{{ testResult.hitCurrentRule }}</el-tag>
+          </div>
+          <el-divider direction="vertical" style="height: 36px;"></el-divider>
+          <div class="result-item">
+            <span class="result-label">综合匹配状态</span>
+            <el-tag v-if="testResult.status === 'Success'" type="success" effect="dark">🟢 完全匹配</el-tag>
+            <el-tag v-else-if="testResult.status === 'Partial'" type="warning" effect="dark">🟡 部分匹配</el-tag>
+            <el-tag v-else type="danger" effect="dark">🔴 未能匹配</el-tag>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部操作栏 -->
+    <div class="footer-bar">
+      <div style="font-size: 12px; color: #64748b;">
+        <span v-if="batchStatusMsg"><i class="fa-solid fa-circle-info" style="color: #009688; margin-right: 4px;"></i>{{ batchStatusMsg }}</span>
+        <span v-else>💡 提示：点击“立即识别”将一次性内存极速回填至当前 Excel 表</span>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <el-button @click="resetConfig"><i class="fa-solid fa-rotate-left" style="margin-right: 4px;"></i>恢复默认</el-button>
+        <el-button type="primary" plain @click="saveConfig"><i class="fa-solid fa-floppy-disk" style="margin-right: 4px;"></i>保存配置</el-button>
+        <el-button type="primary" :loading="isExecuting" @click="executeBatch">
+          <i class="fa-solid fa-bolt" style="margin-right: 4px;"></i>🚀 立即识别并填入 Excel
+        </el-button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, nextTick, onMounted } = Vue;
+
+    createApp({
+      setup() {
+        // 配置响应式对象
+        const config = reactive({
+          sourceColumn: 'C',
+          currentColumn: 'S',
+          poleColumn: 'T',
+          startRow: 2,
+          processRangeMode: 'AllValid',
+          poleExcludeKeywords: ['IP', 'DPN', 'PF', 'PT', 'PIN'],
+          poleAllowedValues: ['1P', '2P', '3P', '4P', '1P+N', '3P+N'],
+          enableStrictPoleWhitelist: true,
+          polePipeline: [],
+          poleFormat: 'WithP',
+          currentExcludeKeywords: ['mA', '毫安', 'kA', '千安', 'VAC', 'VDC', 'V', 'Hz', 'ms'],
+          currentAllowedValues: ['1', '2', '6', '10', '16', '20', '25', '32', '40', '50', '63', '80', '100', '125', '160', '200', '250', '400', '630'],
+          enableStrictCurrentWhitelist: true,
+          currentPipeline: [],
+          currentFormat: 'NumberOnly'
+        });
+
+        // 界面状态与测试数据
+        const testModelText = ref('NXBLE-40 1P+N C16 0.03A 4.5kA');
+        const testResult = ref(null);
+        const isExecuting = ref(false);
+        const batchStatusMsg = ref('');
+
+        // Tag 输入控制
+        const poleTagInputVisible = ref(false);
+        const newPoleTagValue = ref('');
+        const poleTagInputRef = ref(null);
+
+        const poleAllowTagInputVisible = ref(false);
+        const newPoleAllowTagValue = ref('');
+        const poleAllowTagInputRef = ref(null);
+
+        const curTagInputVisible = ref(false);
+        const newCurTagValue = ref('');
+        const curTagInputRef = ref(null);
+
+        const curAllowTagInputVisible = ref(false);
+        const newCurAllowTagValue = ref('');
+        const curAllowTagInputRef = ref(null);
+
+        // 发送消息给宿主 C# 后端
+        const postToHost = (action, payload = {}) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ action, ...payload }));
+          }
+        };
+
+        // 窗口控制
+        const onDragWindow = () => postToHost('dragWindow');
+        const onMinimize = () => postToHost('minimize');
+        const onClose = () => postToHost('close');
+
+        // 极数顺位管理
+        const addPolePipelineItem = () => {
+          config.polePipeline.push({
+            id: Date.now().toString(),
+            title: '找 "数字+P" (如 3P, 4P, 1P+N)',
+            enabled: true,
+            mode: 'FindBeforeP',
+            mapping: {},
+            fixedValue: '',
+            customRegex: ''
+          });
+        };
+
+        const deletePoleRule = (index) => {
+          config.polePipeline.splice(index, 1);
+        };
+
+        const movePoleRule = (index, dir) => {
+          const target = index + dir;
+          if (target < 0 || target >= config.polePipeline.length) return;
+          const temp = config.polePipeline[index];
+          config.polePipeline[index] = config.polePipeline[target];
+          config.polePipeline[target] = temp;
+        };
+
+        const onPoleModeChange = (rule) => {
+          if (rule.mode === 'CodeMapping' && (!rule.mapping || Object.keys(rule.mapping).length === 0)) {
+            rule.mapping = { '/3300': '3P', '/4300': '4P' };
+          }
+        };
+
+        const addMappingRow = (rule) => {
+          if (!rule.mapping) rule.mapping = {};
+          rule.mapping['/newCode'] = '3P';
+        };
+
+        const deleteMappingRow = (rule, key) => {
+          delete rule.mapping[key];
+        };
+
+        const updateMappingKey = (rule, oldKey, newKey) => {
+          if (!newKey || oldKey === newKey) return;
+          const val = rule.mapping[oldKey];
+          delete rule.mapping[oldKey];
+          rule.mapping[newKey] = val;
+        };
+
+        // 电流顺位管理
+        const addCurrentPipelineItem = () => {
+          config.currentPipeline.push({
+            id: Date.now().toString(),
+            title: '找带单位 "A" 的数字',
+            enabled: true,
+            mode: 'NumberWithA',
+            mapping: {},
+            fixedValue: '',
+            customRegex: ''
+          });
+        };
+
+        const deleteCurrentRule = (index) => {
+          config.currentPipeline.splice(index, 1);
+        };
+
+        const moveCurrentRule = (index, dir) => {
+          const target = index + dir;
+          if (target < 0 || target >= config.currentPipeline.length) return;
+          const temp = config.currentPipeline[index];
+          config.currentPipeline[index] = config.currentPipeline[target];
+          config.currentPipeline[target] = temp;
+        };
+
+        // 标签管理 (极数排除)
+        const removePoleExcludeTag = (idx) => config.poleExcludeKeywords.splice(idx, 1);
+        const showAddPoleTagInput = () => {
+          poleTagInputVisible.value = true;
+          nextTick(() => poleTagInputRef.value?.focus());
+        };
+        const confirmAddPoleTag = () => {
+          if (newPoleTagValue.value.trim()) {
+            config.poleExcludeKeywords.push(newPoleTagValue.value.trim());
+          }
+          newPoleTagValue.value = '';
+          poleTagInputVisible.value = false;
+        };
+
+        // 标签管理 (极数白名单)
+        const removePoleAllowedTag = (idx) => config.poleAllowedValues.splice(idx, 1);
+        const showAddPoleAllowTagInput = () => {
+          poleAllowTagInputVisible.value = true;
+          nextTick(() => poleAllowTagInputRef.value?.focus());
+        };
+        const confirmAddPoleAllowTag = () => {
+          if (newPoleAllowTagValue.value.trim()) {
+            config.poleAllowedValues.push(newPoleAllowTagValue.value.trim());
+          }
+          newPoleAllowTagValue.value = '';
+          poleAllowTagInputVisible.value = false;
+        };
+
+        // 标签管理 (电流排除)
+        const removeCurrentExcludeTag = (idx) => config.currentExcludeKeywords.splice(idx, 1);
+        const showAddCurTagInput = () => {
+          curTagInputVisible.value = true;
+          nextTick(() => curTagInputRef.value?.focus());
+        };
+        const confirmAddCurTag = () => {
+          if (newCurTagValue.value.trim()) {
+            config.currentExcludeKeywords.push(newCurTagValue.value.trim());
+          }
+          newCurTagValue.value = '';
+          curTagInputVisible.value = false;
+        };
+
+        // 标签管理 (电流白名单)
+        const removeCurrentAllowedTag = (idx) => config.currentAllowedValues.splice(idx, 1);
+        const showAddCurAllowTagInput = () => {
+          curAllowTagInputVisible.value = true;
+          nextTick(() => curAllowTagInputRef.value?.focus());
+        };
+        const confirmAddCurAllowTag = () => {
+          if (newCurAllowTagValue.value.trim()) {
+            config.currentAllowedValues.push(newCurAllowTagValue.value.trim());
+          }
+          newCurAllowTagValue.value = '';
+          curAllowTagInputVisible.value = false;
+        };
+
+        // 沙盒测试
+        const setTestSample = (txt) => {
+          testModelText.value = txt;
+          runTestParse();
+        };
+
+        const runTestParse = () => {
+          postToHost('testParse', {
+            rawModel: testModelText.value,
+            config: JSON.parse(JSON.stringify(config))
+          });
+        };
+
+        // 保存与重置
+        const saveConfig = () => {
+          postToHost('saveConfig', { config: JSON.parse(JSON.stringify(config)) });
+        };
+
+        const resetConfig = () => {
+          postToHost('resetConfig');
+        };
+
+        // 执行批量回填
+        const executeBatch = () => {
+          isExecuting.value = true;
+          batchStatusMsg.value = '正在向 Excel 执行批量识别与二维数组回填...';
+          postToHost('executeBatch', { config: JSON.parse(JSON.stringify(config)) });
+        };
+
+        // 处理 C# 消息
+        const handleHostMessage = (data) => {
+          if (!data) return;
+          switch (data.action) {
+            case 'renderConfig':
+              if (data.config) {
+                Object.assign(config, data.config);
+                if (data.message) ElementPlus.ElMessage.success(data.message);
+                runTestParse();
+              }
+              break;
+            case 'saveResult':
+              if (data.success) {
+                ElementPlus.ElMessage.success(data.message);
+              } else {
+                ElementPlus.ElMessage.error(data.message);
+              }
+              break;
+            case 'testParseResult':
+              testResult.value = data.result;
+              break;
+            case 'batchExecuteResult':
+              isExecuting.value = false;
+              if (data.result && data.result.success) {
+                batchStatusMsg.value = data.result.message;
+                ElementPlus.ElMessage.success({
+                  message: data.result.message,
+                  duration: 5000
+                });
+              } else {
+                batchStatusMsg.value = '执行失败: ' + (data.result?.message || '未知错误');
+                ElementPlus.ElMessage.error(batchStatusMsg.value);
+              }
+              break;
+            case 'error':
+              isExecuting.value = false;
+              ElementPlus.ElMessage.error(data.message);
+              break;
+          }
+        };
+
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (event) => {
+              try {
+                const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                handleHostMessage(data);
+              } catch (e) {
+                console.error(e);
+              }
+            });
+          }
+          // 请求初始配置
+          postToHost('getConfig');
+        });
+
+        return {
+          config,
+          testModelText,
+          testResult,
+          isExecuting,
+          batchStatusMsg,
+          onDragWindow,
+          onMinimize,
+          onClose,
+          addPolePipelineItem,
+          deletePoleRule,
+          movePoleRule,
+          onPoleModeChange,
+          addMappingRow,
+          deleteMappingRow,
+          updateMappingKey,
+          addCurrentPipelineItem,
+          deleteCurrentRule,
+          moveCurrentRule,
+          removePoleExcludeTag,
+          showAddPoleTagInput,
+          confirmAddPoleTag,
+          poleTagInputVisible,
+          newPoleTagValue,
+          poleTagInputRef,
+          removePoleAllowedTag,
+          showAddPoleAllowTagInput,
+          confirmAddPoleAllowTag,
+          poleAllowTagInputVisible,
+          newPoleAllowTagValue,
+          poleAllowTagInputRef,
+          removeCurrentExcludeTag,
+          showAddCurTagInput,
+          confirmAddCurTag,
+          curTagInputVisible,
+          newCurTagValue,
+          curTagInputRef,
+          removeCurrentAllowedTag,
+          showAddCurAllowTagInput,
+          confirmAddCurAllowTag,
+          curAllowTagInputVisible,
+          newCurAllowTagValue,
+          curAllowTagInputRef,
+          setTestSample,
+          runTestParse,
+          saveConfig,
+          resetConfig,
+          executeBatch
+        };
+      }
+    }).use(ElementPlus).mount('#app');
+  </script>
+</body>
+</html>

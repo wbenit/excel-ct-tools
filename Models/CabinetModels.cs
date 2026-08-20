@@ -544,6 +544,83 @@ namespace ExcelAddInDemo.Models
             Tolsum = tolsum;
         }
     }
+
+    /// <summary>
+    /// 箱柜定义名称前缀只读值类型（轻量不可变结构体，零堆分配）
+    /// </summary>
+    public readonly struct CabinetPrefixConfig
+    {
+        // 默认汇总行前缀 --硬编码--
+        public const string DefaultSumPrefix = "Cab_Sum_";
+        // 默认明细信息行前缀 --硬编码--
+        public const string DefaultDetPrefix = "Cab_Det_";
+        // 默认明细小计行前缀 --硬编码--
+        public const string DefaultSubsumPrefix = "Cab_Subsum_";
+        // 默认明细总计行前缀 --硬编码--
+        public const string DefaultTolsumPrefix = "Cab_Tolsum_";
+
+        // 顶部汇总行使用的 Excel 定义名称前缀 (如 "Cab_Sum_")
+        public string SumPrefix { get; }
+
+        // 底部明细箱柜信息行使用的 Excel 定义名称前缀 (如 "Cab_Det_")
+        public string DetPrefix { get; }
+
+        // 底部明细小计行使用的 Excel 定义名称前缀 (如 "Cab_Subsum_")
+        public string SubsumPrefix { get; }
+
+        // 底部明细总计行使用的 Excel 定义名称前缀 (如 "Cab_Tolsum_")
+        public string TolsumPrefix { get; }
+
+        // 显式全参构造函数
+        public CabinetPrefixConfig(string? sumPrefix, string? detPrefix, string? subsumPrefix, string? tolsumPrefix)
+        {
+            // 初始化汇总行前缀，空值回退默认兜底 --硬编码--
+            SumPrefix = !string.IsNullOrEmpty(sumPrefix) ? sumPrefix! : DefaultSumPrefix;
+            // 初始化明细信息行前缀，空值回退默认兜底 --硬编码--
+            DetPrefix = !string.IsNullOrEmpty(detPrefix) ? detPrefix! : DefaultDetPrefix;
+            // 初始化小计行前缀，空值回退默认兜底 --硬编码--
+            SubsumPrefix = !string.IsNullOrEmpty(subsumPrefix) ? subsumPrefix! : DefaultSubsumPrefix;
+            // 初始化总计行前缀，空值回退默认兜底 --硬编码--
+            TolsumPrefix = !string.IsNullOrEmpty(tolsumPrefix) ? tolsumPrefix! : DefaultTolsumPrefix;
+        }
+
+        // 从 ExcelSettings 配置模型构造
+        public CabinetPrefixConfig(ExcelSettings? cfg)
+            : this(cfg?.SumNamePrefix, cfg?.DetNamePrefix, cfg?.SubsumNamePrefix, cfg?.TolsumNamePrefix)
+        {
+        }
+
+        // 静态便捷属性：获取当前全局配置的前缀快照
+        public static CabinetPrefixConfig Current => new CabinetPrefixConfig(ConfigManager.Instance.Current?.Excel);
+
+        // 静态默认兜底实例
+        public static CabinetPrefixConfig Default => new CabinetPrefixConfig(DefaultSumPrefix, DefaultDetPrefix, DefaultSubsumPrefix, DefaultTolsumPrefix);
+
+        // 支持元组解构: var (sum, det, subsum, tolsum) = CabinetPrefixConfig.Current;
+        public void Deconstruct(out string sumPrefix, out string detPrefix, out string subsumPrefix, out string tolsumPrefix)
+        {
+            // 输出汇总行前缀
+            sumPrefix = SumPrefix;
+            // 输出明细信息行前缀
+            detPrefix = DetPrefix;
+            // 输出明细小计行前缀
+            subsumPrefix = SubsumPrefix;
+            // 输出明细总计行前缀
+            tolsumPrefix = TolsumPrefix;
+        }
+
+        // 快速生成第 K 台箱柜的汇总行定义名称 (如 "Cab_Sum_1")
+        public string GetSumName(int k) => $"{SumPrefix}{k}";
+
+        // 快速生成第 K 台箱柜的明细信息行定义名称 (如 "Cab_Det_1")
+        public string GetDetName(int k) => $"{DetPrefix}{k}";
+
+        // 快速生成第 K 台箱柜的小计行定义名称 (如 "Cab_Subsum_1")
+        public string GetSubsumName(int k) => $"{SubsumPrefix}{k}";
+
+        // 快速生成第 K 台箱柜的总计行定义名称 (如 "Cab_Tolsum_1")
+        public string GetTolsumName(int k) => $"{TolsumPrefix}{k}";
+    }
 }
 
 

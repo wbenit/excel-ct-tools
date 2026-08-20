@@ -55,11 +55,8 @@ namespace ExcelAddInDemo
                 dynamic activeWb = app.ActiveWorkbook;
                 if (activeWb == null) return storage;
 
-                // 从配置文件读取箱柜定义名称前缀 (规则 6)
-                string sumPrefix = ConfigManager.Instance.Current.Excel.SumNamePrefix ?? "Cab_Sum_";
-                string detPrefix = ConfigManager.Instance.Current.Excel.DetNamePrefix ?? "Cab_Det_";
-                string subsumPrefix = ConfigManager.Instance.Current.Excel.SubsumNamePrefix ?? "Cab_Subsum_";
-                string tolsumPrefix = ConfigManager.Instance.Current.Excel.TolsumNamePrefix ?? "Cab_Tolsum_";
+                // 从配置中读取箱柜定义名称前缀值对象 (零堆分配)
+                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
 
                 // 遍历当前工作簿中的所有工作表
                 foreach (dynamic sheet in activeWb.Worksheets)
@@ -355,11 +352,8 @@ namespace ExcelAddInDemo
                 // 批量一次性写入选择表 A 列 (规则 7)
                 dictSheet.Range[$"A1:A{totalRows}"].Value2 = matrix;
 
-                // 从配置中读取箱柜明细定义名称前缀 (规则 6)
-                string sumPrefix = ConfigManager.Instance.Current.Excel.SumNamePrefix ?? "Cab_Sum_";
-                string detPrefix = ConfigManager.Instance.Current.Excel.DetNamePrefix ?? "Cab_Det_";
-                string subsumPrefix = ConfigManager.Instance.Current.Excel.SubsumNamePrefix ?? "Cab_Subsum_";
-                string tolsumPrefix = ConfigManager.Instance.Current.Excel.TolsumNamePrefix ?? "Cab_Tolsum_";
+                // 从配置中读取箱柜明细定义名称前缀值对象 (零堆分配)
+                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
                 string currentSheetName = Convert.ToString(activeSheet.Name) ?? "";
 
                 // 构建当前活动工作表的箱柜锚点字典 (复用 Tool 公共方法，内置空值自动智能补齐重建)
@@ -537,10 +531,8 @@ namespace ExcelAddInDemo
                 dynamic wb = app.ActiveWorkbook;
                 if (wb == null) return;
 
-                string sumPrefix = ConfigManager.Instance.Current.Excel.SumNamePrefix ?? "Cab_Sum_";
-                string detPrefix = ConfigManager.Instance.Current.Excel.DetNamePrefix ?? "Cab_Det_";
-                string subsumPrefix = ConfigManager.Instance.Current.Excel.SubsumNamePrefix ?? "Cab_Subsum_";
-                string tolsumPrefix = ConfigManager.Instance.Current.Excel.TolsumNamePrefix ?? "Cab_Tolsum_";
+                // 读取箱柜定义名称前缀值对象 (零堆分配)
+                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
 
                 // 构建当前工作表箱柜字典 (复用 Tool 公共方法，内置空值自动智能补齐重建)
                 var validCabinets = Tool.GetSheetValidCabinets(sheet, wb);

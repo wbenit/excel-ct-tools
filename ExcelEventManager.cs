@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using ExcelDna.Integration;
+using ExcelAddInDemo.Models;
 
 namespace ExcelAddInDemo
 {
@@ -263,9 +264,10 @@ namespace ExcelAddInDemo
 
                     // 【配置文件替代硬编码列举】
                     // 1. 原硬编码前缀校验: "Cab_Sum_" (汇总标签检测) 和 "Cab_Det_" (明细标签检测)
-                    // 2. 替代配置项: ConfigManager.Instance.Current.Excel.SumNamePrefix / DetNamePrefix
-                    string sumPrefix = ConfigManager.Instance.Current.Excel.SumNamePrefix;
-                    string detPrefix = ConfigManager.Instance.Current.Excel.DetNamePrefix;
+                    // 2. 替代配置项: CabinetPrefixConfig.Current
+                    var prefixes = CabinetPrefixConfig.Current;
+                    string sumPrefix = prefixes.SumPrefix;
+                    string detPrefix = prefixes.DetPrefix;
 
                     // 若超链接指向明细前缀 (表明当前修改的是顶部汇总行的 B列名称)
                     if (subAddr.Contains(detPrefix))
@@ -353,10 +355,10 @@ namespace ExcelAddInDemo
                 try { wb = activeSheet.Parent as Microsoft.Office.Interop.Excel.Workbook; } catch { }
 
                 // 【配置文件替代硬编码列举】
-                // 1. 箱柜明细前缀: DetNamePrefix (默认 Cab_Det_)
+                // 1. 箱柜明细前缀: CabinetPrefixConfig.Current.DetPrefix
                 // 2. 右键菜单文本: NewCabinetMenuCaption (默认 新建箱柜)
                 // 3. 右键菜单Tag标识: NewCabinetMenuTag (默认 CT_BTN_NEW_CABINET)
-                string detPrefix = ConfigManager.Instance.Current.Excel.DetNamePrefix ?? "Cab_Det_";
+                string detPrefix = CabinetPrefixConfig.Current.DetPrefix;
                 string menuCaption = ConfigManager.Instance.Current.Excel.NewCabinetMenuCaption ?? "新建箱柜";
                 string menuTag = ConfigManager.Instance.Current.Excel.NewCabinetMenuTag ?? "CT_BTN_NEW_CABINET";
 

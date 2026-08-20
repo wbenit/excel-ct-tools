@@ -125,6 +125,8 @@ namespace ExcelAddInDemo
             <!-- 云物料库项 -->
             <button id='btnCloudMaterialSub' label='云物料库' onAction='OnMenuAction' />
           </menu>
+          <!-- 型号识别(提取极数与电流) 按钮 -->
+          <button id='btnModelParamParser' label='识别极数电流' imageMso='AutoFilter' size='large' screentip='型号识别极数电流' supertip='自动从型号中识别并提取电流和极数，支持双通道顺位流水线与白名单过滤' onAction='OnMenuAction' />
         </group>
         <!-- ③调价格→ 功能分组 -->
         <group id='grpAdjustPrice' label='③调价格→'>
@@ -352,6 +354,12 @@ namespace ExcelAddInDemo
             {
                 // 弹出基于 WebView2 + Vue 3 的“智能输入配置”窗口
                 ExcelServices.ShowSmartInputDialog();
+            }
+            // 响应“识别极数电流”按钮指令
+            else if (controlId == "btnModelParamParser")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“型号参数识别设置”窗口
+                ExcelServices.ShowModelParamParserDialog();
             }
         }
     }

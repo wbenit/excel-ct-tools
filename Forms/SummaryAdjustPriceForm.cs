@@ -261,6 +261,33 @@ namespace ExcelAddInDemo
                         PostWebMessageAsStringSafe(resultJson);
                     }
                 }
+                // 响应调整窗体尺寸指令 (例如切换为图二紧凑编辑条时动态收缩窗口)
+                else if (action == "resizeWindow")
+                {
+                    // 读取目标宽度，默认 720
+                    int width = root.TryGetProperty("width", out var wElem) ? wElem.GetInt32() : 720;
+                    // 读取目标高度，默认 620
+                    int height = root.TryGetProperty("height", out var hElem) ? hElem.GetInt32() : 620;
+
+                    // 调度至主线程执行窗口几何尺寸更新
+                    SafeInvoke(() =>
+                    {
+                        // 检查当前尺寸是否有变化
+                        if (this.ClientSize.Width != width || this.ClientSize.Height != height)
+                        {
+                            // 动态调整窗体工作区尺寸
+                            this.ClientSize = new Size(width, height);
+                        }
+                    });
+                }
+                // 响应一键更新指令 (预留接口)
+                else if (action == "updateFromSummary")
+                {
+                    // 调用控制器执行一键更新业务
+                    string resultJson = _controller.UpdateFromSummary(jsonString);
+                    // 跨线程安全向前端回发更新结果
+                    PostWebMessageAsStringSafe(resultJson);
+                }
             }
             catch (Exception ex)
             {

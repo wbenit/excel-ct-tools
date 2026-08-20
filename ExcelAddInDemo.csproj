@@ -63,6 +63,10 @@
     <None Include="Resources\smart_input.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将型号参数识别设置前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\model_param_parser.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将公共主题样式 CSS 文件复制至构建输出路径中 -->
     <None Include="Resources\theme.css">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
