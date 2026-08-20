@@ -151,7 +151,7 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 响应单元格修改事件，实现箱柜名称在顶部与底部的纯文本双向同步更新
+        /// 响应单元格修改事件，实现箱柜关键行之间的双向数据同步与规格型号智能联动回填
         /// </summary>
         private static void OnSheetChange(object shObj, Microsoft.Office.Interop.Excel.Range target)
         {
@@ -170,7 +170,14 @@ namespace ExcelAddInDemo
                 // 校验 wb 句柄有效性
                 if (wb == null) return;
 
-                // 处理第 3 列 (C列 - 规格型号) 修改时的智能属性联动回填
+                // 1. 优先尝试处理箱柜关键行（Sum 汇总行、Det 明细行、Tolsum 总计行）之间的 8 组双向数据绑定联动
+                if (TryHandleCabinetBiDirectionalSync(wb, sh, target))
+                {
+                    // 若命中双向绑定同步，直接退出避免重复触发
+                    return;
+                }
+
+                // 2. 处理第 3 列 (C列 - 元器件规格型号) 修改时的智能属性联动回填
                 if (target.Column == 3 && target.Cells.Count == 1)
                 {
                     // 读取 C 列最新输入的规格型号字符串
@@ -243,97 +250,319 @@ namespace ExcelAddInDemo
                     }
                     return;
                 }
+            }
+            catch { }
+        }
 
-                // 限制仅处理第 2 列 (B列) 的修改
-                if (target.Column != 2) return;
+        /// <summary>
+        /// 尝试处理箱柜关键行（Sum 汇总行、Det 明细信息行、Tolsum 总计行）之间的 8 组双向数据同步
+        /// 包含:
+        /// 1. Sum B (2) <-> Det B (2) [箱柜名称]
+        /// 2. Sum C (3) <-> Det G (7) [柜型]
+        /// 3. Sum D (4) <-> Det D (4) [外形尺寸]
+        /// 4. Sum F (6) <-> Tolsum F (6) [数量/台数]
+        /// 5. Sum I (9) <-> Det I (9) [备注]
+        /// 6. Sum M (13) <-> Det K (11) [重量]
+        /// 7. Sum N (14) <-> Det M (13) [排产周期]
+        /// 8. Sum O (15) <-> Det O (15) [开标日期]
+        /// </summary>
+        /// <param name="wb">当前工作簿对象</param>
+        /// <param name="sh">当前工作表对象</param>
+        /// <param name="target">被修改的目标单元格 Range</param>
+        /// <returns>若成功命中并处理了双向同步返回 true，否则返回 false</returns>
+        private static bool TryHandleCabinetBiDirectionalSync(
+            Microsoft.Office.Interop.Excel.Workbook wb,
+            Microsoft.Office.Interop.Excel.Worksheet sh,
+            Microsoft.Office.Interop.Excel.Range target)
+        {
+            try
+            {
+                // 校验关键句柄有效性
+                if (wb == null || sh == null || target == null || _excelApp == null) return false;
 
-                // 读取改动单元格的新纯文本内容
-                string newName = Convert.ToString(target.Value) ?? "";
-                // 若新文本为空白则直接退出
-                if (string.IsNullOrWhiteSpace(newName)) return;
+                // 获取改动单元格的物理列号与行号
+                int col = target.Column;
+                int row = target.Row;
 
-                // 获取改动单元格所在行第 1 列 (A列) 单元格
-                Microsoft.Office.Interop.Excel.Range aCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[target.Row, 1];
+                // 从 CabinetPrefixConfig 读取当前配置的定义名称前缀
+                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
 
-                // 校验 A列单元格是否包含超链接锚点
+                // 尝试获取当前行第 1 列 (A 列) 单元格
+                Microsoft.Office.Interop.Excel.Range? aCell = null;
+                try { aCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[row, 1]; } catch { }
+
+                // 尝试提取 A 列单元格的超链接子地址 SubAddress
+                string subAddr = "";
                 if (aCell != null && aCell.Hyperlinks != null && aCell.Hyperlinks.Count > 0)
                 {
-                    // 获取超链接跳转目标子地址 (SubAddress)
-                    string subAddr = "";
                     try { subAddr = aCell.Hyperlinks[1].SubAddress ?? ""; } catch { }
+                }
 
-                    // 【配置文件替代硬编码列举】
-                    // 1. 原硬编码前缀校验: "Cab_Sum_" (汇总标签检测) 和 "Cab_Det_" (明细标签检测)
-                    // 2. 替代配置项: CabinetPrefixConfig.Current
-                    var prefixes = CabinetPrefixConfig.Current;
-                    string sumPrefix = prefixes.SumPrefix;
-                    string detPrefix = prefixes.DetPrefix;
-
-                    // 若超链接指向明细前缀 (表明当前修改的是顶部汇总行的 B列名称)
-                    if (subAddr.Contains(detPrefix))
+                // ----------------------------------------------------
+                // 情况 1: 修改的是顶部汇总行 (Sum 行)
+                // 判定标准: A 列超链接指向 Det 明细前缀 (包含 detPrefix)
+                // ----------------------------------------------------
+                if (!string.IsNullOrEmpty(subAddr) && subAddr.Contains(detPrefix))
+                {
+                    // 提取目标 Det 标签与箱柜序号 K
+                    string detTag = ExtractTag(subAddr, detPrefix);
+                    int k = Tool.ExtractIndexFromName(detTag, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                    if (k <= 0 && !string.IsNullOrEmpty(subAddr))
                     {
-                        // 提取对应的目标明细定义名称标签 (例如 Cab_Det_1)
-                        string targetTag = ExtractTag(subAddr, detPrefix);
-                        if (!string.IsNullOrEmpty(targetTag))
-                        {
-                            // 查找对应的底部明细 A列单元格 Range
-                            Microsoft.Office.Interop.Excel.Range? detAnchorA = FindRangeByTag(wb, sh, targetTag);
-                            if (detAnchorA != null)
-                            {
-                                // 获取底部明细 B列名称单元格 (右移1列)
-                                Microsoft.Office.Interop.Excel.Range detNameB = (Microsoft.Office.Interop.Excel.Range)detAnchorA.Offset[0, 1];
+                        // 兜底从完整超链接地址解析箱柜序号 K
+                        k = Tool.ExtractIndexFromName(subAddr, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                    }
 
-                                // 暂停事件触发防止无限递归
-                                _excelApp.EnableEvents = false;
-                                try
-                                {
-                                    // 1. 同步更新底部明细表头 B列纯文本数值
-                                    detNameB.Value = newName;
-                                }
-                                catch { }
-                                finally
-                                {
-                                    // 恢复事件触发机制
-                                    _excelApp.EnableEvents = true;
-                                }
-                                return;
+                    // 1.1 若修改的是 Sum 行 F 列 (第 6 列: 数量) -> 同步至 Tolsum 行 F 列 (第 6 列)
+                    if (col == 6)
+                    {
+                        if (k > 0)
+                        {
+                            // 查找对应的 Tolsum 总计行定义名称 Range
+                            string tolsumTag = $"{tolsumPrefix}{k}";
+                            Microsoft.Office.Interop.Excel.Range? tolsumAnchorA = FindRangeByTag(wb, sh, tolsumTag);
+                            if (tolsumAnchorA != null)
+                            {
+                                // 获取 Tolsum 行的 F 列单元格 (第 6 列)
+                                Microsoft.Office.Interop.Excel.Range tolsumCellF = (Microsoft.Office.Interop.Excel.Range)sh.Cells[tolsumAnchorA.Row, 6];
+                                // 执行安全同步赋值
+                                SyncCellValue(tolsumCellF, target.Value);
+                                return true;
                             }
                         }
+                        return false;
                     }
-                    // 若超链接指向汇总前缀 (表明当前修改的是底部明细行的 B列名称)
-                    else if (subAddr.Contains(sumPrefix))
-                    {
-                        // 提取对应的目标汇总定义名称标签 (例如 Cab_Sum_1)
-                        string targetTag = ExtractTag(subAddr, sumPrefix);
-                        if (!string.IsNullOrEmpty(targetTag))
-                        {
-                            // 查找对应的顶部汇总 A列单元格 Range
-                            Microsoft.Office.Interop.Excel.Range? sumAnchorA = FindRangeByTag(wb, sh, targetTag);
-                            if (sumAnchorA != null)
-                            {
-                                // 获取顶部汇总 B列名称单元格 (右移1列)
-                                Microsoft.Office.Interop.Excel.Range sumNameB = (Microsoft.Office.Interop.Excel.Range)sumAnchorA.Offset[0, 1];
 
-                                // 暂停事件触发防止无限递归
-                                _excelApp.EnableEvents = false;
-                                try
-                                {
-                                    // 1. 反向同步更新顶部汇总行 B列纯文本数值
-                                    sumNameB.Value = newName;
-                                }
-                                catch { }
-                                finally
-                                {
-                                    // 恢复事件触发机制
-                                    _excelApp.EnableEvents = true;
-                                }
-                                return;
-                            }
+                    // 1.2 查找底部明细行 (Det) 的 A 列锚点 Range
+                    Microsoft.Office.Interop.Excel.Range? detAnchorA = !string.IsNullOrEmpty(detTag) ? FindRangeByTag(wb, sh, detTag) : null;
+                    if (detAnchorA == null && k > 0)
+                    {
+                        // 兜底使用 detPrefix + k 寻找
+                        detAnchorA = FindRangeByTag(wb, sh, $"{detPrefix}{k}");
+                    }
+
+                    // 若成功定位到 Det 明细行
+                    if (detAnchorA != null)
+                    {
+                        int detRow = detAnchorA.Row;
+                        Microsoft.Office.Interop.Excel.Range? targetDetCell = null;
+
+                        // 依据修改的 Sum 行列号匹配对应的 Det 目标列
+                        switch (col)
+                        {
+                            case 2:  // Sum 行 B 列 (2: 箱柜名称) -> Det 行 B 列 (2)
+                                targetDetCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[detRow, 2];
+                                break;
+                            case 3:  // Sum 行 C 列 (3: 柜型) -> Det 行 G 列 (7)
+                                targetDetCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[detRow, 7];
+                                break;
+                            case 4:  // Sum 行 D 列 (4: 外形尺寸) -> Det 行 D 列 (4)
+                                targetDetCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[detRow, 4];
+                                break;
+                            case 9:  // Sum 行 I 列 (9: 备注) -> Det 行 I 列 (9)
+                                targetDetCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[detRow, 9];
+                                break;
+                            case 13: // Sum 行 M 列 (13: 重量) -> Det 行 K 列 (11)
+                                targetDetCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[detRow, 11];
+                                break;
+                            case 14: // Sum 行 N 列 (14: 排产周期) -> Det 行 M 列 (13)
+                                targetDetCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[detRow, 13];
+                                break;
+                            case 15: // Sum 行 O 列 (15: 开标日期) -> Det 行 O 列 (15)
+                                targetDetCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[detRow, 15];
+                                break;
+                        }
+
+                        // 若命中同步目标单元格，执行安全赋值并返回成功
+                        if (targetDetCell != null)
+                        {
+                            SyncCellValue(targetDetCell, target.Value);
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+
+                // ----------------------------------------------------
+                // 情况 2: 修改的是底部明细行 (Det 行)
+                // 判定标准: A 列超链接指向 Sum 汇总前缀 (包含 sumPrefix)
+                // ----------------------------------------------------
+                if (!string.IsNullOrEmpty(subAddr) && subAddr.Contains(sumPrefix))
+                {
+                    // 提取目标 Sum 标签与箱柜序号 K
+                    string sumTag = ExtractTag(subAddr, sumPrefix);
+                    int k = Tool.ExtractIndexFromName(sumTag, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                    if (k <= 0 && !string.IsNullOrEmpty(subAddr))
+                    {
+                        // 兜底从完整超链接解析箱柜序号 K
+                        k = Tool.ExtractIndexFromName(subAddr, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                    }
+
+                    // 查找顶部汇总行 (Sum) 的 A 列锚点 Range
+                    Microsoft.Office.Interop.Excel.Range? sumAnchorA = !string.IsNullOrEmpty(sumTag) ? FindRangeByTag(wb, sh, sumTag) : null;
+                    if (sumAnchorA == null && k > 0)
+                    {
+                        // 兜底使用 sumPrefix + k 寻找
+                        sumAnchorA = FindRangeByTag(wb, sh, $"{sumPrefix}{k}");
+                    }
+
+                    // 若成功定位到 Sum 汇总行
+                    if (sumAnchorA != null)
+                    {
+                        int sumRow = sumAnchorA.Row;
+                        Microsoft.Office.Interop.Excel.Range? targetSumCell = null;
+
+                        // 依据修改的 Det 行列号匹配对应的 Sum 目标列
+                        switch (col)
+                        {
+                            case 2:  // Det 行 B 列 (2: 箱柜名称) -> Sum 行 B 列 (2)
+                                targetSumCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[sumRow, 2];
+                                break;
+                            case 4:  // Det 行 D 列 (4: 外形尺寸) -> Sum 行 D 列 (4)
+                                targetSumCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[sumRow, 4];
+                                break;
+                            case 7:  // Det 行 G 列 (7: 柜型) -> Sum 行 C 列 (3)
+                                targetSumCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[sumRow, 3];
+                                break;
+                            case 9:  // Det 行 I 列 (9: 备注) -> Sum 行 I 列 (9)
+                                targetSumCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[sumRow, 9];
+                                break;
+                            case 11: // Det 行 K 列 (11: 重量) -> Sum 行 M 列 (13)
+                                targetSumCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[sumRow, 13];
+                                break;
+                            case 13: // Det 行 M 列 (13: 排产周期) -> Sum 行 N 列 (14)
+                                targetSumCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[sumRow, 14];
+                                break;
+                            case 15: // Det 行 O 列 (15: 开标日期) -> Sum 行 O 列 (15)
+                                targetSumCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[sumRow, 15];
+                                break;
+                        }
+
+                        // 若命中同步目标单元格，执行安全赋值并返回成功
+                        if (targetSumCell != null)
+                        {
+                            SyncCellValue(targetSumCell, target.Value);
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+
+                // ----------------------------------------------------
+                // 情况 3: 修改的是总计行 (Tolsum 行) 的 F 列 (第 6 列: 数量)
+                // 判定标准: col == 6 且当前行匹配 Cab_Tolsum_k
+                // ----------------------------------------------------
+                if (col == 6)
+                {
+                    // 尝试通过定义名称识别当前行是否为 Tolsum 行并提取序号 K
+                    int tolsumK = FindCabinetIndexByRowAndPrefix(wb, sh, row, tolsumPrefix);
+                    if (tolsumK > 0)
+                    {
+                        // 找到对应的 Sum 汇总行锚点
+                        string sumTag = $"{sumPrefix}{tolsumK}";
+                        Microsoft.Office.Interop.Excel.Range? sumAnchorA = FindRangeByTag(wb, sh, sumTag);
+                        if (sumAnchorA != null)
+                        {
+                            // 获取 Sum 汇总行的 F 列单元格 (第 6 列)
+                            Microsoft.Office.Interop.Excel.Range sumCellF = (Microsoft.Office.Interop.Excel.Range)sh.Cells[sumAnchorA.Row, 6];
+                            // 执行反向同步赋值
+                            SyncCellValue(sumCellF, target.Value);
+                            return true;
                         }
                     }
                 }
             }
             catch { }
+            return false;
+        }
+
+        /// <summary>
+        /// 在挂起 Excel 全局事件的前提下将新值安全同步给目标单元格，并恢复事件机制
+        /// </summary>
+        /// <param name="targetCell">目标单元格 Range</param>
+        /// <param name="newValue">待同步的新值 (支持文本、数值、空值)</param>
+        private static void SyncCellValue(Microsoft.Office.Interop.Excel.Range targetCell, object? newValue)
+        {
+            if (_excelApp == null || targetCell == null) return;
+            // 挂起 Excel 全局事件触发避免递归死循环
+            _excelApp.EnableEvents = false;
+            try
+            {
+                // 将新值同步写入目标单元格
+                targetCell.Value = newValue;
+            }
+            catch { }
+            finally
+            {
+                // 恢复 Excel 全局事件触发机制
+                _excelApp.EnableEvents = true;
+            }
+        }
+
+        /// <summary>
+        /// 根据物理行号与定义名称前缀查找当前工作表中匹配的箱柜序号 K
+        /// </summary>
+        /// <param name="wb">工作簿对象</param>
+        /// <param name="sh">工作表对象</param>
+        /// <param name="row">目标物理行号</param>
+        /// <param name="prefix">定义名称前缀 (如 Cab_Tolsum_)</param>
+        /// <returns>匹配到的箱柜序号 K，未匹配返回 0</returns>
+        private static int FindCabinetIndexByRowAndPrefix(
+            Microsoft.Office.Interop.Excel.Workbook wb,
+            Microsoft.Office.Interop.Excel.Worksheet sh,
+            int row,
+            string prefix)
+        {
+            try
+            {
+                string curSheetName = Convert.ToString(sh.Name) ?? "";
+
+                // 1. 优先扫描工作表级别定义名称
+                if (sh.Names != null)
+                {
+                    foreach (Microsoft.Office.Interop.Excel.Name n in sh.Names)
+                    {
+                        try
+                        {
+                            string clean = Tool.ExtractCleanNameStr(Convert.ToString(n.Name) ?? "");
+                            if (clean.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                            {
+                                if (n.RefersToRange != null && n.RefersToRange.Row == row)
+                                {
+                                    int k = Tool.ExtractIndexFromName(clean);
+                                    if (k > 0) return k;
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
+                // 2. 扫描工作簿级别定义名称
+                if (wb != null && wb.Names != null)
+                {
+                    foreach (Microsoft.Office.Interop.Excel.Name n in wb.Names)
+                    {
+                        try
+                        {
+                            string clean = Tool.ExtractCleanNameStr(Convert.ToString(n.Name) ?? "");
+                            if (clean.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                            {
+                                var r = n.RefersToRange;
+                                if (r != null && r.Row == row &&
+                                    string.Equals(Convert.ToString(r.Worksheet?.Name), curSheetName, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    int k = Tool.ExtractIndexFromName(clean);
+                                    if (k > 0) return k;
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+            return 0;
         }
 
         /// <summary>
@@ -599,24 +828,49 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 依据定义名称标签精准获取 Range 对象，带多层 Safe-Lookup 兜底
+        /// 依据定义名称标签精准获取 Range 对象，带多层 Safe-Lookup 兜底 (优先工作表级，后回退工作簿级)
         /// </summary>
         private static Microsoft.Office.Interop.Excel.Range? FindRangeByTag(Microsoft.Office.Interop.Excel.Workbook wb, Microsoft.Office.Interop.Excel.Worksheet sh, string tagName)
         {
             try
             {
-                // 安全遍历工作簿中的定义名称进行精确名称比对与后缀匹配
-                foreach (Microsoft.Office.Interop.Excel.Name n in wb.Names)
+                string curSheetName = Convert.ToString(sh.Name) ?? "";
+
+                // 1. 优先遍历当前工作表中的定义名称
+                if (sh.Names != null)
                 {
-                    string nStr = Convert.ToString(n.Name) ?? "";
-                    if (nStr.Contains("!"))
+                    foreach (Microsoft.Office.Interop.Excel.Name n in sh.Names)
                     {
-                        nStr = nStr.Substring(nStr.IndexOf("!") + 1);
+                        try
+                        {
+                            string nStr = Tool.ExtractCleanNameStr(Convert.ToString(n.Name) ?? "");
+                            if (string.Equals(nStr, tagName, StringComparison.OrdinalIgnoreCase) || nStr.EndsWith(tagName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                if (n.RefersToRange != null) return n.RefersToRange;
+                            }
+                        }
+                        catch { }
                     }
-                    nStr = nStr.Trim('\'', '=', ' ', '"');
-                    if (string.Equals(nStr, tagName, StringComparison.OrdinalIgnoreCase) || nStr.EndsWith(tagName, StringComparison.OrdinalIgnoreCase))
+                }
+
+                // 2. 安全遍历工作簿中的定义名称进行精确比对与工作表校验
+                if (wb != null && wb.Names != null)
+                {
+                    foreach (Microsoft.Office.Interop.Excel.Name n in wb.Names)
                     {
-                        if (n.RefersToRange != null) return n.RefersToRange;
+                        try
+                        {
+                            string nStr = Tool.ExtractCleanNameStr(Convert.ToString(n.Name) ?? "");
+                            if (string.Equals(nStr, tagName, StringComparison.OrdinalIgnoreCase) || nStr.EndsWith(tagName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                var r = n.RefersToRange;
+                                if (r != null && string.Equals(Convert.ToString(r.Worksheet?.Name), curSheetName, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    return r;
+                                }
+                            }
+                        }
+                        catch { }
                     }
                 }
             }
