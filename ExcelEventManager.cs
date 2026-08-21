@@ -257,14 +257,14 @@ namespace ExcelAddInDemo
         /// <summary>
         /// 尝试处理箱柜关键行（Sum 汇总行、Det 明细信息行、Tolsum 总计行）之间的 8 组双向数据同步
         /// 包含:
-        /// 1. Sum B (2) <-> Det B (2) [箱柜名称]
-        /// 2. Sum C (3) <-> Det G (7) [柜型]
-        /// 3. Sum D (4) <-> Det D (4) [外形尺寸]
+        /// 1. Sum B (2) <-> Det B (2) [柜号]
+        /// 2. Sum C (3) <-> Det G (7) [箱柜名称，Det G:H合并]
+        /// 3. Sum D (4) <-> Det D (4) [箱柜型号，Det D:E合并]
         /// 4. Sum F (6) <-> Tolsum F (6) [数量/台数]
         /// 5. Sum I (9) <-> Det I (9) [备注]
-        /// 6. Sum M (13) <-> Det K (11) [重量]
-        /// 7. Sum N (14) <-> Det M (13) [排产周期]
-        /// 8. Sum O (15) <-> Det O (15) [开标日期]
+        /// 6. Sum M (13) <-> Det K (11) [箱柜尺寸]
+        /// 7. Sum N (14) <-> Det M (13) [类别]
+        /// 8. Sum Q (17) <-> Det O (15) [图号]
         /// </summary>
         /// <param name="wb">当前工作簿对象</param>
         /// <param name="sh">当前工作表对象</param>
@@ -347,28 +347,28 @@ namespace ExcelAddInDemo
                         int detRow = detAnchorA.Row;
                         Microsoft.Office.Interop.Excel.Range? targetDetCell = null;
 
-                        // 依据修改的 Sum 行列号匹配对应的 Det 目标列
+                        // 依据修改的 Sum 行列号匹配对应的 Det 目标数据列
                         switch (col)
                         {
-                            case 2:  // Sum 行 B 列 (2: 箱柜名称) -> Det 行 B 列 (2)
+                            case 2:  // Sum 行 B 列 (2: 柜号) -> Det 行 B 列 (2: 柜号)
                                 targetDetCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[detRow, 2];
                                 break;
-                            case 3:  // Sum 行 C 列 (3: 柜型) -> Det 行 G 列 (7)
+                            case 3:  // Sum 行 C 列 (3: 箱柜名称) -> Det 行 G 列 (7: 箱柜名称, G:H合并)
                                 targetDetCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[detRow, 7];
                                 break;
-                            case 4:  // Sum 行 D 列 (4: 外形尺寸) -> Det 行 D 列 (4)
+                            case 4:  // Sum 行 D 列 (4: 箱柜型号) -> Det 行 D 列 (4: 箱柜型号, D:E合并)
                                 targetDetCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[detRow, 4];
                                 break;
-                            case 9:  // Sum 行 I 列 (9: 备注) -> Det 行 I 列 (9)
+                            case 9:  // Sum 行 I 列 (9: 备注) -> Det 行 I 列 (9: 备注)
                                 targetDetCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[detRow, 9];
                                 break;
-                            case 13: // Sum 行 M 列 (13: 重量) -> Det 行 K 列 (11)
+                            case 13: // Sum 行 M 列 (13: 箱柜尺寸) -> Det 行 K 列 (11: 箱柜尺寸)
                                 targetDetCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[detRow, 11];
                                 break;
-                            case 14: // Sum 行 N 列 (14: 排产周期) -> Det 行 M 列 (13)
+                            case 14: // Sum 行 N 列 (14: 类别) -> Det 行 M 列 (13: 类别)
                                 targetDetCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[detRow, 13];
                                 break;
-                            case 15: // Sum 行 O 列 (15: 开标日期) -> Det 行 O 列 (15)
+                            case 17: // Sum 行 Q 列 (17: 图号) -> Det 行 O 列 (15: 图号)
                                 targetDetCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[detRow, 15];
                                 break;
                         }
@@ -412,29 +412,31 @@ namespace ExcelAddInDemo
                         int sumRow = sumAnchorA.Row;
                         Microsoft.Office.Interop.Excel.Range? targetSumCell = null;
 
-                        // 依据修改的 Det 行列号匹配对应的 Sum 目标列
+                        // 依据修改的 Det 行列号匹配对应的 Sum 目标数据列
                         switch (col)
                         {
-                            case 2:  // Det 行 B 列 (2: 箱柜名称) -> Sum 行 B 列 (2)
+                            case 2:  // Det 行 B 列 (2: 柜号) -> Sum 行 B 列 (2: 柜号)
                                 targetSumCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[sumRow, 2];
                                 break;
-                            case 4:  // Det 行 D 列 (4: 外形尺寸) -> Sum 行 D 列 (4)
+                            case 4:  // Det 行 D 列 (4: 箱柜型号) -> Sum 行 D 列 (4: 箱柜型号)
+                            case 5:  // Det 行 E 列 (5: 箱柜型号合并区) -> Sum 行 D 列 (4: 箱柜型号)
                                 targetSumCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[sumRow, 4];
                                 break;
-                            case 7:  // Det 行 G 列 (7: 柜型) -> Sum 行 C 列 (3)
+                            case 7:  // Det 行 G 列 (7: 箱柜名称) -> Sum 行 C 列 (3: 箱柜名称)
+                            case 8:  // Det 行 H 列 (8: 箱柜名称合并区) -> Sum 行 C 列 (3: 箱柜名称)
                                 targetSumCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[sumRow, 3];
                                 break;
-                            case 9:  // Det 行 I 列 (9: 备注) -> Sum 行 I 列 (9)
+                            case 9:  // Det 行 I 列 (9: 备注) -> Sum 行 I 列 (9: 备注)
                                 targetSumCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[sumRow, 9];
                                 break;
-                            case 11: // Det 行 K 列 (11: 重量) -> Sum 行 M 列 (13)
+                            case 11: // Det 行 K 列 (11: 箱柜尺寸) -> Sum 行 M 列 (13: 箱柜尺寸)
                                 targetSumCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[sumRow, 13];
                                 break;
-                            case 13: // Det 行 M 列 (13: 排产周期) -> Sum 行 N 列 (14)
+                            case 13: // Det 行 M 列 (13: 类别) -> Sum 行 N 列 (14: 类别)
                                 targetSumCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[sumRow, 14];
                                 break;
-                            case 15: // Det 行 O 列 (15: 开标日期) -> Sum 行 O 列 (15)
-                                targetSumCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[sumRow, 15];
+                            case 15: // Det 行 O 列 (15: 图号) -> Sum 行 Q 列 (17: 图号)
+                                targetSumCell = (Microsoft.Office.Interop.Excel.Range)sh.Cells[sumRow, 17];
                                 break;
                         }
 

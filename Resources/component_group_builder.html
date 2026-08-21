@@ -1,0 +1,1529 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>二次元件组规则管道构建器</title>
+  <!-- 引入 Element Plus CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <!-- 引入 FontAwesome 图标库 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- 引入 Vue 3 核心库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入 Element Plus 组件库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <!-- 引入 Element Plus 图标库 -->
+  <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+  <!-- 引入项目公共主题样式 -->
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    /* 全局重置与窗口外壳 */
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      overflow: hidden !important;
+      height: 100%;
+      width: 100%;
+      background-color: #f4f7f6;
+      user-select: none;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      background-color: #ffffff;
+      overflow: hidden;
+    }
+
+    /* 顶部拖拽标题栏 */
+    .window-header {
+      height: 38px;
+      min-height: 38px;
+      background: linear-gradient(135deg, #009688 0%, #00796b 100%);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      cursor: move;
+      user-select: none;
+      z-index: 1000;
+      flex-shrink: 0;
+    }
+
+    .window-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .window-controls {
+      display: flex;
+      gap: 6px;
+      margin-left: 12px;
+    }
+
+    .ctrl-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: #ffffff;
+      transition: background-color 0.2s;
+    }
+
+    .ctrl-btn:hover {
+      background-color: rgba(255, 255, 255, 0.25);
+    }
+
+    .ctrl-btn.close:hover {
+      background-color: #f56c6c;
+    }
+
+    /* 三栏主体工作区 */
+    .main-workspace {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+      background-color: #f8fafc;
+      width: 100%;
+    }
+
+    /* 1. 左侧规则库面板 (固定 250px) */
+    .sidebar-panel {
+      width: 250px;
+      min-width: 250px;
+      max-width: 250px;
+      border-right: 1px solid #e2e8f0;
+      background-color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .sidebar-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid #edf2f7;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .sidebar-header-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .rule-list-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .rule-card-item {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 8px 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      position: relative;
+    }
+
+    .rule-card-item:hover {
+      border-color: #009688;
+      box-shadow: 0 2px 6px rgba(0, 150, 136, 0.1);
+    }
+
+    .rule-card-item.active {
+      border-color: #009688;
+      background-color: #e0f2f1;
+      border-left: 4px solid #009688;
+    }
+
+    .rule-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .rule-card-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: #1e293b;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+
+    .rule-card-target {
+      font-size: 12px;
+      color: #009688;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .rule-card-expr {
+      font-size: 11px;
+      color: #64748b;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: monospace;
+      background: #f1f5f9;
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+
+    .order-btn {
+      width: 20px;
+      height: 20px;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: #64748b;
+      background: #f1f5f9;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .order-btn:hover:not(.disabled) {
+      background: #009688;
+      color: #ffffff;
+    }
+
+    .order-btn.disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    /* 2. 中间主编辑器面板 (自适应伸缩) */
+    .editor-panel {
+      flex: 1;
+      min-width: 480px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .config-card {
+      background: #ffffff;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      padding: 12px 16px;
+      width: 100%;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #edf2f7;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1e293b;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-title i {
+      color: #009688;
+    }
+
+    /* 节点管道流样式 */
+    .pipeline-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 100%;
+    }
+
+    /* 常规单一节点卡片 */
+    .pipeline-node {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-left: 3px solid #009688;
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: all 0.2s;
+      width: 100%;
+    }
+
+    .pipeline-node:hover {
+      border-color: #cbd5e1;
+      background: #f1f5f9;
+    }
+
+    /* 【或】关系分支分组卡片 */
+    .pipeline-or-card {
+      background: #fffbf0;
+      border: 1px dashed #f59e0b;
+      border-left: 4px solid #f59e0b;
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: all 0.2s;
+      width: 100%;
+    }
+
+    .or-group-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 6px;
+      border-bottom: 1px dashed #fde68a;
+    }
+
+    .or-divider {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 2px 0;
+      position: relative;
+    }
+
+    .or-divider-tag {
+      background: #fef3c7;
+      color: #d97706;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 1px 8px;
+      border-radius: 10px;
+      border: 1px solid #fcd34d;
+    }
+
+    .node-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      width: 100%;
+    }
+
+    .node-left-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 320px;
+    }
+
+    .node-right-actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .node-property-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-left: 12px;
+      border-left: 2px dashed #cbd5e1;
+      padding-left: 10px;
+      width: calc(100% - 12px);
+    }
+
+    .prop-filter-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #ffffff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid #e2e8f0;
+      flex-wrap: wrap;
+      width: 100%;
+    }
+
+    /* 3. 右侧沙盒与测试面板 (固定 350px) */
+    .sandbox-panel {
+      width: 350px;
+      min-width: 350px;
+      max-width: 350px;
+      border-left: 1px solid #e2e8f0;
+      background-color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .sandbox-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid #edf2f7;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background-color: #f8fafc;
+      flex-shrink: 0;
+    }
+
+    .sandbox-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .matched-group-item {
+      background: #e0f2f1;
+      border: 1px solid #80cbc4;
+      border-radius: 6px;
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .matched-group-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #00796b;
+    }
+
+    .matched-group-qty {
+      font-size: 14px;
+      font-weight: 700;
+      color: #004d40;
+    }
+
+    .log-box {
+      font-family: monospace;
+      font-size: 11px;
+      background: #1e293b;
+      color: #38bdf8;
+      padding: 8px;
+      border-radius: 6px;
+      height: 140px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+
+    /* 底部操作区 */
+    .sandbox-footer {
+      padding: 10px 12px;
+      border-top: 1px solid #edf2f7;
+      background-color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    /* 自定义滚动条 */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部拖拽标题栏 -->
+    <div class="window-header" @mousedown="onHeaderMouseDown" @dblclick="toggleMaximize">
+      <div class="window-title">
+        <i class="fa-solid fa-network-wired"></i>
+        <span>二次元件组动态规则管道构建器</span>
+        <el-tag size="small" effect="dark" type="info" style="background: rgba(255,255,255,0.2); border: none;">v2.0 管道流</el-tag>
+      </div>
+      <div class="header-actions">
+        <el-button size="small" type="success" @click.stop="saveAllConfig">
+          <i class="fa-solid fa-floppy-disk" style="margin-right: 4px;"></i>保存配置
+        </el-button>
+        <el-button size="small" type="warning" @click.stop="resetToDefault">
+          <i class="fa-solid fa-rotate-left" style="margin-right: 4px;"></i>恢复出厂规则
+        </el-button>
+        <div class="window-controls">
+          <div class="ctrl-btn" @click.stop="minimizeWindow" title="最小化">
+            <i class="fa-solid fa-minus"></i>
+          </div>
+          <div class="ctrl-btn" @click.stop="toggleMaximize" title="最大化/还原">
+            <i class="fa-regular fa-square"></i>
+          </div>
+          <div class="ctrl-btn close" @click.stop="closeWindow" title="关闭">
+            <i class="fa-solid fa-xmark"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 三栏主体工作区 -->
+    <div class="main-workspace">
+      <!-- 1. 左侧规则库面板 -->
+      <div class="sidebar-panel">
+        <div class="sidebar-header">
+          <div class="sidebar-header-top">
+            <span style="font-size: 13px; font-weight: 600; color: #1e293b;">
+              <i class="fa-solid fa-list-check" style="color: #009688; margin-right: 6px;"></i>规则库 ({{ filteredRules.length }})
+            </span>
+            <el-button size="small" type="primary" plain @click="addNewRule">
+              <i class="fa-solid fa-plus" style="margin-right: 4px;"></i>新建规则
+            </el-button>
+          </div>
+          <el-input v-model="searchKeyword" size="small" placeholder="搜索规则名称 / 目标组..." clearable>
+            <template #prefix>
+              <i class="fa-solid fa-magnifying-glass" style="color: #94a3b8;"></i>
+            </template>
+          </el-input>
+        </div>
+
+        <div class="rule-list-container">
+          <div
+            v-for="(rule, index) in filteredRules"
+            :key="rule.id"
+            class="rule-card-item"
+            :class="{ active: currentRule && currentRule.id === rule.id }"
+            @click="selectRule(rule)"
+          >
+            <div class="rule-card-top">
+              <div class="rule-card-name" :title="rule.name">
+                <el-switch
+                  v-model="rule.enabled"
+                  size="small"
+                  @click.stop
+                  style="--el-switch-on-color: #009688;"
+                ></el-switch>
+                <span style="margin-left: 4px;">{{ rule.name || '未命名规则' }}</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <span style="font-size: 11px; color: #94a3b8; margin-right: 2px;">#{{ index + 1 }}</span>
+                <div class="order-btn" :class="{ disabled: index === 0 }" @click.stop="moveRuleUp(index)" title="上移(提升扣减优先级)">
+                  <i class="fa-solid fa-chevron-up"></i>
+                </div>
+                <div class="order-btn" :class="{ disabled: index === filteredRules.length - 1 }" @click.stop="moveRuleDown(index)" title="下移(降低扣减优先级)">
+                  <i class="fa-solid fa-chevron-down"></i>
+                </div>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+              <div class="rule-card-expr" :title="rule.rawExpression" style="flex: 1;">
+                {{ rule.rawExpression || '(可视化管道构建)' }}
+              </div>
+              <div class="rule-card-target">
+                <span>{{ rule.targetGroup || '未定组名' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 中间规则管道可视化编辑器 -->
+      <div class="editor-panel" v-if="currentRule">
+        <!-- 规则基础属性卡片 -->
+        <div class="config-card">
+          <div class="card-header">
+            <div class="card-title">
+              <i class="fa-solid fa-sliders"></i>
+              <span>基本信息与生成策略</span>
+            </div>
+            <div>
+              <el-button size="small" type="danger" plain @click="deleteCurrentRule">
+                <i class="fa-solid fa-trash-can" style="margin-right: 4px;"></i>删除本规则
+              </el-button>
+            </div>
+          </div>
+
+          <el-form :model="currentRule" label-width="90px" size="small">
+            <el-row :gutter="16">
+              <el-col :span="12">
+                <el-form-item label="规则名称:">
+                  <el-input v-model="currentRule.name" placeholder="如: 双电源报警回路" style="width: 100%;"></el-input>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="目标元件组:">
+                  <el-input v-model="currentRule.targetGroup" placeholder="写入C列, 如: *ATS+MXOF" style="width: 100%;">
+                    <template #prepend><span style="color: #009688; font-weight: 600;">C列</span></template>
+                  </el-input>
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-row :gutter="16">
+              <el-col :span="12">
+                <el-form-item label="套数策略:">
+                  <el-select v-model="currentRule.policy" placeholder="请选择数量生成策略" style="width: 100%;">
+                    <el-option :value="1" label="跟随主控元件数量 (# 修饰符)"></el-option>
+                    <el-option :value="2" label="自动按成组比例配比 (/ 计算组数)"></el-option>
+                    <el-option :value="0" label="固定套数"></el-option>
+                    <el-option :value="3" label="所有匹配元件数量之和"></el-option>
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12" v-if="currentRule.policy === 0">
+                <el-form-item label="固定套数:">
+                  <el-input-number v-model="currentRule.fixedQuantity" :min="1" :max="999" style="width: 100%;"></el-input-number>
+                </el-form-item>
+              </el-col>
+            </el-row>
+          </el-form>
+        </div>
+
+        <!-- 管道条件节点流式看板 -->
+        <div class="config-card">
+          <div class="card-header">
+            <div class="card-title">
+              <i class="fa-solid fa-diagram-project"></i>
+              <span>管道条件节点流水线 (Condition Pipeline)</span>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <el-button size="small" type="primary" @click="addConditionNode">
+                <i class="fa-solid fa-plus" style="margin-right: 4px;"></i>添加条件节点
+              </el-button>
+              <el-button size="small" type="warning" plain @click="addOrGroup">
+                <i class="fa-solid fa-code-branch" style="margin-right: 4px;"></i>添加【或】条件分支组
+              </el-button>
+            </div>
+          </div>
+
+          <div class="pipeline-container">
+            <!-- 1. 顶层常规条件节点列表 -->
+            <div
+              v-for="(node, nIdx) in (currentRule.conditionTree.nodes || [])"
+              :key="node.id || nIdx"
+              class="pipeline-node"
+            >
+              <!-- 节点顶行: 匹配模式 + 元件名称 + 操作 -->
+              <div class="node-header-row">
+                <div class="node-left-controls">
+                  <span style="font-size: 12px; font-weight: 600; color: #475569; flex-shrink: 0;">节点 {{ nIdx + 1 }}:</span>
+                  <el-select v-model="node.mode" size="small" style="width: 120px; flex-shrink: 0;" @change="onNodeModeChange(node)">
+                    <el-option :value="0" label="必须包含"></el-option>
+                    <el-option :value="1" label="必须排除 (-)"></el-option>
+                    <el-option :value="2" label="主控数量 (#)"></el-option>
+                    <el-option :value="3" label="成组比例 (/)"></el-option>
+                  </el-select>
+
+                  <!-- 常规模式下的元件名称输入 -->
+                  <el-input
+                    v-if="node.mode !== 3"
+                    v-model="node.elementName"
+                    size="small"
+                    placeholder="元件名称 (输入 * 匹配任意元件)"
+                    style="flex: 1; min-width: 140px;"
+                    @input="syncToRawExpression"
+                  >
+                    <template #prepend>元件名称</template>
+                  </el-input>
+
+                  <!-- 比例模式下的成组配比展示 -->
+                  <span v-else style="font-size: 12px; color: #009688; font-weight: 600;">
+                    成组比例联动配比
+                  </span>
+                </div>
+
+                <div class="node-right-actions">
+                  <el-button size="small" type="primary" plain @click="addPropertyFilter(node)" v-if="node.mode !== 3">
+                    <i class="fa-solid fa-filter" style="margin-right: 4px;"></i>添加属性过滤
+                  </el-button>
+                  <el-button size="small" type="danger" plain @click="removeConditionNode(nIdx)">
+                    <i class="fa-solid fa-trash"></i>
+                  </el-button>
+                </div>
+              </div>
+
+              <!-- 比例模式的子项列表 -->
+              <div v-if="node.mode === 3" style="display: flex; flex-direction: column; gap: 6px; margin-left: 12px; width: 100%;">
+                <div
+                  v-for="(rItem, rIdx) in node.ratioItems"
+                  :key="rIdx"
+                  style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;"
+                >
+                  <span style="font-size: 12px; color: #64748b;">比例 {{ rIdx + 1 }}:</span>
+                  <el-input-number v-model="rItem.count" :min="1" :max="99" size="small" style="width: 90px;" @change="syncToRawExpression"></el-input-number>
+                  <span style="font-size: 12px; color: #64748b;">个</span>
+                  <el-input v-model="rItem.elementName" size="small" placeholder="如: 电流表" style="width: 160px;" @input="syncToRawExpression"></el-input>
+                  <el-button size="small" type="danger" text @click="removeRatioItem(node, rIdx)">
+                    <i class="fa-solid fa-xmark"></i>
+                  </el-button>
+                </div>
+                <div>
+                  <el-button size="small" type="primary" text @click="addRatioItem(node)">
+                    <i class="fa-solid fa-plus" style="margin-right: 4px;"></i>添加比例成员
+                  </el-button>
+                </div>
+              </div>
+
+              <!-- 属性过滤条件列表 (电流、型号、极数、附件) -->
+              <div class="node-property-list" v-if="node.mode !== 3 && node.propertyFilters && node.propertyFilters.length > 0">
+                <div
+                  v-for="(filter, fIdx) in node.propertyFilters"
+                  :key="fIdx"
+                  class="prop-filter-row"
+                >
+                  <span style="font-size: 11px; color: #64748b;">属性:</span>
+                  <el-select v-model="filter.propertyType" size="small" style="width: 110px;" @change="syncToRawExpression">
+                    <el-option value="Current" label="电流 (V列)"></el-option>
+                    <el-option value="Model" label="型号 (C列)"></el-option>
+                    <el-option value="Poles" label="极数 (W列)"></el-option>
+                    <el-option value="Appendix" label="附件 (X列)"></el-option>
+                  </el-select>
+
+                  <el-select v-model="filter.operator" size="small" style="width: 85px;" @change="syncToRawExpression">
+                    <el-option value=">=" label=">="></el-option>
+                    <el-option value=">" label=">"></el-option>
+                    <el-option value="<=" label="<="></el-option>
+                    <el-option value="<" label="<"></el-option>
+                    <el-option value="==" label="等于"></el-option>
+                    <el-option value="contains" label="包含"></el-option>
+                  </el-select>
+
+                  <el-input v-model="filter.value" size="small" placeholder="比较值 (如 1000 / WATSG / 3P / 1)" style="flex: 1; min-width: 120px;" @input="syncToRawExpression"></el-input>
+
+                  <el-button size="small" type="danger" text @click="removePropertyFilter(node, fIdx)">
+                    <i class="fa-solid fa-xmark"></i>
+                  </el-button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. 【或】关系分支条件组列表 (subGroups) -->
+            <div
+              v-for="(grp, gIdx) in (currentRule.conditionTree.subGroups || [])"
+              :key="'grp_' + gIdx"
+              class="pipeline-or-card"
+            >
+              <!-- 分支卡片头部 -->
+              <div class="or-group-header">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <el-tag type="warning" size="small" effect="dark">OR 或关系组</el-tag>
+                  <span style="font-size: 12px; font-weight: 600; color: #92400e;">
+                    满足以下任一分支即可 (共 {{ (grp.nodes || []).length }} 个候选分支)
+                  </span>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <el-button size="small" type="warning" plain @click="addOrGroupMember(grp)">
+                    <i class="fa-solid fa-plus" style="margin-right: 4px;"></i>添加或分支项
+                  </el-button>
+                  <el-button size="small" type="danger" plain @click="removeOrGroup(gIdx)">
+                    <i class="fa-solid fa-trash" style="margin-right: 4px;"></i>删除或关系组
+                  </el-button>
+                </div>
+              </div>
+
+              <!-- 分支成员列表 -->
+              <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+                <template v-for="(subNode, mIdx) in (grp.nodes || [])" :key="'sub_' + mIdx">
+                  <!-- 分支之间的 OR 徽章 -->
+                  <div v-if="mIdx > 0" class="or-divider">
+                    <span class="or-divider-tag">—— 或 (OR) ——</span>
+                  </div>
+
+                  <div style="background: #ffffff; border: 1px solid #fed7aa; border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px;">
+                    <div class="node-header-row">
+                      <div class="node-left-controls">
+                        <span style="font-size: 12px; font-weight: 600; color: #b45309; flex-shrink: 0;">分支 {{ mIdx + 1 }}:</span>
+                        <el-select v-model="subNode.mode" size="small" style="width: 120px; flex-shrink: 0;" @change="syncToRawExpression">
+                          <el-option :value="0" label="必须包含"></el-option>
+                          <el-option :value="1" label="必须排除 (-)"></el-option>
+                          <el-option :value="2" label="主控数量 (#)"></el-option>
+                        </el-select>
+
+                        <el-input
+                          v-model="subNode.elementName"
+                          size="small"
+                          placeholder="元件名称 (如: 热继电器 / 控制保护开关)"
+                          style="flex: 1; min-width: 140px;"
+                          @input="syncToRawExpression"
+                        >
+                          <template #prepend>元件名称</template>
+                        </el-input>
+                      </div>
+
+                      <div class="node-right-actions">
+                        <el-button size="small" type="warning" plain @click="addPropertyFilter(subNode)">
+                          <i class="fa-solid fa-filter" style="margin-right: 4px;"></i>添加属性过滤
+                        </el-button>
+                        <el-button size="small" type="danger" text @click="removeOrGroupMember(grp, mIdx)">
+                          <i class="fa-solid fa-xmark"></i>
+                        </el-button>
+                      </div>
+                    </div>
+
+                    <!-- 分支成员的属性过滤器 -->
+                    <div class="node-property-list" v-if="subNode.propertyFilters && subNode.propertyFilters.length > 0">
+                      <div
+                        v-for="(filter, fIdx) in subNode.propertyFilters"
+                        :key="fIdx"
+                        class="prop-filter-row"
+                      >
+                        <span style="font-size: 11px; color: #64748b;">属性:</span>
+                        <el-select v-model="filter.propertyType" size="small" style="width: 110px;" @change="syncToRawExpression">
+                          <el-option value="Current" label="电流 (V列)"></el-option>
+                          <el-option value="Model" label="型号 (C列)"></el-option>
+                          <el-option value="Poles" label="极数 (W列)"></el-option>
+                          <el-option value="Appendix" label="附件 (X列)"></el-option>
+                        </el-select>
+
+                        <el-select v-model="filter.operator" size="small" style="width: 85px;" @change="syncToRawExpression">
+                          <el-option value=">=" label=">="></el-option>
+                          <el-option value=">" label=">"></el-option>
+                          <el-option value="<=" label="<="></el-option>
+                          <el-option value="<" label="<"></el-option>
+                          <el-option value="==" label="等于"></el-option>
+                          <el-option value="contains" label="包含"></el-option>
+                        </el-select>
+
+                        <el-input v-model="filter.value" size="small" placeholder="比较值" style="flex: 1; min-width: 120px;" @input="syncToRawExpression"></el-input>
+
+                        <el-button size="small" type="danger" text @click="removePropertyFilter(subNode, fIdx)">
+                          <i class="fa-solid fa-xmark"></i>
+                        </el-button>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- 空状态提示 -->
+            <div
+              v-if="(!currentRule.conditionTree.nodes || currentRule.conditionTree.nodes.length === 0) && (!currentRule.conditionTree.subGroups || currentRule.conditionTree.subGroups.length === 0)"
+              style="text-align: center; padding: 20px; color: #94a3b8; font-size: 12px;"
+            >
+              暂无条件节点，请点击上方“添加条件节点”或“添加【或】条件分支组”，也可直接在下方输入经典表达式
+            </div>
+          </div>
+        </div>
+
+        <!-- 经典表达式预览与双向反解析卡片 -->
+        <div class="config-card">
+          <div class="card-header">
+            <div class="card-title">
+              <i class="fa-solid fa-code"></i>
+              <span>底层经典表达式 (双向实时互转)</span>
+            </div>
+            <div>
+              <el-button size="small" type="primary" plain @click="applyRawExpressionToTree">
+                <i class="fa-solid fa-arrow-up-from-bracket" style="margin-right: 4px;"></i>从表达式反向解析至管道
+              </el-button>
+            </div>
+          </div>
+
+          <el-input
+            v-model="currentRule.rawExpression"
+            type="textarea"
+            :rows="2"
+            placeholder="经典表达式，如: (热继电器# | 控制保护开关#) & 消防电源监控 & -时控开关"
+            style="font-family: monospace; width: 100%;"
+          ></el-input>
+          <div style="margin-top: 6px; font-size: 11px; color: #64748b;">
+            💡 提示: 支持 <code>&</code>(与)、<code>|</code>(或)、<code>()</code>(分组)、<code>/</code>(成组比例)、<code>#</code>(套数驱动)、<code>-</code>(排除) 及 <code>电流:</code>、<code>型号:</code>、<code>极数:</code>、<code>附件:</code> 语法。
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. 右侧沙盒测试与执行面板 -->
+      <div class="sandbox-panel">
+        <div class="sandbox-header">
+          <span style="font-size: 13px; font-weight: 600; color: #1e293b;">
+            <i class="fa-solid fa-flask-vial" style="color: #009688; margin-right: 6px;"></i>实时沙盒与测试
+          </span>
+          <el-button size="small" type="primary" plain @click="loadActiveCabinet">
+            <i class="fa-solid fa-file-excel" style="margin-right: 4px;"></i>抓取当前箱柜
+          </el-button>
+        </div>
+
+        <div class="sandbox-body">
+          <!-- 元件数据概要 -->
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 12px; font-weight: 600; color: #475569;">
+              测试元件列表 ({{ testComponents.length }} 行):
+            </span>
+            <el-button size="small" type="success" @click="runSandboxTest">
+              <i class="fa-solid fa-play" style="margin-right: 4px;"></i>沙盒试跑
+            </el-button>
+          </div>
+
+          <!-- 测试元件精简展示表格 -->
+          <el-table :data="testComponents" size="small" height="150" border stripe style="width: 100%; font-size: 11px;">
+            <el-table-column prop="eleName" label="名称(B)" width="70"></el-table-column>
+            <el-table-column prop="eleNorms" label="型号(C)" min-width="80"></el-table-column>
+            <el-table-column prop="eleNums" label="数量(F)" width="55" align="center"></el-table-column>
+            <el-table-column prop="eleCurrent" label="电流(V)" width="55"></el-table-column>
+            <el-table-column prop="elePoles" label="极数(W)" width="55"></el-table-column>
+            <el-table-column prop="eleAppendix" label="附件(X)" width="55"></el-table-column>
+          </el-table>
+
+          <!-- 命中规则与生成结果展示 -->
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 12px; font-weight: 600; color: #009688;">
+              <i class="fa-solid fa-circle-check" style="margin-right: 4px;"></i>命中结果预览 ({{ testResult.matchedRules ? testResult.matchedRules.length : 0 }} 项):
+            </span>
+            <div
+              v-for="(item, mIdx) in (testResult.matchedRules || [])"
+              :key="mIdx"
+              class="matched-group-item"
+              style="flex-direction: column; align-items: stretch; gap: 4px;"
+            >
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                  <div class="matched-group-title">{{ item.targetGroup }}</div>
+                  <div style="font-size: 11px; color: #00796b;">{{ item.ruleName }}</div>
+                </div>
+                <div class="matched-group-qty">
+                  {{ item.quantity }} 套 (F列)
+                </div>
+              </div>
+              <div v-if="item.detailInfo" style="font-size: 11px; color: #004d40; background: rgba(0,150,136,0.1); padding: 2px 6px; border-radius: 4px;">
+                {{ item.detailInfo }}
+              </div>
+            </div>
+            <div v-if="!testResult.matchedRules || testResult.matchedRules.length === 0" style="font-size: 11px; color: #94a3b8; text-align: center; padding: 8px;">
+              暂无命中的二次元件组
+            </div>
+          </div>
+
+          <!-- 扣减后剩余元件库存池展示 -->
+          <div v-if="testResult.remainingComponents && testResult.remainingComponents.length > 0" style="display: flex; flex-direction: column; gap: 4px;">
+            <span style="font-size: 12px; font-weight: 600; color: #475569;">
+              <i class="fa-solid fa-boxes-stacked" style="color: #f59e0b; margin-right: 4px;"></i>扣减后剩余元件库存池:
+            </span>
+            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+              <el-tag
+                v-for="(remComp, rIdx) in testResult.remainingComponents"
+                :key="rIdx"
+                :type="remComp.eleNums > 0 ? 'warning' : 'info'"
+                size="small"
+                effect="plain"
+              >
+                {{ remComp.eleName }}: {{ remComp.eleNums }} 件
+              </el-tag>
+            </div>
+          </div>
+
+          <!-- 诊断日志窗口 -->
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <span style="font-size: 12px; font-weight: 600; color: #64748b;">执行过程日志:</span>
+            <div class="log-box">
+              <div v-for="(log, lIdx) in (testResult.logs || [])" :key="lIdx">{{ log }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部主生成按钮区 -->
+        <div class="sandbox-footer">
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px;">
+            <span>生成范围:</span>
+            <el-radio-group v-model="batchScope" size="small">
+              <el-radio :label="true">当前选中箱柜</el-radio>
+              <el-radio :label="false">全表所有箱柜</el-radio>
+            </el-radio-group>
+          </div>
+          <el-button type="primary" size="large" @click="executeBatchGenerate" style="background-color: #009688; border-color: #009688; font-weight: 600; width: 100%;">
+            <i class="fa-solid fa-bolt" style="margin-right: 6px;"></i>立即生成二次元件组到 Excel
+          </el-button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    const app = createApp({
+      setup() {
+        // 全局配置对象
+        const config = ref({
+          columnMapping: {
+            nameCol: 2,
+            normsCol: 3,
+            quantityCol: 6,
+            unitCol: 5,
+            currentCol: 22,
+            polesCol: 23,
+            appendixCol: 24,
+            categoryCol: 2
+          },
+          rules: [],
+          defaultUnitText: '套',
+          defaultCategoryText: '元件组',
+          enableDeduplication: true
+        });
+
+        // 当前选中的规则
+        const currentRule = ref(null);
+        // 搜索关键词
+        const searchKeyword = ref('');
+        // 沙盒测试元件列表
+        const testComponents = ref([]);
+        // 沙盒测试结果
+        const testResult = ref({ totalComponents: 0, matchedRules: [], logs: [] });
+        // 生成范围 (true: 仅当前箱柜, false: 全表)
+        const batchScope = ref(true);
+
+        // 过滤后的规则列表
+        const filteredRules = computed(() => {
+          if (!searchKeyword.value.trim()) return config.value.rules || [];
+          const kw = searchKeyword.value.toLowerCase();
+          return (config.value.rules || []).filter(r => 
+            (r.name && r.name.toLowerCase().includes(kw)) ||
+            (r.targetGroup && r.targetGroup.toLowerCase().includes(kw)) ||
+            (r.rawExpression && r.rawExpression.toLowerCase().includes(kw))
+          );
+        });
+
+        // 页面挂载初始化
+        onMounted(() => {
+          // 挂载 WebView2 消息监听
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', onWebMessageReceived);
+            // 请求加载配置
+            postMessageToHost({ action: 'getConfig' });
+            // 自动抓取当前 Excel 箱柜
+            postMessageToHost({ action: 'loadActiveCabinet' });
+          } else {
+            // 浏览器环境调试模拟数据
+            loadMockData();
+          }
+        });
+
+        // 接收来自 C# 后端的消息
+        const onWebMessageReceived = (event) => {
+          try {
+            const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+            switch (data.action) {
+              case 'renderConfig':
+                if (data.config) {
+                  config.value = data.config;
+                  if (config.value.rules && config.value.rules.length > 0) {
+                    currentRule.value = config.value.rules[0];
+                  }
+                }
+                if (data.message) ElementPlus.ElMessage.success(data.message);
+                break;
+
+              case 'saveResult':
+                if (data.success) {
+                  ElementPlus.ElMessage.success(data.message || '保存成功！');
+                } else {
+                  ElementPlus.ElMessage.error(data.message || '保存失败！');
+                }
+                break;
+
+              case 'activeCabinetLoaded':
+                testComponents.value = data.components || [];
+                ElementPlus.ElMessage.info(`已成功从 Excel 抓取 ${data.count || 0} 行一次元件数据`);
+                // 自动跑一次沙盒
+                runSandboxTest();
+                break;
+
+              case 'pipelineTestResult':
+                testResult.value = data.result || { totalComponents: 0, matchedRules: [], logs: [] };
+                break;
+
+              case 'batchExecuteResult':
+                if (data.result && data.result.success) {
+                  ElementPlus.ElMessageBox.alert(data.result.message, '生成成功', {
+                    confirmButtonText: '确定',
+                    type: 'success'
+                  });
+                } else {
+                  ElementPlus.ElMessageBox.alert(data.result ? data.result.message : '生成失败', '错误提示', {
+                    confirmButtonText: '确定',
+                    type: 'error'
+                  });
+                }
+                break;
+
+              case 'parseExpressionResult':
+                if (currentRule.value && data.tree) {
+                  currentRule.value.conditionTree = data.tree;
+                  ElementPlus.ElMessage.success('已将经典表达式反向解析填充至可视化管道！');
+                }
+                break;
+
+              case 'error':
+                ElementPlus.ElMessage.error(data.message || '操作发生异常');
+                break;
+            }
+          } catch (err) {
+            console.error('解析后端消息失败:', err);
+          }
+        };
+
+        // 向 C# 宿主发送指令
+        const postMessageToHost = (msgObj) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify(msgObj));
+          }
+        };
+
+        // 选中某条规则
+        const selectRule = (rule) => {
+          currentRule.value = rule;
+        };
+
+        // 新增规则
+        const addNewRule = () => {
+          const newRule = {
+            id: 'rule_' + Date.now(),
+            name: '新回路规则',
+            description: '',
+            enabled: true,
+            priority: (config.value.rules?.length || 0) + 1,
+            targetGroup: '*新二次元件组',
+            policy: 1, // FollowMainElement
+            fixedQuantity: 1,
+            mainElementKey: '',
+            conditionTree: {
+              op: 0, // And
+              nodes: [
+                {
+                  id: 'node_' + Date.now(),
+                  elementName: '',
+                  mode: 0, // MustInclude
+                  propertyFilters: [],
+                  ratioItems: []
+                }
+              ],
+              subGroups: []
+            },
+            rawExpression: ''
+          };
+          config.value.rules.unshift(newRule);
+          currentRule.value = newRule;
+        };
+
+        // 上移规则 (提升扣减优先级)
+        const moveRuleUp = (filteredIndex) => {
+          const ruleToMove = filteredRules.value[filteredIndex];
+          if (!ruleToMove) return;
+          const realIdx = config.value.rules.findIndex(r => r.id === ruleToMove.id);
+          if (realIdx > 0) {
+            // 交换位置
+            const temp = config.value.rules[realIdx];
+            config.value.rules[realIdx] = config.value.rules[realIdx - 1];
+            config.value.rules[realIdx - 1] = temp;
+            // 重新编号 priority
+            config.value.rules.forEach((r, idx) => { r.priority = idx + 1; });
+            ElementPlus.ElMessage.success(`已提升 [${ruleToMove.name}] 的扣减优先级`);
+            if (testComponents.value && testComponents.value.length > 0) {
+              runSandboxTest();
+            }
+          }
+        };
+
+        // 下移规则 (降低扣减优先级)
+        const moveRuleDown = (filteredIndex) => {
+          const ruleToMove = filteredRules.value[filteredIndex];
+          if (!ruleToMove) return;
+          const realIdx = config.value.rules.findIndex(r => r.id === ruleToMove.id);
+          if (realIdx >= 0 && realIdx < config.value.rules.length - 1) {
+            // 交换位置
+            const temp = config.value.rules[realIdx];
+            config.value.rules[realIdx] = config.value.rules[realIdx + 1];
+            config.value.rules[realIdx + 1] = temp;
+            // 重新编号 priority
+            config.value.rules.forEach((r, idx) => { r.priority = idx + 1; });
+            ElementPlus.ElMessage.success(`已降低 [${ruleToMove.name}] 的扣减优先级`);
+            if (testComponents.value && testComponents.value.length > 0) {
+              runSandboxTest();
+            }
+          }
+        };
+
+        // 删除当前规则
+        const deleteCurrentRule = () => {
+          if (!currentRule.value) return;
+          ElementPlus.ElMessageBox.confirm(`确定要删除规则 [${currentRule.value.name}] 吗？`, '删除确认', {
+            confirmButtonText: '确定删除',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }).then(() => {
+            const idx = config.value.rules.findIndex(r => r.id === currentRule.value.id);
+            if (idx >= 0) {
+              config.value.rules.splice(idx, 1);
+              currentRule.value = config.value.rules.length > 0 ? config.value.rules[0] : null;
+            }
+          });
+        };
+
+        // 添加普通条件节点
+        const addConditionNode = () => {
+          if (!currentRule.value) return;
+          if (!currentRule.value.conditionTree) {
+            currentRule.value.conditionTree = { op: 0, nodes: [], subGroups: [] };
+          }
+          if (!currentRule.value.conditionTree.nodes) {
+            currentRule.value.conditionTree.nodes = [];
+          }
+          currentRule.value.conditionTree.nodes.push({
+            id: 'node_' + Date.now(),
+            elementName: '',
+            mode: 0,
+            propertyFilters: [],
+            ratioItems: []
+          });
+          syncToRawExpression();
+        };
+
+        // 移除普通条件节点
+        const removeConditionNode = (idx) => {
+          if (!currentRule.value?.conditionTree?.nodes) return;
+          currentRule.value.conditionTree.nodes.splice(idx, 1);
+          syncToRawExpression();
+        };
+
+        // 添加【或】条件分支组
+        const addOrGroup = () => {
+          if (!currentRule.value) return;
+          if (!currentRule.value.conditionTree) {
+            currentRule.value.conditionTree = { op: 0, nodes: [], subGroups: [] };
+          }
+          if (!currentRule.value.conditionTree.subGroups) {
+            currentRule.value.conditionTree.subGroups = [];
+          }
+          currentRule.value.conditionTree.subGroups.push({
+            op: 1, // Or
+            nodes: [
+              { id: 'sub_' + Date.now() + '_1', elementName: '热继电器', mode: 2, propertyFilters: [] },
+              { id: 'sub_' + Date.now() + '_2', elementName: '控制保护开关', mode: 2, propertyFilters: [] }
+            ],
+            subGroups: []
+          });
+          syncToRawExpression();
+        };
+
+        // 移除【或】条件分支组
+        const removeOrGroup = (gIdx) => {
+          if (!currentRule.value?.conditionTree?.subGroups) return;
+          currentRule.value.conditionTree.subGroups.splice(gIdx, 1);
+          syncToRawExpression();
+        };
+
+        // 向【或】组添加分支项
+        const addOrGroupMember = (grp) => {
+          if (!grp.nodes) grp.nodes = [];
+          grp.nodes.push({
+            id: 'sub_' + Date.now(),
+            elementName: '',
+            mode: 0,
+            propertyFilters: []
+          });
+          syncToRawExpression();
+        };
+
+        // 移除【或】组中的某项
+        const removeOrGroupMember = (grp, mIdx) => {
+          if (!grp.nodes) return;
+          grp.nodes.splice(mIdx, 1);
+          syncToRawExpression();
+        };
+
+        // 切换节点模式
+        const onNodeModeChange = (node) => {
+          if (node.mode === 3) {
+            // 比例模式
+            if (!node.ratioItems || node.ratioItems.length === 0) {
+              node.ratioItems = [
+                { count: 3, elementName: '电流表', propertyFilters: [] },
+                { count: 1, elementName: '电压表', propertyFilters: [] }
+              ];
+            }
+          }
+          syncToRawExpression();
+        };
+
+        // 添加属性过滤器
+        const addPropertyFilter = (node) => {
+          if (!node.propertyFilters) node.propertyFilters = [];
+          node.propertyFilters.push({
+            propertyType: 'Current',
+            operator: '>=',
+            value: ''
+          });
+          syncToRawExpression();
+        };
+
+        // 移除属性过滤器
+        const removePropertyFilter = (node, fIdx) => {
+          if (!node.propertyFilters) return;
+          node.propertyFilters.splice(fIdx, 1);
+          syncToRawExpression();
+        };
+
+        // 添加比例成员
+        const addRatioItem = (node) => {
+          if (!node.ratioItems) node.ratioItems = [];
+          node.ratioItems.push({
+            count: 1,
+            elementName: '',
+            propertyFilters: []
+          });
+          syncToRawExpression();
+        };
+
+        // 移除比例成员
+        const removeRatioItem = (node, rIdx) => {
+          if (!node.ratioItems) return;
+          node.ratioItems.splice(rIdx, 1);
+          syncToRawExpression();
+        };
+
+        // 序列化单个节点为表达式片段
+        const serializeSingleNode = (node) => {
+          if (!node) return '';
+          if (node.mode === 3 && node.ratioItems?.length > 0) {
+            // 比例模式
+            return node.ratioItems.map(r => `${r.count || 1}${r.elementName || ''}`).join('/');
+          }
+
+          let name = node.elementName || '';
+          if (node.mode === 1) name = `-${name}`;
+          else if (node.mode === 2) name = `${name}#`;
+
+          let propStrs = '';
+          if (node.propertyFilters?.length > 0) {
+            const pList = node.propertyFilters.map(f => {
+              const pName = f.propertyType === 'Current' ? '电流' : (f.propertyType === 'Model' ? '型号' : (f.propertyType === 'Poles' ? '极数' : (f.propertyType === 'Appendix' ? '附件' : f.propertyType)));
+              const op = (f.operator === '==' || f.operator === 'contains') ? '' : f.operator;
+              return `${pName}:${op}${f.value || ''}`;
+            });
+            propStrs = ' ' + pList.join(' ');
+          }
+
+          return name ? (name + propStrs) : '';
+        };
+
+        // 将可视化管道同步序列化生成为经典表达式
+        const syncToRawExpression = () => {
+          if (!currentRule.value?.conditionTree) return;
+          const tree = currentRule.value.conditionTree;
+          const parts = [];
+
+          // 1. 序列化顶层普通节点 (AND)
+          (tree.nodes || []).forEach(node => {
+            const s = serializeSingleNode(node);
+            if (s) parts.push(s);
+          });
+
+          // 2. 序列化【或】关系子组 (subGroups)
+          (tree.subGroups || []).forEach(grp => {
+            const subParts = [];
+            (grp.nodes || []).forEach(subNode => {
+              const s = serializeSingleNode(subNode);
+              if (s) subParts.push(s);
+            });
+            if (subParts.length === 1) {
+              parts.push(subParts[0]);
+            } else if (subParts.length > 1) {
+              parts.push(`(${subParts.join(' | ')})`);
+            }
+          });
+
+          currentRule.value.rawExpression = parts.join(' & ');
+        };
+
+        // 从经典表达式反向解析填充管道
+        const applyRawExpressionToTree = () => {
+          if (!currentRule.value?.rawExpression) return;
+          postMessageToHost({
+            action: 'parseExpression',
+            expression: currentRule.value.rawExpression,
+            policy: currentRule.value.policy || 0
+          });
+        };
+
+        // 保存所有配置
+        const saveAllConfig = () => {
+          postMessageToHost({
+            action: 'saveConfig',
+            config: config.value
+          });
+        };
+
+        // 恢复出厂规则
+        const resetToDefault = () => {
+          ElementPlus.ElMessageBox.confirm('确定要恢复出厂默认二次元件组规则库吗？自定义规则将被覆盖重置。', '提示', {
+            confirmButtonText: '确定重置',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }).then(() => {
+            postMessageToHost({ action: 'resetConfig' });
+          });
+        };
+
+        // 抓取 Excel 当前活动箱柜
+        const loadActiveCabinet = () => {
+          postMessageToHost({
+            action: 'loadActiveCabinet',
+            config: config.value
+          });
+        };
+
+        // 运行沙盒测试
+        const runSandboxTest = () => {
+          postMessageToHost({
+            action: 'testPipeline',
+            config: config.value,
+            components: testComponents.value
+          });
+        };
+
+        // 执行批量生成
+        const executeBatchGenerate = () => {
+          postMessageToHost({
+            action: 'executeBatch',
+            config: config.value,
+            activeCabinetOnly: batchScope.value
+          });
+        };
+
+        // 窗口控制
+        const onHeaderMouseDown = () => {
+          postMessageToHost({ action: 'dragWindow' });
+        };
+        const minimizeWindow = () => {
+          postMessageToHost({ action: 'minimize' });
+        };
+        const toggleMaximize = () => {
+          postMessageToHost({ action: 'toggleMaximize' });
+        };
+        const closeWindow = () => {
+          postMessageToHost({ action: 'close' });
+        };
+
+        // 浏览器开发模式调试模拟数据
+        const loadMockData = () => {
+          config.value.rules = [
+            {
+              id: '1',
+              name: 'FA风机消防电源监控',
+              targetGroup: '*FA风机',
+              policy: 1,
+              enabled: true,
+              rawExpression: '(热继电器# | 控制保护开关#) & 消防电源监控 & -时控开关',
+              conditionTree: {
+                op: 0,
+                nodes: [
+                  { id: 'n1', elementName: '消防电源监控', mode: 0, propertyFilters: [] },
+                  { id: 'n2', elementName: '时控开关', mode: 1, propertyFilters: [] }
+                ],
+                subGroups: [
+                  {
+                    op: 1,
+                    nodes: [
+                      { id: 's1', elementName: '热继电器', mode: 2, propertyFilters: [] },
+                      { id: 's2', elementName: '控制保护开关', mode: 2, propertyFilters: [] }
+                    ]
+                  }
+                ]
+              }
+            }
+          ];
+          currentRule.value = config.value.rules[0];
+          testComponents.value = [
+            { eleName: '热继电器', eleNorms: 'JR28-25', eleNums: 2, eleCurrent: '16A', elePoles: '3P', eleAppendix: '' },
+            { eleName: '消防电源监控', eleNorms: 'XF-01', eleNums: 1, eleCurrent: '', elePoles: '', eleAppendix: '' }
+          ];
+        };
+
+        return {
+          config,
+          currentRule,
+          searchKeyword,
+          filteredRules,
+          testComponents,
+          testResult,
+          batchScope,
+          selectRule,
+          addNewRule,
+          deleteCurrentRule,
+          moveRuleUp,
+          moveRuleDown,
+          addConditionNode,
+          removeConditionNode,
+          addOrGroup,
+          removeOrGroup,
+          addOrGroupMember,
+          removeOrGroupMember,
+          onNodeModeChange,
+          addPropertyFilter,
+          removePropertyFilter,
+          addRatioItem,
+          removeRatioItem,
+          syncToRawExpression,
+          applyRawExpressionToTree,
+          saveAllConfig,
+          resetToDefault,
+          loadActiveCabinet,
+          runSandboxTest,
+          executeBatchGenerate,
+          onHeaderMouseDown,
+          minimizeWindow,
+          toggleMaximize,
+          closeWindow
+        };
+      }
+    });
+
+    app.use(ElementPlus);
+    app.mount('#app');
+  </script>
+</body>
+</html>

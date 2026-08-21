@@ -218,9 +218,7 @@ namespace ExcelAddInDemo
                     activeSheet.Cells[insertSumRow, 2].Value = cabDisplayName;
                     // 写入明细行箱柜名称 (Cell B)
                     activeSheet.Cells[newDetRow, 2].Value = cabDisplayName;
-                    // 清空明细表头的图号旧数据 (Cell C)
-                    activeSheet.Cells[newDetRow, 3].Value = string.Empty;
-                    // 清空明细表头的柜型/备注旧数据 (Cell I)
+                    // 保留明细表头 C 列静态标签(型号:)，清空明细表头备注旧数据 (Cell I)
                     activeSheet.Cells[newDetRow, 9].Value = string.Empty;
 
                     // 汇总行公式绑定至明细总计行
@@ -923,9 +921,7 @@ namespace ExcelAddInDemo
                     activeSheet.Cells[insertRow, 2].Value = cabDisplayName;
                     // 写入明细行箱柜名称
                     activeSheet.Cells[newDetRow, 2].Value = cabDisplayName;
-                    // 清空明细表头的图号旧数据
-                    activeSheet.Cells[newDetRow, 3].Value = string.Empty;
-                    // 清空明细表头的柜型/备注旧数据
+                    // 保留明细表头 C 列静态标签(型号:)，清空明细表头备注旧数据
                     activeSheet.Cells[newDetRow, 9].Value = string.Empty;
 
                     // 汇总行公式绑定至明细总计行

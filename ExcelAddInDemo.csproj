@@ -67,6 +67,10 @@
     <None Include="Resources\model_param_parser.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将二次元件组规则管道前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\component_group_builder.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将公共主题样式 CSS 文件复制至构建输出路径中 -->
     <None Include="Resources\theme.css">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

@@ -156,8 +156,46 @@
         2. 点击“立即生成”并创建“元件汇总表”成功后，窗口自动平滑收缩为 680×115 紧凑悬浮编辑条，方便用户直接对照 Excel 编辑白色列数据；
         3. 自动缓存生成时的全套分类、合并与排序参数，点击“重新汇总”直接按初始配置极速重算并刷新覆盖“元件汇总表”，并提供返回配置面板的小图标；
         4. 在 [Controllers/SummaryAdjustPriceController.cs](file:///e:/Ace/excel-ct-tools/Controllers/SummaryAdjustPriceController.cs)、[Forms/SummaryAdjustPriceForm.cs](file:///e:/Ace/excel-ct-tools/Forms/SummaryAdjustPriceForm.cs) 与 [Services/ExcelServices.SummaryAdjustPrice.cs](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.SummaryAdjustPrice.cs) 中打通 `resizeWindow` 窗口尺寸自适应与 `updateFromSummary` 一键更新预留通路。
+  30. **箱柜明细行表头静态标签保护与双向同步列映射校正（已落地）**：
+      - **业务与架构**：
+        1. 修复新建箱柜克隆模板后误执行 `Cells[newDetRow, 3].Value = string.Empty` 导致明细行 C 列静态标签 `型号:` 被清空的问题（在 [Services/ExcelServices.Cabinet.cs](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.Cabinet.cs) 的 `CopyCabinetDetailFromTemplate` 与 `CreateNewCabinet` 中彻底移除对 Cell 3 的误清空）；
+        2. 全面校正 [ExcelEventManager.cs](file:///e:/Ace/excel-ct-tools/ExcelEventManager.cs) 中顶部汇总行与底部明细行之间的 8 组双向同步映射：
+           - **柜号**：Sum B (2) $\leftrightarrow$ Det B (2)
+           - **箱柜名称**：Sum C (3) $\leftrightarrow$ Det G (7)（Det G:H 合并数据单元格）
+           - **箱柜型号**：Sum D (4) $\leftrightarrow$ Det D (4)（Det D:E 合并数据单元格）
+           - **数量**：Sum F (6) $\leftrightarrow$ Tolsum F (6)
+           - **备注**：Sum I (9) $\leftrightarrow$ Det I (9)
+           - **箱柜尺寸**：Sum M (13) $\leftrightarrow$ Det K (11)
+           - **类别**：Sum N (14) $\leftrightarrow$ Det M (13)
+           - **图号**：Sum Q (17) $\leftrightarrow$ Det O (15)
+        3. 反向同步增加对合并单元格右侧列（如 Det E 列、Det H 列）的容错支持。
       - **构建状态**：`ExcelAddInDemo.dll` 编译完全通过（0 错误）。
-
-
-
-
+  31. **二次元件组可视化动态规则管道构建器系统（已落地）**：
+      - **业务与架构**：
+        1. 在 [Models/ComponentGroupRuleModels.cs](file:///e:/Ace/excel-ct-tools/Models/ComponentGroupRuleModels.cs) 中构建规则管道模型（包含四种匹配模式：包含/排除/主控数量#/成组比例/，支持多属性过滤：电流/型号/极数/附件及多种套数生成策略），并实现双向编译器 `PipelineCompiler`（可视化条件树 ⇄ 经典文本表达式无损互转）与执行评估器 `PipelineEvaluator`；
+        2. 严格按用户列映射与套数指示实施：
+           - 一次元件读取：B 列名称、C 列型号、F 列数量、V 列电流、W 列极数、X 列附件；
+           - 二次元件输出：B 列写入 `"元件组"`、C 列写入元件组名称、E 列写入 `"套"`、**F 列写入计算套数**；
+        3. 在 [Services/ExcelServices.ComponentGroup.cs](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.ComponentGroup.cs) 中实现箱柜元件二维数组（B~X列）极速批量读取与安全插行（在小计行前插入，继承 CAD 句柄并自动更新定义名称与公式）；
+        4. 在 [Controllers/ComponentGroupBuilderController.cs](file:///e:/Ace/excel-ct-tools/Controllers/ComponentGroupBuilderController.cs) 与 [Forms/ComponentGroupBuilderForm.cs](file:///e:/Ace/excel-ct-tools/Forms/ComponentGroupBuilderForm.cs) 中打通 WebView2 双向消息通道，支持出厂规则库初始化与 AppData 持久化；
+        5. 在 [Resources/component_group_builder.html](file:///e:/Ace/excel-ct-tools/Resources/component_group_builder.html) 中基于 Vue 3 + Element Plus 构建现代化三栏规则流面板（主色调 `#009688` 绿蓝主题，支持从 Excel 一键抓取当前箱柜沙盒试跑与批量执行）；
+        6. 在 [RibbonController.cs](file:///e:/Ace/excel-ct-tools/RibbonController.cs) 的【②录元件】分组中挂载【生成二次元件】（`btnComponentGroupRule`）主菜单入口。
+      - **构建状态**：`ExcelAddInDemo.dll` 编译完全通过（0 错误，0 警告）。
+  32. **规则管道构建器【或】关系条件分支组与 DLR 动态解析修复（已落地）**：
+      - **业务与架构**：
+        1. 修复 `GetActiveCabinetComponentsFromExcel` 与 `ExecuteBatchComponentGroup` 中 `(object)app` 与 `(object)sheet` 的 DLR 动态调用传播，解决 `Nullable<KeyValuePair>` 与 `ValueTuple` 运行时反射异常；
+        2. 全面升级 [Resources/component_group_builder.html](file:///e:/Ace/excel-ct-tools/Resources/component_group_builder.html)，支持在流水线中直接添加与管理【或】关系条件分支卡片（`OR Group`，满足任一分支即可，支持多分支成员、各自属性过滤器及 `(热继电器# | 控制保护开关#)` 经典表达式双向无损互转）。
+      - **构建状态**：`ExcelAddInDemo.dll` 编译完全通过（0 错误）。
+  33. **箱柜元件动态资源池扣减评估算法（机制 B）落地（已完成）**：
+      - **业务与架构**：
+        1. 在 [Models/ComponentGroupRuleModels.cs](file:///e:/Ace/excel-ct-tools/Models/ComponentGroupRuleModels.cs) 中实现 `PipelineEvaluator.EvaluateRulesWithResourcePool`，按规则优先级（Priority）在箱柜元件工作资源池上进行带原子库存扣减的链式匹配；
+        2. 彻底解决“多表共享互感器”时因严格等比导致的互相冲突与一个都无法识别的问题：
+           - **比例模式 `/`**：按成员可用数量动态求公约套数 $\min(\text{数量}/\text{基准配比})$，成套后扣减消耗的元件库存；
+           - **主控模式 `#`**：以主控元件在池中当前剩余数量驱动套数并扣减；
+        3. 同步重构 [Services/ExcelServices.ComponentGroup.cs](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.ComponentGroup.cs) 的 `RunSandboxPipelineTest`（沙盒实时输出扣减追踪日志）与 `ExecuteBatchComponentGroup`（Excel 生成时精准扣减，杜绝虚假超额生成）。
+      - **构建状态**：`ExcelAddInDemo.dll` 编译完全通过（0 错误）。
+  34. **规则流排序控制与分行扣减聚合日志优化（已完成）**：
+      - **业务与架构**：
+        1. 在 [Resources/component_group_builder.html](file:///e:/Ace/excel-ct-tools/Resources/component_group_builder.html) 规则库卡片上增加【⬆️ 上移】与【⬇️ 下移】交互按钮，支持实时调整规则顺序并自动重跑沙盒；
+        2. 在 [Models/ComponentGroupRuleModels.cs](file:///e:/Ace/excel-ct-tools/Models/ComponentGroupRuleModels.cs) 中优化扣减日志格式：将跨多行（如多行互感器 1件+2件）的分步扣减自动智能聚合为统一的消耗总量 `[互感器] 消耗 3件 (池剩余 3件)`，消除日志碎片化带来的数量误解。
+      - **构建状态**：`ExcelAddInDemo.dll` 编译完全通过（0 错误）。
