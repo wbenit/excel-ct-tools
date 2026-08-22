@@ -199,3 +199,11 @@
         1. 在 [Resources/component_group_builder.html](file:///e:/Ace/excel-ct-tools/Resources/component_group_builder.html) 规则库卡片上增加【⬆️ 上移】与【⬇️ 下移】交互按钮，支持实时调整规则顺序并自动重跑沙盒；
         2. 在 [Models/ComponentGroupRuleModels.cs](file:///e:/Ace/excel-ct-tools/Models/ComponentGroupRuleModels.cs) 中优化扣减日志格式：将跨多行（如多行互感器 1件+2件）的分步扣减自动智能聚合为统一的消耗总量 `[互感器] 消耗 3件 (池剩余 3件)`，消除日志碎片化带来的数量误解。
       - **构建状态**：`ExcelAddInDemo.dll` 编译完全通过（0 错误）。
+  35. **汇总调价生成 16 列双层复合表头与本体/附件表价折扣拆分引擎（已落地）**：
+      - **业务与架构**：
+        1. 在 [Services/ExcelServices.SummaryAdjustPrice.cs](file:///d:/code/excel-ct-tools/Services/ExcelServices.SummaryAdjustPrice.cs) 中重构 `AggregatedComponent` 模型，扩充为覆盖 16 个列字段的完整数据结构；
+        2. 实现 `ParseBaseAndAccessoryPrice`：从明细 M 列提取表价公式（如 `=159.05+336.2`），精准拆分第一个加数为【本体表价】，第二项及之后项累加为【附件表价】；
+        3. 实现 `ParseBaseAndAccessoryDiscount` 与 `ExtractDiscountFromTerm`：从明细 N 列提取复合加权折扣公式（如 `=(159.05*1*0.5+336.2*1*1)/495.25`），精准提取【本体折扣】（0.5）与【附件加权折扣】（1.0），并向上兼容普通数值与简单公式；
+        4. 采用 2D 数组（`A~Q` 列 Value2 与 Formula 矩阵）一次性读入内存，完成台数放大与 `Group By` 聚合；
+        5. 生成高保真 16 列【元件汇总表】（双层表头 4~5 行，J~N 列粉色调价核心表头，A/E/I 列浅蓝强调底色，精准列宽 6~24，AutoFilter 挂载与 SUM 合计行，实线细边框），采用 2D 数组单次写入 Excel。
+
