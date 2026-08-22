@@ -102,21 +102,24 @@
     .main-workspace {
       flex: 1;
       display: flex;
-      overflow: hidden;
+      overflow-x: auto;
+      overflow-y: hidden;
       background-color: #f8fafc;
       width: 100%;
+      height: calc(100vh - 38px);
     }
 
-    /* 1. 左侧规则库面板 (固定 250px) */
+    /* 1. 左侧规则库面板 (固定 220px) */
     .sidebar-panel {
-      width: 250px;
-      min-width: 250px;
-      max-width: 250px;
+      width: 220px;
+      min-width: 200px;
+      max-width: 240px;
       border-right: 1px solid #e2e8f0;
       background-color: #ffffff;
       display: flex;
       flex-direction: column;
       flex-shrink: 0;
+      height: 100%;
     }
 
     .sidebar-header {
@@ -235,13 +238,14 @@
     /* 2. 中间主编辑器面板 (自适应伸缩) */
     .editor-panel {
       flex: 1;
-      min-width: 480px;
+      min-width: 320px;
       overflow-y: auto;
       overflow-x: hidden;
-      padding: 14px 16px;
+      padding: 12px 14px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
+      height: 100%;
     }
 
     .config-card {
@@ -273,6 +277,35 @@
 
     .card-title i {
       color: #009688;
+    }
+
+    /* 前置守卫行样式 */
+    .guard-item-row {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-left: 3px solid #009688;
+      border-radius: 6px;
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      transition: all 0.2s;
+      width: 100%;
+    }
+
+    .guard-item-row:hover {
+      border-color: #cbd5e1;
+      background: #f1f5f9;
+    }
+
+    .guard-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      flex: 1;
     }
 
     /* 节点管道流样式 */
@@ -388,16 +421,18 @@
       width: 100%;
     }
 
-    /* 3. 右侧沙盒与测试面板 (固定 350px) */
+    /* 3. 右侧沙盒与测试面板 (弹性 330px) */
     .sandbox-panel {
-      width: 350px;
-      min-width: 350px;
-      max-width: 350px;
+      width: 330px;
+      min-width: 290px;
+      max-width: 380px;
       border-left: 1px solid #e2e8f0;
       background-color: #ffffff;
       display: flex;
       flex-direction: column;
       flex-shrink: 0;
+      height: 100%;
+      overflow: hidden;
     }
 
     .sandbox-header {
@@ -413,30 +448,31 @@
     .sandbox-body {
       flex: 1;
       overflow-y: auto;
-      padding: 10px 12px;
+      padding: 8px 10px;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 8px;
     }
 
     .matched-group-item {
       background: #e0f2f1;
       border: 1px solid #80cbc4;
       border-radius: 6px;
-      padding: 8px 10px;
+      padding: 6px 8px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-shrink: 0;
     }
 
     .matched-group-title {
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
       color: #00796b;
     }
 
     .matched-group-qty {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 700;
       color: #004d40;
     }
@@ -446,11 +482,63 @@
       font-size: 11px;
       background: #1e293b;
       color: #38bdf8;
-      padding: 8px;
+      padding: 6px 8px;
       border-radius: 6px;
-      height: 140px;
+      height: 110px;
+      min-height: 100px;
       overflow-y: auto;
       white-space: pre-wrap;
+      flex-shrink: 0;
+    }
+
+    .comp-table-container {
+      height: 150px;
+      min-height: 140px;
+      max-height: 180px;
+      flex-shrink: 0;
+      overflow-y: auto;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      background: #ffffff;
+    }
+
+    .comp-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      line-height: 1.3;
+      table-layout: fixed;
+    }
+
+    .comp-table th {
+      position: sticky;
+      top: 0;
+      background: #f1f5f9;
+      color: #475569;
+      font-weight: 600;
+      font-size: 11px;
+      padding: 5px 6px;
+      text-align: left;
+      border-bottom: 1px solid #e2e8f0;
+      white-space: nowrap;
+      z-index: 1;
+    }
+
+    .comp-table td {
+      padding: 4px 6px;
+      font-size: 11px;
+      border-bottom: 1px solid #f1f5f9;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .comp-table tbody tr:nth-child(even) {
+      background-color: #f8fafc;
+    }
+
+    .comp-table tbody tr:hover {
+      background-color: #f0fdf4;
     }
 
     /* 底部操作区 */
@@ -490,21 +578,21 @@
         <span>二次元件组动态规则管道构建器</span>
         <el-tag size="small" effect="dark" type="info" style="background: rgba(255,255,255,0.2); border: none;">v2.0 管道流</el-tag>
       </div>
-      <div class="header-actions">
-        <el-button size="small" type="success" @click.stop="saveAllConfig">
+      <div class="header-actions" @mousedown.stop>
+        <el-button size="small" type="success" @click.stop="saveAllConfig" @mousedown.stop>
           <i class="fa-solid fa-floppy-disk" style="margin-right: 4px;"></i>保存配置
         </el-button>
-        <el-button size="small" type="warning" @click.stop="resetToDefault">
+        <el-button size="small" type="warning" @click.stop="resetToDefault" @mousedown.stop>
           <i class="fa-solid fa-rotate-left" style="margin-right: 4px;"></i>恢复出厂规则
         </el-button>
-        <div class="window-controls">
-          <div class="ctrl-btn" @click.stop="minimizeWindow" title="最小化">
+        <div class="window-controls" @mousedown.stop>
+          <div class="ctrl-btn" @click.stop="minimizeWindow" @mousedown.stop title="最小化">
             <i class="fa-solid fa-minus"></i>
           </div>
-          <div class="ctrl-btn" @click.stop="toggleMaximize" title="最大化/还原">
+          <div class="ctrl-btn" @click.stop="toggleMaximize" @mousedown.stop title="最大化/还原">
             <i class="fa-regular fa-square"></i>
           </div>
-          <div class="ctrl-btn close" @click.stop="closeWindow" title="关闭">
+          <div class="ctrl-btn close" @click.stop="closeWindow" @mousedown.stop title="关闭">
             <i class="fa-solid fa-xmark"></i>
           </div>
         </div>
@@ -560,8 +648,9 @@
               </div>
             </div>
             <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
-              <div class="rule-card-expr" :title="rule.rawExpression" style="flex: 1;">
-                {{ rule.rawExpression || '(可视化管道构建)' }}
+              <div class="rule-card-expr" :title="getRuleSummary(rule)" style="flex: 1; display: flex; align-items: center; gap: 4px;">
+                <el-tag v-if="rule.guards && rule.guards.length > 0" size="small" type="warning" effect="plain" style="font-size: 10px; height: 16px; padding: 0 3px; border-radius: 2px;">守卫</el-tag>
+                <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ getRuleSummary(rule) }}</span>
               </div>
               <div class="rule-card-target">
                 <span>{{ rule.targetGroup || '未定组名' }}</span>
@@ -621,6 +710,106 @@
               </el-col>
             </el-row>
           </el-form>
+        </div>
+
+        <!-- 前置生效与跳过守卫卡片 -->
+        <div class="config-card">
+          <div class="card-header">
+            <div class="card-title">
+              <i class="fa-solid fa-shield-halved" style="color: #009688;"></i>
+              <span>前置生效与跳过守卫 (基于箱柜原始元件总数对比)</span>
+              <el-tag v-if="currentRule.guards && currentRule.guards.length > 0" size="small" type="success" effect="plain" style="margin-left: 6px;">
+                {{ currentRule.guards.length }} 条守卫
+              </el-tag>
+            </div>
+            <div>
+              <el-button size="small" type="primary" plain @click="addGuardCondition">
+                <i class="fa-solid fa-plus" style="margin-right: 4px;"></i>添加守卫条件
+              </el-button>
+            </div>
+          </div>
+
+          <!-- 守卫条件列表 -->
+          <div v-if="currentRule.guards && currentRule.guards.length > 0" style="display: flex; flex-direction: column; gap: 8px;">
+            <div
+              v-for="(guard, gIdx) in currentRule.guards"
+              :key="guard.id || gIdx"
+              class="guard-item-row"
+            >
+              <div class="guard-controls">
+                <el-switch
+                  v-model="guard.enabled"
+                  size="small"
+                  style="--el-switch-on-color: #009688; margin-right: 4px;"
+                  @change="syncToRawExpression"
+                  title="启用/停用该守卫"
+                ></el-switch>
+                <span style="font-size: 12px; font-weight: 600; color: #475569;">当 原始元件:</span>
+                <el-input
+                  v-model="guard.sourceElement"
+                  size="small"
+                  placeholder="源元件 (如: 接触器)"
+                  style="width: 140px;"
+                  @input="syncToRawExpression"
+                  clearable
+                ></el-input>
+
+                <span style="font-size: 12px; color: #64748b;">数量</span>
+                <el-select
+                  v-model="guard.operator"
+                  size="small"
+                  style="width: 110px;"
+                  @change="syncToRawExpression"
+                >
+                  <el-option value="==" label="== 等于"></el-option>
+                  <el-option value="!=" label="!= 不等"></el-option>
+                  <el-option value=">" label="> 大于"></el-option>
+                  <el-option value=">=" label=">= 大于等于"></el-option>
+                  <el-option value="<" label="< 小于"></el-option>
+                  <el-option value="<=" label="<= 小于等于"></el-option>
+                </el-select>
+
+                <span style="font-size: 12px; font-weight: 600; color: #475569;">原始元件:</span>
+                <el-input
+                  v-model="guard.targetElement"
+                  size="small"
+                  placeholder="目标元件 (如: 热继电器)"
+                  style="width: 140px;"
+                  @input="syncToRawExpression"
+                  clearable
+                ></el-input>
+
+                <span style="font-size: 12px; color: #64748b;">数量 时 =></span>
+                <el-select
+                  v-model="guard.actionMode"
+                  size="small"
+                  style="width: 145px;"
+                  @change="syncToRawExpression"
+                >
+                  <el-option :value="0" label="跳过本规则 (Skip)">
+                    <span style="color: #e6a23c; font-weight: 600;">跳过本规则 (Skip)</span>
+                  </el-option>
+                  <el-option :value="1" label="才执行本规则 (Only If)">
+                    <span style="color: #67c23a; font-weight: 600;">才执行本规则 (Only If)</span>
+                  </el-option>
+                </el-select>
+              </div>
+
+              <div style="flex-shrink: 0;">
+                <el-button size="small" type="danger" text @click="removeGuardCondition(gIdx)">
+                  <i class="fa-solid fa-trash"></i>
+                </el-button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 空守卫状态提示 -->
+          <div
+            v-else
+            style="text-align: center; padding: 10px; color: #94a3b8; font-size: 12px; background: #f8fafc; border-radius: 6px; border: 1px dashed #e2e8f0;"
+          >
+            <i class="fa-solid fa-circle-info" style="margin-right: 4px;"></i>暂无前置守卫条件（默认不作前置过滤，按顺序直接执行管道评估）
+          </div>
         </div>
 
         <!-- 管道条件节点流式看板 -->
@@ -843,36 +1032,10 @@
             <!-- 空状态提示 -->
             <div
               v-if="(!currentRule.conditionTree.nodes || currentRule.conditionTree.nodes.length === 0) && (!currentRule.conditionTree.subGroups || currentRule.conditionTree.subGroups.length === 0)"
-              style="text-align: center; padding: 20px; color: #94a3b8; font-size: 12px;"
+              style="text-align: center; padding: 25px; color: #94a3b8; font-size: 12px;"
             >
-              暂无条件节点，请点击上方“添加条件节点”或“添加【或】条件分支组”，也可直接在下方输入经典表达式
+              暂无条件节点，请点击上方“添加条件节点”或“添加【或】条件分支组”进行可视化构建
             </div>
-          </div>
-        </div>
-
-        <!-- 经典表达式预览与双向反解析卡片 -->
-        <div class="config-card">
-          <div class="card-header">
-            <div class="card-title">
-              <i class="fa-solid fa-code"></i>
-              <span>底层经典表达式 (双向实时互转)</span>
-            </div>
-            <div>
-              <el-button size="small" type="primary" plain @click="applyRawExpressionToTree">
-                <i class="fa-solid fa-arrow-up-from-bracket" style="margin-right: 4px;"></i>从表达式反向解析至管道
-              </el-button>
-            </div>
-          </div>
-
-          <el-input
-            v-model="currentRule.rawExpression"
-            type="textarea"
-            :rows="2"
-            placeholder="经典表达式，如: (热继电器# | 控制保护开关#) & 消防电源监控 & -时控开关"
-            style="font-family: monospace; width: 100%;"
-          ></el-input>
-          <div style="margin-top: 6px; font-size: 11px; color: #64748b;">
-            💡 提示: 支持 <code>&</code>(与)、<code>|</code>(或)、<code>()</code>(分组)、<code>/</code>(成组比例)、<code>#</code>(套数驱动)、<code>-</code>(排除) 及 <code>电流:</code>、<code>型号:</code>、<code>极数:</code>、<code>附件:</code> 语法。
           </div>
         </div>
       </div>
@@ -899,15 +1062,34 @@
             </el-button>
           </div>
 
-          <!-- 测试元件精简展示表格 -->
-          <el-table :data="testComponents" size="small" height="150" border stripe style="width: 100%; font-size: 11px;">
-            <el-table-column prop="eleName" label="名称(B)" width="70"></el-table-column>
-            <el-table-column prop="eleNorms" label="型号(C)" min-width="80"></el-table-column>
-            <el-table-column prop="eleNums" label="数量(F)" width="55" align="center"></el-table-column>
-            <el-table-column prop="eleCurrent" label="电流(V)" width="55"></el-table-column>
-            <el-table-column prop="elePoles" label="极数(W)" width="55"></el-table-column>
-            <el-table-column prop="eleAppendix" label="附件(X)" width="55"></el-table-column>
-          </el-table>
+          <!-- 测试元件精简展示表格 (轻量稳定原生表格，杜绝高度坍塌) -->
+          <div class="comp-table-container">
+            <table class="comp-table">
+              <thead>
+                <tr>
+                  <th style="width: 25%;">名称(B)</th>
+                  <th style="width: 32%;">型号(C)</th>
+                  <th style="width: 15%; text-align: center;">数量(F)</th>
+                  <th style="width: 14%;">电流(V)</th>
+                  <th style="width: 14%;">极数(W)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(comp, cIdx) in testComponents" :key="cIdx">
+                  <td :title="comp.eleName" style="font-weight: 600; color: #1e293b;">{{ comp.eleName }}</td>
+                  <td :title="comp.eleNorms" style="color: #475569;">{{ comp.eleNorms }}</td>
+                  <td style="text-align: center; color: #009688; font-weight: 700;">{{ comp.eleNums }}</td>
+                  <td style="color: #64748b;">{{ comp.eleCurrent }}</td>
+                  <td style="color: #64748b;">{{ comp.elePoles }}</td>
+                </tr>
+                <tr v-if="!testComponents || testComponents.length === 0">
+                  <td colspan="5" style="text-align: center; color: #94a3b8; padding: 25px 10px; font-size: 11px;">
+                    暂无元件数据 (请在 Excel 切换至分类表并点击“抓取当前箱柜”)
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
           <!-- 命中规则与生成结果展示 -->
           <div style="display: flex; flex-direction: column; gap: 6px;">
@@ -1067,7 +1249,11 @@
 
               case 'activeCabinetLoaded':
                 testComponents.value = data.components || [];
-                ElementPlus.ElMessage.info(`已成功从 Excel 抓取 ${data.count || 0} 行一次元件数据`);
+                if (data.count > 0) {
+                  ElementPlus.ElMessage.success(`已成功从 Excel 抓取箱柜 ${data.count} 行一次元件数据！`);
+                } else {
+                  ElementPlus.ElMessage.warning('当前工作表未识别到有效箱柜元器件数据，请在 Excel 中切换至【分类表】后点击“抓取当前箱柜”');
+                }
                 // 自动跑一次沙盒
                 runSandboxTest();
                 break;
@@ -1087,13 +1273,6 @@
                     confirmButtonText: '确定',
                     type: 'error'
                   });
-                }
-                break;
-
-              case 'parseExpressionResult':
-                if (currentRule.value && data.tree) {
-                  currentRule.value.conditionTree = data.tree;
-                  ElementPlus.ElMessage.success('已将经典表达式反向解析填充至可视化管道！');
                 }
                 break;
 
@@ -1130,6 +1309,7 @@
             policy: 1, // FollowMainElement
             fixedQuantity: 1,
             mainElementKey: '',
+            guards: [],
             conditionTree: {
               op: 0, // And
               nodes: [
@@ -1203,6 +1383,28 @@
           });
         };
 
+        // 添加前置守卫条件项
+        const addGuardCondition = () => {
+          if (!currentRule.value) return;
+          if (!currentRule.value.guards) {
+            currentRule.value.guards = [];
+          }
+          currentRule.value.guards.push({
+            id: 'guard_' + Date.now(),
+            sourceElement: '接触器',
+            operator: '==',
+            targetElement: '热继电器',
+            actionMode: 0, // 默认满足时跳过
+            enabled: true
+          });
+        };
+
+        // 移除前置守卫条件项
+        const removeGuardCondition = (idx) => {
+          if (!currentRule.value?.guards) return;
+          currentRule.value.guards.splice(idx, 1);
+        };
+
         // 添加普通条件节点
         const addConditionNode = () => {
           if (!currentRule.value) return;
@@ -1219,14 +1421,12 @@
             propertyFilters: [],
             ratioItems: []
           });
-          syncToRawExpression();
         };
 
         // 移除普通条件节点
         const removeConditionNode = (idx) => {
           if (!currentRule.value?.conditionTree?.nodes) return;
           currentRule.value.conditionTree.nodes.splice(idx, 1);
-          syncToRawExpression();
         };
 
         // 添加【或】条件分支组
@@ -1246,14 +1446,12 @@
             ],
             subGroups: []
           });
-          syncToRawExpression();
         };
 
         // 移除【或】条件分支组
         const removeOrGroup = (gIdx) => {
           if (!currentRule.value?.conditionTree?.subGroups) return;
           currentRule.value.conditionTree.subGroups.splice(gIdx, 1);
-          syncToRawExpression();
         };
 
         // 向【或】组添加分支项
@@ -1265,14 +1463,12 @@
             mode: 0,
             propertyFilters: []
           });
-          syncToRawExpression();
         };
 
         // 移除【或】组中的某项
         const removeOrGroupMember = (grp, mIdx) => {
           if (!grp.nodes) return;
           grp.nodes.splice(mIdx, 1);
-          syncToRawExpression();
         };
 
         // 切换节点模式
@@ -1286,7 +1482,6 @@
               ];
             }
           }
-          syncToRawExpression();
         };
 
         // 添加属性过滤器
@@ -1297,14 +1492,12 @@
             operator: '>=',
             value: ''
           });
-          syncToRawExpression();
         };
 
         // 移除属性过滤器
         const removePropertyFilter = (node, fIdx) => {
           if (!node.propertyFilters) return;
           node.propertyFilters.splice(fIdx, 1);
-          syncToRawExpression();
         };
 
         // 添加比例成员
@@ -1315,78 +1508,31 @@
             elementName: '',
             propertyFilters: []
           });
-          syncToRawExpression();
         };
 
         // 移除比例成员
         const removeRatioItem = (node, rIdx) => {
           if (!node.ratioItems) return;
           node.ratioItems.splice(rIdx, 1);
-          syncToRawExpression();
         };
 
-        // 序列化单个节点为表达式片段
-        const serializeSingleNode = (node) => {
-          if (!node) return '';
-          if (node.mode === 3 && node.ratioItems?.length > 0) {
-            // 比例模式
-            return node.ratioItems.map(r => `${r.count || 1}${r.elementName || ''}`).join('/');
-          }
-
-          let name = node.elementName || '';
-          if (node.mode === 1) name = `-${name}`;
-          else if (node.mode === 2) name = `${name}#`;
-
-          let propStrs = '';
-          if (node.propertyFilters?.length > 0) {
-            const pList = node.propertyFilters.map(f => {
-              const pName = f.propertyType === 'Current' ? '电流' : (f.propertyType === 'Model' ? '型号' : (f.propertyType === 'Poles' ? '极数' : (f.propertyType === 'Appendix' ? '附件' : f.propertyType)));
-              const op = (f.operator === '==' || f.operator === 'contains') ? '' : f.operator;
-              return `${pName}:${op}${f.value || ''}`;
-            });
-            propStrs = ' ' + pList.join(' ');
-          }
-
-          return name ? (name + propStrs) : '';
-        };
-
-        // 将可视化管道同步序列化生成为经典表达式
-        const syncToRawExpression = () => {
-          if (!currentRule.value?.conditionTree) return;
-          const tree = currentRule.value.conditionTree;
+        // 简短只读摘要生成器 (仅用于左侧卡片显示)
+        const getRuleSummary = (rule) => {
+          if (!rule || !rule.conditionTree) return '未配置条件';
           const parts = [];
-
-          // 1. 序列化顶层普通节点 (AND)
-          (tree.nodes || []).forEach(node => {
-            const s = serializeSingleNode(node);
-            if (s) parts.push(s);
-          });
-
-          // 2. 序列化【或】关系子组 (subGroups)
-          (tree.subGroups || []).forEach(grp => {
-            const subParts = [];
-            (grp.nodes || []).forEach(subNode => {
-              const s = serializeSingleNode(subNode);
-              if (s) subParts.push(s);
-            });
-            if (subParts.length === 1) {
-              parts.push(subParts[0]);
-            } else if (subParts.length > 1) {
-              parts.push(`(${subParts.join(' | ')})`);
+          (rule.conditionTree.nodes || []).forEach(n => {
+            if (n.elementName) {
+              let tag = n.elementName;
+              if (n.mode === 1) tag = `-${tag}`;
+              else if (n.mode === 2) tag = `${tag}#`;
+              parts.push(tag);
             }
           });
-
-          currentRule.value.rawExpression = parts.join(' & ');
-        };
-
-        // 从经典表达式反向解析填充管道
-        const applyRawExpressionToTree = () => {
-          if (!currentRule.value?.rawExpression) return;
-          postMessageToHost({
-            action: 'parseExpression',
-            expression: currentRule.value.rawExpression,
-            policy: currentRule.value.policy || 0
+          (rule.conditionTree.subGroups || []).forEach(g => {
+            const sub = (g.nodes || []).map(sn => sn.elementName).filter(Boolean);
+            if (sub.length > 0) parts.push(`(${sub.join(' | ')})`);
           });
+          return parts.length > 0 ? parts.join(' & ') : '未配置条件';
         };
 
         // 保存所有配置
@@ -1434,8 +1580,11 @@
           });
         };
 
-        // 窗口控制
-        const onHeaderMouseDown = () => {
+        // 窗口控制 (仅在点击空白标题栏区域时触发拖拽)
+        const onHeaderMouseDown = (e) => {
+          if (e && e.target && e.target.closest('.header-actions, .window-controls, .ctrl-btn, .el-button')) {
+            return;
+          }
           postMessageToHost({ action: 'dragWindow' });
         };
         const minimizeWindow = () => {
@@ -1457,7 +1606,7 @@
               targetGroup: '*FA风机',
               policy: 1,
               enabled: true,
-              rawExpression: '(热继电器# | 控制保护开关#) & 消防电源监控 & -时控开关',
+              guards: [],
               conditionTree: {
                 op: 0,
                 nodes: [
@@ -1474,12 +1623,38 @@
                   }
                 ]
               }
+            },
+            {
+              id: '2',
+              name: 'KM变频器联动',
+              targetGroup: '*KM变频器',
+              policy: 0,
+              enabled: true,
+              guards: [
+                {
+                  id: 'g1',
+                  sourceElement: '接触器',
+                  operator: '==',
+                  targetElement: '热继电器',
+                  actionMode: 0,
+                  enabled: true
+                }
+              ],
+              conditionTree: {
+                op: 0,
+                nodes: [
+                  { id: 'n3', elementName: '变频器', mode: 0, propertyFilters: [] },
+                  { id: 'n4', elementName: '接触器', mode: 0, propertyFilters: [] }
+                ],
+                subGroups: []
+              }
             }
           ];
           currentRule.value = config.value.rules[0];
           testComponents.value = [
             { eleName: '热继电器', eleNorms: 'JR28-25', eleNums: 2, eleCurrent: '16A', elePoles: '3P', eleAppendix: '' },
-            { eleName: '消防电源监控', eleNorms: 'XF-01', eleNums: 1, eleCurrent: '', elePoles: '', eleAppendix: '' }
+            { eleName: '接触器', eleNorms: 'CJX2-1810', eleNums: 2, eleCurrent: '18A', elePoles: '3P', eleAppendix: '' },
+            { eleName: '变频器', eleNorms: 'ATV310', eleNums: 1, eleCurrent: '', elePoles: '', eleAppendix: '' }
           ];
         };
 
@@ -1496,6 +1671,8 @@
           deleteCurrentRule,
           moveRuleUp,
           moveRuleDown,
+          addGuardCondition,
+          removeGuardCondition,
           addConditionNode,
           removeConditionNode,
           addOrGroup,
@@ -1507,8 +1684,7 @@
           removePropertyFilter,
           addRatioItem,
           removeRatioItem,
-          syncToRawExpression,
-          applyRawExpressionToTree,
+          getRuleSummary,
           saveAllConfig,
           resetToDefault,
           loadActiveCabinet,

@@ -60,12 +60,18 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 配置窗体几何外观 (1360x820 像素大视口)
+        /// 配置窗体几何外观 (根据当前屏幕工作区自适应计算，防止小屏幕被任务栏遮挡)
         /// </summary>
         private void InitializeFormProperties()
         {
             this.Text = "二次元件组规则管道构建器";
-            this.ClientSize = new Size(1360, 820);
+            // 获取主屏幕工作区 (已扣除任务栏高度)
+            var workArea = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1366, 768);
+            // 宽度取 1320 与工作区 92% 的较小值，最小不低于 1000
+            int targetWidth = Math.Max(1000, Math.Min(1320, (int)(workArea.Width * 0.92)));
+            // 高度取 780 与工作区 88% 的较小值，最小不低于 620
+            int targetHeight = Math.Max(620, Math.Min(780, (int)(workArea.Height * 0.88)));
+            this.ClientSize = new Size(targetWidth, targetHeight);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.None;
             this.MaximizeBox = true;
@@ -258,18 +264,6 @@ namespace ExcelAddInDemo
                         {
                             action = "batchExecuteResult",
                             result = batchRes
-                        }, JsonOptions));
-                        break;
-
-                    // 7. 表达式转条件树
-                    case "parseExpression":
-                        string rawExpr = root.TryGetProperty("expression", out var exprProp) ? exprProp.GetString() ?? "" : "";
-                        int policyInt = root.TryGetProperty("policy", out var polProp) ? polProp.GetInt32() : 0;
-                        var treeRes = _controller.ParseExpression(rawExpr, (QuantityPolicy)policyInt);
-                        PostWebMessageSafe(JsonSerializer.Serialize(new
-                        {
-                            action = "parseExpressionResult",
-                            tree = treeRes
                         }, JsonOptions));
                         break;
 

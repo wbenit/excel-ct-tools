@@ -172,6 +172,58 @@ namespace ExcelAddInDemo.Models
     }
 
     /// <summary>
+    /// 前置守卫动作模式枚举 (满足条件时跳过 / 满足条件时才执行)
+    /// </summary>
+    public enum GuardActionMode
+    {
+        /// <summary>
+        /// 满足条件时跳过本规则 (默认模式)
+        /// </summary>
+        SkipIfMatched = 0,
+
+        /// <summary>
+        /// 满足条件时才执行本规则
+        /// </summary>
+        ExecuteIfMatched = 1
+    }
+
+    /// <summary>
+    /// 前置生效/跳过守卫条件模型 (基于箱柜原始数量比较两个元件数量)
+    /// </summary>
+    public class RuleGuardCondition
+    {
+        /// <summary>
+        /// 唯一标识
+        /// </summary>
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
+        /// <summary>
+        /// 源元件名称 (如: "接触器")
+        /// </summary>
+        public string SourceElement { get; set; } = "";
+
+        /// <summary>
+        /// 数量比较运算符: ==, !=, >, >=, <, <=
+        /// </summary>
+        public string Operator { get; set; } = "==";
+
+        /// <summary>
+        /// 目标元件名称 (如: "热继电器")
+        /// </summary>
+        public string TargetElement { get; set; } = "";
+
+        /// <summary>
+        /// 守卫动作模式 (满足时跳过 / 满足时才执行)
+        /// </summary>
+        public GuardActionMode ActionMode { get; set; } = GuardActionMode.SkipIfMatched;
+
+        /// <summary>
+        /// 是否启用本守卫项
+        /// </summary>
+        public bool Enabled { get; set; } = true;
+    }
+
+    /// <summary>
     /// 单条二次元件组规则管道实体
     /// </summary>
     public class ComponentGroupRule
@@ -220,6 +272,11 @@ namespace ExcelAddInDemo.Models
         /// 主控元件名称 (当 Policy 为 FollowMainElement 时可指定，未指定自动取带 # 的元件)
         /// </summary>
         public string MainElementKey { get; set; } = "";
+
+        /// <summary>
+        /// 前置生效/跳过守卫条件列表 (基于箱柜原始元件总数对比)
+        /// </summary>
+        public List<RuleGuardCondition> Guards { get; set; } = new List<RuleGuardCondition>();
 
         /// <summary>
         /// 可视化条件树根节点
@@ -324,7 +381,15 @@ namespace ExcelAddInDemo.Models
                 Policy = QuantityPolicy.Fixed,
                 FixedQuantity = 1,
                 Priority = priority++,
-                RawExpression = "凝露控制器|防潮控制器"
+                ConditionTree = new RuleConditionGroup
+                {
+                    Op = LogicalOperator.Or,
+                    Nodes = new List<RuleConditionNode>
+                    {
+                        new RuleConditionNode { ElementName = "凝露控制器", Mode = ElementMatchMode.MustInclude },
+                        new RuleConditionNode { ElementName = "防潮控制器", Mode = ElementMatchMode.MustInclude }
+                    }
+                }
             });
 
             // 2. 双V3A电压电流表测量组
@@ -334,7 +399,22 @@ namespace ExcelAddInDemo.Models
                 TargetGroup = "*双V3A",
                 Policy = QuantityPolicy.AutoByRatio,
                 Priority = priority++,
-                RawExpression = "3电流表/2电压表"
+                ConditionTree = new RuleConditionGroup
+                {
+                    Op = LogicalOperator.And,
+                    Nodes = new List<RuleConditionNode>
+                    {
+                        new RuleConditionNode
+                        {
+                            Mode = ElementMatchMode.RatioMember,
+                            RatioItems = new List<RatioItem>
+                            {
+                                new RatioItem { ElementName = "电流表", Count = 3 },
+                                new RatioItem { ElementName = "电压表", Count = 2 }
+                            }
+                        }
+                    }
+                }
             });
 
             // 3. 1V3A1Z 电流电压转换开关测量组
@@ -344,7 +424,23 @@ namespace ExcelAddInDemo.Models
                 TargetGroup = "*1V3A1Z",
                 Policy = QuantityPolicy.AutoByRatio,
                 Priority = priority++,
-                RawExpression = "3电流表/1电压表/1转换开关"
+                ConditionTree = new RuleConditionGroup
+                {
+                    Op = LogicalOperator.And,
+                    Nodes = new List<RuleConditionNode>
+                    {
+                        new RuleConditionNode
+                        {
+                            Mode = ElementMatchMode.RatioMember,
+                            RatioItems = new List<RatioItem>
+                            {
+                                new RatioItem { ElementName = "电流表", Count = 3 },
+                                new RatioItem { ElementName = "电压表", Count = 1 },
+                                new RatioItem { ElementName = "转换开关", Count = 1 }
+                            }
+                        }
+                    }
+                }
             });
 
             // 4. 1V3A (无转换开关)
@@ -354,7 +450,23 @@ namespace ExcelAddInDemo.Models
                 TargetGroup = "*1V3A",
                 Policy = QuantityPolicy.AutoByRatio,
                 Priority = priority++,
-                RawExpression = "(3电流表/1电压表) &-转换开关"
+                ConditionTree = new RuleConditionGroup
+                {
+                    Op = LogicalOperator.And,
+                    Nodes = new List<RuleConditionNode>
+                    {
+                        new RuleConditionNode
+                        {
+                            Mode = ElementMatchMode.RatioMember,
+                            RatioItems = new List<RatioItem>
+                            {
+                                new RatioItem { ElementName = "电流表", Count = 3 },
+                                new RatioItem { ElementName = "电压表", Count = 1 }
+                            }
+                        },
+                        new RuleConditionNode { ElementName = "转换开关", Mode = ElementMatchMode.MustExclude }
+                    }
+                }
             });
 
             // 5. 双电源大电流报警回路
@@ -364,7 +476,22 @@ namespace ExcelAddInDemo.Models
                 TargetGroup = "*ATS+MXOF",
                 Policy = QuantityPolicy.FollowMainElement,
                 Priority = priority++,
-                RawExpression = "双电源# 附件:1"
+                ConditionTree = new RuleConditionGroup
+                {
+                    Op = LogicalOperator.And,
+                    Nodes = new List<RuleConditionNode>
+                    {
+                        new RuleConditionNode
+                        {
+                            ElementName = "双电源",
+                            Mode = ElementMatchMode.MainDriver,
+                            PropertyFilters = new List<PropertyFilterItem>
+                            {
+                                new PropertyFilterItem { PropertyType = "Appendix", Operator = "==", Value = "1" }
+                            }
+                        }
+                    }
+                }
             });
 
             // 6. 变频器控保组
@@ -374,17 +501,51 @@ namespace ExcelAddInDemo.Models
                 TargetGroup = "*变频器控保",
                 Policy = QuantityPolicy.AutoByRatio,
                 Priority = priority++,
-                RawExpression = "1变频器/1控制保护开关"
+                ConditionTree = new RuleConditionGroup
+                {
+                    Op = LogicalOperator.And,
+                    Nodes = new List<RuleConditionNode>
+                    {
+                        new RuleConditionNode
+                        {
+                            Mode = ElementMatchMode.RatioMember,
+                            RatioItems = new List<RatioItem>
+                            {
+                                new RatioItem { ElementName = "变频器", Count = 1 },
+                                new RatioItem { ElementName = "控制保护开关", Count = 1 }
+                            }
+                        }
+                    }
+                }
             });
 
-            // 7. KM变频器回路
+            // 7. KM变频器回路 (配置前置守卫: 当接触器数量与热继电器数量相等时跳过)
             config.Rules.Add(new ComponentGroupRule
             {
                 Name = "KM变频器联动",
                 TargetGroup = "*KM变频器",
                 Policy = QuantityPolicy.Fixed,
                 Priority = priority++,
-                RawExpression = "变频器&接触器"
+                Guards = new List<RuleGuardCondition>
+                {
+                    new RuleGuardCondition
+                    {
+                        SourceElement = "接触器",
+                        Operator = "==",
+                        TargetElement = "热继电器",
+                        ActionMode = GuardActionMode.SkipIfMatched,
+                        Enabled = true
+                    }
+                },
+                ConditionTree = new RuleConditionGroup
+                {
+                    Op = LogicalOperator.And,
+                    Nodes = new List<RuleConditionNode>
+                    {
+                        new RuleConditionNode { ElementName = "变频器", Mode = ElementMatchMode.MustInclude },
+                        new RuleConditionNode { ElementName = "接触器", Mode = ElementMatchMode.MustInclude }
+                    }
+                }
             });
 
             // 8. 单变频器回路 (排除控保与接触器)
@@ -394,7 +555,16 @@ namespace ExcelAddInDemo.Models
                 TargetGroup = "*单变频器",
                 Policy = QuantityPolicy.Fixed,
                 Priority = priority++,
-                RawExpression = "变频器&-控制保护开关&-接触器"
+                ConditionTree = new RuleConditionGroup
+                {
+                    Op = LogicalOperator.And,
+                    Nodes = new List<RuleConditionNode>
+                    {
+                        new RuleConditionNode { ElementName = "变频器", Mode = ElementMatchMode.MustInclude },
+                        new RuleConditionNode { ElementName = "控制保护开关", Mode = ElementMatchMode.MustExclude },
+                        new RuleConditionNode { ElementName = "接触器", Mode = ElementMatchMode.MustExclude }
+                    }
+                }
             });
 
             // 9. 软启动回路
@@ -404,7 +574,14 @@ namespace ExcelAddInDemo.Models
                 TargetGroup = "*软启动",
                 Policy = QuantityPolicy.FollowMainElement,
                 Priority = priority++,
-                RawExpression = "软启动#"
+                ConditionTree = new RuleConditionGroup
+                {
+                    Op = LogicalOperator.And,
+                    Nodes = new List<RuleConditionNode>
+                    {
+                        new RuleConditionNode { ElementName = "软启动", Mode = ElementMatchMode.MainDriver }
+                    }
+                }
             });
 
             // 10. FA风机消防电源联动
@@ -414,7 +591,27 @@ namespace ExcelAddInDemo.Models
                 TargetGroup = "*FA风机",
                 Policy = QuantityPolicy.FollowMainElement,
                 Priority = priority++,
-                RawExpression = "(热继电器#|控制保护开关#) &消防电源监控&-时控开关"
+                ConditionTree = new RuleConditionGroup
+                {
+                    Op = LogicalOperator.And,
+                    Nodes = new List<RuleConditionNode>
+                    {
+                        new RuleConditionNode { ElementName = "消防电源监控", Mode = ElementMatchMode.MustInclude },
+                        new RuleConditionNode { ElementName = "时控开关", Mode = ElementMatchMode.MustExclude }
+                    },
+                    SubGroups = new List<RuleConditionGroup>
+                    {
+                        new RuleConditionGroup
+                        {
+                            Op = LogicalOperator.Or,
+                            Nodes = new List<RuleConditionNode>
+                            {
+                                new RuleConditionNode { ElementName = "热继电器", Mode = ElementMatchMode.MainDriver },
+                                new RuleConditionNode { ElementName = "控制保护开关", Mode = ElementMatchMode.MainDriver }
+                            }
+                        }
+                    }
+                }
             });
 
             // 11. BA风机回路
@@ -424,7 +621,28 @@ namespace ExcelAddInDemo.Models
                 TargetGroup = "*BA风机",
                 Policy = QuantityPolicy.FollowMainElement,
                 Priority = priority++,
-                RawExpression = "(热继电器#|控制保护开关#) &-消防电源监控&-变频器&-时控开关"
+                ConditionTree = new RuleConditionGroup
+                {
+                    Op = LogicalOperator.And,
+                    Nodes = new List<RuleConditionNode>
+                    {
+                        new RuleConditionNode { ElementName = "消防电源监控", Mode = ElementMatchMode.MustExclude },
+                        new RuleConditionNode { ElementName = "变频器", Mode = ElementMatchMode.MustExclude },
+                        new RuleConditionNode { ElementName = "时控开关", Mode = ElementMatchMode.MustExclude }
+                    },
+                    SubGroups = new List<RuleConditionGroup>
+                    {
+                        new RuleConditionGroup
+                        {
+                            Op = LogicalOperator.Or,
+                            Nodes = new List<RuleConditionNode>
+                            {
+                                new RuleConditionNode { ElementName = "热继电器", Mode = ElementMatchMode.MainDriver },
+                                new RuleConditionNode { ElementName = "控制保护开关", Mode = ElementMatchMode.MainDriver }
+                            }
+                        }
+                    }
+                }
             });
 
             // 12. 电能表回路
@@ -434,7 +652,14 @@ namespace ExcelAddInDemo.Models
                 TargetGroup = "*电能表",
                 Policy = QuantityPolicy.FollowMainElement,
                 Priority = priority++,
-                RawExpression = "电能表#"
+                ConditionTree = new RuleConditionGroup
+                {
+                    Op = LogicalOperator.And,
+                    Nodes = new List<RuleConditionNode>
+                    {
+                        new RuleConditionNode { ElementName = "电能表", Mode = ElementMatchMode.MainDriver }
+                    }
+                }
             });
 
             // 13. 直接式表通讯
@@ -444,16 +669,29 @@ namespace ExcelAddInDemo.Models
                 TargetGroup = "*表通讯",
                 Policy = QuantityPolicy.FollowMainElement,
                 Priority = priority++,
-                RawExpression = "直接式表# 型号:0 &-多功能表"
+                ConditionTree = new RuleConditionGroup
+                {
+                    Op = LogicalOperator.And,
+                    Nodes = new List<RuleConditionNode>
+                    {
+                        new RuleConditionNode
+                        {
+                            ElementName = "直接式表",
+                            Mode = ElementMatchMode.MainDriver,
+                            PropertyFilters = new List<PropertyFilterItem>
+                            {
+                                new PropertyFilterItem { PropertyType = "Model", Operator = "==", Value = "0" }
+                            }
+                        },
+                        new RuleConditionNode { ElementName = "多功能表", Mode = ElementMatchMode.MustExclude }
+                    }
+                }
             });
 
-            // 将所有初始规则的 RawExpression 自动解析填充进 ConditionTree
+            // 自动为所有规则生成只读摘要文本
             foreach (var rule in config.Rules)
             {
-                if (!string.IsNullOrWhiteSpace(rule.RawExpression))
-                {
-                    rule.ConditionTree = PipelineCompiler.ParseExpressionToTree(rule.RawExpression, rule.Policy);
-                }
+                rule.RawExpression = PipelineCompiler.BuildRuleSummary(rule);
             }
 
             return config;
@@ -609,424 +847,143 @@ namespace ExcelAddInDemo.Models
     /// <summary>
     /// 规则管道双向编译器: 实现可视化管道 ⇄ 经典文本表达式无损互转与解析
     /// </summary>
+    /// <summary>
+    /// 规则管道轻量摘要生成器: 纯结构化架构下仅用于生成人类可读的单行规则摘要 (供日志与界面概览展示)
+    /// </summary>
     public static class PipelineCompiler
     {
         /// <summary>
-        /// 将经典表达式字符串解析为可视化条件树
+        /// 根据规则实体生成人类可读的简要概括文本
         /// </summary>
-        public static RuleConditionGroup ParseExpressionToTree(string expression, QuantityPolicy policy)
+        /// <param name="rule">二次元件组规则实体</param>
+        /// <returns>简短可读的单行摘要字符串</returns>
+        public static string BuildRuleSummary(ComponentGroupRule rule)
         {
-            var rootGroup = new RuleConditionGroup { Op = LogicalOperator.And };
-            if (string.IsNullOrWhiteSpace(expression)) return rootGroup;
+            // 校验规则实体非空
+            if (rule == null) return string.Empty;
 
-            // 预处理: 将中文括号替换为标准括号
-            string expr = expression.Trim().Replace("（", "(").Replace("）", ")");
-
-            // 处理顶层带有 OR 的逻辑分组
-            if (expr.Contains("|") && !expr.StartsWith("(") && !expr.EndsWith(")"))
-            {
-                // 顶层若包含 | 且无外层整体括号包围，拆分为 OR 组
-                var orGroup = new RuleConditionGroup { Op = LogicalOperator.Or };
-                var segments = SplitByTopLevelOperator(expr, '|');
-                foreach (var seg in segments)
-                {
-                    if (string.IsNullOrWhiteSpace(seg)) continue;
-                    var subGroup = ParseSimpleExpressionBlock(seg);
-                    orGroup.SubGroups.Add(subGroup);
-                }
-                return orGroup;
-            }
-
-            // 否则按标准复合块解析
-            return ParseSimpleExpressionBlock(expr);
+            // 格式化条件树与前置守卫为单行概括文本
+            return BuildExpressionFromTree(rule.ConditionTree, rule.Guards);
         }
 
         /// <summary>
-        /// 解析一个复合条件块 (处理 & 逻辑与括号)
+        /// 将结构化条件树与前置守卫转换为简短文字标签
         /// </summary>
-        private static RuleConditionGroup ParseSimpleExpressionBlock(string block)
+        /// <param name="group">条件树根节点</param>
+        /// <param name="guards">前置守卫列表 (可选)</param>
+        /// <returns>简要文字标签</returns>
+        public static string BuildExpressionFromTree(RuleConditionGroup group, List<RuleGuardCondition>? guards = null)
         {
-            var group = new RuleConditionGroup { Op = LogicalOperator.And };
-            string text = block.Trim();
-
-            // 若整体被括号包围，脱去外层括号
-            if (text.StartsWith("(") && text.EndsWith(")"))
-            {
-                // 检查是否是一对闭合的整体括号
-                if (IsBalancedParentheses(text.Substring(1, text.Length - 2)))
-                {
-                    text = text.Substring(1, text.Length - 2).Trim();
-                }
-            }
-
-            // 按顶层 & 拆分
-            var andSegments = SplitByTopLevelOperator(text, '&');
-            foreach (var seg in andSegments)
-            {
-                string s = seg.Trim();
-                if (string.IsNullOrWhiteSpace(s)) continue;
-
-                // 若分段内部是带有 | 的括号子表达式
-                if (s.StartsWith("(") && s.EndsWith(")"))
-                {
-                    string inner = s.Substring(1, s.Length - 2).Trim();
-                    if (inner.Contains("|"))
-                    {
-                        var subOrGroup = new RuleConditionGroup { Op = LogicalOperator.Or };
-                        var orParts = SplitByTopLevelOperator(inner, '|');
-                        foreach (var part in orParts)
-                        {
-                            var node = ParseAtomNode(part.Trim());
-                            if (node != null) subOrGroup.Nodes.Add(node);
-                        }
-                        group.SubGroups.Add(subOrGroup);
-                        continue;
-                    }
-                }
-
-                // 普通原子节点解析
-                var atomNode = ParseAtomNode(s);
-                if (atomNode != null)
-                {
-                    group.Nodes.Add(atomNode);
-                }
-            }
-
-            return group;
-        }
-
-        /// <summary>
-        /// 解析单个原子条件节点 (如 "双电源# 电流:>1000 型号:WATSG 附件:1 极数:3P" 或 "3电流表/1电压表")
-        /// </summary>
-        public static RuleConditionNode? ParseAtomNode(string rawAtom)
-        {
-            if (string.IsNullOrWhiteSpace(rawAtom)) return null;
-            string atom = rawAtom.Trim();
-
-            var node = new RuleConditionNode();
-
-            // 1. 检查是否为成组比例语法 (包含 '/')
-            if (atom.Contains("/"))
-            {
-                node.Mode = ElementMatchMode.RatioMember;
-                var ratioSegments = atom.Split('/');
-                var ratioList = new List<RatioItem>();
-
-                foreach (var rSeg in ratioSegments)
-                {
-                    string segText = rSeg.Trim();
-                    if (string.IsNullOrEmpty(segText)) continue;
-
-                    var rItem = new RatioItem();
-                    // 提取前缀数字比例 (如 3电流表)
-                    var matchNum = Regex.Match(segText, @"^(\d+)(.*)$");
-                    if (matchNum.Success)
-                    {
-                        rItem.Count = int.Parse(matchNum.Groups[1].Value);
-                        segText = matchNum.Groups[2].Value.Trim();
-                    }
-                    else
-                    {
-                        rItem.Count = 1;
-                    }
-
-                    // 拆分元件名称与可能跟随的属性
-                    var parts = segText.Split(' ');
-                    rItem.ElementName = parts[0].Trim();
-                    for (int p = 1; p < parts.Length; p++)
-                    {
-                        var filter = ParsePropertyFilter(parts[p]);
-                        if (filter != null) rItem.PropertyFilters.Add(filter);
-                    }
-
-                    ratioList.Add(rItem);
-                }
-
-                node.RatioItems = ratioList;
-                node.ElementName = string.Join("/", ratioList.Select(r => $"{r.Count}{r.ElementName}"));
-                return node;
-            }
-
-            // 2. 检查模式 (排除 - 或 数量驱动 #)
-            if (atom.StartsWith("-"))
-            {
-                node.Mode = ElementMatchMode.MustExclude;
-                atom = atom.Substring(1).Trim();
-            }
-            else if (atom.Contains("#"))
-            {
-                node.Mode = ElementMatchMode.MainDriver;
-                atom = atom.Replace("#", "").Trim();
-            }
-            else
-            {
-                node.Mode = ElementMatchMode.MustInclude;
-            }
-
-            // 3. 拆分元件名称与属性
-            var spaceParts = atom.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-            if (spaceParts.Length > 0)
-            {
-                node.ElementName = spaceParts[0].Trim();
-
-                // 解析后续各个属性过滤项
-                for (int i = 1; i < spaceParts.Length; i++)
-                {
-                    var filter = ParsePropertyFilter(spaceParts[i]);
-                    if (filter != null)
-                    {
-                        node.PropertyFilters.Add(filter);
-                    }
-                }
-            }
-
-            return node;
-        }
-
-        /// <summary>
-        /// 解析单个属性过滤器 (如 "电流:>1000", "型号:WATSG", "极数:3P", "附件:1")
-        /// </summary>
-        private static PropertyFilterItem? ParsePropertyFilter(string propText)
-        {
-            if (string.IsNullOrWhiteSpace(propText)) return null;
-
-            var colonParts = propText.Split(new[] { ':', '：' }, 2);
-            if (colonParts.Length == 0) return null;
-
-            string propHeader = colonParts[0].Trim();
-            string propVal = colonParts.Length > 1 ? colonParts[1].Trim() : "";
-
-            var filter = new PropertyFilterItem();
-
-            // 识别属性类型
-            switch (propHeader)
-            {
-                case "电流":
-                    filter.PropertyType = "Current";
-                    break;
-                case "型号":
-                    filter.PropertyType = "Model";
-                    break;
-                case "极数":
-                    filter.PropertyType = "Poles";
-                    break;
-                case "附件":
-                    filter.PropertyType = "Appendix";
-                    break;
-                default:
-                    filter.PropertyType = propHeader;
-                    break;
-            }
-
-            // 解析操作符与值
-            if (propVal.StartsWith(">="))
-            {
-                filter.Operator = ">=";
-                filter.Value = propVal.Substring(2).Trim();
-            }
-            else if (propVal.StartsWith("<="))
-            {
-                filter.Operator = "<=";
-                filter.Value = propVal.Substring(2).Trim();
-            }
-            else if (propVal.StartsWith(">"))
-            {
-                filter.Operator = ">";
-                filter.Value = propVal.Substring(1).Trim();
-            }
-            else if (propVal.StartsWith("<"))
-            {
-                filter.Operator = "<";
-                filter.Value = propVal.Substring(1).Trim();
-            }
-            else if (propVal.StartsWith("!="))
-            {
-                filter.Operator = "!=";
-                filter.Value = propVal.Substring(2).Trim();
-            }
-            else if (propVal.StartsWith("=="))
-            {
-                filter.Operator = "==";
-                filter.Value = propVal.Substring(2).Trim();
-            }
-            else
-            {
-                // 默认文本匹配采用 contains 或等于
-                filter.Operator = (filter.PropertyType == "Current" || filter.PropertyType == "Poles") ? "==" : "contains";
-                filter.Value = propVal;
-            }
-
-            return filter;
-        }
-
-        /// <summary>
-        /// 将可视化条件树转换为经典文本表达式字符串
-        /// </summary>
-        public static string BuildExpressionFromTree(RuleConditionGroup group)
-        {
-            if (group == null) return "";
+            // 校验条件树根节点有效性
+            if (group == null) return string.Empty;
 
             var parts = new List<string>();
 
-            // 序列化所有当前层节点
+            // 1. 提取顶层普通条件节点名称与模式
             if (group.Nodes != null)
             {
                 foreach (var node in group.Nodes)
                 {
-                    string nodeStr = BuildAtomNodeString(node);
+                    string nodeStr = FormatNodeSummary(node);
                     if (!string.IsNullOrEmpty(nodeStr)) parts.Add(nodeStr);
                 }
             }
 
-            // 序列化子条件组
+            // 2. 提取【或】关系子分支摘要
             if (group.SubGroups != null)
             {
                 foreach (var sub in group.SubGroups)
                 {
                     string subStr = BuildExpressionFromTree(sub);
-                    if (!string.IsNullOrEmpty(subStr))
-                    {
-                        // 若子组包含多个条件，用括号包裹
-                        parts.Add($"({subStr})");
-                    }
+                    if (!string.IsNullOrEmpty(subStr)) parts.Add($"({subStr})");
                 }
             }
 
+            // 拼接主体条件部分
             string opSymbol = group.Op == LogicalOperator.Or ? " | " : " & ";
-            return string.Join(opSymbol, parts);
+            string bodyExpr = string.Join(opSymbol, parts);
+
+            // 3. 拼接前置守卫概览前缀 (若配置了守卫)
+            string guardPrefix = FormatGuardsSummary(guards);
+            if (!string.IsNullOrEmpty(guardPrefix))
+            {
+                return string.IsNullOrEmpty(bodyExpr) ? guardPrefix : $"{guardPrefix} {bodyExpr}";
+            }
+
+            return bodyExpr;
         }
 
         /// <summary>
-        /// 格式化单个条件节点为文本字符串
+        /// 格式化前置守卫为简短前缀概括
         /// </summary>
-        private static string BuildAtomNodeString(RuleConditionNode node)
+        public static string FormatGuardsSummary(List<RuleGuardCondition>? guards)
         {
-            if (node == null) return "";
+            if (guards == null || guards.Count == 0) return string.Empty;
+
+            // 过滤有效启用的守卫条件项
+            var valid = guards.Where(g => g.Enabled && !string.IsNullOrWhiteSpace(g.SourceElement) && !string.IsNullOrWhiteSpace(g.TargetElement)).ToList();
+            if (valid.Count == 0) return string.Empty;
+
+            // 分组提取跳过与生效守卫
+            var skipGuards = valid.Where(g => g.ActionMode == GuardActionMode.SkipIfMatched).ToList();
+            var onlyGuards = valid.Where(g => g.ActionMode == GuardActionMode.ExecuteIfMatched).ToList();
+
+            var prefixList = new List<string>();
+            if (skipGuards.Count > 0)
+            {
+                string inner = string.Join("; ", skipGuards.Select(g => $"{g.SourceElement} {g.Operator} {g.TargetElement}"));
+                prefixList.Add($"[跳过: {inner}]");
+            }
+            if (onlyGuards.Count > 0)
+            {
+                string inner = string.Join("; ", onlyGuards.Select(g => $"{g.SourceElement} {g.Operator} {g.TargetElement}"));
+                prefixList.Add($"[仅当: {inner}]");
+            }
+
+            return string.Join(" ", prefixList);
+        }
+
+        /// <summary>
+        /// 格式化单个条件节点的简短概览文本
+        /// </summary>
+        private static string FormatNodeSummary(RuleConditionNode node)
+        {
+            if (node == null) return string.Empty;
 
             // 成组比例模式
-            if (node.Mode == ElementMatchMode.RatioMember && node.RatioItems != null && node.RatioItems.Count > 0)
+            if (node.Mode == ElementMatchMode.RatioMember && node.RatioItems?.Count > 0)
             {
-                var rList = new List<string>();
-                foreach (var r in node.RatioItems)
-                {
-                    var sbItem = new StringBuilder();
-                    sbItem.Append($"{r.Count}{r.ElementName}");
-                    if (r.PropertyFilters != null)
-                    {
-                        foreach (var f in r.PropertyFilters)
-                        {
-                            sbItem.Append($" {FormatFilterForExpression(f)}");
-                        }
-                    }
-                    rList.Add(sbItem.ToString());
-                }
-                return string.Join("/", rList);
+                return string.Join("/", node.RatioItems.Select(r => $"{r.Count}{r.ElementName}"));
             }
 
-            var sb = new StringBuilder();
+            // 排除模式
             if (node.Mode == ElementMatchMode.MustExclude)
             {
-                sb.Append($"-{node.ElementName}");
-            }
-            else if (node.Mode == ElementMatchMode.MainDriver)
-            {
-                sb.Append($"{node.ElementName}#");
-            }
-            else
-            {
-                sb.Append(node.ElementName);
+                return $"-{node.ElementName}";
             }
 
-            if (node.PropertyFilters != null)
+            // 主控数量驱动模式
+            if (node.Mode == ElementMatchMode.MainDriver)
             {
-                foreach (var filter in node.PropertyFilters)
-                {
-                    sb.Append($" {FormatFilterForExpression(filter)}");
-                }
+                return $"{node.ElementName}#";
             }
 
-            return sb.ToString();
-        }
-
-        /// <summary>
-        /// 格式化属性过滤项
-        /// </summary>
-        private static string FormatFilterForExpression(PropertyFilterItem filter)
-        {
-            string label = filter.PropertyType switch
-            {
-                "Current" => "电流",
-                "Model" => "型号",
-                "Poles" => "极数",
-                "Appendix" => "附件",
-                _ => filter.PropertyType
-            };
-
-            string opStr = filter.Operator switch
-            {
-                "==" or "contains" => "",
-                _ => filter.Operator
-            };
-
-            return $"{label}:{opStr}{filter.Value}";
-        }
-
-        /// <summary>
-        /// 顶层运算符安全拆分 (忽略括号内部的运算符)
-        /// </summary>
-        private static List<string> SplitByTopLevelOperator(string text, char op)
-        {
-            var list = new List<string>();
-            int depth = 0;
-            int lastIdx = 0;
-
-            for (int i = 0; i < text.Length; i++)
-            {
-                char c = text[i];
-                if (c == '(' || c == '（') depth++;
-                else if (c == ')' || c == '）') depth--;
-                else if (c == op && depth == 0)
-                {
-                    list.Add(text.Substring(lastIdx, i - lastIdx).Trim());
-                    lastIdx = i + 1;
-                }
-            }
-
-            if (lastIdx < text.Length)
-            {
-                list.Add(text.Substring(lastIdx).Trim());
-            }
-
-            return list;
-        }
-
-        /// <summary>
-        /// 校验括号是否对称匹配
-        /// </summary>
-        private static bool IsBalancedParentheses(string str)
-        {
-            int count = 0;
-            foreach (char c in str)
-            {
-                if (c == '(' || c == '（') count++;
-                if (c == ')' || c == '）') count--;
-                if (count < 0) return false;
-            }
-            return count == 0;
+            return node.ElementName ?? string.Empty;
         }
     }
 
     /// <summary>
-    /// 规则管道高效内存执行评估器 (支持箱柜元件动态资源池扣减机制)
+    /// 规则管道高效内存执行评估器 (支持箱柜元件动态资源池扣减机制与前置守卫过滤)
     /// </summary>
     public static class PipelineEvaluator
     {
         /// <summary>
-        /// 针对整个箱柜元件集合，按规则优先级依次进行带【动态资源池扣减】的完整评估
+        /// 针对整个箱柜元件集合，按规则优先级依次进行带【前置守卫检查】与【动态资源池扣减】的完整评估
         /// </summary>
         /// <param name="rules">启用的规则管道列表 (已按优先级排序)</param>
         /// <param name="components">箱柜一次元件集合</param>
         /// <param name="executionLogs">执行与扣减过程诊断日志列表</param>
+        /// <param name="remainingComponents">执行完毕后剩余元件库存列表</param>
         /// <returns>命中的规则匹配结果列表</returns>
         public static List<RuleMatchResult> EvaluateRulesWithResourcePool(
             List<ComponentGroupRule> rules,
@@ -1044,8 +1001,20 @@ namespace ExcelAddInDemo.Models
                 return matchedResults;
             }
 
-            // 1. 克隆一份深拷贝作为当前箱柜的动态工作资源池
+            // 1. 克隆一份深拷贝作为当前箱柜的动态工作资源池 (按序消耗扣减)
             var workingPool = components.Select(c => new EleComponentDto
+            {
+                RowIndex = c.RowIndex,
+                EleName = c.EleName,
+                EleNorms = c.EleNorms,
+                EleNums = c.EleNums,
+                EleCurrent = c.EleCurrent,
+                ElePoles = c.ElePoles,
+                EleAppendix = c.EleAppendix
+            }).ToList();
+
+            // 2. 同时克隆一份原始库存镜像 (用于前置守卫比对两元件的原始数量，不受前面规则扣减影响)
+            var originalPool = components.Select(c => new EleComponentDto
             {
                 RowIndex = c.RowIndex,
                 EleName = c.EleName,
@@ -1063,14 +1032,54 @@ namespace ExcelAddInDemo.Models
             executionLogs.Add($"📦 【初始元件库存池】: {string.Join(", ", initialCompSummary)}");
 
             int step = 1;
-            // 2. 依次按规则优先级从上到下遍历评估
+            // 3. 依次按规则优先级从上到下遍历评估
             foreach (var rule in rules.Where(r => r.Enabled).OrderBy(r => r.Priority))
             {
-                string expr = rule.RawExpression;
-                if (string.IsNullOrWhiteSpace(expr))
+                // 1. 前置生效与跳过守卫判断 (基于原始元件池 originalPool 对比两元件数量)
+                var guards = rule.Guards;
+                if (guards != null && guards.Count > 0)
                 {
-                    expr = PipelineCompiler.BuildExpressionFromTree(rule.ConditionTree);
+                    bool isGuardedOut = false;
+                    string guardLogReason = "";
+
+                    // 遍历所有已启用的守卫项
+                    foreach (var guard in guards.Where(g => g.Enabled && !string.IsNullOrWhiteSpace(g.SourceElement) && !string.IsNullOrWhiteSpace(g.TargetElement)))
+                    {
+                        // 统计源元件在原始箱柜中的总数
+                        int srcCount = originalPool.Where(c => c.EleNums > 0 && MatchSingleComponentProperties(c, guard.SourceElement)).Sum(c => c.EleNums);
+                        // 统计目标元件在原始箱柜中的总数
+                        int tgtCount = originalPool.Where(c => c.EleNums > 0 && MatchSingleComponentProperties(c, guard.TargetElement)).Sum(c => c.EleNums);
+                        // 进行数值关系比较
+                        bool isConditionTrue = EvaluateNumberComparison(srcCount, guard.Operator, tgtCount);
+
+                        // 满足时跳过模式
+                        if (guard.ActionMode == GuardActionMode.SkipIfMatched && isConditionTrue)
+                        {
+                            isGuardedOut = true;
+                            guardLogReason = $"原始[{guard.SourceElement}]数量({srcCount}件) {guard.Operator} 原始[{guard.TargetElement}]数量({tgtCount}件) -> 触发跳过";
+                            break;
+                        }
+                        // 满足时才生效模式
+                        else if (guard.ActionMode == GuardActionMode.ExecuteIfMatched && !isConditionTrue)
+                        {
+                            isGuardedOut = true;
+                            guardLogReason = $"原始[{guard.SourceElement}]数量({srcCount}件) 不满足 {guard.Operator} 原始[{guard.TargetElement}]数量({tgtCount}件) -> 前提不成立跳过";
+                            break;
+                        }
+                    }
+
+                    // 若判定跳过，记录日志并直接处理下一规则
+                    if (isGuardedOut)
+                    {
+                        executionLogs.Add($"[步骤 {step}] ⏭️ 规则 [{rule.Name}] 被前置守卫跳过");
+                        executionLogs.Add($"    └── 守卫决策: {guardLogReason}");
+                        step++;
+                        continue;
+                    }
                 }
+
+                // 2. 提取主体条件树表达式进行资源池评估
+                string expr = PipelineCompiler.BuildExpressionFromTree(rule.ConditionTree);
                 if (string.IsNullOrWhiteSpace(expr)) continue;
 
                 // 尝试在当前剩余资源池中评估本规则，并准备扣减清单
@@ -1138,12 +1147,34 @@ namespace ExcelAddInDemo.Models
                 step++;
             }
 
-            // 3. 输出最终剩余元件库存快照
+            // 4. 输出最终剩余元件库存快照
             var finalRemaining = workingPool.Select(c => $"[{c.EleName}]: {c.EleNums}件");
             executionLogs.Add($"🏁 【最终剩余元件库存】: {string.Join(", ", finalRemaining)}");
             remainingComponents = workingPool;
 
             return matchedResults;
+        }
+
+        /// <summary>
+        /// 执行两整数数值间的逻辑关系比较
+        /// </summary>
+        /// <param name="a">左操作数 (源元件数量)</param>
+        /// <param name="op">比较运算符: ==, !=, >, >=, <, <=</param>
+        /// <param name="b">右操作数 (目标元件数量)</param>
+        /// <returns>比较结果布尔值</returns>
+        private static bool EvaluateNumberComparison(int a, string op, int b)
+        {
+            // 标准化比较运算符并计算布尔值
+            return op switch
+            {
+                "==" or "=" => a == b,
+                "!=" or "<>" => a != b,
+                ">" => a > b,
+                ">=" or "=>" => a >= b,
+                "<" => a < b,
+                "<=" or "=<" => a <= b,
+                _ => a == b
+            };
         }
 
         /// <summary>

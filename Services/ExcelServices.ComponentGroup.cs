@@ -96,7 +96,7 @@ namespace ExcelAddInDemo
                 if (!activeCab.HasValue)
                 {
                     // 记录未能定位箱柜实体的日志
-                    LogHelper.WriteLog("[抓取元件] GetActiveCabinet 未能定位到活动箱柜实体。");
+                    LogHelper.WriteLog("[抓取元件] 未能定位到任何有效箱柜实体，抓取终止。");
                     return resultList;
                 }
 
