@@ -199,7 +199,27 @@
         1. 在 [Resources/component_group_builder.html](file:///e:/Ace/excel-ct-tools/Resources/component_group_builder.html) 规则库卡片上增加【⬆️ 上移】与【⬇️ 下移】交互按钮，支持实时调整规则顺序并自动重跑沙盒；
         2. 在 [Models/ComponentGroupRuleModels.cs](file:///e:/Ace/excel-ct-tools/Models/ComponentGroupRuleModels.cs) 中优化扣减日志格式：将跨多行（如多行互感器 1件+2件）的分步扣减自动智能聚合为统一的消耗总量 `[互感器] 消耗 3件 (池剩余 3件)`，消除日志碎片化带来的数量误解。
       - **构建状态**：`ExcelAddInDemo.dll` 编译完全通过（0 错误）。
-  35. **汇总调价生成 16 列双层复合表头与本体/附件表价折扣拆分引擎（已落地）**：
+  35. **二次元件组规则管道前置生效/跳过守卫（基于原始数量的两元件对比）机制落地（已完成）**：
+      - **业务与架构**：
+        1. 在 [Models/ComponentGroupRuleModels.cs](file:///e:/Ace/excel-ct-tools/Models/ComponentGroupRuleModels.cs) 中定义 `GuardActionMode`（`SkipIfMatched` / `ExecuteIfMatched`）与 `RuleGuardCondition` 模型，并在 `ComponentGroupRule` 中增加 `Guards` 集合；
+        2. 升级双向编译器 `PipelineCompiler`：支持 `[SKIP: 接触器 == 热继电器]`、`[ONLY: 接触器 > 热继电器]` 前缀语法，实现可视化守卫 ⇄ 经典文本表达式的无损实时双向互转；
+        3. 升级执行评估器 `PipelineEvaluator.EvaluateRulesWithResourcePool`：保留 `originalPool` 不可变镜像，优先评估规则的守卫条件，若满足跳过模式或不满足仅生效模式，直接跳过并输出清晰诊断日志（如 `[步骤 X] ⏭️ 规则 [KM变频器联动] 被前置守卫跳过: 原始[接触器]数量(3件) == 原始[热继电器]数量(3件) -> 触发跳过`）；
+        4. 在 [Resources/component_group_builder.html](file:///e:/Ace/excel-ct-tools/Resources/component_group_builder.html) 中新增【前置生效与跳过守卫】可视化卡片，左侧规则卡片联动显示 `守卫` 徽章，打通沙盒试跑与批量生成。
+      - **构建状态**：`ExcelAddInDemo.dll` 编译构建通过（0 错误，0 警告）。
+  36. **二次元件组规则构建器架构大瘦身（全面转向纯结构化数据流）（已完成）**：
+      - **业务与架构**：
+        1. 彻底移除 `PipelineCompiler` 中 400+ 行冗余的文本反向解析器、括号匹配与复杂正则表达式；
+        2. 控制器与窗体移除 `parseExpression` 与 `buildExpression` 双向消息通道，全面升级为纯强类型 JSON 交互；
+        3. 移除前端中间面板底部的【经典表达式输入卡片】与庞大的文本双向同步逻辑，交互直观轻快，左侧卡片采用纯轻量响应式计算属性展示规则概括；
+        4. 重构 `CreateDefault` 出厂规则库为强类型对象直接构造，直存直取，系统健壮性与可维护性大幅提升。
+      - **构建状态**：`ExcelAddInDemo.dll` 编译构建通过（0 错误，0 警告）。
+  37. **沙盒面板 Flexbox 弹性收缩坍塌与小屏幕视口适配修复（已完成）**：
+      - **业务与架构**：
+        1. 根治 `.comp-table-container` 因 Flex 默认收缩（`flex-shrink: 1`）在空间紧凑时被压缩为 0px 产生的一条线 Bug，明确赋予 `height: 150px; min-height: 140px; flex-shrink: 0;`；
+        2. 为 `.matched-group-item`、`.log-box` 均显式声明 `flex-shrink: 0;`，交由父容器 `.sandbox-body` 的垂直滚动条自适应平滑承载；
+        3. 宿主窗体初始化根据屏幕工作区（`Screen.PrimaryScreen.WorkingArea`）动态计算尺寸，彻底避免超出屏幕导致被任务栏遮挡。
+      - **构建状态**：`ExcelAddInDemo.dll` 编译构建通过（0 错误，0 警告）。
+  38. **汇总调价生成 16 列双层复合表头与本体/附件表价折扣拆分引擎（已落地）**：
       - **业务与架构**：
         1. 在 [Services/ExcelServices.SummaryAdjustPrice.cs](file:///d:/code/excel-ct-tools/Services/ExcelServices.SummaryAdjustPrice.cs) 中重构 `AggregatedComponent` 模型，扩充为覆盖 16 个列字段的完整数据结构；
         2. 实现 `ParseBaseAndAccessoryPrice`：从明细 M 列提取表价公式（如 `=159.05+336.2`），精准拆分第一个加数为【本体表价】，第二项及之后项累加为【附件表价】；

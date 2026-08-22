@@ -72,14 +72,15 @@ namespace ExcelAddInDemo.Controllers
             {
                 if (config == null) return false;
 
-                // 保存前保证每条规则的 RawExpression 和 ConditionTree 双向同步
+                // 保存前保证每条规则的 RawExpression 包含最新只读文字摘要 (供列表概览)
                 if (config.Rules != null)
                 {
                     foreach (var rule in config.Rules)
                     {
-                        if (rule.ConditionTree != null && (rule.ConditionTree.Nodes?.Count > 0 || rule.ConditionTree.SubGroups?.Count > 0))
+                        if (rule.ConditionTree != null)
                         {
-                            rule.RawExpression = PipelineCompiler.BuildExpressionFromTree(rule.ConditionTree);
+                            // 自动生成单行概括摘要
+                            rule.RawExpression = PipelineCompiler.BuildRuleSummary(rule);
                         }
                     }
                 }
@@ -140,22 +141,6 @@ namespace ExcelAddInDemo.Controllers
 
             var activeConfig = config ?? LoadConfig();
             return ExcelServices.ExecuteBatchComponentGroup(activeConfig, activeCabinetOnly);
-        }
-
-        /// <summary>
-        /// 经典表达式转可视化条件树
-        /// </summary>
-        public RuleConditionGroup ParseExpression(string expression, QuantityPolicy policy)
-        {
-            return PipelineCompiler.ParseExpressionToTree(expression, policy);
-        }
-
-        /// <summary>
-        /// 可视化条件树转经典表达式
-        /// </summary>
-        public string BuildExpression(RuleConditionGroup tree)
-        {
-            return PipelineCompiler.BuildExpressionFromTree(tree);
         }
     }
 }
