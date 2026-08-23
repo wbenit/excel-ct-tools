@@ -27,7 +27,7 @@ namespace ExcelAddInDemo
             }
             catch (Exception ex)
             {
-                LogHelper.WriteLog($"弹出汇总调价窗口异常: {ex.Message}");
+                // 弹出异常提示信息
                 System.Windows.Forms.MessageBox.Show($"弹出汇总调价窗口失败: {ex.Message}", "错误提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
             }
         }
@@ -47,15 +47,6 @@ namespace ExcelAddInDemo
                 dynamic activeWb = app.ActiveWorkbook;
                 if (activeWb == null) return result;
 
-                // 读取箱柜定义名称前缀值对象 (零堆分配)
-                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
-
-                var allNames = new List<dynamic>();
-                if (activeWb.Names != null)
-                {
-                    try { foreach (dynamic n in activeWb.Names) allNames.Add(n); } catch { }
-                }
-
                 // 遍历工作簿中的所有工作表
                 foreach (dynamic sheet in activeWb.Worksheets)
                 {
@@ -68,17 +59,8 @@ namespace ExcelAddInDemo
                         continue;
                     }
 
-                    var currentSheetNames = new List<dynamic>(allNames);
-                    if (sheet.Names != null)
-                    {
-                        try { foreach (dynamic n in sheet.Names) currentSheetNames.Add(n); } catch { }
-                    }
-
-                    // 1. 优先通过定义名称构建箱柜锚点列表 (规则 6)
-                    var validCabinets = Tool.BuildCabinetMap(
-                        currentSheetNames,
-                        sheetName,
-                        sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                    // 1. 调用公共方法获取当前工作表的有效箱柜锚点列表 (规则 6)
+                    var validCabinets = Tool.GetSheetValidCabinets(sheet, activeWb);
 
                     int totalCount = 0;
                     if (validCabinets.Count > 0)
@@ -176,9 +158,9 @@ namespace ExcelAddInDemo
                     });
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                LogHelper.WriteLog($"获取分类工作表与箱柜数量异常: {ex.Message}");
+                // 捕获异常静默处理
             }
 
             return result;
@@ -519,16 +501,6 @@ namespace ExcelAddInDemo
                 app.ScreenUpdating = false;
                 app.DisplayAlerts = false;
 
-                // 读取箱柜定义名称前缀值对象 (零堆分配)
-                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
-
-                // 收集工作簿级别所有定义名称
-                var allWbNames = new List<dynamic>();
-                if (activeWb.Names != null)
-                {
-                    try { foreach (dynamic n in activeWb.Names) allWbNames.Add(n); } catch { }
-                }
-
                 // 原始元器件提取列表
                 var rawComponents = new List<AggregatedComponent>();
 
@@ -543,18 +515,8 @@ namespace ExcelAddInDemo
                     catch { continue; }
                     if (sheet == null) continue;
 
-                    // 收集当前工作表所有定义名称
-                    var sheetNames = new List<dynamic>(allWbNames);
-                    if (sheet.Names != null)
-                    {
-                        try { foreach (dynamic n in sheet.Names) sheetNames.Add(n); } catch { }
-                    }
-
-                    // 构建有效箱柜锚点字典 (规则 6)
-                    var validCabinets = Tool.BuildCabinetMap(
-                        sheetNames,
-                        sheetName,
-                        sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                    // 调用公共方法构建当前分类表的有效箱柜锚点字典 (规则 6)
+                    var validCabinets = Tool.GetSheetValidCabinets(sheet, activeWb);
 
                     // 遍历当前分类表中的每个箱柜
                     foreach (var cab in validCabinets)
@@ -900,7 +862,7 @@ namespace ExcelAddInDemo
                     summarySheet.Range[$"I{startDataRow}:I{endDataRow}"].Interior.Color = softBlueColor;
 
                     // 设置各数值列的显示格式 --硬编码--
-                    summarySheet.Range[$"E{startDataRow}:E{endDataRow}"].NumberFormat = "0.##"; // 数量格式
+                    summarySheet.Range[$"E{startDataRow}:E{endDataRow}"].NumberFormat = "General"; // 数量自适应通用格式
                     summarySheet.Range[$"F{startDataRow}:G{endDataRow}"].NumberFormat = "#,##0.00"; // 销售单价与总价格式
                     summarySheet.Range[$"I{startDataRow}:I{endDataRow}"].NumberFormat = "#,##0.00"; // 成本单价格式
                     summarySheet.Range[$"J{startDataRow}:J{endDataRow}"].NumberFormat = "0.00"; // 报出系数格式
@@ -920,7 +882,7 @@ namespace ExcelAddInDemo
                     summarySheet.Cells[totalRow, 5].Formula = $"=SUM(E{startDataRow}:E{endDataRow})";
                     summarySheet.Cells[totalRow, 5].Font.Bold = true;
                     summarySheet.Cells[totalRow, 5].HorizontalAlignment = -4108;
-                    summarySheet.Cells[totalRow, 5].NumberFormat = "0.##";
+                    summarySheet.Cells[totalRow, 5].NumberFormat = "General";
 
                     // 销售总价合计公式
                     summarySheet.Cells[totalRow, 7].Formula = $"=SUM(G{startDataRow}:G{endDataRow})";
@@ -1022,9 +984,6 @@ namespace ExcelAddInDemo
                 }
 
                 if (summarySheet == null) return false;
-
-                // 记录日志：一键更新预留通路已打通
-                LogHelper.WriteLog("执行一键更新预留处理流程：已校验元件汇总表存在，等待后续细化批量回填算法");
 
                 // 当前阶段返回成功，提示前端已就绪
                 return true;

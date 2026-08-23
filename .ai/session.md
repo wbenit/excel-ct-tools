@@ -226,4 +226,16 @@
         3. 实现 `ParseBaseAndAccessoryDiscount` 与 `ExtractDiscountFromTerm`：从明细 N 列提取复合加权折扣公式（如 `=(159.05*1*0.5+336.2*1*1)/495.25`），精准提取【本体折扣】（0.5）与【附件加权折扣】（1.0），并向上兼容普通数值与简单公式；
         4. 采用 2D 数组（`A~Q` 列 Value2 与 Formula 矩阵）一次性读入内存，完成台数放大与 `Group By` 聚合；
         5. 生成高保真 16 列【元件汇总表】（双层表头 4~5 行，J~N 列粉色调价核心表头，A/E/I 列浅蓝强调底色，精准列宽 6~24，AutoFilter 挂载与 SUM 合计行，实线细边框），采用 2D 数组单次写入 Excel。
+  39. **清理 ExcelServices.SummaryAdjustPrice.cs 中的日志代码（已完成）**：
+      - **业务与架构**：
+        1. 移除 [Services/ExcelServices.SummaryAdjustPrice.cs](file:///d:/code/excel-ct-tools/Services/ExcelServices.SummaryAdjustPrice.cs) 中所有 `LogHelper.WriteLog` 语句；
+        2. 精简各异常处理块为静默或直接返回 `false`，保持异常弹窗交互完好。
+  40. **重构汇总调价与元件提取逻辑复用 Tool.GetSheetValidCabinets（已完成）**：
+      - **业务与架构**：
+        1. 在 [Services/ExcelServices.SummaryAdjustPrice.cs](file:///d:/code/excel-ct-tools/Services/ExcelServices.SummaryAdjustPrice.cs) 的 `GetCategorySheetsWithCabinetCount` 与 `GenerateComponentSummarySheet` 中，彻底移除手动遍历 `Names` 集合与前缀读取冗余；
+        2. 统一复用公共方法 `Tool.GetSheetValidCabinets(sheet, activeWb)`，直接获取结构化箱柜锚点，并自动获得定义名称缺失时的智能补齐修复能力。
+  41. **修复元件汇总表数量格式裸小数点显示 Bug（已完成）**：
+      - **业务与架构**：
+        1. 将 [Services/ExcelServices.SummaryAdjustPrice.cs](file:///d:/code/excel-ct-tools/Services/ExcelServices.SummaryAdjustPrice.cs) 中数据行 E 列及合计行 E 列的数量格式由 `"0.##"` 改为通用格式 `"General"`；
+        2. 根除整数显示为 `1.` 的尾随小数点渲染问题，同时自适应支持小数数量展示。
 
