@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
   <!-- 字符编码设置为 UTF-8 -->
   <meta charset="UTF-8">
@@ -20,7 +21,8 @@
   <link rel="stylesheet" href="theme.css">
   <style>
     /* 全局重置 */
-    html, body {
+    html,
+    body {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
@@ -236,32 +238,80 @@
     /* 底部操作工具栏 */
     .footer-bar {
       height: 50px;
+      min-height: 50px;
       background: #ffffff;
       border-top: 1px solid #e2e8f0;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 18px;
+      padding: 0 16px;
       box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.03);
+      transition: all 0.2s ease;
+    }
+
+    /* 折叠状态下底部栏样式 (单行状态栏浮动条) */
+    .footer-bar.collapsed-footer {
+      height: 100% !important;
+      min-height: 50px !important;
+      border-top: none !important;
+      box-shadow: none !important;
+      background: #ffffff;
+      cursor: move;
+    }
+
+    /* 折叠状态关闭按钮 */
+    .ctrl-btn-collapsed-close {
+      width: 26px;
+      height: 26px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: #94a3b8;
+      font-size: 13px;
+      transition: all 0.2s;
+      margin-left: 2px;
+    }
+
+    .ctrl-btn-collapsed-close:hover {
+      background-color: #ef4444;
+      color: #ffffff;
+    }
+
+    /* 折叠/展开按钮动效 */
+    .collapse-toggle-btn {
+      border-color: #009688 !important;
+      color: #009688 !important;
+      background: #e0f2f1 !important;
+      flex-shrink: 0;
+      transition: all 0.2s ease !important;
+    }
+
+    .collapse-toggle-btn:hover {
+      background: #b2dfdb !important;
+      color: #00796b !important;
+      border-color: #00796b !important;
+      transform: scale(1.08);
     }
   </style>
 </head>
+
 <body>
   <div id="app">
-    <!-- 顶部拖拽标题栏 -->
-    <div class="window-header" @mousedown="onDragWindow">
+    <!-- 顶部拖拽标题栏 (折叠后隐藏) -->
+    <div v-show="!isCollapsed" class="window-header" @mousedown="onDragWindow">
       <div class="window-title">
         <i class="fa-solid fa-wand-magic-sparkles"></i>
         <span>元器件型号参数识别设置 (极数与电流)</span>
       </div>
       <div class="window-controls" @mousedown.stop>
-        <div class="ctrl-btn" title="最小化" @click.stop="onMinimize"><i class="fa-solid fa-minus"></i></div>
         <div class="ctrl-btn close" title="关闭" @click.stop="onClose"><i class="fa-solid fa-xmark"></i></div>
       </div>
     </div>
 
-    <!-- 主体内容区域 -->
-    <div class="main-body">
+    <!-- 主体内容区域 (折叠后隐藏) -->
+    <div v-show="!isCollapsed" class="main-body">
       <!-- 1. Excel 列映射配置卡片 -->
       <div class="config-card">
         <div class="card-header">
@@ -270,33 +320,44 @@
             <span>1. Excel 工作表列映射与格式</span>
           </div>
         </div>
-        
+
         <!-- 一行紧凑排列，字号小，彻底杜绝换行 -->
-        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: nowrap;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: nowrap;">
           <div style="display: flex; align-items: center; gap: 4px;">
             <span class="label-text">源型号列:</span>
-            <el-input v-model="config.sourceColumn" placeholder="C" size="small" style="width: 50px; text-transform: uppercase;"></el-input>
+            <el-input v-model="config.sourceColumn" placeholder="C" size="small"
+              style="width: 44px; text-transform: uppercase;"></el-input>
           </div>
           <div style="display: flex; align-items: center; gap: 4px;">
-            <span class="label-text">电流输出列:</span>
-            <el-input v-model="config.currentColumn" placeholder="S" size="small" style="width: 50px; text-transform: uppercase;"></el-input>
+            <span class="label-text">最小电流列:</span>
+            <el-input v-model="config.minCurrentColumn" placeholder="S" size="small"
+              style="width: 44px; text-transform: uppercase;"></el-input>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <span class="label-text">最大电流列:</span>
+            <el-input v-model="config.maxCurrentColumn" placeholder="可空" size="small"
+              style="width: 44px; text-transform: uppercase;"></el-input>
           </div>
           <div style="display: flex; align-items: center; gap: 4px;">
             <span class="label-text">极数输出列:</span>
-            <el-input v-model="config.poleColumn" placeholder="T" size="small" style="width: 50px; text-transform: uppercase;"></el-input>
+            <el-input v-model="config.poleColumn" placeholder="T" size="small"
+              style="width: 44px; text-transform: uppercase;"></el-input>
           </div>
           <div style="display: flex; align-items: center; gap: 4px;">
             <span class="label-text">脱扣输出列:</span>
-            <el-input v-model="config.tripModeColumn" placeholder="U" size="small" style="width: 50px; text-transform: uppercase;"></el-input>
+            <el-input v-model="config.tripModeColumn" placeholder="U" size="small"
+              style="width: 44px; text-transform: uppercase;"></el-input>
           </div>
           <div style="display: flex; align-items: center; gap: 4px;">
-            <span style="font-size: 11px; color: #009688; background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 3px 8px; border-radius: 4px; font-weight: 500; white-space: nowrap;">
-              <i class="fa-solid fa-crosshairs" style="margin-right: 4px;"></i>范围: 当前选中区域
+            <span
+              style="font-size: 11px; color: #009688; background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 3px 6px; border-radius: 4px; font-weight: 500; white-space: nowrap;">
+              <i class="fa-solid fa-crosshairs" style="margin-right: 2px;"></i>范围: 选中区域
             </span>
           </div>
         </div>
 
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 8px; border-top: 1px dashed #edf2f7; flex-wrap: wrap; gap: 8px;">
+        <div
+          style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 8px; border-top: 1px dashed #edf2f7; flex-wrap: wrap; gap: 8px;">
           <div style="display: flex; align-items: center; gap: 8px;">
             <span class="label-text">极数输出格式:</span>
             <el-radio-group v-model="config.poleFormat" size="small">
@@ -330,25 +391,12 @@
         <div style="margin-bottom: 8px;">
           <span style="font-size: 12px; color: #475569; font-weight: 600;">🚫 极数前置必去项 (排除防护等级 IP、DPN 前缀等):</span>
           <div class="tag-container">
-            <el-tag
-              v-for="(tag, idx) in config.poleExcludeKeywords"
-              :key="idx"
-              closable
-              type="danger"
-              size="small"
-              @close="removePoleExcludeTag(idx)"
-            >
+            <el-tag v-for="(tag, idx) in config.poleExcludeKeywords" :key="idx" closable type="danger" size="small"
+              @close="removePoleExcludeTag(idx)">
               {{ tag }}
             </el-tag>
-            <el-input
-              v-if="poleTagInputVisible"
-              ref="poleTagInputRef"
-              v-model="newPoleTagValue"
-              size="small"
-              style="width: 80px;"
-              @keyup.enter="confirmAddPoleTag"
-              @blur="confirmAddPoleTag"
-            ></el-input>
+            <el-input v-if="poleTagInputVisible" ref="poleTagInputRef" v-model="newPoleTagValue" size="small"
+              style="width: 80px;" @keyup.enter="confirmAddPoleTag" @blur="confirmAddPoleTag"></el-input>
             <el-button v-else size="small" style="padding: 2px 8px; height: 24px;" @click="showAddPoleTagInput">
               + 添加排除词
             </el-button>
@@ -369,32 +417,23 @@
                 <el-option label="固定极数值 (直接指定)" value="FixedValue"></el-option>
                 <el-option label="自定义正则表达式 (高级匹配)" value="CustomRegex"></el-option>
               </el-select>
-              
+
               <!-- 固定值输入框 -->
-              <el-input
-                v-if="rule.mode === 'FixedValue'"
-                v-model="rule.fixedValue"
-                placeholder="固定值(如 1P+N, 3P)"
-                size="small"
-                style="width: 140px;"
-              ></el-input>
+              <el-input v-if="rule.mode === 'FixedValue'" v-model="rule.fixedValue" placeholder="固定值(如 1P+N, 3P)"
+                size="small" style="width: 140px;"></el-input>
 
               <!-- 自定义正则输入框 -->
-              <el-input
-                v-if="rule.mode === 'CustomRegex'"
-                v-model="rule.customRegex"
-                placeholder="正则(如 (?<pole>[1-4]P(?:\+N)?))"
-                size="small"
-                style="width: 210px;"
-              ></el-input>
+              <el-input v-if="rule.mode === 'CustomRegex'" v-model="rule.customRegex"
+                placeholder="正则(如 (?<pole>[1-4]P(?:\+N)?))" size="small" style="width: 210px;"></el-input>
             </div>
-            
+
             <div style="display: flex; align-items: center; gap: 6px;">
               <el-switch v-model="rule.enabled" size="small" active-text="启用"></el-switch>
               <el-button circle size="small" :disabled="index === 0" title="上移顺位" @click="movePoleRule(index, -1)">
                 <i class="fa-solid fa-arrow-up"></i>
               </el-button>
-              <el-button circle size="small" :disabled="index === config.polePipeline.length - 1" title="下移顺位" @click="movePoleRule(index, 1)">
+              <el-button circle size="small" :disabled="index === config.polePipeline.length - 1" title="下移顺位"
+                @click="movePoleRule(index, 1)">
                 <i class="fa-solid fa-arrow-down"></i>
               </el-button>
               <el-button circle size="small" type="danger" plain title="删除此顺位" @click="deletePoleRule(index)">
@@ -405,9 +444,11 @@
 
           <!-- 代号对照表子模块 -->
           <div v-if="rule.mode === 'CodeMapping'" class="mapping-table">
-            <div style="font-size: 11px; color: #64748b; margin-bottom: 6px; display: flex; justify-content: space-between;">
+            <div
+              style="font-size: 11px; color: #64748b; margin-bottom: 6px; display: flex; justify-content: space-between;">
               <span>包含代号 ➔ 映射输出极数对照表:</span>
-              <el-link type="primary" :underline="false" style="font-size: 11px;" @click="addMappingRow(rule)">+ 添加映射行</el-link>
+              <el-link type="primary" :underline="false" style="font-size: 11px;" @click="addMappingRow(rule)">+
+                添加映射行</el-link>
             </div>
             <div v-for="(item, itemIdx) in (rule.mappingList || [])" :key="item.id || itemIdx" class="mapping-row">
               <el-input v-model="item.code" size="small" placeholder="如 /3300" style="width: 120px;"></el-input>
@@ -420,7 +461,8 @@
                 <el-option label="1P+N" value="1P+N"></el-option>
                 <el-option label="3P+N" value="3P+N"></el-option>
               </el-select>
-              <el-button type="danger" link size="small" @click="deleteMappingRow(rule, itemIdx)"><i class="fa-solid fa-xmark"></i></el-button>
+              <el-button type="danger" link size="small" @click="deleteMappingRow(rule, itemIdx)"><i
+                  class="fa-solid fa-xmark"></i></el-button>
             </div>
           </div>
         </div>
@@ -432,25 +474,13 @@
             <el-switch v-model="config.enableStrictPoleWhitelist" size="small" active-text="严格白名单"></el-switch>
           </div>
           <div class="tag-container">
-            <el-tag
-              v-for="(tag, idx) in config.poleAllowedValues"
-              :key="idx"
-              closable
-              type="success"
-              size="small"
-              @close="removePoleAllowedTag(idx)"
-            >
+            <el-tag v-for="(tag, idx) in config.poleAllowedValues" :key="idx" closable type="success" size="small"
+              @close="removePoleAllowedTag(idx)">
               {{ tag }}
             </el-tag>
-            <el-input
-              v-if="poleAllowTagInputVisible"
-              ref="poleAllowTagInputRef"
-              v-model="newPoleAllowTagValue"
-              size="small"
-              style="width: 70px;"
-              @keyup.enter="confirmAddPoleAllowTag"
-              @blur="confirmAddPoleAllowTag"
-            ></el-input>
+            <el-input v-if="poleAllowTagInputVisible" ref="poleAllowTagInputRef" v-model="newPoleAllowTagValue"
+              size="small" style="width: 70px;" @keyup.enter="confirmAddPoleAllowTag"
+              @blur="confirmAddPoleAllowTag"></el-input>
             <el-button v-else size="small" style="padding: 2px 8px; height: 24px;" @click="showAddPoleAllowTagInput">
               + 增加白名单值
             </el-button>
@@ -472,27 +502,15 @@
 
         <!-- 电流前置排除项 -->
         <div style="margin-bottom: 8px;">
-          <span style="font-size: 12px; color: #475569; font-weight: 600;">🚫 电流前置必去项 (排除 100mA 漏电、10kA 分断、220V 电压等):</span>
+          <span style="font-size: 12px; color: #475569; font-weight: 600;">🚫 电流前置必去项 (排除 100mA 漏电、10kA 分断、220V
+            电压等):</span>
           <div class="tag-container">
-            <el-tag
-              v-for="(tag, idx) in config.currentExcludeKeywords"
-              :key="idx"
-              closable
-              type="danger"
-              size="small"
-              @close="removeCurrentExcludeTag(idx)"
-            >
+            <el-tag v-for="(tag, idx) in config.currentExcludeKeywords" :key="idx" closable type="danger" size="small"
+              @close="removeCurrentExcludeTag(idx)">
               {{ tag }}
             </el-tag>
-            <el-input
-              v-if="curTagInputVisible"
-              ref="curTagInputRef"
-              v-model="newCurTagValue"
-              size="small"
-              style="width: 80px;"
-              @keyup.enter="confirmAddCurTag"
-              @blur="confirmAddCurTag"
-            ></el-input>
+            <el-input v-if="curTagInputVisible" ref="curTagInputRef" v-model="newCurTagValue" size="small"
+              style="width: 80px;" @keyup.enter="confirmAddCurTag" @blur="confirmAddCurTag"></el-input>
             <el-button v-else size="small" style="padding: 2px 8px; height: 24px;" @click="showAddCurTagInput">
               + 添加排除词
             </el-button>
@@ -513,32 +531,23 @@
                 <el-option label="固定电流值 (直接指定)" value="FixedValue"></el-option>
                 <el-option label="自定义正则表达式 (高级匹配)" value="CustomRegex"></el-option>
               </el-select>
-              
+
               <!-- 固定值输入框 -->
-              <el-input
-                v-if="rule.mode === 'FixedValue'"
-                v-model="rule.fixedValue"
-                placeholder="固定值(如 100)"
-                size="small"
-                style="width: 120px;"
-              ></el-input>
+              <el-input v-if="rule.mode === 'FixedValue'" v-model="rule.fixedValue" placeholder="固定值(如 100)"
+                size="small" style="width: 120px;"></el-input>
 
               <!-- 自定义正则输入框 -->
-              <el-input
-                v-if="rule.mode === 'CustomRegex'"
-                v-model="rule.customRegex"
-                placeholder="正则(如 (?<current>\d+)A)"
-                size="small"
-                style="width: 210px;"
-              ></el-input>
+              <el-input v-if="rule.mode === 'CustomRegex'" v-model="rule.customRegex"
+                placeholder="正则(如 (?<current>\d+)A)" size="small" style="width: 210px;"></el-input>
             </div>
-            
+
             <div style="display: flex; align-items: center; gap: 6px;">
               <el-switch v-model="rule.enabled" size="small" active-text="启用"></el-switch>
               <el-button circle size="small" :disabled="index === 0" title="上移顺位" @click="moveCurrentRule(index, -1)">
                 <i class="fa-solid fa-arrow-up"></i>
               </el-button>
-              <el-button circle size="small" :disabled="index === config.currentPipeline.length - 1" title="下移顺位" @click="moveCurrentRule(index, 1)">
+              <el-button circle size="small" :disabled="index === config.currentPipeline.length - 1" title="下移顺位"
+                @click="moveCurrentRule(index, 1)">
                 <i class="fa-solid fa-arrow-down"></i>
               </el-button>
               <el-button circle size="small" type="danger" plain title="删除此顺位" @click="deleteCurrentRule(index)">
@@ -555,41 +564,19 @@
             <el-switch v-model="config.enableStrictCurrentWhitelist" size="small" active-text="严格标称校验"></el-switch>
           </div>
           <div class="tag-container" style="max-height: 70px; overflow-y: auto;">
-            <el-tag
-              v-for="(tag, idx) in config.currentAllowedValues"
-              :key="idx"
-              closable
-              type="success"
-              size="small"
-              @close="removeCurrentAllowedTag(idx)"
-            >
+            <el-tag v-for="(tag, idx) in config.currentAllowedValues" :key="idx" closable type="success" size="small"
+              @close="removeCurrentAllowedTag(idx)">
               {{ tag }}A
             </el-tag>
-            <el-input
-              v-if="curAllowTagInputVisible"
-              ref="curAllowTagInputRef"
-              v-model="newCurAllowTagValue"
-              size="small"
-              style="width: 70px;"
-              @keyup.enter="confirmAddCurAllowTag"
-              @blur="confirmAddCurAllowTag"
-            ></el-input>
+            <el-input v-if="curAllowTagInputVisible" ref="curAllowTagInputRef" v-model="newCurAllowTagValue"
+              size="small" style="width: 70px;" @keyup.enter="confirmAddCurAllowTag"
+              @blur="confirmAddCurAllowTag"></el-input>
             <el-button v-else size="small" style="padding: 2px 8px; height: 24px;" @click="showAddCurAllowTagInput">
               + 增加标称值
             </el-button>
           </div>
         </div>
 
-        <!-- 多电流及区间匹配策略 (最大值 / 最小值选择) -->
-        <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed #e2e8f0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 12px; color: #475569; font-weight: 600;">⚖️ 多电流/区间匹配策略:</span>
-            <el-checkbox v-model="config.preferMaxCurrent">
-              {{ config.preferMaxCurrent ? '匹配多个电流或区间时取【最大值】' : '匹配多个电流或区间时取【最小值】' }}
-            </el-checkbox>
-          </div>
-          <span style="font-size: 11px; color: #94a3b8;">(勾选时取最大值如 125A/4A，未勾选取最小值如 100A/2.5A)</span>
-        </div>
       </div>
 
       <!-- 4. 脱扣方式 (Trip Mode) 识别通道 (排除 ➔ 顺位流水线 ➔ 简写代号映射) -->
@@ -615,32 +602,23 @@
                 <el-option label="固定脱扣方式 (直接指定)" value="FixedValue"></el-option>
                 <el-option label="自定义正则表达式 (高级匹配)" value="CustomRegex"></el-option>
               </el-select>
-              
+
               <!-- 固定值输入框 -->
-              <el-input
-                v-if="rule.mode === 'FixedValue'"
-                v-model="rule.fixedValue"
-                placeholder="固定简写(如 TM, C)"
-                size="small"
-                style="width: 130px;"
-              ></el-input>
+              <el-input v-if="rule.mode === 'FixedValue'" v-model="rule.fixedValue" placeholder="固定简写(如 TM, C)"
+                size="small" style="width: 130px;"></el-input>
 
               <!-- 自定义正则输入框 -->
-              <el-input
-                v-if="rule.mode === 'CustomRegex'"
-                v-model="rule.customRegex"
-                placeholder="正则(如 (?<trip>TM|TMD|Elec))"
-                size="small"
-                style="width: 210px;"
-              ></el-input>
+              <el-input v-if="rule.mode === 'CustomRegex'" v-model="rule.customRegex"
+                placeholder="正则(如 (?<trip>TM|TMD|Elec))" size="small" style="width: 210px;"></el-input>
             </div>
-            
+
             <div style="display: flex; align-items: center; gap: 6px;">
               <el-switch v-model="rule.enabled" size="small" active-text="启用"></el-switch>
               <el-button circle size="small" :disabled="index === 0" title="上移顺位" @click="moveTripRule(index, -1)">
                 <i class="fa-solid fa-arrow-up"></i>
               </el-button>
-              <el-button circle size="small" :disabled="index === config.tripModePipeline.length - 1" title="下移顺位" @click="moveTripRule(index, 1)">
+              <el-button circle size="small" :disabled="index === config.tripModePipeline.length - 1" title="下移顺位"
+                @click="moveTripRule(index, 1)">
                 <i class="fa-solid fa-arrow-down"></i>
               </el-button>
               <el-button circle size="small" type="danger" plain title="删除此顺位" @click="deleteTripRule(index)">
@@ -651,15 +629,18 @@
 
           <!-- 代号对照表子模块 (支持双向绑定自由编辑代号与简写) -->
           <div v-if="rule.mode === 'CodeMapping'" class="mapping-table">
-            <div style="font-size: 11px; color: #64748b; margin-bottom: 6px; display: flex; justify-content: space-between;">
+            <div
+              style="font-size: 11px; color: #64748b; margin-bottom: 6px; display: flex; justify-content: space-between;">
               <span>包含特征代号 ➔ 映射输出脱扣简写对照表:</span>
-              <el-link type="primary" :underline="false" style="font-size: 11px;" @click="addTripMappingRow(rule)">+ 添加映射行</el-link>
+              <el-link type="primary" :underline="false" style="font-size: 11px;" @click="addTripMappingRow(rule)">+
+                添加映射行</el-link>
             </div>
             <div v-for="(item, itemIdx) in (rule.mappingList || [])" :key="item.id || itemIdx" class="mapping-row">
               <el-input v-model="item.code" size="small" placeholder="如 /3300 或 TMD" style="width: 130px;"></el-input>
               <span style="font-size: 12px; color: #94a3b8;">➔</span>
               <el-input v-model="item.pole" size="small" placeholder="如 TM, Elec, C" style="width: 110px;"></el-input>
-              <el-button type="danger" link size="small" @click="deleteTripMappingRow(rule, itemIdx)"><i class="fa-solid fa-xmark"></i></el-button>
+              <el-button type="danger" link size="small" @click="deleteTripMappingRow(rule, itemIdx)"><i
+                  class="fa-solid fa-xmark"></i></el-button>
             </div>
           </div>
         </div>
@@ -672,21 +653,28 @@
           <span>5. 实时沙盒即时测试 (Live Sandbox)</span>
         </div>
         <div style="display: flex; gap: 8px;">
-          <el-input v-model="testModelText" placeholder="在此输入测试型号，如 NXBLE-40 1P+N C16 0.03A 4.5kA" clearable @keyup.enter="runTestParse">
+          <el-input v-model="testModelText" placeholder="在此输入测试型号，如 NXBLE-40 1P+N C16 0.03A 4.5kA" clearable
+            @keyup.enter="runTestParse">
             <template #append>
-              <el-button type="primary" @click="runTestParse"><i class="fa-solid fa-play" style="margin-right: 4px;"></i>测试识别</el-button>
+              <el-button type="primary" @click="runTestParse"><i class="fa-solid fa-play"
+                  style="margin-right: 4px;"></i>测试识别</el-button>
             </template>
           </el-input>
         </div>
         <!-- 快速测试样例标签 -->
         <div style="margin-top: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
           <span style="font-size: 11px; color: #0f766e;">快速填入样例:</span>
-          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('NXBLE-40 1P+N C16 0.03A 4.5kA')">1P+N微断 C16 (C)</el-tag>
-          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('NM1-125S/3300 100A')">塑壳 3300 100A (TM)</el-tag>
-          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('iC65N-3P-C25A 30mA 6kA')">微断 3P C25A (C)</el-tag>
+          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('NXBLE-40 1P+N C16 0.03A 4.5kA')">1P+N微断
+            C16 (C)</el-tag>
+          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('NM1-125S/3300 100A')">塑壳 3300 100A
+            (TM)</el-tag>
+          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('iC65N-3P-C25A 30mA 6kA')">微断 3P C25A
+            (C)</el-tag>
           <el-tag size="small" style="cursor: pointer;" @click="setTestSample('NXB-63 D20 3P')">微断 D曲线 (D)</el-tag>
-          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('NSX250F MicroLogic 2.2 160A')">电子脱扣 160A (Elec)</el-tag>
-          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('CDM1-225/3200 160A')">单磁脱扣 160A (MA)</el-tag>
+          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('NSX250F MicroLogic 2.2 160A')">电子脱扣 160A
+            (Elec)</el-tag>
+          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('CDM1-225/3200 160A')">单磁脱扣 160A
+            (MA)</el-tag>
         </div>
 
         <!-- 测试回显结果面板 -->
@@ -699,15 +687,22 @@
             </div>
             <el-divider direction="vertical" style="height: 36px;"></el-divider>
             <div class="result-item">
-              <span class="result-label">电流识别结果</span>
-              <span class="result-value">{{ testResult.current || '未识别' }}</span>
+              <span class="result-label">最小电流结果</span>
+              <span class="result-value">{{ testResult.minCurrent || testResult.current || '未识别' }}</span>
+              <el-tag v-if="testResult.hitCurrentRule" size="small" type="info">{{ testResult.hitCurrentRule }}</el-tag>
+            </div>
+            <el-divider direction="vertical" style="height: 36px;"></el-divider>
+            <div class="result-item">
+              <span class="result-label">最大电流结果</span>
+              <span class="result-value">{{ testResult.maxCurrent || testResult.current || '未识别' }}</span>
               <el-tag v-if="testResult.hitCurrentRule" size="small" type="info">{{ testResult.hitCurrentRule }}</el-tag>
             </div>
             <el-divider direction="vertical" style="height: 36px;"></el-divider>
             <div class="result-item">
               <span class="result-label">脱扣方式结果</span>
               <span class="result-value">{{ testResult.tripMode || '未识别' }}</span>
-              <el-tag v-if="testResult.hitTripModeRule" size="small" type="info">{{ testResult.hitTripModeRule }}</el-tag>
+              <el-tag v-if="testResult.hitTripModeRule" size="small" type="info">{{ testResult.hitTripModeRule
+                }}</el-tag>
             </div>
             <el-divider direction="vertical" style="height: 36px;"></el-divider>
             <div class="result-item">
@@ -718,25 +713,42 @@
             </div>
           </div>
           <!-- 多候选提示条 -->
-          <div v-if="testResult.candidateCurrents && testResult.candidateCurrents.length > 1" style="font-size: 11px; color: #0284c7; background-color: #f0f9ff; padding: 4px 10px; border-radius: 4px; width: 95%; text-align: center;">
-            <i class="fa-solid fa-circle-info" style="margin-right: 4px;"></i>检测到多个有效候选电流: [ {{ testResult.candidateCurrents.join('A, ') }}A ]，已按策略择取 <strong>{{ testResult.current }}</strong>
+          <div v-if="testResult.candidateCurrents && testResult.candidateCurrents.length > 1"
+            style="font-size: 11px; color: #0284c7; background-color: #f0f9ff; padding: 4px 10px; border-radius: 4px; width: 95%; text-align: center;">
+            <i class="fa-solid fa-circle-info" style="margin-right: 4px;"></i>检测到区间/多档候选电流: [ {{
+            testResult.candidateCurrents.join('A, ') }}A ] ➔ 最小电流: <strong>{{ testResult.minCurrent }}</strong>，最大电流: <strong>{{ testResult.maxCurrent }}</strong>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 底部操作栏 -->
-    <div class="footer-bar">
-      <div style="font-size: 12px; color: #64748b;">
-        <span v-if="batchStatusMsg"><i class="fa-solid fa-circle-info" style="color: #009688; margin-right: 4px;"></i>{{ batchStatusMsg }}</span>
-        <span v-else>💡 提示：点击“立即识别”将仅针对 Excel 当前选中的行区域进行二维数组极速回填</span>
+    <!-- 底部操作栏 (折叠后仅保留此行状态栏) -->
+    <div class="footer-bar" :class="{ 'collapsed-footer': isCollapsed }" @mousedown="onFooterMouseDown">
+      <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;">
+        <!-- 折叠/展开切换箭头按钮 -->
+        <el-button circle size="small" class="collapse-toggle-btn" :title="isCollapsed ? '展开完整设置面板' : '折叠面板（仅保留此状态栏）'"
+          @click.stop="toggleCollapse">
+          <i :class="isCollapsed ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
+        </el-button>
+
+        <div style="font-size: 12px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+          <span v-if="batchStatusMsg"><i class="fa-solid fa-circle-info"
+              style="color: #009688; margin-right: 4px;"></i>{{ batchStatusMsg }}</span>
+          <span v-else>💡 提示：点击“立即识别”将仅针对 Excel 当前选中的行区域进行二维数组极速回填</span>
+        </div>
       </div>
-      <div style="display: flex; gap: 10px;">
-        <el-button @click="resetConfig"><i class="fa-solid fa-rotate-left" style="margin-right: 4px;"></i>恢复默认</el-button>
-        <el-button type="primary" plain @click="saveConfig"><i class="fa-solid fa-floppy-disk" style="margin-right: 4px;"></i>保存配置</el-button>
+      <div style="display: flex; gap: 10px; flex-shrink: 0; align-items: center;" @mousedown.stop>
+        <el-button @click="resetConfig"><i class="fa-solid fa-rotate-left"
+            style="margin-right: 4px;"></i>恢复默认</el-button>
+        <el-button type="primary" plain @click="saveConfig"><i class="fa-solid fa-floppy-disk"
+            style="margin-right: 4px;"></i>保存配置</el-button>
         <el-button type="primary" :loading="isExecuting" @click="executeBatch">
           <i class="fa-solid fa-bolt" style="margin-right: 4px;"></i>🚀 立即识别并填入 Excel
         </el-button>
+        <!-- 折叠状态下右侧快捷关闭按钮 -->
+        <div v-if="isCollapsed" class="ctrl-btn-collapsed-close" title="关闭窗口" @click.stop="onClose">
+          <i class="fa-solid fa-xmark"></i>
+        </div>
       </div>
     </div>
   </div>
@@ -749,6 +761,8 @@
         // 配置响应式对象
         const config = reactive({
           sourceColumn: 'C',
+          minCurrentColumn: 'S',
+          maxCurrentColumn: '',
           currentColumn: 'S',
           poleColumn: 'T',
           tripModeColumn: 'U',
@@ -805,6 +819,31 @@
         const onDragWindow = () => postToHost('dragWindow');
         const onMinimize = () => postToHost('minimize');
         const onClose = () => postToHost('close');
+
+        // 状态栏折叠状态控制 (折叠后仅保留底部单行状态栏)
+        const isCollapsed = ref(false);
+
+        // 切换折叠与展开
+        const toggleCollapse = () => {
+          isCollapsed.value = !isCollapsed.value;
+          if (isCollapsed.value) {
+            // 折叠为 50px 单行悬浮条
+            postToHost('resizeWindow', { width: 960, height: 100 });
+          } else {
+            // 展开为 700px 完整窗口
+            postToHost('resizeWindow', { width: 960, height: 700 });
+          }
+        };
+
+        // 折叠状态下底部栏支持拖拽移动窗口
+        const onFooterMouseDown = (e) => {
+          if (isCollapsed.value) {
+            // 排除按钮与交互控件
+            if (!e.target.closest('.el-button') && !e.target.closest('.ctrl-btn-collapsed-close') && !e.target.closest('button')) {
+              onDragWindow();
+            }
+          }
+        };
 
         // 辅助方法: 将配置中的 mapping 字典同步转换为 mappingList 数组供前端稳定双向绑定
         const syncMappingToList = (cfg) => {
@@ -1222,10 +1261,14 @@
           runTestParse,
           saveConfig,
           resetConfig,
-          executeBatch
+          executeBatch,
+          isCollapsed,
+          toggleCollapse,
+          onFooterMouseDown
         };
       }
     }).use(ElementPlus).mount('#app');
   </script>
 </body>
+
 </html>

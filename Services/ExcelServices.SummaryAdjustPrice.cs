@@ -861,15 +861,25 @@ namespace ExcelAddInDemo
                     summarySheet.Range[$"E{startDataRow}:E{endDataRow}"].Interior.Color = softBlueColor;
                     summarySheet.Range[$"I{startDataRow}:I{endDataRow}"].Interior.Color = softBlueColor;
 
-                    // 设置各数值列的显示格式 --硬编码--
-                    summarySheet.Range[$"E{startDataRow}:E{endDataRow}"].NumberFormat = "General"; // 数量自适应通用格式
-                    summarySheet.Range[$"F{startDataRow}:G{endDataRow}"].NumberFormat = "#,##0.00"; // 销售单价与总价格式
-                    summarySheet.Range[$"I{startDataRow}:I{endDataRow}"].NumberFormat = "#,##0.00"; // 成本单价格式
-                    summarySheet.Range[$"J{startDataRow}:J{endDataRow}"].NumberFormat = "0.00"; // 报出系数格式
-                    summarySheet.Range[$"K{startDataRow}:K{endDataRow}"].NumberFormat = "#,##0.00"; // 本体表价格式
-                    summarySheet.Range[$"L{startDataRow}:L{endDataRow}"].NumberFormat = "0.####"; // 本体折扣格式
-                    summarySheet.Range[$"M{startDataRow}:M{endDataRow}"].NumberFormat = "#,##0.00"; // 附件表价格式
-                    summarySheet.Range[$"N{startDataRow}:N{endDataRow}"].NumberFormat = "0.####"; // 附件折扣格式
+                    // 设置各数值列的显示格式（双轨安全容错机制，兼容中英文 Excel） --硬编码--
+                    // E 列数量格式：优先使用中文本地化通用格式 G/通用格式，容错回退 General
+                    try { summarySheet.Range[$"E{startDataRow}:E{endDataRow}"].NumberFormatLocal = "G/通用格式"; }
+                    catch { try { summarySheet.Range[$"E{startDataRow}:E{endDataRow}"].NumberFormat = "General"; } catch { } }
+
+                    // F~G 列：销售单价与总价格式
+                    try { summarySheet.Range[$"F{startDataRow}:G{endDataRow}"].NumberFormat = "#,##0.00"; } catch { }
+                    // I 列：成本单价格式
+                    try { summarySheet.Range[$"I{startDataRow}:I{endDataRow}"].NumberFormat = "#,##0.00"; } catch { }
+                    // J 列：报出系数格式
+                    try { summarySheet.Range[$"J{startDataRow}:J{endDataRow}"].NumberFormat = "0.00"; } catch { }
+                    // K 列：本体表价格式
+                    try { summarySheet.Range[$"K{startDataRow}:K{endDataRow}"].NumberFormat = "#,##0.00"; } catch { }
+                    // L 列：本体折扣格式
+                    try { summarySheet.Range[$"L{startDataRow}:L{endDataRow}"].NumberFormat = "0.####"; } catch { }
+                    // M 列：附件表价格式
+                    try { summarySheet.Range[$"M{startDataRow}:M{endDataRow}"].NumberFormat = "#,##0.00"; } catch { }
+                    // N 列：附件折扣格式
+                    try { summarySheet.Range[$"N{startDataRow}:N{endDataRow}"].NumberFormat = "0.####"; } catch { }
 
                     // 写入底部合计行
                     int totalRow = endDataRow + 1;
@@ -882,13 +892,15 @@ namespace ExcelAddInDemo
                     summarySheet.Cells[totalRow, 5].Formula = $"=SUM(E{startDataRow}:E{endDataRow})";
                     summarySheet.Cells[totalRow, 5].Font.Bold = true;
                     summarySheet.Cells[totalRow, 5].HorizontalAlignment = -4108;
-                    summarySheet.Cells[totalRow, 5].NumberFormat = "General";
+                    // 合计行 E 列数量格式：优先使用中文本地化通用格式 G/通用格式，容错回退 General
+                    try { summarySheet.Cells[totalRow, 5].NumberFormatLocal = "G/通用格式"; }
+                    catch { try { summarySheet.Cells[totalRow, 5].NumberFormat = "General"; } catch { } }
 
                     // 销售总价合计公式
                     summarySheet.Cells[totalRow, 7].Formula = $"=SUM(G{startDataRow}:G{endDataRow})";
                     summarySheet.Cells[totalRow, 7].Font.Bold = true;
                     summarySheet.Cells[totalRow, 7].HorizontalAlignment = -4152;
-                    summarySheet.Cells[totalRow, 7].NumberFormat = "#,##0.00";
+                    try { summarySheet.Cells[totalRow, 7].NumberFormat = "#,##0.00"; } catch { }
 
                     // 设置表格全区域边框 (A4:P{totalRow}) --硬编码--
                     dynamic tableRange = summarySheet.Range[$"A4:P{totalRow}"];

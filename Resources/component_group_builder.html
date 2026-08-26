@@ -699,7 +699,6 @@
                     <el-option :value="1" label="跟随主控元件数量 (# 修饰符)"></el-option>
                     <el-option :value="2" label="自动按成组比例配比 (/ 计算组数)"></el-option>
                     <el-option :value="0" label="固定套数"></el-option>
-                    <el-option :value="3" label="所有匹配元件数量之和"></el-option>
                   </el-select>
                 </el-form-item>
               </el-col>
@@ -1525,11 +1524,36 @@
               let tag = n.elementName;
               if (n.mode === 1) tag = `-${tag}`;
               else if (n.mode === 2) tag = `${tag}#`;
+              if (n.propertyFilters && n.propertyFilters.length > 0) {
+                const pTags = n.propertyFilters.map(p => {
+                  if (!p.value) return '';
+                  const pName = p.propertyType === 'Current' ? '电流' : p.propertyType === 'Model' ? '型号' : p.propertyType === 'Poles' ? '极数' : '附件';
+                  const op = p.operator === '==' || p.operator === '=' ? '' : p.operator;
+                  return `${pName}:${op}${p.value}`;
+                }).filter(Boolean);
+                if (pTags.length > 0) tag += ` ${pTags.join(' ')}`;
+              }
               parts.push(tag);
+            } else if (n.mode === 3 && n.ratioItems && n.ratioItems.length > 0) {
+              parts.push(n.ratioItems.map(r => `${r.count}${r.elementName}`).join('/'));
             }
           });
           (rule.conditionTree.subGroups || []).forEach(g => {
-            const sub = (g.nodes || []).map(sn => sn.elementName).filter(Boolean);
+            const sub = (g.nodes || []).map(sn => {
+              let tag = sn.elementName;
+              if (sn.mode === 1) tag = `-${tag}`;
+              else if (sn.mode === 2) tag = `${tag}#`;
+              if (sn.propertyFilters && sn.propertyFilters.length > 0) {
+                const pTags = sn.propertyFilters.map(p => {
+                  if (!p.value) return '';
+                  const pName = p.propertyType === 'Current' ? '电流' : p.propertyType === 'Model' ? '型号' : p.propertyType === 'Poles' ? '极数' : '附件';
+                  const op = p.operator === '==' || p.operator === '=' ? '' : p.operator;
+                  return `${pName}:${op}${p.value}`;
+                }).filter(Boolean);
+                if (pTags.length > 0) tag += ` ${pTags.join(' ')}`;
+              }
+              return tag;
+            }).filter(Boolean);
             if (sub.length > 0) parts.push(`(${sub.join(' | ')})`);
           });
           return parts.length > 0 ? parts.join(' & ') : '未配置条件';

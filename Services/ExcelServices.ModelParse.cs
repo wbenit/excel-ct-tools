@@ -25,23 +25,12 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 若窗体已存在且未被销毁，则直接激活并带到最前
-                if (_modelParamParserForm != null && !_modelParamParserForm.IsDisposed)
-                {
-                    _modelParamParserForm.WindowState = System.Windows.Forms.FormWindowState.Normal;
-                    _modelParamParserForm.Activate();
-                    return;
-                }
-
-                // 实例化新窗体
-                _modelParamParserForm = new ModelParamParserForm();
-                // 窗体关闭时清空引用
-                _modelParamParserForm.FormClosed += (s, e) => _modelParamParserForm = null;
-                // 显示窗体
-                _modelParamParserForm.Show();
+                // 以标准非模态方式展示型号参数识别窗口 (挂载 Excel 主句柄并保持置顶交互)
+                ShowModelessForm(ref _modelParamParserForm, () => new ModelParamParserForm());
             }
             catch (Exception ex)
             {
+                // 弹出异常提示
                 System.Windows.Forms.MessageBox.Show($"打开型号参数识别窗口失败: {ex.Message}", "错误", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
             }
         }
@@ -94,27 +83,14 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 电流解析核心逻辑: 经历前置排除过滤 -> 收集所有规则候选 -> 纯数字兜底提取 -> 标称白名单校验 -> 根据最大/最小值择值
-        /// </summary>
-        /// <param name="rawModel">原始型号文本</param>
-        /// <param name="config">配置对象</param>
-        /// <param name="hitRuleTitle">命中的规则标题</param>
-        /// <returns>提取出的最终电流结果（如 100 或 100A）</returns>
-        public static string ParseCurrent(string rawModel, ModelParserConfig config, out string hitRuleTitle)
-        {
-            // 调用包含全部候选列表输出的重载版本
-            return ParseCurrent(rawModel, config, out hitRuleTitle, out _);
-        }
-
-        /// <summary>
-        /// 电流解析核心逻辑 (包含所有候选电流列表输出，供沙盒展示与消歧)
+        /// 电流解析核心逻辑: 提取出最小电流与最大电流 (支持区间 2.5-4A 分流及单值 100A 同值)
         /// </summary>
         /// <param name="rawModel">原始型号文本</param>
         /// <param name="config">配置对象</param>
         /// <param name="hitRuleTitle">命中的规则标题</param>
         /// <param name="candidateList">所有被成功提取并符合白名单的候选电流值</param>
-        /// <returns>提取出的最终电流结果</returns>
-        public static string ParseCurrent(string rawModel, ModelParserConfig config, out string hitRuleTitle, out List<string> candidateList)
+        /// <returns>提取出的最小电流与最大电流元组 (MinCurrent, MaxCurrent)</returns>
+        public static (string MinCurrent, string MaxCurrent) ParseCurrentMinMax(string rawModel, ModelParserConfig config, out string hitRuleTitle, out List<string> candidateList)
         {
             // 初始化命中规则输出变量
             hitRuleTitle = string.Empty;
@@ -122,7 +98,7 @@ namespace ExcelAddInDemo
             candidateList = new List<string>();
 
             // 校验输入字符串有效性
-            if (string.IsNullOrWhiteSpace(rawModel)) return string.Empty;
+            if (string.IsNullOrWhiteSpace(rawModel)) return (string.Empty, string.Empty);
 
             // 1. 前置必去项与负向排除过滤 (如将 100mA, 10kA, 220V 掩码，避免误提取为额定电流)
             string cleanText = MaskCurrentExclusions(rawModel, config.CurrentExcludeKeywords);
@@ -164,10 +140,10 @@ namespace ExcelAddInDemo
                 }
             }
 
-            // 若未找到任何合规的候选电流，返回空
+            // 若未找到任何合规的候选电流，返回空元组
             if (validCandidates.Count == 0)
             {
-                return string.Empty;
+                return (string.Empty, string.Empty);
             }
 
             // 填充输出的候选字符串列表
@@ -176,38 +152,51 @@ namespace ExcelAddInDemo
                 candidateList.Add(item.OriginalStr);
             }
 
-            // 4. 根据用户 Checkbox 勾选配置（取最大值还是最小值）决定最终输出
-            (double Value, string OriginalStr, string RuleTitle) chosen;
-            if (config.PreferMaxCurrent)
+            // 4. 计算最小电流与最大电流候选
+            var minItem = validCandidates[0];
+            var maxItem = validCandidates[0];
+            for (int i = 1; i < validCandidates.Count; i++)
             {
-                // 用户勾选: 取所有匹配到的候选电流中的【最大值】
-                chosen = validCandidates[0];
-                for (int i = 1; i < validCandidates.Count; i++)
+                // 寻找最小值
+                if (validCandidates[i].Value < minItem.Value)
                 {
-                    if (validCandidates[i].Value > chosen.Value)
-                    {
-                        chosen = validCandidates[i];
-                    }
+                    minItem = validCandidates[i];
                 }
-            }
-            else
-            {
-                // 用户未勾选: 取所有匹配到的候选电流中的【最小值】
-                chosen = validCandidates[0];
-                for (int i = 1; i < validCandidates.Count; i++)
+                // 寻找最大值
+                if (validCandidates[i].Value > maxItem.Value)
                 {
-                    if (validCandidates[i].Value < chosen.Value)
-                    {
-                        chosen = validCandidates[i];
-                    }
+                    maxItem = validCandidates[i];
                 }
             }
 
             // 记录命中的规则名称
-            hitRuleTitle = chosen.RuleTitle;
+            hitRuleTitle = minItem.RuleTitle;
 
             // 5. 格式化输出 (根据配置决定是否带 A)
-            return FormatCurrentOutput(chosen.OriginalStr, config.CurrentFormat);
+            string minFormatted = FormatCurrentOutput(minItem.OriginalStr, config.CurrentFormat);
+            string maxFormatted = FormatCurrentOutput(maxItem.OriginalStr, config.CurrentFormat);
+
+            return (minFormatted, maxFormatted);
+        }
+
+        /// <summary>
+        /// 兼容保留原 ParseCurrent 接口 (返回最小电流)
+        /// </summary>
+        public static string ParseCurrent(string rawModel, ModelParserConfig config, out string hitRuleTitle, out List<string> candidateList)
+        {
+            // 调用最小最大解析接口
+            var (minCur, _) = ParseCurrentMinMax(rawModel, config, out hitRuleTitle, out candidateList);
+            // 返回最小电流
+            return minCur;
+        }
+
+        /// <summary>
+        /// 兼容保留原单输出 ParseCurrent 接口
+        /// </summary>
+        public static string ParseCurrent(string rawModel, ModelParserConfig config, out string hitRuleTitle)
+        {
+            // 调用重载方法
+            return ParseCurrent(rawModel, config, out hitRuleTitle, out _);
         }
 
         /// <summary>
@@ -279,8 +268,11 @@ namespace ExcelAddInDemo
             result.Pole = ParsePoles(rawModel ?? string.Empty, config, out string hitPole);
             result.HitPoleRule = hitPole;
 
-            // 2. 执行电流流水线解析 (同时获取所有合法候选列表)
-            result.Current = ParseCurrent(rawModel ?? string.Empty, config, out string hitCurrent, out var candidateList);
+            // 2. 执行电流流水线解析 (分别提取最小电流与最大电流，同时获取所有合法候选列表)
+            var (minCur, maxCur) = ParseCurrentMinMax(rawModel ?? string.Empty, config, out string hitCurrent, out var candidateList);
+            result.MinCurrent = minCur;
+            result.MaxCurrent = maxCur;
+            result.Current = minCur; // 兼容旧字段
             result.HitCurrentRule = hitCurrent;
             result.CandidateCurrents = candidateList;
 
@@ -290,7 +282,7 @@ namespace ExcelAddInDemo
 
             // 综合评估解析结果状态
             bool hasPole = !string.IsNullOrWhiteSpace(result.Pole);
-            bool hasCur = !string.IsNullOrWhiteSpace(result.Current);
+            bool hasCur = !string.IsNullOrWhiteSpace(result.MinCurrent) || !string.IsNullOrWhiteSpace(result.MaxCurrent);
             bool hasTrip = !string.IsNullOrWhiteSpace(result.TripMode);
 
             // 三项均成功提取记为 Success (若未配置脱扣顺位则按两项判定)
@@ -349,7 +341,8 @@ namespace ExcelAddInDemo
 
                 // 规范化列名 (转为大写且去除空格)
                 string colSrc = string.IsNullOrWhiteSpace(config.SourceColumn) ? "C" : config.SourceColumn.Trim().ToUpper();
-                string colCur = string.IsNullOrWhiteSpace(config.CurrentColumn) ? "S" : config.CurrentColumn.Trim().ToUpper();
+                string colMinCur = string.IsNullOrWhiteSpace(config.MinCurrentColumn) ? string.Empty : config.MinCurrentColumn.Trim().ToUpper();
+                string colMaxCur = string.IsNullOrWhiteSpace(config.MaxCurrentColumn) ? string.Empty : config.MaxCurrentColumn.Trim().ToUpper();
                 string colPole = string.IsNullOrWhiteSpace(config.PoleColumn) ? "T" : config.PoleColumn.Trim().ToUpper();
                 string colTrip = string.IsNullOrWhiteSpace(config.TripModeColumn) ? "U" : config.TripModeColumn.Trim().ToUpper();
 
@@ -384,7 +377,8 @@ namespace ExcelAddInDemo
                     object[,] rawArray = ConvertTo2DArray(srcRange.Value2, rowCount);
 
                     // ==================== 2. 在内存中创建当前选区对应的目标二维数组 ====================
-                    object[,] currentArray = new object[rowCount, 1];
+                    object[,] minCurrentArray = new object[rowCount, 1];
+                    object[,] maxCurrentArray = new object[rowCount, 1];
                     object[,] poleArray = new object[rowCount, 1];
                     object[,] tripArray = new object[rowCount, 1];
 
@@ -398,24 +392,26 @@ namespace ExcelAddInDemo
                         // 若为空行则置空保留
                         if (string.IsNullOrWhiteSpace(rawModel))
                         {
-                            currentArray[i, 0] = string.Empty;
+                            minCurrentArray[i, 0] = string.Empty;
+                            maxCurrentArray[i, 0] = string.Empty;
                             poleArray[i, 0] = string.Empty;
                             tripArray[i, 0] = string.Empty;
                             continue;
                         }
 
-                        // 调用三通道流水线解析极数、电流与脱扣方式
+                        // 调用三通道流水线解析极数、最小/最大电流与脱扣方式
                         string pole = ParsePoles(rawModel, config, out _);
-                        string current = ParseCurrent(rawModel, config, out _);
+                        var (minCurrent, maxCurrent) = ParseCurrentMinMax(rawModel, config, out _, out _);
                         string tripMode = ParseTripMode(rawModel, config, out _);
 
                         // 填充内存二维数组
-                        currentArray[i, 0] = current;
+                        minCurrentArray[i, 0] = minCurrent;
+                        maxCurrentArray[i, 0] = maxCurrent;
                         poleArray[i, 0] = pole;
                         tripArray[i, 0] = tripMode;
 
                         // 统计识别成功与失败数
-                        if (!string.IsNullOrWhiteSpace(pole) && !string.IsNullOrWhiteSpace(current))
+                        if (!string.IsNullOrWhiteSpace(pole) && (!string.IsNullOrWhiteSpace(minCurrent) || !string.IsNullOrWhiteSpace(maxCurrent)))
                         {
                             successCount++;
                         }
@@ -426,14 +422,33 @@ namespace ExcelAddInDemo
                     }
 
                     // ==================== 3. 一次性将二维数组整块写回当前选区目标列 ====================
-                    dynamic curRange = activeSheet.Range[$"{colCur}{startRow}:{colCur}{endRow}"];
-                    curRange.Value2 = currentArray;
+                    // 写回最小电流列
+                    if (!string.IsNullOrWhiteSpace(colMinCur))
+                    {
+                        dynamic minCurRange = activeSheet.Range[$"{colMinCur}{startRow}:{colMinCur}{endRow}"];
+                        minCurRange.Value2 = minCurrentArray;
+                    }
 
-                    dynamic poleRange = activeSheet.Range[$"{colPole}{startRow}:{colPole}{endRow}"];
-                    poleRange.Value2 = poleArray;
+                    // 写回最大电流列 (若配置了独立列)
+                    if (!string.IsNullOrWhiteSpace(colMaxCur) && colMaxCur != colMinCur)
+                    {
+                        dynamic maxCurRange = activeSheet.Range[$"{colMaxCur}{startRow}:{colMaxCur}{endRow}"];
+                        maxCurRange.Value2 = maxCurrentArray;
+                    }
 
-                    dynamic tripRange = activeSheet.Range[$"{colTrip}{startRow}:{colTrip}{endRow}"];
-                    tripRange.Value2 = tripArray;
+                    // 写回极数列
+                    if (!string.IsNullOrWhiteSpace(colPole))
+                    {
+                        dynamic poleRange = activeSheet.Range[$"{colPole}{startRow}:{colPole}{endRow}"];
+                        poleRange.Value2 = poleArray;
+                    }
+
+                    // 写回脱扣方式列
+                    if (!string.IsNullOrWhiteSpace(colTrip))
+                    {
+                        dynamic tripRange = activeSheet.Range[$"{colTrip}{startRow}:{colTrip}{endRow}"];
+                        tripRange.Value2 = tripArray;
+                    }
                 }
 
                 // 检查选区内是否有有效数据行

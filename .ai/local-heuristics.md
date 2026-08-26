@@ -84,3 +84,11 @@
   4. **全作用域动态最大序号增量与彻底取消 Delete**：同时扫描 `targetWb.Names`、`activeSheet.Names` 与 B 列“箱柜X”提取 `maxK` 并分配 `cabinetK = maxK + 1`；彻底抹除代码中所有的 `Delete()` 盲目删除逻辑，由纯递增 `cabinetK` 保证定义名称唯一性，彻底解决旧名称被擦除的问题。
   5. **绝对禁用 Cell.Text 校验，改用 Cell.Value2 / Cell.Value 读取内存数据**：在 `ScreenUpdating = false` 下，读取单元格必须使用 `Cell.Value2` 或 `Cell.Value`，确保不受视口渲染暂停影响，精准解析 B 列 "箱柜X" 文本并正确计算增量序号 `maxK + 1`；同时搭配 `ExtractIndexFromName` 安全助手清洗包含引号/等号的 Name 字符串。
   6. **取消打开外部 templateWb，直接使用当前工作表 activeSheet 内部行复制**：由于项目工作簿本身即是由 CabinetTemplate.xlsx 复制建立，模板行原本就存在于当前工作表中。直接在 `activeSheet` 内部执行 `Rows.Copy()` 与 `Rows.Insert(-4121)`，无需打开任何外部文件，彻底根除跨工作簿句柄关闭丢弃定义名称的致命问题。
+
+### 13. 中文版 Excel COM 环境下 Range.NumberFormat = "General" 抛出 0x800A03EC 异常
+- **现象**：在生成汇总表或设置单元格格式时，Excel 抛出 `不能设置类 Range 的 NumberFormat 属性`（`COMException 0x800A03EC`）。
+- **原因**：在中文版 Excel / WPS 环境中，通用格式的本地化名称为 `"G/通用格式"`，直接为 `Range.NumberFormat` 赋值英文字符串 `"General"` 会被 Excel COM 解析器拒绝抛错。
+- **解决**：
+  1. 优先使用本地化属性 `range.NumberFormatLocal = "G/通用格式"`，并使用 try-catch 双轨回退 `range.NumberFormat = "General"`。
+  2. 对所有的 `NumberFormat` 样式设置语句均添加 try-catch 保护，避免因个别特殊版本格式解析失败导致整个业务流程中断。
+

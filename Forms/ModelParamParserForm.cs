@@ -75,11 +75,14 @@ namespace ExcelAddInDemo
             // 设为无边框样式
             this.FormBorderStyle = FormBorderStyle.None;
 
+            // 窗体强力置顶显示
+            this.TopMost = true;
+
             // 禁用原生最大化
             this.MaximizeBox = false;
 
-            // 启用最小化
-            this.MinimizeBox = true;
+            // 禁用最小化
+            this.MinimizeBox = false;
 
             // 设置背景填充色
             this.BackColor = Color.White;
@@ -270,6 +273,24 @@ namespace ExcelAddInDemo
                     // 8. 关闭窗口
                     case "close":
                         SafeInvoke(() => this.Close());
+                        break;
+
+                    // 9. 响应窗体尺寸调整指令 (支持折叠为单行状态栏或展开完整设置面板)
+                    case "resizeWindow":
+                        // 提取目标宽度，默认 960 像素
+                        int width = root.TryGetProperty("width", out var wElem) ? wElem.GetInt32() : 960;
+                        // 提取目标高度，默认 700 像素
+                        int height = root.TryGetProperty("height", out var hElem) ? hElem.GetInt32() : 700;
+                        // 调度至 UI 线程更新窗体尺寸
+                        SafeInvoke(() =>
+                        {
+                            // 判断尺寸是否有变动，避免无效重绘
+                            if (this.ClientSize.Width != width || this.ClientSize.Height != height)
+                            {
+                                // 设置窗体工作区尺寸
+                                this.ClientSize = new Size(width, height);
+                            }
+                        });
                         break;
                 }
             }

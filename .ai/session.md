@@ -238,4 +238,41 @@
       - **业务与架构**：
         1. 将 [Services/ExcelServices.SummaryAdjustPrice.cs](file:///d:/code/excel-ct-tools/Services/ExcelServices.SummaryAdjustPrice.cs) 中数据行 E 列及合计行 E 列的数量格式由 `"0.##"` 改为通用格式 `"General"`；
         2. 根除整数显示为 `1.` 的尾随小数点渲染问题，同时自适应支持小数数量展示。
+  42. **拉取远程仓库所有最新代码（已完成）**：
+      - **业务与架构**：
+        1. 在 [excel-ct-tools](file:///d:/code/excel-ct-tools) 中执行 `git pull --all`，成功拉取远程 `origin/main`（提交 `61eb768 优化电流 脱扣方式`，包含 `ModelParserConfig.cs`、`model_param_parser.html`、`ExcelServices.ModelParse.cs` 更新）；
+        2. 在 [cad-net_1](file:///d:/code/cad-net_1) 中执行 `git pull --all`，状态保持最新（`Already up to date`）；
+        3. 执行 `dotnet build` 编译验证通过（0 错误）。
+  43. **修复汇总调价生成元件汇总表时 NumberFormat 中文 Excel 抛错 Bug（已修复）**：
+      - **业务与架构**：
+        1. 根因定位：中文版 Excel COM 接口不识别英文字符串 `"General"`，直接赋值 `Range.NumberFormat = "General"` 会抛出 `COMException: 不能设置类 Range 的 NumberFormat 属性`；
+        2. 在 [Services/ExcelServices.SummaryAdjustPrice.cs](file:///d:/code/excel-ct-tools/Services/ExcelServices.SummaryAdjustPrice.cs) 中对数据行与合计行 E 列数量格式升级为双轨容错机制（优先 `NumberFormatLocal = "G/通用格式"`，回退 `NumberFormat = "General"`）；
+        3. 为全部单价、总价、折扣、表价等 `NumberFormat` 样式赋值语句增加 try-catch 保护，彻底消除格式解析异常导致中断生成的问题。
+  44. **型号参数识别设置窗口增加底部折叠箭头与单行状态栏悬浮（已落地）**：
+      - **业务与架构**：
+        1. 在 [Resources/model_param_parser.html](file:///d:/code/excel-ct-tools/Resources/model_param_parser.html) 底部操作栏左侧增加折叠/展开箭头切换按钮（圆形 Element Plus 图标按钮，绿蓝相间主题 `#009688`）；
+        2. 实现 `isCollapsed` 响应式状态控制：折叠时隐藏顶部标题栏与主体设置面板（`v-show="!isCollapsed"`），仅保留最下方状态栏（包含状态提示、恢复默认、保存配置、立即识别与快捷关闭按钮），并支持拖拽悬浮于 Excel 视口上方；
+        3. 在 [Forms/ModelParamParserForm.cs](file:///d:/code/excel-ct-tools/Forms/ModelParamParserForm.cs) 的 `OnWebMessageReceived` 中增加 `resizeWindow` 消息响应分支，在折叠与展开之间平滑联动切换窗体几何尺寸。
+  45. **型号参数识别设置窗口置顶显示与去除最小化按钮（已落地）**：
+      - **业务与架构**：
+        1. 在 [Forms/ModelParamParserForm.cs](file:///d:/code/excel-ct-tools/Forms/ModelParamParserForm.cs) 的 `InitializeFormProperties` 中设置 `this.TopMost = true;` 并在 [Services/ExcelServices.ModelParse.cs](file:///d:/code/excel-ct-tools/Services/ExcelServices.ModelParse.cs) 中通过 `ShowModelessForm` 挂载 Excel 主句柄置顶显示；
+        2. 设置 `this.MinimizeBox = false;` 禁用系统级最小化；
+        3. 在 [Resources/model_param_parser.html](file:///d:/code/excel-ct-tools/Resources/model_param_parser.html) 的标题栏中移除最小化按钮，仅保留关闭按钮。
+  47. **二次元件组主控元器件 (#) 与成组比例项 (/) 动态资源池精准扣减重构（已落地）**：
+      - **业务与架构**：
+        1. 在 [Models/ComponentGroupRuleModels.cs](file:///d:/code/excel-ct-tools/Models/ComponentGroupRuleModels.cs) 中升级 `PipelineCompiler.FormatNodeSummary`，将节点配置的属性过滤器（电流、型号、极数、附件）完整格式化序列化进单行摘要文本（如 `双电源# 附件:1`）；
+        2. 重构 `PipelineEvaluator.EvaluateConditionGroup` 为基于强类型条件树直接递归求值：
+           - **主控数量 (#)**：按生成套数（`finalQty`）精准从资源池中扣减主控元器件库存，彻底解决固定套数策略下的过度全额扣除问题；
+           - **成组比例 (/)**：严格按 `finalQty * baseRatio` 扣减各比例成员；
+           - **OR 分支组**：实现首个分支命中即锁定扣减（Short-Circuit OR 互斥匹配），彻底杜绝多候选分支并发时的误扣漏扣；
+           - **属性过滤扣减**：支持基于电流、型号、极数、附件等属性过滤维度的精准元器件匹配与扣减；
+        3. 在 [Resources/component_group_builder.html](file:///d:/code/excel-ct-tools/Resources/component_group_builder.html) 中同步升级前端 `getRuleSummary`，使左侧规则卡片完整展示属性过滤标签；从套数策略下拉列表中移除未启用的“所有匹配元件数量之和”选项，精简为“跟随主控 (#)”、“自动成组比例 (/)”和“固定套数”3 种成熟策略；
+        4. 优化沙盒测试与批量生成日志：清晰呈现主控元器件与比例元件的消耗件数与池剩余件数。
+      - **构建状态**：`ExcelAddInDemo.csproj` 编译构建通过（0 错误）。
+
+
+
+
+
+
 

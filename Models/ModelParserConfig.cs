@@ -38,8 +38,18 @@ namespace ExcelAddInDemo.Models
         // 默认源数据型号所在列 (如 C 列)
         public string SourceColumn { get; set; } = "C"; // --硬编码-- 默认源型号列
 
-        // 默认提取后电流输出的目标列 (如 S 列)
-        public string CurrentColumn { get; set; } = "S"; // --硬编码-- 默认电流输出列
+        // 默认提取后最小电流输出的目标列 (如 S 列)
+        public string MinCurrentColumn { get; set; } = "S"; // --硬编码-- 默认最小电流输出列
+
+        // 默认提取后最大电流输出的目标列 (可自由配置如 S 或 T 列，留空则不写入)
+        public string MaxCurrentColumn { get; set; } = string.Empty; // --硬编码-- 默认最大电流输出列
+
+        // 兼容性字段：电流输出列 (自动重定向至 MinCurrentColumn)
+        public string CurrentColumn
+        {
+            get => MinCurrentColumn;
+            set => MinCurrentColumn = value;
+        }
 
         // 默认提取后极数输出的目标列 (如 T 列)
         public string PoleColumn { get; set; } = "T"; // --硬编码-- 默认极数输出列
@@ -142,12 +152,12 @@ namespace ExcelAddInDemo.Models
             // 构造塑壳脱扣代号默认对照表 (区分大小写)
             var mapping = new Dictionary<string, string>
             {
-                { "/3300", "3P" }, // --硬编码-- 正泰/德力西塑壳 3极
-                { "/4300", "4P" }, // --硬编码-- 4极
-                { "/3320", "3P" }, // --硬编码-- 3极带辅助
-                { "/4320", "4P" }, // --硬编码-- 4极带辅助
-                { "/33002", "3P" }, // --硬编码-- 电操3极
-                { "/43002", "4P" }, // --硬编码-- 电操4极
+                { "3300", "3P" }, // --硬编码-- 正泰/德力西塑壳 3极
+                { "4300", "4P" }, // --硬编码-- 4极
+                { "3320", "3P" }, // --硬编码-- 3极带辅助
+                { "4320", "4P" }, // --硬编码-- 4极带辅助
+                { "33002", "3P" }, // --硬编码-- 电操3极
+                { "43002", "4P" }, // --硬编码-- 电操4极
                 { " 3P", "3P" },
                 { " 4P", "4P" }
             };
@@ -213,17 +223,11 @@ namespace ExcelAddInDemo.Models
             // 3. 初始化脱扣方式多级顺位流水线 (输出标准简写代号，区分大小写)
             var gbTripMapping = new Dictionary<string, string>
             {
-                { "/3300", "TM" },   // --硬编码-- 3极热磁复式
-                { "/4300", "TM" },   // --硬编码-- 4极热磁复式
-                { "/3320", "TM" },   // --硬编码-- 3极带辅助热磁
-                { "/4320", "TM" },   // --硬编码-- 4极带辅助热磁
-                { "/33002", "TM" },  // --硬编码-- 3极电操热磁
-                { "/43002", "TM" },  // --硬编码-- 4极电操热磁
-                { "/3200", "MA" },   // --硬编码-- 3极单电磁
-                { "/4200", "MA" },   // --硬编码-- 4极单电磁
-                { "/3220", "MA" },   // --硬编码-- 3极单电磁带辅助
-                { "/3400", "Elec" }, // --硬编码-- 3极电子式
-                { "/4400", "Elec" }  // --硬编码-- 4极电子式
+                { "33002", "D" },  // --硬编码-- 3极电操热磁
+                { "43002", "D" },  // --硬编码-- 4极电操热磁
+                { "3200", "MA" },   // --硬编码-- 3极单电磁
+                { "4200", "MA" },   // --硬编码-- 4极单电磁
+                { "32002", "DMA" }   // --硬编码-- 3极单电磁带辅助
             };
 
             cfg.TripModePipeline.Add(new PipelineRuleItem
@@ -237,14 +241,7 @@ namespace ExcelAddInDemo.Models
 
             var brandTripMapping = new Dictionary<string, string>
             {
-                { "TMD", "TMD" },         // --硬编码-- 施耐德/ABB 配电热磁
-                { "TMA", "TMA" },         // --硬编码-- 可调热磁
-                { "TM", "TM" },           // --硬编码-- 热磁式
-                { "MicroLogic", "Elec" }, // --硬编码-- 施耐德电子脱扣
-                { "Ekip", "Elec" },       // --硬编码-- ABB 电子脱扣
-                { "ETS", "Elec" },        // --硬编码-- 电子式
-                { " MA", "MA" },          // --硬编码-- 单磁瞬时
-                { "-MA", "MA" }
+                { "MA", "DMA" } // --硬编码-- 可调热磁
             };
 
             cfg.TripModePipeline.Add(new PipelineRuleItem
@@ -280,7 +277,13 @@ namespace ExcelAddInDemo.Models
         // 解析提取出的极数
         public string Pole { get; set; } = string.Empty;
 
-        // 解析提取出的电流
+        // 解析提取出的最小电流 (如 2.5 或 100)
+        public string MinCurrent { get; set; } = string.Empty;
+
+        // 解析提取出的最大电流 (如 4 或 100)
+        public string MaxCurrent { get; set; } = string.Empty;
+
+        // 兼容性字段：电流 (默认与 MinCurrent 一致)
         public string Current { get; set; } = string.Empty;
 
         // 解析提取出的脱扣方式简写代号 (如 TM, C, D, MA, Elec, LE)
