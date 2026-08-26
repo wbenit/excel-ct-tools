@@ -273,21 +273,26 @@
         
         <!-- 一行紧凑排列，字号小，彻底杜绝换行 -->
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: nowrap;">
-          <div style="display: flex; align-items: center; gap: 6px;">
+          <div style="display: flex; align-items: center; gap: 4px;">
             <span class="label-text">源型号列:</span>
-            <el-input v-model="config.sourceColumn" placeholder="C" size="small" style="width: 55px; text-transform: uppercase;"></el-input>
+            <el-input v-model="config.sourceColumn" placeholder="C" size="small" style="width: 50px; text-transform: uppercase;"></el-input>
           </div>
-          <div style="display: flex; align-items: center; gap: 6px;">
+          <div style="display: flex; align-items: center; gap: 4px;">
             <span class="label-text">电流输出列:</span>
-            <el-input v-model="config.currentColumn" placeholder="S" size="small" style="width: 55px; text-transform: uppercase;"></el-input>
+            <el-input v-model="config.currentColumn" placeholder="S" size="small" style="width: 50px; text-transform: uppercase;"></el-input>
           </div>
-          <div style="display: flex; align-items: center; gap: 6px;">
+          <div style="display: flex; align-items: center; gap: 4px;">
             <span class="label-text">极数输出列:</span>
-            <el-input v-model="config.poleColumn" placeholder="T" size="small" style="width: 55px; text-transform: uppercase;"></el-input>
+            <el-input v-model="config.poleColumn" placeholder="T" size="small" style="width: 50px; text-transform: uppercase;"></el-input>
           </div>
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <span class="label-text">起始数据行:</span>
-            <el-input-number v-model="config.startRow" :min="1" :max="10000" size="small" style="width: 90px;"></el-input-number>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <span class="label-text">脱扣输出列:</span>
+            <el-input v-model="config.tripModeColumn" placeholder="U" size="small" style="width: 50px; text-transform: uppercase;"></el-input>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <span style="font-size: 11px; color: #009688; background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 3px 8px; border-radius: 4px; font-weight: 500; white-space: nowrap;">
+              <i class="fa-solid fa-crosshairs" style="margin-right: 4px;"></i>范围: 当前选中区域
+            </span>
           </div>
         </div>
 
@@ -404,10 +409,10 @@
               <span>包含代号 ➔ 映射输出极数对照表:</span>
               <el-link type="primary" :underline="false" style="font-size: 11px;" @click="addMappingRow(rule)">+ 添加映射行</el-link>
             </div>
-            <div v-for="(val, key) in rule.mapping" :key="key" class="mapping-row">
-              <el-input :model-value="key" size="small" placeholder="如 /3300" style="width: 120px;" @change="(newKey) => updateMappingKey(rule, key, newKey)"></el-input>
+            <div v-for="(item, itemIdx) in (rule.mappingList || [])" :key="item.id || itemIdx" class="mapping-row">
+              <el-input v-model="item.code" size="small" placeholder="如 /3300" style="width: 120px;"></el-input>
               <span style="font-size: 12px; color: #94a3b8;">➔</span>
-              <el-select :model-value="val" size="small" style="width: 90px;" @change="(newVal) => rule.mapping[key] = newVal">
+              <el-select v-model="item.pole" size="small" style="width: 90px;">
                 <el-option label="1P" value="1P"></el-option>
                 <el-option label="2P" value="2P"></el-option>
                 <el-option label="3P" value="3P"></el-option>
@@ -415,7 +420,7 @@
                 <el-option label="1P+N" value="1P+N"></el-option>
                 <el-option label="3P+N" value="3P+N"></el-option>
               </el-select>
-              <el-button type="danger" link size="small" @click="deleteMappingRow(rule, key)"><i class="fa-solid fa-xmark"></i></el-button>
+              <el-button type="danger" link size="small" @click="deleteMappingRow(rule, itemIdx)"><i class="fa-solid fa-xmark"></i></el-button>
             </div>
           </div>
         </div>
@@ -574,13 +579,97 @@
             </el-button>
           </div>
         </div>
+
+        <!-- 多电流及区间匹配策略 (最大值 / 最小值选择) -->
+        <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed #e2e8f0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 12px; color: #475569; font-weight: 600;">⚖️ 多电流/区间匹配策略:</span>
+            <el-checkbox v-model="config.preferMaxCurrent">
+              {{ config.preferMaxCurrent ? '匹配多个电流或区间时取【最大值】' : '匹配多个电流或区间时取【最小值】' }}
+            </el-checkbox>
+          </div>
+          <span style="font-size: 11px; color: #94a3b8;">(勾选时取最大值如 125A/4A，未勾选取最小值如 100A/2.5A)</span>
+        </div>
       </div>
 
-      <!-- 4. 实时沙盒即时测试卡片 -->
+      <!-- 4. 脱扣方式 (Trip Mode) 识别通道 (排除 ➔ 顺位流水线 ➔ 简写代号映射) -->
+      <div class="config-card">
+        <div class="card-header">
+          <div class="card-title">
+            <i class="fa-solid fa-sliders"></i>
+            <span>4. 脱扣方式 (Trip Mode) 识别通道 (输出简写代号：TM / C / D / MA / Elec / LE 等)</span>
+          </div>
+          <el-button type="primary" size="small" plain @click="addTripPipelineItem">
+            <i class="fa-solid fa-plus" style="margin-right: 4px;"></i>添加脱扣顺位
+          </el-button>
+        </div>
+
+        <!-- 脱扣方式多级顺位流水线列表 -->
+        <div v-for="(rule, index) in config.tripModePipeline" :key="rule.id" class="pipeline-item">
+          <div class="pipeline-header">
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
+              <span class="order-badge">第 {{ index + 1 }} 顺位</span>
+              <el-select v-model="rule.mode" size="small" style="width: 250px;" @change="onTripModeChange(rule)">
+                <el-option label="特征/代号映射表 (如 /3300->TM)" value="CodeMapping"></el-option>
+                <el-option label="微断脱扣特性曲线 (提取 C/D/B/K/Z)" value="CurveLetter"></el-option>
+                <el-option label="固定脱扣方式 (直接指定)" value="FixedValue"></el-option>
+                <el-option label="自定义正则表达式 (高级匹配)" value="CustomRegex"></el-option>
+              </el-select>
+              
+              <!-- 固定值输入框 -->
+              <el-input
+                v-if="rule.mode === 'FixedValue'"
+                v-model="rule.fixedValue"
+                placeholder="固定简写(如 TM, C)"
+                size="small"
+                style="width: 130px;"
+              ></el-input>
+
+              <!-- 自定义正则输入框 -->
+              <el-input
+                v-if="rule.mode === 'CustomRegex'"
+                v-model="rule.customRegex"
+                placeholder="正则(如 (?<trip>TM|TMD|Elec))"
+                size="small"
+                style="width: 210px;"
+              ></el-input>
+            </div>
+            
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <el-switch v-model="rule.enabled" size="small" active-text="启用"></el-switch>
+              <el-button circle size="small" :disabled="index === 0" title="上移顺位" @click="moveTripRule(index, -1)">
+                <i class="fa-solid fa-arrow-up"></i>
+              </el-button>
+              <el-button circle size="small" :disabled="index === config.tripModePipeline.length - 1" title="下移顺位" @click="moveTripRule(index, 1)">
+                <i class="fa-solid fa-arrow-down"></i>
+              </el-button>
+              <el-button circle size="small" type="danger" plain title="删除此顺位" @click="deleteTripRule(index)">
+                <i class="fa-solid fa-trash-can"></i>
+              </el-button>
+            </div>
+          </div>
+
+          <!-- 代号对照表子模块 (支持双向绑定自由编辑代号与简写) -->
+          <div v-if="rule.mode === 'CodeMapping'" class="mapping-table">
+            <div style="font-size: 11px; color: #64748b; margin-bottom: 6px; display: flex; justify-content: space-between;">
+              <span>包含特征代号 ➔ 映射输出脱扣简写对照表:</span>
+              <el-link type="primary" :underline="false" style="font-size: 11px;" @click="addTripMappingRow(rule)">+ 添加映射行</el-link>
+            </div>
+            <div v-for="(item, itemIdx) in (rule.mappingList || [])" :key="item.id || itemIdx" class="mapping-row">
+              <el-input v-model="item.code" size="small" placeholder="如 /3300 或 TMD" style="width: 130px;"></el-input>
+              <span style="font-size: 12px; color: #94a3b8;">➔</span>
+              <el-input v-model="item.pole" size="small" placeholder="如 TM, Elec, C" style="width: 110px;"></el-input>
+              <el-button type="danger" link size="small" @click="deleteTripMappingRow(rule, itemIdx)"><i class="fa-solid fa-xmark"></i></el-button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. 实时沙盒即时测试卡片 -->
       <div class="sandbox-card">
         <div class="card-title" style="margin-bottom: 8px;">
           <i class="fa-solid fa-vial"></i>
-          <span>4. 实时沙盒即时测试 (Live Sandbox)</span>
+          <span>5. 实时沙盒即时测试 (Live Sandbox)</span>
         </div>
         <div style="display: flex; gap: 8px;">
           <el-input v-model="testModelText" placeholder="在此输入测试型号，如 NXBLE-40 1P+N C16 0.03A 4.5kA" clearable @keyup.enter="runTestParse">
@@ -592,32 +681,45 @@
         <!-- 快速测试样例标签 -->
         <div style="margin-top: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
           <span style="font-size: 11px; color: #0f766e;">快速填入样例:</span>
-          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('NXBLE-40 1P+N C16 0.03A 4.5kA')">1P+N漏电断路器</el-tag>
-          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('NM1-125S/3300 100A')">塑壳 3300 100A</el-tag>
-          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('iC65N-3P-C25A 30mA 6kA')">微断 3P 25A (含30mA/6kA)</el-tag>
-          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('ABC-99/3300 100A')">含非标数字99 (避开99)</el-tag>
-          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('GV2-M08C (2.5-4A)')">电机保护器 2.5-4A</el-tag>
+          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('NXBLE-40 1P+N C16 0.03A 4.5kA')">1P+N微断 C16 (C)</el-tag>
+          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('NM1-125S/3300 100A')">塑壳 3300 100A (TM)</el-tag>
+          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('iC65N-3P-C25A 30mA 6kA')">微断 3P C25A (C)</el-tag>
+          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('NXB-63 D20 3P')">微断 D曲线 (D)</el-tag>
+          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('NSX250F MicroLogic 2.2 160A')">电子脱扣 160A (Elec)</el-tag>
+          <el-tag size="small" style="cursor: pointer;" @click="setTestSample('CDM1-225/3200 160A')">单磁脱扣 160A (MA)</el-tag>
         </div>
 
         <!-- 测试回显结果面板 -->
-        <div v-if="testResult" class="sandbox-result">
-          <div class="result-item">
-            <span class="result-label">极数识别结果</span>
-            <span class="result-value">{{ testResult.pole || '未识别' }}</span>
-            <el-tag v-if="testResult.hitPoleRule" size="small" type="info">{{ testResult.hitPoleRule }}</el-tag>
+        <div v-if="testResult" class="sandbox-result" style="flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: center; justify-content: space-around; width: 100%;">
+            <div class="result-item">
+              <span class="result-label">极数识别结果</span>
+              <span class="result-value">{{ testResult.pole || '未识别' }}</span>
+              <el-tag v-if="testResult.hitPoleRule" size="small" type="info">{{ testResult.hitPoleRule }}</el-tag>
+            </div>
+            <el-divider direction="vertical" style="height: 36px;"></el-divider>
+            <div class="result-item">
+              <span class="result-label">电流识别结果</span>
+              <span class="result-value">{{ testResult.current || '未识别' }}</span>
+              <el-tag v-if="testResult.hitCurrentRule" size="small" type="info">{{ testResult.hitCurrentRule }}</el-tag>
+            </div>
+            <el-divider direction="vertical" style="height: 36px;"></el-divider>
+            <div class="result-item">
+              <span class="result-label">脱扣方式结果</span>
+              <span class="result-value">{{ testResult.tripMode || '未识别' }}</span>
+              <el-tag v-if="testResult.hitTripModeRule" size="small" type="info">{{ testResult.hitTripModeRule }}</el-tag>
+            </div>
+            <el-divider direction="vertical" style="height: 36px;"></el-divider>
+            <div class="result-item">
+              <span class="result-label">综合匹配状态</span>
+              <el-tag v-if="testResult.status === 'Success'" type="success" effect="dark">🟢 完全匹配</el-tag>
+              <el-tag v-else-if="testResult.status === 'Partial'" type="warning" effect="dark">🟡 部分匹配</el-tag>
+              <el-tag v-else type="danger" effect="dark">🔴 未能匹配</el-tag>
+            </div>
           </div>
-          <el-divider direction="vertical" style="height: 36px;"></el-divider>
-          <div class="result-item">
-            <span class="result-label">电流识别结果</span>
-            <span class="result-value">{{ testResult.current || '未识别' }}</span>
-            <el-tag v-if="testResult.hitCurrentRule" size="small" type="info">{{ testResult.hitCurrentRule }}</el-tag>
-          </div>
-          <el-divider direction="vertical" style="height: 36px;"></el-divider>
-          <div class="result-item">
-            <span class="result-label">综合匹配状态</span>
-            <el-tag v-if="testResult.status === 'Success'" type="success" effect="dark">🟢 完全匹配</el-tag>
-            <el-tag v-else-if="testResult.status === 'Partial'" type="warning" effect="dark">🟡 部分匹配</el-tag>
-            <el-tag v-else type="danger" effect="dark">🔴 未能匹配</el-tag>
+          <!-- 多候选提示条 -->
+          <div v-if="testResult.candidateCurrents && testResult.candidateCurrents.length > 1" style="font-size: 11px; color: #0284c7; background-color: #f0f9ff; padding: 4px 10px; border-radius: 4px; width: 95%; text-align: center;">
+            <i class="fa-solid fa-circle-info" style="margin-right: 4px;"></i>检测到多个有效候选电流: [ {{ testResult.candidateCurrents.join('A, ') }}A ]，已按策略择取 <strong>{{ testResult.current }}</strong>
           </div>
         </div>
       </div>
@@ -627,7 +729,7 @@
     <div class="footer-bar">
       <div style="font-size: 12px; color: #64748b;">
         <span v-if="batchStatusMsg"><i class="fa-solid fa-circle-info" style="color: #009688; margin-right: 4px;"></i>{{ batchStatusMsg }}</span>
-        <span v-else>💡 提示：点击“立即识别”将一次性内存极速回填至当前 Excel 表</span>
+        <span v-else>💡 提示：点击“立即识别”将仅针对 Excel 当前选中的行区域进行二维数组极速回填</span>
       </div>
       <div style="display: flex; gap: 10px;">
         <el-button @click="resetConfig"><i class="fa-solid fa-rotate-left" style="margin-right: 4px;"></i>恢复默认</el-button>
@@ -649,6 +751,7 @@
           sourceColumn: 'C',
           currentColumn: 'S',
           poleColumn: 'T',
+          tripModeColumn: 'U',
           startRow: 2,
           processRangeMode: 'AllValid',
           poleExcludeKeywords: ['IP', 'DPN', 'PF', 'PT', 'PIN'],
@@ -660,7 +763,12 @@
           currentAllowedValues: ['1', '2', '6', '10', '16', '20', '25', '32', '40', '50', '63', '80', '100', '125', '160', '200', '250', '400', '630'],
           enableStrictCurrentWhitelist: true,
           currentPipeline: [],
-          currentFormat: 'NumberOnly'
+          currentFormat: 'NumberOnly',
+          preferMaxCurrent: true,
+          tripModeExcludeKeywords: [],
+          tripModeAllowedValues: ['TM', 'TMD', 'TMA', 'MA', 'Elec', 'C', 'D', 'B', 'K', 'Z', 'LE'],
+          enableStrictTripModeWhitelist: false,
+          tripModePipeline: []
         });
 
         // 界面状态与测试数据
@@ -698,6 +806,94 @@
         const onMinimize = () => postToHost('minimize');
         const onClose = () => postToHost('close');
 
+        // 辅助方法: 将配置中的 mapping 字典同步转换为 mappingList 数组供前端稳定双向绑定
+        const syncMappingToList = (cfg) => {
+          if (cfg) {
+            // 极数映射同步
+            if (cfg.polePipeline) {
+              cfg.polePipeline.forEach(rule => {
+                if (rule.mode === 'CodeMapping') {
+                  rule.mappingList = [];
+                  if (rule.mapping && typeof rule.mapping === 'object') {
+                    Object.keys(rule.mapping).forEach((key, idx) => {
+                      rule.mappingList.push({
+                        id: `${Date.now()}_pole_${idx}_${Math.random().toString(36).substr(2, 4)}`,
+                        code: key,
+                        pole: rule.mapping[key] || '3P'
+                      });
+                    });
+                  }
+                  if (rule.mappingList.length === 0) {
+                    rule.mappingList = [
+                      { id: '1', code: '/3300', pole: '3P' },
+                      { id: '2', code: '/4300', pole: '4P' }
+                    ];
+                  }
+                }
+              });
+            }
+            // 脱扣方式映射同步
+            if (cfg.tripModePipeline) {
+              cfg.tripModePipeline.forEach(rule => {
+                if (rule.mode === 'CodeMapping') {
+                  rule.mappingList = [];
+                  if (rule.mapping && typeof rule.mapping === 'object') {
+                    Object.keys(rule.mapping).forEach((key, idx) => {
+                      rule.mappingList.push({
+                        id: `${Date.now()}_trip_${idx}_${Math.random().toString(36).substr(2, 4)}`,
+                        code: key,
+                        pole: rule.mapping[key] || 'TM'
+                      });
+                    });
+                  }
+                }
+              });
+            }
+          }
+        };
+
+        // 辅助方法: 将前端 mappingList 序列化回 C# 识别的 Dictionary<string, string> mapping
+        const getSerializableConfig = () => {
+          const cloned = JSON.parse(JSON.stringify(config));
+          // 极数序列化
+          if (cloned.polePipeline) {
+            cloned.polePipeline.forEach(rule => {
+              if (rule.mode === 'CodeMapping') {
+                const dict = {};
+                if (Array.isArray(rule.mappingList)) {
+                  rule.mappingList.forEach(item => {
+                    const cleanCode = (item.code || '').trim();
+                    if (cleanCode) {
+                      dict[cleanCode] = item.pole || '3P';
+                    }
+                  });
+                }
+                rule.mapping = dict;
+                delete rule.mappingList;
+              }
+            });
+          }
+          // 脱扣方式序列化
+          if (cloned.tripModePipeline) {
+            cloned.tripModePipeline.forEach(rule => {
+              if (rule.mode === 'CodeMapping') {
+                const dict = {};
+                if (Array.isArray(rule.mappingList)) {
+                  rule.mappingList.forEach(item => {
+                    const cleanCode = (item.code || '').trim();
+                    if (cleanCode) {
+                      dict[cleanCode] = item.pole || 'TM';
+                    }
+                  });
+                }
+                rule.mapping = dict;
+                delete rule.mappingList;
+              }
+            });
+          }
+          return cloned;
+        };
+
         // 极数顺位管理
         const addPolePipelineItem = () => {
           config.polePipeline.push({
@@ -706,6 +902,7 @@
             enabled: true,
             mode: 'FindBeforeP',
             mapping: {},
+            mappingList: [],
             fixedValue: '',
             customRegex: ''
           });
@@ -724,25 +921,29 @@
         };
 
         const onPoleModeChange = (rule) => {
-          if (rule.mode === 'CodeMapping' && (!rule.mapping || Object.keys(rule.mapping).length === 0)) {
-            rule.mapping = { '/3300': '3P', '/4300': '4P' };
+          if (rule.mode === 'CodeMapping') {
+            if (!rule.mappingList || rule.mappingList.length === 0) {
+              rule.mappingList = [
+                { id: '1', code: '/3300', pole: '3P' },
+                { id: '2', code: '/4300', pole: '4P' }
+              ];
+            }
           }
         };
 
         const addMappingRow = (rule) => {
-          if (!rule.mapping) rule.mapping = {};
-          rule.mapping['/newCode'] = '3P';
+          if (!rule.mappingList) rule.mappingList = [];
+          rule.mappingList.push({
+            id: `${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+            code: '',
+            pole: '3P'
+          });
         };
 
-        const deleteMappingRow = (rule, key) => {
-          delete rule.mapping[key];
-        };
-
-        const updateMappingKey = (rule, oldKey, newKey) => {
-          if (!newKey || oldKey === newKey) return;
-          const val = rule.mapping[oldKey];
-          delete rule.mapping[oldKey];
-          rule.mapping[newKey] = val;
+        const deleteMappingRow = (rule, itemIdx) => {
+          if (rule.mappingList) {
+            rule.mappingList.splice(itemIdx, 1);
+          }
         };
 
         // 电流顺位管理
@@ -768,6 +969,63 @@
           const temp = config.currentPipeline[index];
           config.currentPipeline[index] = config.currentPipeline[target];
           config.currentPipeline[target] = temp;
+        };
+
+        // 脱扣方式顺位管理
+        const addTripPipelineItem = () => {
+          config.tripModePipeline.push({
+            id: Date.now().toString(),
+            title: '特征/代号映射表 (如 /3300->TM)',
+            enabled: true,
+            mode: 'CodeMapping',
+            mapping: {},
+            mappingList: [
+              { id: '1', code: '/3300', pole: 'TM' },
+              { id: '2', code: '/4300', pole: 'TM' },
+              { id: '3', code: '/3200', pole: 'MA' },
+              { id: '4', code: '/3400', pole: 'Elec' }
+            ],
+            fixedValue: '',
+            customRegex: ''
+          });
+        };
+
+        const deleteTripRule = (index) => {
+          config.tripModePipeline.splice(index, 1);
+        };
+
+        const moveTripRule = (index, dir) => {
+          const target = index + dir;
+          if (target < 0 || target >= config.tripModePipeline.length) return;
+          const temp = config.tripModePipeline[index];
+          config.tripModePipeline[index] = config.tripModePipeline[target];
+          config.tripModePipeline[target] = temp;
+        };
+
+        const onTripModeChange = (rule) => {
+          if (rule.mode === 'CodeMapping') {
+            if (!rule.mappingList || rule.mappingList.length === 0) {
+              rule.mappingList = [
+                { id: '1', code: '/3300', pole: 'TM' },
+                { id: '2', code: '/4300', pole: 'TM' }
+              ];
+            }
+          }
+        };
+
+        const addTripMappingRow = (rule) => {
+          if (!rule.mappingList) rule.mappingList = [];
+          rule.mappingList.push({
+            id: `${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+            code: '',
+            pole: 'TM'
+          });
+        };
+
+        const deleteTripMappingRow = (rule, itemIdx) => {
+          if (rule.mappingList) {
+            rule.mappingList.splice(itemIdx, 1);
+          }
         };
 
         // 标签管理 (极数排除)
@@ -835,13 +1093,13 @@
         const runTestParse = () => {
           postToHost('testParse', {
             rawModel: testModelText.value,
-            config: JSON.parse(JSON.stringify(config))
+            config: getSerializableConfig()
           });
         };
 
         // 保存与重置
         const saveConfig = () => {
-          postToHost('saveConfig', { config: JSON.parse(JSON.stringify(config)) });
+          postToHost('saveConfig', { config: getSerializableConfig() });
         };
 
         const resetConfig = () => {
@@ -852,7 +1110,7 @@
         const executeBatch = () => {
           isExecuting.value = true;
           batchStatusMsg.value = '正在向 Excel 执行批量识别与二维数组回填...';
-          postToHost('executeBatch', { config: JSON.parse(JSON.stringify(config)) });
+          postToHost('executeBatch', { config: getSerializableConfig() });
         };
 
         // 处理 C# 消息
@@ -861,6 +1119,7 @@
           switch (data.action) {
             case 'renderConfig':
               if (data.config) {
+                syncMappingToList(data.config);
                 Object.assign(config, data.config);
                 if (data.message) ElementPlus.ElMessage.success(data.message);
                 runTestParse();
@@ -926,10 +1185,15 @@
           onPoleModeChange,
           addMappingRow,
           deleteMappingRow,
-          updateMappingKey,
           addCurrentPipelineItem,
           deleteCurrentRule,
           moveCurrentRule,
+          addTripPipelineItem,
+          deleteTripRule,
+          moveTripRule,
+          onTripModeChange,
+          addTripMappingRow,
+          deleteTripMappingRow,
           removePoleExcludeTag,
           showAddPoleTagInput,
           confirmAddPoleTag,

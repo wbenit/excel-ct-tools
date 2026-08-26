@@ -94,23 +94,43 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 电流解析核心逻辑: 经历前置排除过滤 -> 多级顺位流水线 -> 后置标称白名单校验
+        /// 电流解析核心逻辑: 经历前置排除过滤 -> 收集所有规则候选 -> 纯数字兜底提取 -> 标称白名单校验 -> 根据最大/最小值择值
         /// </summary>
         /// <param name="rawModel">原始型号文本</param>
         /// <param name="config">配置对象</param>
         /// <param name="hitRuleTitle">命中的规则标题</param>
-        /// <returns>提取出的电流结果（如 100 或 100A）</returns>
+        /// <returns>提取出的最终电流结果（如 100 或 100A）</returns>
         public static string ParseCurrent(string rawModel, ModelParserConfig config, out string hitRuleTitle)
+        {
+            // 调用包含全部候选列表输出的重载版本
+            return ParseCurrent(rawModel, config, out hitRuleTitle, out _);
+        }
+
+        /// <summary>
+        /// 电流解析核心逻辑 (包含所有候选电流列表输出，供沙盒展示与消歧)
+        /// </summary>
+        /// <param name="rawModel">原始型号文本</param>
+        /// <param name="config">配置对象</param>
+        /// <param name="hitRuleTitle">命中的规则标题</param>
+        /// <param name="candidateList">所有被成功提取并符合白名单的候选电流值</param>
+        /// <returns>提取出的最终电流结果</returns>
+        public static string ParseCurrent(string rawModel, ModelParserConfig config, out string hitRuleTitle, out List<string> candidateList)
         {
             // 初始化命中规则输出变量
             hitRuleTitle = string.Empty;
+            // 初始化候选值输出列表
+            candidateList = new List<string>();
+
             // 校验输入字符串有效性
             if (string.IsNullOrWhiteSpace(rawModel)) return string.Empty;
 
             // 1. 前置必去项与负向排除过滤 (如将 100mA, 10kA, 220V 掩码，避免误提取为额定电流)
             string cleanText = MaskCurrentExclusions(rawModel, config.CurrentExcludeKeywords);
 
-            // 2. 依次遍历用户配置的电流顺位流水线规则
+            // 存储收集到的所有合法数值及其规则来源
+            var validCandidates = new List<(double Value, string OriginalStr, string RuleTitle)>();
+
+            // 2. 依次遍历用户配置的所有启用电流顺位规则
             if (config.CurrentPipeline != null)
             {
                 foreach (var rule in config.CurrentPipeline)
@@ -118,19 +138,115 @@ namespace ExcelAddInDemo
                     // 跳过未启用的顺位规则
                     if (!rule.Enabled) continue;
 
-                    // 尝试使用当前规则模式提取电流
-                    string extracted = TryExtractCurrentByRule(cleanText, rule);
+                    // 从清洗后的文本中提取符合该规则的所有候选原始字符串
+                    var rawMatches = ExtractRawCurrentCandidatesByRule(cleanText, rule);
 
-                    // 判断是否提取到了候选电流值
+                    foreach (var rawMatch in rawMatches)
+                    {
+                        // 若无法转为 int，固定提取数字；若为区间，则展开两个端点数字
+                        var numericValues = ExtractPureNumbersFromMatch(rawMatch);
+
+                        foreach (var numVal in numericValues)
+                        {
+                            string numStr = numVal.ToString("0.###", CultureInfo.InvariantCulture);
+
+                            // 3. 后置标称范围白名单校验 (如过滤 99 等非标数值)
+                            if (ValidateCurrentWhitelist(numStr, config))
+                            {
+                                // 防止同一规则重复添加完全相同的值
+                                if (!validCandidates.Exists(c => Math.Abs(c.Value - numVal) < 0.0001))
+                                {
+                                    validCandidates.Add((numVal, numStr, rule.Title));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 若未找到任何合规的候选电流，返回空
+            if (validCandidates.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            // 填充输出的候选字符串列表
+            foreach (var item in validCandidates)
+            {
+                candidateList.Add(item.OriginalStr);
+            }
+
+            // 4. 根据用户 Checkbox 勾选配置（取最大值还是最小值）决定最终输出
+            (double Value, string OriginalStr, string RuleTitle) chosen;
+            if (config.PreferMaxCurrent)
+            {
+                // 用户勾选: 取所有匹配到的候选电流中的【最大值】
+                chosen = validCandidates[0];
+                for (int i = 1; i < validCandidates.Count; i++)
+                {
+                    if (validCandidates[i].Value > chosen.Value)
+                    {
+                        chosen = validCandidates[i];
+                    }
+                }
+            }
+            else
+            {
+                // 用户未勾选: 取所有匹配到的候选电流中的【最小值】
+                chosen = validCandidates[0];
+                for (int i = 1; i < validCandidates.Count; i++)
+                {
+                    if (validCandidates[i].Value < chosen.Value)
+                    {
+                        chosen = validCandidates[i];
+                    }
+                }
+            }
+
+            // 记录命中的规则名称
+            hitRuleTitle = chosen.RuleTitle;
+
+            // 5. 格式化输出 (根据配置决定是否带 A)
+            return FormatCurrentOutput(chosen.OriginalStr, config.CurrentFormat);
+        }
+
+        /// <summary>
+        /// 脱扣方式解析核心逻辑: 经历前置排除过滤 -> 多级顺位流水线 -> 后置标称白名单校验
+        /// </summary>
+        /// <param name="rawModel">原始型号文本</param>
+        /// <param name="config">配置对象</param>
+        /// <param name="hitRuleTitle">命中的规则标题</param>
+        /// <returns>提取出的脱扣方式简写代号（如 TM, C, D, MA, Elec 等）</returns>
+        public static string ParseTripMode(string rawModel, ModelParserConfig config, out string hitRuleTitle)
+        {
+            // 初始化命中规则输出变量
+            hitRuleTitle = string.Empty;
+            // 校验输入字符串有效性
+            if (string.IsNullOrWhiteSpace(rawModel)) return string.Empty;
+
+            // 1. 前置必去项排除过滤
+            string cleanText = MaskTripModeExclusions(rawModel, config.TripModeExcludeKeywords);
+
+            // 2. 依次遍历用户配置的脱扣方式顺位流水线规则
+            if (config.TripModePipeline != null)
+            {
+                foreach (var rule in config.TripModePipeline)
+                {
+                    // 跳过未启用的顺位规则
+                    if (!rule.Enabled) continue;
+
+                    // 尝试使用当前顺位模式提取脱扣方式
+                    string extracted = TryExtractTripModeByRule(cleanText, rule);
+
+                    // 判断是否提取到了有效简写代号
                     if (!string.IsNullOrWhiteSpace(extracted))
                     {
-                        // 3. 后置标称范围白名单校验 (如过滤 99 等非标数值)
-                        if (ValidateCurrentWhitelist(extracted, config))
+                        // 3. 后置白名单校验 (若开启严格白名单)
+                        if (ValidateTripModeWhitelist(extracted, config))
                         {
                             // 记录命中的顺位规则名称
                             hitRuleTitle = rule.Title;
-                            // 格式化输出 (100 或 100A)
-                            return FormatCurrentOutput(extracted, config.CurrentFormat);
+                            return extracted.Trim();
                         }
                     }
                 }
@@ -159,25 +275,32 @@ namespace ExcelAddInDemo
                 return result;
             }
 
-            // 执行极数双通道流水线解析
+            // 1. 执行极数流水线解析
             result.Pole = ParsePoles(rawModel ?? string.Empty, config, out string hitPole);
             result.HitPoleRule = hitPole;
 
-            // 执行电流双通道流水线解析
-            result.Current = ParseCurrent(rawModel ?? string.Empty, config, out string hitCurrent);
+            // 2. 执行电流流水线解析 (同时获取所有合法候选列表)
+            result.Current = ParseCurrent(rawModel ?? string.Empty, config, out string hitCurrent, out var candidateList);
             result.HitCurrentRule = hitCurrent;
+            result.CandidateCurrents = candidateList;
+
+            // 3. 执行脱扣方式流水线解析
+            result.TripMode = ParseTripMode(rawModel ?? string.Empty, config, out string hitTrip);
+            result.HitTripModeRule = hitTrip;
 
             // 综合评估解析结果状态
             bool hasPole = !string.IsNullOrWhiteSpace(result.Pole);
             bool hasCur = !string.IsNullOrWhiteSpace(result.Current);
+            bool hasTrip = !string.IsNullOrWhiteSpace(result.TripMode);
 
-            // 两者均成功提取记为 Success
-            if (hasPole && hasCur)
+            // 三项均成功提取记为 Success (若未配置脱扣顺位则按两项判定)
+            bool expectTrip = config.TripModePipeline != null && config.TripModePipeline.Exists(r => r.Enabled);
+            if (hasPole && hasCur && (!expectTrip || hasTrip))
             {
                 result.Status = "Success";
             }
-            // 仅提取到其中一项记为 Partial
-            else if (hasPole || hasCur)
+            // 任意提取到其中一项记为 Partial
+            else if (hasPole || hasCur || hasTrip)
             {
                 result.Status = "Partial";
             }
@@ -228,94 +351,108 @@ namespace ExcelAddInDemo
                 string colSrc = string.IsNullOrWhiteSpace(config.SourceColumn) ? "C" : config.SourceColumn.Trim().ToUpper();
                 string colCur = string.IsNullOrWhiteSpace(config.CurrentColumn) ? "S" : config.CurrentColumn.Trim().ToUpper();
                 string colPole = string.IsNullOrWhiteSpace(config.PoleColumn) ? "T" : config.PoleColumn.Trim().ToUpper();
-                // 确保起始行号不小于 1
-                int startRow = config.StartRow < 1 ? 2 : config.StartRow;
+                string colTrip = string.IsNullOrWhiteSpace(config.TripModeColumn) ? "U" : config.TripModeColumn.Trim().ToUpper();
 
-                // 计算当前工作表中已使用区域的最大物理行数
-                int maxUsedRow = 0;
-                try
+                // 获取用户在 Excel 中当前选中的区域 (Selection)
+                dynamic? selection = app.Selection;
+                if (selection == null)
                 {
-                    dynamic usedRange = activeSheet.UsedRange;
-                    maxUsedRow = (int)(usedRange.Row + usedRange.Rows.Count - 1);
-                }
-                catch
-                {
-                    maxUsedRow = startRow + 100;
-                }
-
-                // 若有效行数小于起始行，说明表为空
-                if (maxUsedRow < startRow)
-                {
-                    batchResult.Success = true;
-                    batchResult.TotalRows = 0;
-                    batchResult.Message = "指定起始行下方无有效数据";
+                    batchResult.Success = false;
+                    batchResult.Message = "请先在 Excel 中选择需要识别的单元格或行区域";
                     return batchResult;
                 }
 
-                // 计算待处理的总行数
-                int rowCount = maxUsedRow - startRow + 1;
-                batchResult.TotalRows = rowCount;
-
-                // ==================== 1. 一次性将源型号整列读入二维数组 ====================
-                dynamic srcRange = activeSheet.Range[$"{colSrc}{startRow}:{colSrc}{maxUsedRow}"];
-                object[,] rawArray = ConvertTo2DArray(srcRange.Value2, rowCount);
-
-                // ==================== 2. 在内存中创建电流与极数的目标二维数组 ====================
-                object[,] currentArray = new object[rowCount, 1];
-                object[,] poleArray = new object[rowCount, 1];
-
-                // 计数器统计识别情况
+                // 初始化统计计数器
+                int totalRows = 0;
                 int successCount = 0;
                 int failedCount = 0;
 
-                // 循环遍历内存中的二维数组行
-                for (int i = 0; i < rowCount; i++)
+                // 遍历当前选择的所有选区 (支持单个连续选区或按住 Ctrl 的多选区)
+                foreach (dynamic area in selection.Areas)
                 {
-                    // 获取当前行的原始型号文本
-                    object val = rawArray[i + 1, 1];
-                    string rawModel = val?.ToString()?.Trim() ?? string.Empty;
+                    // 获取当前选区的起始物理行号与总行数
+                    int startRow = (int)area.Row;
+                    int rowCount = (int)area.Rows.Count;
+                    int endRow = startRow + rowCount - 1;
 
-                    // 若本行为空行，则保持空值
-                    if (string.IsNullOrWhiteSpace(rawModel))
+                    // 若选区行数无效则跳过
+                    if (rowCount <= 0) continue;
+                    totalRows += rowCount;
+
+                    // ==================== 1. 一次性将选中区域对应源型号整块读入二维数组 ====================
+                    dynamic srcRange = activeSheet.Range[$"{colSrc}{startRow}:{colSrc}{endRow}"];
+                    object[,] rawArray = ConvertTo2DArray(srcRange.Value2, rowCount);
+
+                    // ==================== 2. 在内存中创建当前选区对应的目标二维数组 ====================
+                    object[,] currentArray = new object[rowCount, 1];
+                    object[,] poleArray = new object[rowCount, 1];
+                    object[,] tripArray = new object[rowCount, 1];
+
+                    // 循环遍历当前选区内存中的二维数组行
+                    for (int i = 0; i < rowCount; i++)
                     {
-                        currentArray[i, 0] = string.Empty;
-                        poleArray[i, 0] = string.Empty;
-                        continue;
+                        // 获取当前行源型号内容
+                        object val = rawArray[i + 1, 1];
+                        string rawModel = val?.ToString()?.Trim() ?? string.Empty;
+
+                        // 若为空行则置空保留
+                        if (string.IsNullOrWhiteSpace(rawModel))
+                        {
+                            currentArray[i, 0] = string.Empty;
+                            poleArray[i, 0] = string.Empty;
+                            tripArray[i, 0] = string.Empty;
+                            continue;
+                        }
+
+                        // 调用三通道流水线解析极数、电流与脱扣方式
+                        string pole = ParsePoles(rawModel, config, out _);
+                        string current = ParseCurrent(rawModel, config, out _);
+                        string tripMode = ParseTripMode(rawModel, config, out _);
+
+                        // 填充内存二维数组
+                        currentArray[i, 0] = current;
+                        poleArray[i, 0] = pole;
+                        tripArray[i, 0] = tripMode;
+
+                        // 统计识别成功与失败数
+                        if (!string.IsNullOrWhiteSpace(pole) && !string.IsNullOrWhiteSpace(current))
+                        {
+                            successCount++;
+                        }
+                        else
+                        {
+                            failedCount++;
+                        }
                     }
 
-                    // 调用双通道流水线解析极数与电流
-                    string pole = ParsePoles(rawModel, config, out _);
-                    string current = ParseCurrent(rawModel, config, out _);
+                    // ==================== 3. 一次性将二维数组整块写回当前选区目标列 ====================
+                    dynamic curRange = activeSheet.Range[$"{colCur}{startRow}:{colCur}{endRow}"];
+                    curRange.Value2 = currentArray;
 
-                    // 写入内存结果数组
-                    currentArray[i, 0] = current;
-                    poleArray[i, 0] = pole;
+                    dynamic poleRange = activeSheet.Range[$"{colPole}{startRow}:{colPole}{endRow}"];
+                    poleRange.Value2 = poleArray;
 
-                    // 统计成功率
-                    if (!string.IsNullOrWhiteSpace(pole) && !string.IsNullOrWhiteSpace(current))
-                    {
-                        successCount++;
-                    }
-                    else
-                    {
-                        failedCount++;
-                    }
+                    dynamic tripRange = activeSheet.Range[$"{colTrip}{startRow}:{colTrip}{endRow}"];
+                    tripRange.Value2 = tripArray;
                 }
 
-                // ==================== 3. 一次性将二维数组整块写入目标列 ====================
-                dynamic curRange = activeSheet.Range[$"{colCur}{startRow}:{colCur}{maxUsedRow}"];
-                curRange.Value2 = currentArray;
-
-                dynamic poleRange = activeSheet.Range[$"{colPole}{startRow}:{colPole}{maxUsedRow}"];
-                poleRange.Value2 = poleArray;
+                // 检查选区内是否有有效数据行
+                if (totalRows == 0)
+                {
+                    batchResult.Success = true;
+                    batchResult.TotalRows = 0;
+                    batchResult.Message = "当前选择区域内无有效数据行";
+                    return batchResult;
+                }
 
                 // 停止计时并汇总结果
                 stopwatch.Stop();
                 batchResult.Success = true;
+                batchResult.TotalRows = totalRows;
                 batchResult.SuccessCount = successCount;
                 batchResult.FailedCount = failedCount;
                 batchResult.ElapsedMilliseconds = stopwatch.ElapsedMilliseconds;
-                batchResult.Message = $"批量处理完成：共处理 {rowCount} 行，完全识别 {successCount} 行，耗时 {stopwatch.ElapsedMilliseconds} ms";
+                batchResult.Message = $"选中区域处理完成：共处理 {totalRows} 行，有效识别 {successCount} 行，耗时 {stopwatch.ElapsedMilliseconds} ms";
             }
             catch (Exception ex)
             {
@@ -396,14 +533,15 @@ namespace ExcelAddInDemo
                     }
                     break;
 
-                // 顺位模式 2: 脱扣代号或特殊特征对照表映射 (如 /3300 -> 3P)
+                // 顺位模式 2: 脱扣代号或特殊特征对照表映射 (如 /3300 -> 3P)，区分大小写
                 case "CodeMapping":
                     if (rule.Mapping != null)
                     {
                         foreach (var kvp in rule.Mapping)
                         {
+                            // 严格区分大小写匹配代号关键词
                             if (!string.IsNullOrWhiteSpace(kvp.Key) &&
-                                text.IndexOf(kvp.Key, StringComparison.OrdinalIgnoreCase) >= 0)
+                                text.IndexOf(kvp.Key, StringComparison.Ordinal) >= 0)
                             {
                                 return kvp.Value?.Trim() ?? string.Empty;
                             }
@@ -462,60 +600,99 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 根据指定的顺位规则尝试提取电流
+        /// 根据指定的顺位规则尝试提取电流（返回首个匹配，保持旧接口兼容）
         /// </summary>
         private static string TryExtractCurrentByRule(string text, PipelineRuleItem rule)
         {
+            // 提取该规则下的所有候选原始匹配项
+            var candidates = ExtractRawCurrentCandidatesByRule(text, rule);
+            if (candidates.Count > 0)
+            {
+                // 提取首个候选中的纯数字部分
+                var numbers = ExtractPureNumbersFromMatch(candidates[0]);
+                if (numbers.Count > 0)
+                {
+                    return numbers[0].ToString("0.###", CultureInfo.InvariantCulture);
+                }
+                return candidates[0];
+            }
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// 根据规则提取清洗后文本中的所有原始候选匹配项
+        /// </summary>
+        private static List<string> ExtractRawCurrentCandidatesByRule(string text, PipelineRuleItem rule)
+        {
+            var list = new List<string>();
+            if (string.IsNullOrWhiteSpace(text) || rule == null) return list;
+
             switch (rule.Mode)
             {
                 // 顺位模式 1: 寻找带单位 "A" 的数字 (如 100A, 63A, 0.03A)
                 case "NumberWithA":
-                    var matchA = Regex.Match(text, @"(?i)(?:^|[^a-zA-Z0-9\.])(\d+(?:\.\d+)?)\s*A(?:[^a-zA-Z0-9]|$)");
-                    if (matchA.Success)
+                    var matchesA = Regex.Matches(text, @"(?i)(?:^|[^a-zA-Z0-9\.])(\d+(?:\.\d+)?)\s*A(?:[^a-zA-Z0-9]|$)");
+                    foreach (Match m in matchesA)
                     {
-                        return matchA.Groups[1].Value;
+                        if (m.Success && m.Groups.Count > 1)
+                        {
+                            list.Add(m.Groups[1].Value.Trim());
+                        }
                     }
                     break;
 
                 // 顺位模式 2: 寻找脱扣曲线字母 [C/D/K/Z] 后面的数字 (如 C32, D16)
                 case "CurveLetterNumber":
-                    var matchCurve = Regex.Match(text, @"(?i)(?:^|[^a-zA-Z0-9])[CDKZ](\d+(?:\.\d+)?)(?:[^\d\.]|$)");
-                    if (matchCurve.Success)
+                    var matchesCurve = Regex.Matches(text, @"(?i)(?:^|[^a-zA-Z0-9])[CDKZ](\d+(?:\.\d+)?)(?:[^\d\.]|$)");
+                    foreach (Match m in matchesCurve)
                     {
-                        return matchCurve.Groups[1].Value;
+                        if (m.Success && m.Groups.Count > 1)
+                        {
+                            list.Add(m.Groups[1].Value.Trim());
+                        }
                     }
                     break;
 
                 // 顺位模式 3: 寻找整定电流可调区间 (如 2.5-4A, 0.63-1A)
                 case "CurrentRange":
-                    var matchRange = Regex.Match(text, @"(?i)(\d+(?:\.\d+)?\s*[-~～至]\s*\d+(?:\.\d+)?)\s*A?");
-                    if (matchRange.Success)
+                    var matchesRange = Regex.Matches(text, @"(?i)(\d+(?:\.\d+)?\s*[-~～至]\s*\d+(?:\.\d+)?)\s*A?");
+                    foreach (Match m in matchesRange)
                     {
-                        return matchRange.Groups[1].Value.Replace(" ", "");
+                        if (m.Success && m.Groups.Count > 1)
+                        {
+                            list.Add(m.Groups[1].Value.Replace(" ", "").Trim());
+                        }
                     }
                     break;
 
                 // 顺位模式: 空格+数字+空格 (如独立的纯数字电流 " 100 " 或 " 63 ")
                 case "SpaceNumberSpace":
-                    var matchSpaceCur = Regex.Match(text, @"(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)");
-                    if (matchSpaceCur.Success)
+                    var matchesSpace = Regex.Matches(text, @"(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)");
+                    foreach (Match m in matchesSpace)
                     {
-                        return matchSpaceCur.Groups[1].Value;
+                        if (m.Success && m.Groups.Count > 1)
+                        {
+                            list.Add(m.Groups[1].Value.Trim());
+                        }
                     }
                     break;
 
                 // 顺位模式 4: 寻找末尾纯数字 (如 NM1-125 100)
                 case "TrailingNumber":
                     var matchTail = Regex.Match(text, @"(?i)(?:^|\s|-|_|/)(\d+(?:\.\d+)?)\s*$");
-                    if (matchTail.Success)
+                    if (matchTail.Success && matchTail.Groups.Count > 1)
                     {
-                        return matchTail.Groups[1].Value;
+                        list.Add(matchTail.Groups[1].Value.Trim());
                     }
                     break;
 
                 // 顺位模式 5: 固定电流值 (如固定 100A)
                 case "FixedValue":
-                    return rule.FixedValue?.Trim() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(rule.FixedValue))
+                    {
+                        list.Add(rule.FixedValue.Trim());
+                    }
+                    break;
 
                 // 顺位模式 6: 自定义正则表达式 (支持 (?<current>...) 命名捕获组或首个括号捕获)
                 case "CustomRegex":
@@ -523,18 +700,22 @@ namespace ExcelAddInDemo
                     {
                         try
                         {
-                            var matchCustomCur = Regex.Match(text, rule.CustomRegex);
-                            if (matchCustomCur.Success)
+                            var matchesCustom = Regex.Matches(text, rule.CustomRegex);
+                            foreach (Match m in matchesCustom)
                             {
-                                if (matchCustomCur.Groups["current"].Success)
+                                if (!m.Success) continue;
+                                if (m.Groups["current"].Success)
                                 {
-                                    return matchCustomCur.Groups["current"].Value.Trim();
+                                    list.Add(m.Groups["current"].Value.Trim());
                                 }
-                                if (matchCustomCur.Groups.Count > 1)
+                                else if (m.Groups.Count > 1)
                                 {
-                                    return matchCustomCur.Groups[1].Value.Trim();
+                                    list.Add(m.Groups[1].Value.Trim());
                                 }
-                                return matchCustomCur.Value.Trim();
+                                else
+                                {
+                                    list.Add(m.Value.Trim());
+                                }
                             }
                         }
                         catch { }
@@ -542,7 +723,61 @@ namespace ExcelAddInDemo
                     break;
             }
 
-            return string.Empty;
+            return list;
+        }
+
+        /// <summary>
+        /// 从正则匹配到的候选文本中提取纯数字；若无法直接转为 int，则固定提取其中包含的数字；若是区间则展开端点
+        /// </summary>
+        /// <param name="rawMatch">匹配到的原始文本 (如 200A, C32, 2.5-4A)</param>
+        /// <returns>提取出的浮点数值集合</returns>
+        private static List<double> ExtractPureNumbersFromMatch(string rawMatch)
+        {
+            var results = new List<double>();
+            if (string.IsNullOrWhiteSpace(rawMatch)) return results;
+
+            string clean = rawMatch.Trim();
+
+            // 1. 先检查是否为区间格式 (如 2.5-4A, 6~10A)
+            var rangeMatch = Regex.Match(clean, @"(\d+(?:\.\d+)?)\s*[-~～至]\s*(\d+(?:\.\d+)?)");
+            if (rangeMatch.Success && rangeMatch.Groups.Count > 2)
+            {
+                if (double.TryParse(rangeMatch.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double lowVal))
+                {
+                    results.Add(lowVal);
+                }
+                if (double.TryParse(rangeMatch.Groups[2].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double highVal))
+                {
+                    results.Add(highVal);
+                }
+                return results;
+            }
+
+            // 2. 检查是否可直接转为整数 int
+            if (int.TryParse(clean, out int intVal))
+            {
+                results.Add(intVal);
+                return results;
+            }
+
+            // 3. 检查是否可直接转为浮点数 double
+            if (double.TryParse(clean, NumberStyles.Any, CultureInfo.InvariantCulture, out double doubleVal))
+            {
+                results.Add(doubleVal);
+                return results;
+            }
+
+            // 4. 若无法转为 int/double (如匹配到 200A, C32 等非纯数字)，固定正则提取其中的纯数字
+            var numMatches = Regex.Matches(clean, @"\d+(?:\.\d+)?");
+            foreach (Match nm in numMatches)
+            {
+                if (nm.Success && double.TryParse(nm.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedVal))
+                {
+                    results.Add(parsedVal);
+                }
+            }
+
+            return results;
         }
 
         /// <summary>
@@ -656,6 +891,113 @@ namespace ExcelAddInDemo
                     ? clean.Substring(0, clean.Length - 1).Trim()
                     : clean;
             }
+        }
+
+        /// <summary>
+        /// 屏蔽脱扣方式前置排除关键词
+        /// </summary>
+        private static string MaskTripModeExclusions(string input, List<string>? exclusions)
+        {
+            if (string.IsNullOrWhiteSpace(input) || exclusions == null || exclusions.Count == 0)
+                return input;
+
+            string result = input;
+            foreach (var word in exclusions)
+            {
+                if (string.IsNullOrWhiteSpace(word)) continue;
+                string pattern = $@"(?i)\b{Regex.Escape(word.Trim())}\b";
+                result = Regex.Replace(result, pattern, MASK_PLACEHOLDER);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// 根据指定的顺位规则尝试提取脱扣方式简写代号
+        /// </summary>
+        private static string TryExtractTripModeByRule(string text, PipelineRuleItem rule)
+        {
+            switch (rule.Mode)
+            {
+                // 顺位模式 1 & 2: 代号与特征对照表映射 (如 /3300->TM, TMD->TMD)，区分大小写
+                case "CodeMapping":
+                    if (rule.Mapping != null)
+                    {
+                        foreach (var kvp in rule.Mapping)
+                        {
+                            // 严格区分大小写匹配代号关键词
+                            if (!string.IsNullOrWhiteSpace(kvp.Key) &&
+                                text.IndexOf(kvp.Key, StringComparison.Ordinal) >= 0)
+                            {
+                                return kvp.Value?.Trim() ?? string.Empty;
+                            }
+                        }
+                    }
+                    break;
+
+                // 顺位模式 3: 微断脱扣特性曲线提取 (C/D/B/K/Z)
+                case "CurveLetter":
+                    var matchCurve = Regex.Match(text, @"(?i)(?:^|[^a-zA-Z0-9])([CDBKZ])\d+(?:[^\d\.]|$)");
+                    if (matchCurve.Success && matchCurve.Groups.Count > 1)
+                    {
+                        return matchCurve.Groups[1].Value.ToUpper();
+                    }
+                    break;
+
+                // 顺位模式: 固定脱扣方式简写
+                case "FixedValue":
+                    return rule.FixedValue?.Trim() ?? string.Empty;
+
+                // 顺位模式: 自定义正则表达式提取
+                case "CustomRegex":
+                    if (!string.IsNullOrWhiteSpace(rule.CustomRegex))
+                    {
+                        try
+                        {
+                            var matchCustom = Regex.Match(text, rule.CustomRegex);
+                            if (matchCustom.Success)
+                            {
+                                if (matchCustom.Groups["trip"].Success)
+                                {
+                                    return matchCustom.Groups["trip"].Value.Trim();
+                                }
+                                if (matchCustom.Groups.Count > 1)
+                                {
+                                    return matchCustom.Groups[1].Value.Trim();
+                                }
+                                return matchCustom.Value.Trim();
+                            }
+                        }
+                        catch { }
+                    }
+                    break;
+            }
+
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// 校验脱扣方式简写代号是否命中白名单
+        /// </summary>
+        private static bool ValidateTripModeWhitelist(string tripMode, ModelParserConfig config)
+        {
+            // 若未启用严格白名单校验，直接通过
+            if (!config.EnableStrictTripModeWhitelist) return true;
+            if (string.IsNullOrWhiteSpace(tripMode)) return false;
+
+            string clean = tripMode.Trim().ToUpper();
+            if (config.TripModeAllowedValues != null)
+            {
+                foreach (var item in config.TripModeAllowedValues)
+                {
+                    if (string.IsNullOrWhiteSpace(item)) continue;
+                    if (string.Equals(clean, item.Trim().ToUpper(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         /// <summary>

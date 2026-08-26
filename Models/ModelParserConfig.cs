@@ -20,8 +20,8 @@ namespace ExcelAddInDemo.Models
         // 匹配模式代号 (如 FindBeforeP, CodeMapping, FindBeforeJi 等)
         public string Mode { get; set; } = string.Empty;
 
-        // 脱扣代号映射表 (针对 CodeMapping 模式，例如 {"/3300": "3P", "/4300": "4P"})
-        public Dictionary<string, string> Mapping { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        // 脱扣代号映射表 (针对 CodeMapping 模式，例如 {"/3300": "3P", "/4300": "4P"})，区分大小写
+        public Dictionary<string, string> Mapping { get; set; } = new Dictionary<string, string>();
 
         // 固定取值 (针对 FixedValue 模式，如固定为 3P)
         public string FixedValue { get; set; } = string.Empty;
@@ -43,6 +43,9 @@ namespace ExcelAddInDemo.Models
 
         // 默认提取后极数输出的目标列 (如 T 列)
         public string PoleColumn { get; set; } = "T"; // --硬编码-- 默认极数输出列
+
+        // 默认提取后脱扣方式输出的目标列 (如 U 列)
+        public string TripModeColumn { get; set; } = "U"; // --硬编码-- 默认脱扣方式输出列
 
         // 默认处理的起始行号 (表头下方第 2 行开始)
         public int StartRow { get; set; } = 2; // --硬编码-- 默认起始数据行
@@ -99,6 +102,26 @@ namespace ExcelAddInDemo.Models
         // 电流输出格式: "NumberOnly" (如 100) 或 "WithA" (如 100A)
         public string CurrentFormat { get; set; } = "NumberOnly"; // --硬编码-- 默认电流输出格式
 
+        // 匹配到多个电流或区间电流时是否选择最大值 (true: 取最大值，false: 取最小值)
+        public bool PreferMaxCurrent { get; set; } = true; // --硬编码-- 默认取最大值
+
+        // ===================== 脱扣方式通道配置 =====================
+
+        // 脱扣方式前置必去项/负向排除关键词列表
+        public List<string> TripModeExcludeKeywords { get; set; } = new List<string>();
+
+        // 脱扣方式后置标称白名单有效值集合 (输出简写代号)
+        public List<string> TripModeAllowedValues { get; set; } = new List<string>
+        {
+            "TM", "TMD", "TMA", "MA", "Elec", "C", "D", "B", "K", "Z", "LE" // --硬编码-- 默认脱扣方式白名单
+        };
+
+        // 是否开启脱扣方式严格白名单校验
+        public bool EnableStrictTripModeWhitelist { get; set; } = false;
+
+        // 脱扣方式多级顺位匹配流水线规则列表
+        public List<PipelineRuleItem> TripModePipeline { get; set; } = new List<PipelineRuleItem>();
+
         /// <summary>
         /// 创建带有出厂默认规则的配置对象
         /// </summary>
@@ -116,8 +139,8 @@ namespace ExcelAddInDemo.Models
                 Enabled = true
             });
 
-            // 构造塑壳脱扣代号默认对照表
-            var mapping = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            // 构造塑壳脱扣代号默认对照表 (区分大小写)
+            var mapping = new Dictionary<string, string>
             {
                 { "/3300", "3P" }, // --硬编码-- 正泰/德力西塑壳 3极
                 { "/4300", "4P" }, // --硬编码-- 4极
@@ -187,6 +210,60 @@ namespace ExcelAddInDemo.Models
                 Enabled = true
             });
 
+            // 3. 初始化脱扣方式多级顺位流水线 (输出标准简写代号，区分大小写)
+            var gbTripMapping = new Dictionary<string, string>
+            {
+                { "/3300", "TM" },   // --硬编码-- 3极热磁复式
+                { "/4300", "TM" },   // --硬编码-- 4极热磁复式
+                { "/3320", "TM" },   // --硬编码-- 3极带辅助热磁
+                { "/4320", "TM" },   // --硬编码-- 4极带辅助热磁
+                { "/33002", "TM" },  // --硬编码-- 3极电操热磁
+                { "/43002", "TM" },  // --硬编码-- 4极电操热磁
+                { "/3200", "MA" },   // --硬编码-- 3极单电磁
+                { "/4200", "MA" },   // --硬编码-- 4极单电磁
+                { "/3220", "MA" },   // --硬编码-- 3极单电磁带辅助
+                { "/3400", "Elec" }, // --硬编码-- 3极电子式
+                { "/4400", "Elec" }  // --硬编码-- 4极电子式
+            };
+
+            cfg.TripModePipeline.Add(new PipelineRuleItem
+            {
+                // 顺位 1：国标 4 位脱扣代号映射
+                Title = "国标 4 位脱扣代号映射 (如 /3300->TM)",
+                Mode = "CodeMapping",
+                Enabled = true,
+                Mapping = gbTripMapping
+            });
+
+            var brandTripMapping = new Dictionary<string, string>
+            {
+                { "TMD", "TMD" },         // --硬编码-- 施耐德/ABB 配电热磁
+                { "TMA", "TMA" },         // --硬编码-- 可调热磁
+                { "TM", "TM" },           // --硬编码-- 热磁式
+                { "MicroLogic", "Elec" }, // --硬编码-- 施耐德电子脱扣
+                { "Ekip", "Elec" },       // --硬编码-- ABB 电子脱扣
+                { "ETS", "Elec" },        // --硬编码-- 电子式
+                { " MA", "MA" },          // --硬编码-- 单磁瞬时
+                { "-MA", "MA" }
+            };
+
+            cfg.TripModePipeline.Add(new PipelineRuleItem
+            {
+                // 顺位 2：合资/外资品牌脱扣器代号映射
+                Title = "品牌脱扣器代号映射 (如 TMD->TMD, Ekip->Elec)",
+                Mode = "CodeMapping",
+                Enabled = true,
+                Mapping = brandTripMapping
+            });
+
+            cfg.TripModePipeline.Add(new PipelineRuleItem
+            {
+                // 顺位 3：微断脱扣特性曲线提取 (C/D/B/K/Z)
+                Title = "微断脱扣特性曲线提取 (如 C16->C, D20->D)",
+                Mode = "CurveLetter",
+                Enabled = true
+            });
+
             // 返回构造完成的默认配置对象
             return cfg;
         }
@@ -206,13 +283,22 @@ namespace ExcelAddInDemo.Models
         // 解析提取出的电流
         public string Current { get; set; } = string.Empty;
 
+        // 解析提取出的脱扣方式简写代号 (如 TM, C, D, MA, Elec, LE)
+        public string TripMode { get; set; } = string.Empty;
+
         // 命中的极数规则标题
         public string HitPoleRule { get; set; } = string.Empty;
 
         // 命中的电流规则标题
         public string HitCurrentRule { get; set; } = string.Empty;
 
-        // 解析状态标识: Success (两者成功), Partial (部分成功), Failed (均失败)
+        // 命中的脱扣方式规则标题
+        public string HitTripModeRule { get; set; } = string.Empty;
+
+        // 识别到的所有候选电流列表 (用于前端沙盒展示多匹配情况)
+        public List<string> CandidateCurrents { get; set; } = new List<string>();
+
+        // 解析状态标识: Success (均成功), Partial (部分成功), Failed (均失败)
         public string Status { get; set; } = "Failed";
     }
 
@@ -227,7 +313,7 @@ namespace ExcelAddInDemo.Models
         // 处理的总数据行数
         public int TotalRows { get; set; } = 0;
 
-        // 完全解析成功的行数 (极数与电流均提取到)
+        // 完全解析成功的行数 (极数、电流、脱扣方式均有效识别)
         public int SuccessCount { get; set; } = 0;
 
         // 部分或完全未识别的行数
