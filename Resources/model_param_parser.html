@@ -716,7 +716,8 @@
           <div v-if="testResult.candidateCurrents && testResult.candidateCurrents.length > 1"
             style="font-size: 11px; color: #0284c7; background-color: #f0f9ff; padding: 4px 10px; border-radius: 4px; width: 95%; text-align: center;">
             <i class="fa-solid fa-circle-info" style="margin-right: 4px;"></i>检测到区间/多档候选电流: [ {{
-            testResult.candidateCurrents.join('A, ') }}A ] ➔ 最小电流: <strong>{{ testResult.minCurrent }}</strong>，最大电流: <strong>{{ testResult.maxCurrent }}</strong>
+            testResult.candidateCurrents.join('A, ') }}A ] ➔ 最小电流: <strong>{{ testResult.minCurrent }}</strong>，最大电流:
+            <strong>{{ testResult.maxCurrent }}</strong>
           </div>
         </div>
       </div>
@@ -734,7 +735,7 @@
         <div style="font-size: 12px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
           <span v-if="batchStatusMsg"><i class="fa-solid fa-circle-info"
               style="color: #009688; margin-right: 4px;"></i>{{ batchStatusMsg }}</span>
-          <span v-else>💡 提示：点击“立即识别”将仅针对 Excel 当前选中的行区域进行二维数组极速回填</span>
+          <span v-else>💡 提示：点击“立即识别”将仅针对 Excel 当前选中的行区域进行极速写入</span>
         </div>
       </div>
       <div style="display: flex; gap: 10px; flex-shrink: 0; align-items: center;" @mousedown.stop>
@@ -1145,7 +1146,7 @@
           postToHost('resetConfig');
         };
 
-        // 执行批量回填
+        // 执行批量回填 (已集成自动写入第5行表头)
         const executeBatch = () => {
           isExecuting.value = true;
           batchStatusMsg.value = '正在向 Excel 执行批量识别与二维数组回填...';

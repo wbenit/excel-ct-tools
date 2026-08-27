@@ -1007,5 +1007,80 @@ namespace ExcelAddInDemo
                 return false;
             }
         }
+
+        /// <summary>
+        /// 切换指定列区域的隐藏与显示状态（如 F:P 或 Q:W）
+        /// </summary>
+        /// <param name="columnRange">列区域范围字符串，例如 "F:P" 或 "Q:W"</param>
+        /// <param name="hidden">是否隐藏，true 为隐藏，false 为显示</param>
+        /// <returns>操作是否成功</returns>
+        public static bool SetSheetColumnsHidden(string columnRange, bool hidden)
+        {
+            try
+            {
+                // 验证列区域参数是否有效
+                if (string.IsNullOrWhiteSpace(columnRange)) return false;
+
+                // 获取当前活动 Excel 应用程序实例
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                if (app == null) return false;
+
+                // 获取当前活动工作表
+                dynamic activeSheet = app.ActiveSheet;
+                if (activeSheet == null) return false;
+
+                // 优化 Excel 渲染性能，临时关闭屏幕刷新
+                app.ScreenUpdating = false;
+
+                try
+                {
+                    // 设置目标列区域的 Hidden 属性实现隐藏或展开
+                    activeSheet.Columns[columnRange].Hidden = hidden;
+                }
+                finally
+                {
+                    // 恢复 Excel 屏幕刷新显示
+                    app.ScreenUpdating = true;
+                }
+
+                // 返回操作成功标志
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志并返回失败
+                LogHelper.WriteLog($"SetSheetColumnsHidden 异常: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 获取当前活动工作表中价格列 (F:P) 的隐藏状态
+        /// </summary>
+        /// <returns>价格列是否处于隐藏状态</returns>
+        public static bool GetSheetColumnsHiddenStatus()
+        {
+            try
+            {
+                // 获取当前活动 Excel 应用程序实例
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                if (app == null) return false;
+
+                // 获取当前活动工作表
+                dynamic activeSheet = app.ActiveSheet;
+                if (activeSheet == null) return false;
+
+                // 读取 F 列的 Hidden 状态作为价格列 (F:P) 的代表状态 --硬编码--
+                bool isPriceHidden = Convert.ToBoolean(activeSheet.Columns["F"].Hidden);
+
+                // 返回价格列隐藏状态
+                return isPriceHidden;
+            }
+            catch
+            {
+                // 异常情况下默认返回未隐藏
+                return false;
+            }
+        }
     }
 }

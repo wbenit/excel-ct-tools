@@ -233,5 +233,98 @@ namespace ExcelAddInDemo.Controllers
                 return JsonSerializer.Serialize(errorResponse, JsonOptions);
             }
         }
+
+        /// <summary>
+        /// 切换指定列区域的显示或隐藏（例如 F:P 或 Q:W）
+        /// </summary>
+        /// <param name="targetRange">列区域范围字符串</param>
+        /// <param name="hidden">是否隐藏</param>
+        /// <returns>JSON 响应报文</returns>
+        public string ToggleColumnsVisibility(string targetRange, bool hidden)
+        {
+            try
+            {
+                // 调用 ExcelServices 底层服务执行列隐藏/显示
+                bool success = ExcelServices.SetSheetColumnsHidden(targetRange, hidden);
+
+                // 封装结构化响应结果
+                var response = new
+                {
+                    action = "onColumnsVisibilityChanged",
+                    success = success,
+                    targetRange = targetRange,
+                    hidden = hidden,
+                    message = success ? $"已成功{(hidden ? "隐藏" : "显示")}列 {targetRange}" : $"设置列 {targetRange} 状态失败"
+                };
+
+                // 序列化并返回 JSON
+                return JsonSerializer.Serialize(response, JsonOptions);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"ToggleColumnsVisibility 异常: {ex.Message}");
+
+                // 封装错误返回
+                var errorResponse = new
+                {
+                    action = "onColumnsVisibilityChanged",
+                    success = false,
+                    targetRange = targetRange,
+                    hidden = hidden,
+                    message = $"操作失败: {ex.Message}"
+                };
+
+                // 返回错误 JSON
+                return JsonSerializer.Serialize(errorResponse, JsonOptions);
+            }
+        }
+
+        /// <summary>
+        /// 获取当前活动工作表中价格列 (F:P) 的隐藏状态
+        /// </summary>
+        /// <returns>JSON 响应报文</returns>
+        public string GetColumnsHiddenStatus()
+        {
+            try
+            {
+                // 调用 ExcelServices 底层服务读取价格列隐藏状态
+                bool hidePrice = ExcelServices.GetSheetColumnsHiddenStatus();
+
+                // 封装结构化响应结果
+                var response = new
+                {
+                    action = "onColumnsHiddenStatusLoaded",
+                    success = true,
+                    data = new
+                    {
+                        hidePriceColumns = hidePrice
+                    }
+                };
+
+                // 序列化并返回 JSON
+                return JsonSerializer.Serialize(response, JsonOptions);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"GetColumnsHiddenStatus 异常: {ex.Message}");
+
+                // 封装错误响应
+                var errorResponse = new
+                {
+                    action = "onColumnsHiddenStatusLoaded",
+                    success = false,
+                    data = new
+                    {
+                        hidePriceColumns = false
+                    },
+                    message = ex.Message
+                };
+
+                // 返回错误 JSON
+                return JsonSerializer.Serialize(errorResponse, JsonOptions);
+            }
+        }
     }
 }

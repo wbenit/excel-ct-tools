@@ -276,3 +276,29 @@
 
 
 
+  48. **汇总调价紧凑编辑条主题色全面绿蓝化(#009688)与增加F~P价格列隐藏复选框（已落地）**：
+      - **业务与架构**：
+        1. 在 [Resources/summary_adjust_price.html](file:///d:/code/excel-ct-tools/Resources/summary_adjust_price.html) 中将图二紧凑悬浮编辑条样式全面统一为绿蓝相间主题（主色调 #009688，包含绿蓝渐变分割线、图标边框背景、重新汇总操作文字、一键更新渐变胶囊主按钮）；
+        2. 在图二编辑条中间仅保留单个 Element Plus 复选框（<el-checkbox> 显式闭合）：【隐藏价格列(F~P)】；
+        3. 在 [Services/ExcelServices.SummaryAdjustPrice.cs](file:///d:/code/excel-ct-tools/Services/ExcelServices.SummaryAdjustPrice.cs) 中实现 SetSheetColumnsHidden(columnRange, hidden) 与 GetSheetColumnsHiddenStatus() 底层公共方法；
+        4. 在 [Controllers/SummaryAdjustPriceController.cs](file:///d:/code/excel-ct-tools/Controllers/SummaryAdjustPriceController.cs) 与 [Forms/SummaryAdjustPriceForm.cs](file:///d:/code/excel-ct-tools/Forms/SummaryAdjustPriceForm.cs) 中打通 WebView2 消息通道。
+      - **构建状态**：ExcelAddInDemo.dll 编译构建通过（0 错误）。
+  49. **元器件型号参数识别设置页面根据设置列在第5行添加表头（已落地）**：
+      - **业务与架构**：
+        1. 在 [Services/ExcelServices.ModelParse.cs](file:///d:/code/excel-ct-tools/Services/ExcelServices.ModelParse.cs) 中新增 AddModelParserHeadersToExcel 公共方法，固定在第 5 行对应列写入表头（源型号列 C -> 型号、最小电流列 S -> 最小电流、最大电流列 V -> 最大电流、极数输出列 T -> 极数、脱扣输出列 U -> 脱扣方式），并应用水平/垂直居中（-4108）与加粗字体；
+        2. 在 [Controllers/ModelParamParserController.cs](file:///d:/code/excel-ct-tools/Controllers/ModelParamParserController.cs) 与 [Forms/ModelParamParserForm.cs](file:///d:/code/excel-ct-tools/Forms/ModelParamParserForm.cs) 中打通 ddHeaders 消息路由通道；
+        3. 在 [Resources/model_param_parser.html](file:///d:/code/excel-ct-tools/Resources/model_param_parser.html) 中在 1. Excel 工作表列映射与格式卡片右上角和底部工具栏中添加【添加第5行表头】按钮，并绑定 ddHeaders 交互及 ElMessage 消息反馈。
+      - **构建状态**：ExcelAddInDemo.csproj 编译构建通过（0 错误）。
+  50. **型号参数识别添加第5行表头功能直接集成至【立即识别】操作流程（已落地）**：
+      - **业务与架构**：
+        1. 在 [Services/ExcelServices.ModelParse.cs](file:///d:/code/excel-ct-tools/Services/ExcelServices.ModelParse.cs) 的 ExecuteBatchModelParse 中，在批量处理选区二维数组前直接调用 AddModelParserHeadersToExcel(config)；
+        2. 用户点击【🚀 立即识别并填入 Excel】时，自动根据配置将 型号、最小电流、最大电流、极数、脱扣方式 写入第 5 行对应列并设置居中加粗，同时极速完成选区数据回填；
+        3. 在 [Resources/model_param_parser.html](file:///d:/code/excel-ct-tools/Resources/model_param_parser.html) 中优化状态栏提示信息，界面无需冗余的独立按钮。
+      - **构建状态**：ExcelAddInDemo.dll 编译构建通过（0 错误）。
+  51. **清理前端与控制器中多余的独立 addHeaders 消息通道（已完成）**：
+      - **业务与架构**：
+        1. 从 [Resources/model_param_parser.html](file:///d:/code/excel-ct-tools/Resources/model_param_parser.html) 中彻底移除 ddHeaders 函数、ddHeadersResult 消息处理与 eturn 导出；
+        2. 从 [Forms/ModelParamParserForm.cs](file:///d:/code/excel-ct-tools/Forms/ModelParamParserForm.cs) 移除 case " addHeaders\: 消息路由；
+ 3. 从 [Controllers/ModelParamParserController.cs](file:///d:/code/excel-ct-tools/Controllers/ModelParamParserController.cs) 移除 AddHeaders 控制器方法；
+ 4. 保持 [Services/ExcelServices.ModelParse.cs](file:///d:/code/excel-ct-tools/Services/ExcelServices.ModelParse.cs) 中的 AddModelParserHeadersToExcel 作为核心由批量回填入口内部调用。
+ - **构建状态**：ExcelAddInDemo.dll 编译构建通过（0 错误）。

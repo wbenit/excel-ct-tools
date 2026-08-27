@@ -288,6 +288,27 @@ namespace ExcelAddInDemo
                     // 跨线程安全向前端回发更新结果
                     PostWebMessageAsStringSafe(resultJson);
                 }
+                // 响应切换列隐藏状态指令
+                else if (action == "toggleColumnsVisibility")
+                {
+                    // 读取目标列区域
+                    string targetRange = root.TryGetProperty("targetRange", out var trElem) ? (trElem.GetString() ?? "") : "";
+                    // 读取隐藏标志
+                    bool hidden = root.TryGetProperty("hidden", out var hElem) && hElem.GetBoolean();
+
+                    // 调用控制器执行切换
+                    string resultJson = _controller.ToggleColumnsVisibility(targetRange, hidden);
+                    // 跨线程安全回发执行结果
+                    PostWebMessageAsStringSafe(resultJson);
+                }
+                // 响应获取列隐藏状态指令
+                else if (action == "getColumnsHiddenStatus")
+                {
+                    // 调用控制器读取列隐藏状态
+                    string resultJson = _controller.GetColumnsHiddenStatus();
+                    // 跨线程安全回发状态报文
+                    PostWebMessageAsStringSafe(resultJson);
+                }
             }
             catch (Exception ex)
             {

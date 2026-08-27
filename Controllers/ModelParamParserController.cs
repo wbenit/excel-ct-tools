@@ -122,7 +122,7 @@ namespace ExcelAddInDemo.Controllers
             }
 
             var activeConfig = config ?? LoadConfig();
-            // 调用公共服务层执行二维数组内存批量回填
+            // 调用公共服务层执行二维数组内存批量回填 (已集成写入第5行表头)
             return ExcelServices.ExecuteBatchModelParse(activeConfig);
         }
     }

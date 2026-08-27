@@ -346,6 +346,9 @@ namespace ExcelAddInDemo
                 string colPole = string.IsNullOrWhiteSpace(config.PoleColumn) ? "T" : config.PoleColumn.Trim().ToUpper();
                 string colTrip = string.IsNullOrWhiteSpace(config.TripModeColumn) ? "U" : config.TripModeColumn.Trim().ToUpper();
 
+                // ==================== 0. 自动根据配置在工作表第 5 行对应列写入表头 ====================
+                AddModelParserHeadersToExcel(config);
+
                 // 获取用户在 Excel 中当前选中的区域 (Selection)
                 dynamic? selection = app.Selection;
                 if (selection == null)
@@ -478,6 +481,121 @@ namespace ExcelAddInDemo
 
             // 返回最终执行统计报告
             return batchResult;
+        }
+
+        /// <summary>
+        /// 根据配置的列映射在当前工作表第 5 行添加表头 (型号、最小电流、最大电流、极数、脱扣方式)
+        /// </summary>
+        /// <param name="config">型号参数识别配置对象</param>
+        /// <returns>操作结果元组 (Success: 是否成功, Message: 提示信息)</returns>
+        public static (bool Success, string Message) AddModelParserHeadersToExcel(ModelParserConfig config)
+        {
+            try
+            {
+                // 获取当前正在运行的 Excel 顶级 Application 实例
+                dynamic? app = ExcelDna.Integration.ExcelDnaUtil.Application;
+                if (app == null)
+                {
+                    // 未检测到运行中的 Excel 实例
+                    return (false, "未检测到运行中的 Excel 应用程序实例");
+                }
+
+                // 获取当前活动工作表
+                dynamic? activeSheet = app.ActiveSheet;
+                if (activeSheet == null)
+                {
+                    // 未激活工作表提示
+                    return (false, "请先在 Excel 中打开或激活一个工作表");
+                }
+
+                // 固定设置表头所在的行号为第 5 行
+                const int HEADER_ROW = 5; // --硬编码-- 固定表头设置在第 5 行
+
+                // 规范化列名 (转为大写且去除多余首尾空格)
+                string colSrc = string.IsNullOrWhiteSpace(config.SourceColumn) ? string.Empty : config.SourceColumn.Trim().ToUpper();
+                string colMinCur = string.IsNullOrWhiteSpace(config.MinCurrentColumn) ? string.Empty : config.MinCurrentColumn.Trim().ToUpper();
+                string colMaxCur = string.IsNullOrWhiteSpace(config.MaxCurrentColumn) ? string.Empty : config.MaxCurrentColumn.Trim().ToUpper();
+                string colPole = string.IsNullOrWhiteSpace(config.PoleColumn) ? string.Empty : config.PoleColumn.Trim().ToUpper();
+                string colTrip = string.IsNullOrWhiteSpace(config.TripModeColumn) ? string.Empty : config.TripModeColumn.Trim().ToUpper();
+
+                // 存储待写入表头的列与对应标题文本列表
+                var headersToSet = new List<(string Col, string HeaderText)>();
+
+                // 1. 添加源型号列表头
+                if (!string.IsNullOrWhiteSpace(colSrc))
+                {
+                    // 源型号列默认表头为“型号”
+                    headersToSet.Add((colSrc, "型号")); // --硬编码-- 默认源型号列表头
+                }
+
+                // 2. 添加最小电流列表头
+                if (!string.IsNullOrWhiteSpace(colMinCur))
+                {
+                    // 最小电流列默认表头为“最小电流”
+                    headersToSet.Add((colMinCur, "最小电流")); // --硬编码-- 默认最小电流列表头
+                }
+
+                // 3. 添加最大电流列表头 (若已配置且与最小电流列不重复)
+                if (!string.IsNullOrWhiteSpace(colMaxCur) && colMaxCur != colMinCur)
+                {
+                    // 最大电流列默认表头为“最大电流”
+                    headersToSet.Add((colMaxCur, "最大电流")); // --硬编码-- 默认最大电流列表头
+                }
+
+                // 4. 添加极数输出列表头
+                if (!string.IsNullOrWhiteSpace(colPole))
+                {
+                    // 极数输出列默认表头为“极数”
+                    headersToSet.Add((colPole, "极数")); // --硬编码-- 默认极数输出列表头
+                }
+
+                // 5. 添加脱扣方式输出列表头
+                if (!string.IsNullOrWhiteSpace(colTrip))
+                {
+                    // 脱扣方式输出列默认表头为“脱扣方式”
+                    headersToSet.Add((colTrip, "脱扣方式")); // --硬编码-- 默认脱扣方式列表头
+                }
+
+                // 检查是否有有效列配置
+                if (headersToSet.Count == 0)
+                {
+                    // 无有效列配置提示
+                    return (false, "未配置任何有效的列映射，无法添加表头");
+                }
+
+                // 记录成功写入的表头描述清单
+                var successList = new List<string>();
+
+                // 逐个向第 5 行对应列写入表头并应用格式
+                foreach (var (col, headerText) in headersToSet)
+                {
+                    // 获取目标第 5 行单元格 Range 对象
+                    dynamic cell = activeSheet.Range[$"{col}{HEADER_ROW}"];
+
+                    // 写入表头文本内容
+                    cell.Value2 = headerText;
+
+                    // 设置水平居中对齐 (xlCenter = -4108)
+                    cell.HorizontalAlignment = -4108; // --硬编码-- 居中对齐常量
+
+                    // 设置垂直居中对齐 (xlCenter = -4108)
+                    cell.VerticalAlignment = -4108; // --硬编码-- 居中对齐常量
+
+                    // 设置字体加粗
+                    cell.Font.Bold = true;
+
+                    // 记录写入描述
+                    successList.Add($"{col}列 [{headerText}]");
+                }
+
+                // 返回成功消息
+                return (true, $"已在第 {HEADER_ROW} 行成功添加表头：{string.Join("，", successList)}");
+            }
+            catch (Exception ex)
+            {
+                // 捕获并返回异常信息
+                return (false, $"添加表头失败: {ex.Message}");
+            }
         }
 
         // ===================================================================================
