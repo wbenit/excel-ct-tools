@@ -1,11 +1,6 @@
 {
-    // 指定当前工作区默认解决方案，辅助 C# Language Server 快速定位并加载全局符号
-    "dotnet.defaultSolution": "ExcelAddInDemo.sln",
-    // 启用完整的解决方案分析
-    "csharp.lsp.analyzers.enable": true,
-    // 将 HTML 文件关联为 Vue 语言模式，启用 Volar (Vue - Official) 的模板语法支持与方法跳转
-    "files.associations": {
-        // 将所有 HTML 页面（包括 Resources 目录下的 WebView2 Vue 视图）映射为 Vue 语言
-        "*.html": "vue"
-    }
+  // 指定当前工作区默认解决方案，辅助 C# Language Server 快速定位并加载全局符号
+  "dotnet.defaultSolution": "ExcelAddInDemo.sln",
+  // 启用完整的解决方案分析
+  "csharp.lsp.analyzers.enable": true
 }

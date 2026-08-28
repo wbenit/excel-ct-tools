@@ -346,6 +346,19 @@ namespace ExcelAddInDemo
                 string colPole = string.IsNullOrWhiteSpace(config.PoleColumn) ? "T" : config.PoleColumn.Trim().ToUpper();
                 string colTrip = string.IsNullOrWhiteSpace(config.TripModeColumn) ? "U" : config.TripModeColumn.Trim().ToUpper();
 
+                // 校验列映射冲突，防止相互覆盖
+                string? conflictErr = CheckColumnConflicts(colSrc, colMinCur, colMaxCur, colPole, colTrip);
+                // 若存在重复列则终止执行
+                if (conflictErr != null)
+                {
+                    // 记录失败状态
+                    batchResult.Success = false;
+                    // 记录冲突原因
+                    batchResult.Message = conflictErr;
+                    // 返回错误结果
+                    return batchResult;
+                }
+
                 // ==================== 0. 自动根据配置在工作表第 5 行对应列写入表头 ====================
                 AddModelParserHeadersToExcel(config);
 
@@ -518,6 +531,7 @@ namespace ExcelAddInDemo
                 string colPole = string.IsNullOrWhiteSpace(config.PoleColumn) ? string.Empty : config.PoleColumn.Trim().ToUpper();
                 string colTrip = string.IsNullOrWhiteSpace(config.TripModeColumn) ? string.Empty : config.TripModeColumn.Trim().ToUpper();
 
+
                 // 存储待写入表头的列与对应标题文本列表
                 var headersToSet = new List<(string Col, string HeaderText)>();
 
@@ -596,6 +610,43 @@ namespace ExcelAddInDemo
                 // 捕获并返回异常信息
                 return (false, $"添加表头失败: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 校验列映射配置是否存在重复冲突
+        /// </summary>
+        private static string? CheckColumnConflicts(string colSrc, string colMinCur, string colMaxCur, string colPole, string colTrip)
+        {
+            // 构造参与校验的列配置清单
+            var definedCols = new (string Col, string Name)[]
+            {
+                (colSrc, "源型号列"),
+                (colMinCur, "最小电流列"),
+                (colMaxCur, "最大电流列"),
+                (colPole, "极数输出列"),
+                (colTrip, "脱扣输出列")
+            };
+
+            // 双重循环遍历比对是否存在重复列配置
+            for (int i = 0; i < definedCols.Length; i++)
+            {
+                // 跳过未配置的空列
+                if (string.IsNullOrWhiteSpace(definedCols[i].Col)) continue;
+                for (int j = i + 1; j < definedCols.Length; j++)
+                {
+                    // 跳过未配置的空列
+                    if (string.IsNullOrWhiteSpace(definedCols[j].Col)) continue;
+                    // 若存在完全相同的列字母
+                    if (definedCols[i].Col == definedCols[j].Col)
+                    {
+                        // 返回冲突提示信息
+                        return $"列映射配置冲突：{definedCols[i].Name} 与 {definedCols[j].Name} 不能设为同一列 [{definedCols[i].Col}]";
+                    }
+                }
+            }
+
+            // 无冲突返回 null
+            return null;
         }
 
         // ===================================================================================

@@ -44,12 +44,6 @@ namespace ExcelAddInDemo.Models
         // 默认提取后最大电流输出的目标列 (可自由配置如 S 或 T 列，留空则不写入)
         public string MaxCurrentColumn { get; set; } = string.Empty; // --硬编码-- 默认最大电流输出列
 
-        // 兼容性字段：电流输出列 (自动重定向至 MinCurrentColumn)
-        public string CurrentColumn
-        {
-            get => MinCurrentColumn;
-            set => MinCurrentColumn = value;
-        }
 
         // 默认提取后极数输出的目标列 (如 T 列)
         public string PoleColumn { get; set; } = "T"; // --硬编码-- 默认极数输出列
