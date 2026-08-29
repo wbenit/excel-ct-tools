@@ -496,6 +496,11 @@ namespace ExcelAddInDemo
 
                 // Q 列 (索引 16): 类别 =IF(AND(B{row}="",C{row}=""),"","元件")
                 matrix[r, 16] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",\"元件\")";
+                if (totalCols >= 20)
+                {
+                    // 覆盖写入 A 列至 Q 列完整元器件二维数组
+                    matrix[r, 20]=spec;
+                }
             }
 
             // 返回构建完成的元器件二维矩阵

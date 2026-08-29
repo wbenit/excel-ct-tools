@@ -222,6 +222,9 @@ namespace ExcelAddInDemo
             // 原始型号规格 (预留扩展)
             public string OriginalModel { get; set; } = string.Empty;
 
+            // 明细表 U 列原始型号 (汇总表 R 列对应，相同规格合并时用“，”连接)
+            public string RawModelFromU { get; set; } = string.Empty;
+
             // 位号 / 安装位置 (预留扩展)
             public string Position { get; set; } = string.Empty;
 
@@ -481,24 +484,28 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 执行元件数据提取、内存合并聚合并在当前工作簿生成“元件汇总表” (16 列双层表头版)
+        /// 执行元件数据提取、内存合并聚合并在当前工作簿生成“元件汇总表” (17 列双层表头版，包含“原型号规格”基准参考列)
         /// </summary>
         public static bool GenerateComponentSummarySheet(Controllers.GenerateSummaryRequest request)
         {
+            // 校验请求参数有效性
             if (request == null || request.SelectedSheets == null || request.SelectedSheets.Count == 0) return false;
 
             try
             {
                 // 获取当前活动的 Excel Application 实例 (安全访问)
                 dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                // 若未获取到 Excel 实例直接返回失败
                 if (app == null) return false;
 
                 // 获取活动工作簿
                 dynamic activeWb = app.ActiveWorkbook;
+                // 若工作簿为空则返回失败
                 if (activeWb == null) return false;
 
                 // 临时关闭屏幕刷新与提示警告以提升处理速度
                 app.ScreenUpdating = false;
+                // 关闭 Excel 警告弹窗
                 app.DisplayAlerts = false;
 
                 // 原始元器件提取列表
@@ -507,12 +514,15 @@ namespace ExcelAddInDemo
                 // 遍历用户选中的所有分类工作表
                 foreach (string sheetName in request.SelectedSheets)
                 {
+                    // 定义工作表动态对象
                     dynamic? sheet = null;
                     try
                     {
+                        // 按名称获取工作表 COM 实例
                         sheet = activeWb.Worksheets[sheetName];
                     }
                     catch { continue; }
+                    // 校验工作表非空
                     if (sheet == null) continue;
 
                     // 调用公共方法构建当前分类表的有效箱柜锚点字典 (规则 6)
@@ -521,11 +531,16 @@ namespace ExcelAddInDemo
                     // 遍历当前分类表中的每个箱柜
                     foreach (var cab in validCabinets)
                     {
+                        // 缺少明细锚点则跳过
                         if (cab.Value.Det == null) continue;
 
+                        // 获取明细起始行号与小计行号
                         int detRow = Convert.ToInt32(cab.Value.Det.Row);
+                        // 小计行号默认为 detRow + 27 --硬编码--
                         int subsumRow = cab.Value.Subsum != null ? Convert.ToInt32(cab.Value.Subsum.Row) : detRow + 27;
+                        // 汇总行号
                         int sumRow = cab.Value.Sum != null ? Convert.ToInt32(cab.Value.Sum.Row) : 0;
+                        // 默认单台箱柜台数
                         int cabQty = 1;
 
                         // 获取柜体台数（规则 6 & 8，优先取汇总行 F 列数量）
@@ -533,7 +548,9 @@ namespace ExcelAddInDemo
                         {
                             try
                             {
+                                // 优先读取汇总行数量
                                 object qVal = sheet.Cells[sumRow, 6].Value ?? sheet.Cells[sumRow, 5].Value;
+                                // 转换台数整数
                                 if (qVal != null && int.TryParse(Convert.ToString(qVal), out int pQty) && pQty > 0)
                                 {
                                     cabQty = pQty;
@@ -544,14 +561,19 @@ namespace ExcelAddInDemo
 
                         // 元器件区域起始行与终止行
                         int compStartRow = detRow + 2;
+                        // 终止行为小计行前一行 (规则 6)
                         int compEndRow = subsumRow - 1;
+                        // 行号倒置则跳过
                         if (compEndRow < compStartRow) continue;
 
+                        // 计算区域总行数
                         int rowCount = compEndRow - compStartRow + 1;
 
-                        // 采用 2D 数组一次性批量读入内存（包含值矩阵与公式矩阵，覆盖 A~Q 列，规则 7）
-                        dynamic compRange = sheet.Range[$"A{compStartRow}:Q{compEndRow}"];
+                        // 采用 2D 数组一次性批量读入内存（包含值矩阵与公式矩阵，覆盖 A~U 列共 21 列，规则 7）
+                        dynamic compRange = sheet.Range[$"A{compStartRow}:U{compEndRow}"];
+                        // 读取值矩阵
                         object[,] valMatrix = (object[,])compRange.Value2;
+                        // 读取公式矩阵
                         object[,] formulaMatrix = (object[,])compRange.Formula;
 
                         // 逐行解析元器件字段
@@ -559,7 +581,7 @@ namespace ExcelAddInDemo
                         {
                             // B 列 (索引 2): 元件名称
                             string compName = Convert.ToString(valMatrix[r, 2]) ?? string.Empty;
-                            // C 列 (索引 3): 型号规格
+                            // C 列 (索引 3): 型号规格 (从分类表中提取时的原始型号规格)
                             string model = Convert.ToString(valMatrix[r, 3]) ?? string.Empty;
 
                             // 跳过名称与型号均为空的空白行
@@ -575,15 +597,19 @@ namespace ExcelAddInDemo
 
                             // F 列 (索引 6): 数量
                             decimal qty = 0;
+                            // 解析数量数值
                             if (decimal.TryParse(Convert.ToString(valMatrix[r, 6]), out decimal q)) qty = q;
 
                             // G 列 (索引 7): 销售单价
                             decimal unitPrice = 0;
+                            // 解析单价值
                             if (decimal.TryParse(Convert.ToString(valMatrix[r, 7]), out decimal p)) unitPrice = p;
 
                             // H 列 (索引 8): 销售总价
                             decimal totalP = 0;
+                            // 解析销售总价
                             if (decimal.TryParse(Convert.ToString(valMatrix[r, 8]), out decimal tp)) totalP = tp;
+                            // 若总价未填写则自动计算
                             else totalP = qty * unitPrice;
 
                             // I 列 (索引 9): 备注
@@ -591,41 +617,65 @@ namespace ExcelAddInDemo
 
                             // J 列 (索引 10): 成本单价
                             decimal costUnitPrice = 0;
+                            // 解析成本单价
                             if (decimal.TryParse(Convert.ToString(valMatrix[r, 10]), out decimal cp)) costUnitPrice = cp;
 
                             // K 列 (索引 11): 成本总价
                             decimal costTotalPrice = 0;
+                            // 解析成本总价
                             if (decimal.TryParse(Convert.ToString(valMatrix[r, 11]), out decimal ctp)) costTotalPrice = ctp;
+                            // 缺省时自动计算成本总价
                             else costTotalPrice = qty * costUnitPrice;
 
                             // L 列 (索引 12): 报出系数 / 加价系数
                             decimal markupFactor = 1.0m;
+                            // 解析报出系数值
                             if (decimal.TryParse(Convert.ToString(valMatrix[r, 12]), out decimal mf) && mf > 0) markupFactor = mf;
+                            // 若未指定则根据售价与成本计算加价系数
                             else if (costUnitPrice > 0 && unitPrice > 0) markupFactor = Math.Round(unitPrice / costUnitPrice, 2);
 
                             // M 列 (索引 13): 表价 / 面价公式与拆分
                             object valM = valMatrix[r, 13];
+                            // 获取 M 列公式
                             object formulaM = formulaMatrix[r, 13];
+                            // 拆分本体与附件表价
                             ParseBaseAndAccessoryPrice(valM, formulaM, out decimal basePrice, out decimal accPrice);
 
                             // N 列 (索引 14): 折扣公式与拆分
                             object valN = valMatrix[r, 14];
+                            // 获取 N 列公式
                             object formulaN = formulaMatrix[r, 14];
+                            // 拆分本体与附件折扣
                             ParseBaseAndAccessoryDiscount(valN, formulaN, basePrice, accPrice, out decimal baseDiscount, out decimal accDiscount);
 
                             // Q 列 (索引 17): 类别
                             string compCategory = Convert.ToString(valMatrix[r, 17]) ?? string.Empty;
+                            // 默认分类名称为“元件” --硬编码--
                             if (string.IsNullOrWhiteSpace(compCategory)) compCategory = "元件";
+
+                            // U 列 (索引 21): 原始型号 (分类明细表中该元件的原始信息)
+                            string uColModel = string.Empty;
+                            // 安全检查矩阵第二维宽度是否达到 21 列
+                            if (valMatrix.GetLength(1) >= 21)
+                            {
+                                // 读取 U 列单元格文本值
+                                uColModel = Convert.ToString(valMatrix[r, 21]) ?? string.Empty;
+                            }
 
                             // 计算经过箱柜台数放大后的实际总数量与实际总金额
                             decimal totalQty = qty * cabQty;
+                            // 计算放大后的销售总金额
                             decimal finalTotalPrice = totalP * cabQty;
+                            // 计算放大后的成本总金额
                             decimal finalCostTotalPrice = costTotalPrice * cabQty;
 
+                            // 将提取到的元件明细添加至临时列表
                             rawComponents.Add(new AggregatedComponent
                             {
                                 Name = compName.Trim(),
-                                Model = model.Trim(),
+                                OriginalModel = model.Trim(), // 记录分类表中的原始型号规格，供基准对照
+                                RawModelFromU = uColModel.Trim(), // 记录明细表 U 列原始型号
+                                Model = model.Trim(), // 当前可用于汇总调价的型号规格
                                 Manufacturer = mfg.Trim(),
                                 Unit = unit.Trim(),
                                 Quantity = totalQty,
@@ -648,21 +698,27 @@ namespace ExcelAddInDemo
 
                 // 内存合并聚合
                 var mergeConditions = request.MergeConditions;
+                // 根据前端指定的合并条件进行分组
                 var grouped = rawComponents.GroupBy(c =>
                 {
+                    // 默认按名称和型号合并
                     string key = $"{c.Name}||{c.Model}";
+                    // 按厂家合并
                     if (mergeConditions.ByManufacturer)
                     {
                         key += $"||{(mergeConditions.IncludeNoManufacturer && string.IsNullOrWhiteSpace(c.Manufacturer) ? "" : c.Manufacturer)}";
                     }
+                    // 按价格合并
                     if (mergeConditions.ByPrice)
                     {
                         key += $"||{c.UnitPrice}";
                     }
+                    // 按备注合并
                     if (mergeConditions.ByRemark)
                     {
                         key += $"||{c.Remark}";
                     }
+                    // 按原图型号合并
                     if (mergeConditions.ByOriginalModel)
                     {
                         key += $"||{c.OriginalModel}";
@@ -670,17 +726,35 @@ namespace ExcelAddInDemo
                     return key;
                 }).Select(g =>
                 {
+                    // 获取分组第一项
                     var first = g.First();
+                    // 汇总数量
                     decimal sumQty = g.Sum(x => x.Quantity);
+                    // 汇总总价
                     decimal sumTotal = g.Sum(x => x.TotalPrice);
+                    // 汇总成本总额
                     decimal sumCost = g.Sum(x => x.CostTotalPrice);
+                    // 加权平均单价计算
                     decimal avgPrice = sumQty > 0 ? Math.Round(sumTotal / sumQty, 2) : first.UnitPrice;
+                    // 加权平均成本单价计算
                     decimal avgCostPrice = sumQty > 0 ? Math.Round(sumCost / sumQty, 2) : first.CostUnitPrice;
+                    // 加权报出系数计算
                     decimal markupFactor = avgCostPrice > 0 ? Math.Round(avgPrice / avgCostPrice, 2) : first.MarkupFactor;
 
+                    // 提取所有不为空的明细 U 列原始型号，去重并以全角逗号“，”连接 (需求规定)
+                    var distinctUModels = g.Select(x => x.RawModelFromU)
+                        .Where(u => !string.IsNullOrWhiteSpace(u))
+                        .Distinct()
+                        .ToList();
+                    // 用全角逗号拼接所有不重复的原始型号
+                    string combinedUModel = string.Join("，", distinctUModels);
+
+                    // 构建聚合后的元件实体
                     return new AggregatedComponent
                     {
                         Name = first.Name,
+                        OriginalModel = first.OriginalModel, // 保留原型号规格基准
+                        RawModelFromU = combinedUModel, // 原始型号 (U 列多项逗号拼接)
                         Model = first.Model,
                         Manufacturer = first.Manufacturer,
                         Unit = first.Unit,
@@ -703,10 +777,12 @@ namespace ExcelAddInDemo
                 // 排序处理
                 if (request.SortSettings.SortType == "mfg_name_model")
                 {
+                    // 按厂家、名称、型号排序
                     grouped = grouped.OrderBy(x => x.Manufacturer).ThenBy(x => x.Name).ThenBy(x => x.Model).ToList();
                 }
                 else
                 {
+                    // 默认按工作表、名称、厂家、型号排序
                     grouped = grouped.OrderBy(x => x.SheetName).ThenBy(x => x.Name).ThenBy(x => x.Manufacturer).ThenBy(x => x.Model).ToList();
                 }
 
@@ -715,80 +791,105 @@ namespace ExcelAddInDemo
                 dynamic summarySheet = null;
                 try
                 {
+                    // 尝试获取已有的“元件汇总表”
                     summarySheet = activeWb.Worksheets[summarySheetName];
+                    // 清空既有内容与样式
                     summarySheet.Cells.Clear();
                 }
                 catch
                 {
+                    // 不存在则在工作簿最后新增工作表
                     summarySheet = activeWb.Worksheets.Add(After: activeWb.Worksheets[activeWb.Worksheets.Count]);
+                    // 重命名为“元件汇总表”
                     summarySheet.Name = summarySheetName;
                 }
 
-                // 写入大标题
+                // 写入大标题 (扩展为覆盖 A1:R1 共 18 列)
                 summarySheet.Cells[1, 1].Value = "元件汇总调价清单";
-                dynamic titleRange = summarySheet.Range["A1:P1"];
+                // 合并大标题区域
+                dynamic titleRange = summarySheet.Range["A1:R1"];
                 titleRange.Merge();
+                // 设置标题字号与加粗
                 titleRange.Font.Size = 14;
                 titleRange.Font.Bold = true;
+                // 居中对齐
                 titleRange.HorizontalAlignment = -4108; // 居中 xlCenter --硬编码--
 
                 // 设置表头第 4 行与第 5 行行高
                 summarySheet.Range["4:4"].RowHeight = 22; // --硬编码--
                 summarySheet.Range["5:5"].RowHeight = 22; // --硬编码--
 
-                // 合并第 4~5 行的常规列 (A~I 列)
+                // 合并第 4~5 行的常规列 (A~J 列)
+                // A 列: 序号
                 summarySheet.Range["A4:A5"].Merge();
                 summarySheet.Cells[4, 1].Value = "序号";
 
+                // B 列: 元件名称
                 summarySheet.Range["B4:B5"].Merge();
                 summarySheet.Cells[4, 2].Value = "元件名称";
 
+                // C 列: 原型号规格 (放置在元件名称后，基准参考)
                 summarySheet.Range["C4:C5"].Merge();
-                summarySheet.Cells[4, 3].Value = "型号规格";
+                summarySheet.Cells[4, 3].Value = "原型号规格";
 
+                // D 列: 型号规格 (调价列，允许工程师修改替换)
                 summarySheet.Range["D4:D5"].Merge();
-                summarySheet.Cells[4, 4].Value = "单位";
+                summarySheet.Cells[4, 4].Value = "型号规格";
 
+                // E 列: 单位
                 summarySheet.Range["E4:E5"].Merge();
-                summarySheet.Cells[4, 5].Value = "数量";
+                summarySheet.Cells[4, 5].Value = "单位";
 
+                // F 列: 数量
                 summarySheet.Range["F4:F5"].Merge();
-                summarySheet.Cells[4, 6].Value = "单价";
+                summarySheet.Cells[4, 6].Value = "数量";
 
+                // G 列: 单价
                 summarySheet.Range["G4:G5"].Merge();
-                summarySheet.Cells[4, 7].Value = "总价";
+                summarySheet.Cells[4, 7].Value = "单价";
 
+                // H 列: 总价
                 summarySheet.Range["H4:H5"].Merge();
-                summarySheet.Cells[4, 8].Value = "生产厂家";
+                summarySheet.Cells[4, 8].Value = "总价";
 
+                // I 列: 生产厂家
                 summarySheet.Range["I4:I5"].Merge();
-                summarySheet.Cells[4, 9].Value = "成本单价";
+                summarySheet.Cells[4, 9].Value = "生产厂家";
 
-                // 合并第 4~5 行的报出系数列 (J 列，粉色表头)
+                // J 列: 成本单价
                 summarySheet.Range["J4:J5"].Merge();
-                summarySheet.Cells[4, 10].Value = "报出系数";
+                summarySheet.Cells[4, 10].Value = "成本单价";
 
-                // 写入本体复合表头 (K~L 列，第 4 行合并“本体”，第 5 行“表价”与“折扣”)
-                summarySheet.Range["K4:L4"].Merge();
-                summarySheet.Cells[4, 11].Value = "本体";
-                summarySheet.Cells[5, 11].Value = "表价";
-                summarySheet.Cells[5, 12].Value = "折扣";
+                // K 列: 报出系数 (合并第 4~5 行，粉色表头)
+                summarySheet.Range["K4:K5"].Merge();
+                summarySheet.Cells[4, 11].Value = "报出系数";
 
-                // 写入附件复合表头 (M~N 列，第 4 行合并“附件”，第 5 行“表价”与“折扣”)
-                summarySheet.Range["M4:N4"].Merge();
-                summarySheet.Cells[4, 13].Value = "附件";
-                summarySheet.Cells[5, 13].Value = "表价";
-                summarySheet.Cells[5, 14].Value = "折扣";
+                // L~M 列: 本体复合表头 (第 4 行合并“本体”，第 5 行“表价”与“折扣”)
+                summarySheet.Range["L4:M4"].Merge();
+                summarySheet.Cells[4, 12].Value = "本体";
+                summarySheet.Cells[5, 12].Value = "表价";
+                summarySheet.Cells[5, 13].Value = "折扣";
 
-                // 合并第 4~5 行的辅助列 (O~P 列)
-                summarySheet.Range["O4:O5"].Merge();
-                summarySheet.Cells[4, 15].Value = "备注";
+                // N~O 列: 附件复合表头 (第 4 行合并“附件”，第 5 行“表价”与“折扣”)
+                summarySheet.Range["N4:O4"].Merge();
+                summarySheet.Cells[4, 14].Value = "附件";
+                summarySheet.Cells[5, 14].Value = "表价";
+                summarySheet.Cells[5, 15].Value = "折扣";
 
+                // P 列: 备注
                 summarySheet.Range["P4:P5"].Merge();
-                summarySheet.Cells[4, 16].Value = "类别";
+                summarySheet.Cells[4, 16].Value = "备注";
 
-                // 设置全表头基础文字与对齐样式 (A4:P5)
-                dynamic headerAllRange = summarySheet.Range["A4:P5"];
+                // Q 列: 类别
+                summarySheet.Range["Q4:Q5"].Merge();
+                summarySheet.Cells[4, 17].Value = "类别";
+
+                // R 列: 原始型号 (合并第 4~5 行，对应明细表 U 列内容，多项逗号拼接)
+                summarySheet.Range["R4:R5"].Merge();
+                summarySheet.Cells[4, 18].Value = "原始型号";
+
+                // 设置全表头基础文字与对齐样式 (覆盖 A4:R5 共 18 列)
+                dynamic headerAllRange = summarySheet.Range["A4:R5"];
                 headerAllRange.Font.Name = "宋体"; // --硬编码--
                 headerAllRange.Font.Size = 10; // --硬编码--
                 headerAllRange.Font.Bold = true;
@@ -796,121 +897,132 @@ namespace ExcelAddInDemo
                 headerAllRange.VerticalAlignment = -4108; // 居中 xlCenter --硬编码--
                 headerAllRange.WrapText = true;
 
-                // 常规列灰色背景 (A4:I5 与 O4:P5) --硬编码--
+                // 常规列灰色背景 (A4:J5 与 P4:R5 覆盖 P、Q、R 三列) --硬编码--
                 int headerGrayColor = System.Drawing.ColorTranslator.ToOle(System.Drawing.ColorTranslator.FromHtml("#E8ECEF"));
-                summarySheet.Range["A4:I5"].Interior.Color = headerGrayColor;
-                summarySheet.Range["O4:P5"].Interior.Color = headerGrayColor;
+                summarySheet.Range["A4:J5"].Interior.Color = headerGrayColor;
+                summarySheet.Range["P4:R5"].Interior.Color = headerGrayColor;
 
-                // 调价核心列粉色背景 (J4:N5，包含报出系数、本体与附件) --硬编码--
+                // 调价核心列粉色背景 (K4:O5，包含报出系数、本体与附件) --硬编码--
                 int headerPinkColor = System.Drawing.ColorTranslator.ToOle(System.Drawing.ColorTranslator.FromHtml("#E6A8A8"));
-                summarySheet.Range["J4:N5"].Interior.Color = headerPinkColor;
+                summarySheet.Range["K4:O5"].Interior.Color = headerPinkColor;
 
-                // 批量回写 16 列数据 (从第 6 行开始)
+                // 柔和浅蓝色强调底色 (基准参考列专属色) --硬编码--
+                int softBlueColor = System.Drawing.ColorTranslator.ToOle(System.Drawing.ColorTranslator.FromHtml("#A8C7EB"));
+
+                // 原型号规格表头 (C4:C5) 显式设置为浅蓝色底色，与后续数据列保持蓝底一致风格
+                summarySheet.Range["C4:C5"].Interior.Color = softBlueColor;
+
+                // 批量回写 18 列数据 (从第 6 行开始)
                 int dataRowCount = grouped.Count;
                 int startDataRow = 6;
                 int endDataRow = startDataRow + dataRowCount - 1;
 
                 if (dataRowCount > 0)
                 {
-                    object[,] outMatrix = new object[dataRowCount, 16];
+                    // 构建 18 列数据输出矩阵
+                    object[,] outMatrix = new object[dataRowCount, 18];
                     for (int i = 0; i < dataRowCount; i++)
                     {
                         var comp = grouped[i];
                         outMatrix[i, 0] = i + 1; // A: 序号
                         outMatrix[i, 1] = comp.Name; // B: 元件名称
-                        outMatrix[i, 2] = comp.Model; // C: 型号规格
-                        outMatrix[i, 3] = comp.Unit; // D: 单位
-                        outMatrix[i, 4] = (double)comp.Quantity; // E: 数量
-                        outMatrix[i, 5] = (double)comp.UnitPrice; // F: 单价
-                        outMatrix[i, 6] = (double)comp.TotalPrice; // G: 总价
-                        outMatrix[i, 7] = comp.Manufacturer; // H: 生产厂家
-                        outMatrix[i, 8] = (double)comp.CostUnitPrice; // I: 成本单价
-                        outMatrix[i, 9] = (double)comp.MarkupFactor; // J: 报出系数
-                        outMatrix[i, 10] = comp.BasePrice > 0 ? (object)(double)comp.BasePrice : string.Empty; // K: 本体表价
-                        outMatrix[i, 11] = comp.BaseDiscount > 0 ? (object)(double)comp.BaseDiscount : string.Empty; // L: 本体折扣
-                        outMatrix[i, 12] = comp.AccessoryPrice > 0 ? (object)(double)comp.AccessoryPrice : string.Empty; // M: 附件表价
-                        outMatrix[i, 13] = (comp.AccessoryPrice > 0 && comp.AccessoryDiscount > 0) ? (object)(double)comp.AccessoryDiscount : string.Empty; // N: 附件折扣
-                        outMatrix[i, 14] = comp.Remark; // O: 备注
-                        outMatrix[i, 15] = comp.Category; // P: 类别
+                        outMatrix[i, 2] = comp.OriginalModel; // C: 原型号规格 (基准参考列)
+                        outMatrix[i, 3] = comp.Model; // D: 型号规格 (可编辑调价列)
+                        outMatrix[i, 4] = comp.Unit; // E: 单位
+                        outMatrix[i, 5] = (double)comp.Quantity; // F: 数量
+                        outMatrix[i, 6] = (double)comp.UnitPrice; // G: 单价
+                        outMatrix[i, 7] = (double)comp.TotalPrice; // H: 总价
+                        outMatrix[i, 8] = comp.Manufacturer; // I: 生产厂家
+                        outMatrix[i, 9] = (double)comp.CostUnitPrice; // J: 成本单价
+                        outMatrix[i, 10] = (double)comp.MarkupFactor; // K: 报出系数
+                        outMatrix[i, 11] = comp.BasePrice > 0 ? (object)(double)comp.BasePrice : string.Empty; // L: 本体表价
+                        outMatrix[i, 12] = comp.BaseDiscount > 0 ? (object)(double)comp.BaseDiscount : string.Empty; // M: 本体折扣
+                        outMatrix[i, 13] = comp.AccessoryPrice > 0 ? (object)(double)comp.AccessoryPrice : string.Empty; // N: 附件表价
+                        outMatrix[i, 14] = (comp.AccessoryPrice > 0 && comp.AccessoryDiscount > 0) ? (object)(double)comp.AccessoryDiscount : string.Empty; // O: 附件折扣
+                        outMatrix[i, 15] = comp.Remark; // P: 备注
+                        outMatrix[i, 16] = comp.Category; // Q: 类别
+                        outMatrix[i, 17] = comp.RawModelFromU; // R: 原始型号 (对应明细表 U 列内容，逗号拼接)
                     }
 
-                    // 一次性批量写入数据矩阵 (覆盖 A6:P{endDataRow}) (规则 7)
-                    summarySheet.Range[$"A{startDataRow}:P{endDataRow}"].Value2 = outMatrix;
+                    // 一次性批量写入数据矩阵 (覆盖 A6:R{endDataRow}) (规则 7)
+                    summarySheet.Range[$"A{startDataRow}:R{endDataRow}"].Value2 = outMatrix;
 
                     // 设置数据行行高
                     summarySheet.Range[$"{startDataRow}:{endDataRow}"].RowHeight = 20; // --硬编码--
 
-                    // 设置单元格对齐方式
-                    summarySheet.Range[$"A{startDataRow}:A{endDataRow}"].HorizontalAlignment = -4108; // 居中
-                    summarySheet.Range[$"B{startDataRow}:C{endDataRow}"].HorizontalAlignment = -4131; // 靠左
-                    summarySheet.Range[$"D{startDataRow}:E{endDataRow}"].HorizontalAlignment = -4108; // 居中
-                    summarySheet.Range[$"F{startDataRow}:G{endDataRow}"].HorizontalAlignment = -4152; // 靠右
-                    summarySheet.Range[$"H{startDataRow}:H{endDataRow}"].HorizontalAlignment = -4131; // 靠左
-                    summarySheet.Range[$"I{startDataRow}:I{endDataRow}"].HorizontalAlignment = -4152; // 靠右
-                    summarySheet.Range[$"J{startDataRow}:J{endDataRow}"].HorizontalAlignment = -4108; // 居中
-                    summarySheet.Range[$"K{startDataRow}:K{endDataRow}"].HorizontalAlignment = -4152; // 靠右
-                    summarySheet.Range[$"L{startDataRow}:L{endDataRow}"].HorizontalAlignment = -4108; // 居中
-                    summarySheet.Range[$"M{startDataRow}:M{endDataRow}"].HorizontalAlignment = -4152; // 靠右
-                    summarySheet.Range[$"N{startDataRow}:N{endDataRow}"].HorizontalAlignment = -4108; // 居中
-                    summarySheet.Range[$"O{startDataRow}:O{endDataRow}"].HorizontalAlignment = -4131; // 靠左
-                    summarySheet.Range[$"P{startDataRow}:P{endDataRow}"].HorizontalAlignment = -4108; // 居中
+                    // 设置单元格对齐方式 (完整对应 18 列布局)
+                    summarySheet.Range[$"A{startDataRow}:A{endDataRow}"].HorizontalAlignment = -4108; // A 序号居中
+                    summarySheet.Range[$"B{startDataRow}:D{endDataRow}"].HorizontalAlignment = -4131; // B~D 名称、原型号、型号靠左
+                    summarySheet.Range[$"E{startDataRow}:F{endDataRow}"].HorizontalAlignment = -4108; // E~F 单位、数量居中
+                    summarySheet.Range[$"G{startDataRow}:H{endDataRow}"].HorizontalAlignment = -4152; // G~H 单价、总价靠右
+                    summarySheet.Range[$"I{startDataRow}:I{endDataRow}"].HorizontalAlignment = -4131; // I 厂家靠左
+                    summarySheet.Range[$"J{startDataRow}:J{endDataRow}"].HorizontalAlignment = -4152; // J 成本单价靠右
+                    summarySheet.Range[$"K{startDataRow}:K{endDataRow}"].HorizontalAlignment = -4108; // K 报出系数居中
+                    summarySheet.Range[$"L{startDataRow}:L{endDataRow}"].HorizontalAlignment = -4152; // L 本体表价靠右
+                    summarySheet.Range[$"M{startDataRow}:M{endDataRow}"].HorizontalAlignment = -4108; // M 本体折扣居中
+                    summarySheet.Range[$"N{startDataRow}:N{endDataRow}"].HorizontalAlignment = -4152; // N 附件表价靠右
+                    summarySheet.Range[$"O{startDataRow}:O{endDataRow}"].HorizontalAlignment = -4108; // O 附件折扣居中
+                    summarySheet.Range[$"P{startDataRow}:P{endDataRow}"].HorizontalAlignment = -4131; // P 备注靠左
+                    summarySheet.Range[$"Q{startDataRow}:Q{endDataRow}"].HorizontalAlignment = -4108; // Q 类别居中
+                    summarySheet.Range[$"R{startDataRow}:R{endDataRow}"].HorizontalAlignment = -4131; // R 原始型号靠左
 
-                    // 设置特定列的浅蓝色强调底色 (序号 A 列、数量 E 列、成本单价 I 列) --硬编码--
-                    int softBlueColor = System.Drawing.ColorTranslator.ToOle(System.Drawing.ColorTranslator.FromHtml("#A8C7EB"));
+                    // 设置基准参考列的浅蓝色强调底色 (序号 A 列、原型号规格 C 列、数量 F 列、成本单价 J 列) --硬编码--
                     summarySheet.Range[$"A{startDataRow}:A{endDataRow}"].Interior.Color = softBlueColor;
-                    summarySheet.Range[$"E{startDataRow}:E{endDataRow}"].Interior.Color = softBlueColor;
-                    summarySheet.Range[$"I{startDataRow}:I{endDataRow}"].Interior.Color = softBlueColor;
+                    summarySheet.Range[$"C{startDataRow}:C{endDataRow}"].Interior.Color = softBlueColor; // 原型号规格蓝色底色
+                    summarySheet.Range[$"F{startDataRow}:F{endDataRow}"].Interior.Color = softBlueColor; // 数量列蓝色底色
+                    summarySheet.Range[$"J{startDataRow}:J{endDataRow}"].Interior.Color = softBlueColor; // 成本单价蓝色底色
 
                     // 设置各数值列的显示格式（双轨安全容错机制，兼容中英文 Excel） --硬编码--
-                    // E 列数量格式：优先使用中文本地化通用格式 G/通用格式，容错回退 General
-                    try { summarySheet.Range[$"E{startDataRow}:E{endDataRow}"].NumberFormatLocal = "G/通用格式"; }
-                    catch { try { summarySheet.Range[$"E{startDataRow}:E{endDataRow}"].NumberFormat = "General"; } catch { } }
+                    // F 列数量格式：优先使用中文本地化通用格式 G/通用格式，容错回退 General
+                    try { summarySheet.Range[$"F{startDataRow}:F{endDataRow}"].NumberFormatLocal = "G/通用格式"; }
+                    catch { try { summarySheet.Range[$"F{startDataRow}:F{endDataRow}"].NumberFormat = "General"; } catch { } }
 
-                    // F~G 列：销售单价与总价格式
-                    try { summarySheet.Range[$"F{startDataRow}:G{endDataRow}"].NumberFormat = "#,##0.00"; } catch { }
-                    // I 列：成本单价格式
-                    try { summarySheet.Range[$"I{startDataRow}:I{endDataRow}"].NumberFormat = "#,##0.00"; } catch { }
-                    // J 列：报出系数格式
-                    try { summarySheet.Range[$"J{startDataRow}:J{endDataRow}"].NumberFormat = "0.00"; } catch { }
-                    // K 列：本体表价格式
-                    try { summarySheet.Range[$"K{startDataRow}:K{endDataRow}"].NumberFormat = "#,##0.00"; } catch { }
-                    // L 列：本体折扣格式
-                    try { summarySheet.Range[$"L{startDataRow}:L{endDataRow}"].NumberFormat = "0.####"; } catch { }
-                    // M 列：附件表价格式
-                    try { summarySheet.Range[$"M{startDataRow}:M{endDataRow}"].NumberFormat = "#,##0.00"; } catch { }
-                    // N 列：附件折扣格式
-                    try { summarySheet.Range[$"N{startDataRow}:N{endDataRow}"].NumberFormat = "0.####"; } catch { }
+                    // G~H 列：销售单价与总价格式
+                    try { summarySheet.Range[$"G{startDataRow}:H{endDataRow}"].NumberFormat = "#,##0.00"; } catch { }
+                    // J 列：成本单价格式
+                    try { summarySheet.Range[$"J{startDataRow}:J{endDataRow}"].NumberFormat = "#,##0.00"; } catch { }
+                    // K 列：报出系数格式
+                    try { summarySheet.Range[$"K{startDataRow}:K{endDataRow}"].NumberFormat = "0.00"; } catch { }
+                    // L 列：本体表价格式
+                    try { summarySheet.Range[$"L{startDataRow}:L{endDataRow}"].NumberFormat = "#,##0.00"; } catch { }
+                    // M 列：本体折扣格式
+                    try { summarySheet.Range[$"M{startDataRow}:M{endDataRow}"].NumberFormat = "0.####"; } catch { }
+                    // N 列：附件表价格式
+                    try { summarySheet.Range[$"N{startDataRow}:N{endDataRow}"].NumberFormat = "#,##0.00"; } catch { }
+                    // O 列：附件折扣格式
+                    try { summarySheet.Range[$"O{startDataRow}:O{endDataRow}"].NumberFormat = "0.####"; } catch { }
 
                     // 写入底部合计行
                     int totalRow = endDataRow + 1;
                     summarySheet.Range[$"{totalRow}:{totalRow}"].RowHeight = 22; // --硬编码--
+                    // 合计行标签写入 B 列 (元件名称)
                     summarySheet.Cells[totalRow, 2].Value = "合计";
                     summarySheet.Cells[totalRow, 2].Font.Bold = true;
                     summarySheet.Cells[totalRow, 2].HorizontalAlignment = -4108; // 居中
 
-                    // 数量总计公式
-                    summarySheet.Cells[totalRow, 5].Formula = $"=SUM(E{startDataRow}:E{endDataRow})";
-                    summarySheet.Cells[totalRow, 5].Font.Bold = true;
-                    summarySheet.Cells[totalRow, 5].HorizontalAlignment = -4108;
-                    // 合计行 E 列数量格式：优先使用中文本地化通用格式 G/通用格式，容错回退 General
-                    try { summarySheet.Cells[totalRow, 5].NumberFormatLocal = "G/通用格式"; }
-                    catch { try { summarySheet.Cells[totalRow, 5].NumberFormat = "General"; } catch { } }
+                    // 数量总计公式写入 F 列
+                    summarySheet.Cells[totalRow, 6].Formula = $"=SUM(F{startDataRow}:F{endDataRow})";
+                    summarySheet.Cells[totalRow, 6].Font.Bold = true;
+                    summarySheet.Cells[totalRow, 6].HorizontalAlignment = -4108;
+                    // 合计行 F 列数量格式
+                    try { summarySheet.Cells[totalRow, 6].NumberFormatLocal = "G/通用格式"; }
+                    catch { try { summarySheet.Cells[totalRow, 6].NumberFormat = "General"; } catch { } }
 
-                    // 销售总价合计公式
-                    summarySheet.Cells[totalRow, 7].Formula = $"=SUM(G{startDataRow}:G{endDataRow})";
-                    summarySheet.Cells[totalRow, 7].Font.Bold = true;
-                    summarySheet.Cells[totalRow, 7].HorizontalAlignment = -4152;
-                    try { summarySheet.Cells[totalRow, 7].NumberFormat = "#,##0.00"; } catch { }
+                    // 销售总价合计公式写入 H 列
+                    summarySheet.Cells[totalRow, 8].Formula = $"=SUM(H{startDataRow}:H{endDataRow})";
+                    summarySheet.Cells[totalRow, 8].Font.Bold = true;
+                    summarySheet.Cells[totalRow, 8].HorizontalAlignment = -4152;
+                    try { summarySheet.Cells[totalRow, 8].NumberFormat = "#,##0.00"; } catch { }
 
-                    // 设置表格全区域边框 (A4:P{totalRow}) --硬编码--
-                    dynamic tableRange = summarySheet.Range[$"A4:P{totalRow}"];
+                    // 设置表格全区域边框 (覆盖 A4:R{totalRow} 共 18 列) --硬编码--
+                    dynamic tableRange = summarySheet.Range[$"A4:R{totalRow}"];
                     tableRange.Borders.LineStyle = 1; // 实线 xlContinuous
                     tableRange.Borders.Weight = 2; // 细线 xlThin
                 }
                 else
                 {
-                    // 若无数据，至少设置表头区域边框
-                    dynamic tableRange = summarySheet.Range["A4:P5"];
+                    // 若无数据，至少设置表头区域边框 (A4:R5)
+                    dynamic tableRange = summarySheet.Range["A4:R5"];
                     tableRange.Borders.LineStyle = 1;
                     tableRange.Borders.Weight = 2;
                 }
@@ -918,25 +1030,27 @@ namespace ExcelAddInDemo
                 // 显式精准设置各列宽度（保证界面美观无挤压，注意宽度） --硬编码--
                 summarySheet.Columns[1].ColumnWidth = 6;   // A: 序号
                 summarySheet.Columns[2].ColumnWidth = 18;  // B: 元件名称
-                summarySheet.Columns[3].ColumnWidth = 24;  // C: 型号规格
-                summarySheet.Columns[4].ColumnWidth = 6;   // D: 单位
-                summarySheet.Columns[5].ColumnWidth = 8;   // E: 数量
-                summarySheet.Columns[6].ColumnWidth = 14;  // F: 单价
-                summarySheet.Columns[7].ColumnWidth = 15;  // G: 总价
-                summarySheet.Columns[8].ColumnWidth = 18;  // H: 生产厂家
-                summarySheet.Columns[9].ColumnWidth = 14;  // I: 成本单价
-                summarySheet.Columns[10].ColumnWidth = 9;  // J: 报出系数
-                summarySheet.Columns[11].ColumnWidth = 12; // K: 本体表价
-                summarySheet.Columns[12].ColumnWidth = 8;  // L: 本体折扣
-                summarySheet.Columns[13].ColumnWidth = 12; // M: 附件表价
-                summarySheet.Columns[14].ColumnWidth = 8;  // N: 附件折扣
-                summarySheet.Columns[15].ColumnWidth = 18; // O: 备注
-                summarySheet.Columns[16].ColumnWidth = 8;  // P: 类别
+                summarySheet.Columns[3].ColumnWidth = 24;  // C: 原型号规格 (基准参考列)
+                summarySheet.Columns[4].ColumnWidth = 24;  // D: 型号规格
+                summarySheet.Columns[5].ColumnWidth = 6;   // E: 单位
+                summarySheet.Columns[6].ColumnWidth = 8;   // F: 数量
+                summarySheet.Columns[7].ColumnWidth = 14;  // G: 单价
+                summarySheet.Columns[8].ColumnWidth = 15;  // H: 总价
+                summarySheet.Columns[9].ColumnWidth = 18;  // I: 生产厂家
+                summarySheet.Columns[10].ColumnWidth = 14; // J: 成本单价
+                summarySheet.Columns[11].ColumnWidth = 9;  // K: 报出系数
+                summarySheet.Columns[12].ColumnWidth = 12; // L: 本体表价
+                summarySheet.Columns[13].ColumnWidth = 8;  // M: 本体折扣
+                summarySheet.Columns[14].ColumnWidth = 12; // N: 附件表价
+                summarySheet.Columns[15].ColumnWidth = 8;  // O: 附件折扣
+                summarySheet.Columns[16].ColumnWidth = 18; // P: 备注
+                summarySheet.Columns[17].ColumnWidth = 8;  // Q: 类别
+                summarySheet.Columns[18].ColumnWidth = 24; // R: 原始型号 (明细表 U 列多项拼接)
 
-                // 挂载 AutoFilter 自动筛选下拉箭头至第 5 行 (A5:P5)
+                // 挂载 AutoFilter 自动筛选下拉箭头至第 5 行 (A5:R5)
                 try
                 {
-                    summarySheet.Range["A5:P5"].AutoFilter();
+                    summarySheet.Range["A5:R5"].AutoFilter();
                 }
                 catch { }
 
@@ -1055,7 +1169,7 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 获取当前活动工作表中价格列 (F:P) 的隐藏状态
+        /// 获取当前活动工作表中价格列 (G:O) 的隐藏状态
         /// </summary>
         /// <returns>价格列是否处于隐藏状态</returns>
         public static bool GetSheetColumnsHiddenStatus()
@@ -1070,8 +1184,8 @@ namespace ExcelAddInDemo
                 dynamic activeSheet = app.ActiveSheet;
                 if (activeSheet == null) return false;
 
-                // 读取 F 列的 Hidden 状态作为价格列 (F:P) 的代表状态 --硬编码--
-                bool isPriceHidden = Convert.ToBoolean(activeSheet.Columns["F"].Hidden);
+                // 读取 G 列的 Hidden 状态作为价格列 (G:O) 的代表状态 (因新增原型号规格列整体向右顺延一列) --硬编码--
+                bool isPriceHidden = Convert.ToBoolean(activeSheet.Columns["G"].Hidden);
 
                 // 返回价格列隐藏状态
                 return isPriceHidden;

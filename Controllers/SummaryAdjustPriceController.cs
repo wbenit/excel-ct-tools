@@ -281,7 +281,7 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
-        /// 获取当前活动工作表中价格列 (F:P) 的隐藏状态
+        /// 获取当前活动工作表中价格列 (G:O) 的隐藏状态
         /// </summary>
         /// <returns>JSON 响应报文</returns>
         public string GetColumnsHiddenStatus()

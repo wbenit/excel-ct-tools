@@ -1,16 +1,25 @@
 # Session State
 
 ## [Completed]
-- 成功定位并彻底解决了“最小电流定义列无效”的问题：
-  1. **移除 C# 反序列化覆盖源**：在 `Models/ModelParserConfig.cs` 中彻底删除了未使用的 `CurrentColumn` 兼容属性。其原 setter `set => MinCurrentColumn = value` 会在反序列化前端旧字段或本地缓存时，无条件将用户自定义的最小电流列强行覆盖为默认值 `"S"`。
-  2. **前端清理与列冲突防护**：在 `Resources/model_param_parser.html` 中彻底移除了 `currentColumn` 冗余属性；在各列输入框中增加 `@input` 自动大写与去空格转换；并增加 `validateColumnConflicts` 校验，在执行批量识别前若检测到列配置重复（如最小电流列与极数列相同），会立即弹出警告并拦截执行，防止数据互相覆盖。
-  3. **后端防御性校验与代码精简**：在 `Services/ExcelServices.ModelParse.cs` 中增加 `CheckColumnConflicts` 方法，并在批量回填总入口 `ExecuteModelParamBatchParse` 中统一校验拦截，移除了其子步骤 `AddModelParserHeadersToExcel` 内部多余的二次重复查重调用，避免冗余。
-  4. **清理磁盘旧配置缓存**：在 `bin/Debug/net48/data/ModelParserConfig.json` 中移除了残留的 `"currentColumn": "S"`。
-  5. **解决全屏红波浪线**：在 `.vscode/settings.json` 中移除了错误的 `"*.html": "vue"` 映射，恢复了标准 HTML 语言模式。
-  6. 经 `dotnet build` 语法校验无任何语法报错，JS 逻辑校验 100% 正确。
+
+- 成功实现“汇总调价生成的元件汇总表添加‘原型号规格’列（蓝底）”以及“新增 R 列‘原始型号’（提取明细表 U 列内容并以‘，’拼接）”功能：
+  1. **元器件提取范围扩展至 U 列**：在 `ExcelServices.SummaryAdjustPrice.cs` 中，批量读取区域由 `A:Q` 扩展为 `A:U`（21 列），安全读取 U 列原始数据存入 `RawModelFromU`。
+  2. **多行合并逗号拼接**：在 `GroupBy` 聚合时，将规格型号相同的多行元件所对应的 U 列内容进行去空、去重，并使用全角逗号“，”进行连接拼接。
+  3. **18 列表头布局与样式**：
+     - 大标题合并扩展为 `A1:R1`；
+     - 在第 17 列 Q 列（类别）后新增第 18 列 **R 列（原始型号）**，表头合并 `R4:R5`，常规灰色背景，数据行常规白色；
+     - 数据矩阵扩展为 18 列（`new object[dataRowCount, 18]`），一次性批量写回 `A6:R{endDataRow}`；
+     - R 列文本靠左对齐，显式设置列宽为 24；
+     - 表格全区域边框扩展至 `A4:R{totalRow}`，自动筛选挂载于 `A5:R5`。
+  4. 前端“隐藏价格列(G~O)”联动适配。
+  5. 经 `dotnet build -t:Compile` 编译验证，0 错误通过。
 
 ## [In-Progress]
-- 待用户关闭正在运行的 Excel 后重新编译解决方案并启动测试。
+
+- 等待用户在 Excel 中执行完整测试与验收。
 
 ## [Next]
-- 指导用户重新生成并启动 Excel 插件，验证最小电流列设置及批量回填效果。
+
+- 用户在 Excel 中点击【汇总调价】生成“元件汇总表”，验证：
+  1. C 列“原型号规格”（蓝底）与 R 列“原始型号”（白底，U 列逗号拼接）是否正确显示；
+  2. 价格列、合计行 SUM 公式是否运作正常。

@@ -722,9 +722,9 @@
 
           <!-- 中间复选框控制区：控制价格列隐藏 -->
           <div class="editor-checkbox-group">
-            <!-- 隐藏价格列(F~P) 复选框 (显式闭合标签) -->
+            <!-- 隐藏价格列(G~O) 复选框 (显式闭合标签) -->
             <el-checkbox class="theme-checkbox" v-model="hidePriceColumns" @change="handleTogglePriceColumns">
-              隐藏价格列(F~N)
+              隐藏价格列(G~O)
             </el-checkbox>
           </div>
 
@@ -878,12 +878,12 @@
           fetchColumnsHiddenStatus();
         };
 
-        // 切换价格列 (F~N) 隐藏状态
+        // 切换价格列 (G~O) 隐藏状态
         const handleTogglePriceColumns = (val) => {
           if (window.chrome && window.chrome.webview) {
             window.chrome.webview.postMessage(JSON.stringify({
               action: 'toggleColumnsVisibility',
-              targetRange: 'F:N',
+              targetRange: 'G:O',
               hidden: val
             }));
           }

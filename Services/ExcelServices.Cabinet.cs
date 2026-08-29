@@ -919,6 +919,7 @@ namespace ExcelAddInDemo
                     string cabDisplayName = string.IsNullOrWhiteSpace(initialCabName) ? $"箱柜{cabinetK}" : initialCabName.Trim();
                     // 写入汇总行箱柜名称
                     activeSheet.Cells[insertRow, 2].Value = cabDisplayName;
+                    activeSheet.Cells[insertRow, 5].Value = "台";
                     // 写入明细行箱柜名称
                     activeSheet.Cells[newDetRow, 2].Value = cabDisplayName;
                     // 保留明细表头 C 列静态标签(型号:)，清空明细表头备注旧数据
@@ -1024,128 +1025,6 @@ namespace ExcelAddInDemo
             return maxK + 1;
         }
 
-        /// <summary>
-        /// 将面向对象实体 CabinetObject 完整渲染写回 Excel 工作表中
-        /// 遵循规则 6（行号结构与空行/插入行规则）及规则 7（内存二维数组批量读写）
-        /// </summary>
-        public static bool RenderCabinetObjectToSheet(dynamic sheet, Models.CabinetObject cabinet, int insertRow, int targetDetailRow, int templateBlankRows = 23)
-        {
-            if (sheet == null || cabinet == null || insertRow <= 0 || targetDetailRow <= 0) return false;
-
-            try
-            {
-                dynamic app = sheet.Application;
-                bool prevUpdating = app.ScreenUpdating;
-                app.ScreenUpdating = false;
-
-                // 1. 定位箱柜信息行 Cab_Det_k.Row
-                int detRow = targetDetailRow + 3;
-                cabinet.DetAnchorRow = detRow;
-                cabinet.SumAnchorRow = insertRow;
-
-                // 2. 渲染底部明细表头箱柜名称 (B 列)
-                sheet.Cells[detRow, 2].Value2 = cabinet.Header.CabinetNo;
-
-                // 3. 动态获取计费策略公式行定义列表
-                var rowDefs = new List<Models.FormulaFeeRowDefinition>();
-                if (cabinet.BillingStrategy is Models.FormulaBillingGroupStrategy fs && fs.RowDefinitions != null)
-                {
-                    rowDefs = fs.RowDefinitions;
-                }
-                int feeRowCount = rowDefs.Count;
-
-                // 4. 根据规则 6：Cab_Det_k.Row + 2 为元器件起始行
-                int compStartRow = detRow + 2;
-                int defaultCompRowCount = Math.Max(1, templateBlankRows - feeRowCount);
-
-                // 判定实际元器件列表数量
-                int compCount = cabinet.Components != null ? cabinet.Components.Count : 0;
-                int compRowCount = Math.Max(defaultCompRowCount, compCount);
-
-                // 规则 6：“如果元器件数量多于区域行数，先要插入行”
-                if (compCount > defaultCompRowCount)
-                {
-                    int insertLineCount = compCount - defaultCompRowCount;
-                    int insertStartRow = compStartRow + defaultCompRowCount;
-                    sheet.Rows[$"{insertStartRow}:{insertStartRow + insertLineCount - 1}"].Insert(-4121);
-                }
-
-                // 规则 6：Cab_Subsum_k.Row - 1 为元器件终止行
-                int compEndRow = compStartRow + compRowCount - 1;
-                int subsumRow = compEndRow + 1;
-                cabinet.SubsumAnchorRow = subsumRow;
-
-                // 规则 6：Cab_Tolsum_k.Row 为总计行
-                int tolsumRow = feeRowCount > 0 ? subsumRow + feeRowCount - 1 : subsumRow;
-                cabinet.TolsumAnchorRow = tolsumRow;
-
-                // 5. 规则 7：元器件区域采用二维数组一次性批量写入内存与 Excel (覆盖 A 列至 Q 列)
-                int baseHeaderRow = compStartRow - 1;
-                int cabDetRow = baseHeaderRow - 1;
-                // 调用公共工具方法构建包含 F/G/H/J/K/L/N/Q 自适应公式与已有元件属性的 17 列矩阵
-                object[,] compArray = Tool.BuildComponentRowsMatrix(compStartRow, compEndRow, cabDetRow, 17, cabinet.Components);
-
-                // 批量一次性回写元器件二维数组至 A~Q 列
-                dynamic compRange = sheet.Range[$"A{compStartRow}:Q{compEndRow}"];
-                compRange.Formula = compArray;
-
-                // 6. 规则 7：计费区域（从 Cab_Subsum_k.Row 至 Cab_Tolsum_k.Row）批量写入
-                if (feeRowCount > 0)
-                {
-                    // 计费区域二维数组 (覆盖 A 列至 Q 列共 17 列)
-                    object[,] feeArray = new object[feeRowCount, 17];
-
-                    for (int j = 0; j < feeRowCount; j++)
-                    {
-                        var rowDef = rowDefs[j];
-                        if (rowDef.Name == "总计" || rowDef.IndexTag == "总计")
-                        {
-                            feeArray[j, 0] = "总计";
-                        }
-                        else
-                        {
-                            feeArray[j, 0] = $"=ROW()-ROW(A${baseHeaderRow})";
-                        }
-
-                        feeArray[j, 1] = rowDef.Name ?? string.Empty;
-
-                        if (!string.IsNullOrWhiteSpace(rowDef.TotalPriceFormula))
-                        {
-                            feeArray[j, 7] = Models.FormulaEngine.ConvertToExcelFormula(
-                                rowDef.TotalPriceFormula,
-                                1,
-                                subsumRow,
-                                compStartRow,
-                                compEndRow
-                            );
-                        }
-
-                        if (!string.IsNullOrWhiteSpace(rowDef.CostTotalPriceFormula))
-                        {
-                            feeArray[j, 10] = Models.FormulaEngine.ConvertToExcelFormula(
-                                rowDef.CostTotalPriceFormula,
-                                1,
-                                subsumRow,
-                                compStartRow,
-                                compEndRow
-                            );
-                        }
-                    }
-
-                    // 覆盖写入 A 列至 Q 列完整计费二维矩阵 (规则 7)
-                    dynamic feeRange = sheet.Range[$"A{subsumRow}:Q{tolsumRow}"];
-                    feeRange.Formula = feeArray;
-                }
-
-                app.ScreenUpdating = prevUpdating;
-                return true;
-            }
-            catch (Exception ex)
-            {
-                LogHelper.WriteLog($"RenderCabinetObjectToSheet 异常: {ex.Message}");
-                return false;
-            }
-        }
 
         /// <summary>
         /// 从 Excel 工作表中反向解析指定箱柜的 CabinetObject 实体数据模型
@@ -1664,9 +1543,9 @@ namespace ExcelAddInDemo
                 if (compEndRow >= compStartRow)
                 {
                     // 生成 17 列包含自适应公式与元件属性的二维矩阵
-                    object[,] compMatrix = Tool.BuildComponentRowsMatrix(compStartRow, compEndRow, detRow, 17, cab.Components);
+                    object[,] compMatrix = Tool.BuildComponentRowsMatrix(compStartRow, compEndRow, detRow, 21, cab.Components);
                     // 批量写入元器件完整区域
-                    sheet.Range[$"A{compStartRow}:Q{compEndRow}"].Formula = compMatrix;
+                    sheet.Range[$"A{compStartRow}:U{compEndRow}"].Formula = compMatrix;
 
                     // 批量写入 AA 列 CAD 句柄扩展列
                     int rowCount = compEndRow - compStartRow + 1;
