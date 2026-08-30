@@ -37,12 +37,20 @@
        - 为 `.footer-bar` 添加 `flex-shrink: 0; z-index: 10;` 确保底部按钮栏始终吸底完整可见；
        - 为分类名称和初始箱柜输入框增加 `@keyup.enter="submitCreate"` 回车快捷提交支持。
 
+- **公式法调费窗口：明细表格最左侧行号/下拉列水平滚动固定锁定**：
+  1. **需求目标**：
+     - 在“公式法调费”明细表格中，横向水平滚动查看右侧列（如 J/K/类别等）时，最左侧包含下拉图标及行号（1、2、3、4、总计）的列需要固定不随滚动条平移。
+  2. **修改内容 (`Resources/formula_adjust_fee.html`)**：
+     - 在明细表格最左侧索引列 `<el-table-column>` 上增加 `fixed` 属性（`<el-table-column fixed width="36" align="center">`）；
+     - 增加 `.detail-section .el-table th.el-table-fixed-column--left` 与 `.detail-section .el-table td.el-table-fixed-column--left` 的背景色与 z-index 防护样式，杜绝横向滚动时下层单元格内容穿帮透出；
+     - 同步更新至 `bin\Debug\net48\Resources\formula_adjust_fee.html`。
+
 ## [In-Progress]
 
 - 修复已就绪，已通过 `dotnet build` 编译成功。
+- 待用户在 Excel 中打开“公式法调费”窗口进行横向滚动验证。
 
 ## [Next]
 
 - 请用户在 Excel 中重新点击“新建分类”，验证窗口底部“取消”与“确定创建”按钮完整显示且支持点击/回车创建。
-
-
+- 验证在水平滚动明细表格时，最左侧行号索引列始终牢固固定在最左侧。

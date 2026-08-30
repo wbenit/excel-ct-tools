@@ -366,6 +366,21 @@
       .row-index-cell.total-row-bg {
         background-color: #fef08a;
       }
+
+      /* 固定列背景色防护：确保水平横向滚动时被遮盖的单元格内容不发生透出穿帮 */
+      .detail-section .el-table th.el-table-fixed-column--left {
+        /* 表头固定列背景色与普通表头一致 */
+        background-color: #e2e8f0 !important;
+        /* 设置更高层级避免被滚动列遮挡 */
+        z-index: 4 !important;
+      }
+      /* 固定列内容单元格背景色防护 */
+      .detail-section .el-table td.el-table-fixed-column--left {
+        /* 固定列单元格底色设为纯白背景 */
+        background-color: #ffffff !important;
+        /* 提升层级覆盖普通数据单元格 */
+        z-index: 2 !important;
+      }
     </style>
   </head>
   <body>
@@ -517,7 +532,8 @@
             @row-contextmenu="handleRowContextMenu"
           >
             <!-- 行标记索引列 (最左侧 1, 2, 3, 4, 5... 序号) -->
-            <el-table-column width="36" align="center">
+            <!-- 增加 fixed 属性，确保在明细表格水平横向滚动时该列保持固定锁定在最左侧 -->
+            <el-table-column fixed width="36" align="center">
               <template #header>
                 <div
                   style="
