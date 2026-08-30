@@ -80,11 +80,15 @@ namespace ExcelAddInDemo
             <!-- 国网报价项 -->
             <button id='btnStateGridQuoteSub' label='国网报价' onAction='OnMenuAction' />
           </menu>
-          <!-- 分类下拉菜单 -->
-          <menu id='menuCategory' label='分类' imageMso='GroupOutline' size='large'>
-            <!-- 分类列表项 -->
-            <button id='btnCategorySub' label='新建分类' onAction='OnMenuAction' />
-          </menu>
+          <!-- 分类功能按钮 (SplitButton 支持大图标一键直达与下拉菜单) -->
+          <splitButton id='splitCategory' size='large'>
+            <!-- 顶部大图标一键直接触发新建分类 -->
+            <button id='btnCategorySub' label='新建分类' imageMso='GroupOutline' onAction='OnMenuAction' />
+            <!-- 下拉菜单列表 -->
+            <menu id='menuCategory' label='分类'>
+              <button id='btnCategorySubMenu' label='新建分类' onAction='OnMenuAction' />
+            </menu>
+          </splitButton>
           <!-- 箱柜下拉菜单 -->
           <menu id='menuCabinet' label='箱柜' imageMso='CreateForm' size='large'>
             <!-- 1. 新建箱柜按钮 -->
@@ -341,8 +345,8 @@ namespace ExcelAddInDemo
                 // 弹出基于 WebView2 + Vue 3 的“公式法调费”窗口
                 ExcelServices.ShowFormulaAdjustFeeDialog();
             }
-            // 响应“新建分类”按钮指令
-            else if (controlId == "btnCategorySub")
+            // 响应“新建分类”按钮指令 (支持 splitButton 顶部直达与下拉菜单项)
+            else if (controlId == "btnCategorySub" || controlId == "btnCategorySubMenu")
             {
                 // 弹出基于 WebView2 + Vue 3 的“新建分类”窗口
                 ExcelServices.ShowCategoryDialog();

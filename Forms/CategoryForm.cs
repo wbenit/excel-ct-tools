@@ -60,15 +60,15 @@ namespace ExcelAddInDemo.Forms
         }
 
         /// <summary>
-        /// 配置窗体基本外观与尺寸 (480x360 像素)
+        /// 配置窗体基本外观与尺寸 (480x420 像素)
         /// </summary>
         private void InitializeFormProperties()
         {
             // 设置窗体标题文本
             this.Text = "新建分类";
 
-            // 依据界面布局设定尺寸为 480x360 像素
-            this.ClientSize = new Size(480, 360);
+            // 依据界面布局与元素高度设定尺寸为 480x420 像素，确保底部确定与取消按钮完整展示
+            this.ClientSize = new Size(480, 420);
 
             // 设置屏幕中央弹出
             this.StartPosition = FormStartPosition.CenterScreen;
@@ -140,13 +140,18 @@ namespace ExcelAddInDemo.Forms
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
                 string appDir = Tool.GetAppDirectory();
 
-                // 配置多级备选路径集 --避免调试与打包执行环境差异--
+                // 配置多级备选路径集 --优先从插件真实物理安装目录加载--
                 string[] candidatePaths = new string[]
                 {
-                    Path.Combine(baseDir, "Resources", "category.html"),
-                    Path.Combine(baseDir, "..", "Resources", "category.html"),
-                    Path.Combine(baseDir, "publish", "Resources", "category.html"),
+                    // 候选路径 1: 插件运行物理目录下的 Resources
                     Path.Combine(appDir, "Resources", "category.html"),
+                    // 候选路径 2: 插件运行物理目录
+                    Path.Combine(appDir, "category.html"),
+                    // 候选路径 3: 当前 AppDomain 根路径/Resources
+                    Path.Combine(baseDir, "Resources", "category.html"),
+                    // 候选路径 4: 当前 AppDomain 根路径
+                    Path.Combine(baseDir, "category.html"),
+                    // 候选路径 5: 当前工作目录下的 Resources
                     Path.Combine(Directory.GetCurrentDirectory(), "Resources", "category.html")
                 };
 

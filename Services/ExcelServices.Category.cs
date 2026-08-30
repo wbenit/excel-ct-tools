@@ -18,7 +18,7 @@ namespace ExcelAddInDemo
         private static Forms.CategoryForm? _categoryFormInstance;
 
         /// <summary>
-        /// 供 Ribbon 菜单调用的新建分类入口：弹出基于 WebView2 + Vue 3 的新建分类窗体
+        /// 供 Ribbon 菜单调用的新建分类入口：弹出基于 WebView2 + Vue 3 的新建分类窗体 (非模态，可交互编辑 Excel)
         /// </summary>
         public static void ShowCategoryDialog()
         {
@@ -26,6 +26,7 @@ namespace ExcelAddInDemo
             {
                 // 获取当前正在运行的 Excel Application 对象 (安全调用)
                 dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                // 校验工作簿是否打开
                 if (app == null || app.ActiveWorkbook == null)
                 {
                     // 若无工作簿打开则提示用户
@@ -37,26 +38,14 @@ namespace ExcelAddInDemo
                     return;
                 }
 
-                // 若窗口实例已存在且未被释放，则直接置顶激活
-                if (_categoryFormInstance != null && !_categoryFormInstance.IsDisposed)
-                {
-                    // 激活并置前窗口
-                    _categoryFormInstance.BringToFront();
-                    _categoryFormInstance.Activate();
-                    return;
-                }
-
-                // 实例化新建分类宿主窗体
-                _categoryFormInstance = new Forms.CategoryForm();
-
-                // 获取 Excel 主窗口 Win32 句柄以模态附着弹出，防止下沉或异常 (安全调用)
-                IntPtr excelHwnd = ExcelDnaSafeAccessor.GetWindowHandle();
-                _categoryFormInstance.ShowDialog(new ExcelWin32Window(excelHwnd));
+                // 以统一非模态方式展示新建分类窗口，保持 Excel 处于可交互编辑状态，杜绝单例句柄残留导致的点击无效
+                ShowModelessForm(ref _categoryFormInstance, () => new Forms.CategoryForm());
             }
             catch (Exception ex)
             {
                 // 全局捕获异常并记录日志
                 LogHelper.WriteLog($"弹出新建分类窗口异常: {ex.Message}");
+                // 弹出异常提示对话框
                 System.Windows.Forms.MessageBox.Show(
                     $"弹出新建分类窗口失败: {ex.Message}",
                     "系统提示",
