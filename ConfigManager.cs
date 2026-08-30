@@ -122,5 +122,39 @@ namespace ExcelAddInDemo
                 System.Diagnostics.Debug.WriteLine($"保存配置文件发生异常: {ex.Message}");
             }
         }
+
+        /// <summary>
+        /// 设置并持久化右键菜单模式 (自定义业务菜单 或 Excel 原生菜单)
+        /// </summary>
+        /// <param name="useCustom">true 为启用 WebView2 业务菜单，false 为完全放行原生右键菜单</param>
+        public void SetCustomContextMenuMode(bool useCustom)
+        {
+            // 读取当前配置对象的引用
+            var cfg = Current;
+            // 判断当前配置是否有效
+            if (cfg != null && cfg.Excel != null)
+            {
+                // 更新右键菜单模式布尔值
+                cfg.Excel.UseCustomContextMenu = useCustom;
+                // 执行持久化保存至配置文件
+                SaveConfig(cfg);
+            }
+        }
+
+        /// <summary>
+        /// 切换右键菜单模式并返回切换后的最新模式状态
+        /// </summary>
+        /// <returns>切换后的 UseCustomContextMenu 状态</returns>
+        public bool ToggleCustomContextMenuMode()
+        {
+            // 获取当前右键菜单是否启用自定义模式
+            bool currentMode = Current?.Excel?.UseCustomContextMenu ?? true;
+            // 计算取反后的目标模式
+            bool targetMode = !currentMode;
+            // 保存并应用最新的目标模式
+            SetCustomContextMenuMode(targetMode);
+            // 返回更新后的目标模式状态
+            return targetMode;
+        }
     }
 }

@@ -197,6 +197,8 @@ namespace ExcelAddInDemo
         </group>
         <!-- 辅助项 功能分组 -->
         <group id='grpAuxiliary' label='辅助项'>
+          <!-- 右键菜单模式切换按钮 -->
+          <button id='btnToggleContextMenuMode' label='右键菜单模式' imageMso='ControlsGallery' size='large' screentip='切换右键菜单模式' supertip='在【业务专属菜单】与【Excel 原生右键菜单】之间彻底二选一切换' onAction='OnMenuAction' />
           <!-- 项目工具下拉菜单 -->
           <menu id='menuProjectTools' label='项目工具' imageMso='Tools' size='large'>
             <!-- 智能输入按钮 -->
@@ -368,6 +370,12 @@ namespace ExcelAddInDemo
             {
                 // 弹出基于 WebView2 + Vue 3 的“二次元件组规则管道构建器”窗口
                 ExcelServices.ShowComponentGroupBuilderDialog();
+            }
+            // 响应“切换右键菜单模式”按钮指令
+            else if (controlId == "btnToggleContextMenuMode")
+            {
+                // 调度宏一键切换右键菜单模式并提示
+                ExcelEventManager.MacroToggleContextMenuMode();
             }
         }
     }

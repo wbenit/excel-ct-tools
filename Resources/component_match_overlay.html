@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>元器件物料智能联想下拉</title>
+  
+  <!-- 引入 Element-Plus 样式表 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus@2.4.4/dist/index.css">
+  <!-- 引入 FontAwesome 图标库 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  
+  <style>
+    /* 绿蓝相间现代工程风格设计规范 (主色调: #009688) */
+    :root {
+      --primary-color: #009688;
+      --primary-hover: #00796b;
+      --primary-light: #e0f2f1;
+      --primary-gradient: linear-gradient(135deg, #009688 0%, #00b4d8 100%);
+      --bg-color: #ffffff;
+      --card-bg: #ffffff;
+      --text-main: #1e293b;
+      --text-muted: #64748b;
+      --border-color: #e2e8f0;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      overflow: hidden;
+      font-size: 12px;
+      height: 100vh;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    /* 顶部搜索条与过滤管道指示器 */
+    .header-bar {
+      padding: 8px 10px;
+      background: #f8fafc;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .search-input-box {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .pipeline-tags {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+      font-size: 11px;
+    }
+
+    .pipeline-badge {
+      background: var(--primary-light);
+      color: var(--primary-color);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+
+    /* 候选物料列表容器 */
+    .list-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px;
+    }
+
+    .item-card {
+      padding: 8px 10px;
+      margin-bottom: 4px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+    }
+
+    .item-card:hover {
+      background-color: #f1f5f9;
+      border-color: #cbd5e1;
+    }
+
+    .item-card.selected {
+      background-color: var(--primary-light);
+      border-color: var(--primary-color);
+    }
+
+    .item-row-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .item-model {
+      font-weight: 600;
+      color: #0f172a;
+      font-size: 12px;
+    }
+
+    .item-price {
+      font-weight: 700;
+      color: #e11d48;
+      font-size: 12px;
+    }
+
+    .item-row-bottom {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    .brand-tag {
+      background: #e2e8f0;
+      color: #334155;
+      padding: 0 4px;
+      border-radius: 2px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    /* 底部提示栏 */
+    .footer-bar {
+      height: 28px;
+      background: #f8fafc;
+      border-top: 1px solid var(--border-color);
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-muted);
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+
+    /* 覆盖 Element-Plus 样式 */
+    .el-input__wrapper {
+      padding: 1px 8px !important;
+    }
+    .el-input:focus-within {
+      --el-input-focus-border-color: #009688;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部搜索条与当前过滤管道标识 -->
+    <div class="header-bar">
+      <div class="search-input-box">
+        <el-input
+          ref="searchInputRef"
+          v-model="searchKeyword"
+          size="small"
+          placeholder="输入型号/参数即时模糊搜索物料 (↑↓切换 Enter选中 Esc退出)"
+          clearable
+          @input="onSearchInput"
+          @keydown.down.prevent="moveNext"
+          @keydown.up.prevent="movePrev"
+          @keydown.enter.prevent="confirmSelect"
+          @keydown.esc.prevent="closeOverlay"
+        >
+          <template #prefix>
+            <i class="fa-solid fa-magnifying-glass" style="color: #009688;"></i>
+          </template>
+        </el-input>
+      </div>
+      <!-- 管道约束状态栏 -->
+      <div class="pipeline-tags">
+        <span style="color: #64748b;">过滤管道:</span>
+        <span class="pipeline-badge">品牌: {{ filterBrand || '全部' }}</span>
+        <span 
+          v-for="(r, idx) in activeMustRules" 
+          :key="idx" 
+          class="pipeline-badge"
+        >
+          必含: {{ r }}
+        </span>
+      </div>
+    </div>
+
+    <!-- 物料候选列表 -->
+    <div ref="listRef" class="list-container">
+      <div v-if="loading" style="text-align: center; padding: 20px; color: #64748b;">
+        <i class="fa-solid fa-spinner fa-spin" style="color: #009688; font-size: 16px;"></i>
+        <div style="margin-top: 4px;">正在智能检索物料库...</div>
+      </div>
+
+      <div v-else-if="items.length === 0" style="text-align: center; padding: 24px 0; color: #94a3b8;">
+        <i class="fa-solid fa-box-open" style="font-size: 24px; margin-bottom: 6px; display: block;"></i>
+        <span>未找到符合管道约束的物料</span>
+      </div>
+
+      <div v-else>
+        <div
+          v-for="(item, index) in items"
+          :key="item.id || index"
+          class="item-card"
+          :class="{ selected: selectedIndex === index }"
+          @click="selectItem(item)"
+          @mouseenter="selectedIndex = index"
+        >
+          <div class="item-row-top">
+            <span class="item-model">{{ item.model }}</span>
+            <span class="item-price">¥{{ item.price ? Number(item.price).toFixed(2) : '0.00' }}</span>
+          </div>
+          <div class="item-row-bottom">
+            <span class="brand-tag">{{ item.brand || '标准' }}</span>
+            <span>{{ item.name }}</span>
+            <span v-if="item.current">电流: {{ item.current }}A</span>
+            <span v-if="item.poles">极数: {{ item.poles }}</span>
+            <span v-if="item.tripping">脱扣: {{ item.tripping }}</span>
+            <span v-if="item.param1" style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ item.param1 }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部统计与快捷键指引 -->
+    <div class="footer-bar">
+      <span>共匹配到 <strong style="color: #009688;">{{ items.length }}</strong> 条物料</span>
+      <span>[↑/↓] 切换 | [Enter] 确认回填 | [Esc] 退出</span>
+    </div>
+  </div>
+
+  <!-- 引入 Vue 3 与 Element-Plus 脚本 -->
+  <script src="https://unpkg.com/vue@3.3.4/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.min.js"></script>
+
+  <script>
+    const { createApp, ref, computed, nextTick, onMounted } = Vue;
+
+    createApp({
+      setup() {
+        const searchInputRef = ref(null);
+        const listRef = ref(null);
+        const searchKeyword = ref('');
+        const items = ref([]);
+        const selectedIndex = ref(0);
+        const loading = ref(false);
+
+        // 上下文参数 (由 C# 传入)
+        const cellParams = ref({
+          name: '',
+          current: '',
+          pole: '',
+          tripMode: ''
+        });
+        const filterBrand = ref('');
+        const activeMustRules = ref([]);
+
+        let debounceTimer = null;
+
+        // 与 C# 宿主通信
+        const postToHost = (action, payload = {}) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ action, ...payload }));
+          }
+        };
+
+        // 监听 C# 消息
+        if (window.chrome && window.chrome.webview) {
+          window.chrome.webview.addEventListener('message', (event) => {
+            try {
+              const msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+              handleHostMessage(msg);
+            } catch (e) {}
+          });
+        }
+
+        const handleHostMessage = (msg) => {
+          if (!msg || !msg.action) return;
+
+          switch (msg.action) {
+            // 初始化展示 (带上当前行参数与初始匹配物料)
+            case 'initCandidates':
+              loading.value = false;
+              items.value = msg.items || [];
+              selectedIndex.value = 0;
+              searchKeyword.value = '';
+              if (msg.cellParams) cellParams.value = msg.cellParams;
+              if (msg.filterBrand !== undefined) filterBrand.value = msg.filterBrand;
+              if (msg.activeMustRules) activeMustRules.value = msg.activeMustRules;
+
+              // 自动聚焦到搜索框
+              nextTick(() => {
+                if (searchInputRef.value && searchInputRef.value.focus) {
+                  searchInputRef.value.focus();
+                }
+              });
+              break;
+
+            // 模糊搜索结果返回
+            case 'searchResult':
+              loading.value = false;
+              items.value = msg.items || [];
+              selectedIndex.value = 0;
+              break;
+          }
+        };
+
+        // 用户输入即时模糊搜索 (防抖 200ms)
+        const onSearchInput = () => {
+          if (debounceTimer) clearTimeout(debounceTimer);
+          loading.value = true;
+          debounceTimer = setTimeout(() => {
+            postToHost('searchKeyword', {
+              keyword: searchKeyword.value,
+              cellParams: cellParams.value
+            });
+          }, 200);
+        };
+
+        // 键盘上下移动选择
+        const moveNext = () => {
+          if (items.value.length === 0) return;
+          if (selectedIndex.value < items.value.length - 1) {
+            selectedIndex.value++;
+            scrollToSelected();
+          }
+        };
+
+        const movePrev = () => {
+          if (items.value.length === 0) return;
+          if (selectedIndex.value > 0) {
+            selectedIndex.value--;
+            scrollToSelected();
+          }
+        };
+
+        const scrollToSelected = () => {
+          nextTick(() => {
+            const container = listRef.value;
+            if (!container) return;
+            const activeElem = container.querySelector('.item-card.selected');
+            if (activeElem) {
+              activeElem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
+          });
+        };
+
+        // 确认选择某一条并回填 Excel
+        const confirmSelect = () => {
+          if (items.value.length > 0 && selectedIndex.value >= 0 && selectedIndex.value < items.value.length) {
+            selectItem(items.value[selectedIndex.value]);
+          }
+        };
+
+        const selectItem = (item) => {
+          postToHost('selectComponent', { item });
+        };
+
+        const closeOverlay = () => {
+          postToHost('closeOverlay');
+        };
+
+        onMounted(() => {
+          postToHost('overlayReady');
+        });
+
+        return {
+          searchInputRef,
+          listRef,
+          searchKeyword,
+          items,
+          selectedIndex,
+          loading,
+          cellParams,
+          filterBrand,
+          activeMustRules,
+          onSearchInput,
+          moveNext,
+          movePrev,
+          confirmSelect,
+          selectItem,
+          closeOverlay
+        };
+      }
+    }).use(ElementPlus).mount('#app');
+  </script>
+</body>
+</html>

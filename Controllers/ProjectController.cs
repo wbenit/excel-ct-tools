@@ -100,118 +100,135 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
-        /// 异步初始化并创建新项目文件，复制 CabinetTemplate.xlsx 及其工作表并填入项目信息
+        /// 在 Excel 主线程同步初始化并创建新项目文件，复制 CabinetTemplate.xlsx 及其工作表并填入项目信息
         /// </summary>
-        public async Task<bool> CreateProjectAsync(CreateProjectModel model)
+        /// <param name="model">前端传递的新建项目数据实体</param>
+        /// <returns>创建成功返回 true，否则返回 false</returns>
+        public bool CreateProject(CreateProjectModel model)
         {
-            // 在 Task 异步线程中完成 Workbook 创建与单元格数据填入
-            return await Task.Run(() =>
+            try
             {
-                try
+                // 1. 校验保存路径有效性，若不存在则自动创建
+                if (!Directory.Exists(model.SavePath))
                 {
-                    // 1. 校验保存路径有效性，若不存在则自动创建
-                    if (!Directory.Exists(model.SavePath))
-                    {
-                        // 自动创建保存目录
-                        Directory.CreateDirectory(model.SavePath);
-                    }
-
-                    // 2. 确定目标工作簿文件名与路径
-                    string fileName = string.IsNullOrWhiteSpace(model.FileName) ? "新建项目" : model.FileName;
-                    // 若文件名未包含 .xlsx 后缀则自动补全
-                    if (!fileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-                    {
-                        // 补全 .xlsx 后缀
-                        fileName += ".xlsx";
-                    }
-                    // 拼接得到目标保存路径
-                    string targetFilePath = Path.Combine(model.SavePath, fileName);
-
-                    // 3. 获取 Excel Application COM 对象 (安全调用)
-                    dynamic? app = ExcelDnaSafeAccessor.GetApplication();
-                    // 校验 Application 是否获取成功
-                    if (app == null) return false;
-
-                    // 临时关闭屏幕刷新与警告弹出以提升渲染性能
-                    app.ScreenUpdating = false;
-                    // 关闭 Excel 操作对话框提示
-                    app.DisplayAlerts = false;
-
-                    try
-                    {
-                        // 4. 获取或创建 CabinetTemplate.xlsx 模板物理路径
-                        string templatePath = EnsureCabinetTemplate(app);
-
-                        // 5. 直接只读打开 CabinetTemplate.xlsx 模板并另存为目标物理路径
-                        // 使用 SaveAs 方式可完全保留模板原汁原味的无外部链接本地公式结构
-                        dynamic newWb = app.Workbooks.Open(templatePath, ReadOnly: true);
-
-                        // 6. 另存为新的目标项目工作簿物理文件
-                        newWb.SaveAs(targetFilePath);
-
-                        // 7. 移除目标工作簿中非 "项目信息" 与非 "分类1" 的多余工作表
-                        for (int i = newWb.Sheets.Count; i >= 1; i--)
-                        {
-                            // 获取对应位置工作表对象
-                            dynamic item = newWb.Sheets[i];
-                            // 获取工作表名称字符串
-                            string name = (string)item.Name;
-                            // 若非目标保留工作表则自动清理删除
-                            if (name != "项目信息" && name != "分类1")
-                            {
-                                // 删掉多余工作表
-                                item.Delete();
-                            }
-                        }
-
-                        // 8. 调用 ExcelServices 统一完成【项目信息】与【分类1】工作表的完整回填、公式联动与定义名称锚点绑定
-                        ExcelServices.InitializeCreatedProjectWorkbook(newWb, model);
-
-                        // 9. 保存修改后的新工作簿
-                        newWb.Save();
-
-                        // 记录最近一次成功创建的目标文件路径
-                        LastCreatedTargetFilePath = targetFilePath;
-
-                        // 恢复 Excel 屏幕刷新与警告属性
-                        app.ScreenUpdating = true;
-                        app.DisplayAlerts = true;
-
-                        // 返回成功结果
-                        return true;
-                    }
-                    finally
-                    {
-                        // 兜底恢复 Excel 屏幕刷新与提示
-                        app.ScreenUpdating = true;
-                        app.DisplayAlerts = true;
-                    }
+                    // 自动创建保存目录
+                    Directory.CreateDirectory(model.SavePath);
                 }
-                catch (Exception ex)
+
+                // 2. 确定目标工作簿文件名与路径
+                string fileName = string.IsNullOrWhiteSpace(model.FileName) ? "新建项目" : model.FileName;
+                // 若文件名未包含 .xlsx 后缀则自动补全
+                if (!fileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
                 {
-                    // 弹出捕获的异常信息窗口
-                    MessageBox.Show($"创建项目工作簿失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    // 返回创建失败标识
+                    // 补全 .xlsx 后缀
+                    fileName += ".xlsx";
+                }
+                // 拼接得到目标保存路径
+                string targetFilePath = Path.Combine(model.SavePath, fileName);
+
+                // 3. 获取 Excel Application COM 对象 (安全调用)
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                // 校验 Application 是否获取成功
+                if (app == null)
+                {
+                    // 记录未获取到 Excel 实例日志
+                    LogHelper.WriteLog("创建项目失败: 未能获取 Excel Application 实例。");
                     return false;
                 }
-            });
+
+                // 临时关闭屏幕刷新与警告弹出以提升渲染性能
+                app.ScreenUpdating = false;
+                // 关闭 Excel 操作对话框提示
+                app.DisplayAlerts = false;
+
+                try
+                {
+                    // 4. 获取或创建 CabinetTemplate.xlsx 模板物理路径
+                    string templatePath = EnsureCabinetTemplate(app);
+
+                    // 5. 直接只读打开 CabinetTemplate.xlsx 模板并另存为目标物理路径
+                    // 使用 SaveAs 方式可完全保留模板原汁原味的无外部链接本地公式结构
+                    dynamic newWb = app.Workbooks.Open(templatePath, ReadOnly: true);
+
+                    // 6. 另存为新的目标项目工作簿物理文件
+                    newWb.SaveAs(targetFilePath);
+
+                    // 7. 移除目标工作簿中非 "项目信息" 与非 "分类1" 的多余工作表
+                    for (int i = newWb.Sheets.Count; i >= 1; i--)
+                    {
+                        // 获取对应位置工作表对象
+                        dynamic item = newWb.Sheets[i];
+                        // 获取工作表名称字符串
+                        string name = (string)item.Name;
+                        // 若非目标保留工作表则自动清理删除
+                        if (name != "项目信息" && name != "分类1")
+                        {
+                            // 删掉多余工作表
+                            item.Delete();
+                        }
+                    }
+
+                    // 8. 调用 ExcelServices 统一完成【项目信息】与【分类1】工作表的完整回填、公式联动与定义名称锚点绑定
+                    ExcelServices.InitializeCreatedProjectWorkbook(newWb, model);
+
+                    // 9. 保存修改后的新工作簿
+                    newWb.Save();
+
+                    // 记录最近一次成功创建的目标文件路径
+                    LastCreatedTargetFilePath = targetFilePath;
+
+                    // 返回成功结果
+                    return true;
+                }
+                finally
+                {
+                    // 兜底恢复 Excel 屏幕刷新与提示
+                    try
+                    {
+                        // 开启屏幕更新
+                        app.ScreenUpdating = true;
+                        // 开启提示告警
+                        app.DisplayAlerts = true;
+                    }
+                    catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"创建项目工作簿失败: {ex.Message}");
+                // 弹出捕获的异常信息窗口
+                MessageBox.Show($"创建项目工作簿失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                // 返回创建失败标识
+                return false;
+            }
         }
-
-
 
         /// <summary>
         /// 检索 CabinetTemplate.xlsx 模板文件路径，若磁盘不存在则动态构建标准模板
         /// </summary>
+        /// <param name="app">Excel Application 实例</param>
+        /// <returns>模板文件绝对路径</returns>
         public static string EnsureCabinetTemplate(dynamic app)
         {
             // 获取基准运行目录
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            // 获取插件实际安装/运行物理目录
+            string appDir = Tool.GetAppDirectory();
             // 配置多重备选路径列表
             string[] candidates = new string[]
             {
+                // 优先从插件真实物理目录下的 Resources 寻找
+                Path.Combine(appDir, "Resources", "CabinetTemplate.xlsx"),
+                // 优先从插件真实物理目录根目录寻找
+                Path.Combine(appDir, "CabinetTemplate.xlsx"),
+                // 从 AppDomain 基目录下的 Resources 寻找
                 Path.Combine(baseDir, "Resources", "CabinetTemplate.xlsx"),
+                // 从 AppDomain 基目录根寻找
                 Path.Combine(baseDir, "CabinetTemplate.xlsx"),
+                // 从当前工作目录下的 Resources 寻找
                 Path.Combine(Directory.GetCurrentDirectory(), "Resources", "CabinetTemplate.xlsx"),
+                // 从当前工作目录根寻找
                 Path.Combine(Directory.GetCurrentDirectory(), "CabinetTemplate.xlsx")
             };
 

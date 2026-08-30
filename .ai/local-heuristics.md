@@ -92,3 +92,15 @@
   1. 优先使用本地化属性 `range.NumberFormatLocal = "G/通用格式"`，并使用 try-catch 双轨回退 `range.NumberFormat = "General"`。
   2. 对所有的 `NumberFormat` 样式设置语句均添加 try-catch 保护，避免因个别特殊版本格式解析失败导致整个业务流程中断。
 
+### 14. Excel COM 与 ExcelDnaUtil 在 Task.Run 后台线程池调用引发静默失败
+- **现象**：在 WebView2 弹窗中点击“开始报价”或执行某些 Excel 操作时，界面没有任何反应，既没有创建成功，也没有弹出任何错误提示。
+- **原因**：
+  1. **Excel-DNA 线程限制**：在 `Task.Run` 后台工作线程中调用 `ExcelDnaUtil.Application` 时，底层会抛出 `InvalidOperationException`（只能在 Excel 主线程调用），在安全访问器中将其 catch 返回 null，导致 `app == null` 直接提前退出。
+  2. **COM 单线程单元（STA）规则**：Excel COM 对象是 STA 架构，不能在多线程或后台线程池中直接调用，否则会触发 RPC 封送错误或未响应。
+  3. **静默失败无反馈**：当后端操作返回 false 时，缺少错误捕获和弹窗提示，且前端未设置 loading 遮罩和结果监听，导致用户点击后界面毫无反应。
+- **解决**：
+  1. 所有 Excel COM 操作（Workbook 创建、Sheet 复制、Range 写入、Defined Names 绑定）必须统一使用 `SafeInvoke` 在 Excel / UI 主线程上同步执行。
+  2. 在前端增加 `:loading="isSubmitting"` 防重状态，并在后端执行异常时回发 `startQuotationResult` 或弹出明确的错误提示。
+  3. 模板与 HTML 文件检索路径增加 `Tool.GetAppDirectory()` 动态解析。
+
+

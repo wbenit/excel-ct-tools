@@ -2,24 +2,24 @@
 
 ## [Completed]
 
-- 成功实现“汇总调价生成的元件汇总表添加‘原型号规格’列（蓝底）”以及“新增 R 列‘原始型号’（提取明细表 U 列内容并以‘，’拼接）”功能：
-  1. **元器件提取范围扩展至 U 列**：在 `ExcelServices.SummaryAdjustPrice.cs` 中，批量读取区域由 `A:Q` 扩展为 `A:U`（21 列），安全读取 U 列原始数据存入 `RawModelFromU`。
-  2. **多行合并逗号拼接**：在 `GroupBy` 聚合时，将规格型号相同的多行元件所对应的 U 列内容进行去空、去重，并使用全角逗号“，”进行连接拼接。
-  3. **18 列表头布局与样式**：
-     - 大标题合并扩展为 `A1:R1`；
-     - 在第 17 列 Q 列（类别）后新增第 18 列 **R 列（原始型号）**，表头合并 `R4:R5`，常规灰色背景，数据行常规白色；
-     - 数据矩阵扩展为 18 列（`new object[dataRowCount, 18]`），一次性批量写回 `A6:R{endDataRow}`；
-     - R 列文本靠左对齐，显式设置列宽为 24；
-     - 表格全区域边框扩展至 `A4:R{totalRow}`，自动筛选挂载于 `A5:R5`。
-  4. 前端“隐藏价格列(G~O)”联动适配。
-  5. 经 `dotnet build -t:Compile` 编译验证，0 错误通过。
+- **排查并彻底修复点击“开始报价”没反应的问题**：
+  1. **定位根本原因**：
+     - 原 `ProjectController.CreateProjectAsync` 采用了 `Task.Run` 后台线程池执行；
+     - 在后台线程中访问 `ExcelDnaUtil.Application` 会因非 Excel 主线程而抛出异常，导致 `ExcelDnaSafeAccessor.GetApplication()` 捕获返回 `null`；
+     - 后端收到 `app == null` 直接提前返回 `false`，且 `CreateProjectForm.cs` 中对失败未做任何提示和处理，导致点击后前端静默无反应。
+  2. **后端修复 (`Controllers/ProjectController.cs` & `Forms/CreateProjectForm.cs`)**：
+     - 将 `CreateProject` 调整为在 Excel 主线程同步调度执行（遵循 Excel COM 单线程 STA 规则）；
+     - `CreateProjectForm.cs` 使用 `SafeInvoke` 调度到主线程安全执行，并增加成功/失败结果回发机制及异常捕获提示；
+     - 在 `EnsureCabinetTemplate` 和 `OnFormLoadAsync` 候选路径中补充 `Tool.GetAppDirectory()`，确保能 100% 命中模板文件 `CabinetTemplate.xlsx`。
+  3. **前端优化 (`Resources/create_project.html`)**：
+     - 为“开始报价”按钮添加 `:loading="isSubmitting"` 防重与加载状态；
+     - 增加 `startQuotationResult` 消息监听与 Element Plus 错误提示。
 
 ## [In-Progress]
 
-- 等待用户在 Excel 中执行完整测试与验收。
+- 修复已就绪，等待用户在 Excel 中重新启动并验证点击“开始报价”。
 
 ## [Next]
 
-- 用户在 Excel 中点击【汇总调价】生成“元件汇总表”，验证：
-  1. C 列“原型号规格”（蓝底）与 R 列“原始型号”（白底，U 列逗号拼接）是否正确显示；
-  2. 价格列、合计行 SUM 公式是否运作正常。
+- 验证点击“开始报价”后成功基于模板创建项目工作簿、自动回填【项目信息】与【分类1】、并置顶激活新工作簿。
+

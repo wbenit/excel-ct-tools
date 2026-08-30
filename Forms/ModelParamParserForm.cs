@@ -256,8 +256,25 @@ namespace ExcelAddInDemo
                         }, JsonOptions));
                         break;
 
+                    // 5.1 执行 Excel 参数提取并反查物料库回填 (含“点击查询”淡黄底色)
+                    case "executeMatchWithDb":
+                        ComponentMatchColumnConfig? matchColCfg = null;
+                        if (root.TryGetProperty("columnConfig", out var colCfgProp))
+                        {
+                            matchColCfg = JsonSerializer.Deserialize<ComponentMatchColumnConfig>(colCfgProp.GetRawText(), JsonOptions);
+                        }
+                        var matchDbRes = _controller.ExecuteBatchMatchWithDb(matchColCfg);
+                        PostWebMessageSafe(JsonSerializer.Serialize(new
+                        {
+                            action = "matchWithDbResult",
+                            result = matchDbRes
+                        }, JsonOptions));
+                        break;
+
                     // 6. 窗体窗口拖拽
                     case "dragWindow":
+
+
                         SafeInvoke(() =>
                         {
                             ReleaseCapture();

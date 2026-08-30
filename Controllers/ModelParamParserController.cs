@@ -125,5 +125,16 @@ namespace ExcelAddInDemo.Controllers
             // 调用公共服务层执行二维数组内存批量回填 (已集成写入第5行表头)
             return ExcelServices.ExecuteBatchModelParse(activeConfig);
         }
+
+        /// <summary>
+        /// 触发 Excel 直接基于已有电流极数脱扣反查物料库与多列批量回填 (含“点击查询”淡黄底色)
+        /// </summary>
+        public BatchMatchExecuteResult ExecuteBatchMatchWithDb(ComponentMatchColumnConfig? colConfig = null)
+        {
+            // 调用业务服务层执行按 S/T/U 列参数反查物料库与二维数组整块回填
+            return ExcelServices.ExecuteBatchMatchWithColumnConfig(colConfig);
+        }
     }
 }
+
+

@@ -420,7 +420,7 @@
         <!-- 底部控制与操作按钮栏 -->
         <div class="bottom-action-bar">
           <el-checkbox v-model="form.batchCabinet">批建箱柜</el-checkbox>
-          <el-button class="start-btn" @click="startQuotation"
+          <el-button class="start-btn" :loading="isSubmitting" @click="startQuotation"
             >开始报价</el-button
           >
         </div>
@@ -434,6 +434,7 @@
       const app = createApp({
         setup() {
           const isExpanded = ref(false);
+          const isSubmitting = ref(false);
 
           const form = reactive({
             projectDate: "2026年08月09日",
@@ -485,6 +486,11 @@
                     updateFileName();
                   } else if (res && res.action === "setSavePath") {
                     form.savePath = res.savePath;
+                  } else if (res && res.action === "startQuotationResult") {
+                    isSubmitting.value = false;
+                    if (!res.success) {
+                      ElementPlus.ElMessage.error(res.message || "创建项目失败");
+                    }
                   }
                 } catch (e) {
                   console.error("初始化通信数据解析异常:", e);
@@ -542,6 +548,8 @@
           };
 
           const startQuotation = () => {
+            if (isSubmitting.value) return;
+            isSubmitting.value = true;
             if (window.chrome && window.chrome.webview) {
               window.chrome.webview.postMessage(
                 JSON.stringify({

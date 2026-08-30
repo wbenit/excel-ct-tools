@@ -135,13 +135,21 @@ namespace ExcelAddInDemo
 
                 // 拼接目标 HTML 页面物理路径
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                // 获取插件实际安装/运行物理目录
+                string appDir = Tool.GetAppDirectory();
 
                 // 计算多层备选寻找路径
                 string[] candidatePaths = new string[]
                 {
+                    // 候选路径 1: 插件运行物理目录下的 Resources
+                    Path.Combine(appDir, "Resources", "create_project.html"),
+                    // 候选路径 2: 插件运行物理目录
+                    Path.Combine(appDir, "create_project.html"),
+                    // 候选路径 3: 当前 AppDomain 根路径/Resources
                     Path.Combine(baseDir, "Resources", "create_project.html"),
-                    Path.Combine(baseDir, "..", "Resources", "create_project.html"),
-                    Path.Combine(baseDir, "publish", "Resources", "create_project.html"),
+                    // 候选路径 4: 当前 AppDomain 根路径
+                    Path.Combine(baseDir, "create_project.html"),
+                    // 候选路径 5: 当前工作目录下的 Resources
                     Path.Combine(Directory.GetCurrentDirectory(), "Resources", "create_project.html")
                 };
 
@@ -249,30 +257,51 @@ namespace ExcelAddInDemo
                         SelectSaveFolder();
                         break;
 
-                    // 提交开始报价：新建 Workbook，复制 CabinetTemplate.xlsx 及其工作表并填入数据
+                    // 提交开始报价：在 Excel 主线程新建 Workbook，复制 CabinetTemplate.xlsx 及其工作表并填入数据
                     case "startQuotation":
                         if (root.TryGetProperty("data", out var dataProp))
                         {
+                            // 解析前端提交的新建项目表单数据
                             var model = JsonSerializer.Deserialize<CreateProjectModel>(dataProp.GetRawText(), JsonOptions);
                             if (model != null)
                             {
-                                // 异步执行创建项目工作簿、复制工作表与单元格数据填入
-                                bool success = await _projectController.CreateProjectAsync(model);
-
-                                if (success)
+                                // 调度到主线程安全执行 Excel COM 操作
+                                SafeInvoke(() =>
                                 {
-                                    // 显式关闭当前新建项目弹窗并激活工作簿 (UI 线程执行)
-                                    SafeInvoke(() =>
+                                    try
                                     {
-                                        this.Close();
-                                        // 检查是否记录了新建的目标工作簿路径
-                                        if (!string.IsNullOrEmpty(ProjectController.LastCreatedTargetFilePath))
+                                        // 在主线程同步执行创建项目工作簿、复制工作表与单元格数据填入
+                                        bool success = _projectController.CreateProject(model);
+
+                                        // 通知前端操作结果
+                                        var resultMsg = new
                                         {
-                                            // 立即同步激活新创建的目标工作簿
-                                            ExcelServices.ActivateCreatedWorkbook(ProjectController.LastCreatedTargetFilePath);
+                                            action = "startQuotationResult",
+                                            success = success,
+                                            message = success ? "项目创建成功" : "创建项目工作簿失败"
+                                        };
+                                        PostWebMessageSafe(JsonSerializer.Serialize(resultMsg, JsonOptions));
+
+                                        if (success)
+                                        {
+                                            // 显式关闭当前新建项目弹窗并激活工作簿 (UI 线程执行)
+                                            this.Close();
+                                            // 检查是否记录了新建的目标工作簿路径
+                                            if (!string.IsNullOrEmpty(ProjectController.LastCreatedTargetFilePath))
+                                            {
+                                                // 立即同步激活新创建的目标工作簿
+                                                ExcelServices.ActivateCreatedWorkbook(ProjectController.LastCreatedTargetFilePath);
+                                            }
                                         }
-                                    });
-                                }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        // 记录异常日志
+                                        LogHelper.WriteLog($"执行 startQuotation 异常: {ex.Message}");
+                                        // 弹出错误提示
+                                        MessageBox.Show($"创建项目发生异常: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                    }
+                                });
                             }
                         }
                         break;

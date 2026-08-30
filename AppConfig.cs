@@ -18,15 +18,19 @@ namespace ExcelAddInDemo
     // 后端 API 接口连接配置数据模型
     public class ApiSettings
     {
-        // 远程 API 服务的基准访问地址（带默认兜底值）
-        public string BaseUrl { get; set; } = "https://api.example.com/v1";
+        // 远程商城 API 服务的基准访问地址 (默认: https://mall.xingren.online) --硬编码--
+        public string BaseUrl { get; set; } = "https://mall.xingren.online";
+
+        // 元器件分页检索接口相对路径 (默认: /api/api/Component/GetPagedList) --硬编码--
+        public string ComponentGetPagedListEndpoint { get; set; } = "/api/api/Component/GetPagedList";
 
         // 网络 API 请求的超时等待时间（单位：秒）
-        public int TimeoutSeconds { get; set; } = 30;
+        public int TimeoutSeconds { get; set; } = 15;
 
         // 请求失败时的最大自动重试次数
-        public int MaxRetryCount { get; set; } = 3;
+        public int MaxRetryCount { get; set; } = 2;
     }
+
 
     // Excel 视图、工作表及生成相关的配置选项模型
     public class ExcelSettings
@@ -92,10 +96,20 @@ namespace ExcelAddInDemo
         // 右键菜单“新建箱柜”按钮的唯一 Tag 标识 (默认: CT_BTN_NEW_CABINET)
         public string NewCabinetMenuTag { get; set; } = "CT_BTN_NEW_CABINET";
 
+        // 右键菜单“识别参数并匹配物料”按钮的显示文本 (默认: 识别参数并匹配物料) --硬编码--
+        public string ParseMatchComponentsMenuCaption { get; set; } = "识别参数并匹配物料";
+
+        // 右键菜单“识别参数并匹配物料”按钮的唯一 Tag 标识 (默认: CT_BTN_PARSE_MATCH_COMPONENTS) --硬编码--
+        public string ParseMatchComponentsMenuTag { get; set; } = "CT_BTN_PARSE_MATCH_COMPONENTS";
+
         // 【项目信息】工作表中【分类汇总】区域的起始物理行号 (默认: 29)
         public int ProjectInfoCategorySummaryStartRow { get; set; } = 29;
 
         // 扫描【项目信息】工作表【分类汇总】区域时的最大扫描行数限制 (默认: 100)
         public int ProjectInfoCategorySummaryMaxScanRows { get; set; } = 100;
+
+        // 是否启用基于 WebView2 + Vue 3 的自定义业务右键菜单 (默认: true，若为 false 则完全使用 Excel 原生右键菜单)
+        public bool UseCustomContextMenu { get; set; } = true;
     }
 }
+

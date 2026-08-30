@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>业务专属右键上下文菜单</title>
+  
+  <!-- 引入 Element-Plus 样式表 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus@2.4.4/dist/index.css">
+  <!-- 引入 FontAwesome 图标库 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  
+  <style>
+    /* 绿蓝相间现代化工程级调色盘 (主色调: #009688) */
+    :root {
+      --primary-color: #009688;
+      --primary-hover: #00796b;
+      --primary-active: #004d40;
+      --primary-light: #e0f2f1;
+      --primary-gradient: linear-gradient(135deg, #009688 0%, #00b4d8 100%);
+      --bg-color: #ffffff;
+      --text-main: #1e293b;
+      --text-muted: #64748b;
+      --border-color: #e2e8f0;
+      --hover-bg: #e6fffa;
+      --shadow-elevation: 0 10px 25px -5px rgba(0, 0, 0, 0.18), 0 8px 10px -6px rgba(0, 0, 0, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+    }
+
+    html, body {
+      background-color: transparent;
+      color: var(--text-main);
+      overflow: hidden;
+      font-size: 13px;
+      width: 100%;
+      height: 100%;
+      padding: 2px;
+    }
+
+    #app {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 菜单主体容器 */
+    .context-menu-container {
+      background: var(--bg-color);
+      border-radius: 8px;
+      border: 1px solid rgba(0, 150, 136, 0.25);
+      box-shadow: var(--shadow-elevation);
+      padding: 5px 0;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      width: 100%;
+      backdrop-filter: blur(10px);
+    }
+
+    /* 顶部标题微标签 */
+    .menu-header-badge {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 12px 6px 12px;
+      font-size: 11px;
+      color: var(--text-muted);
+      border-bottom: 1px solid #f1f5f9;
+      margin-bottom: 3px;
+      flex-shrink: 0;
+    }
+
+    .badge-title {
+      font-weight: 600;
+      color: var(--primary-color);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .badge-sheet-name {
+      background: #f1f5f9;
+      padding: 1px 6px;
+      border-radius: 4px;
+      max-width: 120px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* 菜单项容器 */
+    .menu-item-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 0 4px;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* 单个菜单项 */
+    .menu-item {
+      display: flex;
+      align-items: center;
+      padding: 7px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.12s ease-in-out;
+      color: var(--text-main);
+      gap: 9px;
+      font-weight: 500;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .menu-item:hover, .menu-item.active-focus {
+      background-color: var(--primary-light);
+      color: var(--primary-color);
+      transform: translateX(2px);
+    }
+
+    .menu-item:active {
+      background-color: #b2dfdb;
+      transform: scale(0.98);
+    }
+
+    .menu-item.disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    /* 菜单项图标容器 */
+    .item-icon-wrap {
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      color: var(--primary-color);
+      flex-shrink: 0;
+    }
+
+    .menu-item:hover .item-icon-wrap {
+      transform: scale(1.1);
+    }
+
+    .item-label {
+      flex: 1;
+      font-size: 12.5px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .item-shortcut {
+      font-size: 11px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    /* 分割线 */
+    .menu-divider {
+      height: 1px;
+      background: #f1f5f9;
+      margin: 3px 6px;
+      flex-shrink: 0;
+    }
+
+    /* 切换模式特色按钮 (置底显眼) */
+    .menu-item-switch {
+      background: #f8fafc;
+      border: 1px dashed #cbd5e1;
+      margin: 2px 4px 0 4px;
+      color: #475569;
+      flex-shrink: 0;
+    }
+
+    .menu-item-switch:hover, .menu-item-switch.active-focus {
+      background: #f1f5f9;
+      color: #0f172a;
+      border-color: #94a3b8;
+    }
+
+    .menu-item-switch .item-icon-wrap {
+      color: #0284c7;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="context-menu-container" ref="containerRef">
+      <!-- 顶部信息微标签 -->
+      <div class="menu-header-badge">
+        <span class="badge-title">
+          <i class="fa-solid fa-cube"></i> 业务快捷菜单
+        </span>
+        <span class="badge-sheet-name" :title="contextInfo.sheetName">
+          {{ contextInfo.sheetName || '工作表' }} ({{ contextInfo.cellAddress || '单元格' }})
+        </span>
+      </div>
+
+      <!-- 核心业务菜单列表 -->
+      <div class="menu-item-list">
+        <!-- 1. 新建箱柜 -->
+        <div class="menu-item" 
+             :class="{ 'active-focus': focusedIndex === 0, 'disabled': !contextInfo.isAboveFirstDet }"
+             @click.stop="triggerAction('createCabinet')"
+             @mouseenter="focusedIndex = 0">
+          <div class="item-icon-wrap">
+            <i class="fa-solid fa-folder-plus"></i>
+          </div>
+          <span class="item-label">新建箱柜</span>
+          <span class="item-shortcut">选区顶部</span>
+        </div>
+
+        <!-- 2. 识别参数并匹配物料 -->
+        <div class="menu-item" 
+             :class="{ 'active-focus': focusedIndex === 1 }"
+             @click.stop="triggerAction('parseAndMatch')"
+             @mouseenter="focusedIndex = 1">
+          <div class="item-icon-wrap">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+          </div>
+          <span class="item-label">识别参数并匹配物料</span>
+          <span class="item-shortcut">S/T/U 列</span>
+        </div>
+
+        <!-- 3. 物料匹配与品牌规则设置 -->
+        <div class="menu-item" 
+             :class="{ 'active-focus': focusedIndex === 2 }"
+             @click.stop="triggerAction('openMatchSetting')"
+             @mouseenter="focusedIndex = 2">
+          <div class="item-icon-wrap">
+            <i class="fa-solid fa-sliders"></i>
+          </div>
+          <span class="item-label">物料匹配与品牌规则...</span>
+        </div>
+
+        <!-- 4. 智能输入词库配置 -->
+        <div class="menu-item" 
+             :class="{ 'active-focus': focusedIndex === 3 }"
+             @click.stop="triggerAction('openSmartInput')"
+             @mouseenter="focusedIndex = 3">
+          <div class="item-icon-wrap">
+            <i class="fa-solid fa-lightbulb"></i>
+          </div>
+          <span class="item-label">智能输入词库配置...</span>
+        </div>
+
+        <!-- 5. 汇总调价快捷入口 -->
+        <div class="menu-item" 
+             :class="{ 'active-focus': focusedIndex === 4 }"
+             @click.stop="triggerAction('openSummaryAdjustPrice')"
+             @mouseenter="focusedIndex = 4">
+          <div class="item-icon-wrap">
+            <i class="fa-solid fa-calculator"></i>
+          </div>
+          <span class="item-label">汇总调价...</span>
+        </div>
+      </div>
+
+      <!-- 分割线 -->
+      <div class="menu-divider"></div>
+
+      <!-- 底部切换回 Excel 原生右键菜单按钮 -->
+      <div class="menu-item menu-item-switch" 
+           :class="{ 'active-focus': focusedIndex === 5 }"
+           @click.stop="triggerAction('switchToNativeMenu')"
+           @mouseenter="focusedIndex = 5">
+        <div class="item-icon-wrap">
+          <i class="fa-solid fa-arrow-right-arrow-left"></i>
+        </div>
+        <span class="item-label">切换为 Excel 原生右键菜单</span>
+        <span class="item-shortcut">模式切换</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 引入 Vue 3 与 Element-Plus JS 库 -->
+  <script src="https://unpkg.com/vue@3.3.11/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.min.js"></script>
+
+  <script>
+    const { createApp, ref, onMounted, onUnmounted } = Vue;
+
+    createApp({
+      setup() {
+        // 当前聚焦的菜单项索引
+        const focusedIndex = ref(0);
+        // 总菜单项数 (共 6 项)
+        const totalItemsCount = 6;
+        // 防重复触发锁，防止一次点击触发多次动作
+        let isActionProcessing = false;
+
+        // 当前右键上下文数据模型
+        const contextInfo = ref({
+          sheetName: '',
+          cellAddress: '',
+          row: 0,
+          column: 0,
+          isAboveFirstDet: true
+        });
+
+        // 向 C# 后端发送 WebMessage 消息
+        const postToHost = (actionName, payload = {}) => {
+          if (window.chrome && window.chrome.webview) {
+            // 采用显式 action 字段构造数据包
+            const messageData = {
+              action: actionName,
+              ...payload
+            };
+            // 同时兼容以 String 格式发送
+            window.chrome.webview.postMessage(JSON.stringify(messageData));
+          }
+        };
+
+        // 执行菜单项动作并自动通知宿主 (加入严格防重锁)
+        const triggerAction = (actionName) => {
+          if (isActionProcessing) return;
+          isActionProcessing = true;
+          postToHost(actionName, { context: contextInfo.value });
+          // 400ms 后释放锁，确保单次点击仅执行一次
+          setTimeout(() => {
+            isActionProcessing = false;
+          }, 400);
+        };
+
+        // 键盘按键事件监听
+        const handleKeyDown = (e) => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            focusedIndex.value = (focusedIndex.value + 1) % totalItemsCount;
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            focusedIndex.value = (focusedIndex.value - 1 + totalItemsCount) % totalItemsCount;
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            executeFocusedItem();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            postToHost('closeMenu');
+          }
+        };
+
+        // 执行当前键盘选中的菜单项
+        const executeFocusedItem = () => {
+          switch (focusedIndex.value) {
+            case 0:
+              if (contextInfo.value.isAboveFirstDet) triggerAction('createCabinet');
+              break;
+            case 1:
+              triggerAction('parseAndMatch');
+              break;
+            case 2:
+              triggerAction('openMatchSetting');
+              break;
+            case 3:
+              triggerAction('openSmartInput');
+              break;
+            case 4:
+              triggerAction('openSummaryAdjustPrice');
+              break;
+            case 5:
+              triggerAction('switchToNativeMenu');
+              break;
+          }
+        };
+
+        // 监听来自 C# 宿主的初始化与上下文更新消息
+        const handleHostMessage = (event) => {
+          let msg = event.data;
+          if (typeof msg === 'string') {
+            try { msg = JSON.parse(msg); } catch { }
+          }
+          if (!msg) return;
+
+          if (msg.action === 'initContext') {
+            contextInfo.value = {
+              sheetName: msg.sheetName || '',
+              cellAddress: msg.cellAddress || '',
+              row: msg.row || 0,
+              column: msg.column || 0,
+              isAboveFirstDet: msg.isAboveFirstDet !== undefined ? msg.isAboveFirstDet : true
+            };
+            focusedIndex.value = 0;
+          }
+        };
+
+        onMounted(() => {
+          // 挂载键盘事件
+          window.addEventListener('keydown', handleKeyDown);
+          // 挂载 WebView2 消息监听
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', handleHostMessage);
+          }
+          // 通知宿主页面已完全加载
+          postToHost('menuReady');
+        });
+
+        onUnmounted(() => {
+          window.removeEventListener('keydown', handleKeyDown);
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.removeEventListener('message', handleHostMessage);
+          }
+        });
+
+        return {
+          focusedIndex,
+          contextInfo,
+          triggerAction
+        };
+      }
+    }).use(ElementPlus).mount('#app');
+  </script>
+</body>
+</html>

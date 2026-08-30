@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>元器件物料匹配与品牌规则设置</title>
+
+  <!-- 引入 Element-Plus 现代样式表 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus@2.4.4/dist/index.css">
+  <!-- 引入 FontAwesome 6 矢量图标库 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+
+  <style>
+    /* ==========================================================================
+       绿蓝相间现代工程风格设计规范 (主色调: #009688)
+       ========================================================================== */
+    :root {
+      --primary-color: #009688;
+      --primary-hover: #00796b;
+      --primary-light: #e0f2f1;
+      --primary-gradient: linear-gradient(135deg, #009688 0%, #00b4d8 100%);
+      --bg-color: #f8fafc;
+      --card-bg: #ffffff;
+      --text-main: #1e293b;
+      --text-muted: #64748b;
+      --border-color: #e2e8f0;
+      --accent-blue: #0284c7;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      overflow: hidden;
+      font-size: 13px;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* 顶部标题栏 (支持窗口拖拽) */
+    .title-bar {
+      height: 42px;
+      background: var(--primary-gradient);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      cursor: move;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(0, 150, 136, 0.25);
+    }
+
+    .title-bar .title-text {
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .title-bar .ctrl-btn {
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      color: #ffffff;
+    }
+
+    .title-bar .ctrl-btn:hover {
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .title-bar .ctrl-btn.close-btn:hover {
+      background-color: #ef4444;
+    }
+
+    /* 主内容滚动容器 */
+    .content-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* 模块卡片 */
+    .section-card {
+      background: var(--card-bg);
+      border-radius: 8px;
+      padding: 14px 16px;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #0f172a;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .section-title i {
+      color: var(--primary-color);
+    }
+
+    /* 品牌单选按钮组网格 */
+    .brand-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .brand-pill {
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 6px 8px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .brand-pill:hover {
+      border-color: var(--primary-color);
+      background-color: var(--primary-light);
+    }
+
+    .brand-pill.active {
+      border-color: var(--primary-color);
+      background-color: #009688;
+      color: #ffffff;
+      font-weight: 600;
+      box-shadow: 0 2px 6px rgba(0, 150, 136, 0.3);
+    }
+
+    .brand-pill .brand-name {
+      font-size: 12px;
+    }
+
+    .brand-pill .brand-count {
+      font-size: 10px;
+      opacity: 0.85;
+    }
+
+    .brand-pill.active .brand-count {
+      color: #e0f2f1;
+    }
+
+    /* 动态必含约束规则行 */
+    .rule-item-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      padding: 6px 10px;
+      background: #f8fafc;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+      transition: all 0.2s;
+    }
+
+    .rule-item-row:hover {
+      border-color: #cbd5e1;
+      background: #f1f5f9;
+    }
+
+    .rule-item-row.disabled {
+      opacity: 0.6;
+    }
+
+    .rule-tag-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--primary-color);
+      background: var(--primary-light);
+      padding: 2px 6px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+
+    /* 实时测试面板 */
+    .test-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr) auto;
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .test-result-box {
+      background: #f1f5f9;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 12px;
+      border-left: 3px solid var(--primary-color);
+    }
+
+    /* 底部操作栏 */
+    .footer-bar {
+      height: 52px;
+      background: #ffffff;
+      border-top: 1px solid var(--border-color);
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      transition: all 0.2s ease;
+    }
+
+    .footer-bar.collapsed {
+      border: 1px solid var(--primary-color);
+      box-shadow: 0 4px 16px rgba(0, 150, 136, 0.2);
+      cursor: move;
+    }
+
+    /* 自定义覆盖 Element-Plus 样式以匹配 #009688 主题 */
+    .el-button--primary {
+      --el-button-bg-color: #009688;
+      --el-button-border-color: #009688;
+      --el-button-hover-bg-color: #00796b;
+      --el-button-hover-border-color: #00796b;
+      --el-button-active-bg-color: #004d40;
+      --el-button-active-border-color: #004d40;
+    }
+
+    .el-switch.is-checked .el-switch__core {
+      border-color: #009688 !important;
+      background-color: #009688 !important;
+    }
+
+    .el-input:focus-within {
+      --el-input-focus-border-color: #009688;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app">
+    <!-- 顶部标题栏 (按住可拖拽移动窗口) -->
+    <div v-show="!isCollapsed" class="title-bar" @mousedown="onTitleBarMouseDown">
+      <div class="title-text">
+        <i class="fa-solid fa-sliders"></i>
+        <span>元器件物料匹配与品牌规则设置</span>
+      </div>
+      <div class="ctrl-btn close-btn" title="关闭窗口" @click="onClose">
+        <i class="fa-solid fa-xmark"></i>
+      </div>
+    </div>
+
+    <!-- 主滚动容器 -->
+    <div v-show="!isCollapsed" class="content-container">
+      <!-- 1. 目标品牌筛选模块 -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">
+            <i class="fa-solid fa-tags"></i>
+            <span>1. 目标品牌偏好设置 (Brand Filter)</span>
+          </div>
+          <el-tag size="small" type="info" effect="plain">{{ brands.length }} 个品牌可选</el-tag>
+        </div>
+        <div class="brand-grid">
+          <!-- 全部品牌选项 -->
+          <div class="brand-pill" :class="{ active: filterConfig.selectedBrand === '' }"
+            @click="filterConfig.selectedBrand = ''">
+            <span class="brand-name">全部品牌</span>
+            <span class="brand-count">(不限)</span>
+          </div>
+          <!-- 动态从 WebAPI 取得的各品牌 -->
+          <div v-for="b in brands" :key="b.brand" class="brand-pill"
+            :class="{ active: filterConfig.selectedBrand === b.brand }" @click="filterConfig.selectedBrand = b.brand">
+            <span class="brand-name">{{ b.brand }}</span>
+            <span class="brand-count">({{ b.count }})</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 动态必含字段约束模块 -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">
+            <i class="fa-solid fa-filter-circle-dollar"></i>
+            <span>2. 型号必含字段约束 (Must-Contain Rules)</span>
+          </div>
+          <el-button type="primary" size="small" plain @click="addRule">
+            <i class="fa-solid fa-plus" style="margin-right: 4px;"></i>添加必含约束
+          </el-button>
+        </div>
+
+        <div v-if="filterConfig.mustContainRules.length === 0"
+          style="text-align: center; color: #94a3b8; padding: 12px 0;">
+          <i class="fa-solid fa-inbox" style="font-size: 22px; margin-bottom: 4px; display: block;"></i>
+          <span>暂无必含约束，点击右上角“添加必含约束”自定义关键字</span>
+        </div>
+
+        <!-- 动态多行必含字段列表 -->
+        <div v-else>
+          <div v-for="(rule, index) in filterConfig.mustContainRules" :key="rule.id" class="rule-item-row"
+            :class="{ disabled: !rule.enabled }">
+            <el-switch v-model="rule.enabled" size="small" title="启用/停用此约束"></el-switch>
+            <span class="rule-tag-label">必含 #{{ index + 1 }}</span>
+            <el-input v-model="rule.keyword" size="small" placeholder="输入必须包含的字符(如: NDX, 12, CVS)" clearable
+              style="flex: 1;"></el-input>
+            <el-button type="danger" size="small" circle text title="删除此行约束" @click="removeRule(index)">
+              <i class="fa-solid fa-trash-can"></i>
+            </el-button>
+          </div>
+          <div style="font-size: 11px; color: #64748b; margin-top: 4px;">
+            💡 提示：多行约束之间为 <strong>AND（与）</strong> 关系，反查物料时型号必须<strong>同时包含</strong>所有启用的关键字。
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. 实时匹配预览与单条测试模块 -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">
+            <i class="fa-solid fa-flask"></i>
+            <span>3. 实时匹配验证与测试</span>
+          </div>
+          <span style="font-size: 11px; color: #64748b;">即时验证当前规则过滤效果</span>
+        </div>
+
+        <div class="test-grid">
+          <el-input v-model="testForm.name" size="small" placeholder="名称(如微型断路器)"></el-input>
+          <el-input v-model="testForm.current" size="small" placeholder="电流(如16)"></el-input>
+          <el-input v-model="testForm.pole" size="small" placeholder="极数(如3P)"></el-input>
+          <el-input v-model="testForm.trip" size="small" placeholder="脱扣(如D)"></el-input>
+          <el-button type="primary" size="small" :loading="isTesting" @click="runTest">
+            <i class="fa-solid fa-magnifying-glass" style="margin-right: 2px;"></i>测试
+          </el-button>
+        </div>
+
+        <!-- 测试反馈结果 -->
+        <div v-if="testResult" class="test-result-box">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <strong>匹配状态:
+              <span v-if="testResult.length === 1" style="color: #16a34a;">🟢 精准命中 1 条 (唯一匹配直接回填)</span>
+              <span v-else-if="testResult.length > 1" style="color: #ea580c;">🟡 命中 {{ testResult.length }} 条 (多候选:
+                点击查询({{ testResult.length }}))</span>
+              <span v-else style="color: #dc2626;">🔴 未找到匹配</span>
+            </strong>
+            <span style="color: #64748b;">耗时: {{ testDuration }}ms</span>
+          </div>
+          <div v-if="testResult.length > 0"
+            style="max-height: 90px; overflow-y: auto; font-size: 11px; color: #334155;">
+            <div v-for="(it, idx) in testResult.slice(0, 5)" :key="it.id"
+              style="padding: 2px 0; border-bottom: 1px dashed #e2e8f0;">
+              [{{ it.brand }}] <strong>{{ it.model }}</strong> | 单价: ¥{{ it.price }} | {{ it.param1 }}
+            </div>
+            <div v-if="testResult.length > 5" style="color: #64748b; text-align: center; margin-top: 2px;">
+              ... 其余 {{ testResult.length - 5 }} 条省略
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部操作栏 (折叠后作为轻量悬浮条) -->
+    <div class="footer-bar" :class="{ collapsed: isCollapsed }" @mousedown="onFooterMouseDown">
+      <!-- 左侧：折叠/展开按钮 + 搜索弹起开关 -->
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <!-- 折叠/展开切换按钮 -->
+        <el-tooltip :content="isCollapsed ? '展开完整设置面板' : '折叠为极简悬浮条'" placement="top" effect="dark">
+          <el-button size="small" circle text @click.stop="toggleCollapse" style="padding: 6px;">
+            <i :class="isCollapsed ? 'fa-solid fa-angles-up' : 'fa-solid fa-angles-down'"
+              style="color: #009688; font-size: 13px;"></i>
+          </el-button>
+        </el-tooltip>
+
+        <!-- 搜索弹起开关 (hover 显示气泡) -->
+        <el-tooltip :disabled="isCollapsed" content="勾选开启：点击或双击 Excel D 列单元格将弹起物料搜索下拉框" placement="top" effect="dark">
+          <div style="display: flex; align-items: center; cursor: pointer;">
+            <el-checkbox v-model="filterConfig.enableSearchOverlay" size="small" style="margin-right: 0;">
+              <strong style="color: #0f172a;">搜索</strong>
+            </el-checkbox>
+          </div>
+        </el-tooltip>
+      </div>
+
+      <!-- 右侧：操作按钮组 (保存、立即匹配选区、折叠时关闭小按钮) -->
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <el-button type="primary" size="small" plain @click="saveConfig">
+          <i class="fa-solid fa-floppy-disk" style="margin-right: 4px;"></i>保存
+        </el-button>
+        <el-button type="primary" size="small" :loading="isExecuting" @click="executeBatch">
+          <i class="fa-solid fa-bolt" style="margin-right: 4px;"></i>🚀 立即匹配选区
+        </el-button>
+        <!-- 折叠状态下的快速关闭按钮 -->
+        <el-button v-if="isCollapsed" size="small" circle text title="关闭" @click.stop="onClose"
+          style="color: #94a3b8; padding: 4px;">
+          <i class="fa-solid fa-xmark"></i>
+        </el-button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 引入 Vue 3 与 Element-Plus 脚本 -->
+  <script src="https://unpkg.com/vue@3.3.4/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.min.js"></script>
+
+  <script>
+    const { createApp, ref, reactive, onMounted } = Vue;
+
+    createApp({
+      setup() {
+        // 品牌列表
+        const brands = ref([]);
+        // 过滤配置对象 (包含品牌、必含规则及搜索弹起开关)
+        const filterConfig = reactive({
+          selectedBrand: '',
+          mustContainRules: [],
+          enableSearchOverlay: false
+        });
+
+        // 单条测试表单
+        const testForm = reactive({
+          name: '微型断路器',
+          current: '16',
+          pole: '3P',
+          trip: 'D'
+        });
+
+        const isTesting = ref(false);
+        const testResult = ref(null);
+        const testDuration = ref(0);
+        const isExecuting = ref(false);
+        const statusMsg = ref('');
+
+        // 与 C# WinForms 宿主通信的安全辅助函数
+        const postToHost = (action, payload = {}) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ action, ...payload }));
+          }
+        };
+
+        // 接收 C# 宿主发来的消息监听
+        if (window.chrome && window.chrome.webview) {
+          window.chrome.webview.addEventListener('message', (event) => {
+            try {
+              const msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+              handleHostMessage(msg);
+            } catch (e) { }
+          });
+        }
+
+        // 集中处理 C# 消息
+        const handleHostMessage = (msg) => {
+          if (!msg || !msg.action) return;
+
+          switch (msg.action) {
+            case 'initData':
+              if (msg.brands) brands.value = msg.brands;
+              if (msg.config) {
+                filterConfig.selectedBrand = msg.config.selectedBrand || '';
+                filterConfig.mustContainRules = msg.config.mustContainRules || [];
+                filterConfig.enableSearchOverlay = !!msg.config.enableSearchOverlay;
+              }
+              break;
+
+            case 'testResult':
+              isTesting.value = false;
+              testResult.value = msg.items || [];
+              testDuration.value = msg.duration || 0;
+              break;
+
+            case 'batchResult':
+              isExecuting.value = false;
+              if (msg.result) {
+                statusMsg.value = msg.result.message;
+                ElementPlus.ElMessage({
+                  message: msg.result.message,
+                  type: msg.result.success ? 'success' : 'warning',
+                  duration: 4000
+                });
+              }
+              break;
+
+            case 'saveSuccess':
+              ElementPlus.ElMessage.success('匹配规则配置已成功保存！');
+              break;
+          }
+        };
+
+        // 添加必含约束行
+        const addRule = () => {
+          filterConfig.mustContainRules.push({
+            id: Date.now().toString(36) + Math.random().toString(36).substring(2),
+            enabled: true,
+            keyword: ''
+          });
+        };
+
+        // 删除指定约束行
+        const removeRule = (index) => {
+          filterConfig.mustContainRules.splice(index, 1);
+        };
+
+        // 保存配置
+        const saveConfig = () => {
+          postToHost('saveConfig', {
+            config: JSON.parse(JSON.stringify(filterConfig))
+          });
+        };
+
+        // 运行单条模拟测试
+        const runTest = () => {
+          isTesting.value = true;
+          postToHost('testMatch', {
+            name: testForm.name,
+            current: testForm.current,
+            pole: testForm.pole,
+            tripMode: testForm.trip,
+            brand: filterConfig.selectedBrand,
+            rules: JSON.parse(JSON.stringify(filterConfig.mustContainRules))
+          });
+        };
+
+        // 立即执行当前选区批量匹配
+        const executeBatch = () => {
+          isExecuting.value = true;
+          statusMsg.value = '正在从远程 WebAPI 检索物料并回填 Excel...';
+          postToHost('executeBatch', {
+            config: JSON.parse(JSON.stringify(filterConfig))
+          });
+        };
+
+        // 折叠状态控制 (折叠后只保留底部操作栏作为悬浮小工具条)
+        const isCollapsed = ref(false);
+
+        // 切换折叠/展开状态并通知 C# 宿主调整窗口尺寸
+        const toggleCollapse = () => {
+          isCollapsed.value = !isCollapsed.value;
+          postToHost('setCollapseState', { collapsed: isCollapsed.value });
+        };
+
+        // 底部栏鼠标按下处理 (折叠状态下支持按住空白处拖拽移动窗口)
+        const onFooterMouseDown = (e) => {
+          if (isCollapsed.value && !e.target.closest('button') && !e.target.closest('.el-checkbox') && !e.target.closest('.el-switch')) {
+            postToHost('dragWindow');
+          }
+        };
+
+        // 窗口拖拽
+        const onTitleBarMouseDown = (e) => {
+          if (e.target.closest('.ctrl-btn')) return;
+          postToHost('dragWindow');
+        };
+
+        // 关闭窗口
+        const onClose = () => {
+          postToHost('closeWindow');
+        };
+
+        // 页面初始化完成向 C# 宿主索取初始数据
+        onMounted(() => {
+          postToHost('ready');
+        });
+
+        return {
+          brands,
+          filterConfig,
+          testForm,
+          isTesting,
+          testResult,
+          testDuration,
+          isExecuting,
+          statusMsg,
+          isCollapsed,
+          toggleCollapse,
+          onFooterMouseDown,
+          addRule,
+          removeRule,
+          saveConfig,
+          runTest,
+          executeBatch,
+          onTitleBarMouseDown,
+          onClose
+        };
+      }
+    }).use(ElementPlus).mount('#app');
+  </script>
+</body>
+
+</html>

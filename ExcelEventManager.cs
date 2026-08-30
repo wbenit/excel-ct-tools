@@ -49,8 +49,13 @@ namespace ExcelAddInDemo
 
                 // 解除已有的 SheetSelectionChange 事件处理委托绑定，避免重复挂载
                 _excelApp.SheetSelectionChange -= OnSheetSelectionChange;
-                // 重新绑定 SheetSelectionChange 事件处理委托，实现进入 C 列元器件行自动触发覆盖式智能输入 (方案 B)
+                // 重新绑定 SheetSelectionChange 事件处理委托，实现进入 C 列智能输入或 D 列物料联想下拉
                 _excelApp.SheetSelectionChange += OnSheetSelectionChange;
+
+                // 解除已有的 SheetBeforeDoubleClick 事件绑定
+                _excelApp.SheetBeforeDoubleClick -= OnSheetBeforeDoubleClick;
+                // 重新绑定 SheetBeforeDoubleClick 事件，双击 D 列单元格可快速触发物料智能联想
+                _excelApp.SheetBeforeDoubleClick += OnSheetBeforeDoubleClick;
             }
             catch (Exception ex)
             {
@@ -76,10 +81,13 @@ namespace ExcelAddInDemo
                     _excelApp.SheetBeforeRightClick -= OnSheetBeforeRightClick;
                     // 解除 SheetSelectionChange 事件绑定
                     _excelApp.SheetSelectionChange -= OnSheetSelectionChange;
+                    // 解除 SheetBeforeDoubleClick 事件绑定
+                    _excelApp.SheetBeforeDoubleClick -= OnSheetBeforeDoubleClick;
                 }
 
-                // 隐藏方案 B 覆盖输入框
+                // 隐藏覆盖输入框与物料联想下拉浮窗
                 ExcelServices.HideSmartInputOverlay();
+                ExcelServices.HideComponentMatchOverlay();
 
                 // 彻底清理注册的右键菜单控件
                 RemoveContextMenuControls();
@@ -88,7 +96,7 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 响应工作表单元格焦点切换事件，实现选中 C 列元器件行时自动激活覆盖式智能输入 (方案 B / 对应 ZhiNengEn.ShuRu)
+        /// 响应工作表单元格焦点切换事件，实现选中 C 列智能输入或选中 D 列“点击查询”时激活智能下拉
         /// </summary>
         private static void OnSheetSelectionChange(object shObj, Microsoft.Office.Interop.Excel.Range target)
         {
@@ -100,20 +108,96 @@ namespace ExcelAddInDemo
                 // 若选中的是单个单元格
                 if (target.Rows.Count == 1 && target.Columns.Count == 1)
                 {
-                    // 尝试激活覆盖式智能输入框 (内部自动校验 C 列与箱柜元器件行区间)
-                    ExcelServices.ShuRu(target);
+                    int col = target.Column;
+
+                    // 1. 若选中的是 C 列 (第 3 列: 规格型号) -> 激活智能输入覆盖框
+                    if (col == 3)
+                    {
+                        ExcelServices.HideComponentMatchOverlay();
+                        ExcelServices.ShuRu(target);
+                    }
+                    // 2. 若选中的是 D 列 (第 4 列: 规格型号/点击查询) -> 检查是否在“元件汇总表”中并触发物料智能联想下拉
+                    else if (col == 4)
+                    {
+                        // 隐藏智能输入覆盖框
+                        ExcelServices.HideSmartInputOverlay();
+
+                        // 获取当前工作表名称
+                        string curSheetName = (shObj as Microsoft.Office.Interop.Excel.Worksheet)?.Name ?? target.Worksheet?.Name ?? string.Empty;
+
+                        // 仅限定在“元件汇总表”下触发
+                        if (curSheetName == ComponentMatchDefaults.ComponentSummarySheetName)
+                        {
+                            // 读取当前单元格文本值
+                            string cellVal = Convert.ToString(target.Value2)?.Trim() ?? string.Empty;
+
+                            // 若单元格内容包含“点击查询”或者为空/可查询时弹出物料智能联想下拉
+                            if (cellVal.Contains(ComponentMatchDefaults.MultipleCandidatesText) || string.IsNullOrEmpty(cellVal))
+                            {
+                                ExcelServices.ShowComponentMatchOverlay(target);
+                            }
+                            else
+                            {
+                                ExcelServices.HideComponentMatchOverlay();
+                            }
+                        }
+                        else
+                        {
+                            // 非“元件汇总表”隐藏物料下拉浮窗
+                            ExcelServices.HideComponentMatchOverlay();
+                        }
+                    }
+                    else
+                    {
+                        // 离开 C/D 列时全部隐藏
+                        ExcelServices.HideSmartInputOverlay();
+                        ExcelServices.HideComponentMatchOverlay();
+                    }
                 }
                 else
                 {
-                    // 选中多单元格区域时隐藏覆盖输入框
+                    // 选中多单元格区域时隐藏浮窗
                     ExcelServices.HideSmartInputOverlay();
+                    ExcelServices.HideComponentMatchOverlay();
                 }
             }
             catch
             {
-                // 异常时安全兜底隐藏覆盖输入框
+                // 异常时安全兜底隐藏
                 ExcelServices.HideSmartInputOverlay();
+                ExcelServices.HideComponentMatchOverlay();
             }
+        }
+
+        /// <summary>
+        /// 响应工作表单元格双击事件，在“元件汇总表”且开启搜索时双击 D 列单元格弹出物料联想下拉
+        /// </summary>
+        private static void OnSheetBeforeDoubleClick(object shObj, Microsoft.Office.Interop.Excel.Range target, ref bool cancel)
+        {
+            try
+            {
+                // 校验有效性
+                if (target == null || _excelApp == null) return;
+
+                // 获取当前双击所在的工作表名称
+                string sheetName = (shObj as Microsoft.Office.Interop.Excel.Worksheet)?.Name ?? target.Worksheet?.Name ?? string.Empty;
+
+                // 核心条件：必须在“元件汇总表”工作表中，且双击的是 D 列单个单元格
+                if (sheetName == ComponentMatchDefaults.ComponentSummarySheetName &&
+                    target.Rows.Count == 1 && target.Columns.Count == 1 && target.Column == 4)
+                {
+                    // 先校验当前是否开启了“搜索”功能
+                    var cfg = ExcelServices.LoadComponentMatchFilterConfig();
+                    if (cfg != null && cfg.EnableSearchOverlay)
+                    {
+                        // 仅在开启“搜索”时拦截双击并弹起智能联想下拉
+                        cancel = true;
+                        ExcelServices.ShowComponentMatchOverlay(target);
+                    }
+                    // 若未开启“搜索”，保持 cancel = false，允许 Excel 正常双击进入单元格进行文本编辑
+                }
+            }
+            catch { }
         }
 
         /// <summary>
@@ -568,7 +652,7 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 响应工作表右键点击事件：在第一个 Cab_Det 行上方右击时，动态添加/显示“新建箱柜”右键菜单按钮
+        /// 响应工作表右键点击事件：实现【WebView2 业务专属菜单】与【Excel 原生右键菜单】的彻底二选一隔离切换
         /// </summary>
         private static void OnSheetBeforeRightClick(object shObj, Microsoft.Office.Interop.Excel.Range target, ref bool cancel)
         {
@@ -576,6 +660,9 @@ namespace ExcelAddInDemo
             {
                 // 校验全局 _excelApp 与 target 句柄有效性
                 if (_excelApp == null || target == null) return;
+
+                // 读取当前配置：是否启用自定义业务右键菜单
+                bool useCustomMenu = ConfigManager.Instance.Current.Excel.UseCustomContextMenu;
 
                 // 转换当前触发右击的工作表强类型对象
                 Microsoft.Office.Interop.Excel.Worksheet? activeSheet = shObj as Microsoft.Office.Interop.Excel.Worksheet;
@@ -585,19 +672,31 @@ namespace ExcelAddInDemo
                 Microsoft.Office.Interop.Excel.Workbook? wb = null;
                 try { wb = activeSheet.Parent as Microsoft.Office.Interop.Excel.Workbook; } catch { }
 
-                // 【配置文件替代硬编码列举】
-                // 1. 箱柜明细前缀: CabinetPrefixConfig.Current.DetPrefix
-                // 2. 右键菜单文本: NewCabinetMenuCaption (默认 新建箱柜)
-                // 3. 右键菜单Tag标识: NewCabinetMenuTag (默认 CT_BTN_NEW_CABINET)
-                string detPrefix = CabinetPrefixConfig.Current.DetPrefix;
-                string menuCaption = ConfigManager.Instance.Current.Excel.NewCabinetMenuCaption ?? "新建箱柜";
-                string menuTag = ConfigManager.Instance.Current.Excel.NewCabinetMenuTag ?? "CT_BTN_NEW_CABINET";
+                // 若处于【Excel 原生右键菜单模式】：完全放行，不做任何拦截，并清理 CommandBars 注入项
+                if (!useCustomMenu)
+                {
+                    // 彻底放行原生右键菜单
+                    cancel = false;
+                    // 清理任何历史上可能遗留在 CommandBars 中的自定义控件，保持 Excel 原厂菜单 100% 纯净
+                    RemoveContextMenuControls();
+                    // 直接返回
+                    return;
+                }
 
+                // ------------------ 【以下为 WebView 2 业务专属菜单模式】 ------------------
+                // 1. 完全拦截 Excel 原生右键菜单弹窗
+                cancel = true;
+
+                // 2. 清理 CommandBars，确保后台无冗余控件注入
+                RemoveContextMenuControls();
+
+                // 3. 计算箱柜特征：箱柜明细前缀
+                string detPrefix = CabinetPrefixConfig.Current.DetPrefix;
                 // 记录当前工作表中第一个（行号最小的）Cab_Det 物理行号
                 int minDetRow = int.MaxValue;
                 string currentSheetName = Convert.ToString(activeSheet.Name) ?? "";
 
-                // 1. 扫描工作簿级别定义名称，寻找属于当前 Sheet 且匹配 detPrefix 的最小行号
+                // 4. 扫描工作簿级别定义名称，寻找属于当前 Sheet 且匹配 detPrefix 的最小行号
                 if (wb != null && wb.Names != null)
                 {
                     try
@@ -625,7 +724,7 @@ namespace ExcelAddInDemo
                     catch { }
                 }
 
-                // 2. 扫描工作表级别定义名称，寻找匹配 detPrefix 的最小行号
+                // 5. 扫描工作表级别定义名称，寻找匹配 detPrefix 的最小行号
                 if (activeSheet.Names != null)
                 {
                     try
@@ -653,20 +752,167 @@ namespace ExcelAddInDemo
                     catch { }
                 }
 
-                // 获取用户当前右击的物理行号
+                // 获取用户当前右击的物理行号与列号
                 int rightClickRow = target.Row;
+                int rightClickCol = target.Column;
+                // 获取当前单元格的绝对地址 (如 $C$15)
+                string cellAddress = "";
+                try { cellAddress = Convert.ToString(target.get_Address(Type.Missing, Type.Missing, Microsoft.Office.Interop.Excel.XlReferenceStyle.xlA1, Type.Missing, Type.Missing)) ?? ""; } catch { }
 
                 // 判断是否在第一个 Cab_Det 行上方：
                 // 若未识别到任何 Cab_Det 行（如新表），或者右击行号小于最小明细行号，则判定为在上方
                 bool isAboveFirstDet = (minDetRow == int.MaxValue) || (rightClickRow < minDetRow);
 
-                // 动态更新 Excel 单元格右键菜单中“新建箱柜”按钮的状态
-                UpdateNewCabinetContextMenu(isAboveFirstDet, menuCaption, menuTag);
+                // 获取当前屏幕物理鼠标坐标
+                System.Drawing.Point screenPos = System.Windows.Forms.Cursor.Position;
+
+                // 在鼠标所在屏幕位置调起基于 WebView2 + Vue 3 的业务专属右键菜单
+                ExcelAddInDemo.Forms.CustomContextMenuForm.ShowMenu(
+                    screenPos,
+                    currentSheetName,
+                    cellAddress,
+                    rightClickRow,
+                    rightClickCol,
+                    isAboveFirstDet
+                );
             }
             catch (Exception ex)
             {
-                // 记录右键菜单更新异常日志
-                LogHelper.WriteLog($"右键菜单状态更新异常: {ex.Message}");
+                // 记录右键菜单处理异常日志
+                LogHelper.WriteLog($"右键菜单调度异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 动态更新或添加 Excel 单元格右键上下文菜单中的“识别参数并匹配物料”与“物料匹配规则设置...”按钮
+        /// </summary>
+        private static void UpdateParseMatchComponentsContextMenu(string menuCaption, string menuTag)
+        {
+            try
+            {
+                // 校验 Excel 全局应用实例
+                if (_excelApp == null) return;
+
+                // 将 Excel Application 转换为 dynamic 动态对象
+                dynamic dynApp = (dynamic)_excelApp;
+                dynamic commandBars = dynApp.CommandBars;
+                if (commandBars == null) return;
+
+                const string settingTag = "CT_BTN_OPEN_MATCH_SETTING";
+
+                // 遍历 Excel CommandBars 中所有名称为 "Cell" 的上下文右键菜单
+                foreach (dynamic bar in commandBars)
+                {
+                    if (bar.Name == "Cell")
+                    {
+                        // 1. 挂载/更新“识别参数并匹配物料”按钮
+                        dynamic? existingCtrl = null;
+                        try { existingCtrl = bar.FindControl(1, Type.Missing, menuTag); } catch { }
+
+                        if (existingCtrl != null)
+                        {
+                            existingCtrl.Caption = menuCaption;
+                            existingCtrl.Visible = true;
+                            existingCtrl.Enabled = true;
+                        }
+                        else
+                        {
+                            dynamic btn = bar.Controls.Add(1, Type.Missing, Type.Missing, 2, true);
+                            btn.Caption = menuCaption;
+                            btn.Tag = menuTag;
+                            btn.BeginGroup = true;
+                            btn.OnAction = "MacroParseAndMatchComponents";
+                            btn.Visible = true;
+                        }
+
+                        // 2. 挂载/更新“物料匹配与品牌规则设置...”窗口调起按钮
+                        dynamic? existingSettingCtrl = null;
+                        try { existingSettingCtrl = bar.FindControl(1, Type.Missing, settingTag); } catch { }
+
+                        if (existingSettingCtrl != null)
+                        {
+                            existingSettingCtrl.Caption = "物料匹配规则与品牌设置...";
+                            existingSettingCtrl.Visible = true;
+                            existingSettingCtrl.Enabled = true;
+                        }
+                        else
+                        {
+                            dynamic btnSetting = bar.Controls.Add(1, Type.Missing, Type.Missing, 3, true);
+                            btnSetting.Caption = "物料匹配规则与品牌设置...";
+                            btnSetting.Tag = settingTag;
+                            btnSetting.BeginGroup = false;
+                            btnSetting.OnAction = "MacroOpenComponentMatchDialog";
+                            btnSetting.Visible = true;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录更新识别参数并匹配物料右键菜单异常日志
+                LogHelper.WriteLog($"更新识别参数并匹配物料右键菜单异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Excel-DNA 宏入口：打开“元器件物料匹配与品牌规则设置”现代化 Vue 3 浮窗
+        /// </summary>
+        [ExcelCommand]
+        public static void MacroOpenComponentMatchDialog()
+        {
+            try
+            {
+                // 打开或激活物料匹配设置弹窗
+                ExcelAddInDemo.Forms.ComponentMatchForm.ShowDialogForm();
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"打开物料匹配设置弹窗异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Excel-DNA 宏入口：响应右键菜单中“识别参数并匹配物料”按钮指令
+        /// </summary>
+        [ExcelCommand]
+        public static void MacroParseAndMatchComponents()
+        {
+            try
+            {
+                // 调度执行业务服务层：根据选区已有的 S/T/U 列参数反查物料库并回填
+                var result = ExcelServices.ExecuteBatchMatchWithDb(null);
+
+                // 弹出执行结果反馈提示
+                if (result != null)
+                {
+                    if (result.Success)
+                    {
+                        // 提示处理完成
+                        System.Windows.Forms.MessageBox.Show(
+                            result.Message,
+                            "识别与匹配物料完成",
+                            System.Windows.Forms.MessageBoxButtons.OK,
+                            System.Windows.Forms.MessageBoxIcon.Information
+                        );
+                    }
+                    else
+                    {
+                        // 提示失败信息
+                        System.Windows.Forms.MessageBox.Show(
+                            $"识别与匹配失败: {result.Message}",
+                            "提示",
+                            System.Windows.Forms.MessageBoxButtons.OK,
+                            System.Windows.Forms.MessageBoxIcon.Warning
+                        );
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"右键识别参数并匹配物料执行异常: {ex.Message}");
+                // 弹出异常弹窗
+                System.Windows.Forms.MessageBox.Show($"执行异常: {ex.Message}", "错误", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
             }
         }
 
@@ -767,6 +1013,41 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// Excel-DNA 宏入口：一键切换【业务专属右键菜单】与【Excel 原生右键菜单】模式
+        /// </summary>
+        [ExcelCommand]
+        public static void MacroToggleContextMenuMode()
+        {
+            try
+            {
+                // 执行切换并获取最新的模式布尔值
+                bool newMode = ConfigManager.Instance.ToggleCustomContextMenuMode();
+
+                // 彻底清理 CommandBars 遗留，保证原生环境无污染
+                RemoveContextMenuControls();
+
+                // 准备提示文本
+                string modeText = newMode ? "【业务专属右键菜单 (WebView2)】" : "【Excel 纯净原生右键菜单】";
+                string detailText = newMode
+                    ? "在工作表中右键将弹出极简现代化的业务菜单！"
+                    : "在工作表中右键将直接弹出 Excel 原厂自带的默认菜单！";
+
+                // 弹出切换成功提示
+                System.Windows.Forms.MessageBox.Show(
+                    $"已成功切换至：{modeText}\n\n{detailText}",
+                    "右键菜单模式切换",
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Information
+                );
+            }
+            catch (Exception ex)
+            {
+                // 记录切换异常日志
+                LogHelper.WriteLog($"切换右键菜单模式异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// 清理插件注册的所有右键菜单控件，保持 Excel 原始环境干净整洁
         /// </summary>
         public static void RemoveContextMenuControls()
@@ -777,6 +1058,8 @@ namespace ExcelAddInDemo
                 if (_excelApp == null) return;
                 // 读取配置中定义的唯一 Tag 标识
                 string menuTag = ConfigManager.Instance.Current.Excel.NewCabinetMenuTag ?? "CT_BTN_NEW_CABINET";
+                string matchTag = ConfigManager.Instance.Current.Excel.ParseMatchComponentsMenuTag ?? "CT_BTN_PARSE_MATCH_COMPONENTS";
+                const string settingTag = "CT_BTN_OPEN_MATCH_SETTING";
 
                 // 将 Excel Application 转换为 dynamic 动态对象
                 dynamic dynApp = (dynamic)_excelApp;
@@ -791,10 +1074,13 @@ namespace ExcelAddInDemo
                         try
                         {
                             dynamic? ctrl = bar.FindControl(1, Type.Missing, menuTag);
-                            if (ctrl != null)
-                            {
-                                ctrl.Delete(true);
-                            }
+                            if (ctrl != null) ctrl.Delete(true);
+
+                            dynamic? matchCtrl = bar.FindControl(1, Type.Missing, matchTag);
+                            if (matchCtrl != null) matchCtrl.Delete(true);
+
+                            dynamic? settingCtrl = bar.FindControl(1, Type.Missing, settingTag);
+                            if (settingCtrl != null) settingCtrl.Delete(true);
                         }
                         catch { }
                     }
@@ -804,6 +1090,7 @@ namespace ExcelAddInDemo
             }
             catch { }
         }
+
 
         /// <summary>
         /// 从超链接子地址中截取精准的定义名称标签字符串
