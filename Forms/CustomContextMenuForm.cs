@@ -173,6 +173,7 @@ namespace ExcelAddInDemo.Forms
                     case "openMatchSetting":
                     case "openSmartInput":
                     case "openSummaryAdjustPrice":
+                    case "openComponentManage":
                     case "switchToNativeMenu":
                         // 收到业务菜单点击指令：先隐藏菜单，后执行对应业务方法
                         SafeInvoke(() =>

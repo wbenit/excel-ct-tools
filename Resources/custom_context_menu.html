@@ -5,11 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>业务专属右键上下文菜单</title>
   
-  <!-- 引入 Element-Plus 样式表 -->
-  <link rel="stylesheet" href="https://unpkg.com/element-plus@2.4.4/dist/index.css">
-  <!-- 引入 FontAwesome 图标库 -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
-  
   <style>
     /* 绿蓝相间现代化工程级调色盘 (主色调: #009688) */
     :root {
@@ -83,14 +78,14 @@
       color: var(--primary-color);
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 6px;
     }
 
     .badge-sheet-name {
       background: #f1f5f9;
       padding: 1px 6px;
       border-radius: 4px;
-      max-width: 120px;
+      max-width: 130px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -138,16 +133,21 @@
       pointer-events: none;
     }
 
-    /* 菜单项图标容器 */
+    /* 菜单项图标容器与 SVG 尺寸控制 */
     .item-icon-wrap {
       width: 18px;
       height: 18px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 13px;
       color: var(--primary-color);
       flex-shrink: 0;
+    }
+
+    .item-icon-wrap svg {
+      width: 15px;
+      height: 15px;
+      fill: currentColor;
     }
 
     .menu-item:hover .item-icon-wrap {
@@ -198,83 +198,75 @@
 </head>
 <body>
   <div id="app">
-    <div class="context-menu-container" ref="containerRef">
+    <div class="context-menu-container" id="menuContainer">
       <!-- 顶部信息微标签 -->
       <div class="menu-header-badge">
         <span class="badge-title">
-          <i class="fa-solid fa-cube"></i> 业务快捷菜单
+          <span class="item-icon-wrap" style="width:14px;height:14px;">
+            <!-- 立方体图标 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M21 16.5C21 16.88 20.79 17.21 20.47 17.38L12.57 21.82C12.41 21.91 12.21 21.96 12 21.96C11.79 21.96 11.59 21.91 11.43 21.82L3.53 17.38C3.21 17.21 3 16.88 3 16.5V7.5C3 7.12 3.21 6.79 3.53 6.62L11.43 2.18C11.59 2.09 11.79 2.04 12 2.04C12.21 2.04 12.41 2.09 12.57 2.18L20.47 6.62C20.79 6.79 21 7.12 21 7.5V16.5ZM12 4.15L5.04 8.05L12 11.96L18.96 8.05L12 4.15ZM4.5 9.58V15.71L11.25 19.5V13.37L4.5 9.58ZM12.75 19.5L19.5 15.71V9.58L12.75 13.37V19.5Z"/></svg>
+          </span>
+          业务快捷菜单
         </span>
-        <span class="badge-sheet-name" :title="contextInfo.sheetName">
-          {{ contextInfo.sheetName || '工作表' }} ({{ contextInfo.cellAddress || '单元格' }})
+        <span class="badge-sheet-name" id="badgeSheetInfo" title="工作表">
+          工作表
         </span>
       </div>
 
       <!-- 核心业务菜单列表 -->
       <div class="menu-item-list">
         <!-- 1. 新建箱柜 -->
-        <div class="menu-item" 
-             :class="{ 'active-focus': focusedIndex === 0, 'disabled': !contextInfo.isAboveFirstDet }"
-             @click.stop="triggerAction('createCabinet')"
-             @mouseenter="focusedIndex = 0">
+        <div class="menu-item" id="item-0" data-action="createCabinet">
           <div class="item-icon-wrap">
-            <i class="fa-solid fa-folder-plus"></i>
+            <!-- 文件夹加号 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M20 6H12L10 4H4C2.89 4 2 4.89 2 6V18C2 19.1 2.89 20 4 20H20C21.1 20 22 19.1 22 18V8C22 6.9 21.1 6 20 6M19 14H16V17H14V14H11V12H14V9H16V12H19V14Z"/></svg>
           </div>
           <span class="item-label">新建箱柜</span>
           <span class="item-shortcut">选区顶部</span>
         </div>
 
         <!-- 2. 识别参数并匹配物料 -->
-        <div class="menu-item" 
-             :class="{ 'active-focus': focusedIndex === 1 }"
-             @click.stop="triggerAction('parseAndMatch')"
-             @mouseenter="focusedIndex = 1">
+        <div class="menu-item" id="item-1" data-action="parseAndMatch">
           <div class="item-icon-wrap">
-            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            <!-- 魔法棒 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M7.5 5.6L5 7L6.4 4.5L5 2L7.5 3.4L10 2L8.6 4.5L10 7L7.5 5.6M19.5 15.4L22 14L20.6 16.5L22 19L19.5 17.6L17 19L18.4 16.5L17 14L19.5 15.4M22 2L20.6 4.5L22 7L19.5 5.6L17 7L18.4 4.5L17 2L19.5 3.4L22 2M13.34 12.78L15.78 10.34L13.66 8.22L11.22 10.66L13.34 12.78M14.37 7.29C14.77 6.9 15.4 6.9 15.79 7.29L16.71 8.21C17.1 8.6 17.1 9.23 16.71 9.63L14.41 11.93L12.07 9.59L14.37 7.29M2.5 19.5L10.5 11.5L12.5 13.5L4.5 21.5L2.5 19.5Z"/></svg>
           </div>
           <span class="item-label">识别参数并匹配物料</span>
           <span class="item-shortcut">S/T/U 列</span>
         </div>
 
         <!-- 3. 物料匹配与品牌规则设置 -->
-        <div class="menu-item" 
-             :class="{ 'active-focus': focusedIndex === 2 }"
-             @click.stop="triggerAction('openMatchSetting')"
-             @mouseenter="focusedIndex = 2">
+        <div class="menu-item" id="item-2" data-action="openMatchSetting">
           <div class="item-icon-wrap">
-            <i class="fa-solid fa-sliders"></i>
+            <!-- 滑块设置 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M3 17V19H9V17H3M3 5V7H13V5H3M13 21V19H21V17H13V15H11V21H13M7 9V11H3V13H7V15H9V9H7M21 13V11H11V13H21M17 9V7H21V5H17V3H15V9H17Z"/></svg>
           </div>
           <span class="item-label">物料匹配与品牌规则...</span>
         </div>
 
         <!-- 4. 智能输入词库配置 -->
-        <div class="menu-item" 
-             :class="{ 'active-focus': focusedIndex === 3 }"
-             @click.stop="triggerAction('openSmartInput')"
-             @mouseenter="focusedIndex = 3">
+        <div class="menu-item" id="item-3" data-action="openSmartInput">
           <div class="item-icon-wrap">
-            <i class="fa-solid fa-lightbulb"></i>
+            <!-- 灯泡 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M12 2A7 7 0 0 0 5 9C5 11.38 6.19 13.47 8 14.74V17A1 1 0 0 0 9 18H15A1 1 0 0 0 16 17V14.74C17.81 13.47 19 11.38 19 9A7 7 0 0 0 12 2M9 21A1 1 0 0 0 10 22H14A1 1 0 0 0 15 21V20H9V21Z"/></svg>
           </div>
           <span class="item-label">智能输入词库配置...</span>
         </div>
 
         <!-- 5. 汇总调价快捷入口 -->
-        <div class="menu-item" 
-             :class="{ 'active-focus': focusedIndex === 4 }"
-             @click.stop="triggerAction('openSummaryAdjustPrice')"
-             @mouseenter="focusedIndex = 4">
+        <div class="menu-item" id="item-4" data-action="openSummaryAdjustPrice">
           <div class="item-icon-wrap">
-            <i class="fa-solid fa-calculator"></i>
+            <!-- 计算器 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3M19 19H5V5H19V19M6.25 7.75H17.75V9.25H6.25V7.75M7 11H9V13H7V11M11 11H13V13H11V11M15 11H17V13H15V11M7 15H9V17H7V15M11 15H13V17H11V15M15 15H17V17H15V15Z"/></svg>
           </div>
           <span class="item-label">汇总调价...</span>
         </div>
 
         <!-- 6. 元器件数据管理快捷入口 -->
-        <div class="menu-item" 
-             :class="{ 'active-focus': focusedIndex === 5 }"
-             @click.stop="triggerAction('openComponentManage')"
-             @mouseenter="focusedIndex = 5">
+        <div class="menu-item" id="item-5" data-action="openComponentManage">
           <div class="item-icon-wrap">
-            <i class="fa-solid fa-database"></i>
+            <!-- 数据库 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M12 3C7.58 3 4 4.79 4 7V17C4 19.21 7.59 21 12 21S20 19.21 20 17V7C20 4.79 16.42 3 12 3M18 17C18 17.5 15.58 19 12 19S6 17.5 6 17V14.77C7.61 15.55 9.72 16 12 16S16.39 15.55 18 14.77V17M18 12.7C16.39 13.55 14.28 14 12 14S7.61 13.55 6 12.7V10.27C7.61 11.05 9.72 11.5 12 11.5S16.39 11.05 18 10.27V12.7M12 9C7.58 9 6 7.5 6 7S7.58 5 12 5 18 6.5 18 7 16.42 9 12 9Z"/></svg>
           </div>
           <span class="item-label">元器件数据管理...</span>
         </div>
@@ -283,13 +275,11 @@
       <!-- 分割线 -->
       <div class="menu-divider"></div>
 
-      <!-- 底部切换回 Excel 原生右键菜单按钮 -->
-      <div class="menu-item menu-item-switch" 
-           :class="{ 'active-focus': focusedIndex === 5 }"
-           @click.stop="triggerAction('switchToNativeMenu')"
-           @mouseenter="focusedIndex = 5">
+      <!-- 7. 底部切换回 Excel 原生右键菜单按钮 -->
+      <div class="menu-item menu-item-switch" id="item-6" data-action="switchToNativeMenu">
         <div class="item-icon-wrap">
-          <i class="fa-solid fa-arrow-right-arrow-left"></i>
+          <!-- 左右双向箭头 SVG -->
+          <svg viewBox="0 0 24 24"><path d="M8 7.5L3.5 12L8 16.5V13.5H15.5V16.5L20 12L15.5 7.5V10.5H8V7.5M16 11.5V9.9L18.1 12L16 14.1V12.5H7V14.1L4.9 12L7 9.9V11.5H16Z"/></svg>
         </div>
         <span class="item-label">切换为 Excel 原生右键菜单</span>
         <span class="item-shortcut">模式切换</span>
@@ -297,141 +287,149 @@
     </div>
   </div>
 
-  <!-- 引入 Vue 3 与 Element-Plus JS 库 -->
-  <script src="https://unpkg.com/vue@3.3.11/dist/vue.global.prod.js"></script>
-  <script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.min.js"></script>
-
   <script>
-    const { createApp, ref, onMounted, onUnmounted } = Vue;
+    (function () {
+      // 当前聚焦的菜单项索引
+      let focusedIndex = 0;
+      // 菜单项总数 (0 到 6 共 7 项)
+      const totalItemsCount = 7;
+      // 防重复点击锁
+      let isActionProcessing = false;
 
-    createApp({
-      setup() {
-        // 当前聚焦的菜单项索引
-        const focusedIndex = ref(0);
-        // 总菜单项数 (共 6 项)
-        const totalItemsCount = 6;
-        // 防重复触发锁，防止一次点击触发多次动作
-        let isActionProcessing = false;
+      // 上下文数据模型
+      const contextInfo = {
+        sheetName: '',
+        cellAddress: '',
+        row: 0,
+        column: 0,
+        isAboveFirstDet: true
+      };
 
-        // 当前右键上下文数据模型
-        const contextInfo = ref({
-          sheetName: '',
-          cellAddress: '',
-          row: 0,
-          column: 0,
-          isAboveFirstDet: true
-        });
-
-        // 向 C# 后端发送 WebMessage 消息
-        const postToHost = (actionName, payload = {}) => {
-          if (window.chrome && window.chrome.webview) {
-            // 采用显式 action 字段构造数据包
-            const messageData = {
-              action: actionName,
-              ...payload
-            };
-            // 同时兼容以 String 格式发送
-            window.chrome.webview.postMessage(JSON.stringify(messageData));
-          }
-        };
-
-        // 执行菜单项动作并自动通知宿主 (加入严格防重锁)
-        const triggerAction = (actionName) => {
-          if (isActionProcessing) return;
-          isActionProcessing = true;
-          postToHost(actionName, { context: contextInfo.value });
-          // 400ms 后释放锁，确保单次点击仅执行一次
-          setTimeout(() => {
-            isActionProcessing = false;
-          }, 400);
-        };
-
-        // 键盘按键事件监听
-        const handleKeyDown = (e) => {
-          if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            focusedIndex.value = (focusedIndex.value + 1) % totalItemsCount;
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            focusedIndex.value = (focusedIndex.value - 1 + totalItemsCount) % totalItemsCount;
-          } else if (e.key === 'Enter') {
-            e.preventDefault();
-            executeFocusedItem();
-          } else if (e.key === 'Escape') {
-            e.preventDefault();
-            postToHost('closeMenu');
-          }
-        };
-
-        // 执行当前键盘选中的菜单项
-        const executeFocusedItem = () => {
-          switch (focusedIndex.value) {
-            case 0:
-              if (contextInfo.value.isAboveFirstDet) triggerAction('createCabinet');
-              break;
-            case 1:
-              triggerAction('parseAndMatch');
-              break;
-            case 2:
-              triggerAction('openMatchSetting');
-              break;
-            case 3:
-              triggerAction('openSmartInput');
-              break;
-            case 4:
-              triggerAction('openSummaryAdjustPrice');
-              break;
-            case 5:
-              triggerAction('switchToNativeMenu');
-              break;
-          }
-        };
-
-        // 监听来自 C# 宿主的初始化与上下文更新消息
-        const handleHostMessage = (event) => {
-          let msg = event.data;
-          if (typeof msg === 'string') {
-            try { msg = JSON.parse(msg); } catch { }
-          }
-          if (!msg) return;
-
-          if (msg.action === 'initContext') {
-            contextInfo.value = {
-              sheetName: msg.sheetName || '',
-              cellAddress: msg.cellAddress || '',
-              row: msg.row || 0,
-              column: msg.column || 0,
-              isAboveFirstDet: msg.isAboveFirstDet !== undefined ? msg.isAboveFirstDet : true
-            };
-            focusedIndex.value = 0;
-          }
-        };
-
-        onMounted(() => {
-          // 挂载键盘事件
-          window.addEventListener('keydown', handleKeyDown);
-          // 挂载 WebView2 消息监听
-          if (window.chrome && window.chrome.webview) {
-            window.chrome.webview.addEventListener('message', handleHostMessage);
-          }
-          // 通知宿主页面已完全加载
-          postToHost('menuReady');
-        });
-
-        onUnmounted(() => {
-          window.removeEventListener('keydown', handleKeyDown);
-          if (window.chrome && window.chrome.webview) {
-            window.chrome.webview.removeEventListener('message', handleHostMessage);
-          }
-        });
-
-        return {
-          focusedIndex,
-          contextInfo,
-          triggerAction
-        };
+      // 菜单 DOM 节点列表
+      const menuItems = [];
+      for (let i = 0; i < totalItemsCount; i++) {
+        const el = document.getElementById('item-' + i);
+        if (el) menuItems.push(el);
       }
-    }).use(ElementPlus).mount('#app');
+
+      // 更新高亮聚焦状态
+      function updateFocus(newIndex) {
+        focusedIndex = (newIndex + totalItemsCount) % totalItemsCount;
+        menuItems.forEach((item, idx) => {
+          if (idx === focusedIndex) {
+            item.classList.add('active-focus');
+          } else {
+            item.classList.remove('active-focus');
+          }
+        });
+      }
+
+      // 向 C# 宿主发送 WebMessage 消息
+      function postToHost(actionName, payload = {}) {
+        if (window.chrome && window.chrome.webview) {
+          const messageData = {
+            action: actionName,
+            ...payload
+          };
+          window.chrome.webview.postMessage(JSON.stringify(messageData));
+        }
+      }
+
+      // 触发菜单动作
+      function triggerAction(actionName) {
+        if (isActionProcessing) return;
+        isActionProcessing = true;
+        postToHost(actionName, { context: contextInfo });
+        // 400ms 后释放防抖锁
+        setTimeout(() => {
+          isActionProcessing = false;
+        }, 400);
+      }
+
+      // 绑定每个菜单项的原生点击与悬浮事件 (彻底摆脱对外部框架的加载依赖)
+      menuItems.forEach((item, idx) => {
+        item.addEventListener('click', function (e) {
+          e.stopPropagation();
+          const action = item.getAttribute('data-action');
+          if (item.classList.contains('disabled')) return;
+          if (action) {
+            triggerAction(action);
+          }
+        });
+
+        item.addEventListener('mouseenter', function () {
+          updateFocus(idx);
+        });
+      });
+
+      // 键盘导航事件监听
+      window.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          updateFocus(focusedIndex + 1);
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          updateFocus(focusedIndex - 1);
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          const activeItem = menuItems[focusedIndex];
+          if (activeItem && !activeItem.classList.contains('disabled')) {
+            const action = activeItem.getAttribute('data-action');
+            if (action) triggerAction(action);
+          }
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          postToHost('closeMenu');
+        }
+      });
+
+      // 接收来自 C# 宿主的初始化数据
+      function handleHostMessage(event) {
+        let msg = event.data;
+        if (typeof msg === 'string') {
+          try { msg = JSON.parse(msg); } catch { }
+        }
+        if (!msg) return;
+
+        if (msg.action === 'initContext') {
+          contextInfo.sheetName = msg.sheetName || '';
+          contextInfo.cellAddress = msg.cellAddress || '';
+          contextInfo.row = msg.row || 0;
+          contextInfo.column = msg.column || 0;
+          contextInfo.isAboveFirstDet = msg.isAboveFirstDet !== undefined ? msg.isAboveFirstDet : true;
+
+          // 更新表头文本
+          const badgeEl = document.getElementById('badgeSheetInfo');
+          if (badgeEl) {
+            const title = `${contextInfo.sheetName || '工作表'} (${contextInfo.cellAddress || '单元格'})`;
+            badgeEl.textContent = title;
+            badgeEl.setAttribute('title', title);
+          }
+
+          // 根据光标位置控制“新建箱柜”可用状态
+          const createCabItem = document.getElementById('item-0');
+          if (createCabItem) {
+            if (contextInfo.isAboveFirstDet) {
+              createCabItem.classList.remove('disabled');
+            } else {
+              createCabItem.classList.add('disabled');
+            }
+          }
+
+          // 重置聚焦为第 1 项
+          updateFocus(0);
+        }
+      }
+
+      // 注册 WebView2 监听
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.addEventListener('message', handleHostMessage);
+      }
+
+      // 页面 DOM 加载就绪后立即通知宿主 (0 毫秒启动)
+      updateFocus(0);
+      postToHost('menuReady');
+    })();
   </script>
 </body>
 </html>

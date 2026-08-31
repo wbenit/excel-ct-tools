@@ -2,6 +2,35 @@
 
 ## [Completed]
 
+- **彻底修复业务专属右键菜单图标不显示、点击无反应以及元器件管理未响应的问题**：
+  1. **定位根本原因**：
+     - **外部 CDN 依赖导致死锁**：右键菜单页面 `custom_context_menu.html` 引入了海外 CDN `cdnjs.cloudflare.com`（FontAwesome）以及 `unpkg.com`（Vue 3 / Element Plus）。在国内网络或离线内网环境下网络请求严重超时或被拦截，导致 Vue 无法加载（抛出 `Uncaught ReferenceError: Vue is not defined`）；
+     - **模板未编译且无事件监听**：Vue 未能 mount，右上角直接裸露插值表达式源码 `{{ contextInfo.shee...`，菜单项上的 `@click` 纯属普通 HTML 属性而没有绑定任何原生 DOM 点击事件，导致点击彻底无反应；
+     - **C# 路由遗漏**：`CustomContextMenuForm.cs` 的 `OnWebMessageReceived` 分发逻辑中，遗漏了 `case "openComponentManage":`，导致点击元器件数据管理被直接静默丢弃。
+  2. **全面离线化与极速架构重构**：
+     - **图标全面离线化**：将所有菜单项图标彻底替换为轻量内联矢量 SVG（每枚几百字节），实现 100% 零网络依赖、零延迟离线秒显且高清；
+     - **事件绑定原生化**：由于右键菜单属于瞬态快捷交互窗口，改用原生 JavaScript（Vanilla JS）处理点击、防抖、数据接收与键盘导航（上下箭头切换、回车确认、ESC关闭），彻底消除对外部庞大框架库的加载依赖，实现 0 毫秒秒开秒响应；
+     - **C# 路由补齐**：在 `CustomContextMenuForm.cs` 中补充 `case "openComponentManage":` 分支，保障所有菜单项指令均能顺畅下发执行。
+
+
+- **彻底修复 CAD 批量导出到 Excel 时计费区域 A 列显示为 ####（#REF!）的问题及支持用户自定义序号**：
+  1. **定位根本原因**：
+     - 标准模板 `CabinetTemplate.xlsx` 的明细表中，元器件和计费区域预设的序号公式均为 `=ROW()-ROW(A$45)`（指向母版的明细表头行）；
+     - `ExportSingleCabinetOptimized` 导出各箱柜时通过全行克隆拷贝母版明细块，元器件区域通过 `compMatrix` 重新覆写了公式，但计费区域（小计、管理费、利润、税金、单台合计）遗漏了对 A 列的重写；
+     - 批量导出末尾物理删除了母版行（`ws.Rows[...].Delete()`），导致计费区域引用的母版表头行丢失断裂，公式变为 `=ROW()-ROW(#REF!)`；
+     - 因 A 列列宽仅为 4.38，无法容纳 5 字符的 `#REF!` 错误提示，在 Excel 界面被渲染呈现为 `####`；
+     - 顶部汇总行原硬编码 `ROW(A$6)`，改为通过配置动态获取汇总表头行号。
+  2. **最小变动修复与重构 (`Services/ExcelServices.Cabinet.cs`)**：
+     - 在 `ExportSingleCabinetOptimized` 步骤 5 中，顶部汇总行的序号公式采用动态表头行 `sumHeaderRow`，避免写死；
+     - 将计费区域自适应求和与 A 列智能序号刷新逻辑抽取为独立公共方法 `RefreshCabinetFeeAreaFormulas(sheet, detRow, compStartRow, subsumRow, tolsumRow)`，显著降低主流程复杂度，提升模块内聚度与多场景复用性；
+     - 在 `RefreshCabinetFeeAreaFormulas` 中：
+       - 刷新小计行 H/K 列自适应求和公式；
+       - 规则 7 一次性读取计费区域（`subsumRow` 到 `tolsumRow - 1`）原始公式与数值，**判断仅当用户定义为 `[序号]` 或动态序号 `ROW(` 或为空时，才自适应生成 `$"=ROW()-ROW(A${detRow + 1})"`**；
+       - **若用户在 A 列定义为其他特定内容（文本、自定义编号或自定义公式），则完全按照定义内容原样回填保留**；
+       - 显式确保总计行 `tolsumRow` A 列为 `"总计"`；
+     - 彻底切断对母版行的外部依赖，从根源上杜绝 `#REF!` 和 `####`，同时兼顾了灵活性与用户自定义需求。
+
+
 - **排查并彻底修复点击“开始报价”没反应的问题**：
   1. **定位根本原因**：
      - 原 `ProjectController.CreateProjectAsync` 采用了 `Task.Run` 后台线程池执行；

@@ -1624,13 +1624,8 @@ namespace ExcelAddInDemo
                 }
                 catch { }
 
-                // 9. 刷新小计行自适应求和公式
-                try
-                {
-                    sheet.Cells[subsumRow, 8].Formula = $"=ROUND(SUM(H{compStartRow}:INDEX(H:H,ROW()-1)),2)";
-                    sheet.Cells[subsumRow, 11].Formula = $"=ROUND(SUM(K{compStartRow}:INDEX(K:K,ROW()-1)),2)";
-                }
-                catch { }
+                // 9. 刷新小计行自适应求和公式与计费区域 A 列序号公式 (抽取独立方法，契合规则 6 & 规则 7)
+                RefreshCabinetFeeAreaFormulas(sheet, detRow, compStartRow, subsumRow, tolsumRow);
 
                 return true;
             }
@@ -1639,6 +1634,92 @@ namespace ExcelAddInDemo
                 // 记录单箱柜导出异常日志
                 LogHelper.WriteLog($"ExportSingleCabinetOptimized 异常: {ex.Message}");
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// 刷新箱柜计费区域自适应求和公式与 A 列序号 (规则 6 & 规则 7)
+        /// 包含:
+        /// 1. 小计行自适应求和公式 (H 列销售总价与 K 列成本总价)
+        /// 2. 计费区域 (subsumRow 到 tolsumRow - 1) A 列智能适配 (用户定义[序号]或空则动态自适应，其他内容则原样保留)
+        /// 3. 总计行 A 列显式设为“总计”
+        /// </summary>
+        /// <param name="sheet">目标工作表 COM 实例</param>
+        /// <param name="detRow">明细表头行号 (基准公式为 detRow + 1)</param>
+        /// <param name="compStartRow">元器件起始物理行号</param>
+        /// <param name="subsumRow">明细小计物理行号</param>
+        /// <param name="tolsumRow">明细总计物理行号</param>
+        public static void RefreshCabinetFeeAreaFormulas(
+            dynamic sheet,
+            int detRow,
+            int compStartRow,
+            int subsumRow,
+            int tolsumRow)
+        {
+            // 校验工作表与行号有效性
+            if (sheet == null || tolsumRow <= subsumRow) return;
+
+            try
+            {
+                // 1. 刷新小计行求和公式 (H 列销售总价与 K 列成本总价)
+                sheet.Cells[subsumRow, 8].Formula = $"=ROUND(SUM(H{compStartRow}:INDEX(H:H,ROW()-1)),2)";
+                sheet.Cells[subsumRow, 11].Formula = $"=ROUND(SUM(K{compStartRow}:INDEX(K:K,ROW()-1)),2)";
+
+                // 2. 修复计费区域 (从小计行 subsumRow 到单台合计行 tolsumRow - 1) 的 A 列序号
+                int feeRowCount = tolsumRow - subsumRow;
+                if (feeRowCount > 0)
+                {
+                    // 规则 7: 一次性提取计费区域 A 列原始公式与数值数组到内存
+                    dynamic feeRange = sheet.Range[$"A{subsumRow}:A{tolsumRow - 1}"];
+                    object[,]? rawFormulas = null;
+                    // 安全读取单元格原始公式矩阵
+                    try { rawFormulas = feeRange.Formula as object[,]; } catch { }
+                    object[,]? rawValues = null;
+                    // 安全读取单元格原始数值矩阵
+                    try { rawValues = feeRange.Value2 as object[,]; } catch { }
+
+                    // 构建最终待回写的 A 列矩阵 (规则 7: 数组批量写回)
+                    object[,] feeSeqMatrix = new object[feeRowCount, 1];
+                    for (int f = 0; f < feeRowCount; f++)
+                    {
+                        // 提取当前行对应的原始公式文本与显示文本
+                        string fFormula = rawFormulas != null && f + 1 <= rawFormulas.GetLength(0)
+                            ? Convert.ToString(rawFormulas[f + 1, 1])?.Trim() ?? ""
+                            : "";
+                        string fValue = rawValues != null && f + 1 <= rawValues.GetLength(0)
+                            ? Convert.ToString(rawValues[f + 1, 1])?.Trim() ?? ""
+                            : "";
+
+                        // 用户自定义为[序号]、原公式包含ROW(、或文本留空时，才动态生成序号公式
+                        if (fValue == "[序号]" || fFormula == "[序号]" || fFormula.IndexOf("ROW(", StringComparison.OrdinalIgnoreCase) >= 0 || (string.IsNullOrWhiteSpace(fFormula) && string.IsNullOrWhiteSpace(fValue)))
+                        {
+                            // 动态序号公式指向当前箱柜自身明细表头行 (detRow + 1)
+                            feeSeqMatrix[f, 0] = $"=ROW()-ROW(A${detRow + 1})";
+                        }
+                        // 若用户自定义了非 ROW 的特定公式
+                        else if (fFormula.StartsWith("="))
+                        {
+                            // 原样保留用户自定义的公式表达式
+                            feeSeqMatrix[f, 0] = fFormula;
+                        }
+                        // 若用户定义为其他文本或特定编号内容 (如 "1", "-", "一" 等)
+                        else
+                        {
+                            // 严格遵循用户定义内容，原样回填
+                            feeSeqMatrix[f, 0] = !string.IsNullOrEmpty(fValue) ? fValue : fFormula;
+                        }
+                    }
+                    // 一次性批量写回计费区域 A 列
+                    feeRange.Formula = feeSeqMatrix;
+                }
+
+                // 3. 确保总计行 A 列显式设为“总计”
+                sheet.Cells[tolsumRow, 1].Value2 = "总计";
+            }
+            catch (Exception ex)
+            {
+                // 记录刷新计费区域公式异常日志
+                LogHelper.WriteLog($"RefreshCabinetFeeAreaFormulas 异常: {ex.Message}");
             }
         }
 
