@@ -342,6 +342,23 @@ namespace ExcelAddInDemo
                 // 去除前导等号
                 string expr = formulaStr.Substring(1).Trim();
 
+                // 兼容外层 ROUND(...) 函数包裹：如 =ROUND((159.05*1*0.5+336.2*1*1)/495.25 ,2)
+                if (expr.StartsWith("ROUND(", StringComparison.OrdinalIgnoreCase) && expr.EndsWith(")"))
+                {
+                    // 去除前导 "ROUND(" 和末尾 ")"
+                    string inner = expr.Substring(6, expr.Length - 7).Trim();
+                    // 查找末尾的小数位参数分隔逗号（如 ,2 或 , 2）
+                    int lastComma = inner.LastIndexOf(',');
+                    if (lastComma > 0)
+                    {
+                        expr = inner.Substring(0, lastComma).Trim();
+                    }
+                    else
+                    {
+                        expr = inner;
+                    }
+                }
+
                 // 检查是否为复合公式，形如 (A*B*C + D*E*F)/G 或 A*B*C + D*E*F
                 if (expr.Contains("*") && expr.Contains("+"))
                 {
@@ -362,8 +379,8 @@ namespace ExcelAddInDemo
                     string[] terms = numerator.Split('+');
                     if (terms.Length > 0)
                     {
-                        // 解析第一项（本体项）：如 159.05*1*0.5
-                        baseDiscount = ExtractDiscountFromTerm(terms[0], basePrice);
+                        // 解析第一项（本体项）：如 159.05*1*0.5，保留 2 位小数
+                        baseDiscount = Math.Round(ExtractDiscountFromTerm(terms[0], basePrice), 2);
 
                         // 解析第二项及后续项（附件项）：如 336.2*1*1
                         if (terms.Length > 1)
@@ -391,11 +408,12 @@ namespace ExcelAddInDemo
 
                             if (totalAccBase > 0)
                             {
-                                accDiscount = Math.Round(totalAccWeighted / totalAccBase, 4);
+                                // 附件折扣按加权平均计算，保留 2 位小数 (如 0.85)
+                                accDiscount = Math.Round(totalAccWeighted / totalAccBase, 2);
                             }
                             else
                             {
-                                accDiscount = ExtractDiscountFromTerm(terms[1], accPrice);
+                                accDiscount = Math.Round(ExtractDiscountFromTerm(terms[1], accPrice), 2);
                             }
                         }
                         return;
@@ -403,22 +421,22 @@ namespace ExcelAddInDemo
                 }
                 else
                 {
-                    // 简单公式，如 =0.85 或 =1
+                    // 简单公式，如 =0.85 或 =1 或 =ROUND(0.852, 2)
                     string cleanSimple = expr.Trim();
                     if (decimal.TryParse(cleanSimple, out decimal simpleD))
                     {
-                        baseDiscount = simpleD;
-                        accDiscount = accPrice > 0 ? simpleD : 1.0m;
+                        baseDiscount = Math.Round(simpleD, 2);
+                        accDiscount = accPrice > 0 ? baseDiscount : 1.0m;
                         return;
                     }
                 }
             }
 
-            // 若无公式或为纯数值，直接解析 Value2
+            // 若无公式或为纯数值，直接解析 Value2 并保留 2 位小数
             if (decimal.TryParse(valStr, out decimal parsedVal))
             {
-                baseDiscount = parsedVal;
-                accDiscount = accPrice > 0 ? parsedVal : 1.0m;
+                baseDiscount = Math.Round(parsedVal, 2);
+                accDiscount = accPrice > 0 ? baseDiscount : 1.0m;
             }
         }
 
@@ -924,19 +942,25 @@ namespace ExcelAddInDemo
                     for (int i = 0; i < dataRowCount; i++)
                     {
                         var comp = grouped[i];
+                        // 计算当前数据行在 Excel 中的实际物理行号 (从 startDataRow 起算)
+                        int currentRow = startDataRow + i;
                         outMatrix[i, 0] = i + 1; // A: 序号
                         outMatrix[i, 1] = comp.Name; // B: 元件名称
                         outMatrix[i, 2] = comp.OriginalModel; // C: 原型号规格 (基准参考列)
-                        outMatrix[i, 3] = comp.Model; // D: 型号规格 (可编辑调价列)
+                        // D: 型号规格 (汇总生成时保持留空，不填内容)
+                        outMatrix[i, 3] = string.Empty;
                         outMatrix[i, 4] = comp.Unit; // E: 单位
                         outMatrix[i, 5] = (double)comp.Quantity; // F: 数量
-                        outMatrix[i, 6] = (double)comp.UnitPrice; // G: 单价
-                        outMatrix[i, 7] = (double)comp.TotalPrice; // H: 总价
+                        // G: 单价 (采用公式计算: 报出系数 * (本体表价 * 本体折扣 + 附件表价 * 附件折扣))
+                        outMatrix[i, 6] = $"=ROUND(K{currentRow}*(L{currentRow}*M{currentRow}+N{currentRow}*O{currentRow}),2)";
+                        // H: 总价 (采用公式计算: 数量 * 单价，F列为数量，G列为单价)
+                        outMatrix[i, 7] = $"=ROUND(F{currentRow}*G{currentRow},2)";
                         outMatrix[i, 8] = comp.Manufacturer; // I: 生产厂家
-                        outMatrix[i, 9] = (double)comp.CostUnitPrice; // J: 成本单价
+                        // J: 成本单价 (采用公式计算: 本体表价 * 本体折扣 + 附件表价 * 附件折扣)
+                        outMatrix[i, 9] = $"=ROUND(L{currentRow}*M{currentRow}+N{currentRow}*O{currentRow},2)";
                         outMatrix[i, 10] = (double)comp.MarkupFactor; // K: 报出系数
                         outMatrix[i, 11] = comp.BasePrice > 0 ? (object)(double)comp.BasePrice : string.Empty; // L: 本体表价
-                        outMatrix[i, 12] = comp.BaseDiscount > 0 ? (object)(double)comp.BaseDiscount : string.Empty; // M: 本体折扣
+                        outMatrix[i, 12] = comp.BaseDiscount > 0 ? (object)(double)comp.BaseDiscount : 1; // M: 本体折扣
                         outMatrix[i, 13] = comp.AccessoryPrice > 0 ? (object)(double)comp.AccessoryPrice : string.Empty; // N: 附件表价
                         outMatrix[i, 14] = (comp.AccessoryPrice > 0 && comp.AccessoryDiscount > 0) ? (object)(double)comp.AccessoryDiscount : string.Empty; // O: 附件折扣
                         outMatrix[i, 15] = comp.Remark; // P: 备注
@@ -944,8 +968,8 @@ namespace ExcelAddInDemo
                         outMatrix[i, 17] = comp.RawModelFromU; // R: 原始型号 (对应明细表 U 列内容，逗号拼接)
                     }
 
-                    // 一次性批量写入数据矩阵 (覆盖 A6:R{endDataRow}) (规则 7)
-                    summarySheet.Range[$"A{startDataRow}:R{endDataRow}"].Value2 = outMatrix;
+                    // 一次性批量写入数据与公式矩阵 (覆盖 A6:R{endDataRow}) (规则 7)
+                    summarySheet.Range[$"A{startDataRow}:R{endDataRow}"].Formula = outMatrix;
 
                     // 设置数据行行高
                     summarySheet.Range[$"{startDataRow}:{endDataRow}"].RowHeight = 20; // --硬编码--

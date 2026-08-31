@@ -267,6 +267,17 @@
           </div>
           <span class="item-label">汇总调价...</span>
         </div>
+
+        <!-- 6. 元器件数据管理快捷入口 -->
+        <div class="menu-item" 
+             :class="{ 'active-focus': focusedIndex === 5 }"
+             @click.stop="triggerAction('openComponentManage')"
+             @mouseenter="focusedIndex = 5">
+          <div class="item-icon-wrap">
+            <i class="fa-solid fa-database"></i>
+          </div>
+          <span class="item-label">元器件数据管理...</span>
+        </div>
       </div>
 
       <!-- 分割线 -->

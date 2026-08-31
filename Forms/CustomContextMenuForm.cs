@@ -238,7 +238,7 @@ namespace ExcelAddInDemo.Forms
 
                         case "openMatchSetting":
                             // 打开“元器件物料匹配与品牌规则设置”窗口
-                            ExcelAddInDemo.Forms.ComponentMatchForm.ShowDialogForm();
+                            ExcelServices.ShowComponentMatchDialog();
                             break;
 
                         case "openSmartInput":
@@ -249,6 +249,11 @@ namespace ExcelAddInDemo.Forms
                         case "openSummaryAdjustPrice":
                             // 打开“汇总调价”窗口
                             ExcelServices.ShowSummaryAdjustPriceDialog();
+                            break;
+
+                        case "openComponentManage":
+                            // 打开“元器件数据管理”窗口
+                            ExcelServices.ShowComponentManageDialog();
                             break;
 
                         case "switchToNativeMenu":

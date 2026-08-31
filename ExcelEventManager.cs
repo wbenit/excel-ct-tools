@@ -863,7 +863,7 @@ namespace ExcelAddInDemo
             try
             {
                 // 打开或激活物料匹配设置弹窗
-                ExcelAddInDemo.Forms.ComponentMatchForm.ShowDialogForm();
+                ExcelServices.ShowComponentMatchDialog();
             }
             catch (Exception ex)
             {

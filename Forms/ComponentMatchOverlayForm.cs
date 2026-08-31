@@ -20,6 +20,12 @@ namespace ExcelAddInDemo.Forms
         public string Current { get; set; } = string.Empty;
         public string Pole { get; set; } = string.Empty;
         public string TripMode { get; set; } = string.Empty;
+        // 当前 D 列已有的型号内容
+        public string CurrentModel { get; set; } = string.Empty;
+        // 当前 G 列已有的单价或公式内容
+        public string CurrentPrice { get; set; } = string.Empty;
+        // 当前所属品牌
+        public string Brand { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -252,6 +258,40 @@ namespace ExcelAddInDemo.Forms
                             }
                         }
                         // 回填完成后隐藏悬浮窗
+                        SafeInvoke(this.Hide);
+                        break;
+
+                    // 3.1 用户请求加载当前物料的配套附件列表
+                    case "getAttachments":
+                        string brandToQuery = _filterConfig.SelectedBrand ?? _cellParams.Brand ?? string.Empty;
+                        string nameToQuery = _cellParams.Name ?? string.Empty;
+                        string modelToQuery = _cellParams.CurrentModel ?? string.Empty;
+
+                        // 调用 API 客户端拉取符合适配规则的配套附件
+                        var attachmentList = ComponentApiClient.GetAttachments(brandToQuery, nameToQuery, modelToQuery);
+
+                        PostMessageToWeb(new
+                        {
+                            action = "attachmentsResult",
+                            items = attachmentList,
+                            currentModel = modelToQuery,
+                            brand = brandToQuery,
+                            name = nameToQuery
+                        });
+                        break;
+
+                    // 3.2 用户选定配套附件 -> 拼接型号并累加价格公式
+                    case "selectAttachment":
+                        if (root.TryGetProperty("item", out var attachItemProp))
+                        {
+                            var selectedAttach = JsonSerializer.Deserialize<ComponentApiDto>(attachItemProp.GetRawText(), JsonOptions);
+                            if (selectedAttach != null && _targetCell != null)
+                            {
+                                // 调用业务服务层执行“原内容+附件型号”和“=价格+附件价格”回填
+                                ExcelServices.FillSelectedAttachmentToActiveRow(selectedAttach, _targetCell);
+                            }
+                        }
+                        // 回填完成后平滑隐藏下拉窗
                         SafeInvoke(this.Hide);
                         break;
 

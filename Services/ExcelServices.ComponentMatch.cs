@@ -23,6 +23,26 @@ namespace ExcelAddInDemo
         // 智能联想下拉悬浮窗全局静态单例
         private static ComponentMatchOverlayForm? _matchOverlayForm;
 
+        // 物料匹配设置窗口静态单例引用 (可空)
+        private static ComponentMatchForm? _matchSettingForm;
+
+        /// <summary>
+        /// 启动并弹出基于 WebView2 + Vue 3 的“元器件物料匹配与品牌规则设置”窗口
+        /// </summary>
+        public static void ShowComponentMatchDialog()
+        {
+            try
+            {
+                // 以非模态方式展示物料匹配设置窗口，保持 Excel 处于可交互编辑状态
+                ShowModelessForm(ref _matchSettingForm, () => new ComponentMatchForm());
+            }
+            catch (Exception ex)
+            {
+                // 记录打开弹窗异常日志
+                LogHelper.WriteLog($"ShowComponentMatchDialog 异常: {ex.Message}");
+            }
+        }
+
         /// <summary>
         /// 从本地持久化文件中加载物料匹配过滤配置
         /// </summary>
@@ -361,23 +381,42 @@ namespace ExcelAddInDemo
                 dynamic sheet = activeCell.Worksheet;
                 if (sheet == null) return;
 
-                // 3. 读取当前行已有的 B 列(名称)、S 列(电流)、T 列(极数)、U 列(脱扣)
+                // 3. 读取当前行已有的 B 列(名称)、S 列(电流)、T 列(极数)、U 列(脱扣)、D 列(型号)、C 列(原型号)、G 列(单价)
                 string rawName = Convert.ToString(sheet.Range[$"B{row}"].Value2)?.Trim() ?? string.Empty;
                 string rawCur = Convert.ToString(sheet.Range[$"S{row}"].Value2)?.Trim() ?? string.Empty;
                 string rawPole = Convert.ToString(sheet.Range[$"T{row}"].Value2)?.Trim() ?? string.Empty;
                 string rawTrip = Convert.ToString(sheet.Range[$"U{row}"].Value2)?.Trim() ?? string.Empty;
 
-                // 构造上下文参数
+                // 读取当前 D 列实际内容（型号规格）与 C 列内容（原型号规格）
+                string rawModel = Convert.ToString(sheet.Range[$"D{row}"].Value2)?.Trim() ?? string.Empty;
+                string refModel = Convert.ToString(sheet.Range[$"C{row}"].Value2)?.Trim() ?? string.Empty;
+                // 若 D 列为空或为占位提示“点击查询”，优先采用 C 列原型号作为主体型号匹配附件
+                if (string.IsNullOrEmpty(rawModel) || string.Equals(rawModel, "点击查询", StringComparison.OrdinalIgnoreCase))
+                {
+                    rawModel = refModel;
+                }
+
+                // 读取当前 G 列单价或公式（优先通过 Formula 或 Value2 获取）
+                string rawPriceFormula = Convert.ToString(sheet.Range[$"G{row}"].Formula)?.Trim() ?? string.Empty;
+                if (string.IsNullOrEmpty(rawPriceFormula))
+                {
+                    rawPriceFormula = Convert.ToString(sheet.Range[$"G{row}"].Value2)?.Trim() ?? string.Empty;
+                }
+
+                // 4. 加载当前生效的全局过滤管道配置 (品牌 + 必含字段约束 + 搜索开关)
+                var filterConfig = LoadComponentMatchFilterConfig();
+
+                // 构造上下文参数 (带上原型号、原单价与所属品牌)
                 var cellParams = new CellParamsContext
                 {
                     Name = rawName,
                     Current = rawCur,
                     Pole = rawPole,
-                    TripMode = rawTrip
+                    TripMode = rawTrip,
+                    CurrentModel = rawModel,
+                    CurrentPrice = rawPriceFormula,
+                    Brand = filterConfig.SelectedBrand ?? string.Empty
                 };
-
-                // 4. 加载当前生效的全局过滤管道配置 (品牌 + 必含字段约束 + 搜索开关)
-                var filterConfig = LoadComponentMatchFilterConfig();
 
                 // 核心门控: 只有当用户在设置面板中勾选开启了“搜索”时，点击 D 列才弹起搜索框
                 if (!filterConfig.EnableSearchOverlay)
@@ -427,7 +466,8 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 将选中的标准物料项自动完整回填至当前活动行 (B/D/G/I/W/X 列) 并清除 D 列底色
+        /// 将选中的标准物料项自动回填至当前活动行
+        /// 在“元件汇总表”中：汇总表自身已内嵌所有公式，仅将本体价格填在 L 列 (本体表价)，M 列折扣补 1，绝不重写公式
         /// </summary>
         /// <param name="item">用户选中的标准元器件物料 DTO</param>
         /// <param name="targetCell">目标单元格 COM 句柄 (为空则使用当前活动单元格)</param>
@@ -450,6 +490,10 @@ namespace ExcelAddInDemo
                 int row = Convert.ToInt32(cell.Row);
                 if (row <= 0) return false;
 
+                // 判断当前是否在“元件汇总表”中
+                string sheetName = Convert.ToString(sheet.Name) ?? string.Empty;
+                bool isSummarySheet = string.Equals(sheetName.Trim(), ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase);
+
                 // 1. 回填 B 列 (标准名称)
                 if (!string.IsNullOrEmpty(item.Name))
                 {
@@ -459,19 +503,35 @@ namespace ExcelAddInDemo
                 // 2. 回填 D 列 (标准型号，覆盖掉“点击查询”)
                 sheet.Range[$"D{row}"].Value2 = item.Model ?? string.Empty;
 
-                // 3. 回填 G 列 (销售单价)
-                sheet.Range[$"G{row}"].Value2 = item.Price > 0 ? (object)item.Price : string.Empty;
-
-                // 4. 回填 I 列 (品牌/备注)
+                // 3. 回填 I 列 (品牌/生产厂家)
                 sheet.Range[$"I{row}"].Value2 = item.Remark ?? item.Brand ?? string.Empty;
 
-                // 5. 回填 W 列 (扩展参数1)
-                sheet.Range[$"W{row}"].Value2 = item.Param1 ?? string.Empty;
+                // 4. 回填价格逻辑
+                if (isSummarySheet)
+                {
+                    // 在“元件汇总表”中：汇总表自带公式，仅填 L 列本体表价
+                    sheet.Range[$"L{row}"].Value2 = item.Price > 0 ? (object)(double)item.Price : string.Empty;
 
-                // 6. 回填 X 列 (扩展参数2)
-                sheet.Range[$"X{row}"].Value2 = item.Param2 ?? string.Empty;
+                    // 若 M 列 (本体折扣) 当前为空或 0，则默认补 1
+                    string curM = Convert.ToString(sheet.Range[$"M{row}"].Value2)?.Trim() ?? string.Empty;
+                    if (string.IsNullOrEmpty(curM) || curM == "0")
+                    {
+                        sheet.Range[$"M{row}"].Value2 = 1;
+                    }
+                }
+                else
+                {
+                    // 在常规分类明细表中：本体表价填在 M 列 (表价)
+                    sheet.Range[$"M{row}"].Value2 = item.Price > 0 ? (object)item.Price : string.Empty;
 
-                // 7. 清除 D 列单元格的淡黄底色 (重置为无填充 xlNone)
+                    // 回填 W 列 (扩展参数1)
+                    sheet.Range[$"W{row}"].Value2 = item.Param1 ?? string.Empty;
+
+                    // 回填 X 列 (扩展参数2)
+                    sheet.Range[$"X{row}"].Value2 = item.Param2 ?? string.Empty;
+                }
+
+                // 5. 清除 D 列单元格的淡黄底色 (重置为无填充 xlNone)
                 dynamic cellD = sheet.Range[$"D{row}"];
                 cellD.Interior.ColorIndex = ComponentMatchDefaults.XlNoneColorIndex;
 
@@ -480,6 +540,139 @@ namespace ExcelAddInDemo
             catch (Exception ex)
             {
                 LogHelper.WriteLog($"FillSelectedComponentToActiveRow 回填异常: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 用户选中配套附件后：D 列追加“+附件型号”
+        /// 汇总表中附件填 N 列（多附件加法公式），常规表中本体和附件在 M 列进行加法公式连加
+        /// </summary>
+        /// <param name="attachment">选中的附件元器件物料 DTO</param>
+        /// <param name="targetCell">目标单元格 COM 句柄</param>
+        /// <returns>回填是否成功</returns>
+        public static bool FillSelectedAttachmentToActiveRow(ComponentApiDto attachment, dynamic? targetCell = null)
+        {
+            if (attachment == null) return false;
+
+            try
+            {
+                dynamic? app = ExcelDna.Integration.ExcelDnaUtil.Application;
+                if (app == null) return false;
+
+                dynamic cell = targetCell ?? app.ActiveCell;
+                if (cell == null) return false;
+
+                dynamic sheet = cell.Worksheet;
+                if (sheet == null) return false;
+
+                int row = Convert.ToInt32(cell.Row);
+                if (row <= 0) return false;
+
+                // 判断是否在“元件汇总表”工作表中
+                string sheetName = Convert.ToString(sheet.Name) ?? string.Empty;
+                bool isSummarySheet = string.Equals(sheetName.Trim(), ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase);
+
+                // 1. 获取 D 列原有型号内容
+                string oldModel = Convert.ToString(sheet.Range[$"D{row}"].Value2)?.Trim() ?? string.Empty;
+                // 若原单元格内容为初始提示词“点击查询”，则清空
+                if (string.Equals(oldModel, "点击查询", StringComparison.OrdinalIgnoreCase))
+                {
+                    oldModel = string.Empty;
+                }
+
+                // 附件型号
+                string attachModel = attachment.Model?.Trim() ?? string.Empty;
+
+                // 拼接新型号文本：“原内容+附件型号”
+                string newModel;
+                if (string.IsNullOrEmpty(oldModel))
+                {
+                    newModel = attachModel;
+                }
+                else
+                {
+                    // 消除首尾已有的加号字符，防止出现连续的 "++" 符号
+                    string trimmedOld = oldModel.TrimEnd('+', '＋');
+                    string trimmedAttach = attachModel.TrimStart('+', '＋');
+                    newModel = $"{trimmedOld}+{trimmedAttach}";
+                }
+
+                // 回填到 D 列
+                sheet.Range[$"D{row}"].Value2 = newModel;
+
+                // 2. 处理附件价格回填逻辑
+                decimal attachPrice = attachment.Price > 0 ? attachment.Price : 0m;
+                if (attachPrice > 0)
+                {
+                    if (isSummarySheet)
+                    {
+                        // 在“元件汇总表”中：附件价格填入 N 列 (附件表价)，多个附件用加法公式连接
+                        string oldFormulaN = Convert.ToString(sheet.Range[$"N{row}"].Formula)?.Trim() ?? string.Empty;
+                        string oldValN = Convert.ToString(sheet.Range[$"N{row}"].Value2)?.Trim() ?? string.Empty;
+
+                        // 若此前 N 列没有任何价格数据，直接填入单个附件数值
+                        if (string.IsNullOrEmpty(oldFormulaN) && string.IsNullOrEmpty(oldValN))
+                        {
+                            sheet.Range[$"N{row}"].Value2 = (double)attachPrice;
+                        }
+                        // 若此前已有公式 (以 '=' 开头)，直接在原公式末尾累加 "+附件价格"
+                        else if (!string.IsNullOrEmpty(oldFormulaN) && oldFormulaN.StartsWith("="))
+                        {
+                            sheet.Range[$"N{row}"].Formula = $"{oldFormulaN}+{attachPrice:0.##}";
+                        }
+                        // 若此前为纯数值 (例如 49)，升级为加法公式 (例如 =49+60)
+                        else
+                        {
+                            string baseNum = !string.IsNullOrEmpty(oldValN) ? oldValN : oldFormulaN;
+                            sheet.Range[$"N{row}"].Formula = $"={baseNum}+{attachPrice:0.##}";
+                        }
+
+                        // 若 O 列 (附件折扣) 为空或 0，默认填入 1，保障表格自带内置公式计算有效
+                        string curO = Convert.ToString(sheet.Range[$"O{row}"].Value2)?.Trim() ?? string.Empty;
+                        if (string.IsNullOrEmpty(curO) || curO == "0")
+                        {
+                            sheet.Range[$"O{row}"].Value2 = 1;
+                        }
+                    }
+                    else
+                    {
+                        // 常规分类明细表中：本体和附件在 M 列 (表价) 连加 (如 =447.01+150 或 =447.01+150+60)
+                        string oldFormulaM = Convert.ToString(sheet.Range[$"M{row}"].Formula)?.Trim() ?? string.Empty;
+                        string oldValM = Convert.ToString(sheet.Range[$"M{row}"].Value2)?.Trim() ?? string.Empty;
+
+                        string newFormulaM;
+                        // 若此前 M 列无任何数据，直接写公式 "=附件价格"
+                        if (string.IsNullOrEmpty(oldFormulaM) && string.IsNullOrEmpty(oldValM))
+                        {
+                            newFormulaM = $"={attachPrice:0.##}";
+                        }
+                        // 若此前已有公式 (以 '=' 开头)，直接在原公式末尾连加 "+附件价格"
+                        else if (!string.IsNullOrEmpty(oldFormulaM) && oldFormulaM.StartsWith("="))
+                        {
+                            newFormulaM = $"{oldFormulaM}+{attachPrice:0.##}";
+                        }
+                        // 若此前为本体纯数值 (如 447.01)，升级为连加公式 (如 =447.01+150)
+                        else
+                        {
+                            string basePriceStr = !string.IsNullOrEmpty(oldValM) ? oldValM : oldFormulaM;
+                            newFormulaM = $"={basePriceStr}+{attachPrice:0.##}";
+                        }
+
+                        // 写入 M 列公式
+                        sheet.Range[$"M{row}"].Formula = newFormulaM;
+                    }
+                }
+
+                // 3. 清除 D 列底色
+                dynamic cellD = sheet.Range[$"D{row}"];
+                cellD.Interior.ColorIndex = ComponentMatchDefaults.XlNoneColorIndex;
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"FillSelectedAttachmentToActiveRow 异常: {ex.Message}");
                 return false;
             }
         }

@@ -92,15 +92,16 @@
   1. 优先使用本地化属性 `range.NumberFormatLocal = "G/通用格式"`，并使用 try-catch 双轨回退 `range.NumberFormat = "General"`。
   2. 对所有的 `NumberFormat` 样式设置语句均添加 try-catch 保护，避免因个别特殊版本格式解析失败导致整个业务流程中断。
 
-### 14. Excel COM 与 ExcelDnaUtil 在 Task.Run 后台线程池调用引发静默失败
-- **现象**：在 WebView2 弹窗中点击“开始报价”或执行某些 Excel 操作时，界面没有任何反应，既没有创建成功，也没有弹出任何错误提示。
+### 16. WebView2 无边框置顶窗体拖拽引发全局鼠标捕获死锁（卡死整个屏幕）
+- **现象**：在无边框 WebView2 浮窗中拖拽标题栏移动窗口时，鼠标经常“粘”在窗口上无法释放，且全屏幕所有其他区域（包括桌面、Excel 表格、任务栏）均无法点击，整个操作系统宛如卡死，必须按 `Esc` 或调出任务管理器才能解脱。
 - **原因**：
-  1. **Excel-DNA 线程限制**：在 `Task.Run` 后台工作线程中调用 `ExcelDnaUtil.Application` 时，底层会抛出 `InvalidOperationException`（只能在 Excel 主线程调用），在安全访问器中将其 catch 返回 null，导致 `app == null` 直接提前退出。
-  2. **COM 单线程单元（STA）规则**：Excel COM 对象是 STA 架构，不能在多线程或后台线程池中直接调用，否则会触发 RPC 封送错误或未响应。
-  3. **静默失败无反馈**：当后端操作返回 false 时，缺少错误捕获和弹窗提示，且前端未设置 loading 遮罩和结果监听，导致用户点击后界面毫无反应。
-- **解决**：
-  1. 所有 Excel COM 操作（Workbook 创建、Sheet 复制、Range 写入、Defined Names 绑定）必须统一使用 `SafeInvoke` 在 Excel / UI 主线程上同步执行。
-  2. 在前端增加 `:loading="isSubmitting"` 防重状态，并在后端执行异常时回发 `startQuotationResult` 或弹出明确的错误提示。
-  3. 模板与 HTML 文件检索路径增加 `Tool.GetAppDirectory()` 动态解析。
+  1. **异步 IPC 延迟导致“幽灵鼠标捕获”**：Web 端通过 `postMessage('dragWindow')` 跨进程通知 C#，由于存在毫秒级 IPC 时序差，如果用户快速点按或微小晃动后已松开鼠标，C# 此时才收到消息并调用 `SendMessage(WM_NCLBUTTONDOWN, HTCAPTION)`。Windows 系统立即进入移动模态消息循环并全局独占捕获鼠标，但物理鼠标左键早已抬起，Windows **永远也等不到期待的 `WM_LBUTTONUP` 消息**，导致全局鼠标捕获被锁死在当前 HWND 上；
+  2. **高频定时轮询 Excel COM 造成主线程死锁**：前端若使用了 `setInterval` 频繁探测 Excel 选区（COM 操作），在用户拖动窗口触发 Win32 内部移动循环时，后台持续注入的 COM STA 请求会导致线程死锁或互斥挂起（`RPC_E_SERVERCALL_RETRYLATER`）。
+- **结晶解法（终极防护）**：
+  1. **C# 端物理鼠标状态双重校验**：在 `SendMessage(WM_NCLBUTTONDOWN)` 之前，调用 Win32 API `(GetAsyncKeyState(VK_LBUTTON) & 0x8000) == 0` 检测物理左键是否仍在按下状态。如果物理按键已弹起，直接丢弃该指令，坚决不启动系统拖拽循环；
+  2. **前端严格限制鼠标主键**：Web 端 `onHeaderMouseDown` 必须增加 `if (e.button !== 0) return;` 防护，排除中键或右键误触；
+  3. **废除无休止定时器，改用按需探测**：彻底移除 `setInterval` 轮询 COM，改用 `window.addEventListener('focus', ...)`（用户在 Excel 划选完后点击切回浮窗时自动触发检测），外加界面【刷新选区】手动按钮，彻底规避线程竞争。
+
+
 
 

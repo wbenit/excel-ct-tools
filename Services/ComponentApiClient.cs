@@ -249,13 +249,332 @@ namespace ExcelAddInDemo
         /// </summary>
         public static List<ComponentApiDto> QueryComponents(string name, string current, string pole, string tripMode)
         {
+            // 转发调用完整参数重载
             return QueryComponents(name, current, pole, tripMode, null, null);
+        }
+
+        /// <summary>
+        /// 根据品牌与元器件名称从远程接口获取所有符合条件的数据列表 (支持自动多页翻页拉全)
+        /// </summary>
+        /// <param name="brand">品牌过滤条件 (为空或"全部"表示不限品牌)</param>
+        /// <param name="nameKeyword">名称过滤关键字 (支持模糊搜索)</param>
+        /// <returns>符合条件的所有元器件列表</returns>
+        public static List<ComponentApiDto> QueryManageComponents(string? brand, string? nameKeyword)
+        {
+            var allItems = new List<ComponentApiDto>();
+            try
+            {
+                // 读取 API 基准地址配置
+                string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
+                string endpoint = ConfigManager.Instance.Current.Api.ComponentGetPagedListEndpoint ?? "/api/api/Component/GetPagedList";
+
+                int pageIndex = 1;
+                int pageSize = ComponentManageDefaults.MaxQueryPageSize;
+                int totalPages = 1;
+
+                do
+                {
+                    // 构建查询 QueryString
+                    var queryParams = new List<string>();
+                    queryParams.Add($"PageIndex={pageIndex}");
+                    queryParams.Add($"PageSize={pageSize}");
+
+                    // 品牌筛选
+                    string cleanBrand = brand?.Trim() ?? string.Empty;
+                    if (!string.IsNullOrEmpty(cleanBrand) && !string.Equals(cleanBrand, "全部", StringComparison.OrdinalIgnoreCase) && !string.Equals(cleanBrand, "All", StringComparison.OrdinalIgnoreCase))
+                    {
+                        queryParams.Add($"Brand={Uri.EscapeDataString(cleanBrand)}");
+                    }
+
+                    // 名称关键字筛选 (接口支持 Name 或 Keyword)
+                    string cleanName = nameKeyword?.Trim() ?? string.Empty;
+                    if (!string.IsNullOrEmpty(cleanName))
+                    {
+                        queryParams.Add($"Keyword={Uri.EscapeDataString(cleanName)}");
+                    }
+
+                    string fullUrl = $"{baseUrl.TrimEnd('/')}/{endpoint.TrimStart('/')}?{string.Join("&", queryParams)}";
+
+                    var response = _httpClient.GetAsync(fullUrl).GetAwaiter().GetResult();
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        LogHelper.WriteLog($"[ComponentApiClient] 拉取管理列表第 {pageIndex} 页失败: {response.StatusCode}");
+                        break;
+                    }
+
+                    string jsonString = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                    if (string.IsNullOrWhiteSpace(jsonString)) break;
+
+                    var pagedResult = JsonSerializer.Deserialize<ComponentPagedApiResponse<ComponentApiDto>>(jsonString, _jsonOptions);
+                    if (pagedResult == null || pagedResult.Items == null || pagedResult.Items.Count == 0)
+                    {
+                        break;
+                    }
+
+                    allItems.AddRange(pagedResult.Items);
+                    totalPages = pagedResult.TotalPages;
+                    pageIndex++;
+                }
+                while (pageIndex <= totalPages && pageIndex <= 20); // 最多拉取 20 页 (10000 条) 防死循环
+            }
+            catch (Exception ex)
+            {
+                // 记录拉取异常日志
+                LogHelper.WriteLog($"[ComponentApiClient] QueryManageComponents 异常: {ex.Message}");
+            }
+            return allItems;
+        }
+
+        // 品牌与元器件名称列表内存缓存，避免重复拉取
+        private static readonly Dictionary<string, List<string>> _brandNamesCache = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// 根据品牌从远程接口获取该品牌下包含的所有不重复的元器件名称列表（优先通过后端专用 DISTINCT 接口秒级拉取全量真实品类）
+        /// </summary>
+        /// <param name="brand">选中的品牌 (若为空则获取全局常见名称)</param>
+        /// <returns>排序好的不重复元器件名称字符串列表</returns>
+        public static List<string> GetNamesByBrand(string? brand)
+        {
+            // 归一化缓存键，若为空则表示全部品牌
+            string cacheKey = string.IsNullOrWhiteSpace(brand) ? "__ALL__" : brand.Trim();
+            // 命中内存缓存直接返回，避免无谓的网络往返
+            lock (_brandNamesCache)
+            {
+                if (_brandNamesCache.TryGetValue(cacheKey, out var cachedList))
+                {
+                    return cachedList;
+                }
+            }
+
+            var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                // 读取 API 基准地址配置
+                string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
+                string cleanBrand = brand?.Trim() ?? string.Empty;
+
+                // 1. 优先调用后端专用的数据库级 DISTINCT 聚合接口: GET /api/api/Component/GetNames?brand={brand}
+                string endpoint = $"{baseUrl.TrimEnd('/')}/api/api/Component/GetNames";
+                if (!string.IsNullOrEmpty(cleanBrand) && !string.Equals(cleanBrand, "全部", StringComparison.OrdinalIgnoreCase))
+                {
+                    endpoint += $"?brand={Uri.EscapeDataString(cleanBrand)}";
+                }
+
+                var response = _httpClient.GetAsync(endpoint).GetAwaiter().GetResult();
+                if (response.IsSuccessStatusCode)
+                {
+                    string json = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                    if (!string.IsNullOrWhiteSpace(json))
+                    {
+                        var list = JsonSerializer.Deserialize<List<string>>(json, _jsonOptions);
+                        if (list != null && list.Count > 0)
+                        {
+                            foreach (var n in list)
+                            {
+                                if (!string.IsNullOrWhiteSpace(n)) names.Add(n.Trim());
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // 2. 防御性降级策略：若线上尚未更新该接口，通过小批量嗅探兜底
+                    LogHelper.WriteLog($"[ComponentApiClient] GetNames 接口响应码: {response.StatusCode}，启用兜底嗅探");
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"[ComponentApiClient] GetNamesByBrand 异常: {ex.Message}");
+            }
+
+            var result = names.ToList();
+            // 写入本地全局字典缓存
+            lock (_brandNamesCache)
+            {
+                _brandNamesCache[cacheKey] = result;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// 根据品牌、名称以及主体型号从远程接口获取可适配的配套附件列表
+        /// </summary>
+        /// <param name="brand">所属品牌 (如: 德力西, 施耐德)</param>
+        /// <param name="name">元器件名称 (如: 塑壳断路器)</param>
+        /// <param name="model">当前选中的主体型号文本 (用于与附件 Param2 匹配)</param>
+        /// <returns>符合适配条件的附件列表</returns>
+        public static List<ComponentApiDto> GetAttachments(string? brand, string? name, string? model)
+        {
+            var attachments = new List<ComponentApiDto>();
+            try
+            {
+                // 读取 API 基准地址
+                string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
+                string cleanBrand = brand?.Trim() ?? string.Empty;
+                string cleanName = name?.Trim() ?? string.Empty;
+                string cleanModel = model?.Trim() ?? string.Empty;
+
+                // 构建请求参数
+                var queryParams = new List<string>();
+                if (!string.IsNullOrEmpty(cleanBrand)) queryParams.Add($"brand={Uri.EscapeDataString(cleanBrand)}");
+                if (!string.IsNullOrEmpty(cleanName)) queryParams.Add($"name={Uri.EscapeDataString(cleanName)}");
+                if (!string.IsNullOrEmpty(cleanModel)) queryParams.Add($"model={Uri.EscapeDataString(cleanModel)}");
+
+                string endpoint = $"{baseUrl.TrimEnd('/')}/api/api/Component/GetAttachments?{string.Join("&", queryParams)}";
+                var response = _httpClient.GetAsync(endpoint).GetAwaiter().GetResult();
+
+                if (response.IsSuccessStatusCode)
+                {
+                    string json = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                    if (!string.IsNullOrWhiteSpace(json))
+                    {
+                        var list = JsonSerializer.Deserialize<List<ComponentApiDto>>(json, _jsonOptions);
+                        if (list != null) attachments = list;
+                    }
+                }
+                else
+                {
+                    // 若线上尚未更新该接口，启用备用降级逻辑：拉取该品牌同名称且 Param1='附件' 的数据并在客户端比对
+                    LogHelper.WriteLog($"[ComponentApiClient] GetAttachments 端点返回状态码 {response.StatusCode}，启动本地过滤降级策略");
+                    var rawList = SearchComponents(null, cleanName, null, null, null, cleanBrand, null, 200);
+                    attachments = rawList.Where(item =>
+                    {
+                        if (!string.Equals(item.Param1?.Trim(), "附件", StringComparison.OrdinalIgnoreCase)) return false;
+                        if (string.IsNullOrWhiteSpace(item.Param2)) return false;
+                        if (string.IsNullOrEmpty(cleanModel)) return true;
+
+                        var keys = item.Param2.Split(new[] { ',', '，', ';', '；' }, StringSplitOptions.RemoveEmptyEntries)
+                                              .Select(k => k.Trim())
+                                              .Where(k => !string.IsNullOrEmpty(k));
+                        return keys.Any(k => cleanModel.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0);
+                    }).ToList();
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"[ComponentApiClient] GetAttachments 异常: {ex.Message}");
+            }
+
+            return attachments;
+        }
+
+        /// <summary>
+        /// 调用远程商城 WebAPI 新增单条元器件数据 (POST /api/api/Component/Create)
+        /// </summary>
+        /// <param name="dto">新增参数 DTO</param>
+        /// <returns>新增成功后的元器件数据 (包含新生成的 Id)，失败返回 null</returns>
+        public static ComponentApiDto? CreateComponent(CreateComponentApiRequest dto)
+        {
+            try
+            {
+                // 读取 API 基准地址配置
+                string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
+                string url = $"{baseUrl.TrimEnd('/')}/api/api/Component/Create";
+
+                // 序列化请求体 JSON
+                string jsonBody = JsonSerializer.Serialize(dto, _jsonOptions);
+                var content = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json");
+
+                // 发起 POST 请求
+                var response = _httpClient.PostAsync(url, content).GetAwaiter().GetResult();
+                if (!response.IsSuccessStatusCode)
+                {
+                    LogHelper.WriteLog($"[ComponentApiClient] 创建元器件失败, 状态码: {response.StatusCode}");
+                    return null;
+                }
+
+                // 读取并反序列化新增成功后的实体
+                string respJson = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                return JsonSerializer.Deserialize<ComponentApiDto>(respJson, _jsonOptions);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"[ComponentApiClient] CreateComponent 异常: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 调用远程商城 WebAPI 更新已存在的元器件数据 (PUT /api/api/Component/Update)
+        /// </summary>
+        /// <param name="dto">更新参数 DTO (必须包含有效 Id)</param>
+        /// <returns>更新成功后的元器件数据，失败返回 null</returns>
+        public static ComponentApiDto? UpdateComponent(UpdateComponentApiRequest dto)
+        {
+            try
+            {
+                // 读取 API 基准地址配置
+                string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
+                string url = $"{baseUrl.TrimEnd('/')}/api/api/Component/Update";
+
+                // 序列化请求体 JSON
+                string jsonBody = JsonSerializer.Serialize(dto, _jsonOptions);
+                var content = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json");
+
+                // 发起 PUT 请求
+                var response = _httpClient.PutAsync(url, content).GetAwaiter().GetResult();
+                if (!response.IsSuccessStatusCode)
+                {
+                    LogHelper.WriteLog($"[ComponentApiClient] 更新元器件 ID {dto.Id} 失败, 状态码: {response.StatusCode}");
+                    return null;
+                }
+
+                // 读取并反序列化更新结果
+                string respJson = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                return JsonSerializer.Deserialize<ComponentApiDto>(respJson, _jsonOptions);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"[ComponentApiClient] UpdateComponent 异常: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 调用远程商城 WebAPI 根据主键 ID 删除指定的元器件数据 (DELETE /api/api/Component/Delete?id={id})
+        /// </summary>
+        /// <param name="id">元器件主键 ID</param>
+        /// <returns>是否删除成功</returns>
+        public static bool DeleteComponent(int id)
+        {
+            try
+            {
+                // 读取 API 基准地址配置
+                string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
+                string url = $"{baseUrl.TrimEnd('/')}/api/api/Component/Delete?id={id}";
+
+                // 发起 DELETE 请求
+                var response = _httpClient.DeleteAsync(url).GetAwaiter().GetResult();
+                if (!response.IsSuccessStatusCode)
+                {
+                    LogHelper.WriteLog($"[ComponentApiClient] 删除元器件 ID {id} 失败, 状态码: {response.StatusCode}");
+                    return false;
+                }
+
+                // 解析布尔结果
+                string respJson = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                if (bool.TryParse(respJson.Trim(), out bool result))
+                {
+                    return result;
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"[ComponentApiClient] DeleteComponent 异常: {ex.Message}");
+                return false;
+            }
         }
 
         /// <summary>
         /// 从电流字符串中提取纯数字整型 (如 "32A", "100A", "32" ➔ 32)
         /// </summary>
-        private static int? ExtractIntegerCurrent(string? currentStr)
+        public static int? ExtractIntegerCurrent(string? currentStr)
         {
             if (string.IsNullOrWhiteSpace(currentStr)) return null;
 
@@ -284,7 +603,7 @@ namespace ExcelAddInDemo
         /// <summary>
         /// 规范化极数入参 (数据库中存储的是 "4", "3", "2", "1", "1+N" 等，剥离末尾的 P 字符)
         /// </summary>
-        private static string NormalizePolesParam(string? poleStr)
+        public static string NormalizePolesParam(string? poleStr)
         {
             if (string.IsNullOrWhiteSpace(poleStr)) return string.Empty;
 

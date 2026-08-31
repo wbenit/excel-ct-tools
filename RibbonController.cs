@@ -131,6 +131,8 @@ namespace ExcelAddInDemo
           </menu>
           <!-- 型号识别(提取极数与电流) 按钮 -->
           <button id='btnModelParamParser' label='识别极数电流' imageMso='AutoFilter' size='large' screentip='型号识别极数电流' supertip='自动从型号中识别并提取电流和极数，支持双通道顺位流水线与白名单过滤' onAction='OnMenuAction' />
+          <!-- 元器件数据管理按钮 (支持在 Excel 中直接查看、批量筛选、选中行更新/新增/删除) -->
+          <button id='btnComponentManage' label='元器件管理' imageMso='TableInsertRowsAbove' size='large' screentip='元器件数据管理' supertip='在 Excel 中按品牌和名称筛选元器件数据，支持对选中行进行精准更新、新增和删除' onAction='OnMenuAction' />
           <!-- 二次元件组规则管道(生成二次) 按钮 -->
           <button id='btnComponentGroupRule' label='生成二次元件' imageMso='TableFormulaDialog' size='large' screentip='二次元件组规则管道' supertip='基于可视化动态规则管道自动识别箱柜元件特征，生成二次元件组并自动写入套数' onAction='OnMenuAction' />
         </group>
@@ -374,6 +376,12 @@ namespace ExcelAddInDemo
             {
                 // 弹出基于 WebView2 + Vue 3 的“二次元件组规则管道构建器”窗口
                 ExcelServices.ShowComponentGroupBuilderDialog();
+            }
+            // 响应“元器件管理”按钮指令
+            else if (controlId == "btnComponentManage")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“元器件数据管理”悬浮窗口
+                ExcelServices.ShowComponentManageDialog();
             }
             // 响应“切换右键菜单模式”按钮指令
             else if (controlId == "btnToggleContextMenuMode")

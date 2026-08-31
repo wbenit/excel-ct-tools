@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>元器件数据管理</title>
+  
+  <!-- 引入 Element-Plus 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus@2.4.4/dist/index.css">
+  <!-- 引入 FontAwesome 图标库 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <!-- 引入全局公共主题样式 (主色调 #009688) -->
+  <link rel="stylesheet" href="theme.css">
+  
+  <!-- 引入 Vue 3 核心库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- 引入 Element-Plus 组件库 -->
+  <script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.min.js"></script>
+  <!-- 引入 Element-Plus 中文语言包 -->
+  <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+
+  <style>
+    /* 全局与窗体布局样式 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+      background-color: #f8fafc;
+      color: #334155;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      border: 1px solid #009688;
+      background-color: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+    }
+
+    /* 顶部拖拽标题栏 (绿蓝相间渐变，主色调 #009688) */
+    .window-header {
+      height: 38px;
+      background: linear-gradient(135deg, #009688 0%, #00796b 100%);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      cursor: move;
+      flex-shrink: 0;
+    }
+
+    .window-title {
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .window-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .control-btn {
+      background: transparent;
+      border: none;
+      color: #ffffff;
+      font-size: 13px;
+      cursor: pointer;
+      opacity: 0.85;
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+
+    .control-btn:hover {
+      opacity: 1;
+      transform: scale(1.1);
+    }
+
+    .control-btn.close:hover {
+      color: #ff5252;
+    }
+
+    /* 主体内容滚动容器 */
+    .main-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 14px 16px;
+      gap: 14px;
+      overflow-y: auto;
+      background-color: #f8fafc;
+    }
+
+    /* 卡片通用容器 */
+    .section-card {
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+      padding: 12px 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1e293b;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .section-title i {
+      color: #009688;
+    }
+
+    /* 表单项布局 */
+    .filter-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .filter-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .filter-label {
+      width: 65px;
+      font-size: 12px;
+      color: #64748b;
+      flex-shrink: 0;
+      text-align: right;
+    }
+
+    /* 选区检测状态展示卡 */
+    .selection-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-radius: 6px;
+      background: #e0f2f1;
+      border: 1px solid #80cbc4;
+    }
+
+    .selection-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #004d40;
+    }
+
+    .selection-count {
+      font-size: 14px;
+      font-weight: 700;
+      color: #00796b;
+    }
+
+    /* 操作按钮区域网格 */
+    .action-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .action-button-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    .btn-update {
+      --el-button-bg-color: #009688;
+      --el-button-border-color: #009688;
+      --el-button-hover-bg-color: #00796b;
+      --el-button-hover-border-color: #00796b;
+      color: #fff !important;
+    }
+
+    .btn-create {
+      --el-button-bg-color: #0284c7;
+      --el-button-border-color: #0284c7;
+      --el-button-hover-bg-color: #0369a1;
+      --el-button-hover-border-color: #0369a1;
+      color: #fff !important;
+    }
+
+    /* 底部操作说明 */
+    .instructions-box {
+      font-size: 11px;
+      color: #64748b;
+      line-height: 1.6;
+      background: #f1f5f9;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border-left: 3px solid #009688;
+    }
+
+    .instructions-box ol {
+      padding-left: 16px;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部拖拽标题栏 -->
+    <div class="window-header" @mousedown="onHeaderMouseDown">
+      <div class="window-title">
+        <i class="fa-solid fa-database"></i>
+        <span>元器件数据管理</span>
+      </div>
+      <div class="window-controls">
+        <button class="control-btn" title="最小化" @click="minimizeWindow">
+          <i class="fa-solid fa-minus"></i>
+        </button>
+        <button class="control-btn close" title="关闭" @click="closeWindow">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 主体内容 -->
+    <div class="main-body">
+      <!-- 1. 筛选拉取区域卡片 -->
+      <div class="section-card">
+        <div class="section-title">
+          <i class="fa-solid fa-filter"></i>
+          <span>条件筛选与拉取</span>
+        </div>
+        <div class="filter-grid">
+          <div class="filter-row">
+            <span class="filter-label">所属品牌:</span>
+            <el-select
+              v-model="selectedBrand"
+              placeholder="选择品牌 (全部)"
+              clearable
+              filterable
+              @change="onBrandChange"
+              style="flex: 1;"
+            >
+              <el-option label="-- 全部品牌 --" value=""></el-option>
+              <el-option
+                v-for="b in brandList"
+                :key="b.brand"
+                :label="`${b.brand} (${b.count}条)`"
+                :value="b.brand"
+              ></el-option>
+            </el-select>
+          </div>
+
+          <div class="filter-row">
+            <span class="filter-label">名称过滤:</span>
+            <el-select
+              v-model="searchKeyword"
+              placeholder="选择或输入名称 (全部)"
+              clearable
+              filterable
+              allow-create
+              default-first-option
+              :loading="loadingNames"
+              style="flex: 1;"
+            >
+              <el-option label="-- 全部名称 --" value=""></el-option>
+              <el-option
+                v-for="name in nameList"
+                :key="name"
+                :label="name"
+                :value="name"
+              ></el-option>
+            </el-select>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
+            <el-button
+              type="primary"
+              :loading="loadingData"
+              class="btn-update"
+              @click="loadComponents"
+              style="width: 100%; font-weight: 600;"
+            >
+              <i class="fa-solid fa-cloud-arrow-down" style="margin-right: 6px;"></i>
+              查询并呈现至 Excel
+            </el-button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 当前选区检测状态卡片 -->
+      <div class="selection-banner">
+        <div class="selection-info">
+          <i class="fa-solid fa-table-cells"></i>
+          <span>当前选区:</span>
+          <span v-if="selectionInfo.selectedRowCount > 0" class="selection-count">
+            {{ selectionInfo.selectedRowCount }} 行
+          </span>
+          <span v-else style="color: #64748b;">(未选中有效行)</span>
+          <span style="font-size: 11px; color: #64748b;">[工作表: {{ selectionInfo.sheetName || '未检测' }}]</span>
+        </div>
+        <el-button
+          size="small"
+          text
+          @click="detectSelection"
+          title="刷新选区"
+          style="color: #00796b;"
+        >
+          <i class="fa-solid fa-rotate"></i> 刷新选区
+        </el-button>
+      </div>
+
+      <!-- 3. 选区核心动作按钮组卡片 -->
+      <div class="section-card">
+        <div class="section-title">
+          <i class="fa-solid fa-bolt"></i>
+          <span>精准选区操作 (改 / 增 / 删)</span>
+        </div>
+        
+        <div class="action-grid">
+          <div class="action-button-group">
+            <!-- 更新选中行 -->
+            <el-button
+              type="primary"
+              class="btn-update"
+              :loading="updating"
+              :disabled="selectionInfo.selectedRowCount === 0"
+              @click="updateSelectedRows"
+              title="根据 A 列 ID 更新云端数据"
+            >
+              <i class="fa-solid fa-pen-to-square" style="margin-right: 4px;"></i>
+              更新选中行
+            </el-button>
+
+            <!-- 选中内容新增 -->
+            <el-button
+              type="primary"
+              class="btn-create"
+              :loading="creating"
+              :disabled="selectionInfo.selectedRowCount === 0"
+              @click="createSelectedRows"
+              title="忽略原ID，向云端新增物料并回填新分配的ID"
+            >
+              <i class="fa-solid fa-circle-plus" style="margin-right: 4px;"></i>
+              选中行新增
+            </el-button>
+
+            <!-- 删除选中行 -->
+            <el-button
+              type="danger"
+              :loading="deleting"
+              :disabled="selectionInfo.selectedRowCount === 0"
+              @click="confirmDeleteSelectedRows"
+              title="永久删除选中的云端物料并从表格移除"
+            >
+              <i class="fa-solid fa-trash-can" style="margin-right: 4px;"></i>
+              删除选中行
+            </el-button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. 业务操作指引说明 -->
+      <div class="instructions-box">
+        <strong><i class="fa-solid fa-circle-info"></i> 使用操作指引：</strong>
+        <ol>
+          <li><strong>更新</strong>：在表格中修改品牌/型号/单价等，鼠标框选要保存的行，点击【更新选中行】。</li>
+          <li><strong>新增</strong>：在空白行填写新物料（或复制现有行微调），框选这几行，点击【选中行新增】，系统自动生成并在 A 列赋予新系统ID。</li>
+          <li><strong>删除</strong>：鼠标框选要移除的物料行，点击【删除选中行】即可同步删除云端并整行移出。</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, onMounted } = Vue;
+
+    createApp({
+      setup() {
+        // 品牌列表与筛选参数
+        const brandList = ref([]);
+        const selectedBrand = ref('');
+        const searchKeyword = ref('');
+        const nameList = ref([]);
+        const loadingNames = ref(false);
+
+        // 状态加载指示器
+        const loadingData = ref(false);
+        const updating = ref(false);
+        const creating = ref(false);
+        const deleting = ref(false);
+
+        // 选区信息
+        const selectionInfo = ref({
+          isInManageSheet: false,
+          sheetName: '',
+          selectedRowCount: 0,
+          rowIndices: [],
+          message: ''
+        });
+
+        // 切换品牌时触发：清空当前名称并自动拉取该品牌包含的所有元器件名称
+        const onBrandChange = (brand) => {
+          searchKeyword.value = '';
+          loadingNames.value = true;
+          postToHost('getNamesByBrand', { brand: brand || '' });
+        };
+
+        // 窗口拖拽处理：仅响应鼠标主键 (左键 button === 0)
+        const onHeaderMouseDown = (e) => {
+          if (e.button !== 0) return;
+          if (e.target.closest('.window-controls')) return;
+          postToHost('dragWindow');
+        };
+
+        // 最小化与关闭
+        const minimizeWindow = () => postToHost('minimizeWindow');
+        const closeWindow = () => postToHost('closeWindow');
+
+        // 发送消息到 C# 宿主
+        const postToHost = (action, payload = {}) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ action, ...payload }));
+          }
+        };
+
+        // 探测当前 Excel 选区
+        const detectSelection = () => {
+          postToHost('detectSelection');
+        };
+
+        // 根据筛选条件拉取数据
+        const loadComponents = () => {
+          loadingData.value = true;
+          postToHost('loadComponents', {
+            brand: selectedBrand.value,
+            keyword: searchKeyword.value
+          });
+        };
+
+        // 选中行执行【更新】
+        const updateSelectedRows = () => {
+          if (selectionInfo.value.selectedRowCount === 0) {
+            ElementPlus.ElMessage.warning('请先在 Excel 表格中选中需要更新的行！');
+            return;
+          }
+          updating.value = true;
+          postToHost('updateSelected');
+        };
+
+        // 选中行执行【新增】
+        const createSelectedRows = () => {
+          if (selectionInfo.value.selectedRowCount === 0) {
+            ElementPlus.ElMessage.warning('请先在 Excel 表格中选中需要新增的行内容！');
+            return;
+          }
+          creating.value = true;
+          postToHost('createSelected');
+        };
+
+        // 选中行执行【删除】(带确认对话框)
+        const confirmDeleteSelectedRows = () => {
+          if (selectionInfo.value.selectedRowCount === 0) {
+            ElementPlus.ElMessage.warning('请先在 Excel 表格中选中需要删除的行！');
+            return;
+          }
+          ElementPlus.ElMessageBox.confirm(
+            `确定要永久删除选中的 ${selectionInfo.value.selectedRowCount} 条云端元器件物料吗？此操作将同步从 Excel 表格中整行移除！`,
+            '危险操作警告',
+            {
+              confirmButtonText: '确定删除',
+              cancelButtonText: '取消',
+              type: 'warning',
+              confirmButtonClass: 'el-button--danger'
+            }
+          ).then(() => {
+            deleting.value = true;
+            postToHost('deleteSelected');
+          }).catch(() => {});
+        };
+
+        // 监听 C# 宿主回发消息
+        if (window.chrome && window.chrome.webview) {
+          window.chrome.webview.addEventListener('message', (event) => {
+            try {
+              const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+              switch (data.action) {
+                // 初始化品牌列表与选区
+                case 'initData':
+                  if (data.brands) brandList.value = data.brands;
+                  if (data.names) nameList.value = data.names;
+                  if (data.selection) selectionInfo.value = data.selection;
+                  break;
+
+                // 品牌对应的元器件名称列表回发
+                case 'namesResult':
+                  loadingNames.value = false;
+                  if (data.names) {
+                    nameList.value = data.names;
+                  }
+                  break;
+
+                // 选区检测结果
+                case 'selectionResult':
+                  if (data.selection) selectionInfo.value = data.selection;
+                  break;
+
+                // 数据拉取结果
+                case 'loadResult':
+                  loadingData.value = false;
+                  if (data.result && data.result.success) {
+                    ElementPlus.ElMessage.success(data.result.message || '数据拉取成功！');
+                    detectSelection();
+                  } else {
+                    ElementPlus.ElMessage.error(data.result?.message || '拉取数据失败');
+                  }
+                  break;
+
+                // 核心动作完成反馈 (更新 / 新增 / 删除)
+                case 'actionResult':
+                  updating.value = false;
+                  creating.value = false;
+                  deleting.value = false;
+
+                  if (data.result && data.result.success) {
+                    ElementPlus.ElMessage.success(data.result.message);
+                  } else {
+                    ElementPlus.ElMessage.warning(data.result?.message || '操作未完全成功');
+                  }
+                  detectSelection();
+                  break;
+              }
+            } catch (err) {
+              console.error('解析宿主消息失败', err);
+            }
+          });
+        }
+
+        // 挂载就绪：初始获取数据，并在窗口重新激活获得焦点时按需探知选区 (彻底废除 setInterval 避免与 COM/拖拽死锁)
+        onMounted(() => {
+          postToHost('ready');
+
+          // 当用户在 Excel 中选好区域后切回本浮窗时，自动灵敏感知最新选区
+          window.addEventListener('focus', () => {
+            detectSelection();
+          });
+        });
+
+        return {
+          brandList,
+          selectedBrand,
+          searchKeyword,
+          nameList,
+          loadingNames,
+          loadingData,
+          updating,
+          creating,
+          deleting,
+          selectionInfo,
+          onBrandChange,
+          onHeaderMouseDown,
+          minimizeWindow,
+          closeWindow,
+          loadComponents,
+          detectSelection,
+          updateSelectedRows,
+          createSelectedRows,
+          confirmDeleteSelectedRows
+        };
+      }
+    }).use(ElementPlus).mount('#app');
+  </script>
+</body>
+</html>

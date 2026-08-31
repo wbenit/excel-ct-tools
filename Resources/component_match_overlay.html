@@ -178,7 +178,7 @@
           ref="searchInputRef"
           v-model="searchKeyword"
           size="small"
-          placeholder="输入型号/参数即时模糊搜索物料 (↑↓切换 Enter选中 Esc退出)"
+          :placeholder="isAttachmentMode ? '过滤当前可用配套附件型号/说明...' : '输入型号/参数即时模糊搜索物料 (↑↓切换 Enter选中 Esc退出)'"
           clearable
           @input="onSearchInput"
           @keydown.down.prevent="moveNext"
@@ -187,21 +187,58 @@
           @keydown.esc.prevent="closeOverlay"
         >
           <template #prefix>
-            <i class="fa-solid fa-magnifying-glass" style="color: #009688;"></i>
+            <i class="fa-solid" :class="isAttachmentMode ? 'fa-puzzle-piece' : 'fa-magnifying-glass'" style="color: #009688;"></i>
           </template>
         </el-input>
       </div>
-      <!-- 管道约束状态栏 -->
-      <div class="pipeline-tags">
-        <span style="color: #64748b;">过滤管道:</span>
-        <span class="pipeline-badge">品牌: {{ filterBrand || '全部' }}</span>
-        <span 
-          v-for="(r, idx) in activeMustRules" 
-          :key="idx" 
-          class="pipeline-badge"
-        >
-          必含: {{ r }}
-        </span>
+
+      <!-- 管道约束与模式切换栏 -->
+      <div class="pipeline-tags" style="justify-content: space-between;">
+        <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap; flex: 1;">
+          <template v-if="!isAttachmentMode">
+            <span style="color: #64748b;">过滤管道:</span>
+            <span class="pipeline-badge">品牌: {{ filterBrand || '全部' }}</span>
+            <span 
+              v-for="(r, idx) in activeMustRules" 
+              :key="idx" 
+              class="pipeline-badge"
+            >
+              必含: {{ r }}
+            </span>
+          </template>
+          <template v-else>
+            <span style="color: #009688; font-weight: 600;">配套附件:</span>
+            <span class="pipeline-badge" style="background: #fef3c7; color: #b45309;">主体: {{ cellParams.name }} {{ cellParams.currentModel || '当前行物料' }}</span>
+          </template>
+        </div>
+
+        <!-- 附件切换操作按钮 (位于箭头所指位置) -->
+        <div style="display: flex; gap: 4px; align-items: center;">
+          <el-button 
+            v-if="!isAttachmentMode"
+            size="small" 
+            type="success" 
+            plain 
+            class="btn-attachment-toggle"
+            @click="switchToAttachmentMode"
+            style="height: 22px; padding: 0 8px; font-size: 11px; border-color: #009688; color: #009688;"
+          >
+            <i class="fa-solid fa-puzzle-piece" style="margin-right: 4px;"></i>
+            配套附件
+          </el-button>
+
+          <el-button 
+            v-else 
+            size="small" 
+            type="info" 
+            plain 
+            @click="switchToNormalMode"
+            style="height: 22px; padding: 0 8px; font-size: 11px;"
+          >
+            <i class="fa-solid fa-arrow-left" style="margin-right: 4px;"></i>
+            返回物料
+          </el-button>
+        </div>
       </div>
     </div>
 
@@ -209,17 +246,17 @@
     <div ref="listRef" class="list-container">
       <div v-if="loading" style="text-align: center; padding: 20px; color: #64748b;">
         <i class="fa-solid fa-spinner fa-spin" style="color: #009688; font-size: 16px;"></i>
-        <div style="margin-top: 4px;">正在智能检索物料库...</div>
+        <div style="margin-top: 4px;">{{ isAttachmentMode ? '正在匹配适用配套附件...' : '正在智能检索物料库...' }}</div>
       </div>
 
-      <div v-else-if="items.length === 0" style="text-align: center; padding: 24px 0; color: #94a3b8;">
+      <div v-else-if="filteredDisplayItems.length === 0" style="text-align: center; padding: 24px 0; color: #94a3b8;">
         <i class="fa-solid fa-box-open" style="font-size: 24px; margin-bottom: 6px; display: block;"></i>
-        <span>未找到符合管道约束的物料</span>
+        <span>{{ isAttachmentMode ? '暂无与当前型号匹配的配套附件' : '未找到符合管道约束的物料' }}</span>
       </div>
 
       <div v-else>
         <div
-          v-for="(item, index) in items"
+          v-for="(item, index) in filteredDisplayItems"
           :key="item.id || index"
           class="item-card"
           :class="{ selected: selectedIndex === index }"
@@ -227,7 +264,10 @@
           @mouseenter="selectedIndex = index"
         >
           <div class="item-row-top">
-            <span class="item-model">{{ item.model }}</span>
+            <span class="item-model">
+              <span v-if="isAttachmentMode" style="color: #009688; font-weight: 700; margin-right: 4px;">[附件]</span>
+              {{ item.model }}
+            </span>
             <span class="item-price">¥{{ item.price ? Number(item.price).toFixed(2) : '0.00' }}</span>
           </div>
           <div class="item-row-bottom">
@@ -236,7 +276,7 @@
             <span v-if="item.current">电流: {{ item.current }}A</span>
             <span v-if="item.poles">极数: {{ item.poles }}</span>
             <span v-if="item.tripping">脱扣: {{ item.tripping }}</span>
-            <span v-if="item.param1" style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ item.param1 }}</span>
+            <span v-if="item.param2" style="max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="item.param2">适配: {{ item.param2 }}</span>
           </div>
         </div>
       </div>
@@ -244,8 +284,17 @@
 
     <!-- 底部统计与快捷键指引 -->
     <div class="footer-bar">
-      <span>共匹配到 <strong style="color: #009688;">{{ items.length }}</strong> 条物料</span>
-      <span>[↑/↓] 切换 | [Enter] 确认回填 | [Esc] 退出</span>
+      <span>
+        共匹配到 <strong style="color: #009688;">{{ filteredDisplayItems.length }}</strong> 条{{ isAttachmentMode ? '配套附件' : '物料' }}
+      </span>
+      <span>
+        <template v-if="isAttachmentMode">
+          [点击选择] 型号自动拼接 "+" / 单价公式自动累加
+        </template>
+        <template v-else>
+          [↑/↓] 切换 | [Enter] 确认回填 | [Esc] 退出
+        </template>
+      </span>
     </div>
   </div>
 
@@ -265,12 +314,20 @@
         const selectedIndex = ref(0);
         const loading = ref(false);
 
+        // 模式控制：false=常规物料选择模式，true=配套附件选择模式 (方式 A 原位切换)
+        const isAttachmentMode = ref(false);
+        // 暂存常规物料列表，供切回时秒级还原
+        const normalModeItems = ref([]);
+
         // 上下文参数 (由 C# 传入)
         const cellParams = ref({
           name: '',
           current: '',
           pole: '',
-          tripMode: ''
+          tripMode: '',
+          currentModel: '',
+          currentPrice: '',
+          brand: ''
         });
         const filterBrand = ref('');
         const activeMustRules = ref([]);
@@ -282,6 +339,38 @@
           if (window.chrome && window.chrome.webview) {
             window.chrome.webview.postMessage(JSON.stringify({ action, ...payload }));
           }
+        };
+
+        // 计算当前界面展示的过滤列表 (在附件模式下支持本地输入过滤)
+        const filteredDisplayItems = computed(() => {
+          if (!isAttachmentMode.value) {
+            return items.value;
+          }
+          const kw = (searchKeyword.value || '').trim().toLowerCase();
+          if (!kw) return items.value;
+          return items.value.filter(it => {
+            const text = `${it.model || ''} ${it.param2 || ''} ${it.name || ''}`.toLowerCase();
+            return text.indexOf(kw) >= 0;
+          });
+        });
+
+        // 切换至配套附件模式：暂存当前物料，向 C# 发送请求拉取附件
+        const switchToAttachmentMode = () => {
+          isAttachmentMode.value = true;
+          normalModeItems.value = items.value;
+          items.value = [];
+          loading.value = true;
+          searchKeyword.value = '';
+          selectedIndex.value = 0;
+          postToHost('getAttachments');
+        };
+
+        // 从配套附件模式切回常规物料模式
+        const switchToNormalMode = () => {
+          isAttachmentMode.value = false;
+          items.value = normalModeItems.value;
+          searchKeyword.value = '';
+          selectedIndex.value = 0;
         };
 
         // 监听 C# 消息
@@ -300,8 +389,10 @@
           switch (msg.action) {
             // 初始化展示 (带上当前行参数与初始匹配物料)
             case 'initCandidates':
+              isAttachmentMode.value = false;
               loading.value = false;
               items.value = msg.items || [];
+              normalModeItems.value = msg.items || [];
               selectedIndex.value = 0;
               searchKeyword.value = '';
               if (msg.cellParams) cellParams.value = msg.cellParams;
@@ -316,6 +407,14 @@
               });
               break;
 
+            // 配套附件列表返回
+            case 'attachmentsResult':
+              loading.value = false;
+              items.value = msg.items || [];
+              selectedIndex.value = 0;
+              if (msg.currentModel) cellParams.value.currentModel = msg.currentModel;
+              break;
+
             // 模糊搜索结果返回
             case 'searchResult':
               loading.value = false;
@@ -325,8 +424,13 @@
           }
         };
 
-        // 用户输入即时模糊搜索 (防抖 200ms)
+        // 用户输入即时模糊搜索 (常规模式下走后端防抖搜索，附件模式下直接本地过滤)
         const onSearchInput = () => {
+          if (isAttachmentMode.value) {
+            selectedIndex.value = 0;
+            return;
+          }
+
           if (debounceTimer) clearTimeout(debounceTimer);
           loading.value = true;
           debounceTimer = setTimeout(() => {
@@ -339,15 +443,17 @@
 
         // 键盘上下移动选择
         const moveNext = () => {
-          if (items.value.length === 0) return;
-          if (selectedIndex.value < items.value.length - 1) {
+          const list = filteredDisplayItems.value;
+          if (list.length === 0) return;
+          if (selectedIndex.value < list.length - 1) {
             selectedIndex.value++;
             scrollToSelected();
           }
         };
 
         const movePrev = () => {
-          if (items.value.length === 0) return;
+          const list = filteredDisplayItems.value;
+          if (list.length === 0) return;
           if (selectedIndex.value > 0) {
             selectedIndex.value--;
             scrollToSelected();
@@ -367,13 +473,19 @@
 
         // 确认选择某一条并回填 Excel
         const confirmSelect = () => {
-          if (items.value.length > 0 && selectedIndex.value >= 0 && selectedIndex.value < items.value.length) {
-            selectItem(items.value[selectedIndex.value]);
+          const list = filteredDisplayItems.value;
+          if (list.length > 0 && selectedIndex.value >= 0 && selectedIndex.value < list.length) {
+            selectItem(list[selectedIndex.value]);
           }
         };
 
+        // 点击某一条：若为附件模式则派发 selectAttachment，若为常规模式则派发 selectComponent
         const selectItem = (item) => {
-          postToHost('selectComponent', { item });
+          if (isAttachmentMode.value) {
+            postToHost('selectAttachment', { item });
+          } else {
+            postToHost('selectComponent', { item });
+          }
         };
 
         const closeOverlay = () => {
@@ -389,11 +501,15 @@
           listRef,
           searchKeyword,
           items,
+          filteredDisplayItems,
           selectedIndex,
           loading,
+          isAttachmentMode,
           cellParams,
           filterBrand,
           activeMustRules,
+          switchToAttachmentMode,
+          switchToNormalMode,
           onSearchInput,
           moveNext,
           movePrev,

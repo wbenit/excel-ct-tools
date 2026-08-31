@@ -24,9 +24,6 @@ namespace ExcelAddInDemo.Forms
         // 声明业务控制器对象
         private readonly ComponentMatchController _controller;
 
-        // 静态单例引用，防止重复弹窗
-        private static ComponentMatchForm? _currentInstance;
-
         // JSON 序列化通用配置
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
@@ -47,28 +44,6 @@ namespace ExcelAddInDemo.Forms
         private const int HTCAPTION = 0x2;
 
         #endregion
-
-        /// <summary>
-        /// 静态入口：显示或激活物料匹配规则设置窗口
-        /// </summary>
-        public static void ShowDialogForm()
-        {
-            // 校验是否已存在活动窗口实例
-            if (_currentInstance != null && !_currentInstance.IsDisposed)
-            {
-                if (_currentInstance.WindowState == FormWindowState.Minimized)
-                {
-                    _currentInstance.WindowState = FormWindowState.Normal;
-                }
-                _currentInstance.BringToFront();
-                _currentInstance.Activate();
-                return;
-            }
-
-            // 实例化新窗口并展示
-            _currentInstance = new ComponentMatchForm();
-            _currentInstance.Show();
-        }
 
         /// <summary>
         /// 构造函数：初始化窗口外观尺寸与 WebView2 控件
@@ -93,7 +68,6 @@ namespace ExcelAddInDemo.Forms
 
             // 注册加载与关闭生命周期事件
             this.Load += OnFormLoadAsync;
-            this.FormClosed += (s, e) => { _currentInstance = null; };
         }
 
         /// <summary>

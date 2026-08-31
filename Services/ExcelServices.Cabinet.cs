@@ -220,7 +220,7 @@ namespace ExcelAddInDemo
                     activeSheet.Cells[newDetRow, 2].Value = cabDisplayName;
                     // 保留明细表头 C 列静态标签(型号:)，清空明细表头备注旧数据 (Cell I)
                     activeSheet.Cells[newDetRow, 9].Value = string.Empty;
-
+                    activeSheet.Cells[insertSumRow, 5].Formula = $"台";
                     // 汇总行公式绑定至明细总计行
                     // G 列单价公式指向明细总计行的销售总价 (H 列)
                     activeSheet.Cells[insertSumRow, 7].Formula = $"=H{newTolsumRow}";
