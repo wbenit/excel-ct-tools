@@ -611,9 +611,8 @@
         <!-- 合并条件 -->
         <div class="config-row">
           <span class="config-label">合并条件:</span>
-          <div class="config-group">
-            <!-- 固定必选项：名称 -->
-            <el-checkbox class="theme-checkbox" v-model="mergeOpts.byName" disabled>名称</el-checkbox>
+            <!-- 合并条件：名称 (支持自由勾选与取消) -->
+            <el-checkbox class="theme-checkbox" v-model="mergeOpts.byName">名称</el-checkbox>
             <span style="color: #909399;">+</span>
             <!-- 固定必选项：型号 -->
             <el-checkbox class="theme-checkbox" v-model="mergeOpts.byModel" disabled>型号</el-checkbox>
@@ -1053,11 +1052,11 @@
                     ElMessage.error(response.message || '汇总表生成失败');
                   }
                 }
-                // 3. 一键更新结果返回 (预留)
+                // 3. 一键更新结果返回
                 else if (response.action === 'onSummaryUpdated') {
                   updating.value = false;
                   if (response.success) {
-                    ElMessage.info(response.message || '一键更新功能已预留');
+                    ElMessage.success(response.message || '一键更新成功！');
                   } else {
                     ElMessage.warning(response.message || '一键更新操作未完成');
                   }

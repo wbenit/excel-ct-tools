@@ -174,6 +174,7 @@ namespace ExcelAddInDemo.Forms
                     case "openSmartInput":
                     case "openSummaryAdjustPrice":
                     case "openComponentManage":
+                    case "openCabinetAuxCalc":
                     case "switchToNativeMenu":
                         // 收到业务菜单点击指令：先隐藏菜单，后执行对应业务方法
                         SafeInvoke(() =>
@@ -255,6 +256,11 @@ namespace ExcelAddInDemo.Forms
                         case "openComponentManage":
                             // 打开“元器件数据管理”窗口
                             ExcelServices.ShowComponentManageDialog();
+                            break;
+
+                        case "openCabinetAuxCalc":
+                            // 打开“智能辅材与壳体计算”窗口
+                            ExcelServices.ShowCabinetAuxCalcDialog();
                             break;
 
                         case "switchToNativeMenu":

@@ -2,6 +2,45 @@
 
 ## [Completed]
 
+- **落地【智能辅材与壳体计算】及动态定额规则配置中心功能**：
+  1. **模型与配置持久层 (`Models/CabinetAuxCalcModels.cs`)**：
+     - 定义 `QuotationRules` 聚合模型（`GeneralConfig`, `ShellConfig`, `CopperConfig`, `AuxConfig`, `LaborConfig`）；
+     - 实现规则持久化至 `quotation_rules.json`（支持铜价、加点系数、综合税率、壳体匹配名称、标准尺寸库、接线空间阶梯、二次元件定额表等自由配置）；
+     - 根据实际表格结构对齐元器件列字段映射：B 列(名称)、C 列(型号)、F 列(数量)、V 列(图块类别)、W 列(图块名称)、X 列(额定电流)、Y 列(极数)、Z 列(附件描述)；
+     - **新增结构化一次导线长度计算配置模型 (`PrimaryWireLengthConfig`)**：包含基础垂直预留高度(130mm)、火灾互感器增量(100mm)、普通互感器增量(130mm)、落地柜门限(1600mm)、柜宽系数(0.7)、裕量放大系数(1.1)与配电箱宽系数(0.6)。
+  2. **核心业务与计算引擎 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+     - 遵循规则 7，采用 2D 数组一次性批量读入箱柜元器件有效数据（读取范围扩展至 `A{compStartRow}:Z{compEndRow}` 覆盖 26 列）；
+     - **全面接入 `WireLengthConfig` 动态推导一次线长度与用量**：自动根据箱高判断落地柜或配电箱，结合互感器加成折算各规格总米数并差异化计价；
+     - 完整复原原 VBA 算法：CAD/本地特征库双轨降级、容积率安全系数选型、倒T/I型主母排+ATS双电源+通长N排+分支铜排计算、一次导线+二次元件辅材定额、平铺面积+二次装配人工费；
+     - **严格落地用户指定的壳体回写规则**：优先扫描计费区（`Cab_Subsum` 到 `Cab_Tolsum-1`）B 列匹配 `ShellMatchName`（默认“箱体”），命中则写入 C 列；未命中则写入 `Cab_Det` 的 C 列并将 B 列设为匹配名称；
+     - 铜排若 $>0$ 自动插入/更新 TMY 数量公式与总价，辅材与人工费动态公式写入，确保全表联动重算。
+  3. **交互控制与 UI 视觉深度重构 (`Forms/CabinetAuxCalcForm.cs`, `Resources/cabinet_aux_calc.html`)**：
+     - 将窗体尺寸调整为 `960x720` 像素，保证视觉空间宽裕舒展；
+     - **全面去除所有按钮、卡片、窗口阴影 (`box-shadow: none !important`)**，呈现纯净现代工程扁平风；
+     - **定额规则二级 Tabs 彻底解耦独立**：
+       - **Tab 1: 🔌 一次配线定额**（一次导线长度折算参数 + 图 3 一次导线规格选型与单价表）；
+       - **Tab 2: 🧩 二次元件定额**（图 4 二次元件接线与工价定额表单独作为独立 Tab 页，全宽展开并支持添加）；
+       - **Tab 3: 📦 壳体选型规则**（壳体匹配名称、安全系数、标准尺寸库）；
+       - **Tab 4: ⚡ 铜排母线定额**（母排结构门限、补偿参数）；
+       - **Tab 5: 🛠️ 费率与结构补贴**（基础辅材与补贴、平铺制作工价、税率乘数）；
+     - 使用严谨的双列 Grid 网格布局重构参数表单，固定 Label 最小宽度（125px），彻底解决文字与输入框拥挤重叠问题。
+  3. **交互控制与 UI 呈现 (`Controllers/CabinetAuxCalcController.cs`, `Forms/CabinetAuxCalcForm.cs`, `Resources/cabinet_aux_calc.html`)**：
+     - 基于 WebView2 + Vue 3 `<script setup>` + Element Plus 框架构建，主色调 `#009688`；
+     - 提供【📊 智能推导与回写】与【⚙️ 规则与定额配置中心】双视图；
+     - 在 Ribbon 功能区【③调价格→】增加【辅材壳体计算】大按钮，并在右键菜单中挂载直达入口。
+  4. **编译构建**：
+     - 执行 `dotnet build` 编译通过，0 错误，严格遵循每 3 行包含一行中文注释规范。
+
+- **修复元件明细表 M 列（表价/面价）拆分本体与附件价格时附件乘积公式无法解析的问题**：
+  1. **定位根本原因**：
+     - 原 `ParseBaseAndAccessoryPrice` 方法在按 `+` 拆分出各个加项后，对第二项及后续附件项直接使用 `decimal.TryParse` 解析；
+     - 当公式形如 `=159.05+336.2*2` 时，附件项为 `"336.2*2"`（包含乘号），`decimal.TryParse` 失败返回 `false`，导致附件价格解析结果为 `0`；
+     - 另外原逻辑未对外层 `ROUND(...)` 和圆括号进行脱壳处理，当存在 `ROUND` 包裹时会导致所有项均解析失败。
+  2. **修复方案 (`Services/ExcelServices.SummaryAdjustPrice.cs`)**：
+     - 增加 `EvaluateTermValue` 辅助方法，支持对单项表达式进行乘法运算（如 `"336.2*2"` 计算为 `672.4`，`"159.05*1"` 计算为 `159.05`）；
+     - 在 `ParseBaseAndAccessoryPrice` 中增加对 `ROUND(...)` 与外层圆括号的脱壳处理；
+     - 第一项（本体项）与后续项（附件项）均通过 `EvaluateTermValue` 精确计算并累加，确保本体表价与附件总表价均能准确解析。
+
 - **彻底修复业务专属右键菜单图标不显示、点击无反应以及元器件管理未响应的问题**：
   1. **定位根本原因**：
      - **外部 CDN 依赖导致死锁**：右键菜单页面 `custom_context_menu.html` 引入了海外 CDN `cdnjs.cloudflare.com`（FontAwesome）以及 `unpkg.com`（Vue 3 / Element Plus）。在国内网络或离线内网环境下网络请求严重超时或被拦截，导致 Vue 无法加载（抛出 `Uncaught ReferenceError: Vue is not defined`）；
@@ -11,7 +50,6 @@
      - **图标全面离线化**：将所有菜单项图标彻底替换为轻量内联矢量 SVG（每枚几百字节），实现 100% 零网络依赖、零延迟离线秒显且高清；
      - **事件绑定原生化**：由于右键菜单属于瞬态快捷交互窗口，改用原生 JavaScript（Vanilla JS）处理点击、防抖、数据接收与键盘导航（上下箭头切换、回车确认、ESC关闭），彻底消除对外部庞大框架库的加载依赖，实现 0 毫秒秒开秒响应；
      - **C# 路由补齐**：在 `CustomContextMenuForm.cs` 中补充 `case "openComponentManage":` 分支，保障所有菜单项指令均能顺畅下发执行。
-
 
 - **彻底修复 CAD 批量导出到 Excel 时计费区域 A 列显示为 ####（#REF!）的问题及支持用户自定义序号**：
   1. **定位根本原因**：
@@ -29,7 +67,6 @@
        - **若用户在 A 列定义为其他特定内容（文本、自定义编号或自定义公式），则完全按照定义内容原样回填保留**；
        - 显式确保总计行 `tolsumRow` A 列为 `"总计"`；
      - 彻底切断对母版行的外部依赖，从根源上杜绝 `#REF!` 和 `####`，同时兼顾了灵活性与用户自定义需求。
-
 
 - **排查并彻底修复点击“开始报价”没反应的问题**：
   1. **定位根本原因**：
@@ -150,8 +187,8 @@
 
 - **元件汇总表 H 列总价与 J 列成本单价生成改为动态联动公式**：
   1. **需求定位**：
-     - 用户要求将【元件汇总表】中 H 列（总价）改为动态公式：`=ROUND(F{row}*G{row},2)`（数量 * 单价，F列为数量，G列为单价）；
-     - 将 J 列（成本单价）改为动态公式：`=ROUND(L{row}*M{row}+N{row}*O{row},2)`（本体表价 * 本体折扣 + 附件表价 * 附件折扣）；
+     - 用户要求将【元件汇总表】中 H 列（总价）改为动态公式：`=ROUND(F{row}*G{row},2)`（数量 \* 单价，F列为数量，G列为单价）；
+     - 将 J 列（成本单价）改为动态公式：`=ROUND(L{row}*M{row}+N{row}*O{row},2)`（本体表价 _ 本体折扣 + 附件表价 _ 附件折扣）；
      - 结合此前已将 G 列改为 `=ROUND(K{row}*(L{row}*M{row}+N{row}*O{row}),2)`，使整张汇总表的单价、总价、成本价格体系完全形成自动联动公式链。
   2. **代码实施 (`Services/ExcelServices.SummaryAdjustPrice.cs`)**：
      - 将 `outMatrix[i, 7]` 改为 `$"=ROUND(F{currentRow}*G{currentRow},2)"`；
@@ -195,18 +232,98 @@
   3. **编译校验**：
      - 运行 `dotnet build` 编译通过，0 错误。
 
+- **落地配套附件数量入口与型号(+型号*数量)/价格(+单价*数量)公式联动回填**：
+  1. **需求背景与目标**：
+     - 在物料智能联想下拉窗的【配套附件】模式中，支持用户为断路器等主体添加多个同类附件（如 2 个辅助触头 `OF*2`、2 个分励脱扣器 `MX*2` 等）；
+     - 要求提供清晰直观的数量入口，选定附件后实现型号（`+附件型号*数量`）与价格公式（`+单价*数量`）的精准联动回填。
+  2. **前端界面与交互 (`Resources/component_match_overlay.html`)**：
+     - 在配套附件模式管道栏右侧增加精致的步进数量控制器 `数量: [ - ] [ 1 ] [ + ]`（支持输入与点击步进，范围 1~99，默认 1）；
+     - 数量 > 1 时，候选卡片型号右侧呈现 `×数量` 提示徽标，价格实时计算并展示乘积小计（如 `(¥336.20 × 2) ¥672.40`）；
+     - 底部指引更新为 `[点击/回车] 自动拼接 +附件*数量 并累加单价公式`；
+     - 选定附件派发 `selectAttachment` 时携带 `quantity` 数量参数。
+  3. **C# 控制与业务层 (`Forms/ComponentMatchOverlayForm.cs`, `Services/ExcelServices.ComponentMatch.cs`)**：
+     - `ComponentMatchOverlayForm` 解析提取 Web 消息中的 `quantity` 参数并传给服务层；
+     - `ExcelServices.FillSelectedAttachmentToActiveRow` 扩展 `int quantity = 1` 支持：
+       - D 列型号拼接：`quantity > 1` 时格式化为 `+附件型号*数量`（如 `+MX*2`），`quantity == 1` 时为 `+附件型号`；
+       - 价格公式：`quantity > 1` 时生成 `+单价*数量`（如 `+336.2*2`），常规表写入 M 列（如 `=159.05+336.2*2`），汇总表写入 N 列（如 `=336.2*2` 或 `=150+80*2`）；
+       - 与 `SummaryAdjustPrice.cs` 中的 `EvaluateTermValue` 与 `ParseBaseAndAccessoryPrice` 完美闭环兼容。
+  4. **编译校验**：
+     - 运行 `dotnet build` 编译通过，0 错误。
+
+- **落地 Excel 选中行联动 AutoCAD 夹点显示（单选/多选行支持 + 自动缩放视野 + 50ms 防抖 + Ribbon 切换开关）**：
+  1. **需求背景与目标**：
+     - 用户在 Excel 明细表或分类表中选中单行或多选连续/跨行时，自动提取所有覆盖行的 AA 列（第 27 列）CAD 文字句柄，通过轻量级命名管道向 AutoCAD 发送即时夹点高亮与自动对焦缩放通知；
+  2. **客户端与防抖控制 (`Services/CadSyncClient.cs`)**：
+     - 提供全局 `SyncToCadEnabled` 联动开关与 `AutoZoomEnabled` 自动视角缩放开关；
+     - 内置 50ms `System.Threading.Timer` 防抖调度器，在快速按键切换行时避免管道拥堵；
+     - 异步非阻塞发送至 `CadExcelHandleSyncPipe` 管道，超时 50ms 即焚，CAD 未开启时静默忽略不卡顿 Excel。
+  3. **选区事件捕获 (`ExcelEventManager.cs`)**：
+     - 在 `OnSheetSelectionChange` 中检测选区是否覆盖 C 列（或整行多选）：
+     - 批量循环遍历所选所有行，提取 AA 列全部句柄去重合并，并携带 `autoZoom=true` 调用 `CadSyncClient.SendHandlesDebounced` 发送。
+  4. **Ribbon 功能区切换按钮 (`RibbonController.cs`)**：
+     - 在辅助项分组中增加【⚡ 联动CAD】（`btnToggleCadSync`）大图标切换按钮，支持用户随时一键启停联动。
+
+- **汇总调价时提取首个元器件句柄至“元件汇总表” AA 列，并支持点击 C 列在 AutoCAD 中即时夹点高亮显示**：
+  1. **需求背景与目标**：
+     - 在执行“汇总调价”并生成“元件汇总表”时，打通汇总调价行与 AutoCAD 原图元之间的关联映射；
+     - 提取每个分组内首个有效元器件的 CAD 句柄并保存至“元件汇总表”的 AA 列（第 27 列）；
+     - 当工程师在“元件汇总表”中点击 C 列（原型号规格列）时，AutoCAD 自动平移缩放至对应图元并高亮显示原生蓝色夹点。
+  2. **代码实施 (`Services/ExcelServices.SummaryAdjustPrice.cs` & `ExcelEventManager.cs`)**：
+     - **聚合模型扩展**：在 `AggregatedComponent` 类中新增 `Handle` 属性；
+     - **读取范围扩展至 AA 列**：在 `GenerateComponentSummarySheet` 中将二维数组批量读取范围扩展至 `A{compStartRow}:AA{compEndRow}`（覆盖 27 列），并在逐行解析时提取 `valMatrix[r, 27]` 存入 `AggregatedComponent.Handle`；
+     - **提取首个有效句柄**：在 `GroupBy` 分组聚合返回实体时，通过 `g.Select(x => x.Handle).FirstOrDefault(h => !string.IsNullOrWhiteSpace(h))` 提取组内首个有效非空句柄；
+     - **批量写入汇总表 AA 列**：在写入 18 列数据矩阵后，构造 `handleMatrix` 并通过 `Range["AA...:AA..."].Value2 = handleMatrix` 一次性批量写入汇总表 AA 列；
+     - **C 列点击体验优化**：在 `ExcelEventManager.OnSheetSelectionChange` 中，当在“元件汇总表”中选中 C 列时，保持向 CAD 命名管道推送 AA 列句柄以激活夹点高亮与自动缩放，同时隐藏输入覆盖框，避免遮挡和影响用户查看图元。
+
+- **落地汇总调价【一键更新】反向同步更新至各分类表箱柜明细功能**：
+  1. **需求背景与目标**：
+     - 用户在【元件汇总表】中对各物料进行重新选型、添加配套附件、调整厂家品牌、报出系数、本体与附件价格及折扣后，点击【一键更新】按钮，将调价结果全自动精准反向同步更新至各个分类工作表中对应的箱柜明细区域中，并联动刷新整张报价表的公式计算体系。
+  2. **代码实施与架构设计 (`Services/ExcelServices.SummaryAdjustPrice.cs` & `Controllers/SummaryAdjustPriceController.cs` & `Resources/summary_adjust_price.html`)**：
+     - **数据提取与规则模型 (`SummaryAdjustItem`)**：从“元件汇总表”第 6 行起批量读入（A6:R{maxRow} 及 AA 列），提取元件名称、原型号规格、修改后的型号规格、厂家、报出系数、本体/附件表价与折扣、备注及 U 列原始型号；
+     - **智能公式构造与加权折扣计算**：
+       - 若包含附件表价（N 列 > 0 或为公式）：M 列自动组装为本体与附件连加公式（如 `=159.05+336.2*2`），N 列按本体与附件金额加权计算综合折扣并保留 2 位小数；
+       - 若无附件：M 列写入本体表价（数值或公式），N 列写入本体折扣；
+     - **全工作簿箱柜明细精准匹配与批量回写 (规则 6 & 规则 7)**：
+       - 遍历所有有效分类工作表，通过 `Tool.GetSheetValidCabinets` 定位箱柜元器件有效区域（`Cab_Det + 2` 至 `Cab_Subsum - 1`）；
+       - 采用 2D 数组一次性批量读入内存（覆盖 A~AA 共 27 列）；
+       - 依据 `名称 + 原型号`（或 U 列原始型号）精准匹配对应行，批量更新 C 列（型号）、D 列（厂家）、I 列（备注）、L 列（系数）、M 列（表价公式/数值）、N 列（折扣）；
+       - 若箱柜有更新，通过 2D 数组 `.Formula = matrix` 一次性批量写回工作表；
+     - **联动机制保障**：分类表明细行的销售单价(G)、销售总价(H)、成本单价(J)、成本总价(K)均由原自适应公式自动重算，箱柜小计(`Cab_Subsum`)、计费区域与顶部箱柜汇总行(`Cab_Sum`)全链路自动联动刷新；
+     - **前端交互与统计反馈**：更新完成后向前端回发包含更新分类表数、箱柜数及明细项数的统计报文，并通过 Element Plus 弹窗友好提示成功信息。
+  3. **编译校验**：
+     - 运行 `dotnet build /t:Compile` 编译通过，0 错误，严格遵循每 3 行包含一行中文注释规范。
+
+- **升级汇总调价【一键更新】中 N 列折扣公式格式为 `=ROUND((本体*折扣+附件*折扣)/总表价,2)` 样式**：
+  1. **需求定位**：
+     - 用户要求在一键更新回写分类明细表时，N 列（折扣）更新为形如 `=ROUND((159.05*0.5+736.2*1)/831.45,2)` 标准动态公式样式；
+  2. **代码实施 (`Services/ExcelServices.SummaryAdjustPrice.cs`)**：
+     - 在 `UpdateFromComponentSummarySheet` 中，当存在配套附件时（N 列 > 0 或为公式）：
+       - 提取本体项 `baseTerm = $"{baseExpr}*{baseDiscStr}"`（如 `159.05*0.5`）；
+       - 提取附件项 `accTerm = $"{accExpr}*{accDiscStr}"`（支持多附件拆分加项，如 `736.2*1` 或 `336.2*2*1`）；
+       - 计算总表价分母 `totalListPrice = basePrice + accPrice`（如 `831.45`）；
+       - 组合生成标准动态公式：`nColContent = $"=ROUND(({baseTerm}+{accTerm})/{totalListStr},2)"`；
+     - 与既有 `ParseBaseAndAccessoryDiscount` 解析逻辑完全对称兼容闭环。
+  3. **编译校验**：
+     - 运行 `dotnet build /t:Compile` 编译通过，0 警告，0 错误。
+
 ## [Completed]
 
+- 修复汇总调价【一键更新】中因公式字符串插值缺失 `$` 前缀导致 Excel COM 抛出“内存不足”的底层异常；
+- 汇总调价【一键更新】未勾选名称时覆盖 B 列名称，且无论何种条件均更新 E 列单位已全部落地；
+- 汇总调价【一键更新】基于汇总前配置（工作表范围过滤 + 多维合并条件精准对齐 + AB1 单元格配置持久化）已全部落地；
+- 汇总调价“合并条件”中“名称”复选框已改为可自由勾选与取消，后端 GroupBy 动态响应；
+- 汇总调价【一键更新】中 N 列折扣生成 `=ROUND((本体*折扣+附件*折扣)/总表价,2)` 样式动态公式已全部落地；
+- 汇总调价【一键更新】反向精准同步回写至各分类表箱柜明细并联动全表公式重算已全部落地；
+- 汇总调价时提取首个元器件句柄至“元件汇总表” AA 列并点击 C 列联动 AutoCAD 夹点高亮显示已全部落地；
 - 常规表中本体与附件在 M 列连加、汇总表中本体填 L 列附件填 N 列（多附件公式连接且不改动表格自带公式）已全部落地；
-- 明细表 N 列折扣支持 `ROUND(...)` 解析并统一保留 2 位小数。
+- 明细表 N 列折扣支持 `ROUND(...)` 解析并统一保留 2 位小数；
+- 配套附件数量入口及 `+附件型号*数量` 与 `+单价*数量` 公式联动回填全部落地；
+- Excel 选中行联动 AutoCAD 夹点显示（单选/多选行支持 + 自动视角居中缩放 + 命名管道 IPC + 50ms 防抖 + Ribbon 控制）已全部落地。
 
 ## [In-Progress]
 
-- 等待用户在 Excel 中实测验证。
+- 联机环境验证：在 Excel 中测试【一键更新】的反向同步与公式自动重算效果。
 
 ## [Next]
 
-- 在分类明细表 N 列填入 `=ROUND((159.05*1*0.5+336.2*1*1)/495.25 ,2)`，执行汇总调价，验证本体折扣 (0.50) 与附件折扣 (1.00) 是否准确解析并写入汇总表 M 列与 O 列。
-
-
-
+- 根据用户实际使用场景与反馈进行细节调优。

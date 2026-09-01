@@ -270,13 +270,23 @@
           </div>
           <span class="item-label">元器件数据管理...</span>
         </div>
+
+        <!-- 7. 辅材壳体计算快捷入口 -->
+        <div class="menu-item" id="item-6" data-action="openCabinetAuxCalc">
+          <div class="item-icon-wrap">
+            <!-- 仪表盘/计算 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12S6.48 22 12 22 22 17.52 22 12 17.52 2 12 2M12 20C7.59 20 4 16.41 4 12S7.59 4 12 4 20 7.59 20 12 16.41 20 12 20M13 7H11V13H17V11H13V7Z"/></svg>
+          </div>
+          <span class="item-label">辅材壳体计算...</span>
+          <span class="item-shortcut">智能算料</span>
+        </div>
       </div>
 
       <!-- 分割线 -->
       <div class="menu-divider"></div>
 
-      <!-- 7. 底部切换回 Excel 原生右键菜单按钮 -->
-      <div class="menu-item menu-item-switch" id="item-6" data-action="switchToNativeMenu">
+      <!-- 8. 底部切换回 Excel 原生右键菜单按钮 -->
+      <div class="menu-item menu-item-switch" id="item-7" data-action="switchToNativeMenu">
         <div class="item-icon-wrap">
           <!-- 左右双向箭头 SVG -->
           <svg viewBox="0 0 24 24"><path d="M8 7.5L3.5 12L8 16.5V13.5H15.5V16.5L20 12L15.5 7.5V10.5H8V7.5M16 11.5V9.9L18.1 12L16 14.1V12.5H7V14.1L4.9 12L7 9.9V11.5H16Z"/></svg>
@@ -291,8 +301,8 @@
     (function () {
       // 当前聚焦的菜单项索引
       let focusedIndex = 0;
-      // 菜单项总数 (0 到 6 共 7 项)
-      const totalItemsCount = 7;
+      // 菜单项总数 (0 到 7 共 8 项)
+      const totalItemsCount = 8;
       // 防重复点击锁
       let isActionProcessing = false;
 

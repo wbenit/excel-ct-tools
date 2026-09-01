@@ -719,29 +719,45 @@ namespace ExcelAddInDemo
                 // 根据前端指定的合并条件进行分组
                 var grouped = rawComponents.GroupBy(c =>
                 {
-                    // 默认按名称和型号合并
-                    string key = $"{c.Name}||{c.Model}";
+                    // 构建分组键片段列表
+                    var keyParts = new List<string>();
+                    // 按名称合并 (支持勾选与取消)
+                    if (mergeConditions.ByName)
+                    {
+                        keyParts.Add(c.Name);
+                    }
+                    // 按型号合并
+                    if (mergeConditions.ByModel)
+                    {
+                        keyParts.Add(c.Model);
+                    }
                     // 按厂家合并
                     if (mergeConditions.ByManufacturer)
                     {
-                        key += $"||{(mergeConditions.IncludeNoManufacturer && string.IsNullOrWhiteSpace(c.Manufacturer) ? "" : c.Manufacturer)}";
+                        keyParts.Add((mergeConditions.IncludeNoManufacturer && string.IsNullOrWhiteSpace(c.Manufacturer)) ? "" : c.Manufacturer);
                     }
                     // 按价格合并
                     if (mergeConditions.ByPrice)
                     {
-                        key += $"||{c.UnitPrice}";
+                        keyParts.Add(c.UnitPrice.ToString());
                     }
                     // 按备注合并
                     if (mergeConditions.ByRemark)
                     {
-                        key += $"||{c.Remark}";
+                        keyParts.Add(c.Remark);
                     }
                     // 按原图型号合并
                     if (mergeConditions.ByOriginalModel)
                     {
-                        key += $"||{c.OriginalModel}";
+                        keyParts.Add(c.OriginalModel);
                     }
-                    return key;
+                    // 兜底：若所有选项均未勾选，默认按型号分组
+                    if (keyParts.Count == 0)
+                    {
+                        keyParts.Add(c.Model);
+                    }
+                    // 拼接完整分组键
+                    return string.Join("||", keyParts);
                 }).Select(g =>
                 {
                     // 获取分组第一项
@@ -823,6 +839,18 @@ namespace ExcelAddInDemo
                 }
 
                 // 写入大标题 (扩展为覆盖 A1:R1 共 18 列)
+                // 持久化保存本次汇总的选表范围与合并条件配置至隐藏单元格 AB1 (供一键更新精准对齐)
+                try
+                {
+                    var buildConfig = new SummaryBuildConfig
+                    {
+                        SelectedSheets = request.SelectedSheets ?? new List<string>(),
+                        MergeConditions = request.MergeConditions ?? new Controllers.MergeConditionsDto()
+                    };
+                    string jsonConfig = System.Text.Json.JsonSerializer.Serialize(buildConfig);
+                    summarySheet.Range["AB1"].Value2 = jsonConfig;
+                }
+                catch { }
                 summarySheet.Cells[1, 1].Value = "元件汇总调价清单";
                 // 合并大标题区域
                 dynamic titleRange = summarySheet.Range["A1:R1"];
@@ -1103,19 +1131,98 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 一键更新：从“元件汇总表”将修改后的白色列（名称、型号、厂家、单价、备注等）反向同步更新至各分类表箱柜明细块（预留）
+        /// 一键更新同步操作结果实体模型
         /// </summary>
-        public static bool UpdateFromComponentSummarySheet()
+        /// <summary>
+        /// 汇总表构建与回写配置持久化模型
+        /// </summary>
+        public class SummaryBuildConfig
         {
+            // 参与汇总的分类表名称列表
+            public List<string> SelectedSheets { get; set; } = new List<string>();
+
+            // 汇总时的合并条件
+            public Controllers.MergeConditionsDto MergeConditions { get; set; } = new Controllers.MergeConditionsDto();
+        }
+
+        public class SummaryUpdateResult
+        {
+            // 是否成功
+            public bool Success { get; set; } = false;
+
+            // 结果提示消息
+            public string Message { get; set; } = string.Empty;
+
+            // 成功更新的分类工作表总数
+            public int UpdatedSheetCount { get; set; } = 0;
+
+            // 成功更新的箱柜总台数
+            public int UpdatedCabinetCount { get; set; } = 0;
+
+            // 成功更新的元器件明细项总数
+            public int UpdatedComponentCount { get; set; } = 0;
+        }
+
+        /// <summary>
+        /// 汇总调价反向同步单项数据模型
+        /// </summary>
+        private class SummaryAdjustItem
+        {
+            // 单位 (E 列)
+            public string Unit { get; set; } = string.Empty;
+            // 元件名称
+            public string Name { get; set; } = string.Empty;
+
+            // 原型号规格 (基准匹配键)
+            public string OriginalModel { get; set; } = string.Empty;
+
+            // 新型号规格 (D 列修改选型)
+            public string NewModel { get; set; } = string.Empty;
+
+            // 生产厂家
+            public string Manufacturer { get; set; } = string.Empty;
+
+            // 报出系数
+            public decimal MarkupFactor { get; set; } = 1.0m;
+
+            // 回写至分类表 M 列（表价）的内容（公式或数值）
+            public object MColContent { get; set; } = string.Empty;
+
+            // 回写至分类表 N 列（折扣）的内容（数值或公式）
+            public object NColContent { get; set; } = 1.0m;
+
+            // 备注说明
+            public string Remark { get; set; } = string.Empty;
+
+            // U 列原始型号字符串 (多项逗号拼接)
+            public string RawModelFromU { get; set; } = string.Empty;
+        }
+
+        /// <summary>
+        /// 一键更新：从“元件汇总表”将修改后的型号规格、厂家、报出系数、面价公式、折扣、备注等反向同步更新至各分类表箱柜明细块
+        /// </summary>
+        public static SummaryUpdateResult UpdateFromComponentSummarySheet()
+        {
+            // 初始化更新结果实体
+            var result = new SummaryUpdateResult();
+
             try
             {
                 // 获取当前活动 Excel Application 实例
                 dynamic? app = ExcelDnaSafeAccessor.GetApplication();
-                if (app == null) return false;
+                if (app == null)
+                {
+                    result.Message = "未检测到活动的 Excel 应用程序实例";
+                    return result;
+                }
 
                 // 获取当前活动工作簿
                 dynamic activeWb = app.ActiveWorkbook;
-                if (activeWb == null) return false;
+                if (activeWb == null)
+                {
+                    result.Message = "未检测到活动的 Excel 工作簿";
+                    return result;
+                }
 
                 // 目标汇总表名称 --硬编码--
                 string summarySheetName = "元件汇总表";
@@ -1129,20 +1236,445 @@ namespace ExcelAddInDemo
                 catch
                 {
                     // 未找到汇总表直接返回
+                    result.Message = "未找到【元件汇总表】工作表，无法执行一键更新";
                     LogHelper.WriteLog("未找到【元件汇总表】工作表，无法执行一键更新");
-                    return false;
+                    return result;
                 }
 
-                if (summarySheet == null) return false;
+                if (summarySheet == null)
+                {
+                    result.Message = "未找到【元件汇总表】工作表，无法执行一键更新";
+                    return result;
+                }
 
-                // 当前阶段返回成功，提示前端已就绪
-                return true;
+                // 1. 扫描读取【元件汇总表】中的所有调价数据项 (从第 6 行开始)
+                // 1.0 读取持久化存储在 AB1 单元格中的汇总配置 (选表范围与合并条件)
+                SummaryBuildConfig? buildConfig = null;
+                try
+                {
+                    object cfgVal = summarySheet.Range["AB1"].Value2;
+                    string cfgJson = Convert.ToString(cfgVal)?.Trim() ?? string.Empty;
+                    if (!string.IsNullOrEmpty(cfgJson) && cfgJson.StartsWith("{"))
+                    {
+                        buildConfig = System.Text.Json.JsonSerializer.Deserialize<SummaryBuildConfig>(cfgJson);
+                    }
+                }
+                catch { }
+
+                // 若未读到配置则采用默认安全配置
+                if (buildConfig == null)
+                {
+                    buildConfig = new SummaryBuildConfig();
+                }
+
+                int summaryUsedRows = 100;
+                try
+                {
+                    // 获取汇总表已用区域总行数
+                    summaryUsedRows = Convert.ToInt32(summarySheet.UsedRange.Rows.Count);
+                }
+                catch { }
+
+                // 汇总数据起始行
+                int startDataRow = 6;
+                // 数据读取最大截止行
+                int maxReadRow = Math.Max(summaryUsedRows + 5, 20);
+
+                // 一次性批量读取汇总表 A6:R{maxReadRow} 的值矩阵与公式矩阵 (规则 7)
+                dynamic summaryRange = summarySheet.Range[$"A{startDataRow}:R{maxReadRow}"];
+                object[,] summaryValMatrix = (object[,])summaryRange.Value2;
+                object[,] summaryFormulaMatrix = (object[,])summaryRange.Formula;
+
+                int rowCount = summaryValMatrix.GetLength(0);
+
+                // 内存调价规则列表
+                var adjustItems = new List<SummaryAdjustItem>();
+
+                for (int r = 1; r <= rowCount; r++)
+                {
+                    // B 列 (索引 2): 元件名称
+                    string name = Convert.ToString(summaryValMatrix[r, 2])?.Trim() ?? string.Empty;
+                    // 若名称包含“合计”或遇到连续空行则终止读取 --硬编码--
+                    if (name.Contains("合计"))
+                    {
+                        break;
+                    }
+
+                    // C 列 (索引 3): 原型号规格 (基准参考列)
+                    string origModel = Convert.ToString(summaryValMatrix[r, 3])?.Trim() ?? string.Empty;
+
+                    // 若名称与原型号均为空，跳过空行
+                    if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(origModel))
+                    {
+                        continue;
+                    }
+
+                    // D 列 (索引 4): 新型号规格 (工程师修改选型或追加附件后的内容)
+                    string newModel = Convert.ToString(summaryValMatrix[r, 4])?.Trim() ?? string.Empty;
+                    // E 列 (索引 5): 单位
+                    string unit = Convert.ToString(summaryValMatrix[r, 5])?.Trim() ?? string.Empty;
+
+                    // I 列 (索引 9): 生产厂家
+                    string mfr = Convert.ToString(summaryValMatrix[r, 9])?.Trim() ?? string.Empty;
+
+                    // K 列 (索引 11): 报出系数
+                    decimal markupFactor = 1.0m;
+                    if (decimal.TryParse(Convert.ToString(summaryValMatrix[r, 11]), out decimal mf) && mf > 0)
+                    {
+                        markupFactor = mf;
+                    }
+
+                    // L 列 (索引 12): 本体表价 (值与公式)
+                    object valL = summaryValMatrix[r, 12];
+                    object formulaL = summaryFormulaMatrix[r, 12];
+                    decimal basePrice = 0;
+                    if (decimal.TryParse(Convert.ToString(valL), out decimal bp)) basePrice = bp;
+
+                    // M 列 (索引 13): 本体折扣
+                    decimal baseDiscount = 1.0m;
+                    if (decimal.TryParse(Convert.ToString(summaryValMatrix[r, 13]), out decimal bd) && bd > 0) baseDiscount = bd;
+
+                    // N 列 (索引 14): 附件表价 (值与公式)
+                    object valN = summaryValMatrix[r, 14];
+                    object formulaN = summaryFormulaMatrix[r, 14];
+                    decimal accPrice = 0;
+                    if (decimal.TryParse(Convert.ToString(valN), out decimal ap)) accPrice = ap;
+
+                    // O 列 (索引 15): 附件折扣
+                    decimal accDiscount = 1.0m;
+                    if (decimal.TryParse(Convert.ToString(summaryValMatrix[r, 15]), out decimal ad) && ad > 0) accDiscount = ad;
+
+                    // P 列 (索引 16): 备注
+                    string remark = Convert.ToString(summaryValMatrix[r, 16])?.Trim() ?? string.Empty;
+
+                    // R 列 (索引 18): 原始型号 (U 列对应内容，全角逗号拼接)
+                    string rawModelU = Convert.ToString(summaryValMatrix[r, 18])?.Trim() ?? string.Empty;
+
+                    // 构造准备回写到分类表 M 列（表价）与 N 列（折扣）的内容
+                    object mColContent;
+                    object nColContent;
+
+                    // 判断是否存在有效附件表价
+                    string strFormulaN = Convert.ToString(formulaN)?.Trim() ?? string.Empty;
+                    bool hasAccessory = accPrice > 0 || (!string.IsNullOrEmpty(strFormulaN) && strFormulaN.StartsWith("="));
+
+                    if (hasAccessory)
+                    {
+                        // 1. 构建 M 列表价公式：本体表价 + 附件表价 (例如 =159.05+336.2*2)
+                        string baseExpr = basePrice > 0 ? basePrice.ToString("0.##") : "0";
+                        string strFormulaL = Convert.ToString(formulaL)?.Trim() ?? string.Empty;
+                        if (!string.IsNullOrEmpty(strFormulaL) && strFormulaL.StartsWith("="))
+                        {
+                            baseExpr = strFormulaL.TrimStart('=').Trim();
+                        }
+
+                        string accExpr = accPrice > 0 ? accPrice.ToString("0.##") : "0";
+                        if (!string.IsNullOrEmpty(strFormulaN) && strFormulaN.StartsWith("="))
+                        {
+                            accExpr = strFormulaN.TrimStart('=').Trim();
+                        }
+
+                        // 组合生成加法公式
+                        mColContent = $"={baseExpr}+{accExpr}";
+
+                        // 2. 构建 N 列折扣：生成 =ROUND(({本体表价}*{本体折扣}+{附件表价}*{附件折扣})/{总表价},2) 标准公式样式
+                        string baseDiscStr = baseDiscount.ToString("0.####");
+                        // 格式化附件折扣字符串
+                        string accDiscStr = accDiscount.ToString("0.####");
+                        // 计算本体与附件总表价 (分母)
+                        decimal totalListPrice = Math.Round(basePrice + accPrice, 2);
+                        // 格式化分母总表价字符串
+                        string totalListStr = totalListPrice > 0 ? totalListPrice.ToString("0.##") : "1";
+
+                        // 组装本体项 (例如 159.05*0.5)
+                        string baseTerm = $"{baseExpr}*{baseDiscStr}";
+                        string accTerm;
+                        // 若附件表达式包含多个加项 (如 150+80*2)
+                        if (accExpr.Contains("+"))
+                        {
+                            // 拆分多个加项并逐项追加附件折扣乘数
+                            string[] accParts = accExpr.Split('+');
+                            accTerm = string.Join("+", accParts.Select(p => $"{p.Trim()}*{accDiscStr}"));
+                        }
+                        else
+                        {
+                            // 单项附件乘上附件折扣 (如 736.2*1 或 336.2*2*1)
+                            accTerm = $"{accExpr}*{accDiscStr}";
+                        }
+
+                        // 组合生成完整的标准 ROUND 加权折扣公式
+                        nColContent = $"=ROUND(({baseTerm}+{accTerm})/{totalListStr},2)";
+                    }
+                    else
+                    {
+                        // 无附件时：直接写入本体表价与本体折扣
+                        string strFormulaL = Convert.ToString(formulaL)?.Trim() ?? string.Empty;
+                        if (!string.IsNullOrEmpty(strFormulaL) && strFormulaL.StartsWith("="))
+                        {
+                            mColContent = strFormulaL;
+                        }
+                        else
+                        {
+                            mColContent = basePrice > 0 ? (object)(double)basePrice : string.Empty;
+                        }
+
+                        nColContent = baseDiscount > 0 ? (object)(double)baseDiscount : 1;
+                    }
+
+                    // 添加至调价规则列表
+                    adjustItems.Add(new SummaryAdjustItem
+                    {
+                        Name = name,
+                        OriginalModel = origModel,
+                        NewModel = newModel,
+                        Unit = unit,
+                        Manufacturer = mfr,
+                        MarkupFactor = markupFactor,
+                        MColContent = mColContent,
+                        NColContent = nColContent,
+                        Remark = remark,
+                        RawModelFromU = rawModelU
+                    });
+                }
+
+                // 校验是否存在调价项
+                if (adjustItems.Count == 0)
+                {
+                    result.Message = "【元件汇总表】中未提取到有效的元器件调价数据";
+                    return result;
+                }
+
+                // 2. 准备遍历所有分类工作表执行反向回写
+                app.ScreenUpdating = false;
+                app.DisplayAlerts = false;
+                app.EnableEvents = false;
+
+                int updatedSheetCount = 0;
+                int updatedCabinetCount = 0;
+                int updatedComponentCount = 0;
+
+                try
+                {
+                    // 遍历工作簿中的所有工作表
+                    foreach (dynamic sheet in activeWb.Worksheets)
+                    {
+                        string sheetName = Convert.ToString(sheet.Name)?.Trim() ?? string.Empty;
+
+                        // 排除系统特殊表 --硬编码--
+                        if (string.Equals(sheetName, "项目信息", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(sheetName, "元件汇总表", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(sheetName, "元器件数据管理", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        // 核心：若配置指定了参与汇总的工作表列表，仅处理包含在列表中的工作表 (未选中的工作表保持原样)
+                        if (buildConfig.SelectedSheets != null && buildConfig.SelectedSheets.Count > 0)
+                        {
+                            if (!buildConfig.SelectedSheets.Contains(sheetName))
+                            {
+                                continue;
+                            }
+                        }
+
+                        // 获取当前分类表的有效箱柜锚点 (规则 6)
+                        var validCabinets = Tool.GetSheetValidCabinets(sheet, activeWb);
+                        if (validCabinets.Count == 0) continue;
+
+                        bool sheetModified = false;
+
+                        // 遍历各个箱柜
+                        foreach (var cab in validCabinets)
+                        {
+                            if (cab.Value.Det == null) continue;
+
+                            int detRow = Convert.ToInt32(cab.Value.Det.Row);
+                            int subsumRow = cab.Value.Subsum != null ? Convert.ToInt32(cab.Value.Subsum.Row) : detRow + 27;
+
+                            // 元器件起始行与终止行 (规则 6)
+                            int compStartRow = detRow + 2;
+                            int compEndRow = subsumRow - 1;
+                            if (compEndRow < compStartRow) continue;
+
+                            int cabinetRowCount = compEndRow - compStartRow + 1;
+
+                            // 采用 2D 数组一次性批量读入内存 (覆盖 A~AA 共 27 列，规则 7)
+                            dynamic compRange = sheet.Range[$"A{compStartRow}:AA{compEndRow}"];
+                            object[,] valMatrix = (object[,])compRange.Value2;
+                            object[,] formulaMatrix = (object[,])compRange.Formula;
+
+                            bool cabinetModified = false;
+
+                            // 遍历箱柜元器件每一行
+                            for (int r = 1; r <= cabinetRowCount; r++)
+                            {
+                                // B 列 (索引 2): 元件名称
+                                string cName = Convert.ToString(valMatrix[r, 2])?.Trim() ?? string.Empty;
+                                // C 列 (索引 3): 型号规格
+                                string cModel = Convert.ToString(valMatrix[r, 3])?.Trim() ?? string.Empty;
+
+                                // 跳过空行
+                                if (string.IsNullOrWhiteSpace(cName) && string.IsNullOrWhiteSpace(cModel))
+                                {
+                                    continue;
+                                }
+
+                                // U 列 (索引 21): 原始型号
+                                string cRawU = string.Empty;
+                                if (valMatrix.GetLength(1) >= 21)
+                                {
+                                    cRawU = Convert.ToString(valMatrix[r, 21])?.Trim() ?? string.Empty;
+                                }
+
+                                // 匹配汇总调价规则项：按原型号或 U列原始型号匹配
+                                // D 列 (索引 4): 生产厂家
+                                string cMfr = Convert.ToString(valMatrix[r, 4])?.Trim() ?? string.Empty;
+                                // I 列 (索引 9): 备注
+                                string cRemark = Convert.ToString(valMatrix[r, 9])?.Trim() ?? string.Empty;
+
+                                // 根据汇总时的合并条件进行精准多维度匹配
+                                var mergeCond = buildConfig.MergeConditions ?? new Controllers.MergeConditionsDto();
+                                var matchedItem = adjustItems.FirstOrDefault(item =>
+                                {
+                                    // 1. 型号基准比对 (支持原型号匹配或 U 列原始型号匹配)
+                                    bool modelMatched = string.Equals(item.OriginalModel, cModel, StringComparison.OrdinalIgnoreCase) ||
+                                        (!string.IsNullOrEmpty(cRawU) && !string.IsNullOrEmpty(item.RawModelFromU) && item.RawModelFromU.Contains(cRawU));
+                                    if (!modelMatched) return false;
+
+                                    // 2. 若汇总时勾选了【按名称合并】：要求名称必须一致
+                                    if (mergeCond.ByName)
+                                    {
+                                        if (!string.Equals(item.Name, cName, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            return false;
+                                        }
+                                    }
+
+                                    // 3. 若汇总时勾选了【按厂家合并】：要求厂家必须一致
+                                    if (mergeCond.ByManufacturer)
+                                    {
+                                        if (mergeCond.IncludeNoManufacturer && string.IsNullOrWhiteSpace(item.Manufacturer) && string.IsNullOrWhiteSpace(cMfr))
+                                        {
+                                            // 均为空厂家时视为匹配
+                                        }
+                                        else if (!string.Equals(item.Manufacturer, cMfr, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            return false;
+                                        }
+                                    }
+
+                                    // 4. 若汇总时勾选了【按备注合并】：要求备注一致
+                                    if (mergeCond.ByRemark)
+                                    {
+                                        if (!string.Equals(item.Remark, cRemark, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            return false;
+                                        }
+                                    }
+
+                                    // 5. 若汇总时勾选了【按原图型号合并】：要求 U 列原始型号匹配
+                                    if (mergeCond.ByOriginalModel)
+                                    {
+                                        if (!string.IsNullOrEmpty(cRawU) && !string.IsNullOrEmpty(item.RawModelFromU))
+                                        {
+                                            if (!item.RawModelFromU.Contains(cRawU))
+                                            {
+                                                return false;
+                                            }
+                                        }
+                                    }
+
+                                    return true;
+                                });
+                                if (matchedItem != null)
+                                {
+                                    // 0. 若合并条件不包含名称（取消名称勾选），连同名称一起覆盖更新至 B 列 (索引 2)
+                                    if (!mergeCond.ByName && !string.IsNullOrWhiteSpace(matchedItem.Name))
+                                    {
+                                        formulaMatrix[r, 2] = matchedItem.Name;
+                                    }
+
+                                    // 1. 若汇总表 D 列指定了新型号，则更新分类表 C 列 (索引 3)
+                                    if (!string.IsNullOrWhiteSpace(matchedItem.NewModel))
+                                    {
+                                        formulaMatrix[r, 3] = matchedItem.NewModel;
+                                    }
+
+                                    // 2. 更新生产厂家 D 列 (索引 4)
+                                    if (!string.IsNullOrWhiteSpace(matchedItem.Manufacturer))
+                                    {
+                                        formulaMatrix[r, 4] = matchedItem.Manufacturer;
+                                    }
+
+                                    // 3. 不管什么条件，更新单位 E 列 (索引 5)
+                                    if (!string.IsNullOrWhiteSpace(matchedItem.Unit))
+                                    {
+                                        formulaMatrix[r, 5] = matchedItem.Unit;
+                                    }
+
+                                    // 4. 更新备注 I 列 (索引 9)
+                                    formulaMatrix[r, 9] = matchedItem.Remark;
+
+                                    // 5. 更新报出系数 / 加价系数 L 列 (索引 12)
+                                    if (matchedItem.MarkupFactor > 0)
+                                    {
+                                        formulaMatrix[r, 12] = (double)matchedItem.MarkupFactor;
+                                    }
+
+                                    // 6. 更新表价 / 面价 M 列 (索引 13)
+                                    formulaMatrix[r, 13] = matchedItem.MColContent;
+
+                                    // 7. 更新折扣 N 列 (索引 14)
+                                    formulaMatrix[r, 14] = matchedItem.NColContent;
+
+                                    // 标记当前箱柜已修改
+                                    cabinetModified = true;
+                                    updatedComponentCount++;
+                                }
+                            }
+
+                            // 若箱柜有更新，一次性批量回写 2D 矩阵 (规则 7)
+                            if (cabinetModified)
+                            {
+                                compRange.Formula = formulaMatrix;
+                                updatedCabinetCount++;
+                                sheetModified = true;
+                            }
+                        }
+
+                        // 若分类表有修改则递增计数
+                        if (sheetModified)
+                        {
+                            updatedSheetCount++;
+                        }
+                    }
+                }
+                finally
+                {
+                    // 恢复屏幕刷新、警告与系统事件
+                    app.ScreenUpdating = true;
+                    app.DisplayAlerts = true;
+                    app.EnableEvents = true;
+                }
+
+                // 组装成功结果报文
+                result.Success = true;
+                result.UpdatedSheetCount = updatedSheetCount;
+                result.UpdatedCabinetCount = updatedCabinetCount;
+                result.UpdatedComponentCount = updatedComponentCount;
+                result.Message = "一键更新成功：共同步 " + updatedSheetCount + " 个分类表、" + updatedCabinetCount + " 台箱柜、" + updatedComponentCount + " 项元器件明细！";
+
+                // 记录成功日志
+                LogHelper.WriteLog(result.Message);
+                return result;
             }
             catch (Exception ex)
             {
                 // 记录异常日志
                 LogHelper.WriteLog($"UpdateFromComponentSummarySheet 异常: {ex.Message}");
-                return false;
+                result.Success = false;
+                result.Message = $"一键更新遇到异常: {ex.Message}";
+                return result;
             }
         }
 

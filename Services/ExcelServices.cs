@@ -64,6 +64,9 @@ namespace ExcelAddInDemo
         // 企业设置窗口静态单例引用 (可空)
         private static EnterpriseSettingsForm? _enterpriseSettingsForm;
 
+        // 智能辅材与壳体计算窗口静态单例引用 (可空)
+        private static Forms.CabinetAuxCalcForm? _cabinetAuxCalcForm;
+
         /// <summary>
         /// 安全展示非模态窗体，保证弹出时 Excel 依然处于可编辑交互状态
         /// </summary>
@@ -221,6 +224,23 @@ namespace ExcelAddInDemo
                 selection.Interior.Color = ColorTranslator.ToOle(Color.FromArgb(204, 229, 255));
                 // 设置字体颜色为深蓝色以增强视效
                 selection.Font.Color = ColorTranslator.ToOle(Color.FromArgb(0, 51, 102));
+            }
+        }
+
+        /// <summary>
+        /// 启动并弹出基于 WebView2 + Vue 3 的“智能辅材与壳体计算”窗口 (非模态，可编辑 Excel)
+        /// </summary>
+        public static void ShowCabinetAuxCalcDialog()
+        {
+            try
+            {
+                // 以非模态方式展示辅材壳体计算窗口，保持 Excel 处于可交互编辑状态
+                ShowModelessForm(ref _cabinetAuxCalcForm, () => new Forms.CabinetAuxCalcForm());
+            }
+            catch (Exception ex)
+            {
+                // 捕获异常防止程序闪退
+                System.Windows.Forms.MessageBox.Show($"弹出智能辅材与壳体计算窗口失败: {ex.Message}", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
             }
         }
 

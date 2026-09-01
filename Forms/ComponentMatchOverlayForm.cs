@@ -280,15 +280,24 @@ namespace ExcelAddInDemo.Forms
                         });
                         break;
 
-                    // 3.2 用户选定配套附件 -> 拼接型号并累加价格公式
+                    // 3.2 用户选定配套附件 -> 拼接型号并累加价格公式（支持数量）
                     case "selectAttachment":
                         if (root.TryGetProperty("item", out var attachItemProp))
                         {
+                            // 反序列化选中的附件 DTO
                             var selectedAttach = JsonSerializer.Deserialize<ComponentApiDto>(attachItemProp.GetRawText(), JsonOptions);
+                            // 提取前端传入的附件数量，若未传递或小于 1 则默认为 1
+                            int quantity = 1;
+                            if (root.TryGetProperty("quantity", out var qtyProp) && qtyProp.TryGetInt32(out int q))
+                            {
+                                // 限制数量必须为正整数
+                                quantity = q > 0 ? q : 1;
+                            }
+
                             if (selectedAttach != null && _targetCell != null)
                             {
-                                // 调用业务服务层执行“原内容+附件型号”和“=价格+附件价格”回填
-                                ExcelServices.FillSelectedAttachmentToActiveRow(selectedAttach, _targetCell);
+                                // 调用业务服务层执行“原内容+附件型号*数量”和“=价格+附件单价*数量”回填
+                                ExcelServices.FillSelectedAttachmentToActiveRow(selectedAttach, _targetCell, quantity);
                             }
                         }
                         // 回填完成后平滑隐藏下拉窗

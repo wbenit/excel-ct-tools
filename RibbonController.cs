@@ -165,6 +165,8 @@ namespace ExcelAddInDemo
               <button id='btnMultiPlanQuoteSub' label='多方案报价' onAction='OnMenuAction' />
             </menu>
           </menu>
+          <!-- 智能算料/辅材壳体计算 按钮 (大图标直达) -->
+          <button id='btnCabinetAuxCalc' label='辅材壳体计算' imageMso='CalculateNow' size='large' screentip='辅材壳体与配电智能计算' supertip='智能推导匹配壳体尺寸、计算铜排母线用量、一次及二次接线辅材与装配人工费，支持全参数动态配置' onAction='OnMenuAction' />
           <!-- 费用设定下拉菜单 -->
           <menu id='menuFeeSetting' label='费用设定' imageMso='Currency' size='large'>
             <!-- 1. 公式法调费按钮 (对应图二样式与提示) -->
@@ -203,6 +205,8 @@ namespace ExcelAddInDemo
         </group>
         <!-- 辅助项 功能分组 -->
         <group id='grpAuxiliary' label='辅助项'>
+          <!-- 联动CAD夹点显示切换按钮 -->
+          <toggleButton id='btnToggleCadSync' label='联动CAD' imageMso='SelectionPane' size='large' getPressed='GetCadSyncPressed' onAction='OnCadSyncAction' screentip='联动AutoCAD夹点' supertip='选中行时自动读取AA列句柄，在AutoCAD中即时高亮并激活夹点显示' />
           <!-- 右键菜单模式切换按钮 -->
           <button id='btnToggleContextMenuMode' label='右键菜单模式' imageMso='ControlsGallery' size='large' screentip='切换右键菜单模式' supertip='在【业务专属菜单】与【Excel 原生右键菜单】之间彻底二选一切换' onAction='OnMenuAction' />
           <!-- 项目工具下拉菜单 -->
@@ -229,6 +233,24 @@ namespace ExcelAddInDemo
     </tabs>
   </ribbon>
 </customUI>";
+        }
+
+        /// <summary>
+        /// 切换按钮状态获取回调：读取是否开启与 AutoCAD 夹点联动
+        /// </summary>
+        public bool GetCadSyncPressed(IRibbonControl control)
+        {
+            // 读取 CadSyncClient 中的联动开关状态
+            return Services.CadSyncClient.SyncToCadEnabled;
+        }
+
+        /// <summary>
+        /// 切换按钮点击回调：切换与 AutoCAD 夹点联动开关
+        /// </summary>
+        public void OnCadSyncAction(IRibbonControl control, bool isPressed)
+        {
+            // 将用户最新切换的状态同步至 CadSyncClient
+            Services.CadSyncClient.SyncToCadEnabled = isPressed;
         }
 
         /// <summary>
@@ -382,6 +404,12 @@ namespace ExcelAddInDemo
             {
                 // 弹出基于 WebView2 + Vue 3 的“元器件数据管理”悬浮窗口
                 ExcelServices.ShowComponentManageDialog();
+            }
+            // 响应“智能辅材壳体计算”/“智能算料”/“箱体尺寸预估”按钮指令
+            else if (controlId == "btnCabinetAuxCalc" || controlId == "btnSmartMaterial" || controlId == "btnEstimateCabinetSizeSub")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“智能辅材与壳体计算”工作台
+                ExcelServices.ShowCabinetAuxCalcDialog();
             }
             // 响应“切换右键菜单模式”按钮指令
             else if (controlId == "btnToggleContextMenuMode")

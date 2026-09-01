@@ -105,18 +105,79 @@ namespace ExcelAddInDemo
                 // 校验目标单元格与全局 Application
                 if (target == null || _excelApp == null) return;
 
-                // 若选中的是单个单元格
+                // 1. 判断选区是否包含 C 列 (第 3 列: 规格型号) 或选中了整行
+                int startCol = target.Column;
+                int endCol = startCol + target.Columns.Count - 1;
+                bool containsColumnC = (3 >= startCol && 3 <= endCol);
+
+                // 若选区包含 C 列且开启了 CAD 联动：提取选区内所有行的 AA 列 (第 27 列) 句柄并防抖推送
+                if (containsColumnC && Services.CadSyncClient.SyncToCadEnabled)
+                {
+                    try
+                    {
+                        // 获取当前工作表引用
+                        var ws = (shObj as Microsoft.Office.Interop.Excel.Worksheet) ?? target.Worksheet;
+                        if (ws != null)
+                        {
+                            int startRow = target.Row;
+                            int endRow = startRow + target.Rows.Count - 1;
+                            // 限制单次最大多选行数上限（300 行），防止误选全表引起额外开销
+                            if (target.Rows.Count > 50) endRow = startRow + 49;
+
+                            List<string> handleList = new List<string>();
+
+                            // 遍历所选的所有行
+                            for (int r = startRow; r <= endRow; r++)
+                            {
+                                // 读取 AA 列 (第 27 列) 的句柄字符串
+                                string rawHandles = Convert.ToString(ws.Range[$"AA{r}"].Value2)?.Trim() ?? string.Empty;
+                                if (!string.IsNullOrEmpty(rawHandles))
+                                {
+                                    // 兼容两级分隔符（逗号“,”与连字符“-”）进行拆分提取
+                                    string[] parts = rawHandles.Split(new[] { ',', ';', '-', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                                    foreach (var p in parts)
+                                    {
+                                        string cleanP = p.Trim();
+                                        if (!string.IsNullOrEmpty(cleanP) && !handleList.Contains(cleanP))
+                                        {
+                                            handleList.Add(cleanP);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 带有 50ms 防抖与自动缩放视角（autoZoom=true）推送至 CAD 管道
+                            Services.CadSyncClient.SendHandlesDebounced(handleList, true);
+                        }
+                    }
+                    catch { }
+                }
+
+                // 2. 处理 UI 浮窗交互：若选中的是单个单元格
                 if (target.Rows.Count == 1 && target.Columns.Count == 1)
                 {
                     int col = target.Column;
 
-                    // 1. 若选中的是 C 列 (第 3 列: 规格型号) -> 激活智能输入覆盖框
+                    // 2.1 若选中的是 C 列 (第 3 列: 规格型号 / 元件汇总表原型号规格)
                     if (col == 3)
                     {
+                        // 隐藏物料智能联想下拉浮窗
                         ExcelServices.HideComponentMatchOverlay();
-                        ExcelServices.ShuRu(target);
+                        // 获取当前工作表名称
+                        string curSheetName = (shObj as Microsoft.Office.Interop.Excel.Worksheet)?.Name ?? target.Worksheet?.Name ?? string.Empty;
+                        // 仅在非“元件汇总表”的普通分类表中激活智能输入覆盖框 (元件汇总表 C 列专用于基准查看与 CAD 夹点联动)
+                        if (curSheetName != ComponentMatchDefaults.ComponentSummarySheetName)
+                        {
+                            // 弹出智能输入覆盖框
+                            ExcelServices.ShuRu(target);
+                        }
+                        else
+                        {
+                            // 在元件汇总表中隐藏智能输入覆盖框，确保纯粹的 CAD 夹点联动体验
+                            ExcelServices.HideSmartInputOverlay();
+                        }
                     }
-                    // 2. 若选中的是 D 列 (第 4 列: 规格型号/点击查询) -> 检查是否在“元件汇总表”中并触发物料智能联想下拉
+                    // 2.2 若选中的是 D 列 (第 4 列: 规格型号/点击查询) -> 检查是否在“元件汇总表”中并触发物料智能联想下拉
                     else if (col == 4)
                     {
                         // 隐藏智能输入覆盖框

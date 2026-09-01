@@ -146,6 +146,80 @@
       font-weight: 600;
     }
 
+    /* 附件数量控制器与角标样式 */
+    .qty-controller {
+      display: inline-flex;
+      align-items: center;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      padding: 1px 4px;
+      gap: 2px;
+      height: 22px;
+      box-sizing: border-box;
+    }
+
+    .qty-btn {
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 2px;
+      font-size: 12px;
+      font-weight: bold;
+      color: #334155;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+      transition: all 0.1s ease;
+    }
+
+    .qty-btn:hover:not(:disabled) {
+      background: #009688;
+      color: #ffffff;
+      border-color: #009688;
+    }
+
+    .qty-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .qty-input {
+      width: 28px;
+      height: 16px;
+      border: none;
+      text-align: center;
+      font-size: 11px;
+      font-weight: bold;
+      color: #0f172a;
+      outline: none;
+      background: transparent;
+      -moz-appearance: textfield;
+    }
+
+    .qty-input::-webkit-outer-spin-button,
+    .qty-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    .qty-badge {
+      display: inline-block;
+      background: #ffedd5;
+      color: #c2410c;
+      border: 1px solid #fed7aa;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 0 4px;
+      border-radius: 3px;
+      margin-left: 4px;
+      line-height: 14px;
+    }
+
     /* 底部提示栏 */
     .footer-bar {
       height: 28px;
@@ -194,7 +268,7 @@
 
       <!-- 管道约束与模式切换栏 -->
       <div class="pipeline-tags" style="justify-content: space-between;">
-        <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap; flex: 1;">
+        <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap; flex: 1; min-width: 0;">
           <template v-if="!isAttachmentMode">
             <span style="color: #64748b;">过滤管道:</span>
             <span class="pipeline-badge">品牌: {{ filterBrand || '全部' }}</span>
@@ -207,15 +281,47 @@
             </span>
           </template>
           <template v-else>
-            <span style="color: #009688; font-weight: 600;">配套附件:</span>
-            <span class="pipeline-badge" style="background: #fef3c7; color: #b45309;">主体: {{ cellParams.name }} {{ cellParams.currentModel || '当前行物料' }}</span>
+            <span style="color: #009688; font-weight: 600; flex-shrink: 0;">配套附件:</span>
+            <span class="pipeline-badge" style="background: #fef3c7; color: #b45309; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="(cellParams.name || '') + ' ' + (cellParams.currentModel || '当前行物料')">
+              主体: {{ cellParams.name }} {{ cellParams.currentModel || '当前行物料' }}
+            </span>
           </template>
         </div>
 
-        <!-- 附件切换操作按钮 (位于箭头所指位置) -->
-        <div style="display: flex; gap: 4px; align-items: center;">
+        <!-- 附件切换与数量操作控制区 -->
+        <div style="display: flex; gap: 6px; align-items: center; flex-shrink: 0;">
+          <template v-if="isAttachmentMode">
+            <!-- 附件数量入口 -->
+            <div class="qty-controller" title="选定附件的添加数量">
+              <span style="font-size: 11px; color: #475569; font-weight: 600; margin-right: 2px;">数量:</span>
+              <button type="button" class="qty-btn" @click.stop="decrementQty" :disabled="attachmentQuantity <= 1" title="减少数量">-</button>
+              <input 
+                type="number" 
+                v-model.number="attachmentQuantity" 
+                min="1" 
+                max="99" 
+                class="qty-input"
+                @input="onQtyInput"
+                @keydown.stop
+                @click.stop
+              />
+              <button type="button" class="qty-btn" @click.stop="incrementQty" :disabled="attachmentQuantity >= 99" title="增加数量">+</button>
+            </div>
+
+            <el-button 
+              size="small" 
+              type="info" 
+              plain 
+              @click="switchToNormalMode"
+              style="height: 22px; padding: 0 8px; font-size: 11px;"
+            >
+              <i class="fa-solid fa-arrow-left" style="margin-right: 4px;"></i>
+              返回物料
+            </el-button>
+          </template>
+
           <el-button 
-            v-if="!isAttachmentMode"
+            v-else 
             size="small" 
             type="success" 
             plain 
@@ -225,18 +331,6 @@
           >
             <i class="fa-solid fa-puzzle-piece" style="margin-right: 4px;"></i>
             配套附件
-          </el-button>
-
-          <el-button 
-            v-else 
-            size="small" 
-            type="info" 
-            plain 
-            @click="switchToNormalMode"
-            style="height: 22px; padding: 0 8px; font-size: 11px;"
-          >
-            <i class="fa-solid fa-arrow-left" style="margin-right: 4px;"></i>
-            返回物料
           </el-button>
         </div>
       </div>
@@ -267,8 +361,22 @@
             <span class="item-model">
               <span v-if="isAttachmentMode" style="color: #009688; font-weight: 700; margin-right: 4px;">[附件]</span>
               {{ item.model }}
+              <!-- 附件数量提示徽标 -->
+              <span v-if="isAttachmentMode && attachmentQuantity > 1" class="qty-badge" title="选定添加数量">
+                ×{{ attachmentQuantity }}
+              </span>
             </span>
-            <span class="item-price">¥{{ item.price ? Number(item.price).toFixed(2) : '0.00' }}</span>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span class="item-price">
+                <template v-if="isAttachmentMode && attachmentQuantity > 1">
+                  <span style="font-size: 10px; color: #94a3b8; font-weight: normal; margin-right: 2px;">(¥{{ item.price ? Number(item.price).toFixed(2) : '0.00' }} × {{ attachmentQuantity }})</span>
+                  ¥{{ item.price ? (Number(item.price) * attachmentQuantity).toFixed(2) : '0.00' }}
+                </template>
+                <template v-else>
+                  ¥{{ item.price ? Number(item.price).toFixed(2) : '0.00' }}
+                </template>
+              </span>
+            </div>
           </div>
           <div class="item-row-bottom">
             <span class="brand-tag">{{ item.brand || '标准' }}</span>
@@ -289,7 +397,7 @@
       </span>
       <span>
         <template v-if="isAttachmentMode">
-          [点击选择] 型号自动拼接 "+" / 单价公式自动累加
+          [点击/回车] 自动拼接 <strong style="color: #009688;">+附件{{ attachmentQuantity > 1 ? '*' + attachmentQuantity : '' }}</strong> 并累加单价公式
         </template>
         <template v-else>
           [↑/↓] 切换 | [Enter] 确认回填 | [Esc] 退出
@@ -319,6 +427,9 @@
         // 暂存常规物料列表，供切回时秒级还原
         const normalModeItems = ref([]);
 
+        // 附件选定添加数量 (默认 1)
+        const attachmentQuantity = ref(1);
+
         // 上下文参数 (由 C# 传入)
         const cellParams = ref({
           name: '',
@@ -338,6 +449,32 @@
         const postToHost = (action, payload = {}) => {
           if (window.chrome && window.chrome.webview) {
             window.chrome.webview.postMessage(JSON.stringify({ action, ...payload }));
+          }
+        };
+
+        // 数量步进递增
+        const incrementQty = () => {
+          if (attachmentQuantity.value < 99) {
+            attachmentQuantity.value++;
+          }
+        };
+
+        // 数量步进递减
+        const decrementQty = () => {
+          if (attachmentQuantity.value > 1) {
+            attachmentQuantity.value--;
+          }
+        };
+
+        // 数量输入边界校验
+        const onQtyInput = () => {
+          let val = parseInt(attachmentQuantity.value, 10);
+          if (isNaN(val) || val < 1) {
+            attachmentQuantity.value = 1;
+          } else if (val > 99) {
+            attachmentQuantity.value = 99;
+          } else {
+            attachmentQuantity.value = val;
           }
         };
 
@@ -362,6 +499,7 @@
           loading.value = true;
           searchKeyword.value = '';
           selectedIndex.value = 0;
+          attachmentQuantity.value = 1;
           postToHost('getAttachments');
         };
 
@@ -395,6 +533,7 @@
               normalModeItems.value = msg.items || [];
               selectedIndex.value = 0;
               searchKeyword.value = '';
+              attachmentQuantity.value = 1;
               if (msg.cellParams) cellParams.value = msg.cellParams;
               if (msg.filterBrand !== undefined) filterBrand.value = msg.filterBrand;
               if (msg.activeMustRules) activeMustRules.value = msg.activeMustRules;
@@ -479,10 +618,11 @@
           }
         };
 
-        // 点击某一条：若为附件模式则派发 selectAttachment，若为常规模式则派发 selectComponent
+        // 点击某一条：若为附件模式则派发 selectAttachment（含数量），若为常规模式则派发 selectComponent
         const selectItem = (item) => {
           if (isAttachmentMode.value) {
-            postToHost('selectAttachment', { item });
+            const qty = Math.max(1, parseInt(attachmentQuantity.value, 10) || 1);
+            postToHost('selectAttachment', { item, quantity: qty });
           } else {
             postToHost('selectComponent', { item });
           }
@@ -505,9 +645,13 @@
           selectedIndex,
           loading,
           isAttachmentMode,
+          attachmentQuantity,
           cellParams,
           filterBrand,
           activeMustRules,
+          incrementQty,
+          decrementQty,
+          onQtyInput,
           switchToAttachmentMode,
           switchToNormalMode,
           onSearchInput,

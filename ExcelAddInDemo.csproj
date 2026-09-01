@@ -89,6 +89,10 @@
     <None Include="Resources\component_manage.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将辅材壳体计算前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\cabinet_aux_calc.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将公共主题样式 CSS 文件复制至构建输出路径中 -->
     <None Include="Resources\theme.css">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

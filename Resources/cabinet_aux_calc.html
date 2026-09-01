@@ -1,0 +1,1141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智能辅材与壳体计算中心</title>
+
+  <!-- 引入本地基础样式库 -->
+  <link rel="stylesheet" href="theme.css">
+  <!-- 引入 Element Plus 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus@2.4.4/dist/index.css">
+
+  <!-- 引入 Vue 3 与 Element Plus 核心脚本 -->
+  <script src="https://unpkg.com/vue@3.3.11/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.min.js"></script>
+
+  <style>
+    /* 全局重置与基础主题 (纯净扁平无阴影设计) */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body {
+      background-color: #f1f5f9;
+      color: #1e293b;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background-color: #ffffff;
+      border: 1px solid #cbd5e1;
+      box-shadow: none !important;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    /* 顶部标题栏 */
+    .window-header {
+      height: 42px;
+      background: #009688;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      cursor: move;
+      flex-shrink: 0;
+      border-bottom: 1px solid #00796b;
+    }
+
+    .window-title-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    /* 顶部视图导航切换卡 */
+    .nav-tabs-box {
+      display: flex;
+      background: rgba(0, 0, 0, 0.12);
+      border-radius: 4px;
+      padding: 2px;
+      gap: 4px;
+    }
+
+    .nav-tab-item {
+      padding: 4px 16px;
+      font-size: 12px;
+      border-radius: 3px;
+      cursor: pointer;
+      color: #e0f2f1;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .nav-tab-item:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .nav-tab-item.active {
+      background: #ffffff;
+      color: #00796b;
+      font-weight: 600;
+      box-shadow: none !important;
+    }
+
+    /* 窗口控制按钮 */
+    .window-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .win-btn {
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 3px;
+      cursor: pointer;
+      color: #ffffff;
+      transition: background-color 0.15s;
+    }
+
+    .win-btn:hover {
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .win-btn.close:hover {
+      background-color: #ef4444;
+    }
+
+    /* 主内容区 */
+    .main-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 14px;
+      background-color: #f8fafc;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* 扁平无阴影配置卡片 */
+    .cfg-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      padding: 12px 14px;
+      box-shadow: none !important;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .cfg-card-header {
+      font-size: 13px;
+      font-weight: 600;
+      color: #0f766e;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #f1f5f9;
+      padding-bottom: 8px;
+    }
+
+    /* 参数表单标准栅格布局 (防止任何文字输入框重叠) */
+    .param-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px 24px;
+    }
+
+    .param-grid.three-col {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .param-row-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .param-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: #334155;
+      min-width: 125px;
+      flex-shrink: 0;
+      text-align: right;
+    }
+
+    .param-unit {
+      font-size: 12px;
+      color: #64748b;
+      flex-shrink: 0;
+      margin-left: 2px;
+    }
+
+    /* 公式提示微卡片 */
+    .formula-hint-box {
+      background: #f0fdfa;
+      border: 1px solid #ccfbf1;
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: #0f766e;
+      line-height: 1.6;
+    }
+
+    /* 扁平无阴影通用按钮 */
+    .btn-flat {
+      background-color: #009688;
+      border: 1px solid #009688;
+      color: #ffffff;
+      font-weight: 500;
+      border-radius: 3px;
+      padding: 5px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      box-shadow: none !important;
+      transition: all 0.15s;
+    }
+
+    .btn-flat:hover {
+      background-color: #00796b;
+      border-color: #00796b;
+    }
+
+    /* 结果展示卡片网格 */
+    .results-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .result-card {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      box-shadow: none !important;
+      transition: border-color 0.15s;
+    }
+
+    .result-card.highlight {
+      background: #f0fdfa;
+      border-color: #5eead4;
+    }
+
+    .result-card-title {
+      font-size: 12px;
+      color: #475569;
+      font-weight: 600;
+    }
+
+    .result-card-val {
+      font-size: 16px;
+      font-weight: 700;
+      color: #00796b;
+      word-break: break-all;
+    }
+
+    .result-card-desc {
+      font-size: 11px;
+      color: #64748b;
+      line-height: 1.3;
+    }
+
+    /* 底部操作栏 (纯净扁平) */
+    .footer-bar {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      background-color: #ffffff;
+      border-top: 1px solid #e2e8f0;
+      flex-shrink: 0;
+    }
+
+    /* Element Plus 扁平无阴影微调 */
+    .el-button {
+      box-shadow: none !important;
+      border-radius: 3px !important;
+    }
+
+    .el-button--primary:not(.is-link) {
+      background-color: #009688 !important;
+      border-color: #009688 !important;
+      color: #ffffff !important;
+    }
+
+    .el-button--primary:not(.is-link):hover {
+      background-color: #00796b !important;
+      border-color: #00796b !important;
+    }
+
+    .el-tabs__item.is-active {
+      color: #009688 !important;
+      font-weight: 600;
+    }
+
+    .el-tabs__active-bar {
+      background-color: #009688 !important;
+    }
+
+    .el-table {
+      box-shadow: none !important;
+      border-radius: 3px;
+    }
+
+    .el-input-number.is-controls-right .el-input-number__increase,
+    .el-input-number.is-controls-right .el-input-number__decrease {
+      border-color: #e2e8f0;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app">
+    <!-- 顶部标题栏 -->
+    <div class="window-header" @mousedown="onHeaderMouseDown">
+      <div class="window-title-box">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="3" y1="9" x2="21" y2="9"></line>
+          <line x1="9" y1="21" x2="9" y2="9"></line>
+        </svg>
+        <span>智能辅材与壳体计算中心</span>
+      </div>
+
+      <!-- 视图切换选项卡 -->
+      <div class="nav-tabs-box" @mousedown.stop>
+        <div class="nav-tab-item" :class="{ active: currentTab === 'calc' }" @click="currentTab = 'calc'">
+          📊 智能推导与回写
+        </div>
+        <div class="nav-tab-item" :class="{ active: currentTab === 'rules' }" @click="currentTab = 'rules'">
+          ⚙️ 规则与定额配置
+        </div>
+      </div>
+
+      <!-- 窗口控制按钮 -->
+      <div class="window-actions" @mousedown.stop>
+        <div class="win-btn" title="刷新上下文" @click="onRefreshContext">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+        </div>
+        <div class="win-btn close" title="关闭" @click="closeWindow">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主体区域：视图 1 【智能推导与回写】 -->
+    <div class="main-body" v-show="currentTab === 'calc'">
+      <!-- 控制面板卡片 -->
+      <div class="cfg-card">
+        <div class="cfg-card-header">
+          <span>🎯 箱柜范围选择与实时参数</span>
+        </div>
+        <div class="param-grid three-col">
+          <div class="param-row-item">
+            <span class="param-label">目标分类表:</span>
+            <el-select v-model="selectedSheet" placeholder="选择工作表" size="small" style="width: 140px;" @change="onSheetChange">
+              <el-option v-for="name in sheetNames" :key="name" :label="name" :value="name"></el-option>
+            </el-select>
+          </div>
+
+          <div class="param-row-item">
+            <span class="param-label">计算范围:</span>
+            <el-radio-group v-model="calcScope" size="small">
+              <el-radio-button label="single">单台箱柜</el-radio-button>
+              <el-radio-button label="all">整表全部箱柜</el-radio-button>
+            </el-radio-group>
+          </div>
+
+          <div class="param-row-item" v-if="calcScope === 'single'">
+            <span class="param-label">选择箱柜:</span>
+            <el-select v-model="selectedCabinetDet" placeholder="选择箱柜" size="small" style="width: 150px;" @change="onAnalyze">
+              <el-option v-for="cab in cabinets" :key="cab.detName" :label="cab.cabinetName + ' (' + cab.detName + ')'" :value="cab.detName"></el-option>
+            </el-select>
+          </div>
+
+          <div class="param-row-item">
+            <span class="param-label">加点系数 (xishu):</span>
+            <el-input-number v-model="rules.general.elementMarkupRatio" :step="0.05" :min="0.1" :max="5" size="small" style="width: 110px;" @change="onAnalyze"></el-input-number>
+          </div>
+
+          <div class="param-row-item">
+            <span class="param-label">铜排价格:</span>
+            <el-input-number v-model="rules.general.copperPricePerKg" :step="1" :min="10" :max="200" size="small" style="width: 110px;" @change="onAnalyze"></el-input-number>
+            <span class="param-unit">元/KG</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 推导结果预览卡片 -->
+      <div class="cfg-card" style="flex: 1; overflow-y: auto;">
+        <div class="cfg-card-header">
+          <span>📊 智能推导分析预览 ({{ selectedCabinetDet ? selectedCabinetDet : '全部箱柜' }})</span>
+          <button type="button" class="btn-flat" @click="onAnalyze">🔍 重新分析</button>
+        </div>
+
+        <div v-if="calcResult" class="results-grid" style="margin-top: 2px;">
+          <!-- 壳体卡片 -->
+          <div class="result-card highlight">
+            <div class="result-card-title">① 壳体推荐尺寸</div>
+            <div class="result-card-val">{{ calcResult.recommendedShellSize || '未推导' }}</div>
+            <div class="result-card-desc">
+              类型: {{ calcResult.isCabinet ? '落地柜体' : '配电箱体' }} | {{ calcResult.shellTargetLocation }}
+            </div>
+          </div>
+
+          <!-- 铜排卡片 -->
+          <div class="result-card">
+            <div class="result-card-title">② 铜排 (TMY)</div>
+            <div class="result-card-val">{{ calcResult.copperWeight > 0 ? (calcResult.copperWeight + ' KG') : '0 (小箱补贴)' }}</div>
+            <div class="result-card-desc">
+              公式: {{ calcResult.copperQtyFormula || '不设铜排' }}
+            </div>
+          </div>
+
+          <!-- 辅材卡片 -->
+          <div class="result-card">
+            <div class="result-card-title">③ 辅材费用</div>
+            <div class="result-card-val">¥ {{ calcResult.auxiliaryCost || '0.0' }}</div>
+            <div class="result-card-desc">
+              公式: {{ calcResult.auxiliaryFormula || '--' }}
+            </div>
+          </div>
+
+          <!-- 人工费卡片 -->
+          <div class="result-card">
+            <div class="result-card-title">④ 装配人工费</div>
+            <div class="result-card-val">¥ {{ calcResult.laborCost || '0.0' }}</div>
+            <div class="result-card-desc">
+              公式: {{ calcResult.laborFormula || '--' }}
+            </div>
+          </div>
+        </div>
+
+        <!-- 一次导线推导用量清单 -->
+        <div v-if="calcResult && calcResult.primaryWireDetails && calcResult.primaryWireDetails.length > 0" style="margin-top: 10px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 10px;">
+          <div style="font-size: 12px; font-weight: 600; color: #00796b; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+            <span>⚡ 一次导线推导用量明细:</span>
+            <span style="font-size: 11px; color: #64748b; font-weight: normal;">(根据回路电流阶梯选型，结合箱体宽高与互感器高度折算长度)</span>
+          </div>
+          <el-table :data="calcResult.primaryWireDetails" size="small" border style="width: 100%;" max-height="160px">
+            <el-table-column prop="spec" label="导线规格" width="110">
+              <template #default="scope">
+                <el-tag size="small" type="info">{{ scope.row.spec }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="crossSection" label="截面 (mm²)" width="100">
+              <template #default="scope">{{ scope.row.crossSection }} mm²</template>
+            </el-table-column>
+            <el-table-column prop="lengthMeters" label="推导总长 (米)" width="120">
+              <template #default="scope">
+                <span style="font-weight: 600; color: #009688;">{{ scope.row.lengthMeters }} 米</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="pricePerMeter" label="参考单价" width="110">
+              <template #default="scope">
+                ¥ {{ scope.row.pricePerMeter }} /米
+              </template>
+            </el-table-column>
+            <el-table-column prop="subtotalCost" label="费用小计 (元)">
+              <template #default="scope">
+                <span style="font-weight: 600; color: #d97706;">¥ {{ scope.row.subtotalCost }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+
+        <div v-else-if="!calcResult" style="padding: 30px 0; text-align: center; color: #94a3b8; font-size: 13px;">
+          暂无推导数据，请点击右上角【🔍 重新分析】
+        </div>
+
+        <!-- 详细说明与规则命中提示 -->
+        <div v-if="calcResult" style="margin-top: 8px; font-size: 11px; color: #64748b; background: #f8fafc; padding: 6px 10px; border-radius: 4px; border: 1px dashed #cbd5e1;">
+          <div style="font-weight: 600; color: #00796b; margin-bottom: 2px;">📌 核心推导依据:</div>
+          <div>• 元器件有效占积: {{ calcResult.componentArea }} mm² | 最大电流: {{ calcResult.maxCurrent }}A</div>
+          <div>• 壳体回写匹配规则: 查找计费区 B列 "{{ rules.shellRules.shellMatchName }}"，命中写入C列；未命中写入 Cab_Det 并设 B列="{{ rules.shellRules.shellMatchName }}"。</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主体区域：视图 2 【规则与定额配置中心】 (独立 Tab 架构，图3与图4分别独立显示) -->
+    <div class="main-body" v-show="currentTab === 'rules'">
+      <div class="cfg-card" style="flex: 1; overflow-y: auto;">
+        <el-tabs v-model="activeRuleTab">
+
+          <!-- 选项卡 1: 一次导线配线定额 (包含长度生成配置 + 图3 一次导线规格选型与单价表) -->
+          <el-tab-pane label="🔌 一次配线定额" name="primaryWire">
+            <div style="display: flex; flex-direction: column; gap: 12px; padding: 4px 0;">
+              
+              <!-- 模块 A: 长度计算折算参数 -->
+              <div class="cfg-card" style="background: #fafafa;">
+                <div class="cfg-card-header">
+                  <span>📐 一次导线长度生成与折算参数配置</span>
+                </div>
+                <div class="param-grid" style="margin-top: 4px;">
+                  <div class="param-row-item">
+                    <span class="param-label">基础垂直预留高度:</span>
+                    <el-input-number v-model="rules.auxRules.wireLengthConfig.baseVerticalHeight" :step="10" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">mm</span>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">火灾互感器加成:</span>
+                    <el-input-number v-model="rules.auxRules.wireLengthConfig.fireTransformerExtraHeight" :step="10" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">mm</span>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">普通互感器加成:</span>
+                    <el-input-number v-model="rules.auxRules.wireLengthConfig.normalTransformerExtraHeight" :step="10" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">mm</span>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">落地柜高度门限:</span>
+                    <el-input-number v-model="rules.auxRules.wireLengthConfig.cabinetMinHeight" :step="50" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">mm</span>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">落地柜柜宽系数:</span>
+                    <el-input-number v-model="rules.auxRules.wireLengthConfig.cabinetWidthFactor" :step="0.05" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">落地柜裕量系数:</span>
+                    <el-input-number v-model="rules.auxRules.wireLengthConfig.cabinetLengthMargin" :step="0.05" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">配电箱箱宽系数:</span>
+                    <el-input-number v-model="rules.auxRules.wireLengthConfig.boxWidthFactor" :step="0.05" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                  </div>
+                </div>
+
+                <!-- 公式提示 -->
+                <div class="formula-hint-box" style="margin-top: 6px;">
+                  <div>• <b>落地柜 (高度 ≥ {{ rules.auxRules.wireLengthConfig.cabinetMinHeight }}mm)</b>：单回路线长 = 线头数 × (柜宽 × {{ rules.auxRules.wireLengthConfig.cabinetWidthFactor }} + 垂直高度) × {{ rules.auxRules.wireLengthConfig.cabinetLengthMargin }} / 1000 (米)</div>
+                  <div>• <b>配电箱 (高度 &lt; {{ rules.auxRules.wireLengthConfig.cabinetMinHeight }}mm)</b>：单回路线长 = 线头数 × (箱宽 × {{ rules.auxRules.wireLengthConfig.boxWidthFactor }} + 垂直高度) / 1000 (米)</div>
+                </div>
+              </div>
+
+              <!-- 模块 B (图 3): 一次导线规格选型与单价表 -->
+              <div class="cfg-card" style="background: #fafafa;">
+                <div class="cfg-card-header">
+                  <span>⚡ 一次导线规格选型与单价表 (按电流上限自动匹配截面与单价)</span>
+                  <button type="button" class="btn-flat" @click="addPrimaryWireSpec">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                      <line x1="12" y1="5" x2="12" y2="19"></line>
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    添加导线规格
+                  </button>
+                </div>
+                <el-table :data="rules.auxRules.primaryWireSpecTable" size="small" border style="width: 100%; max-height: 220px;">
+                  <el-table-column prop="maxCurrent" label="电流上限 (A)" width="130">
+                    <template #default="scope">
+                      <el-input-number v-model="scope.row.maxCurrent" :min="1" :max="9999" size="small" controls-position="right" style="width: 100%;"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="spec" label="导线规格型号" width="140">
+                    <template #default="scope">
+                      <el-input v-model="scope.row.spec" size="small"></el-input>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="crossSection" label="截面积 (mm²)" width="120">
+                    <template #default="scope">
+                      <el-input-number v-model="scope.row.crossSection" :min="0.5" :max="300" :step="0.5" size="small" controls-position="right" style="width: 100%;"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="pricePerMeter" label="每米单价 (元/米)" width="130">
+                    <template #default="scope">
+                      <el-input-number v-model="scope.row.pricePerMeter" :min="0.1" :max="500" :step="0.5" size="small" controls-position="right" style="width: 100%;"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="80" align="center">
+                    <template #default="scope">
+                      <el-button size="small" type="danger" link @click="rules.auxRules.primaryWireSpecTable.splice(scope.$index, 1)">删除</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+
+            </div>
+          </el-tab-pane>
+
+          <!-- 选项卡 2 (图 4 独立 Tab): 二次元件接线定额 -->
+          <el-tab-pane label="🧩 二次元件定额" name="secondaryWire">
+            <div style="display: flex; flex-direction: column; gap: 12px; padding: 4px 0;">
+              <div class="cfg-card" style="background: #fafafa;">
+                <div class="cfg-card-header">
+                  <span>🧩 二次元件接线与工价定额表 (按关键字匹配配线根数、线单价与装配工价)</span>
+                  <button type="button" class="btn-flat" @click="addSecondaryElement">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                      <line x1="12" y1="5" x2="12" y2="19"></line>
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    添加二次元件
+                  </button>
+                </div>
+                <el-table :data="rules.auxRules.secondaryElements" size="small" border style="width: 100%; max-height: 420px;">
+                  <el-table-column prop="keyword" label="匹配关键字" width="160">
+                    <template #default="scope">
+                      <el-input v-model="scope.row.keyword" size="small" placeholder="如: 接触器"></el-input>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="wireCount" label="配线根数" width="130">
+                    <template #default="scope">
+                      <el-input-number v-model="scope.row.wireCount" :min="1" :max="30" size="small" controls-position="right" style="width: 100%;"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="wirePrice" label="线单价 (元/米)" width="140">
+                    <template #default="scope">
+                      <el-input-number v-model="scope.row.wirePrice" :min="0.1" :max="50" :step="0.1" size="small" controls-position="right" style="width: 100%;"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="laborPrice" label="单只工价 (元)" width="140">
+                    <template #default="scope">
+                      <el-input-number v-model="scope.row.laborPrice" :min="0" :max="200" :step="1" size="small" controls-position="right" style="width: 100%;"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="80" align="center">
+                    <template #default="scope">
+                      <el-button size="small" type="danger" link @click="rules.auxRules.secondaryElements.splice(scope.$index, 1)">删除</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </div>
+          </el-tab-pane>
+
+          <!-- 选项卡 3: 壳体选型规则 -->
+          <el-tab-pane label="📦 壳体选型规则" name="shell">
+            <div style="display: flex; flex-direction: column; gap: 12px; padding: 4px 0;">
+              <div class="cfg-card" style="background: #fafafa;">
+                <div class="cfg-card-header">
+                  <span>壳体匹配与容积率参数</span>
+                </div>
+                <div class="param-grid" style="margin-top: 4px;">
+                  <div class="param-row-item">
+                    <span class="param-label">壳体匹配名称:</span>
+                    <el-input v-model="rules.shellRules.shellMatchName" placeholder="如: 箱体" size="small" style="width: 120px;"></el-input>
+                    <span class="param-unit">(计费区B列查找同名)</span>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">配电箱安全系数:</span>
+                    <el-input-number v-model="rules.shellRules.boxAreaSafetyFactor" :step="0.05" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">落地柜安全系数:</span>
+                    <el-input-number v-model="rules.shellRules.cabinetAreaSafetyFactor" :step="0.05" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">柜体电流门限:</span>
+                    <el-input-number v-model="rules.shellRules.cabinetCurrentThreshold" :step="10" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">A (≥此值判定落地柜)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="cfg-card" style="background: #fafafa;">
+                <div class="cfg-card-header">
+                  <span>标准壳体尺寸库 (宽*高 mm)</span>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0;">
+                  <el-tag v-for="(sz, idx) in rules.shellRules.standardSizes" :key="sz" closable size="small" @close="rules.shellRules.standardSizes.splice(idx, 1)">
+                    {{ sz }}
+                  </el-tag>
+                  <el-input v-if="newSizeInputVisible" ref="sizeInputRef" v-model="newSizeInputValue" size="small" style="width: 90px;" @keyup.enter="addNewSize" @blur="addNewSize"></el-input>
+                  <button v-else type="button" class="btn-flat" @click="showNewSizeInput">+ 添加尺寸</button>
+                </div>
+              </div>
+            </div>
+          </el-tab-pane>
+
+          <!-- 选项卡 4: 铜排母线定额 -->
+          <el-tab-pane label="⚡ 铜排母线定额" name="copper">
+            <div style="display: flex; flex-direction: column; gap: 12px; padding: 4px 0;">
+              <div class="cfg-card" style="background: #fafafa;">
+                <div class="cfg-card-header">
+                  <span>母排结构门限与补偿参数</span>
+                </div>
+                <div class="param-grid" style="margin-top: 4px;">
+                  <div class="param-row-item">
+                    <span class="param-label">倒T型电流门限:</span>
+                    <el-input-number v-model="rules.copperRules.invertedTCurrent" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">A (≥此值采用倒T结构)</span>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">I型电流门限:</span>
+                    <el-input-number v-model="rules.copperRules.iStructureCurrent" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">A (≥此值采用I型结构)</span>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">四极主排补偿:</span>
+                    <el-input-number v-model="rules.copperRules.fourPoleExtra" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">mm</span>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">三极主排补偿:</span>
+                    <el-input-number v-model="rules.copperRules.threePoleExtra" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">mm</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </el-tab-pane>
+
+          <!-- 选项卡 5: 费率与结构补贴 -->
+          <el-tab-pane label="🛠️ 费率与补贴" name="laborAndSubsidy">
+            <div style="display: flex; flex-direction: column; gap: 12px; padding: 4px 0;">
+              
+              <!-- 结构补贴 -->
+              <div class="cfg-card" style="background: #fafafa;">
+                <div class="cfg-card-header">
+                  <span>💰 基础起步费与特殊结构补贴</span>
+                </div>
+                <div class="param-grid" style="margin-top: 4px;">
+                  <div class="param-row-item">
+                    <span class="param-label">基础起步辅材:</span>
+                    <el-input-number v-model="rules.auxRules.baseFee" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">元</span>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">小箱零地补贴:</span>
+                    <el-input-number v-model="rules.auxRules.smallBoxGroundBarFee" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">元 (电流&lt;140A)</span>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">高柜辅材补贴:</span>
+                    <el-input-number v-model="rules.auxRules.highCabinetExtraFee" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">元 (高度&gt;1500mm)</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 人工费率 -->
+              <div class="cfg-card" style="background: #fafafa;">
+                <div class="cfg-card-header">
+                  <span>🛠️ 装配人工费率与综合税费</span>
+                </div>
+                <div class="param-grid" style="margin-top: 4px;">
+                  <div class="param-row-item">
+                    <span class="param-label">面积平铺工价:</span>
+                    <el-input-number v-model="rules.laborRules.areaBaseRate" :step="0.05" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">元/分米²</span>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">预留回路打折:</span>
+                    <el-input-number v-model="rules.laborRules.reservedCircuitDiscount" :step="0.05" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">综合税费乘数:</span>
+                    <el-input-number v-model="rules.general.taxAndManageRatio" :step="0.01" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </el-tab-pane>
+
+        </el-tabs>
+      </div>
+    </div>
+
+    <!-- 底部操作栏 (纯净扁平无阴影) -->
+    <div class="footer-bar">
+      <div>
+        <el-button v-if="currentTab === 'rules'" size="small" @click="onResetRules">
+          ↩ 恢复默认规则
+        </el-button>
+        <span v-else style="font-size: 12px; color: #64748b;">
+          💡 选型与定额计算遵循行业标准定额与用户自定义规则。
+        </span>
+      </div>
+
+      <div style="display: flex; gap: 10px;">
+        <el-button v-if="currentTab === 'calc'" type="primary" size="small" :loading="isApplying" @click="onApply">
+          🚀 确认写入 Excel 表格
+        </el-button>
+        <el-button v-if="currentTab === 'rules'" type="primary" size="small" :loading="isSavingRules" @click="onSaveRules">
+          💾 保存当前规则配置
+        </el-button>
+        <el-button size="small" @click="closeWindow">
+          关闭
+        </el-button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, nextTick, onMounted } = Vue;
+
+    const app = createApp({
+      setup() {
+        // 当前主选项卡 ('calc' | 'rules')
+        const currentTab = ref('calc');
+        // 当前定额规则二级 Tab ('primaryWire' | 'secondaryWire' | 'shell' | 'copper' | 'laborAndSubsidy')
+        const activeRuleTab = ref('primaryWire');
+
+        // 加载与分析状态
+        const isAnalyzing = ref(false);
+        const isApplying = ref(false);
+        const isSavingRules = ref(false);
+
+        // 工作表与箱柜数据
+        const sheetNames = ref([]);
+        const selectedSheet = ref('');
+        const cabinets = ref([]);
+        const selectedCabinetDet = ref('');
+        const calcScope = ref('single');
+
+        // 规则配置对象响应式实体
+        const rules = reactive({
+          general: {
+            elementMarkupRatio: 1.0,
+            taxAndManageRatio: 1.13,
+            copperPricePerKg: 76.0
+          },
+          shellRules: {
+            shellMatchName: '箱体',
+            boxAreaSafetyFactor: 1.2,
+            cabinetAreaSafetyFactor: 1.3,
+            cabinetMinHeight: 1500,
+            cabinetCurrentThreshold: 250,
+            standardSizes: [
+              '400*500', '500*600', '600*700', '600*800', '700*900', '800*1000',
+              '800*1200', '800*1600', '800*1800', '800*2000', '800*2200', '1000*2200'
+            ]
+          },
+          copperRules: {
+            invertedTCurrent: 300,
+            iStructureCurrent: 140,
+            branchMinCurrent: 99,
+            fourPoleExtra: 1400,
+            threePoleExtra: 1200
+          },
+          auxRules: {
+            baseFee: 10.0,
+            smallBoxGroundBarFee: 30.0,
+            highCabinetExtraFee: 40.0,
+            wireLengthConfig: {
+              baseVerticalHeight: 130,
+              fireTransformerExtraHeight: 100,
+              normalTransformerExtraHeight: 130,
+              cabinetMinHeight: 1600,
+              cabinetWidthFactor: 0.7,
+              cabinetLengthMargin: 1.1,
+              boxWidthFactor: 0.6
+            },
+            primaryWireSpecTable: [
+              { maxCurrent: 16, spec: 'BV-2.5', crossSection: 2.5, pricePerMeter: 1.5 },
+              { maxCurrent: 25, spec: 'BV-4.0', crossSection: 4.0, pricePerMeter: 2.2 },
+              { maxCurrent: 40, spec: 'BV-6.0', crossSection: 6.0, pricePerMeter: 3.2 },
+              { maxCurrent: 63, spec: 'BV-10', crossSection: 10.0, pricePerMeter: 5.5 },
+              { maxCurrent: 80, spec: 'BV-16', crossSection: 16.0, pricePerMeter: 8.5 },
+              { maxCurrent: 100, spec: 'BV-25', crossSection: 25.0, pricePerMeter: 13.5 },
+              { maxCurrent: 125, spec: 'BV-35', crossSection: 35.0, pricePerMeter: 18.5 }
+            ],
+            secondaryElements: [
+              { keyword: '接触器', wireCount: 4, wirePrice: 0.8, laborPrice: 8.0 },
+              { keyword: '中间继电器', wireCount: 4, wirePrice: 0.8, laborPrice: 6.0 },
+              { keyword: '热继电器', wireCount: 2, wirePrice: 0.8, laborPrice: 4.0 },
+              { keyword: '按钮', wireCount: 2, wirePrice: 0.8, laborPrice: 3.0 },
+              { keyword: '指示灯', wireCount: 2, wirePrice: 0.8, laborPrice: 3.0 },
+              { keyword: '多功能表', wireCount: 8, wirePrice: 0.8, laborPrice: 15.0 },
+              { keyword: '电度表', wireCount: 6, wirePrice: 0.8, laborPrice: 12.0 },
+              { keyword: '变频器', wireCount: 8, wirePrice: 0.8, laborPrice: 30.0 },
+              { keyword: '断路器附件', wireCount: 3, wirePrice: 0.8, laborPrice: 5.0 }
+            ]
+          },
+          laborRules: {
+            areaBaseRate: 2.95,
+            reservedCircuitDiscount: 0.4
+          }
+        });
+
+        // 单台计算结果
+        const calcResult = ref(null);
+
+        // 新增尺寸输入
+        const newSizeInputVisible = ref(false);
+        const newSizeInputValue = ref('');
+        const sizeInputRef = ref(null);
+
+        // 窗体拖拽移动
+        const onHeaderMouseDown = (e) => {
+          if (e.target.closest('.window-actions') || e.target.closest('.nav-tabs-box')) return;
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage({ action: 'dragMove' });
+          }
+        };
+
+        const closeWindow = () => {
+          if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage({ action: 'close' });
+        };
+
+        // 接收 C# 报文
+        if (window.chrome && window.chrome.webview) {
+          window.chrome.webview.addEventListener('message', (event) => {
+            let msg = event.data;
+            if (typeof msg === 'string') {
+              try { msg = JSON.parse(msg); } catch (e) {}
+            }
+            if (!msg || !msg.action) return;
+
+            if (msg.action === 'initContext') {
+              const data = msg.data;
+              sheetNames.value = data.sheetNames || [];
+              selectedSheet.value = data.activeSheetName || (sheetNames.value[0] || '');
+              cabinets.value = data.cabinets || [];
+              if (cabinets.value.length > 0) {
+                selectedCabinetDet.value = cabinets.value[0].detName;
+              }
+              if (data.rules) {
+                Object.assign(rules, data.rules);
+                if (data.rules.auxRules && data.rules.auxRules.wireLengthConfig) {
+                  rules.auxRules.wireLengthConfig = Object.assign({}, rules.auxRules.wireLengthConfig, data.rules.auxRules.wireLengthConfig);
+                }
+              }
+              triggerAutoAnalyze();
+            }
+            else if (msg.action === 'cabinetsList') {
+              cabinets.value = msg.data || [];
+              if (cabinets.value.length > 0) {
+                selectedCabinetDet.value = cabinets.value[0].detName;
+              } else {
+                selectedCabinetDet.value = '';
+              }
+              triggerAutoAnalyze();
+            }
+            else if (msg.action === 'analyzeResult') {
+              isAnalyzing.value = false;
+              if (msg.success && msg.data) {
+                calcResult.value = msg.data;
+              } else {
+                ElementPlus.ElMessage.warning('未能成功推导出结果，请检查箱柜元件区域');
+              }
+            }
+            else if (msg.action === 'applyResult') {
+              isApplying.value = false;
+              if (msg.success) {
+                ElementPlus.ElMessage.success(`成功写入 ${msg.count} 台箱柜的数据与公式！`);
+              } else {
+                ElementPlus.ElMessage.error('回写 Excel 失败，请检查工作表');
+              }
+            }
+            else if (msg.action === 'saveRulesResult') {
+              isSavingRules.value = false;
+              if (msg.success) {
+                ElementPlus.ElMessage.success('规则与定额配置已成功保存！');
+              } else {
+                ElementPlus.ElMessage.error('保存配置失败');
+              }
+            }
+          });
+        }
+
+        const onSheetChange = () => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage({ action: 'getCabinetsBySheet', sheetName: selectedSheet.value });
+          }
+        };
+
+        const onRefreshContext = () => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage({ action: 'getContext' });
+          }
+        };
+
+        const triggerAutoAnalyze = () => {
+          if (selectedSheet.value && selectedCabinetDet.value) {
+            onAnalyze();
+          }
+        };
+
+        const onAnalyze = () => {
+          if (!selectedSheet.value || !selectedCabinetDet.value) {
+            ElementPlus.ElMessage.warning('请先选择有效的工作表和箱柜');
+            return;
+          }
+          isAnalyzing.value = true;
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage({
+              action: 'analyzeCabinet',
+              sheetName: selectedSheet.value,
+              detName: selectedCabinetDet.value,
+              rules: rules
+            });
+          }
+        };
+
+        const onApply = () => {
+          if (!selectedSheet.value) {
+            ElementPlus.ElMessage.warning('请选择目标工作表');
+            return;
+          }
+          let detNames = [];
+          if (calcScope.value === 'single') {
+            if (!selectedCabinetDet.value) {
+              ElementPlus.ElMessage.warning('请选择目标箱柜');
+              return;
+            }
+            detNames.push(selectedCabinetDet.value);
+          } else {
+            detNames = cabinets.value.map(c => c.detName);
+          }
+
+          if (detNames.length === 0) {
+            ElementPlus.ElMessage.warning('未找到待处理的箱柜');
+            return;
+          }
+
+          isApplying.value = true;
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage({
+              action: 'applyCalculation',
+              sheetName: selectedSheet.value,
+              detNames: detNames,
+              rules: rules
+            });
+          }
+        };
+
+        const onSaveRules = () => {
+          isSavingRules.value = true;
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage({
+              action: 'saveRules',
+              rules: rules
+            });
+          }
+        };
+
+        const onResetRules = () => {
+          ElementPlus.ElMessageBox.confirm('确定要恢复默认定额与规则配置吗？', '提示', {
+            confirmButtonText: '确定恢复',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }).then(() => {
+            onRefreshContext();
+          }).catch(() => {});
+        };
+
+        const showNewSizeInput = () => {
+          newSizeInputVisible.value = true;
+          nextTick(() => {
+            if (sizeInputRef.value) sizeInputRef.value.focus();
+          });
+        };
+
+        const addNewSize = () => {
+          if (newSizeInputValue.value && newSizeInputValue.value.includes('*')) {
+            if (!rules.shellRules.standardSizes.includes(newSizeInputValue.value.trim())) {
+              rules.shellRules.standardSizes.push(newSizeInputValue.value.trim());
+            }
+          }
+          newSizeInputVisible.value = false;
+          newSizeInputValue.value = '';
+        };
+
+        // 添加一次导线规格
+        const addPrimaryWireSpec = () => {
+          if (!rules.auxRules.primaryWireSpecTable) {
+            rules.auxRules.primaryWireSpecTable = [];
+          }
+          rules.auxRules.primaryWireSpecTable.push({
+            maxCurrent: 100,
+            spec: 'BV-25',
+            crossSection: 25.0,
+            pricePerMeter: 13.5
+          });
+        };
+
+        // 添加二次元件
+        const addSecondaryElement = () => {
+          if (!rules.auxRules.secondaryElements) {
+            rules.auxRules.secondaryElements = [];
+          }
+          rules.auxRules.secondaryElements.push({
+            keyword: '新元件',
+            wireCount: 2,
+            wirePrice: 0.8,
+            laborPrice: 5.0
+          });
+        };
+
+        onMounted(() => {
+          onRefreshContext();
+        });
+
+        return {
+          currentTab,
+          activeRuleTab,
+          isAnalyzing,
+          isApplying,
+          isSavingRules,
+          sheetNames,
+          selectedSheet,
+          cabinets,
+          selectedCabinetDet,
+          calcScope,
+          rules,
+          calcResult,
+          newSizeInputVisible,
+          newSizeInputValue,
+          sizeInputRef,
+          onHeaderMouseDown,
+          closeWindow,
+          onSheetChange,
+          onRefreshContext,
+          triggerAutoAnalyze,
+          onAnalyze,
+          onApply,
+          onSaveRules,
+          onResetRules,
+          showNewSizeInput,
+          addNewSize,
+          addPrimaryWireSpec,
+          addSecondaryElement
+        };
+      }
+    });
+
+    app.use(ElementPlus);
+    app.mount('#app');
+  </script>
+</body>
+
+</html>

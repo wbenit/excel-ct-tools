@@ -545,27 +545,35 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 用户选中配套附件后：D 列追加“+附件型号”
+        /// 用户选中配套附件后：D 列追加“+附件型号”（若数量大于1则为“+附件型号*数量”）
         /// 汇总表中附件填 N 列（多附件加法公式），常规表中本体和附件在 M 列进行加法公式连加
         /// </summary>
         /// <param name="attachment">选中的附件元器件物料 DTO</param>
         /// <param name="targetCell">目标单元格 COM 句柄</param>
+        /// <param name="quantity">选定的附件数量，默认为 1</param>
         /// <returns>回填是否成功</returns>
-        public static bool FillSelectedAttachmentToActiveRow(ComponentApiDto attachment, dynamic? targetCell = null)
+        public static bool FillSelectedAttachmentToActiveRow(ComponentApiDto attachment, dynamic? targetCell = null, int quantity = 1)
         {
+            // 校验附件物料对象非空
             if (attachment == null) return false;
+            // 约束数量最小为 1
+            if (quantity <= 0) quantity = 1;
 
             try
             {
+                // 获取 Excel 宿主应用程序实例
                 dynamic? app = ExcelDna.Integration.ExcelDnaUtil.Application;
                 if (app == null) return false;
 
+                // 获取活动单元格 COM 句柄
                 dynamic cell = targetCell ?? app.ActiveCell;
                 if (cell == null) return false;
 
+                // 获取所在工作表
                 dynamic sheet = cell.Worksheet;
                 if (sheet == null) return false;
 
+                // 获取当前物理行号
                 int row = Convert.ToInt32(cell.Row);
                 if (row <= 0) return false;
 
@@ -581,20 +589,23 @@ namespace ExcelAddInDemo
                     oldModel = string.Empty;
                 }
 
-                // 附件型号
+                // 附件基础型号
                 string attachModel = attachment.Model?.Trim() ?? string.Empty;
+                // 若数量大于 1，则格式化为 "附件型号*数量" (如 "MX*2")，否则保持 "附件型号"
+                string attachModelWithQty = quantity > 1 ? $"{attachModel}*{quantity}" : attachModel;
 
-                // 拼接新型号文本：“原内容+附件型号”
+                // 拼接新型号文本：“原内容+附件型号[*数量]”
                 string newModel;
                 if (string.IsNullOrEmpty(oldModel))
                 {
-                    newModel = attachModel;
+                    // 原内容为空时直接作为新型号
+                    newModel = attachModelWithQty;
                 }
                 else
                 {
                     // 消除首尾已有的加号字符，防止出现连续的 "++" 符号
                     string trimmedOld = oldModel.TrimEnd('+', '＋');
-                    string trimmedAttach = attachModel.TrimStart('+', '＋');
+                    string trimmedAttach = attachModelWithQty.TrimStart('+', '＋');
                     newModel = $"{trimmedOld}+{trimmedAttach}";
                 }
 
@@ -605,27 +616,39 @@ namespace ExcelAddInDemo
                 decimal attachPrice = attachment.Price > 0 ? attachment.Price : 0m;
                 if (attachPrice > 0)
                 {
+                    // 格式化价格单项表达式：数量大于 1 时为 "单价*数量" (如 "336.2*2")，否则为纯单价 (如 "336.2")
+                    string priceTerm = quantity > 1 ? $"{attachPrice:0.##}*{quantity}" : $"{attachPrice:0.##}";
+
                     if (isSummarySheet)
                     {
                         // 在“元件汇总表”中：附件价格填入 N 列 (附件表价)，多个附件用加法公式连接
                         string oldFormulaN = Convert.ToString(sheet.Range[$"N{row}"].Formula)?.Trim() ?? string.Empty;
                         string oldValN = Convert.ToString(sheet.Range[$"N{row}"].Value2)?.Trim() ?? string.Empty;
 
-                        // 若此前 N 列没有任何价格数据，直接填入单个附件数值
+                        // 若此前 N 列没有任何价格数据
                         if (string.IsNullOrEmpty(oldFormulaN) && string.IsNullOrEmpty(oldValN))
                         {
-                            sheet.Range[$"N{row}"].Value2 = (double)attachPrice;
+                            if (quantity > 1)
+                            {
+                                // 数量大于 1 时以乘法公式写入，例如 "=336.2*2"
+                                sheet.Range[$"N{row}"].Formula = $"={priceTerm}";
+                            }
+                            else
+                            {
+                                // 单件直接填入数值
+                                sheet.Range[$"N{row}"].Value2 = (double)attachPrice;
+                            }
                         }
-                        // 若此前已有公式 (以 '=' 开头)，直接在原公式末尾累加 "+附件价格"
+                        // 若此前已有公式 (以 '=' 开头)，直接在原公式末尾累加 "+价格表达式"
                         else if (!string.IsNullOrEmpty(oldFormulaN) && oldFormulaN.StartsWith("="))
                         {
-                            sheet.Range[$"N{row}"].Formula = $"{oldFormulaN}+{attachPrice:0.##}";
+                            sheet.Range[$"N{row}"].Formula = $"{oldFormulaN}+{priceTerm}";
                         }
-                        // 若此前为纯数值 (例如 49)，升级为加法公式 (例如 =49+60)
+                        // 若此前为纯数值 (例如 49)，升级为加法公式 (例如 =49+336.2*2)
                         else
                         {
                             string baseNum = !string.IsNullOrEmpty(oldValN) ? oldValN : oldFormulaN;
-                            sheet.Range[$"N{row}"].Formula = $"={baseNum}+{attachPrice:0.##}";
+                            sheet.Range[$"N{row}"].Formula = $"={baseNum}+{priceTerm}";
                         }
 
                         // 若 O 列 (附件折扣) 为空或 0，默认填入 1，保障表格自带内置公式计算有效
@@ -637,26 +660,26 @@ namespace ExcelAddInDemo
                     }
                     else
                     {
-                        // 常规分类明细表中：本体和附件在 M 列 (表价) 连加 (如 =447.01+150 或 =447.01+150+60)
+                        // 常规分类明细表中：本体和附件在 M 列 (表价) 连加 (如 =447.01+336.2*2 或 =447.01+150+60*2)
                         string oldFormulaM = Convert.ToString(sheet.Range[$"M{row}"].Formula)?.Trim() ?? string.Empty;
                         string oldValM = Convert.ToString(sheet.Range[$"M{row}"].Value2)?.Trim() ?? string.Empty;
 
                         string newFormulaM;
-                        // 若此前 M 列无任何数据，直接写公式 "=附件价格"
+                        // 若此前 M 列无任何数据，直接写公式 "=价格表达式"
                         if (string.IsNullOrEmpty(oldFormulaM) && string.IsNullOrEmpty(oldValM))
                         {
-                            newFormulaM = $"={attachPrice:0.##}";
+                            newFormulaM = $"={priceTerm}";
                         }
-                        // 若此前已有公式 (以 '=' 开头)，直接在原公式末尾连加 "+附件价格"
+                        // 若此前已有公式 (以 '=' 开头)，直接在原公式末尾连加 "+价格表达式"
                         else if (!string.IsNullOrEmpty(oldFormulaM) && oldFormulaM.StartsWith("="))
                         {
-                            newFormulaM = $"{oldFormulaM}+{attachPrice:0.##}";
+                            newFormulaM = $"{oldFormulaM}+{priceTerm}";
                         }
-                        // 若此前为本体纯数值 (如 447.01)，升级为连加公式 (如 =447.01+150)
+                        // 若此前为本体纯数值 (如 447.01)，升级为连加公式 (如 =447.01+336.2*2)
                         else
                         {
                             string basePriceStr = !string.IsNullOrEmpty(oldValM) ? oldValM : oldFormulaM;
-                            newFormulaM = $"={basePriceStr}+{attachPrice:0.##}";
+                            newFormulaM = $"={basePriceStr}+{priceTerm}";
                         }
 
                         // 写入 M 列公式

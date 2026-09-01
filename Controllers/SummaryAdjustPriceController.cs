@@ -187,7 +187,7 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
-        /// 一键更新：从“元件汇总表”将修改后的数据同步回各分类表箱柜（当前先预留功能通路）
+        /// 一键更新：从“元件汇总表”将修改后的数据同步回各分类表箱柜
         /// </summary>
         public string UpdateFromSummary(string? payloadJson)
         {
@@ -196,8 +196,8 @@ namespace ExcelAddInDemo.Controllers
                 // 记录调用日志
                 LogHelper.WriteLog("触发汇总调价【一键更新】操作");
 
-                // 调用 ExcelServices 底层预留服务方法
-                bool success = ExcelServices.UpdateFromComponentSummarySheet();
+                // 调用 ExcelServices 底层服务方法执行反向同步
+                var result = ExcelServices.UpdateFromComponentSummarySheet();
 
                 // 封装标准结构化响应
                 var response = new
@@ -205,9 +205,16 @@ namespace ExcelAddInDemo.Controllers
                     // 对应前端监听 action
                     action = "onSummaryUpdated",
                     // 执行成功状态
-                    success = success,
+                    success = result.Success,
                     // 提示文本信息
-                    message = "一键更新功能已准备就绪，当前为预留状态"
+                    message = result.Message,
+                    // 详细统计数据
+                    data = new
+                    {
+                        updatedSheetCount = result.UpdatedSheetCount,
+                        updatedCabinetCount = result.UpdatedCabinetCount,
+                        updatedComponentCount = result.UpdatedComponentCount
+                    }
                 };
 
                 // 序列化并返回 JSON
