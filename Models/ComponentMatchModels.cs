@@ -91,11 +91,11 @@ namespace ExcelAddInDemo.Models
         // 数据库反查后备注回填列 (默认 I 列)
         public string RemarkColumn { get; set; } = "I"; // --硬编码-- 默认备注信息列
 
-        // 数据库反查后扩展参数1回填列 (默认 W 列)
-        public string Param1Column { get; set; } = "W"; // --硬编码-- 默认参数1输出列
+        // 数据库反查后扩展参数1回填列 (默认 V 列)
+        public string Param1Column { get; set; } = "V"; // --硬编码-- 默认参数1输出列
 
-        // 数据库反查后扩展参数2回填列 (默认 X 列)
-        public string Param2Column { get; set; } = "X"; // --硬编码-- 默认参数2输出列
+        // 数据库反查后扩展参数2回填列 (默认 W 列)
+        public string Param2Column { get; set; } = "W"; // --硬编码-- 默认参数2输出列
     }
 
     /// <summary>

@@ -225,8 +225,23 @@ namespace ExcelAddInDemo
             // 明细表 U 列原始型号 (汇总表 R 列对应，相同规格合并时用“，”连接)
             public string RawModelFromU { get; set; } = string.Empty;
 
-            // 位号 / 安装位置 (预留扩展)
-            public string Position { get; set; } = string.Empty;
+            // 额定电流 (对应明细表 X 列 / 汇总表 U 列)
+            public string Current { get; set; } = string.Empty;
+
+            // 极数 (对应明细表 Y 列 / 汇总表 V 列)
+            public string Poles { get; set; } = string.Empty;
+
+            // 脱扣方式 (对应明细表 U 列 / 汇总表 W 列)
+            public string Tripping { get; set; } = string.Empty;
+
+            // 扩展参数 1 (对应明细表 W 列 / 汇总表 X 列)
+            public string Param1 { get; set; } = string.Empty;
+
+            // 扩展参数 2 (对应汇总表 Y 列)
+            public string Param2 { get; set; } = string.Empty;
+
+            // CAD 图元句柄 (对应明细表 AD 列 / 汇总表 AD 列)
+            public string Handle { get; set; } = string.Empty;
 
             // 所属分类工作表 Sheet 名称
             public string SheetName { get; set; } = string.Empty;
@@ -587,8 +602,8 @@ namespace ExcelAddInDemo
                         // 计算区域总行数
                         int rowCount = compEndRow - compStartRow + 1;
 
-                        // 采用 2D 数组一次性批量读入内存（包含值矩阵与公式矩阵，覆盖 A~U 列共 21 列，规则 7）
-                        dynamic compRange = sheet.Range[$"A{compStartRow}:U{compEndRow}"];
+                        // 采用 2D 数组一次性批量读入内存（包含值矩阵与公式矩阵，覆盖 A~AD 列共 30 列，规则 7）
+                        dynamic compRange = sheet.Range[$"A{compStartRow}:AD{compEndRow}"];
                         // 读取值矩阵
                         object[,] valMatrix = (object[,])compRange.Value2;
                         // 读取公式矩阵
@@ -680,6 +695,41 @@ namespace ExcelAddInDemo
                                 uColModel = Convert.ToString(valMatrix[r, 21]) ?? string.Empty;
                             }
 
+                            // V 列 (索引 22): 扩展参数1 (结构/分断等)
+                            string param1Val = string.Empty;
+                            if (valMatrix.GetLength(1) >= 22)
+                            {
+                                param1Val = Convert.ToString(valMatrix[r, 22])?.Trim() ?? string.Empty;
+                            }
+
+                            // W 列 (索引 23): 扩展参数2 (图块名/补充参数等)
+                            string param2Val = string.Empty;
+                            if (valMatrix.GetLength(1) >= 23)
+                            {
+                                param2Val = Convert.ToString(valMatrix[r, 23])?.Trim() ?? string.Empty;
+                            }
+
+                            // X 列 (索引 24): 额定电流
+                            string currentVal = string.Empty;
+                            if (valMatrix.GetLength(1) >= 24)
+                            {
+                                currentVal = Convert.ToString(valMatrix[r, 24])?.Trim() ?? string.Empty;
+                            }
+
+                            // Y 列 (索引 25): 极数
+                            string polesVal = string.Empty;
+                            if (valMatrix.GetLength(1) >= 25)
+                            {
+                                polesVal = Convert.ToString(valMatrix[r, 25])?.Trim() ?? string.Empty;
+                            }
+
+                            // AD 列 (索引 30): CAD 句柄
+                            string handleVal = string.Empty;
+                            if (valMatrix.GetLength(1) >= 30)
+                            {
+                                handleVal = Convert.ToString(valMatrix[r, 30])?.Trim() ?? string.Empty;
+                            }
+
                             // 计算经过箱柜台数放大后的实际总数量与实际总金额
                             decimal totalQty = qty * cabQty;
                             // 计算放大后的销售总金额
@@ -706,6 +756,12 @@ namespace ExcelAddInDemo
                                 BaseDiscount = baseDiscount,
                                 AccessoryPrice = accPrice,
                                 AccessoryDiscount = accDiscount,
+                                Current = currentVal,
+                                Poles = polesVal,
+                                Tripping = string.Empty,
+                                Param1 = param1Val,
+                                Param2 = param2Val,
+                                Handle = handleVal,
                                 Remark = remark.Trim(),
                                 Category = compCategory.Trim(),
                                 SheetName = sheetName
@@ -760,11 +816,11 @@ namespace ExcelAddInDemo
                     return string.Join("||", keyParts);
                 }).Select(g =>
                 {
-                    // 获取分组第一项
+                    // 获取组内首个元素
                     var first = g.First();
-                    // 汇总数量
+                    // 汇总总数量
                     decimal sumQty = g.Sum(x => x.Quantity);
-                    // 汇总总价
+                    // 汇总销售总额
                     decimal sumTotal = g.Sum(x => x.TotalPrice);
                     // 汇总成本总额
                     decimal sumCost = g.Sum(x => x.CostTotalPrice);
@@ -802,6 +858,12 @@ namespace ExcelAddInDemo
                         BaseDiscount = first.BaseDiscount,
                         AccessoryPrice = first.AccessoryPrice,
                         AccessoryDiscount = first.AccessoryDiscount,
+                        Current = g.Select(x => x.Current).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
+                        Poles = g.Select(x => x.Poles).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
+                        Tripping = g.Select(x => x.Tripping).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
+                        Param1 = g.Select(x => x.Param1).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
+                        Param2 = g.Select(x => x.Param2).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
+                        Handle = g.Select(x => x.Handle).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
                         Remark = string.Join(";", g.Select(x => x.Remark).Where(r => !string.IsNullOrWhiteSpace(r)).Distinct()),
                         Category = string.IsNullOrWhiteSpace(first.Category) ? "元件" : first.Category,
                         SheetName = first.SheetName
@@ -934,7 +996,31 @@ namespace ExcelAddInDemo
                 summarySheet.Range["R4:R5"].Merge();
                 summarySheet.Cells[4, 18].Value = "原始型号";
 
-                // 设置全表头基础文字与对齐样式 (覆盖 A4:R5 共 18 列)
+                // T 列: 额定电流 (第 20 列)
+                summarySheet.Range["T4:T5"].Merge();
+                summarySheet.Cells[4, 20].Value = "额定电流";
+
+                // U 列: 极数 (第 21 列)
+                summarySheet.Range["U4:U5"].Merge();
+                summarySheet.Cells[4, 21].Value = "极数";
+
+                // V 列: 脱扣方式 (第 22 列)
+                summarySheet.Range["V4:V5"].Merge();
+                summarySheet.Cells[4, 22].Value = "脱扣方式";
+
+                // W 列: 附件 (第 23 列)
+                summarySheet.Range["W4:W5"].Merge();
+                summarySheet.Cells[4, 23].Value = "附件";
+
+                // X 列: 参数1 (第 24 列)
+                summarySheet.Range["X4:X5"].Merge();
+                summarySheet.Cells[4, 24].Value = "参数1";
+
+                // Y 列: 参数2 (第 25 列)
+                summarySheet.Range["Y4:Y5"].Merge();
+                summarySheet.Cells[4, 25].Value = "参数2";
+
+                // 设置全表头基础文字与对齐样式 (覆盖 A4:R5 与 T4:Y5 共 24 列)
                 dynamic headerAllRange = summarySheet.Range["A4:R5"];
                 headerAllRange.Font.Name = "宋体"; // --硬编码--
                 headerAllRange.Font.Size = 10; // --硬编码--
@@ -943,10 +1029,20 @@ namespace ExcelAddInDemo
                 headerAllRange.VerticalAlignment = -4108; // 居中 xlCenter --硬编码--
                 headerAllRange.WrapText = true;
 
-                // 常规列灰色背景 (A4:J5 与 P4:R5 覆盖 P、Q、R 三列) --硬编码--
+                // 设置扩展表头基础样式 (T4:Y5)
+                dynamic headerExtRange = summarySheet.Range["T4:Y5"];
+                headerExtRange.Font.Name = "宋体"; // --硬编码--
+                headerExtRange.Font.Size = 10; // --硬编码--
+                headerExtRange.Font.Bold = true;
+                headerExtRange.HorizontalAlignment = -4108; // 居中
+                headerExtRange.VerticalAlignment = -4108;
+                headerExtRange.WrapText = true;
+
+                // 常规列灰色背景 (A4:J5, P4:R5 与 T4:Y5) --硬编码--
                 int headerGrayColor = System.Drawing.ColorTranslator.ToOle(System.Drawing.ColorTranslator.FromHtml("#E8ECEF"));
                 summarySheet.Range["A4:J5"].Interior.Color = headerGrayColor;
                 summarySheet.Range["P4:R5"].Interior.Color = headerGrayColor;
+                summarySheet.Range["T4:Y5"].Interior.Color = headerGrayColor;
 
                 // 调价核心列粉色背景 (K4:O5，包含报出系数、本体与附件) --硬编码--
                 int headerPinkColor = System.Drawing.ColorTranslator.ToOle(System.Drawing.ColorTranslator.FromHtml("#E6A8A8"));
@@ -967,6 +1063,10 @@ namespace ExcelAddInDemo
                 {
                     // 构建 18 列数据输出矩阵
                     object[,] outMatrix = new object[dataRowCount, 18];
+                    // 构建 T~Y 列扩展参数输出矩阵 (6 列) 与 AD 列 CAD 句柄矩阵
+                    object[,] paramMatrix = new object[dataRowCount, 6];
+                    object[,] handleMatrix = new object[dataRowCount, 1];
+
                     for (int i = 0; i < dataRowCount; i++)
                     {
                         var comp = grouped[i];
@@ -994,10 +1094,25 @@ namespace ExcelAddInDemo
                         outMatrix[i, 15] = comp.Remark; // P: 备注
                         outMatrix[i, 16] = comp.Category; // Q: 类别
                         outMatrix[i, 17] = comp.RawModelFromU; // R: 原始型号 (对应明细表 U 列内容，逗号拼接)
+
+                        // T~Y 列扩展参数
+                        paramMatrix[i, 0] = comp.Current;  // T 列: 额定电流
+                        paramMatrix[i, 1] = comp.Poles;    // U 列: 极数
+                        paramMatrix[i, 2] = comp.Tripping; // V 列: 脱扣方式
+                        paramMatrix[i, 3] = string.Empty;  // W 列: 附件 (默认留空供选附件时写入脱扣方式)
+                        paramMatrix[i, 4] = comp.Param1;   // X 列: 参数1
+                        paramMatrix[i, 5] = comp.Param2;   // Y 列: 参数2
+
+                        // AD 列 CAD 句柄
+                        handleMatrix[i, 0] = comp.Handle;
                     }
 
                     // 一次性批量写入数据与公式矩阵 (覆盖 A6:R{endDataRow}) (规则 7)
                     summarySheet.Range[$"A{startDataRow}:R{endDataRow}"].Formula = outMatrix;
+
+                    // 一次性批量写入 T~Y 列扩展参数与 AD 列句柄矩阵 (规则 7)
+                    summarySheet.Range[$"T{startDataRow}:Y{endDataRow}"].Value2 = paramMatrix;
+                    summarySheet.Range[$"AD{startDataRow}:AD{endDataRow}"].Value2 = handleMatrix;
 
                     // 设置数据行行高
                     summarySheet.Range[$"{startDataRow}:{endDataRow}"].RowHeight = 20; // --硬编码--
@@ -1017,6 +1132,10 @@ namespace ExcelAddInDemo
                     summarySheet.Range[$"P{startDataRow}:P{endDataRow}"].HorizontalAlignment = -4131; // P 备注靠左
                     summarySheet.Range[$"Q{startDataRow}:Q{endDataRow}"].HorizontalAlignment = -4108; // Q 类别居中
                     summarySheet.Range[$"R{startDataRow}:R{endDataRow}"].HorizontalAlignment = -4131; // R 原始型号靠左
+
+                    // T~V 列对齐居中，W~Y 列靠左
+                    summarySheet.Range[$"T{startDataRow}:V{endDataRow}"].HorizontalAlignment = -4108; // 电流、极数、脱扣居中
+                    summarySheet.Range[$"W{startDataRow}:Y{endDataRow}"].HorizontalAlignment = -4131; // 附件、参数1、参数2靠左
 
                     // 设置基准参考列的浅蓝色强调底色 (序号 A 列、原型号规格 C 列、数量 F 列、成本单价 J 列) --硬编码--
                     summarySheet.Range[$"A{startDataRow}:A{endDataRow}"].Interior.Color = softBlueColor;
@@ -1066,17 +1185,25 @@ namespace ExcelAddInDemo
                     summarySheet.Cells[totalRow, 8].HorizontalAlignment = -4152;
                     try { summarySheet.Cells[totalRow, 8].NumberFormat = "#,##0.00"; } catch { }
 
-                    // 设置表格全区域边框 (覆盖 A4:R{totalRow} 共 18 列) --硬编码--
+                    // 设置表格全区域边框 (覆盖 A4:R{totalRow} 与 U4:Y{endDataRow}) --硬编码--
                     dynamic tableRange = summarySheet.Range[$"A4:R{totalRow}"];
                     tableRange.Borders.LineStyle = 1; // 实线 xlContinuous
                     tableRange.Borders.Weight = 2; // 细线 xlThin
+
+                    dynamic tableExtRange = summarySheet.Range[$"T4:Y{endDataRow}"];
+                    tableExtRange.Borders.LineStyle = 1;
+                    tableExtRange.Borders.Weight = 2;
                 }
                 else
                 {
-                    // 若无数据，至少设置表头区域边框 (A4:R5)
+                    // 若无数据，至少设置表头区域边框 (A4:R5 与 T4:Y5)
                     dynamic tableRange = summarySheet.Range["A4:R5"];
                     tableRange.Borders.LineStyle = 1;
                     tableRange.Borders.Weight = 2;
+
+                    dynamic tableExtRange = summarySheet.Range["T4:Y5"];
+                    tableExtRange.Borders.LineStyle = 1;
+                    tableExtRange.Borders.Weight = 2;
                 }
 
                 // 显式精准设置各列宽度（保证界面美观无挤压，注意宽度） --硬编码--
@@ -1098,11 +1225,17 @@ namespace ExcelAddInDemo
                 summarySheet.Columns[16].ColumnWidth = 18; // P: 备注
                 summarySheet.Columns[17].ColumnWidth = 8;  // Q: 类别
                 summarySheet.Columns[18].ColumnWidth = 24; // R: 原始型号 (明细表 U 列多项拼接)
+                summarySheet.Columns[20].ColumnWidth = 10; // T: 额定电流
+                summarySheet.Columns[21].ColumnWidth = 8;  // U: 极数
+                summarySheet.Columns[22].ColumnWidth = 10; // V: 脱扣方式
+                summarySheet.Columns[23].ColumnWidth = 14; // W: 附件
+                summarySheet.Columns[24].ColumnWidth = 12; // X: 参数1
+                summarySheet.Columns[25].ColumnWidth = 12; // Y: 参数2
 
-                // 挂载 AutoFilter 自动筛选下拉箭头至第 5 行 (A5:R5)
+                // 挂载 AutoFilter 自动筛选下拉箭头至第 5 行 (A5:Y5)
                 try
                 {
-                    summarySheet.Range["A5:R5"].AutoFilter();
+                    summarySheet.Range["A5:Y5"].AutoFilter();
                 }
                 catch { }
 
@@ -1194,6 +1327,24 @@ namespace ExcelAddInDemo
             // 备注说明
             public string Remark { get; set; } = string.Empty;
 
+            // 额定电流 (T 列)
+            public string Current { get; set; } = string.Empty;
+
+            // 极数 (U 列)
+            public string Poles { get; set; } = string.Empty;
+
+            // 脱扣方式 (V 列)
+            public string Tripping { get; set; } = string.Empty;
+
+            // 附件说明与脱扣 (W 列)
+            public string Accessory { get; set; } = string.Empty;
+
+            // 扩展参数 1 (X 列)
+            public string Param1 { get; set; } = string.Empty;
+
+            // 扩展参数 2 (Y 列)
+            public string Param2 { get; set; } = string.Empty;
+
             // U 列原始型号字符串 (多项逗号拼接)
             public string RawModelFromU { get; set; } = string.Empty;
         }
@@ -1203,94 +1354,82 @@ namespace ExcelAddInDemo
         /// </summary>
         public static SummaryUpdateResult UpdateFromComponentSummarySheet()
         {
-            // 初始化更新结果实体
             var result = new SummaryUpdateResult();
-
             try
             {
-                // 获取当前活动 Excel Application 实例
+                // 获取当前活动工作簿
                 dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null)
                 {
-                    result.Message = "未检测到活动的 Excel 应用程序实例";
+                    result.Message = "无法连接到 Excel 应用程序实例";
                     return result;
                 }
 
-                // 获取当前活动工作簿
-                dynamic activeWb = app.ActiveWorkbook;
-                if (activeWb == null)
+                dynamic wb = app.ActiveWorkbook;
+                if (wb == null)
                 {
-                    result.Message = "未检测到活动的 Excel 工作簿";
+                    result.Message = "当前未打开任何工作簿";
                     return result;
                 }
 
-                // 目标汇总表名称 --硬编码--
-                string summarySheetName = "元件汇总表";
-
-                // 探测工作簿中是否存在“元件汇总表”
+                // 查找是否存在“元件汇总表”工作表
                 dynamic? summarySheet = null;
-                try
+                foreach (dynamic ws in wb.Worksheets)
                 {
-                    summarySheet = activeWb.Worksheets[summarySheetName];
-                }
-                catch
-                {
-                    // 未找到汇总表直接返回
-                    result.Message = "未找到【元件汇总表】工作表，无法执行一键更新";
-                    LogHelper.WriteLog("未找到【元件汇总表】工作表，无法执行一键更新");
-                    return result;
+                    string wsName = Convert.ToString(ws.Name) ?? string.Empty;
+                    if (string.Equals(wsName.Trim(), ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        summarySheet = ws;
+                        break;
+                    }
                 }
 
                 if (summarySheet == null)
                 {
-                    result.Message = "未找到【元件汇总表】工作表，无法执行一键更新";
+                    result.Message = $"未找到名为【{ComponentMatchDefaults.ComponentSummarySheetName}】的工作表";
                     return result;
                 }
 
-                // 1. 扫描读取【元件汇总表】中的所有调价数据项 (从第 6 行开始)
-                // 1.0 读取持久化存储在 AB1 单元格中的汇总配置 (选表范围与合并条件)
-                SummaryBuildConfig? buildConfig = null;
+                // 尝试从隐藏单元格 AB1 读取持久化的构建配置（参与汇总工作表列表与合并条件）
+                var buildConfig = new SummaryBuildConfig();
                 try
                 {
-                    object cfgVal = summarySheet.Range["AB1"].Value2;
-                    string cfgJson = Convert.ToString(cfgVal)?.Trim() ?? string.Empty;
-                    if (!string.IsNullOrEmpty(cfgJson) && cfgJson.StartsWith("{"))
+                    // 读取 AB1 单元格中的 JSON 配置字符串
+                    string rawConfig = Convert.ToString(summarySheet.Range["AB1"].Value2)?.Trim() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(rawConfig))
                     {
-                        buildConfig = System.Text.Json.JsonSerializer.Deserialize<SummaryBuildConfig>(cfgJson);
+                        // 反序列化配置模型
+                        var cfg = System.Text.Json.JsonSerializer.Deserialize<SummaryBuildConfig>(rawConfig);
+                        if (cfg != null)
+                        {
+                            // 赋值生效配置
+                            buildConfig = cfg;
+                        }
                     }
                 }
                 catch { }
 
-                // 若未读到配置则采用默认安全配置
-                if (buildConfig == null)
-                {
-                    buildConfig = new SummaryBuildConfig();
-                }
-
-                int summaryUsedRows = 100;
-                try
-                {
-                    // 获取汇总表已用区域总行数
-                    summaryUsedRows = Convert.ToInt32(summarySheet.UsedRange.Rows.Count);
-                }
-                catch { }
-
-                // 汇总数据起始行
-                int startDataRow = 6;
+                // 1. 从“元件汇总表”收集所有调价记录
+                int startDataRow = 6; // 数据起始行
+                int summaryUsedRows = summarySheet.UsedRange.Rows.Count;
                 // 数据读取最大截止行
                 int maxReadRow = Math.Max(summaryUsedRows + 5, 20);
 
-                // 一次性批量读取汇总表 A6:R{maxReadRow} 的值矩阵与公式矩阵 (规则 7)
-                dynamic summaryRange = summarySheet.Range[$"A{startDataRow}:R{maxReadRow}"];
+                // 一次性批量读取汇总表 A6:Y{maxReadRow} 的值矩阵与公式矩阵 (覆盖 A~Y 共 25 列，规则 7)
+                dynamic summaryRange = summarySheet.Range[$"A{startDataRow}:Y{maxReadRow}"];
                 object[,] summaryValMatrix = (object[,])summaryRange.Value2;
                 object[,] summaryFormulaMatrix = (object[,])summaryRange.Formula;
 
-                int rowCount = summaryValMatrix.GetLength(0);
+                if (summaryValMatrix == null || summaryFormulaMatrix == null)
+                {
+                    result.Message = "读取【元件汇总表】数据矩阵失败";
+                    return result;
+                }
 
-                // 内存调价规则列表
+                int totalSummaryRows = summaryValMatrix.GetLength(0);
                 var adjustItems = new List<SummaryAdjustItem>();
 
-                for (int r = 1; r <= rowCount; r++)
+                for (int r = 1; r <= totalSummaryRows; r++)
                 {
                     // B 列 (索引 2): 元件名称
                     string name = Convert.ToString(summaryValMatrix[r, 2])?.Trim() ?? string.Empty;
@@ -1349,6 +1488,30 @@ namespace ExcelAddInDemo
 
                     // R 列 (索引 18): 原始型号 (U 列对应内容，全角逗号拼接)
                     string rawModelU = Convert.ToString(summaryValMatrix[r, 18])?.Trim() ?? string.Empty;
+
+                    // T 列 (索引 20): 额定电流
+                    string currentT = string.Empty;
+                    if (summaryValMatrix.GetLength(1) >= 20) currentT = Convert.ToString(summaryValMatrix[r, 20])?.Trim() ?? string.Empty;
+
+                    // U 列 (索引 21): 极数
+                    string polesU = string.Empty;
+                    if (summaryValMatrix.GetLength(1) >= 21) polesU = Convert.ToString(summaryValMatrix[r, 21])?.Trim() ?? string.Empty;
+
+                    // V 列 (索引 22): 脱扣方式
+                    string trippingV = string.Empty;
+                    if (summaryValMatrix.GetLength(1) >= 22) trippingV = Convert.ToString(summaryValMatrix[r, 22])?.Trim() ?? string.Empty;
+
+                    // W 列 (索引 23): 附件 (附件脱扣方式)
+                    string accessoryW = string.Empty;
+                    if (summaryValMatrix.GetLength(1) >= 23) accessoryW = Convert.ToString(summaryValMatrix[r, 23])?.Trim() ?? string.Empty;
+
+                    // X 列 (索引 24): 参数1
+                    string param1X = string.Empty;
+                    if (summaryValMatrix.GetLength(1) >= 24) param1X = Convert.ToString(summaryValMatrix[r, 24])?.Trim() ?? string.Empty;
+
+                    // Y 列 (索引 25): 参数2
+                    string param2Y = string.Empty;
+                    if (summaryValMatrix.GetLength(1) >= 25) param2Y = Convert.ToString(summaryValMatrix[r, 25])?.Trim() ?? string.Empty;
 
                     // 构造准备回写到分类表 M 列（表价）与 N 列（折扣）的内容
                     object mColContent;
@@ -1433,6 +1596,12 @@ namespace ExcelAddInDemo
                         MColContent = mColContent,
                         NColContent = nColContent,
                         Remark = remark,
+                        Current = currentT,
+                        Poles = polesU,
+                        Tripping = trippingV,
+                        Accessory = accessoryW,
+                        Param1 = param1X,
+                        Param2 = param2Y,
                         RawModelFromU = rawModelU
                     });
                 }
@@ -1456,7 +1625,7 @@ namespace ExcelAddInDemo
                 try
                 {
                     // 遍历工作簿中的所有工作表
-                    foreach (dynamic sheet in activeWb.Worksheets)
+                    foreach (dynamic sheet in wb.Worksheets)
                     {
                         string sheetName = Convert.ToString(sheet.Name)?.Trim() ?? string.Empty;
 
@@ -1478,7 +1647,7 @@ namespace ExcelAddInDemo
                         }
 
                         // 获取当前分类表的有效箱柜锚点 (规则 6)
-                        var validCabinets = Tool.GetSheetValidCabinets(sheet, activeWb);
+                        var validCabinets = Tool.GetSheetValidCabinets(sheet, wb);
                         if (validCabinets.Count == 0) continue;
 
                         bool sheetModified = false;
@@ -1498,8 +1667,8 @@ namespace ExcelAddInDemo
 
                             int cabinetRowCount = compEndRow - compStartRow + 1;
 
-                            // 采用 2D 数组一次性批量读入内存 (覆盖 A~AA 共 27 列，规则 7)
-                            dynamic compRange = sheet.Range[$"A{compStartRow}:AA{compEndRow}"];
+                            // 采用 2D 数组一次性批量读入内存 (覆盖 A~AD 共 30 列，规则 7)
+                            dynamic compRange = sheet.Range[$"A{compStartRow}:AD{compEndRow}"];
                             object[,] valMatrix = (object[,])compRange.Value2;
                             object[,] formulaMatrix = (object[,])compRange.Formula;
 
@@ -1626,6 +1795,31 @@ namespace ExcelAddInDemo
 
                                     // 7. 更新折扣 N 列 (索引 14)
                                     formulaMatrix[r, 14] = matchedItem.NColContent;
+
+                                    // 8. 更新扩展参数1: V 列 (参数1, 索引 22)
+                                    if (!string.IsNullOrWhiteSpace(matchedItem.Param1) && formulaMatrix.GetLength(1) >= 22)
+                                    {
+                                        // 回写扩展参数1至明细表 V 列
+                                        formulaMatrix[r, 22] = matchedItem.Param1;
+                                    }
+                                    // 9. 更新扩展参数2: W 列 (参数2, 索引 23)
+                                    if (!string.IsNullOrWhiteSpace(matchedItem.Param2) && formulaMatrix.GetLength(1) >= 23)
+                                    {
+                                        // 回写扩展参数2至明细表 W 列
+                                        formulaMatrix[r, 23] = matchedItem.Param2;
+                                    }
+                                    // 10. 更新额定电流: X 列 (额定电流, 索引 24)
+                                    if (!string.IsNullOrWhiteSpace(matchedItem.Current) && formulaMatrix.GetLength(1) >= 24)
+                                    {
+                                        // 回写额定电流至明细表 X 列
+                                        formulaMatrix[r, 24] = matchedItem.Current;
+                                    }
+                                    // 11. 更新极数: Y 列 (极数, 索引 25)
+                                    if (!string.IsNullOrWhiteSpace(matchedItem.Poles) && formulaMatrix.GetLength(1) >= 25)
+                                    {
+                                        // 回写极数至明细表 Y 列
+                                        formulaMatrix[r, 25] = matchedItem.Poles;
+                                    }
 
                                     // 标记当前箱柜已修改
                                     cabinetModified = true;

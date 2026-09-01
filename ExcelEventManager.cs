@@ -110,7 +110,7 @@ namespace ExcelAddInDemo
                 int endCol = startCol + target.Columns.Count - 1;
                 bool containsColumnC = (3 >= startCol && 3 <= endCol);
 
-                // 若选区包含 C 列且开启了 CAD 联动：提取选区内所有行的 AA 列 (第 27 列) 句柄并防抖推送
+                // 若选区包含 C 列且开启了 CAD 联动：提取选区内所有行的 AD 列 (第 30 列) / AA 列 (第 27 列兼容) 句柄并防抖推送
                 if (containsColumnC && Services.CadSyncClient.SyncToCadEnabled)
                 {
                     try
@@ -121,7 +121,7 @@ namespace ExcelAddInDemo
                         {
                             int startRow = target.Row;
                             int endRow = startRow + target.Rows.Count - 1;
-                            // 限制单次最大多选行数上限（300 行），防止误选全表引起额外开销
+                            // 限制单次最大多选行数上限（50 行），防止误选全表引起额外开销
                             if (target.Rows.Count > 50) endRow = startRow + 49;
 
                             List<string> handleList = new List<string>();
@@ -129,8 +129,8 @@ namespace ExcelAddInDemo
                             // 遍历所选的所有行
                             for (int r = startRow; r <= endRow; r++)
                             {
-                                // 读取 AA 列 (第 27 列) 的句柄字符串
-                                string rawHandles = Convert.ToString(ws.Range[$"AA{r}"].Value2)?.Trim() ?? string.Empty;
+                                // 读取 AD 列 (第 30 列) 的 CAD 句柄字符串
+                                string rawHandles = Convert.ToString(ws.Range[$"AD{r}"].Value2)?.Trim() ?? string.Empty;
                                 if (!string.IsNullOrEmpty(rawHandles))
                                 {
                                     // 兼容两级分隔符（逗号“,”与连字符“-”）进行拆分提取

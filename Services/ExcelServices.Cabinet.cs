@@ -1547,8 +1547,9 @@ namespace ExcelAddInDemo
                     // 批量写入元器件完整区域
                     sheet.Range[$"A{compStartRow}:U{compEndRow}"].Formula = compMatrix;
 
-                    // 批量写入 AA 列 CAD 句柄扩展列
+                    // 批量写入 AD 列 CAD 句柄扩展列 (原 AA 列)
                     int rowCount = compEndRow - compStartRow + 1;
+                    // 初始化单列二维句柄矩阵
                     object[,] handleMatrix = new object[rowCount, 1];
                     for (int r = 0; r < rowCount; r++)
                     {
@@ -1563,7 +1564,8 @@ namespace ExcelAddInDemo
                             handleMatrix[r, 0] = string.Empty;
                         }
                     }
-                    sheet.Range[$"AA{compStartRow}:AA{compEndRow}"].Value2 = handleMatrix;
+                    // 一次性批量写入 AD 列 CAD 句柄
+                    sheet.Range[$"AD{compStartRow}:AD{compEndRow}"].Value2 = handleMatrix;
                 }
 
                 // 5. 批量组装汇总行 1 行 13 列数据矩阵 (A~M 列一次性单次 Range 批量写入)
@@ -1589,8 +1591,8 @@ namespace ExcelAddInDemo
                 sheet.Cells[detRow, 9].Value2 = installMode;
                 if (cab.Header.MinMaxPoints != null && cab.Header.MinMaxPoints.Count > 0)
                 {
-                    // 记录图纸范围坐标
-                    sheet.Cells[detRow, 27].Value2 = string.Join("-", cab.Header.MinMaxPoints);
+                    // 记录图纸范围坐标至 AD 列 (第 30 列)
+                    sheet.Cells[detRow, 30].Value2 = string.Join("-", cab.Header.MinMaxPoints);
                 }
 
                 // 7. 极致加速：直接注册 4 个定义名称 (零异常抛接，消灭 400 次 COM 异常)

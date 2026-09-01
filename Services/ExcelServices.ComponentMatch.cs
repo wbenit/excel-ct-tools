@@ -153,8 +153,8 @@ namespace ExcelAddInDemo
                 string colModel = string.IsNullOrWhiteSpace(activeColCfg.ModelColumn) ? "D" : activeColCfg.ModelColumn.Trim().ToUpper();
                 string colPrice = string.IsNullOrWhiteSpace(activeColCfg.PriceColumn) ? "G" : activeColCfg.PriceColumn.Trim().ToUpper();
                 string colRemark = string.IsNullOrWhiteSpace(activeColCfg.RemarkColumn) ? "I" : activeColCfg.RemarkColumn.Trim().ToUpper();
-                string colParam1 = string.IsNullOrWhiteSpace(activeColCfg.Param1Column) ? "W" : activeColCfg.Param1Column.Trim().ToUpper();
-                string colParam2 = string.IsNullOrWhiteSpace(activeColCfg.Param2Column) ? "X" : activeColCfg.Param2Column.Trim().ToUpper();
+                string colParam1 = string.IsNullOrWhiteSpace(activeColCfg.Param1Column) ? "V" : activeColCfg.Param1Column.Trim().ToUpper();
+                string colParam2 = string.IsNullOrWhiteSpace(activeColCfg.Param2Column) ? "W" : activeColCfg.Param2Column.Trim().ToUpper();
 
                 // 初始化统计计数器
                 int totalRows = 0;
@@ -497,48 +497,103 @@ namespace ExcelAddInDemo
                 // 1. 回填 B 列 (标准名称)
                 if (!string.IsNullOrEmpty(item.Name))
                 {
+                    // 将标准名称写入 B 列
                     sheet.Range[$"B{row}"].Value2 = item.Name;
                 }
 
-                // 2. 回填 D 列 (标准型号，覆盖掉“点击查询”)
-                sheet.Range[$"D{row}"].Value2 = item.Model ?? string.Empty;
-
-                // 3. 回填 I 列 (品牌/生产厂家)
-                sheet.Range[$"I{row}"].Value2 = item.Remark ?? item.Brand ?? string.Empty;
-
-                // 4. 回填价格逻辑
+                // 2. 根据工作表类型执行差异化回填
                 if (isSummarySheet)
                 {
-                    // 在“元件汇总表”中：汇总表自带公式，仅填 L 列本体表价
+                    // 在“元件汇总表”中：
+                    // D 列 (第 4 列) = 标准型号 (覆盖原有提示)
+                    sheet.Range[$"D{row}"].Value2 = item.Model ?? string.Empty;
+
+                    // I 列 (第 9 列) = 品牌/生产厂家
+                    sheet.Range[$"I{row}"].Value2 = item.Brand ?? string.Empty;
+
+                    // L 列 (第 12 列) = 本体表价 (汇总表自带公式计算销售单价与总价)
                     sheet.Range[$"L{row}"].Value2 = item.Price > 0 ? (object)(double)item.Price : string.Empty;
 
-                    // 若 M 列 (本体折扣) 当前为空或 0，则默认补 1
+                    // 若 M 列 (本体折扣) 当前为空或 0，则默认补 1 保障公式有效
                     string curM = Convert.ToString(sheet.Range[$"M{row}"].Value2)?.Trim() ?? string.Empty;
                     if (string.IsNullOrEmpty(curM) || curM == "0")
                     {
+                        // 补齐本体折扣为 1
                         sheet.Range[$"M{row}"].Value2 = 1;
                     }
+
+                    // P 列 (第 16 列) = 备注
+                    if (!string.IsNullOrEmpty(item.Remark))
+                    {
+                        // 写入备注信息至 P 列
+                        sheet.Range[$"P{row}"].Value2 = item.Remark;
+                    }
+
+                    // T 列 (第 20 列) = 额定电流数值
+                    sheet.Range[$"T{row}"].Value2 = item.Current.HasValue && item.Current.Value > 0 ? (object)item.Current.Value : string.Empty;
+
+                    // U 列 (第 21 列) = 极数 (如 "3", "4", "3P")
+                    sheet.Range[$"U{row}"].Value2 = item.Poles ?? string.Empty;
+
+                    // V 列 (第 22 列) = 脱扣方式 (如 "TM", "C", "D")
+                    sheet.Range[$"V{row}"].Value2 = item.Tripping ?? string.Empty;
+
+                    // W 列 (第 23 列) = 附件列 (重置清空，等待选附件时填入附件脱扣方式)
+                    sheet.Range[$"W{row}"].Value2 = string.Empty;
+
+                    // X 列 (第 24 列) = 扩展参数1 (如 "6kA", 结构尺寸等)
+                    sheet.Range[$"X{row}"].Value2 = item.Param1 ?? string.Empty;
+
+                    // Y 列 (第 25 列) = 扩展参数2 (如 "400V", 分类说明等)
+                    sheet.Range[$"Y{row}"].Value2 = item.Param2 ?? string.Empty;
+
+                    // 清除 D 列单元格的淡黄底色 (重置为无填充 xlNone)
+                    dynamic cellD = sheet.Range[$"D{row}"];
+                    cellD.Interior.ColorIndex = ComponentMatchDefaults.XlNoneColorIndex;
                 }
                 else
                 {
-                    // 在常规分类明细表中：本体表价填在 M 列 (表价)
-                    sheet.Range[$"M{row}"].Value2 = item.Price > 0 ? (object)item.Price : string.Empty;
+                    // 在【常规分类明细表】中：
+                    // C 列 (第 3 列) = 标准规格型号
+                    sheet.Range[$"C{row}"].Value2 = item.Model ?? string.Empty;
 
-                    // 回填 W 列 (扩展参数1)
-                    sheet.Range[$"W{row}"].Value2 = item.Param1 ?? string.Empty;
+                    // D 列 (第 4 列) = 生产厂家/品牌
+                    sheet.Range[$"D{row}"].Value2 = item.Brand ?? string.Empty;
 
-                    // 回填 X 列 (扩展参数2)
-                    sheet.Range[$"X{row}"].Value2 = item.Param2 ?? string.Empty;
+                    // M 列 (第 13 列) = 表价 (本体基准价)
+                    sheet.Range[$"M{row}"].Value2 = item.Price > 0 ? (object)(double)item.Price : string.Empty;
+
+                    // V 列 (第 22 列) = 扩展参数1
+                    sheet.Range[$"V{row}"].Value2 = item.Param1 ?? string.Empty;
+
+                    // W 列 (第 23 列) = 扩展参数2
+                    sheet.Range[$"W{row}"].Value2 = item.Param2 ?? string.Empty;
+
+                    // X 列 (第 24 列) = 额定电流
+                    sheet.Range[$"X{row}"].Value2 = item.Current.HasValue && item.Current.Value > 0 ? (object)item.Current.Value : string.Empty;
+
+                    // Y 列 (第 25 列) = 极数
+                    sheet.Range[$"Y{row}"].Value2 = item.Poles ?? string.Empty;
+
+                    // Z 列 (第 26 列) = 附件/备注说明
+                    sheet.Range[$"Z{row}"].Value2 = item.Remark ?? string.Empty;
+
+                    // 清除 C 列与 D 列的可能残留底色
+                    try
+                    {
+                        // 重置 C 列背景为无填充
+                        sheet.Range[$"C{row}"].Interior.ColorIndex = ComponentMatchDefaults.XlNoneColorIndex;
+                        // 重置 D 列背景为无填充
+                        sheet.Range[$"D{row}"].Interior.ColorIndex = ComponentMatchDefaults.XlNoneColorIndex;
+                    }
+                    catch { }
                 }
-
-                // 5. 清除 D 列单元格的淡黄底色 (重置为无填充 xlNone)
-                dynamic cellD = sheet.Range[$"D{row}"];
-                cellD.Interior.ColorIndex = ComponentMatchDefaults.XlNoneColorIndex;
 
                 return true;
             }
             catch (Exception ex)
             {
+                // 记录异常日志
                 LogHelper.WriteLog($"FillSelectedComponentToActiveRow 回填异常: {ex.Message}");
                 return false;
             }
@@ -581,11 +636,13 @@ namespace ExcelAddInDemo
                 string sheetName = Convert.ToString(sheet.Name) ?? string.Empty;
                 bool isSummarySheet = string.Equals(sheetName.Trim(), ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase);
 
-                // 1. 获取 D 列原有型号内容
-                string oldModel = Convert.ToString(sheet.Range[$"D{row}"].Value2)?.Trim() ?? string.Empty;
+                // 1. 获取型号所在列 (汇总表为 D 列，常规明细表为 C 列)
+                string modelCol = isSummarySheet ? "D" : "C";
+                string oldModel = Convert.ToString(sheet.Range[$"{modelCol}{row}"].Value2)?.Trim() ?? string.Empty;
                 // 若原单元格内容为初始提示词“点击查询”，则清空
                 if (string.Equals(oldModel, "点击查询", StringComparison.OrdinalIgnoreCase))
                 {
+                    // 重置为空文本
                     oldModel = string.Empty;
                 }
 
@@ -609,8 +666,8 @@ namespace ExcelAddInDemo
                     newModel = $"{trimmedOld}+{trimmedAttach}";
                 }
 
-                // 回填到 D 列
-                sheet.Range[$"D{row}"].Value2 = newModel;
+                // 回填到对应型号列
+                sheet.Range[$"{modelCol}{row}"].Value2 = newModel;
 
                 // 2. 处理附件价格回填逻辑
                 decimal attachPrice = attachment.Price > 0 ? attachment.Price : 0m;
@@ -687,9 +744,39 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 3. 清除 D 列底色
-                dynamic cellD = sheet.Range[$"D{row}"];
-                cellD.Interior.ColorIndex = ComponentMatchDefaults.XlNoneColorIndex;
+                // 3. 在“元件汇总表”中，当选附件后把附件的脱扣方式内容填到 W 列 (附件列)
+                if (isSummarySheet)
+                {
+                    // 提取当前选中附件的脱扣方式 (如 "MX", "OF", "MN" 等)
+                    string attachTripping = attachment.Tripping?.Trim() ?? string.Empty;
+                    if (!string.IsNullOrEmpty(attachTripping))
+                    {
+                        // 获取当前行 W 列原有内容
+                        string oldTripW = Convert.ToString(sheet.Range[$"W{row}"].Value2)?.Trim() ?? string.Empty;
+                        if (string.IsNullOrEmpty(oldTripW))
+                        {
+                            // 若 W 列为空则直接写入附件脱扣方式
+                            sheet.Range[$"W{row}"].Value2 = attachTripping;
+                        }
+                        else
+                        {
+                            // 若已有内容则以“+”连接追加
+                            string trimmedOldTrip = oldTripW.TrimEnd('+', '＋');
+                            string trimmedAttachTrip = attachTripping.TrimStart('+', '＋');
+                            sheet.Range[$"W{row}"].Value2 = $"{trimmedOldTrip}+{trimmedAttachTrip}";
+                        }
+                    }
+                }
+
+                // 4. 清除底色 (C 列与 D 列)
+                try
+                {
+                    // 清除型号列底色
+                    sheet.Range[$"{modelCol}{row}"].Interior.ColorIndex = ComponentMatchDefaults.XlNoneColorIndex;
+                    // 清除 D 列底色
+                    sheet.Range[$"D{row}"].Interior.ColorIndex = ComponentMatchDefaults.XlNoneColorIndex;
+                }
+                catch { }
 
                 return true;
             }

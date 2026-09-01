@@ -2,6 +2,64 @@
 
 ## [Completed]
 
+- **元器件明细行与汇总表 CAD 句柄导出/读取列由 AA 列调整为 AD 列 (第 30 列)**：
+  1. **箱柜批量导出引擎 (`Services/ExcelServices.Cabinet.cs`)**：
+     - 将元器件明细行的 CAD 句柄写入列调整为 `AD` 列（`sheet.Range[$"AD{compStartRow}:AD{compEndRow}"]`）；
+     - 将箱柜信息行图元坐标范围写入列调整为 `AD` 列（第 30 列）；
+  2. **汇总调价引擎 (`Services/ExcelServices.SummaryAdjustPrice.cs`)**：
+     - 将明细表批量读取范围从 `A:AA` 扩展至 `A:AD`（30 列）；
+     - 直接从 `AD` 列（索引 30）提取 CAD 句柄，不保留对旧版 `AA` 列的向下兼容；
+     - 汇总表生成时将 CAD 句柄批量写入 `AD` 列；
+     - 汇总调价一键更新反向同步时批量读取范围同样同步为 `A:AD`（30 列）；
+  3. **选区联动与二次元件组 (`ExcelEventManager.cs` & `Services/ExcelServices.ComponentGroup.cs`)**：
+     - 在 `OnSheetSelectionChange` 中直接读取 `AD` 列；
+     - 在二次元件组规则插入时，直接提取与写入 `AD/AE` 列（第 30/31 列）；
+  4. **编译校验**：
+     - 执行 `dotnet build /t:Compile` 编译通过，0 错误。
+
+- **重构物料智能匹配全参数回填与汇总调价双向同步引擎**：
+  1. **物料匹配回填引擎 (`Services/ExcelServices.ComponentMatch.cs`)**：
+     - **常规分类明细表分支**：
+       - B 列 (col 2): 名称 (`item.Name`)
+       - C 列 (col 3): 规格型号 (`item.Model`)
+       - D 列 (col 4): 生产厂家/品牌 (`item.Brand`)
+       - M 列 (col 13): 表价 (`item.Price`)
+       - V 列 (col 22): 扩展参数1 (`item.Param1`)
+       - W 列 (col 23): 扩展参数2 (`item.Param2`)
+       - X 列 (col 24): 额定电流 (`item.Current`)
+       - Y 列 (col 25): 极数 (`item.Poles`)
+       - Z 列 (col 26): 附件/备注 (`item.Remark`)
+       - 回填完成后自动清除 C/D 列背景底色。
+     - **元件汇总表分支**：
+       - B 列 (col 2): 名称 (`item.Name`)
+       - D 列 (col 4): 型号 (`item.Model`)
+       - I 列 (col 9): 品牌/生产厂家 (`item.Brand`)
+       - L 列 (col 12): 本体表价 (`item.Price`)
+       - M 列 (col 13): 本体折扣 (若空/0则自动补 1 保障公式联动)
+       - P 列 (col 16): 备注 (`item.Remark`)
+       - T 列 (col 20): 额定电流 (`item.Current`)
+       - U 列 (col 21): 极数 (`item.Poles`)
+       - V 列 (col 22): 脱扣方式 (`item.Tripping`)
+       - W 列 (col 23): 附件列 (初始置空，选附件时自动回填附件脱扣方式 `attachment.Tripping`)
+       - X 列 (col 24): 参数1 (`item.Param1`)
+       - Y 列 (col 25): 参数2 (`item.Param2`)
+       - 回填完成后自动清除 D 列背景底色。
+     - **附件追加回填 (`FillSelectedAttachmentToActiveRow`)**：
+       - 常规分类表中自适应更新 C 列（型号+附件型号*数量）与 M 列表价连加公式；
+       - 元件汇总表中更新 D 列、N 列附件表价加法公式，并**将附件脱扣方式回填/累加至 W 列**。
+  2. **汇总调价双向同步引擎 (`Services/ExcelServices.SummaryAdjustPrice.cs`)**：
+     - **生成汇总表**：
+       - 读取明细表 A~AA 27 列范围，提取扩展参数 V(参数1)、W(参数2)、X(额定电流)、Y(极数)、AA(CAD句柄)；
+       - 在汇总表渲染 T4:Y5 扩展参数表头（T: 额定电流, U: 极数, V: 脱扣方式, W: 附件, X: 参数1, Y: 参数2）；
+       - 矩阵一次性批量写入 T~Y 列参数数据及 AA 列 CAD 句柄；
+       - 精确设置 T~Y 列宽与 A5:Y5 自动筛选。
+     - **一键更新反向同步**：
+       - 读取汇总表 A~Y 25 列数据矩阵（包含 T: 电流, U: 极数, V: 脱扣, W: 附件, X: 参数1, Y: 参数2）；
+       - 将修改后的参数反写回各分类明细表对应行的 V 列(参数1)、W 列(参数2)、X 列(额定电流)、Y 列(极数)。
+  3. **代码规范与验证**：
+     - 严格遵循每 3 行包含一行中文注释规范；
+     - 遵循最小修改原则，读写大区域遵循规则 7 数组批量进出内存。
+
 - **落地【智能辅材与壳体计算】及动态定额规则配置中心功能**：
   1. **模型与配置持久层 (`Models/CabinetAuxCalcModels.cs`)**：
      - 定义 `QuotationRules` 聚合模型（`GeneralConfig`, `ShellConfig`, `CopperConfig`, `AuxConfig`, `LaborConfig`）；
@@ -314,11 +372,10 @@
 - 汇总调价“合并条件”中“名称”复选框已改为可自由勾选与取消，后端 GroupBy 动态响应；
 - 汇总调价【一键更新】中 N 列折扣生成 `=ROUND((本体*折扣+附件*折扣)/总表价,2)` 样式动态公式已全部落地；
 - 汇总调价【一键更新】反向精准同步回写至各分类表箱柜明细并联动全表公式重算已全部落地；
-- 汇总调价时提取首个元器件句柄至“元件汇总表” AA 列并点击 C 列联动 AutoCAD 夹点高亮显示已全部落地；
-- 常规表中本体与附件在 M 列连加、汇总表中本体填 L 列附件填 N 列（多附件公式连接且不改动表格自带公式）已全部落地；
-- 明细表 N 列折扣支持 `ROUND(...)` 解析并统一保留 2 位小数；
-- 配套附件数量入口及 `+附件型号*数量` 与 `+单价*数量` 公式联动回填全部落地；
-- Excel 选中行联动 AutoCAD 夹点显示（单选/多选行支持 + 自动视角居中缩放 + 命名管道 IPC + 50ms 防抖 + Ribbon 控制）已全部落地。
+- **修复 UpdateFromComponentSummarySheet 中 buildConfig 与 activeWb 变量未定义的编译错误**：
+  1. 在 `ExcelServices.SummaryAdjustPrice.cs` 的 `UpdateFromComponentSummarySheet` 方法中，补齐从 `summarySheet.Range["AB1"].Value2` 中反序列化读取持久化配置 `SummaryBuildConfig` 的逻辑；
+  2. 将 `Tool.GetSheetValidCabinets(sheet, activeWb)` 中的 `activeWb` 修正为当前定义的工作簿变量 `wb`；
+  3. 执行 `dotnet build /t:Compile` 验证通过，0 错误 0 警告。
 
 ## [In-Progress]
 
@@ -327,3 +384,4 @@
 ## [Next]
 
 - 根据用户实际使用场景与反馈进行细节调优。
+

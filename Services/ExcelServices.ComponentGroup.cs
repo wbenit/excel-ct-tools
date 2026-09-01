@@ -388,9 +388,9 @@ namespace ExcelAddInDemo
                     }
 
                     // 3. 在小计行前 (subsumRow 处) 批量插入行并写入二次元件组
-                    // 提取句柄 (AA 列 / AB 列 = 27 / 28)
-                    string handleA = sheet.Cells[detRow, 27].Value?.ToString() ?? "";
-                    string handleB = sheet.Cells[detRow, 28].Value?.ToString() ?? "";
+                    // 提取句柄 (AD/AE 列 = 30/31)
+                    string handleA = sheet.Cells[detRow, 30].Value?.ToString() ?? "";
+                    string handleB = sheet.Cells[detRow, 31].Value?.ToString() ?? "";
 
                     int insertPoint = subsumRow;
 
@@ -411,9 +411,9 @@ namespace ExcelAddInDemo
                         // F 列写入计算得到的套数 (按用户指示: F 列写入计算套数)
                         sheet.Cells[insertPoint, map.QuantityCol].Value = match.Quantity;
 
-                        // 继承 CAD 图元句柄 (AA / AB 列)
-                        if (!string.IsNullOrEmpty(handleA)) sheet.Cells[insertPoint, 27].Value = handleA;
-                        if (!string.IsNullOrEmpty(handleB)) sheet.Cells[insertPoint, 28].Value = handleB;
+                        // 继承 CAD 图元句柄 (AD / AE 列)
+                        if (!string.IsNullOrEmpty(handleA)) sheet.Cells[insertPoint, 30].Value = handleA;
+                        if (!string.IsNullOrEmpty(handleB)) sheet.Cells[insertPoint, 31].Value = handleB;
 
                         result.InsertedGroupsCount++;
                         result.Details.Add($"箱柜 [{k}] 成功在行 {insertPoint} 插入二次元件组: [{match.TargetGroup}]，套数: {match.Quantity} 套");
