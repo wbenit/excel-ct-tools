@@ -97,7 +97,10 @@ namespace ExcelAddInDemo
         /// <param name="mustContainRules">动态必含字段约束规则列表 (多条规则间为 AND 关系)</param>
         /// <param name="maxResults">最多返回结果条数限制 (默认 100)</param>
         /// <returns>经过全局过滤管道筛选后的匹配条目列表</returns>
-        public static List<ComponentApiDto> SearchComponents(
+        /// <summary>
+        /// 异步非阻塞：调用远程商城 WebAPI 根据多维参数检索元器件数据列表 (避免阻塞 UI 线程)
+        /// </summary>
+        public static async Task<List<ComponentApiDto>> SearchComponentsAsync(
             string? searchKeyword,
             string? name,
             string? current,
@@ -105,7 +108,7 @@ namespace ExcelAddInDemo
             string? tripMode,
             string? brand = null,
             List<MustContainRule>? mustContainRules = null,
-            int maxResults = 100)
+            int maxResults = 20)
         {
             try
             {
@@ -116,52 +119,66 @@ namespace ExcelAddInDemo
                 // 构建查询参数 QueryString 列表
                 var queryParams = new List<string>();
 
-                // 1. 处理名称参数 (优先使用明确名称，若无则使用搜索关键字)
+                // 1. 处理名称参数
                 string cleanName = name?.Trim() ?? string.Empty;
                 if (!string.IsNullOrEmpty(cleanName))
                 {
                     queryParams.Add($"Name={Uri.EscapeDataString(cleanName)}");
                 }
 
-                // 2. 处理电流参数 (提取出纯整型数字，如 "32A" ➔ 32)
+                // 2. 处理电流参数 (提取纯整型数字，如 "32A" ➔ 32)
                 int? parsedCurrent = ExtractIntegerCurrent(current);
                 if (parsedCurrent.HasValue)
                 {
                     queryParams.Add($"Current={parsedCurrent.Value}");
                 }
 
-                // 3. 处理极数参数 (剥离末尾的 P 字符，如 "4P" ➔ "4")
+                // 3. 处理极数参数 (剥离末尾 P 字符，如 "4P" ➔ "4")
                 string cleanPoles = NormalizePolesParam(pole);
                 if (!string.IsNullOrEmpty(cleanPoles))
                 {
                     queryParams.Add($"Poles={Uri.EscapeDataString(cleanPoles)}");
                 }
 
-                // 4. 处理品牌筛选参数 (全局过滤管道第一层: 品牌)
+                // 4. 处理脱扣方式参数 (直接匹配数据库 tripping 数据列)
+                string cleanTrip = tripMode?.Trim().ToUpper() ?? string.Empty;
+                if (!string.IsNullOrEmpty(cleanTrip))
+                {
+                    queryParams.Add($"Tripping={Uri.EscapeDataString(cleanTrip)}");
+                }
+
+                // 5. 处理品牌筛选参数
                 string cleanBrand = brand?.Trim() ?? string.Empty;
                 if (!string.IsNullOrEmpty(cleanBrand) && !string.Equals(cleanBrand, "全部", StringComparison.OrdinalIgnoreCase) && !string.Equals(cleanBrand, "All", StringComparison.OrdinalIgnoreCase))
                 {
                     queryParams.Add($"Brand={Uri.EscapeDataString(cleanBrand)}");
                 }
 
-                // 5. 设置大分页大小，获取足够多的候选项供客户端精细过滤
+                // 6. 处理用户即时搜索词
+                string kw = searchKeyword?.Trim() ?? string.Empty;
+                if (!string.IsNullOrEmpty(kw))
+                {
+                    queryParams.Add($"Keyword={Uri.EscapeDataString(kw)}");
+                }
+
+                // 7. 设置分页请求大小为 20 条
                 queryParams.Add("PageIndex=1");
-                queryParams.Add("PageSize=500");
+                queryParams.Add($"PageSize={maxResults}"); // --硬编码-- 第一层接口仅获取前20条数据
 
                 // 组合拼接完整的请求 URL 地址
                 string queryString = string.Join("&", queryParams);
                 string fullUrl = $"{baseUrl.TrimEnd('/')}/{endpoint.TrimStart('/')}?{queryString}";
 
-                // 发送 HTTP GET 异步请求
-                var response = _httpClient.GetAsync(fullUrl).GetAwaiter().GetResult();
+                // 真正的异步 HTTP GET 请求，不阻塞主线程
+                var response = await _httpClient.GetAsync(fullUrl).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
                     LogHelper.WriteLog($"[ComponentApiClient] 请求返回状态码: {response.StatusCode}");
                     return new List<ComponentApiDto>();
                 }
 
-                // 读取响应内容
-                string jsonString = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                // 异步读取响应内容
+                string jsonString = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 if (string.IsNullOrWhiteSpace(jsonString))
                 {
                     return new List<ComponentApiDto>();
@@ -176,7 +193,7 @@ namespace ExcelAddInDemo
 
                 var items = pagedResult.Items;
 
-                // 6. 全局过滤管道第二层: 动态必含字段约束 (Must-Contain Rules, AND 关系)
+                // 8. 全局过滤管道第二层: 动态必含字段约束 (只要型号 Model 包含所有必含关键字即可)
                 if (mustContainRules != null && mustContainRules.Count > 0)
                 {
                     var activeRules = mustContainRules
@@ -188,39 +205,22 @@ namespace ExcelAddInDemo
                     {
                         items = items.Where(item =>
                         {
-                            string fullModelText = (item.Model ?? string.Empty) + " " + (item.Param1 ?? string.Empty) + " " + (item.Param2 ?? string.Empty);
-                            return activeRules.All(kw => fullModelText.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0);
+                            string modelText = item.Model ?? string.Empty;
+                            return activeRules.All(r => modelText.IndexOf(r, StringComparison.OrdinalIgnoreCase) >= 0);
                         }).ToList();
                     }
                 }
 
-                // 7. 用户输入的即时模糊搜索词过滤 (在已收敛的候选集中进一步模糊过滤)
-                string kw = searchKeyword?.Trim() ?? string.Empty;
+                // 9. 全局过滤管道第三层: 用户即时模糊搜索词
                 if (!string.IsNullOrEmpty(kw))
                 {
                     items = items.Where(it =>
                     {
-                        string target = $"{it.Model} {it.Brand} {it.Name} {it.Remark} {it.Param1} {it.Param2}";
-                        return target.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0;
+                        string targetModel = it.Model ?? string.Empty;
+                        return targetModel.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0;
                     }).ToList();
                 }
 
-                // 8. 若指定了脱扣特性，进一步精细筛选
-                string normTrip = tripMode?.Trim().ToUpper() ?? string.Empty;
-                if (!string.IsNullOrEmpty(normTrip) && items.Count > 1)
-                {
-                    var tripMatched = items.Where(x =>
-                        string.Equals(x.Tripping?.Trim(), normTrip, StringComparison.OrdinalIgnoreCase) ||
-                        (!string.IsNullOrEmpty(x.Model) && x.Model.ToUpper().Contains(normTrip))
-                    ).ToList();
-
-                    if (tripMatched.Count > 0)
-                    {
-                        items = tripMatched;
-                    }
-                }
-
-                // 截取最大限制条数
                 return items.Take(maxResults).ToList();
             }
             catch (Exception ex)
@@ -228,6 +228,36 @@ namespace ExcelAddInDemo
                 LogHelper.WriteLog($"[ComponentApiClient] 搜索异常: {ex.Message}");
                 return new List<ComponentApiDto>();
             }
+        }
+
+        /// <summary>
+        /// 同步兼容方法：内部安全调用异步方法
+        /// </summary>
+        public static List<ComponentApiDto> SearchComponents(
+            string? searchKeyword,
+            string? name,
+            string? current,
+            string? pole,
+            string? tripMode,
+            string? brand = null,
+            List<MustContainRule>? mustContainRules = null,
+            int maxResults = 20)
+        {
+            return Task.Run(() => SearchComponentsAsync(searchKeyword, name, current, pole, tripMode, brand, mustContainRules, maxResults)).GetAwaiter().GetResult();
+        }
+
+        /// <summary>
+        /// 异步多维元器件查询
+        /// </summary>
+        public static async Task<List<ComponentApiDto>> QueryComponentsAsync(
+            string name,
+            string current,
+            string pole,
+            string tripMode,
+            string? brand = null,
+            List<MustContainRule>? mustContainRules = null)
+        {
+            return await SearchComponentsAsync(null, name, current, pole, tripMode, brand, mustContainRules).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -398,35 +428,29 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 根据品牌、名称以及主体型号从远程接口获取可适配的配套附件列表
+        /// 异步非阻塞：根据品牌、名称以及主体型号从远程接口获取可适配的配套附件列表
         /// </summary>
-        /// <param name="brand">所属品牌 (如: 德力西, 施耐德)</param>
-        /// <param name="name">元器件名称 (如: 塑壳断路器)</param>
-        /// <param name="model">当前选中的主体型号文本 (用于与附件 Param2 匹配)</param>
-        /// <returns>符合适配条件的附件列表</returns>
-        public static List<ComponentApiDto> GetAttachments(string? brand, string? name, string? model)
+        public static async Task<List<ComponentApiDto>> GetAttachmentsAsync(string? brand, string? name, string? model)
         {
             var attachments = new List<ComponentApiDto>();
             try
             {
-                // 读取 API 基准地址
                 string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
                 string cleanBrand = brand?.Trim() ?? string.Empty;
                 string cleanName = name?.Trim() ?? string.Empty;
                 string cleanModel = model?.Trim() ?? string.Empty;
 
-                // 构建请求参数
                 var queryParams = new List<string>();
                 if (!string.IsNullOrEmpty(cleanBrand)) queryParams.Add($"brand={Uri.EscapeDataString(cleanBrand)}");
                 if (!string.IsNullOrEmpty(cleanName)) queryParams.Add($"name={Uri.EscapeDataString(cleanName)}");
                 if (!string.IsNullOrEmpty(cleanModel)) queryParams.Add($"model={Uri.EscapeDataString(cleanModel)}");
 
                 string endpoint = $"{baseUrl.TrimEnd('/')}/api/api/Component/GetAttachments?{string.Join("&", queryParams)}";
-                var response = _httpClient.GetAsync(endpoint).GetAwaiter().GetResult();
+                var response = await _httpClient.GetAsync(endpoint).ConfigureAwait(false);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    string json = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                    string json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(json))
                     {
                         var list = JsonSerializer.Deserialize<List<ComponentApiDto>>(json, _jsonOptions);
@@ -435,9 +459,8 @@ namespace ExcelAddInDemo
                 }
                 else
                 {
-                    // 若线上尚未更新该接口，启用备用降级逻辑：拉取该品牌同名称且 Param1='附件' 的数据并在客户端比对
                     LogHelper.WriteLog($"[ComponentApiClient] GetAttachments 端点返回状态码 {response.StatusCode}，启动本地过滤降级策略");
-                    var rawList = SearchComponents(null, cleanName, null, null, null, cleanBrand, null, 200);
+                    var rawList = await SearchComponentsAsync(null, cleanName, null, null, null, cleanBrand, null, 200).ConfigureAwait(false);
                     attachments = rawList.Where(item =>
                     {
                         if (!string.Equals(item.Param1?.Trim(), "附件", StringComparison.OrdinalIgnoreCase)) return false;
@@ -453,11 +476,18 @@ namespace ExcelAddInDemo
             }
             catch (Exception ex)
             {
-                // 记录异常日志
                 LogHelper.WriteLog($"[ComponentApiClient] GetAttachments 异常: {ex.Message}");
             }
 
             return attachments;
+        }
+
+        /// <summary>
+        /// 同步兼容包装
+        /// </summary>
+        public static List<ComponentApiDto> GetAttachments(string? brand, string? name, string? model)
+        {
+            return Task.Run(() => GetAttachmentsAsync(brand, name, model)).GetAwaiter().GetResult();
         }
 
         /// <summary>

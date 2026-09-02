@@ -97,7 +97,47 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 核心批处理方法: 直读选区已有的 B 列(名称)、S 列(电流)、T 列(极数)、U 列(脱扣)，应用品牌与必含字段约束反查 WebAPI 并批量回填
+        /// 获取当前生效的列映射配置（优先联动读取用户在“识别极数电流”中配置的输出列，保证两处统一联动）
+        /// </summary>
+        public static ComponentMatchColumnConfig GetEffectiveColumnConfig(ComponentMatchFilterConfig? filterConfig = null)
+        {
+            var activeFilterCfg = filterConfig ?? LoadComponentMatchFilterConfig();
+            var colCfg = activeFilterCfg.ColumnConfig ?? new ComponentMatchColumnConfig();
+
+            try
+            {
+                // 读取用户在“识别极数电流”界面保存的 ModelParserConfig
+                var parserCtrl = new Controllers.ModelParamParserController();
+                var parserCfg = parserCtrl.LoadConfig();
+                if (parserCfg != null)
+                {
+                    // 若 ModelParserConfig 中配置了最小电流列，以其为准联动
+                    if (!string.IsNullOrWhiteSpace(parserCfg.MinCurrentColumn))
+                    {
+                        colCfg.CurrentColumn = parserCfg.MinCurrentColumn.Trim().ToUpper();
+                    }
+                    // 若 ModelParserConfig 中配置了极数列，以其为准联动
+                    if (!string.IsNullOrWhiteSpace(parserCfg.PoleColumn))
+                    {
+                        colCfg.PoleColumn = parserCfg.PoleColumn.Trim().ToUpper();
+                    }
+                    // 若 ModelParserConfig 中配置了脱扣列，以其为准联动
+                    if (!string.IsNullOrWhiteSpace(parserCfg.TripModeColumn))
+                    {
+                        colCfg.TripModeColumn = parserCfg.TripModeColumn.Trim().ToUpper();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"GetEffectiveColumnConfig 联动异常: {ex.Message}");
+            }
+
+            return colCfg;
+        }
+
+        /// <summary>
+        /// 核心批处理方法: 直读选区已有的 B 列(名称)、T 列(额定电流)、U 列(极数)、V 列(脱扣方式)，应用品牌与必含字段约束反查 WebAPI 并批量回填
         /// </summary>
         /// <param name="filterConfig">多维匹配过滤配置 (包含品牌与必含字段规则，若为空则自动加载本地保存配置)</param>
         /// <returns>执行统计结果报告</returns>
@@ -137,24 +177,25 @@ namespace ExcelAddInDemo
                     return result;
                 }
 
-                // 加载生效的过滤规则与列映射配置
+                // 加载生效的过滤规则与列映射配置 (与 ModelParserConfig 联动)
                 var activeFilterCfg = filterConfig ?? LoadComponentMatchFilterConfig();
-                var activeColCfg = activeFilterCfg.ColumnConfig ?? new ComponentMatchColumnConfig();
+                var activeColCfg = GetEffectiveColumnConfig(activeFilterCfg);
 
                 // 提取品牌限定与动态必含字段规则
                 string selectedBrand = activeFilterCfg.SelectedBrand ?? string.Empty;
                 var mustContainRules = activeFilterCfg.MustContainRules ?? new List<MustContainRule>();
 
-                // 规范化列名 (转为大写且去除空格)
+                // 规范化列名 (分类明细表标准: W=Current, X=Poles, Y=trip, Z=Accessory, AA=BlockName, AB=BlockCategory)
                 string colName = string.IsNullOrWhiteSpace(activeColCfg.NameColumn) ? "B" : activeColCfg.NameColumn.Trim().ToUpper();
-                string colCur = string.IsNullOrWhiteSpace(activeColCfg.CurrentColumn) ? "S" : activeColCfg.CurrentColumn.Trim().ToUpper();
-                string colPole = string.IsNullOrWhiteSpace(activeColCfg.PoleColumn) ? "T" : activeColCfg.PoleColumn.Trim().ToUpper();
-                string colTrip = string.IsNullOrWhiteSpace(activeColCfg.TripModeColumn) ? "U" : activeColCfg.TripModeColumn.Trim().ToUpper();
+                string colCur = string.IsNullOrWhiteSpace(activeColCfg.CurrentColumn) ? "W" : activeColCfg.CurrentColumn.Trim().ToUpper();
+                string colPole = string.IsNullOrWhiteSpace(activeColCfg.PoleColumn) ? "X" : activeColCfg.PoleColumn.Trim().ToUpper();
+                string colTrip = string.IsNullOrWhiteSpace(activeColCfg.TripModeColumn) ? "Y" : activeColCfg.TripModeColumn.Trim().ToUpper();
                 string colModel = string.IsNullOrWhiteSpace(activeColCfg.ModelColumn) ? "D" : activeColCfg.ModelColumn.Trim().ToUpper();
                 string colPrice = string.IsNullOrWhiteSpace(activeColCfg.PriceColumn) ? "G" : activeColCfg.PriceColumn.Trim().ToUpper();
                 string colRemark = string.IsNullOrWhiteSpace(activeColCfg.RemarkColumn) ? "I" : activeColCfg.RemarkColumn.Trim().ToUpper();
-                string colParam1 = string.IsNullOrWhiteSpace(activeColCfg.Param1Column) ? "V" : activeColCfg.Param1Column.Trim().ToUpper();
-                string colParam2 = string.IsNullOrWhiteSpace(activeColCfg.Param2Column) ? "W" : activeColCfg.Param2Column.Trim().ToUpper();
+                string colAttachment = string.IsNullOrWhiteSpace(activeColCfg.AttachmentColumn) ? "Z" : activeColCfg.AttachmentColumn.Trim().ToUpper();
+                string colParam1 = string.IsNullOrWhiteSpace(activeColCfg.Param1Column) ? "AA" : activeColCfg.Param1Column.Trim().ToUpper();
+                string colParam2 = string.IsNullOrWhiteSpace(activeColCfg.Param2Column) ? "AB" : activeColCfg.Param2Column.Trim().ToUpper();
 
                 // 初始化统计计数器
                 int totalRows = 0;
@@ -174,20 +215,20 @@ namespace ExcelAddInDemo
                     if (rowCount <= 0) continue;
                     totalRows += rowCount;
 
-                    // ==================== 1. 一次性从已有的 B列(名称)、S列(电流)、T列(极数)、U列(脱扣)读入内存 ====================
+                    // ==================== 1. 一次性从已有的 B列(名称)、T列(电流)、U列(极数)、V列(脱扣)读入内存 ====================
                     // 一次性读入 B 列 (名称)
                     dynamic nameRange = activeSheet.Range[$"{colName}{startRow}:{colName}{endRow}"];
                     object[,] nameRawArray = ConvertTo2DArray(nameRange.Value2, rowCount);
 
-                    // 一次性读入 S 列 (电流)
+                    // 一次性读入 T 列 (额定电流)
                     dynamic curRange = activeSheet.Range[$"{colCur}{startRow}:{colCur}{endRow}"];
                     object[,] curRawArray = ConvertTo2DArray(curRange.Value2, rowCount);
 
-                    // 一次性读入 T 列 (极数)
+                    // 一次性读入 U 列 (极数)
                     dynamic poleRange = activeSheet.Range[$"{colPole}{startRow}:{colPole}{endRow}"];
                     object[,] poleRawArray = ConvertTo2DArray(poleRange.Value2, rowCount);
 
-                    // 一次性读入 U 列 (脱扣方式)
+                    // 一次性读入 V 列 (脱扣方式)
                     dynamic tripRange = activeSheet.Range[$"{colTrip}{startRow}:{colTrip}{endRow}"];
                     object[,] tripRawArray = ConvertTo2DArray(tripRange.Value2, rowCount);
 
@@ -196,8 +237,8 @@ namespace ExcelAddInDemo
                     object[,] modelArray = new object[rowCount, 1];   // D 列 (型号)
                     object[,] priceArray = new object[rowCount, 1];   // G 列 (单价)
                     object[,] remarkArray = new object[rowCount, 1];  // I 列 (备注)
-                    object[,] param1Array = new object[rowCount, 1];  // W 列 (参数1)
-                    object[,] param2Array = new object[rowCount, 1];  // X 列 (参数2)
+                    object[,] param1Array = new object[rowCount, 1];  // X 列 (参数1)
+                    object[,] param2Array = new object[rowCount, 1];  // Y 列 (参数2)
 
                     // 收集当前区域中需要高亮淡黄底色的行号集合 (相对于工作表的绝对物理行号)
                     var yellowHighlightRowList = new List<int>();
@@ -288,7 +329,7 @@ namespace ExcelAddInDemo
                         }
                     }
 
-                    // ==================== 4. 一次性将二维数组整块写回 Excel 目标字段列 (不覆盖S/T/U列) ====================
+                    // ==================== 4. 一次性将二维数组整块写回 Excel 目标字段列 (不覆盖T/U/V列) ====================
                     // 写回 B 列 (名称)
                     activeSheet.Range[$"{colName}{startRow}:{colName}{endRow}"].Value2 = nameArray;
                     // 写回 D 列 (型号)
@@ -297,9 +338,9 @@ namespace ExcelAddInDemo
                     activeSheet.Range[$"{colPrice}{startRow}:{colPrice}{endRow}"].Value2 = priceArray;
                     // 写回 I 列 (备注)
                     activeSheet.Range[$"{colRemark}{startRow}:{colRemark}{endRow}"].Value2 = remarkArray;
-                    // 写回 W 列 (参数1)
+                    // 写回 X 列 (扩展参数1)
                     activeSheet.Range[$"{colParam1}{startRow}:{colParam1}{endRow}"].Value2 = param1Array;
-                    // 写回 X 列 (参数2)
+                    // 写回 Y 列 (扩展参数2)
                     activeSheet.Range[$"{colParam2}{startRow}:{colParam2}{endRow}"].Value2 = param2Array;
 
                     // ==================== 5. 针对“点击查询”单元格统一应用淡黄底色 ====================
@@ -381,11 +422,21 @@ namespace ExcelAddInDemo
                 dynamic sheet = activeCell.Worksheet;
                 if (sheet == null) return;
 
-                // 3. 读取当前行已有的 B 列(名称)、S 列(电流)、T 列(极数)、U 列(脱扣)、D 列(型号)、C 列(原型号)、G 列(单价)
-                string rawName = Convert.ToString(sheet.Range[$"B{row}"].Value2)?.Trim() ?? string.Empty;
-                string rawCur = Convert.ToString(sheet.Range[$"S{row}"].Value2)?.Trim() ?? string.Empty;
-                string rawPole = Convert.ToString(sheet.Range[$"T{row}"].Value2)?.Trim() ?? string.Empty;
-                string rawTrip = Convert.ToString(sheet.Range[$"U{row}"].Value2)?.Trim() ?? string.Empty;
+                // 4. 加载当前生效的全局过滤管道配置与联动列配置 (自动从“识别极数电流”中同步用户修改的列)
+                var filterConfig = LoadComponentMatchFilterConfig();
+                var activeColCfg = GetEffectiveColumnConfig(filterConfig);
+
+                // 动态获取各参数所在列名 (分类明细表标准: W=Current, X=Poles, Y=trip)
+                string colName = string.IsNullOrWhiteSpace(activeColCfg.NameColumn) ? "B" : activeColCfg.NameColumn.Trim().ToUpper();
+                string colCur = string.IsNullOrWhiteSpace(activeColCfg.CurrentColumn) ? "W" : activeColCfg.CurrentColumn.Trim().ToUpper();
+                string colPole = string.IsNullOrWhiteSpace(activeColCfg.PoleColumn) ? "X" : activeColCfg.PoleColumn.Trim().ToUpper();
+                string colTrip = string.IsNullOrWhiteSpace(activeColCfg.TripModeColumn) ? "Y" : activeColCfg.TripModeColumn.Trim().ToUpper();
+
+                // 3. 读取当前行已有的名称(B)、额定电流(W)、极数(X)、脱扣(Y)、型号(D)、原型号(C)、单价(G)
+                string rawName = Convert.ToString(sheet.Range[$"{colName}{row}"].Value2)?.Trim() ?? string.Empty;
+                string rawCur = Convert.ToString(sheet.Range[$"{colCur}{row}"].Value2)?.Trim() ?? string.Empty;
+                string rawPole = Convert.ToString(sheet.Range[$"{colPole}{row}"].Value2)?.Trim() ?? string.Empty;
+                string rawTrip = Convert.ToString(sheet.Range[$"{colTrip}{row}"].Value2)?.Trim() ?? string.Empty;
 
                 // 读取当前 D 列实际内容（型号规格）与 C 列内容（原型号规格）
                 string rawModel = Convert.ToString(sheet.Range[$"D{row}"].Value2)?.Trim() ?? string.Empty;
@@ -402,9 +453,6 @@ namespace ExcelAddInDemo
                 {
                     rawPriceFormula = Convert.ToString(sheet.Range[$"G{row}"].Value2)?.Trim() ?? string.Empty;
                 }
-
-                // 4. 加载当前生效的全局过滤管道配置 (品牌 + 必含字段约束 + 搜索开关)
-                var filterConfig = LoadComponentMatchFilterConfig();
 
                 // 构造上下文参数 (带上原型号、原单价与所属品牌)
                 var cellParams = new CellParamsContext
@@ -425,24 +473,14 @@ namespace ExcelAddInDemo
                     return;
                 }
 
-                // 5. 按照已有参数初筛候选列表
-                var initialItems = ComponentApiClient.QueryComponents(
-                    rawName,
-                    rawCur,
-                    rawPole,
-                    rawTrip,
-                    filterConfig.SelectedBrand,
-                    filterConfig.MustContainRules
-                );
-
-                // 6. 初始化或复用下拉悬浮窗实例
+                // 5. 初始化或复用下拉悬浮窗实例
                 if (_matchOverlayForm == null || _matchOverlayForm.IsDisposed)
                 {
                     _matchOverlayForm = new ComponentMatchOverlayForm();
                 }
 
-                // 在当前单元格下方贴合弹出
-                _matchOverlayForm.ShowAtCell(activeCell, initialItems, cellParams, filterConfig);
+                // 6. 在当前单元格下方贴合弹出 (传 null 触发后台异步非阻塞拉取数据，避免 Excel 主线程卡顿)
+                _matchOverlayForm.ShowAtCell(activeCell, null, cellParams, filterConfig);
             }
             catch (Exception ex)
             {
@@ -553,7 +591,7 @@ namespace ExcelAddInDemo
                 }
                 else
                 {
-                    // 在【常规分类明细表】中：
+                    // 在【常规分类明细表】中（按图片标准）：
                     // C 列 (第 3 列) = 标准规格型号
                     sheet.Range[$"C{row}"].Value2 = item.Model ?? string.Empty;
 
@@ -563,20 +601,23 @@ namespace ExcelAddInDemo
                     // M 列 (第 13 列) = 表价 (本体基准价)
                     sheet.Range[$"M{row}"].Value2 = item.Price > 0 ? (object)(double)item.Price : string.Empty;
 
-                    // V 列 (第 22 列) = 扩展参数1
-                    sheet.Range[$"V{row}"].Value2 = item.Param1 ?? string.Empty;
+                    // W 列 (第 23 列) = Current 额定电流
+                    sheet.Range[$"W{row}"].Value2 = item.Current.HasValue && item.Current.Value > 0 ? (object)item.Current.Value : string.Empty;
 
-                    // W 列 (第 23 列) = 扩展参数2
-                    sheet.Range[$"W{row}"].Value2 = item.Param2 ?? string.Empty;
+                    // X 列 (第 24 列) = Poles 极数 (如 "3", "4", "1P")
+                    sheet.Range[$"X{row}"].Value2 = item.Poles ?? string.Empty;
 
-                    // X 列 (第 24 列) = 额定电流
-                    sheet.Range[$"X{row}"].Value2 = item.Current.HasValue && item.Current.Value > 0 ? (object)item.Current.Value : string.Empty;
+                    // Y 列 (第 25 列) = trip 脱扣方式 (如 "D", "C")
+                    sheet.Range[$"Y{row}"].Value2 = item.Tripping ?? string.Empty;
 
-                    // Y 列 (第 25 列) = 极数
-                    sheet.Range[$"Y{row}"].Value2 = item.Poles ?? string.Empty;
+                    // Z 列 (第 26 列) = Accessory 附件 (置空，等待选附件时填入)
+                    sheet.Range[$"Z{row}"].Value2 = string.Empty;
 
-                    // Z 列 (第 26 列) = 附件/备注说明
-                    sheet.Range[$"Z{row}"].Value2 = item.Remark ?? string.Empty;
+                    // AA 列 (第 27 列) = BlockName 块名/扩展参数1
+                    sheet.Range[$"AA{row}"].Value2 = item.Param1 ?? string.Empty;
+
+                    // AB 列 (第 28 列) = BlockCategory 块类别/扩展参数2
+                    sheet.Range[$"AB{row}"].Value2 = item.Param2 ?? string.Empty;
 
                     // 清除 C 列与 D 列的可能残留底色
                     try
@@ -744,27 +785,25 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 3. 在“元件汇总表”中，当选附件后把附件的脱扣方式内容填到 W 列 (附件列)
-                if (isSummarySheet)
+                // 3. 处理附件信息列回填 (汇总表填入 W 列，常规分类明细表填入 Z 列 Accessory)
+                string attachCol = isSummarySheet ? "W" : "Z";
+                // 提取当前选中附件的脱扣方式 (如 "MX", "OF", "MN" 等)
+                string attachTripping = attachment.Tripping?.Trim() ?? string.Empty;
+                if (!string.IsNullOrEmpty(attachTripping))
                 {
-                    // 提取当前选中附件的脱扣方式 (如 "MX", "OF", "MN" 等)
-                    string attachTripping = attachment.Tripping?.Trim() ?? string.Empty;
-                    if (!string.IsNullOrEmpty(attachTripping))
+                    // 获取当前行附件列原有内容
+                    string oldTrip = Convert.ToString(sheet.Range[$"{attachCol}{row}"].Value2)?.Trim() ?? string.Empty;
+                    if (string.IsNullOrEmpty(oldTrip))
                     {
-                        // 获取当前行 W 列原有内容
-                        string oldTripW = Convert.ToString(sheet.Range[$"W{row}"].Value2)?.Trim() ?? string.Empty;
-                        if (string.IsNullOrEmpty(oldTripW))
-                        {
-                            // 若 W 列为空则直接写入附件脱扣方式
-                            sheet.Range[$"W{row}"].Value2 = attachTripping;
-                        }
-                        else
-                        {
-                            // 若已有内容则以“+”连接追加
-                            string trimmedOldTrip = oldTripW.TrimEnd('+', '＋');
-                            string trimmedAttachTrip = attachTripping.TrimStart('+', '＋');
-                            sheet.Range[$"W{row}"].Value2 = $"{trimmedOldTrip}+{trimmedAttachTrip}";
-                        }
+                        // 若附件列为空则直接写入附件脱扣方式
+                        sheet.Range[$"{attachCol}{row}"].Value2 = attachTripping;
+                    }
+                    else
+                    {
+                        // 若已有内容则以“+”连接追加
+                        string trimmedOldTrip = oldTrip.TrimEnd('+', '＋');
+                        string trimmedAttachTrip = attachTripping.TrimStart('+', '＋');
+                        sheet.Range[$"{attachCol}{row}"].Value2 = $"{trimmedOldTrip}+{trimmedAttachTrip}";
                     }
                 }
 

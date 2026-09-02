@@ -528,7 +528,7 @@
             // 初始化展示 (带上当前行参数与初始匹配物料)
             case 'initCandidates':
               isAttachmentMode.value = false;
-              loading.value = false;
+              loading.value = msg.loading !== undefined ? msg.loading : false;
               items.value = msg.items || [];
               normalModeItems.value = msg.items || [];
               selectedIndex.value = 0;
@@ -577,7 +577,7 @@
               keyword: searchKeyword.value,
               cellParams: cellParams.value
             });
-          }, 200);
+          }, 120);
         };
 
         // 键盘上下移动选择

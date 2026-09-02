@@ -339,12 +339,12 @@ namespace ExcelAddInDemo
                     return batchResult;
                 }
 
-                // 规范化列名 (转为大写且去除空格)
+                // 规范化列名 (分类明细表标准: W=Current, X=Poles, Y=trip)
                 string colSrc = string.IsNullOrWhiteSpace(config.SourceColumn) ? "C" : config.SourceColumn.Trim().ToUpper();
-                string colMinCur = string.IsNullOrWhiteSpace(config.MinCurrentColumn) ? string.Empty : config.MinCurrentColumn.Trim().ToUpper();
+                string colMinCur = string.IsNullOrWhiteSpace(config.MinCurrentColumn) ? "W" : config.MinCurrentColumn.Trim().ToUpper();
                 string colMaxCur = string.IsNullOrWhiteSpace(config.MaxCurrentColumn) ? string.Empty : config.MaxCurrentColumn.Trim().ToUpper();
-                string colPole = string.IsNullOrWhiteSpace(config.PoleColumn) ? "T" : config.PoleColumn.Trim().ToUpper();
-                string colTrip = string.IsNullOrWhiteSpace(config.TripModeColumn) ? "U" : config.TripModeColumn.Trim().ToUpper();
+                string colPole = string.IsNullOrWhiteSpace(config.PoleColumn) ? "X" : config.PoleColumn.Trim().ToUpper();
+                string colTrip = string.IsNullOrWhiteSpace(config.TripModeColumn) ? "Y" : config.TripModeColumn.Trim().ToUpper();
 
                 // 校验列映射冲突，防止相互覆盖
                 string? conflictErr = CheckColumnConflicts(colSrc, colMinCur, colMaxCur, colPole, colTrip);

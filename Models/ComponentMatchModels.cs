@@ -66,18 +66,18 @@ namespace ExcelAddInDemo.Models
     }
 
     /// <summary>
-    /// 元器件参数识别与物料反查列映射配置模型
+    /// 元器件参数识别与物料反查列映射配置模型 (分类明细表标准: W=Current, X=Poles, Y=trip, Z=Accessory, AA=BlockName, AB=BlockCategory)
     /// </summary>
     public class ComponentMatchColumnConfig
     {
-        // 识别后电流输入列 (默认 S 列)
-        public string CurrentColumn { get; set; } = "S"; // --硬编码-- 默认电流所在列
+        // 识别后电流输入列 (分类明细表标准: W 列 Current)
+        public string CurrentColumn { get; set; } = "W"; // --硬编码-- 默认额定电流所在列
 
-        // 识别后极数输入列 (默认 T 列)
-        public string PoleColumn { get; set; } = "T"; // --硬编码-- 默认极数所在列
+        // 识别后极数输入列 (分类明细表标准: X 列 Poles)
+        public string PoleColumn { get; set; } = "X"; // --硬编码-- 默认极数所在列
 
-        // 识别后脱扣方式输入列 (默认 U 列)
-        public string TripModeColumn { get; set; } = "U"; // --硬编码-- 默认脱扣所在列
+        // 识别后脱扣方式输入列 (分类明细表标准: Y 列 trip)
+        public string TripModeColumn { get; set; } = "Y"; // --硬编码-- 默认脱扣方式所在列
 
         // 数据库反查后名称回填列 (默认 B 列)
         public string NameColumn { get; set; } = "B"; // --硬编码-- 默认元器件名称列
@@ -91,11 +91,14 @@ namespace ExcelAddInDemo.Models
         // 数据库反查后备注回填列 (默认 I 列)
         public string RemarkColumn { get; set; } = "I"; // --硬编码-- 默认备注信息列
 
-        // 数据库反查后扩展参数1回填列 (默认 V 列)
-        public string Param1Column { get; set; } = "V"; // --硬编码-- 默认参数1输出列
+        // 数据库反查后附件回填列 (分类明细表标准: Z 列 Accessory)
+        public string AttachmentColumn { get; set; } = "Z"; // --硬编码-- 默认附件所在列
 
-        // 数据库反查后扩展参数2回填列 (默认 W 列)
-        public string Param2Column { get; set; } = "W"; // --硬编码-- 默认参数2输出列
+        // 数据库反查后扩展参数1回填列 (分类明细表标准: AA 列 BlockName)
+        public string Param1Column { get; set; } = "AA"; // --硬编码-- 默认参数1/块名输出列
+
+        // 数据库反查后扩展参数2回填列 (分类明细表标准: AB 列 BlockCategory)
+        public string Param2Column { get; set; } = "AB"; // --硬编码-- 默认参数2/块类别输出列
     }
 
     /// <summary>

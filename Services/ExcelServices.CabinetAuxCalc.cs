@@ -160,11 +160,11 @@ namespace ExcelAddInDemo
                     Quantity = 1
                 };
 
-                // 若元器件区域行数有效，采用 2D 数组一次性批量读入内存 (覆盖 A 到 Z 列)
+                // 若元器件区域行数有效，采用 2D 数组一次性批量读入内存 (覆盖 A 到 AB 列)
                 if (compEndRow >= compStartRow)
                 {
-                    // 获取元器件区域的 Range 引用 (覆盖至 Z 列即第 26 列)
-                    Range compRange = ws.Range[$"A{compStartRow}:Z{compEndRow}"];
+                    // 获取元器件区域的 Range 引用 (覆盖至 AB 列即第 28 列)
+                    Range compRange = ws.Range[$"A{compStartRow}:AB{compEndRow}"];
                     // 一次性读取为二维对象数组
                     object[,] compMatrix = compRange.Value2 as object[,];
 
@@ -172,6 +172,8 @@ namespace ExcelAddInDemo
                     {
                         // 获取二维数组行数
                         int rowCount = compMatrix.GetLength(0);
+                        // 获取二维数组列数
+                        int colCount = compMatrix.GetLength(1);
                         // 遍历每一行元器件数据
                         for (int r = 1; r <= rowCount; r++)
                         {
@@ -194,31 +196,36 @@ namespace ExcelAddInDemo
                                 if (qty <= 0) qty = 1;
                             }
 
-                            // 提取 V 列图块类别 (第 22 列) 与 W 列图块名称 (第 23 列)
-                            string blockCategory = compMatrix[r, 22]?.ToString()?.Trim() ?? string.Empty;
-                            string blockName = compMatrix[r, 23]?.ToString()?.Trim() ?? string.Empty;
-
-                            // 提取 X 列电流 (第 24 列，若为空则从型号中自动正则识别)
+                            // 提取 W 列电流 (第 23 列，若为空则从型号中自动正则识别)
                             int current = 0;
-                            if (compMatrix[r, 24] != null)
+                            if (colCount >= 23 && compMatrix[r, 23] != null)
                             {
-                                int.TryParse(compMatrix[r, 24].ToString(), out current);
+                                int.TryParse(compMatrix[r, 23].ToString(), out current);
                             }
                             if (current <= 0)
                             {
                                 current = ParseCurrentFromModel(model);
                             }
 
-                            // 提取 Y 列极数 (第 25 列)
-                            string poles = compMatrix[r, 25]?.ToString()?.Trim() ?? "3";
+                            // 提取 X 列极数 (第 24 列)
+                            string poles = (colCount >= 24 ? compMatrix[r, 24]?.ToString()?.Trim() : null) ?? "3";
                             if (string.IsNullOrWhiteSpace(poles))
                             {
                                 poles = ParsePolesFromModel(model);
                             }
                             int poleCount = ParsePoleNumber(poles);
 
+                            // 提取 Y 列脱扣类型/脱扣方式 (第 25 列)
+                            string trip = colCount >= 25 ? compMatrix[r, 25]?.ToString()?.Trim() ?? string.Empty : string.Empty;
+
                             // 提取 Z 列附件描述 (第 26 列)
-                            string accessory = compMatrix[r, 26]?.ToString()?.Trim() ?? string.Empty;
+                            string accessory = colCount >= 26 ? compMatrix[r, 26]?.ToString()?.Trim() ?? string.Empty : string.Empty;
+
+                            // 提取 AA 列图块名称 (第 27 列)
+                            string blockName = colCount >= 27 ? compMatrix[r, 27]?.ToString()?.Trim() ?? string.Empty : string.Empty;
+
+                            // 提取 AB 列图块类别 (第 28 列)
+                            string blockCategory = colCount >= 28 ? compMatrix[r, 28]?.ToString()?.Trim() ?? string.Empty : string.Empty;
 
                             // 构造元器件条目实体
                             var compItem = new CabinetComponentItem
@@ -230,9 +237,10 @@ namespace ExcelAddInDemo
                                 Current = current,
                                 Poles = poles,
                                 PoleCount = poleCount,
-                                BlockCategory = blockCategory,
-                                BlockName = blockName,
+                                Trip = trip,
                                 Accessory = accessory,
+                                BlockName = blockName,
+                                BlockCategory = blockCategory,
                                 IsAts = name.Contains("双电源") || model.Contains("双电源") || model.Contains("ATS") || model.Contains("NZ7") || model.Contains("WATSN"),
                                 IsFireTransformer = name.Contains("火灾") || model.Contains("火灾") || name.Contains("漏电互感器"),
                                 IsCurrentTransformer = (name.Contains("互感器") || model.Contains("互感器")) && !name.Contains("火灾"),
@@ -404,58 +412,152 @@ namespace ExcelAddInDemo
             if (shellHeight > 1000) isCabinet = true;
 
             // -------------------------------------------------------------
-            // 2. 铜排 (TMY) 计算
+            // 2. 铜排 (TMY) 动态规则与尺寸联动计算
             // -------------------------------------------------------------
             double copperWeight = 0.0;
-            // 获取最大电流对应的母排理论每米单重
-            double mainBusWeightPerMeter = GetBusbarWeightPerMeter(maxCurrent, rules.CopperRules.MainBusSpecTable);
+            // 记录铜排各分项计算公式明细列表 (主母排、各动态附件排、分支小排)
+            var copperFormulaDetails = new List<string>();
 
-            // 遍历所有电流规格计算铜排
-            foreach (var kvp in currentWireMap)
+            // 获取最大电流对应的母排规格条目与每米理论单重
+            var mainBusSpecItem = GetBusbarSpecItem(maxCurrent, rules.CopperRules.MainBusSpecTable);
+            // 提取主母排理论单重 (kg/m)
+            double mainBusWeightPerMeter = mainBusSpecItem.WeightPerMeter;
+
+            // 计算扣除余量后的有效柜宽与有效柜高 (单位: mm)
+            int effectiveWidth = Math.Max(0, shellWidth - rules.CopperRules.WidthDeduction);
+            // 计算扣除余量后的有效柜高 (单位: mm)
+            int effectiveHeight = Math.Max(0, shellHeight - rules.CopperRules.HeightDeduction);
+
+            // 判定当前箱柜采用的母排结构类型 ("invertedT" / "iStructure" / "none")
+            string currentStructure = "none";
+            // 若最大电流大于等于倒T型门限则判定为倒T结构
+            if (maxCurrent >= rules.CopperRules.InvertedTCurrent)
             {
-                int cur = kvp.Key;
-                int wireCount = kvp.Value;
-                double specWeight = GetBusbarWeightPerMeter(cur, rules.CopperRules.MainBusSpecTable);
+                currentStructure = "invertedT";
+            }
+            // 若最大电流在I型门限区间内则判定为I型结构
+            else if (maxCurrent >= rules.CopperRules.IStructureCurrent)
+            {
+                currentStructure = "iStructure";
+            }
 
-                if (cur == maxCurrent)
+            // 2.1 主母排/公共大排计算
+            if (currentStructure == "invertedT")
+            {
+                // 倒 T 型母排结构展开长度 (有效柜宽 + 四极主排折弯与引下补偿)
+                int mainBusLen = effectiveWidth + rules.CopperRules.FourPoleExtra;
+                // 计算倒 T 型主母排基础理论重量 (kg)
+                double mainBusW = (mainBusWeightPerMeter * mainBusLen) / 1000.0;
+                // 累加到总铜排重量
+                copperWeight += mainBusW;
+                // 记录倒 T 型主母排算式文本
+                copperFormulaDetails.Add($"主母排 (倒T型 | {mainBusSpecItem.Spec} | {mainBusWeightPerMeter:F3}kg/m): {mainBusWeightPerMeter:F3} × [({shellWidth}-{rules.CopperRules.WidthDeduction}) + {rules.CopperRules.FourPoleExtra}] / 1000 = {mainBusW:F2} KG");
+            }
+            else if (currentStructure == "iStructure")
+            {
+                // I 型母排结构展开长度 (有效柜宽 + 三极主排折弯与引下补偿)
+                int mainBusLen = effectiveWidth + rules.CopperRules.ThreePoleExtra;
+                // 计算 I 型主母排基础理论重量 (kg)
+                double mainBusW = (mainBusWeightPerMeter * mainBusLen) / 1000.0;
+                // 累加到总铜排重量
+                copperWeight += mainBusW;
+                // 记录 I 型主母排算式文本
+                copperFormulaDetails.Add($"主母排 (I型 | {mainBusSpecItem.Spec} | {mainBusWeightPerMeter:F3}kg/m): {mainBusWeightPerMeter:F3} × [({shellWidth}-{rules.CopperRules.WidthDeduction}) + {rules.CopperRules.ThreePoleExtra}] / 1000 = {mainBusW:F2} KG");
+            }
+
+            // 2.2 动态附件与特殊元器件铜排规则计算 (双电源、互感器、母联等动态排数与尺寸联动)
+            if (rules.CopperRules.AttachmentRules != null && rules.CopperRules.AttachmentRules.Count > 0)
+            {
+                // 遍历所有已配置的动态附件铜排规则
+                foreach (var attRule in rules.CopperRules.AttachmentRules)
                 {
-                    // 主母排/公共排计算
-                    if (maxCurrent >= rules.CopperRules.InvertedTCurrent)
+                    // 若规则未启用或关键字为空则跳过
+                    if (!attRule.IsEnabled || string.IsNullOrWhiteSpace(attRule.Keyword)) continue;
+
+                    // 校验适用母排结构模式 (支持通用 "all" 或与当前结构一致)
+                    bool structureMatched = attRule.TargetStructure.Equals("all", StringComparison.OrdinalIgnoreCase) ||
+                                           attRule.TargetStructure.Equals(currentStructure, StringComparison.OrdinalIgnoreCase);
+                    // 若结构不匹配则跳过该规则
+                    if (!structureMatched) continue;
+
+                    // 统计当前箱柜中命中该附件规则的元件数量与最大回路电流
+                    int matchCount = 0;
+                    // 记录命中的元件最大额定电流
+                    int maxItemCurrent = 0;
+
+                    // 遍历箱柜提取的元器件明细项
+                    foreach (var comp in scanData.Components)
                     {
-                        // 倒 T 型母排结构 (>=300A)
-                        copperWeight += (specWeight * ((shellWidth - rules.CopperRules.WidthDeduction) + rules.CopperRules.FourPoleExtra)) / 1000.0;
-                        if (hasAts)
+                        // 匹配元器件名称、型号规格、图块类别或图块名称
+                        bool isMatch = (!string.IsNullOrEmpty(comp.Name) && comp.Name.IndexOf(attRule.Keyword, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                                       (!string.IsNullOrEmpty(comp.Model) && comp.Model.IndexOf(attRule.Keyword, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                                       (!string.IsNullOrEmpty(comp.BlockCategory) && comp.BlockCategory.IndexOf(attRule.Keyword, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                                       (!string.IsNullOrEmpty(comp.BlockName) && comp.BlockName.IndexOf(attRule.Keyword, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                                       (attRule.Keyword.Equals("双电源", StringComparison.OrdinalIgnoreCase) && comp.IsAts) ||
+                                       (attRule.Keyword.Equals("ATS", StringComparison.OrdinalIgnoreCase) && comp.IsAts) ||
+                                       (attRule.Keyword.Equals("火灾互感器", StringComparison.OrdinalIgnoreCase) && comp.IsFireTransformer);
+
+                        // 命中规则时累计数量
+                        if (isMatch)
                         {
-                            copperWeight += (specWeight * (shellWidth - rules.CopperRules.WidthDeduction) + rules.CopperRules.AtsInvertedTExtra) / 1000.0;
-                        }
-                        if (hasFireTransformer)
-                        {
-                            copperWeight += (specWeight * (shellHeight - rules.CopperRules.HeightDeduction)) / 1000.0;
+                            // 累加元件数量
+                            matchCount += Math.Max(1, comp.Quantity);
+                            // 记录最大电流用于定额选型
+                            if (comp.Current > maxItemCurrent) maxItemCurrent = comp.Current;
                         }
                     }
-                    else if (maxCurrent >= rules.CopperRules.IStructureCurrent)
+
+                    // 若存在命中的附件元器件
+                    if (matchCount > 0)
                     {
-                        // I 型母排结构 (140A ~ 300A)
-                        copperWeight += (specWeight * ((shellWidth - rules.CopperRules.WidthDeduction) + rules.CopperRules.ThreePoleExtra)) / 1000.0;
-                        if (hasAts)
-                        {
-                            copperWeight += (specWeight * (shellWidth - rules.CopperRules.WidthDeduction) + rules.CopperRules.AtsIExtra) / 1000.0;
-                        }
-                        if (hasFireTransformer)
-                        {
-                            copperWeight += (specWeight * (shellHeight - rules.CopperRules.HeightDeduction)) / 1000.0;
-                        }
+                        // 计算单套附件与箱柜宽高及排数联动的额外总长度 (mm)
+                        int singleExtraLen = (attRule.WidthMultiplier * effectiveWidth) +
+                                             (attRule.HeightMultiplier * effectiveHeight) +
+                                             attRule.ExtraFixedLength;
+                        // 计算全部命中套数的附件总长度
+                        int totalExtraLen = singleExtraLen * matchCount;
+
+                        // 确定采用的铜排理论单重 (主排规格或元件自身回路规格)
+                        double specWeight = attRule.UseMainBusSpec ? mainBusWeightPerMeter : GetBusbarWeightPerMeter(maxItemCurrent > 0 ? maxItemCurrent : maxCurrent, rules.CopperRules.MainBusSpecTable);
+                        // 计算该附件增加的理论重量 (kg)
+                        double attWeight = (specWeight * totalExtraLen) / 1000.0;
+                        // 累加到总铜排重量
+                        copperWeight += attWeight;
+
+                        // 组装直观透明的尺寸联动推导算式文本
+                        string formulaText = $"[附件·{attRule.Keyword}] ({matchCount}处): {specWeight:F3}kg/m × [{attRule.WidthMultiplier}×({shellWidth}-{rules.CopperRules.WidthDeduction}) + {attRule.HeightMultiplier}×({shellHeight}-{rules.CopperRules.HeightDeduction}) + {attRule.ExtraFixedLength}] / 1000 = {attWeight:F2} KG";
+                        // 添加到算式明细列表中
+                        copperFormulaDetails.Add(formulaText);
                     }
                 }
-                else if (cur >= rules.CopperRules.BranchMinCurrent && cur < maxCurrent)
+            }
+
+            // 2.3 分支铜排计算 (>= 99A 且小于最大电流)
+            foreach (var kvp in currentWireMap)
+            {
+                // 回路额定电流
+                int cur = kvp.Key;
+                // 该电流回路的相线总数
+                int wireCount = kvp.Value;
+                // 当电流达到分支铜排起算门限且非主进线最大电流时计算分支排
+                if (cur >= rules.CopperRules.BranchMinCurrent && cur < maxCurrent)
                 {
-                    // 小分支铜排计算 (>=99A 且非最大电流)
-                    copperWeight += (specWeight * (wireCount / 3.0)) + (mainBusWeightPerMeter * 0.13 * 3.0 * (wireCount / 3.0));
+                    // 获取分支排自身理论每米单重
+                    double specWeight = GetBusbarWeightPerMeter(cur, rules.CopperRules.MainBusSpecTable);
+                    // 计算分支回路组数 (按3相一组折算)
+                    double branchCircuits = wireCount / 3.0;
+                    // 分支排重量 = 分支本体重(1m/组) + 主排搭接过渡排重(0.13m*3/组)
+                    double branchWeight = (specWeight * branchCircuits) + (mainBusWeightPerMeter * 0.13 * 3.0 * branchCircuits);
+                    // 累加分支铜排重量
+                    copperWeight += branchWeight;
+                    // 记录分支铜排算式文本
+                    copperFormulaDetails.Add($"分支铜排 ({cur}A回路 共{branchCircuits:F1}组): {branchCircuits:F1}组 × ({specWeight:F3}kg/m×1m + {mainBusWeightPerMeter:F3}kg/m×0.39m搭接) = {branchWeight:F2} KG");
                 }
             }
 
             // 铜排重量四舍五入保留 1 位小数
             copperWeight = Math.Round(copperWeight, 1);
+            // 构造铜排写入单元格的数量公式
             string copperQtyFormula = copperWeight > 0 ? $"=ROUND({copperWeight}*{xishu}*1,1)" : string.Empty;
 
             // -------------------------------------------------------------
@@ -615,6 +717,7 @@ namespace ExcelAddInDemo
                 LaborCost = totalLaborCost,
                 LaborFormula = laborFormula,
                 PrimaryWireDetails = primaryWireDetails,
+                CopperFormulaDetails = copperFormulaDetails,
                 Description = $"推导完成: 最大电流 {maxCurrent}A, 判定为{(isCabinet ? "落地柜" : "配电箱")}, 推荐尺寸 {recommendedSize}"
             };
         }
@@ -853,20 +956,35 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 获取电流对应的母排理论理论每米单重
+        /// 获取电流对应的母排规格条目与每米单重
+        /// </summary>
+        private static MainBusSpecItem GetBusbarSpecItem(int current, List<MainBusSpecItem> specTable)
+        {
+            // 默认兜底规格为 TMY-30*4 单重 1.068 kg/m --硬编码--
+            if (specTable == null || specTable.Count == 0) return new MainBusSpecItem { Spec = "TMY-30*4", WeightPerMeter = 1.068, MaxCurrent = 250 };
+
+            // 遍历规格表阶梯逐级比对电流上限
+            foreach (var item in specTable)
+            {
+                // 若回路电流小于等于该档电流上限则命中
+                if (current <= item.MaxCurrent)
+                {
+                    return item;
+                }
+            }
+            // 超出上限时返回最大档位规格
+            return specTable[specTable.Count - 1];
+        }
+
+        /// <summary>
+        /// 获取电流对应的母排理论每米单重
         /// </summary>
         private static double GetBusbarWeightPerMeter(int current, List<MainBusSpecItem> specTable)
         {
-            if (specTable == null || specTable.Count == 0) return 1.068;
-
-            foreach (var item in specTable)
-            {
-                if (current <= item.MaxCurrent)
-                {
-                    return item.WeightPerMeter;
-                }
-            }
-            return specTable[specTable.Count - 1].WeightPerMeter;
+            // 调用 GetBusbarSpecItem 获取条目并提取单重
+            var item = GetBusbarSpecItem(current, specTable);
+            // 返回理论每米单重
+            return item != null ? item.WeightPerMeter : 1.068;
         }
 
         /// <summary>

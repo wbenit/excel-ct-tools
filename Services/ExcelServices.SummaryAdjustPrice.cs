@@ -225,19 +225,22 @@ namespace ExcelAddInDemo
             // 明细表 U 列原始型号 (汇总表 R 列对应，相同规格合并时用“，”连接)
             public string RawModelFromU { get; set; } = string.Empty;
 
-            // 额定电流 (对应明细表 X 列 / 汇总表 U 列)
+            // 额定电流 (对应明细表 W 列 / 汇总表 T 列)
             public string Current { get; set; } = string.Empty;
 
-            // 极数 (对应明细表 Y 列 / 汇总表 V 列)
+            // 极数 (对应明细表 X 列 / 汇总表 U 列)
             public string Poles { get; set; } = string.Empty;
 
-            // 脱扣方式 (对应明细表 U 列 / 汇总表 W 列)
+            // 脱扣方式 (对应明细表 Y 列 / 汇总表 V 列)
             public string Tripping { get; set; } = string.Empty;
 
-            // 扩展参数 1 (对应明细表 W 列 / 汇总表 X 列)
+            // 配套附件 (对应明细表 Z 列 / 汇总表 W 列)
+            public string Accessory { get; set; } = string.Empty;
+
+            // 扩展参数 1 / 图块名称 (对应明细表 AA 列 / 汇总表 X 列)
             public string Param1 { get; set; } = string.Empty;
 
-            // 扩展参数 2 (对应汇总表 Y 列)
+            // 扩展参数 2 / 图块类别 (对应明细表 AB 列 / 汇总表 Y 列)
             public string Param2 { get; set; } = string.Empty;
 
             // CAD 图元句柄 (对应明细表 AD 列 / 汇总表 AD 列)
@@ -695,32 +698,46 @@ namespace ExcelAddInDemo
                                 uColModel = Convert.ToString(valMatrix[r, 21]) ?? string.Empty;
                             }
 
-                            // V 列 (索引 22): 扩展参数1 (结构/分断等)
-                            string param1Val = string.Empty;
-                            if (valMatrix.GetLength(1) >= 22)
-                            {
-                                param1Val = Convert.ToString(valMatrix[r, 22])?.Trim() ?? string.Empty;
-                            }
-
-                            // W 列 (索引 23): 扩展参数2 (图块名/补充参数等)
-                            string param2Val = string.Empty;
+                            // W 列 (索引 23): Current 额定电流
+                            string currentVal = string.Empty;
                             if (valMatrix.GetLength(1) >= 23)
                             {
-                                param2Val = Convert.ToString(valMatrix[r, 23])?.Trim() ?? string.Empty;
+                                currentVal = Convert.ToString(valMatrix[r, 23])?.Trim() ?? string.Empty;
                             }
 
-                            // X 列 (索引 24): 额定电流
-                            string currentVal = string.Empty;
+                            // X 列 (索引 24): Poles 极数
+                            string polesVal = string.Empty;
                             if (valMatrix.GetLength(1) >= 24)
                             {
-                                currentVal = Convert.ToString(valMatrix[r, 24])?.Trim() ?? string.Empty;
+                                polesVal = Convert.ToString(valMatrix[r, 24])?.Trim() ?? string.Empty;
                             }
 
-                            // Y 列 (索引 25): 极数
-                            string polesVal = string.Empty;
+                            // Y 列 (索引 25): trip 脱扣方式
+                            string tripVal = string.Empty;
                             if (valMatrix.GetLength(1) >= 25)
                             {
-                                polesVal = Convert.ToString(valMatrix[r, 25])?.Trim() ?? string.Empty;
+                                tripVal = Convert.ToString(valMatrix[r, 25])?.Trim() ?? string.Empty;
+                            }
+
+                            // Z 列 (索引 26): Accessory 配套附件
+                            string accVal = string.Empty;
+                            if (valMatrix.GetLength(1) >= 26)
+                            {
+                                accVal = Convert.ToString(valMatrix[r, 26])?.Trim() ?? string.Empty;
+                            }
+
+                            // AA 列 (索引 27): BlockName 扩展参数1 / 图块名称
+                            string param1Val = string.Empty;
+                            if (valMatrix.GetLength(1) >= 27)
+                            {
+                                param1Val = Convert.ToString(valMatrix[r, 27])?.Trim() ?? string.Empty;
+                            }
+
+                            // AB 列 (索引 28): BlockCategory 扩展参数2 / 图块类别
+                            string param2Val = string.Empty;
+                            if (valMatrix.GetLength(1) >= 28)
+                            {
+                                param2Val = Convert.ToString(valMatrix[r, 28])?.Trim() ?? string.Empty;
                             }
 
                             // AD 列 (索引 30): CAD 句柄
@@ -758,7 +775,8 @@ namespace ExcelAddInDemo
                                 AccessoryDiscount = accDiscount,
                                 Current = currentVal,
                                 Poles = polesVal,
-                                Tripping = string.Empty,
+                                Tripping = tripVal,
+                                Accessory = accVal,
                                 Param1 = param1Val,
                                 Param2 = param2Val,
                                 Handle = handleVal,
@@ -861,6 +879,7 @@ namespace ExcelAddInDemo
                         Current = g.Select(x => x.Current).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
                         Poles = g.Select(x => x.Poles).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
                         Tripping = g.Select(x => x.Tripping).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
+                        Accessory = g.Select(x => x.Accessory).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
                         Param1 = g.Select(x => x.Param1).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
                         Param2 = g.Select(x => x.Param2).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
                         Handle = g.Select(x => x.Handle).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
@@ -1796,29 +1815,46 @@ namespace ExcelAddInDemo
                                     // 7. 更新折扣 N 列 (索引 14)
                                     formulaMatrix[r, 14] = matchedItem.NColContent;
 
-                                    // 8. 更新扩展参数1: V 列 (参数1, 索引 22)
-                                    if (!string.IsNullOrWhiteSpace(matchedItem.Param1) && formulaMatrix.GetLength(1) >= 22)
+                                    // 8. 更新额定电流: W 列 (Current, 索引 23)
+                                    if (!string.IsNullOrWhiteSpace(matchedItem.Current) && formulaMatrix.GetLength(1) >= 23)
                                     {
-                                        // 回写扩展参数1至明细表 V 列
-                                        formulaMatrix[r, 22] = matchedItem.Param1;
+                                        // 回写额定电流至明细表 W 列
+                                        formulaMatrix[r, 23] = matchedItem.Current;
                                     }
-                                    // 9. 更新扩展参数2: W 列 (参数2, 索引 23)
-                                    if (!string.IsNullOrWhiteSpace(matchedItem.Param2) && formulaMatrix.GetLength(1) >= 23)
+
+                                    // 9. 更新极数: X 列 (Poles, 索引 24)
+                                    if (!string.IsNullOrWhiteSpace(matchedItem.Poles) && formulaMatrix.GetLength(1) >= 24)
                                     {
-                                        // 回写扩展参数2至明细表 W 列
-                                        formulaMatrix[r, 23] = matchedItem.Param2;
+                                        // 回写极数至明细表 X 列
+                                        formulaMatrix[r, 24] = matchedItem.Poles;
                                     }
-                                    // 10. 更新额定电流: X 列 (额定电流, 索引 24)
-                                    if (!string.IsNullOrWhiteSpace(matchedItem.Current) && formulaMatrix.GetLength(1) >= 24)
+
+                                    // 10. 更新脱扣方式: Y 列 (trip, 索引 25)
+                                    if (!string.IsNullOrWhiteSpace(matchedItem.Tripping) && formulaMatrix.GetLength(1) >= 25)
                                     {
-                                        // 回写额定电流至明细表 X 列
-                                        formulaMatrix[r, 24] = matchedItem.Current;
+                                        // 回写脱扣方式至明细表 Y 列
+                                        formulaMatrix[r, 25] = matchedItem.Tripping;
                                     }
-                                    // 11. 更新极数: Y 列 (极数, 索引 25)
-                                    if (!string.IsNullOrWhiteSpace(matchedItem.Poles) && formulaMatrix.GetLength(1) >= 25)
+
+                                    // 11. 更新配套附件: Z 列 (Accessory, 索引 26)
+                                    if (!string.IsNullOrWhiteSpace(matchedItem.Accessory) && formulaMatrix.GetLength(1) >= 26)
                                     {
-                                        // 回写极数至明细表 Y 列
-                                        formulaMatrix[r, 25] = matchedItem.Poles;
+                                        // 回写配套附件至明细表 Z 列
+                                        formulaMatrix[r, 26] = matchedItem.Accessory;
+                                    }
+
+                                    // 12. 更新图块名称: AA 列 (BlockName / 扩展参数1, 索引 27)
+                                    if (!string.IsNullOrWhiteSpace(matchedItem.Param1) && formulaMatrix.GetLength(1) >= 27)
+                                    {
+                                        // 回写图块名称至明细表 AA 列
+                                        formulaMatrix[r, 27] = matchedItem.Param1;
+                                    }
+
+                                    // 13. 更新图块类别: AB 列 (BlockCategory / 扩展参数2, 索引 28)
+                                    if (!string.IsNullOrWhiteSpace(matchedItem.Param2) && formulaMatrix.GetLength(1) >= 28)
+                                    {
+                                        // 回写图块类别至明细表 AB 列
+                                        formulaMatrix[r, 28] = matchedItem.Param2;
                                     }
 
                                     // 标记当前箱柜已修改

@@ -449,6 +449,19 @@
           </div>
         </div>
 
+        <!-- 铜排推导明细与尺寸联动算式清单 -->
+        <div v-if="calcResult && calcResult.copperFormulaDetails && calcResult.copperFormulaDetails.length > 0" style="margin-top: 10px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 10px;">
+          <div style="font-size: 12px; font-weight: 600; color: #00796b; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+            <span>⚡ 铜排母线推导明细与尺寸联动算式:</span>
+            <span style="font-size: 11px; color: #64748b; font-weight: normal;">(主排展开补偿 + 动态附件排数与宽高联动 + 分支搭接)</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; font-family: Consolas, 'Courier New', monospace; background: #f8fafc; padding: 6px 10px; border-radius: 4px; border-left: 3px solid #009688;">
+            <div v-for="(item, idx) in calcResult.copperFormulaDetails" :key="idx" style="color: #334155; line-height: 1.6;">
+              <span style="color: #009688; font-weight: 600;">{{ idx + 1 }}.</span> {{ item }}
+            </div>
+          </div>
+        </div>
+
         <!-- 一次导线推导用量清单 -->
         <div v-if="calcResult && calcResult.primaryWireDetails && calcResult.primaryWireDetails.length > 0" style="margin-top: 10px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 10px;">
           <div style="font-size: 12px; font-weight: 600; color: #00796b; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
@@ -687,9 +700,11 @@
           <!-- 选项卡 4: 铜排母线定额 -->
           <el-tab-pane label="⚡ 铜排母线定额" name="copper">
             <div style="display: flex; flex-direction: column; gap: 12px; padding: 4px 0;">
+              
+              <!-- 基础结构门限与补偿 -->
               <div class="cfg-card" style="background: #fafafa;">
                 <div class="cfg-card-header">
-                  <span>母排结构门限与补偿参数</span>
+                  <span>📐 母排结构门限与基准补偿参数</span>
                 </div>
                 <div class="param-grid" style="margin-top: 4px;">
                   <div class="param-row-item">
@@ -712,8 +727,86 @@
                     <el-input-number v-model="rules.copperRules.threePoleExtra" size="small" style="width: 110px;" controls-position="right"></el-input-number>
                     <span class="param-unit">mm</span>
                   </div>
+                  <div class="param-row-item">
+                    <span class="param-label">柜宽扣除量:</span>
+                    <el-input-number v-model="rules.copperRules.widthDeduction" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">mm</span>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">柜高扣除量:</span>
+                    <el-input-number v-model="rules.copperRules.heightDeduction" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">mm</span>
+                  </div>
+                  <div class="param-row-item">
+                    <span class="param-label">分支铜排起算门限:</span>
+                    <el-input-number v-model="rules.copperRules.branchMinCurrent" size="small" style="width: 110px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">A (≥此值计算分支铜排)</span>
+                  </div>
                 </div>
               </div>
+
+              <!-- 动态附件铜排规则库 (与箱柜宽高及排数联动) -->
+              <div class="cfg-card" style="background: #fafafa;">
+                <div class="cfg-card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                  <span>⚡ 附件与特殊元器件铜排动态影响规则库 (排数与柜宽高尺寸联动)</span>
+                  <div style="display: flex; gap: 8px;">
+                    <button type="button" class="btn-flat" @click="resetDefaultAttachmentRules">↺ 恢复默认规则</button>
+                    <button type="button" class="btn-flat" @click="addAttachmentRule">+ 新增附件规则</button>
+                  </div>
+                </div>
+                <div style="margin-top: 6px;">
+                  <el-table :data="rules.copperRules.attachmentRules" size="small" border style="width: 100%;" max-height="240px">
+                    <el-table-column label="匹配关键字" min-width="110">
+                      <template #default="scope">
+                        <el-input v-model="scope.row.keyword" size="small" placeholder="如: 双电源/ATS/互感器"></el-input>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="适用结构" width="125">
+                      <template #default="scope">
+                        <el-select v-model="scope.row.targetStructure" size="small">
+                          <el-option label="全部结构" value="all"></el-option>
+                          <el-option label="倒T型(≥300A)" value="invertedT"></el-option>
+                          <el-option label="I型(<300A)" value="iStructure"></el-option>
+                        </el-select>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="横向排数(宽联动)" width="120" align="center">
+                      <template #default="scope">
+                        <el-input-number v-model="scope.row.widthMultiplier" :min="0" :max="12" size="small" style="width: 90px;" controls-position="right"></el-input-number>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="纵向排数(高联动)" width="120" align="center">
+                      <template #default="scope">
+                        <el-input-number v-model="scope.row.heightMultiplier" :min="0" :max="12" size="small" style="width: 90px;" controls-position="right"></el-input-number>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="固定补偿(mm)" width="115" align="center">
+                      <template #default="scope">
+                        <el-input-number v-model="scope.row.extraFixedLength" :step="50" :min="0" :max="10000" size="small" style="width: 90px;" controls-position="right"></el-input-number>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="规格基准" width="110" align="center">
+                      <template #default="scope">
+                        <el-select v-model="scope.row.useMainBusSpec" size="small">
+                          <el-option label="主排规格" :value="true"></el-option>
+                          <el-option label="回路规格" :value="false"></el-option>
+                        </el-select>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="启用" width="65" align="center">
+                      <template #default="scope">
+                        <el-switch v-model="scope.row.isEnabled" size="small"></el-switch>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="60" align="center">
+                      <template #default="scope">
+                        <el-button type="danger" link size="small" @click="deleteAttachmentRule(scope.$index)">删除</el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+              </div>
+
             </div>
           </el-tab-pane>
 
@@ -844,7 +937,16 @@
             iStructureCurrent: 140,
             branchMinCurrent: 99,
             fourPoleExtra: 1400,
-            threePoleExtra: 1200
+            threePoleExtra: 1200,
+            widthDeduction: 120,
+            heightDeduction: 300,
+            attachmentRules: [
+              { keyword: '双电源', targetStructure: 'invertedT', widthMultiplier: 3, heightMultiplier: 3, extraFixedLength: 1200, useMainBusSpec: true, isEnabled: true },
+              { keyword: '双电源', targetStructure: 'iStructure', widthMultiplier: 3, heightMultiplier: 0, extraFixedLength: 800, useMainBusSpec: true, isEnabled: true },
+              { keyword: 'ATS', targetStructure: 'invertedT', widthMultiplier: 3, heightMultiplier: 3, extraFixedLength: 1200, useMainBusSpec: true, isEnabled: true },
+              { keyword: 'ATS', targetStructure: 'iStructure', widthMultiplier: 3, heightMultiplier: 0, extraFixedLength: 800, useMainBusSpec: true, isEnabled: true },
+              { keyword: '火灾互感器', targetStructure: 'all', widthMultiplier: 0, heightMultiplier: 3, extraFixedLength: 200, useMainBusSpec: true, isEnabled: true }
+            ]
           },
           auxRules: {
             baseFee: 10.0,
@@ -927,6 +1029,15 @@
                 Object.assign(rules, data.rules);
                 if (data.rules.auxRules && data.rules.auxRules.wireLengthConfig) {
                   rules.auxRules.wireLengthConfig = Object.assign({}, rules.auxRules.wireLengthConfig, data.rules.auxRules.wireLengthConfig);
+                }
+                if (data.rules.copperRules && (!data.rules.copperRules.attachmentRules || data.rules.copperRules.attachmentRules.length === 0)) {
+                  rules.copperRules.attachmentRules = [
+                    { keyword: '双电源', targetStructure: 'invertedT', widthMultiplier: 3, heightMultiplier: 3, extraFixedLength: 1200, useMainBusSpec: true, isEnabled: true },
+                    { keyword: '双电源', targetStructure: 'iStructure', widthMultiplier: 3, heightMultiplier: 0, extraFixedLength: 800, useMainBusSpec: true, isEnabled: true },
+                    { keyword: 'ATS', targetStructure: 'invertedT', widthMultiplier: 3, heightMultiplier: 3, extraFixedLength: 1200, useMainBusSpec: true, isEnabled: true },
+                    { keyword: 'ATS', targetStructure: 'iStructure', widthMultiplier: 3, heightMultiplier: 0, extraFixedLength: 800, useMainBusSpec: true, isEnabled: true },
+                    { keyword: '火灾互感器', targetStructure: 'all', widthMultiplier: 0, heightMultiplier: 3, extraFixedLength: 200, useMainBusSpec: true, isEnabled: true }
+                  ];
                 }
               }
               triggerAutoAnalyze();
@@ -1096,6 +1207,41 @@
           });
         };
 
+        // 添加动态附件铜排规则
+        const addAttachmentRule = () => {
+          if (!rules.copperRules.attachmentRules) {
+            rules.copperRules.attachmentRules = [];
+          }
+          rules.copperRules.attachmentRules.push({
+            keyword: '新附件',
+            targetStructure: 'all',
+            widthMultiplier: 3,
+            heightMultiplier: 0,
+            extraFixedLength: 500,
+            useMainBusSpec: true,
+            isEnabled: true
+          });
+        };
+
+        // 删除动态附件铜排规则
+        const deleteAttachmentRule = (index) => {
+          if (rules.copperRules.attachmentRules && index >= 0 && index < rules.copperRules.attachmentRules.length) {
+            rules.copperRules.attachmentRules.splice(index, 1);
+          }
+        };
+
+        // 恢复默认附件铜排规则
+        const resetDefaultAttachmentRules = () => {
+          rules.copperRules.attachmentRules = [
+            { keyword: '双电源', targetStructure: 'invertedT', widthMultiplier: 3, heightMultiplier: 3, extraFixedLength: 1200, useMainBusSpec: true, isEnabled: true },
+            { keyword: '双电源', targetStructure: 'iStructure', widthMultiplier: 3, heightMultiplier: 0, extraFixedLength: 800, useMainBusSpec: true, isEnabled: true },
+            { keyword: 'ATS', targetStructure: 'invertedT', widthMultiplier: 3, heightMultiplier: 3, extraFixedLength: 1200, useMainBusSpec: true, isEnabled: true },
+            { keyword: 'ATS', targetStructure: 'iStructure', widthMultiplier: 3, heightMultiplier: 0, extraFixedLength: 800, useMainBusSpec: true, isEnabled: true },
+            { keyword: '火灾互感器', targetStructure: 'all', widthMultiplier: 0, heightMultiplier: 3, extraFixedLength: 200, useMainBusSpec: true, isEnabled: true }
+          ];
+          ElementPlus.ElMessage.success('已重置为默认附件铜排规则');
+        };
+
         onMounted(() => {
           onRefreshContext();
         });
@@ -1128,7 +1274,10 @@
           showNewSizeInput,
           addNewSize,
           addPrimaryWireSpec,
-          addSecondaryElement
+          addSecondaryElement,
+          addAttachmentRule,
+          deleteAttachmentRule,
+          resetDefaultAttachmentRules
         };
       }
     });

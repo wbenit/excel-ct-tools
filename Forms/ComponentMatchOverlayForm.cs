@@ -121,12 +121,16 @@ namespace ExcelAddInDemo.Forms
             }
         }
 
+        // 搜索请求序号计数器 (防止快速输入时异步结果乱序覆盖)
+        private long _searchReqCounter = 0;
+        private long _latestSearchReqId = 0;
+
         /// <summary>
         /// 在指定的 Excel 活动单元格下方精准定位并展示智能下拉框
         /// </summary>
         public void ShowAtCell(
             dynamic activeCell,
-            List<ComponentApiDto> initialItems,
+            List<ComponentApiDto>? initialItems,
             CellParamsContext cellParams,
             ComponentMatchFilterConfig filterConfig)
         {
@@ -170,7 +174,7 @@ namespace ExcelAddInDemo.Forms
                 }
                 this.BringToFront();
 
-                // 若 WebView2 已经就绪，立即推送初始候选数据
+                // 若 WebView2 已经就绪，立即推送初始候选数据或触发后台异步加载
                 if (_isWebReady)
                 {
                     PushInitialCandidates();
@@ -183,7 +187,7 @@ namespace ExcelAddInDemo.Forms
         }
 
         /// <summary>
-        /// 推送初始候选数据至前端界面
+        /// 推送初始候选数据至前端界面 (若无初始数据则触发后台异步拉取，绝不阻塞 UI 线程)
         /// </summary>
         private void PushInitialCandidates()
         {
@@ -192,18 +196,76 @@ namespace ExcelAddInDemo.Forms
                 .Select(r => r.Keyword.Trim())
                 .ToList();
 
+            // 若已有初始数据直接推送到前端
+            if (_pendingInitialItems != null && _pendingInitialItems.Count > 0)
+            {
+                PostMessageToWeb(new
+                {
+                    action = "initCandidates",
+                    items = _pendingInitialItems,
+                    cellParams = _cellParams,
+                    filterBrand = _filterConfig.SelectedBrand ?? string.Empty,
+                    activeMustRules,
+                    loading = false
+                });
+                return;
+            }
+
+            // 先推送上下文并让前端展示 loading 状态
             PostMessageToWeb(new
             {
                 action = "initCandidates",
-                items = _pendingInitialItems,
+                items = new List<ComponentApiDto>(),
                 cellParams = _cellParams,
                 filterBrand = _filterConfig.SelectedBrand ?? string.Empty,
-                activeMustRules
+                activeMustRules,
+                loading = true
+            });
+
+            // 在后台工作线程异步拉取初始候选数据
+            long reqId = Interlocked.Increment(ref _searchReqCounter);
+            _latestSearchReqId = reqId;
+
+            var cp = _cellParams;
+            var fc = _filterConfig;
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    var items = await ComponentApiClient.SearchComponentsAsync(
+                        null,
+                        cp.Name,
+                        cp.Current,
+                        cp.Pole,
+                        cp.TripMode,
+                        fc.SelectedBrand,
+                        fc.MustContainRules
+                    ).ConfigureAwait(false);
+
+                    // 校验请求版本，丢弃过期结果
+                    if (reqId == Interlocked.Read(ref _latestSearchReqId))
+                    {
+                        SafeInvoke(() =>
+                        {
+                            PostMessageToWeb(new
+                            {
+                                action = "searchResult",
+                                items,
+                                reqId
+                            });
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogHelper.WriteLog($"[ComponentMatchOverlayForm] 后台拉取初始候选数据异常: {ex.Message}");
+                }
             });
         }
 
         /// <summary>
-        /// 集中处理前端 Vue 3 发来的操作指令
+        /// 集中处理前端 Vue 3 发来的操作指令 (全异步非阻塞)
         /// </summary>
         private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
@@ -226,28 +288,53 @@ namespace ExcelAddInDemo.Forms
                         PushInitialCandidates();
                         break;
 
-                    // 2. 即时模糊搜索
+                    // 2. 即时模糊搜索 (全异步非阻塞 + 请求防竞态版本保护)
                     case "searchKeyword":
                         string kw = root.TryGetProperty("keyword", out var kwProp) ? kwProp.GetString() ?? "" : "";
-                        var searchResults = ComponentApiClient.SearchComponents(
-                            kw,
-                            _cellParams.Name,
-                            _cellParams.Current,
-                            _cellParams.Pole,
-                            _cellParams.TripMode,
-                            _filterConfig.SelectedBrand,
-                            _filterConfig.MustContainRules
-                        );
+                        long currentReqId = Interlocked.Increment(ref _searchReqCounter);
+                        _latestSearchReqId = currentReqId;
 
-                        PostMessageToWeb(new
+                        var searchCp = _cellParams;
+                        var searchFc = _filterConfig;
+
+                        Task.Run(async () =>
                         {
-                            action = "searchResult",
-                            items = searchResults
+                            try
+                            {
+                                var searchResults = await ComponentApiClient.SearchComponentsAsync(
+                                    kw,
+                                    searchCp.Name,
+                                    searchCp.Current,
+                                    searchCp.Pole,
+                                    searchCp.TripMode,
+                                    searchFc.SelectedBrand,
+                                    searchFc.MustContainRules
+                                ).ConfigureAwait(false);
+
+                                // 仅当返回结果是最新一次搜索时才推送到前端，彻底消除数据跳变
+                                if (currentReqId == Interlocked.Read(ref _latestSearchReqId))
+                                {
+                                    SafeInvoke(() =>
+                                    {
+                                        PostMessageToWeb(new
+                                        {
+                                            action = "searchResult",
+                                            items = searchResults,
+                                            reqId = currentReqId
+                                        });
+                                    });
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                LogHelper.WriteLog($"[ComponentMatchOverlayForm] 异步模糊搜索异常: {ex.Message}");
+                            }
                         });
                         break;
 
-                    // 3. 用户确认选择某一条物料 -> 执行 Excel 回填并清除底色
+                    // 3. 用户确认选择某一条物料 -> 先隐藏窗口，后台执行 Excel 回填
                     case "selectComponent":
+                        SafeInvoke(this.Hide);
                         if (root.TryGetProperty("item", out var itemProp))
                         {
                             var selectedItem = JsonSerializer.Deserialize<ComponentApiDto>(itemProp.GetRawText(), JsonOptions);
@@ -257,51 +344,55 @@ namespace ExcelAddInDemo.Forms
                                 ExcelServices.FillSelectedComponentToActiveRow(selectedItem, _targetCell);
                             }
                         }
-                        // 回填完成后隐藏悬浮窗
-                        SafeInvoke(this.Hide);
                         break;
 
-                    // 3.1 用户请求加载当前物料的配套附件列表
+                    // 3.1 用户请求加载当前物料的配套附件列表 (异步非阻塞)
                     case "getAttachments":
                         string brandToQuery = _filterConfig.SelectedBrand ?? _cellParams.Brand ?? string.Empty;
                         string nameToQuery = _cellParams.Name ?? string.Empty;
                         string modelToQuery = _cellParams.CurrentModel ?? string.Empty;
 
-                        // 调用 API 客户端拉取符合适配规则的配套附件
-                        var attachmentList = ComponentApiClient.GetAttachments(brandToQuery, nameToQuery, modelToQuery);
-
-                        PostMessageToWeb(new
+                        Task.Run(async () =>
                         {
-                            action = "attachmentsResult",
-                            items = attachmentList,
-                            currentModel = modelToQuery,
-                            brand = brandToQuery,
-                            name = nameToQuery
+                            try
+                            {
+                                var attachmentList = await ComponentApiClient.GetAttachmentsAsync(brandToQuery, nameToQuery, modelToQuery).ConfigureAwait(false);
+                                SafeInvoke(() =>
+                                {
+                                    PostMessageToWeb(new
+                                    {
+                                        action = "attachmentsResult",
+                                        items = attachmentList,
+                                        currentModel = modelToQuery,
+                                        brand = brandToQuery,
+                                        name = nameToQuery
+                                    });
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                LogHelper.WriteLog($"[ComponentMatchOverlayForm] 异步拉取配套附件异常: {ex.Message}");
+                            }
                         });
                         break;
 
-                    // 3.2 用户选定配套附件 -> 拼接型号并累加价格公式（支持数量）
+                    // 3.2 用户选定配套附件 -> 先隐藏窗口，后台拼接型号并累加价格公式
                     case "selectAttachment":
+                        SafeInvoke(this.Hide);
                         if (root.TryGetProperty("item", out var attachItemProp))
                         {
-                            // 反序列化选中的附件 DTO
                             var selectedAttach = JsonSerializer.Deserialize<ComponentApiDto>(attachItemProp.GetRawText(), JsonOptions);
-                            // 提取前端传入的附件数量，若未传递或小于 1 则默认为 1
                             int quantity = 1;
                             if (root.TryGetProperty("quantity", out var qtyProp) && qtyProp.TryGetInt32(out int q))
                             {
-                                // 限制数量必须为正整数
                                 quantity = q > 0 ? q : 1;
                             }
 
                             if (selectedAttach != null && _targetCell != null)
                             {
-                                // 调用业务服务层执行“原内容+附件型号*数量”和“=价格+附件单价*数量”回填
                                 ExcelServices.FillSelectedAttachmentToActiveRow(selectedAttach, _targetCell, quantity);
                             }
                         }
-                        // 回填完成后平滑隐藏下拉窗
-                        SafeInvoke(this.Hide);
                         break;
 
                     // 4. 关闭悬浮窗

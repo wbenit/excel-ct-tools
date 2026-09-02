@@ -2,6 +2,68 @@
 
 ## [Completed]
 
+- **落地铜排计算公式可视化、设置即时联动与附件（双电源/互感器等）动态规则尺寸联动功能 (`Models/CabinetAuxCalcModels.cs` & `Services/ExcelServices.CabinetAuxCalc.cs` & `Resources/cabinet_aux_calc.html`)**：
+  1. **模型层与规则可扩展性升级 (`Models/CabinetAuxCalcModels.cs`)**：
+     - 新增 `AttachmentBusbarRule` 动态规则模型（包含关键字、适用结构、横向排数、纵向排数、固定补偿、规格选用与启用开关）；
+     - `CopperConfig` 增加 `AttachmentRules` 规则库（预设倒T/I型双电源、ATS、火灾互感器等标准规则，消除静态硬编码）；
+     - `CabinetCalcResult` 扩展 `CopperFormulaDetails` 明细算式列表。
+  2. **业务与动态几何尺寸联动引擎 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+     - 重构铜排计算算法：主母排根据倒T型（四极补偿）或I型（三极补偿）结合有效柜宽计算；
+     - 动态遍历 `AttachmentRules`：实现附件排长 $N_W \times (W - \Delta W) + N_H \times (H - \Delta H) + L_{\text{固定补偿}}$ 与箱柜宽高及排数的完全参数化联动；
+     - 细化分支铜排与过渡搭接排算式，生成结构化且完全透明的推导过程字符串。
+  3. **交互控制与 UI 呈现升级 (`Resources/cabinet_aux_calc.html`)**：
+     - **【⚡ 铜排母线定额】配置页**：补齐柜宽/柜高扣除量，并新增【附件与特殊元器件铜排动态影响规则库】Element-Plus 动态数据表格，支持新增/删除/修改规则及一键恢复默认；
+     - **【📊 智能推导与回写】视图**：在铜排结果下方直观展示【⚡ 铜排母线推导明细与尺寸联动算式】，全流程透明展开主排、动态附件排与分支排的具体算式；
+     - 调参即时联动，全表推导即时重算。
+  4. **编译构建**：
+     - 执行 `dotnet build /t:Compile` 编译通过，0 错误，严格遵循每 3 行包含一行中文注释规范。
+
+
+- **物料智能联想下拉悬浮窗全链路异步非阻塞性能优化 (`Forms/ComponentMatchOverlayForm.cs` & `Services/ComponentApiClient.cs` & `Resources/component_match_overlay.html`)**：
+  1. **主线程解耦**：
+     - `ComponentApiClient` 实现真正的 `SearchComponentsAsync`、`QueryComponentsAsync`、`GetAttachmentsAsync` 异步 HTTP 请求；
+     - `ComponentMatchOverlayForm` 的 `searchKeyword`、`getAttachments` 及初始数据加载全部迁移到后台 `Task.Run` 工作线程，**彻底解除 UI/STA 主线程网络等待阻塞**；
+  2. **请求版本与防乱序机制**：
+     - 增加自增 `_searchReqCounter` 与 `_latestSearchReqId`，快速打字时自动丢弃旧请求返回，消除数据闪烁与乱序覆盖；
+  3. **前端防抖与交互提速**：
+     - 前端防抖调整为 120ms，界面 Loading 动画在非阻塞主线程中 60fps 平滑旋转，输入打字 0 卡顿、0 丢字；
+  4. **Excel 选区联动提速**：
+     - `ShowComponentMatchOverlay` 弹出悬浮窗时不再在主线程等待网络响应，瞬间弹窗并异步填充候选数据，Excel 光标移动毫无顿挫感；
+  5. **编译校验**：
+     - `dotnet build /t:Compile` 编译通过，0 错误。
+  1. **正向生成汇总表提取校准 (`GenerateComponentSummarySheet`)**：
+     - 从分类明细表提取元器件时，严格按照：W(电流)、X(极数)、Y(脱扣)、Z(附件)、AA(BlockName)、AB(BlockCategory) 列提取并写入汇总表的 T、U、V、W、X、Y 列；
+  2. **反向一键更新回写校准 (`UpdateFromComponentSummarySheet`)**：
+     - 从元件汇总表写回分类明细表时，修正原先写入旧列的问题，严格回写至：
+       - **W 列 (索引 23)**: `Current` (额定电流)
+       - **X 列 (索引 24)**: `Poles` (极数)
+       - **Y 列 (索引 25)**: `trip` (脱扣方式)
+       - **Z 列 (索引 26)**: `Accessory` (配套附件)
+       - **AA 列 (索引 27)**: `BlockName` (图块名称 / 扩展参数1)
+       - **AB 列 (索引 28)**: `BlockCategory` (图块类别 / 扩展参数2)
+  3. **编译校验**：
+     - 执行 `dotnet build /t:Compile` 编译通过，0 错误。
+  1. **模型列映射规范重构 (`Models/CabinetAuxCalcModels.cs`)**：
+     - **W 列 (第 23 列)**: 额定电流 (`Current`)
+     - **X 列 (第 24 列)**: 极数 (`Poles`)
+     - **Y 列 (第 25 列)**: 脱扣类型/脱扣方式 (`Trip`)（新增属性）
+     - **Z 列 (第 26 列)**: 附件描述 (`Accessory`)
+     - **AA 列 (第 27 列)**: 图块名称 (`BlockName`)
+     - **AB 列 (第 28 列)**: 图块类别 (`BlockCategory`)
+  2. **元器件矩阵批量读取引擎适配 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+     - 依据规则 7，将元器件批量读取范围从 `A:Z` 扩展至 `A:AB`（共 28 列，`ws.Range[$"A{compStartRow}:AB{compEndRow}"]`）；
+     - 逐行提取时，严格按照 W(电流)、X(极数)、Y(脱扣)、Z(附件)、AA(图块名)、AB(图块类别) 列索引进行读取与赋值；
+  3. **编译校验**：
+     - 执行 `dotnet build /t:Compile` 编译通过，0 错误。
+
+
+- **直接匹配数据库脱扣数据列 (`DrawMall.Ability` & `excel-ct-tools`)**：
+  1. **服务端接口与 DTO 增强 (`DrawMall.Ability.Docking/Dto/ComponentDtos.cs` & `DrawMall.Ability/ComponentServicer.cs`)**：
+     - `ComponentQueryDto` 新增 `Tripping` 脱扣方式查询属性；
+     - `ComponentServicer.GetPagedListAsync` 直接在数据库层面按 `x.Tripping == query.Tripping` 进行精确匹配过滤；
+  2. **客户端接口请求联动 (`Services/ComponentApiClient.cs`)**：
+     - 在 `queryParams` 中添加 `Tripping={cleanTrip}`，直接向 WebAPI 传递脱扣入参，由数据库返回匹配 `tripping` 数据列的结果，彻底移除客户端本地猜测代码。
+
 - **元器件明细行与汇总表 CAD 句柄导出/读取列由 AA 列调整为 AD 列 (第 30 列)**：
   1. **箱柜批量导出引擎 (`Services/ExcelServices.Cabinet.cs`)**：
      - 将元器件明细行的 CAD 句柄写入列调整为 `AD` 列（`sheet.Range[$"AD{compStartRow}:AD{compEndRow}"]`）；
@@ -45,7 +107,7 @@
        - Y 列 (col 25): 参数2 (`item.Param2`)
        - 回填完成后自动清除 D 列背景底色。
      - **附件追加回填 (`FillSelectedAttachmentToActiveRow`)**：
-       - 常规分类表中自适应更新 C 列（型号+附件型号*数量）与 M 列表价连加公式；
+       - 常规分类表中自适应更新 C 列（型号+附件型号\*数量）与 M 列表价连加公式；
        - 元件汇总表中更新 D 列、N 列附件表价加法公式，并**将附件脱扣方式回填/累加至 W 列**。
   2. **汇总调价双向同步引擎 (`Services/ExcelServices.SummaryAdjustPrice.cs`)**：
      - **生成汇总表**：
@@ -82,11 +144,11 @@
        - **Tab 4: ⚡ 铜排母线定额**（母排结构门限、补偿参数）；
        - **Tab 5: 🛠️ 费率与结构补贴**（基础辅材与补贴、平铺制作工价、税率乘数）；
      - 使用严谨的双列 Grid 网格布局重构参数表单，固定 Label 最小宽度（125px），彻底解决文字与输入框拥挤重叠问题。
-  3. **交互控制与 UI 呈现 (`Controllers/CabinetAuxCalcController.cs`, `Forms/CabinetAuxCalcForm.cs`, `Resources/cabinet_aux_calc.html`)**：
+  4. **交互控制与 UI 呈现 (`Controllers/CabinetAuxCalcController.cs`, `Forms/CabinetAuxCalcForm.cs`, `Resources/cabinet_aux_calc.html`)**：
      - 基于 WebView2 + Vue 3 `<script setup>` + Element Plus 框架构建，主色调 `#009688`；
      - 提供【📊 智能推导与回写】与【⚙️ 规则与定额配置中心】双视图；
      - 在 Ribbon 功能区【③调价格→】增加【辅材壳体计算】大按钮，并在右键菜单中挂载直达入口。
-  4. **编译构建**：
+  5. **编译构建**：
      - 执行 `dotnet build` 编译通过，0 错误，严格遵循每 3 行包含一行中文注释规范。
 
 - **修复元件明细表 M 列（表价/面价）拆分本体与附件价格时附件乘积公式无法解析的问题**：
@@ -384,4 +446,3 @@
 ## [Next]
 
 - 根据用户实际使用场景与反馈进行细节调优。
-

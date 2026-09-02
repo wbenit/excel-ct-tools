@@ -189,6 +189,56 @@ namespace ExcelAddInDemo.Models
         // 柜高扣除量 (单位: mm，默认 300) --硬编码--
         [JsonPropertyName("heightDeduction")]
         public int HeightDeduction { get; set; } = 300;
+
+        // 附件与特殊元器件铜排动态影响规则库 (支持用户动态增删改附件及排数几何联动)
+        [JsonPropertyName("attachmentRules")]
+        public List<AttachmentBusbarRule> AttachmentRules { get; set; } = new List<AttachmentBusbarRule>
+        {
+            // 预设默认规则 1: 倒T型大电流双电源 (3根横向排 + 3根纵向跨接排 + 1200mm补偿) --硬编码--
+            new AttachmentBusbarRule { Keyword = "双电源", TargetStructure = "invertedT", WidthMultiplier = 3, HeightMultiplier = 3, ExtraFixedLength = 1200, UseMainBusSpec = true, IsEnabled = true },
+            // 预设默认规则 2: I型中小电流双电源 (3根横向排 + 800mm补偿) --硬编码--
+            new AttachmentBusbarRule { Keyword = "双电源", TargetStructure = "iStructure", WidthMultiplier = 3, HeightMultiplier = 0, ExtraFixedLength = 800, UseMainBusSpec = true, IsEnabled = true },
+            // 预设默认规则 3: ATS 倒T型结构规则 (别名支持) --硬编码--
+            new AttachmentBusbarRule { Keyword = "ATS", TargetStructure = "invertedT", WidthMultiplier = 3, HeightMultiplier = 3, ExtraFixedLength = 1200, UseMainBusSpec = true, IsEnabled = true },
+            // 预设默认规则 4: ATS I型结构规则 (别名支持) --硬编码--
+            new AttachmentBusbarRule { Keyword = "ATS", TargetStructure = "iStructure", WidthMultiplier = 3, HeightMultiplier = 0, ExtraFixedLength = 800, UseMainBusSpec = true, IsEnabled = true },
+            // 预设默认规则 5: 火灾互感器过排 (3根纵向排 + 200mm补偿) --硬编码--
+            new AttachmentBusbarRule { Keyword = "火灾互感器", TargetStructure = "all", WidthMultiplier = 0, HeightMultiplier = 3, ExtraFixedLength = 200, UseMainBusSpec = true, IsEnabled = true }
+        };
+    }
+
+    /// <summary>
+    /// 附件与特殊元器件铜排动态影响规则条目模型
+    /// </summary>
+    public class AttachmentBusbarRule
+    {
+        // 匹配元器件名称或型号的关键字 (如 "双电源", "ATS", "火灾互感器", "母联开关")
+        [JsonPropertyName("keyword")]
+        public string Keyword { get; set; } = string.Empty;
+
+        // 适用母排结构类型: "all"(通用), "invertedT"(仅倒T型), "iStructure"(仅I型)
+        [JsonPropertyName("targetStructure")]
+        public string TargetStructure { get; set; } = "all";
+
+        // 柜宽联动排数 (根数，与有效柜宽 (W-dW) 乘算)
+        [JsonPropertyName("widthMultiplier")]
+        public int WidthMultiplier { get; set; } = 3;
+
+        // 柜高联动排数 (根数，与有效柜高 (H-dH) 乘算)
+        [JsonPropertyName("heightMultiplier")]
+        public int HeightMultiplier { get; set; } = 0;
+
+        // 固定折弯/端头/相间预留补偿长度 (单位: mm)
+        [JsonPropertyName("extraFixedLength")]
+        public int ExtraFixedLength { get; set; } = 1200;
+
+        // 铜排规格选用: true 表示采用主母排单重，false 表示采用该元件自身回路电流规格
+        [JsonPropertyName("useMainBusSpec")]
+        public bool UseMainBusSpec { get; set; } = true;
+
+        // 是否启用当前动态规则
+        [JsonPropertyName("isEnabled")]
+        public bool IsEnabled { get; set; } = true;
     }
 
     /// <summary>
@@ -433,23 +483,26 @@ namespace ExcelAddInDemo.Models
         // 数量 (Column F)
         public int Quantity { get; set; } = 1;
 
-        // 额定电流 (Column X 或通过型号解析，单位 A)
+        // 额定电流 (Column W 或通过型号解析，单位 A)
         public int Current { get; set; }
 
-        // 极数 (Column Y 或通过型号解析，如 3, 4, 1N 等)
+        // 极数 (Column X 或通过型号解析，如 3, 4, 1N 等)
         public string Poles { get; set; } = "3";
 
         // 极数数值 (解析后的数字，如 3P -> 3, 3P+N -> 4)
         public int PoleCount { get; set; } = 3;
 
-        // 图块类别 (Column V)
-        public string BlockCategory { get; set; } = string.Empty;
-
-        // 图块名称 (Column W)
-        public string BlockName { get; set; } = string.Empty;
+        // 脱扣类型/脱扣方式 (Column Y)
+        public string Trip { get; set; } = string.Empty;
 
         // 附件描述 (Column Z)
         public string Accessory { get; set; } = string.Empty;
+
+        // 图块名称 (Column AA)
+        public string BlockName { get; set; } = string.Empty;
+
+        // 图块类别 (Column AB)
+        public string BlockCategory { get; set; } = string.Empty;
 
         // 是否为双电源 ATS
         public bool IsAts { get; set; }
@@ -536,6 +589,10 @@ namespace ExcelAddInDemo.Models
         // 一次导线用量与费用明细列表
         [JsonPropertyName("primaryWireDetails")]
         public List<PrimaryWireUsageItem> PrimaryWireDetails { get; set; } = new List<PrimaryWireUsageItem>();
+
+        // 铜排各分项算式明细列表 (展示主母排、各动态附件排、分支排的具体计算式与尺寸联动)
+        [JsonPropertyName("copperFormulaDetails")]
+        public List<string> CopperFormulaDetails { get; set; } = new List<string>();
 
         // 推导过程与说明明细
         [JsonPropertyName("description")]

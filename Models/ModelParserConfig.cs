@@ -38,18 +38,18 @@ namespace ExcelAddInDemo.Models
         // 默认源数据型号所在列 (如 C 列)
         public string SourceColumn { get; set; } = "C"; // --硬编码-- 默认源型号列
 
-        // 默认提取后最小电流输出的目标列 (如 S 列)
-        public string MinCurrentColumn { get; set; } = "S"; // --硬编码-- 默认最小电流输出列
+        // 默认提取后最小电流输出的目标列 (分类明细表标准: W 列 Current)
+        public string MinCurrentColumn { get; set; } = "W"; // --硬编码-- 默认最小电流输出列
 
-        // 默认提取后最大电流输出的目标列 (可自由配置如 S 或 T 列，留空则不写入)
+        // 默认提取后最大电流输出的目标列 (可自由配置，留空则不写入)
         public string MaxCurrentColumn { get; set; } = string.Empty; // --硬编码-- 默认最大电流输出列
 
 
-        // 默认提取后极数输出的目标列 (如 T 列)
-        public string PoleColumn { get; set; } = "T"; // --硬编码-- 默认极数输出列
+        // 默认提取后极数输出的目标列 (分类明细表标准: X 列 Poles)
+        public string PoleColumn { get; set; } = "X"; // --硬编码-- 默认极数输出列
 
-        // 默认提取后脱扣方式输出的目标列 (如 U 列)
-        public string TripModeColumn { get; set; } = "U"; // --硬编码-- 默认脱扣方式输出列
+        // 默认提取后脱扣方式输出的目标列 (分类明细表标准: Y 列 trip)
+        public string TripModeColumn { get; set; } = "Y"; // --硬编码-- 默认脱扣方式输出列
 
         // 默认处理的起始行号 (表头下方第 2 行开始)
         public int StartRow { get; set; } = 2; // --硬编码-- 默认起始数据行
