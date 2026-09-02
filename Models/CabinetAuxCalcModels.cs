@@ -135,21 +135,60 @@ namespace ExcelAddInDemo.Models
     }
 
     /// <summary>
-    /// 铜排与母线计算定额规则模型
+    /// 铜排与母线计算定额规则模型 (基于 tmy.DrawIO 全新铜排制作与推导规则)
     /// </summary>
     public class CopperConfig
     {
-        // 倒T结构母排电流阈值 (单位: A，默认 300) --硬编码--
-        [JsonPropertyName("invertedTCurrent")]
-        public int InvertedTCurrent { get; set; } = 300;
+        // 出线塑壳断路器数量门限 (单位: 台，默认 2) --硬编码--
+        [JsonPropertyName("mccbCountThreshold")]
+        public int MccbCountThreshold { get; set; } = 2;
 
-        // I型结构母排电流阈值 (单位: A，默认 140) --硬编码--
-        [JsonPropertyName("iStructureCurrent")]
-        public int IStructureCurrent { get; set; } = 140;
+        // 出线塑壳断路器电流之和门限 (单位: A，默认 250) --硬编码--
+        [JsonPropertyName("mccbCurrentSumThreshold")]
+        public int MccbCurrentSumThreshold { get; set; } = 250;
 
-        // 分支铜排起算最小电流 (单位: A，默认 99) --硬编码--
+        // 出线分路总电流之和门限 (单位: A，默认 300) --硬编码--
+        [JsonPropertyName("branchTotalCurrentThreshold")]
+        public int BranchTotalCurrentThreshold { get; set; } = 300;
+
+        // 主进线开关电流判定门限 (单位: A，默认 250) --硬编码--
+        [JsonPropertyName("mainSwitchCurrentThreshold")]
+        public int MainSwitchCurrentThreshold { get; set; } = 250;
+
+        // 极数为 4 的塑壳断路器数量门限 (单位: 台，默认 1，>=该值采用 4 根水平排，否则 3 根) --硬编码--
+        [JsonPropertyName("fourPoleMccbThreshold")]
+        public int FourPoleMccbThreshold { get; set; } = 1;
+
+        // 触发垂直 N 排的特殊元器件关键字列表 (可动态编辑增删) --硬编码--
+        [JsonPropertyName("specialComponentKeywords")]
+        public List<string> SpecialComponentKeywords { get; set; } = new List<string>
+        {
+            "双电源", "ATS", "火灾探测器", "火灾互感器", "电气火灾"
+        };
+
+        // 柜宽扣除边距 (单位: mm，默认 120) --硬编码--
+        [JsonPropertyName("widthDeduction")]
+        public int WidthDeduction { get; set; } = 120;
+
+        // 柜高扣除边距 (单位: mm，默认 300) --硬编码--
+        [JsonPropertyName("heightDeduction")]
+        public int HeightDeduction { get; set; } = 300;
+
+        // 垂直母排基准展开长 (单位: m，默认 1.2) --硬编码--
+        [JsonPropertyName("verticalBaseLength")]
+        public double VerticalBaseLength { get; set; } = 1.2;
+
+        // 垂直母排负荷延伸系数 (单位: m，默认 0.1) --硬编码--
+        [JsonPropertyName("loadExtensionRatio")]
+        public double LoadExtensionRatio { get; set; } = 0.1;
+
+        // 垂直母排负荷延伸步长电流基数 (单位: A，默认 150) --硬编码--
+        [JsonPropertyName("loadExtensionStepCurrent")]
+        public int LoadExtensionStepCurrent { get; set; } = 150;
+
+        // 出线大电流分支铜排起算门限 (单位: A，默认 100) --硬编码--
         [JsonPropertyName("branchMinCurrent")]
-        public int BranchMinCurrent { get; set; } = 99;
+        public int BranchMinCurrent { get; set; } = 100;
 
         // 电流区间与对应铜排截面及每米单重对照表 (kg/m)
         [JsonPropertyName("mainBusSpecTable")]
@@ -166,45 +205,33 @@ namespace ExcelAddInDemo.Models
             new MainBusSpecItem { MaxCurrent = 9999, Spec = "TMY-120*10", WeightPerMeter = 10.680 }
         };
 
-        // 四极主母排预留长度补偿 (单位: mm，默认 1400) --硬编码--
+        // 倒T结构母排电流阈值 (单位: A，兼容保留) --硬编码--
+        [JsonPropertyName("invertedTCurrent")]
+        public int InvertedTCurrent { get; set; } = 300;
+
+        // I型结构母排电流阈值 (单位: A，兼容保留) --硬编码--
+        [JsonPropertyName("iStructureCurrent")]
+        public int IStructureCurrent { get; set; } = 140;
+
+        // 四极主母排预留长度补偿 (单位: mm，兼容保留) --硬编码--
         [JsonPropertyName("fourPoleExtra")]
         public int FourPoleExtra { get; set; } = 1400;
 
-        // 三极主母排预留长度补偿 (单位: mm，默认 1200) --硬编码--
+        // 三极主母排预留长度补偿 (单位: mm，兼容保留) --硬编码--
         [JsonPropertyName("threePoleExtra")]
         public int ThreePoleExtra { get; set; } = 1200;
 
-        // 双电源(ATS)倒T结构增加排长 (单位: mm，默认 4800) --硬编码--
+        // 双电源(ATS)倒T结构增加排长 (单位: mm，兼容保留) --硬编码--
         [JsonPropertyName("atsInvertedTExtra")]
         public int AtsInvertedTExtra { get; set; } = 4800;
 
-        // 双电源(ATS)I型结构增加排长 (单位: mm，默认 4200) --硬编码--
+        // 双电源(ATS)I型结构增加排长 (单位: mm，兼容保留) --硬编码--
         [JsonPropertyName("atsIExtra")]
         public int AtsIExtra { get; set; } = 4200;
 
-        // 柜宽扣除量 (单位: mm，默认 120) --硬编码--
-        [JsonPropertyName("widthDeduction")]
-        public int WidthDeduction { get; set; } = 120;
-
-        // 柜高扣除量 (单位: mm，默认 300) --硬编码--
-        [JsonPropertyName("heightDeduction")]
-        public int HeightDeduction { get; set; } = 300;
-
-        // 附件与特殊元器件铜排动态影响规则库 (支持用户动态增删改附件及排数几何联动)
+        // 附件与特殊元器件铜排动态影响规则库 (兼容保留)
         [JsonPropertyName("attachmentRules")]
-        public List<AttachmentBusbarRule> AttachmentRules { get; set; } = new List<AttachmentBusbarRule>
-        {
-            // 预设默认规则 1: 倒T型大电流双电源 (3根横向排 + 3根纵向跨接排 + 1200mm补偿) --硬编码--
-            new AttachmentBusbarRule { Keyword = "双电源", TargetStructure = "invertedT", WidthMultiplier = 3, HeightMultiplier = 3, ExtraFixedLength = 1200, UseMainBusSpec = true, IsEnabled = true },
-            // 预设默认规则 2: I型中小电流双电源 (3根横向排 + 800mm补偿) --硬编码--
-            new AttachmentBusbarRule { Keyword = "双电源", TargetStructure = "iStructure", WidthMultiplier = 3, HeightMultiplier = 0, ExtraFixedLength = 800, UseMainBusSpec = true, IsEnabled = true },
-            // 预设默认规则 3: ATS 倒T型结构规则 (别名支持) --硬编码--
-            new AttachmentBusbarRule { Keyword = "ATS", TargetStructure = "invertedT", WidthMultiplier = 3, HeightMultiplier = 3, ExtraFixedLength = 1200, UseMainBusSpec = true, IsEnabled = true },
-            // 预设默认规则 4: ATS I型结构规则 (别名支持) --硬编码--
-            new AttachmentBusbarRule { Keyword = "ATS", TargetStructure = "iStructure", WidthMultiplier = 3, HeightMultiplier = 0, ExtraFixedLength = 800, UseMainBusSpec = true, IsEnabled = true },
-            // 预设默认规则 5: 火灾互感器过排 (3根纵向排 + 200mm补偿) --硬编码--
-            new AttachmentBusbarRule { Keyword = "火灾互感器", TargetStructure = "all", WidthMultiplier = 0, HeightMultiplier = 3, ExtraFixedLength = 200, UseMainBusSpec = true, IsEnabled = true }
-        };
+        public List<AttachmentBusbarRule> AttachmentRules { get; set; } = new List<AttachmentBusbarRule>();
     }
 
     /// <summary>

@@ -2,6 +2,31 @@
 
 ## [Completed]
 
+- **优化铜排配置栅格排版与响应式深度合并，彻底解决输入框文字遮挡与数字不显示问题 (`Resources/cabinet_aux_calc.html`)**：
+  1. **排版挤压消除**：将每个 `.param-row-item` 后面的 `.param-unit` 精简为纯单位（`台`、`A`、`mm`、`米`），把长篇业务说明剥离并统一收纳至底部的公式与业务提示微卡片中，彻底根除双列网格互相重叠覆盖遮挡输入框的问题；
+  2. **响应式深度合并与默认值兜底**：在 `initContext` 中采用细粒度属性赋值保持 Vue 3 `reactive` 对象的响应式追踪，并对历史旧版本 JSON 缺少的新字段（`mccbCountThreshold: 2`, `mccbCurrentSumThreshold: 250`, `branchTotalCurrentThreshold: 300`, `mainSwitchCurrentThreshold: 250`, `fourPoleMccbThreshold: 1` 等）全面自动赋予规范默认值；
+  3. **清理重复 DOM**：删除铜排定额页中残留的重复特殊元件与母排表格标签，已重新同步至 `bin\Debug\net48\Resources\cabinet_aux_calc.html`。
+
+- **落地基于 `tmy.DrawIO` 的全新铜排制作规则引擎与配置项扩充 (`Models/CabinetAuxCalcModels.cs` & `Services/ExcelServices.CabinetAuxCalc.cs` & `Resources/cabinet_aux_calc.html`)**：
+  1. **配置模型层升级 (`Models/CabinetAuxCalcModels.cs`)**：
+     - 在 `CopperConfig` 中扩充全新规则门限：`MccbCountThreshold` (出线塑壳数量门限，默认 2 台)、`MccbCurrentSumThreshold` (塑壳电流和门限，默认 250A)、`BranchTotalCurrentThreshold` (分路总电流和门限，默认 300A)、`MainSwitchCurrentThreshold` (主进线开关电流门限，默认 250A)；
+     - 🌟 **4极水平排判定门限**：新增 `FourPoleMccbThreshold`（默认 1 台，分路中 4 极塑壳 $\ge$ 该值采用 4 根水平排，否则 3 根）；
+     - 🌟 **特殊元器件关键字列表**：新增 `SpecialComponentKeywords`（默认 `["双电源", "ATS", "火灾探测器", "火灾互感器", "电气火灾"]`，支持用户动态增删）；
+     - **工艺系数与边距**：补充 `WidthDeduction` (120mm)、`HeightDeduction` (300mm)、`VerticalBaseLength` (1.2m)、`LoadExtensionRatio` (0.1m)、`LoadExtensionStepCurrent` (150A) 与 `BranchMinCurrent` (100A)。
+  2. **业务计算引擎重构 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+     - **主开关与分路解耦**：首行自动识别为主进线开关提取 $I_{main}$ 与极数 $P_{main}$，后续行为分路元件；
+     - **分支一（水平排 vs 垂直母排）**：
+       - 若分路塑壳数 $\ge$ 门限且塑壳电流和 $\ge$ 门限 $\to$ 判定为水平排，若 4 极塑壳数 $\ge$ 门限为 4 根 $(W-\Delta W)\times 4$，否则为 3 根 $(W-\Delta W)\times 3$；
+       - 若未做水平排，且分路总电流和 $\ge$ 门限且主开关电流 $>$ 门限 $\to$ 判定为垂直母排，按 $[1.2 + 0.1 \times (\sum I / 150)] \times 极数$ 计算；
+     - **分支二（垂直 N 排）**：命中特殊元器件或主开关为 4 极时，自动生成 1 根 $(H - \Delta H)$ 垂直 N 排；
+     - **分支三（零地排）**：标配 1 根 $(W - \Delta W)$ 零地排；
+     - **分支四（出线分支排）**：出线电流 $>$ 门限的塑壳数量 $\times 1.0\text{m}$。
+  3. **前端配置界面与交互完善 (`Resources/cabinet_aux_calc.html`)**：
+     - 铜排定额页重构为：主母排决策门限（含 4 极塑壳门限）、尺寸扣除量与垂直排工艺系数、特殊元器件关键字标签库（支持添加/删除 Tag）、母排规格表；
+     - 绿色/蓝绿色主题（`#009688`）无边框设计，实时联动推导算式展示。
+  4. **代码规范**：
+     - 全程遵循每 3 行包含至少 1 行中文注释，配置硬编码均规范标注 `--硬编码--`。
+
 - **落地铜排计算公式可视化、设置即时联动与附件（双电源/互感器等）动态规则尺寸联动功能 (`Models/CabinetAuxCalcModels.cs` & `Services/ExcelServices.CabinetAuxCalc.cs` & `Resources/cabinet_aux_calc.html`)**：
   1. **模型层与规则可扩展性升级 (`Models/CabinetAuxCalcModels.cs`)**：
      - 新增 `AttachmentBusbarRule` 动态规则模型（包含关键字、适用结构、横向排数、纵向排数、固定补偿、规格选用与启用开关）；
