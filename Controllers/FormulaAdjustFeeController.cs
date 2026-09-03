@@ -467,7 +467,7 @@ namespace ExcelAddInDemo.Controllers
                     Unit = "",
                     Quantity = "",
                     Price = "",
-                    TotalPriceFormula = "=ROUND(H2*0.12, 2)",
+                    TotalPriceFormula = "=ROUND(H1*0.12, 2)",
                     CostPrice = "",
                     CostTotalPriceFormula = "",
                     Category = "费用"
@@ -482,7 +482,7 @@ namespace ExcelAddInDemo.Controllers
                     Unit = "",
                     Quantity = "",
                     Price = "",
-                    TotalPriceFormula = "=ROUND(SUM(H2:H3)*0.15, 2)",
+                    TotalPriceFormula = "=ROUND(SUM(H1:H2)*0.15, 2)",
                     CostPrice = "",
                     CostTotalPriceFormula = "",
                     Category = "费用"
@@ -497,7 +497,7 @@ namespace ExcelAddInDemo.Controllers
                     Unit = "",
                     Quantity = "",
                     Price = "",
-                    TotalPriceFormula = "=ROUND(SUM(H2:H4)*0.13, 2)",
+                    TotalPriceFormula = "=ROUND(SUM(H1:H3)*0.13, 2)",
                     CostPrice = "",
                     CostTotalPriceFormula = "",
                     Category = "费用"
@@ -512,9 +512,9 @@ namespace ExcelAddInDemo.Controllers
                     Unit = "",
                     Quantity = "",
                     Price = "",
-                    TotalPriceFormula = "=ROUND(SUM(H2:H5), 2)",
+                    TotalPriceFormula = "=ROUND(SUM(H1:H4), 2)",
                     CostPrice = "",
-                    CostTotalPriceFormula = "=ROUND(SUM(K2:K5), 2)",
+                    CostTotalPriceFormula = "=ROUND(SUM(K1:K4), 2)",
                     Category = ""
                 },
                 // 6. 总计 (A 列写“总计”，B 列为空)
@@ -525,11 +525,10 @@ namespace ExcelAddInDemo.Controllers
                     Model = "",
                     Manufacturer = "",
                     Unit = "台",
-                    Quantity = "=ROUND(H6, 2)",
-                    Price = "=ROUND(F7*G7, 2)",
-                    TotalPriceFormula = "",
+                    Price = "=ROUND(H5, 2)",
+                    TotalPriceFormula = "=ROUND(F6*G6, 2)",
                     CostPrice = "",
-                    CostTotalPriceFormula = "=ROUND(K6*F7, 2)",
+                    CostTotalPriceFormula = "=ROUND(K5*F6, 2)",
                     Category = ""
                 }
             };
@@ -545,11 +544,11 @@ namespace ExcelAddInDemo.Controllers
                 // 小计
                 new FormulaItemModel { No = "[序号]", Name = "小计", TotalPriceFormula = "[总价小计]", CostTotalPriceFormula = "[成本总价小计]" },
                 // 综合费率
-                new FormulaItemModel { No = "[序号]", Name = "综合成套费", TotalPriceFormula = "=ROUND(H2*0.25, 2)", Category = "费用" },
+                new FormulaItemModel { No = "[序号]", Name = "综合成套费", TotalPriceFormula = "=ROUND(H1*0.25, 2)", Category = "费用" },
                 // 单台合计
-                new FormulaItemModel { No = "[序号]", Name = "单台合计", TotalPriceFormula = "=ROUND(SUM(H2:H3), 2)", CostTotalPriceFormula = "=ROUND(SUM(K2:K3), 2)" },
+                new FormulaItemModel { No = "[序号]", Name = "单台合计", TotalPriceFormula = "=ROUND(SUM(H1:H2), 2)", CostTotalPriceFormula = "=ROUND(SUM(K1:K2), 2)" },
                 // 总计行
-                new FormulaItemModel { No = "总计", Name = "", Unit = "台", Quantity = "=ROUND(H4, 2)", Price = "=ROUND(F5*G5, 2)", CostTotalPriceFormula = "=ROUND(K4*F5, 2)" }
+                new FormulaItemModel { No = "总计", Name = "", Unit = "台", Price = "=ROUND(H3, 2)", TotalPriceFormula = "=ROUND(F4*G4, 2)", CostTotalPriceFormula = "=ROUND(K3*F4, 2)" }
             };
         }
 

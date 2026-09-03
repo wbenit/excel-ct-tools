@@ -59,6 +59,8 @@
         padding: 0 12px;
         font-size: 13px;
         font-weight: 600;
+        cursor: move;
+        touch-action: none; /* 禁用系统手势干扰，保障平滑拖拽 */
       }
 
       /* 右侧关闭与控制按钮集 */
@@ -381,13 +383,18 @@
         /* 提升层级覆盖普通数据单元格 */
         z-index: 2 !important;
       }
+      /* 固定列在行悬停时的背景色同步，避免被纯白覆盖遮蔽 hover 效果 */
+      .detail-section .el-table__body tr:hover > td.el-table-fixed-column--left {
+        /* 悬停时采用淡灰底色保持视觉一致 */
+        background-color: #f8fafc !important;
+      }
     </style>
   </head>
   <body>
     <!-- Vue 3 前端应用挂载节点 -->
     <div id="app" @click="hideContextMenu">
-      <!-- 窗口顶部无边框拖拽标题栏 -->
-      <div class="window-header" @mousedown="handleHeaderMouseDown">
+      <!-- 窗口顶部无边框拖拽标题栏 (采用 PointerEvents 平滑位移，绝无模态死锁) -->
+      <div class="window-header" @pointerdown="handleHeaderPointerDown">
         <span style="pointer-events: none"
           ><i class="fa-solid fa-calculator"></i> 公式法调费</span
         >
@@ -559,13 +566,15 @@
               </template>
             </el-table-column>
 
-            <!-- A 列：序号 (只读标识/可双击改动) -->
-            <el-table-column label="A" align="center" width="60">
+            <!-- A 列：序号 (只读标识/可双击改动，添加 fixed 属性使其在横向滚动时固定锁定在左侧) -->
+            <el-table-column fixed label="A" align="center" width="60">
               <template #header>
+                <!-- A 列表头分行显示标识与标题 -->
                 <div>A</div>
                 <div>序号</div>
               </template>
               <template #default="scope">
+                <!-- 双向绑定行序号输入框 -->
                 <el-input
                   v-model="scope.row.no"
                   class="table-cell-input formula-text-red"
@@ -575,13 +584,15 @@
               </template>
             </el-table-column>
 
-            <!-- B 列：元件名称 -->
-            <el-table-column label="B" min-width="90">
+            <!-- B 列：元件名称 (添加 fixed 属性并固定宽度为 100px，横向滚动时固定锁定在左侧) -->
+            <el-table-column fixed label="B" width="100">
               <template #header>
+                <!-- B 列表头显示标识与标题 -->
                 <div>B</div>
                 <div>元件名称</div>
               </template>
               <template #default="scope">
+                <!-- 双向绑定元件/费用名称输入框 -->
                 <el-input
                   v-model="scope.row.name"
                   class="table-cell-input"
@@ -895,10 +906,72 @@
             });
           };
 
-          // 拖拽无边框窗口
-          const handleHeaderMouseDown = () => {
-            sendMessageToHost({ action: "dragWindow" });
+          // 窗口无模态平滑拖拽处理 (基于 PointerEvents + rAF 节流，彻底杜绝 Win32 模态循环死锁与 Excel 崩溃)
+          const handleHeaderPointerDown = (e) => {
+            // 仅响应鼠标主键 (button === 0)
+            if (e.button !== 0) return;
+            // 排除点击右上角控制按钮
+            if (e.target.closest('.window-controls') || e.target.closest('.control-btn')) return;
+
+            // 获取物理像素与 CSS 像素缩放比率 (保障高分屏精准 1:1 跟随)
+            const dpi = window.devicePixelRatio || 1;
+            let lastScreenX = e.screenX;
+            let lastScreenY = e.screenY;
+            let pendingDeltaX = 0;
+            let pendingDeltaY = 0;
+            let rafId = null;
+
+            try {
+              e.target.setPointerCapture(e.pointerId);
+            } catch (_) {}
+
+            const onPointerMove = (moveEvt) => {
+              pendingDeltaX += (moveEvt.screenX - lastScreenX) * dpi;
+              pendingDeltaY += (moveEvt.screenY - lastScreenY) * dpi;
+              lastScreenX = moveEvt.screenX;
+              lastScreenY = moveEvt.screenY;
+
+              if (!rafId) {
+                rafId = requestAnimationFrame(() => {
+                  const dx = Math.round(pendingDeltaX);
+                  const dy = Math.round(pendingDeltaY);
+                  if (dx !== 0 || dy !== 0) {
+                    sendMessageToHost({ action: "moveWindow", deltaX: dx, deltaY: dy });
+                    pendingDeltaX = 0;
+                    pendingDeltaY = 0;
+                  }
+                  rafId = null;
+                });
+              }
+            };
+
+            const onPointerUp = () => {
+              try {
+                e.target.releasePointerCapture(e.pointerId);
+              } catch (_) {}
+              if (rafId) {
+                cancelAnimationFrame(rafId);
+                rafId = null;
+              }
+              const dx = Math.round(pendingDeltaX);
+              const dy = Math.round(pendingDeltaY);
+              if (dx !== 0 || dy !== 0) {
+                sendMessageToHost({ action: "moveWindow", deltaX: dx, deltaY: dy });
+                pendingDeltaX = 0;
+                pendingDeltaY = 0;
+              }
+              window.removeEventListener('pointermove', onPointerMove);
+              window.removeEventListener('pointerup', onPointerUp);
+              window.removeEventListener('pointercancel', onPointerUp);
+            };
+
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerup', onPointerUp);
+            window.addEventListener('pointercancel', onPointerUp);
           };
+
+          // 兼容旧版调用
+          const handleHeaderMouseDown = handleHeaderPointerDown;
 
           // 最小化窗口
           const handleMinimize = () => {
@@ -1051,6 +1124,7 @@
             deleteGroup,
             saveAllToHost,
             applyFormula,
+            handleHeaderPointerDown,
             handleHeaderMouseDown,
             handleMinimize,
             handleClose,

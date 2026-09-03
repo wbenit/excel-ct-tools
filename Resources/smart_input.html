@@ -72,6 +72,7 @@
         font-size: 13px;
         font-weight: 600;
         cursor: move;
+        touch-action: none; /* 禁用系统手势干扰，保障平滑拖拽 */
       }
 
       /* 标题栏右侧控制按钮 */
@@ -282,8 +283,8 @@
   </head>
   <body>
     <div id="app" v-cloak>
-      <!-- 1. 顶部无边框标题栏 -->
-      <div class="window-header" @mousedown="handleHeaderMouseDown">
+      <!-- 1. 顶部无边框标题栏 (采用 PointerEvents 平滑位移) -->
+      <div class="window-header" @pointerdown="handleHeaderPointerDown">
         <div>
           <i class="fa-solid fa-wand-magic-sparkles" style="margin-right: 6px"></i>
           <span>智能填写模式配置</span>
@@ -684,11 +685,72 @@
             handleFillRow(row);
           };
 
-          // 窗口控制方法
-          const handleHeaderMouseDown = (e) => {
-            if (e.target.closest(".window-controls")) return;
-            postToHost("windowDrag");
+          // 窗口无模态平滑拖拽处理 (基于 PointerEvents + rAF 节流，彻底杜绝 Win32 模态循环死锁与 Excel 崩溃)
+          const handleHeaderPointerDown = (e) => {
+            // 仅响应鼠标主键 (button === 0)
+            if (e.button !== 0) return;
+            // 排除点击右上角控制按钮
+            if (e.target.closest(".window-controls") || e.target.closest(".control-btn")) return;
+
+            // 获取物理像素与 CSS 像素缩放比率 (保障高分屏精准 1:1 跟随)
+            const dpi = window.devicePixelRatio || 1;
+            let lastScreenX = e.screenX;
+            let lastScreenY = e.screenY;
+            let pendingDeltaX = 0;
+            let pendingDeltaY = 0;
+            let rafId = null;
+
+            try {
+              e.target.setPointerCapture(e.pointerId);
+            } catch (_) {}
+
+            const onPointerMove = (moveEvt) => {
+              pendingDeltaX += (moveEvt.screenX - lastScreenX) * dpi;
+              pendingDeltaY += (moveEvt.screenY - lastScreenY) * dpi;
+              lastScreenX = moveEvt.screenX;
+              lastScreenY = moveEvt.screenY;
+
+              if (!rafId) {
+                rafId = requestAnimationFrame(() => {
+                  const dx = Math.round(pendingDeltaX);
+                  const dy = Math.round(pendingDeltaY);
+                  if (dx !== 0 || dy !== 0) {
+                    postToHost("moveWindow", { deltaX: dx, deltaY: dy });
+                    pendingDeltaX = 0;
+                    pendingDeltaY = 0;
+                  }
+                  rafId = null;
+                });
+              }
+            };
+
+            const onPointerUp = () => {
+              try {
+                e.target.releasePointerCapture(e.pointerId);
+              } catch (_) {}
+              if (rafId) {
+                cancelAnimationFrame(rafId);
+                rafId = null;
+              }
+              const dx = Math.round(pendingDeltaX);
+              const dy = Math.round(pendingDeltaY);
+              if (dx !== 0 || dy !== 0) {
+                postToHost("moveWindow", { deltaX: dx, deltaY: dy });
+                pendingDeltaX = 0;
+                pendingDeltaY = 0;
+              }
+              window.removeEventListener('pointermove', onPointerMove);
+              window.removeEventListener('pointerup', onPointerUp);
+              window.removeEventListener('pointercancel', onPointerUp);
+            };
+
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerup', onPointerUp);
+            window.addEventListener('pointercancel', onPointerUp);
           };
+
+          // 兼容旧版调用
+          const handleHeaderMouseDown = handleHeaderPointerDown;
 
           const handleMinimize = () => {
             postToHost("minimize");
@@ -788,6 +850,7 @@
             clearAllSheets,
             handleFillRow,
             handleRowDoubleClick,
+            handleHeaderPointerDown,
             handleHeaderMouseDown,
             handleMinimize,
             handleClose,

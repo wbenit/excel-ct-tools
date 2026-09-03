@@ -2,6 +2,179 @@
 
 ## [Completed]
 
+- **彻底排除主元器件（第1个元件）参与导线与分支排计算的约束修复 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+  1. **问题排查定位**：
+     - 在基础特征扫描循环中，原代码对 `i = 0` 的首行主元器件也统计了极数与数量，将其极线头塞入 `currentWireMap` 中，导致主进线总开关被错误折算了一次出线导线；
+     - 分支排部分原先遍历为 `i = 1` 开始，确认主元器件未参与分支排；
+  2. **精准排除与单点修复**：
+     - 在统计 `currentWireMap` 时增加 `if (i > 0 && !comp.IsFireTransformer && !comp.IsCurrentTransformer)` 门控约束；
+     - 确保首行主进线开关（`i == 0`）与互感器穿心件绝不计入一次导线线头数，主进线开关不计算分支排也不计算导线，仅出线分路元件（`i > 0`）计算出线导线与分支排；
+  3. **编译构建验证**：
+     - `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误 0 警告。
+
+
+- **落实“无水平排则出线分支不做排只能做线”的工程约束规则 (`Services/ExcelServices.CabinetAuxCalc.cs`, `Models/CabinetAuxCalcModels.cs`, `Resources/cabinet_aux_calc.html`)**：
+  1. **出线分支排门控约束 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+     - 在分支四中引入 `hasHorizontalBus` 判定：仅当满足水平排条件（`hasHorizontalBus == true`）且存在大电流出线断路器时，才计算出线分支铜排；
+     - 若未满足水平排（`hasHorizontalBus == false`），出线分支坚决不做分支排，不累加铜排重量也不生成分支排算式；
+  2. **一次配线全量承接与规格扩展 (`Services/ExcelServices.CabinetAuxCalc.cs`, `Models/CabinetAuxCalcModels.cs`)**：
+     - 在一次导线计算遍历 `currentWireMap` 时，将门控放行逻辑调整为 `!hasHorizontalBus || cur < rules.CopperRules.BranchMinCurrent`；
+     - 当无水平排时，所有出线回路（包括大电流回路）自动全部转为一次导线配线（“只能做线”）；
+     - 在 `PrimaryWireSpecTable` 中扩充 160A（BV-50）、250A（BV-70）、9999A（BV-95）大截面导线规格条目，保障大电流走线选型精准；
+  3. **前端界面提示更新与热同步 (`Resources/cabinet_aux_calc.html`)**：
+     - 更新铜排定额面板关于出线分支排的业务提示：“仅在满足水平排且出线额定电流 > XXA 时触发；若未满足水平排，则出线分支不做排，全部按一次导线计算”；
+     - 前端模板已热同步至 `bin\Debug\net48\Resources\cabinet_aux_calc.html`；
+  4. **编译构建验证**：
+     - `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误 0 警告。
+
+
+- **彻底修复出线分支排铜排型号直接借用水平主排单重的问题，重构为基于各出线回路额定电流独立选型与透明推导 (`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`)**：
+  1. **问题根因定位**：
+     - 原代码在扫描大电流塑壳断路器时仅统计台数，计算理论重量时直接乘以水平主排每米单重 `mainBusWeightPerMeter`；
+     - 水平主排是按照主进线开关（如 400A）选型为 `TMY-40*4`（1.424 kg/m），而出线回路断路器可能是 160A、250A 等，导致出线分支排重量被成倍虚高，且算式中未能展现真实分支规格；
+  2. **核心业务与计算引擎重构 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+     - 解除与水平主排的强耦合，建立按规格分组统计字典 `branchBusGroupMap`；
+     - 循环出线回路时，满足大电流门限的断路器根据自身额定电流调用 `GetBusbarSpecItem` 精准匹配对应 TMY 规格与每米理论单重；
+     - 依据规格分组聚合台数并汇总涉及的电流档位，按单台基准长独立计算各组理论重量并累加至 `copperWeight`；
+     - 算式明细输出全面透明化，如 `出线分支排 (出线160A共3台 | TMY-25*3 | 0.668kg/m): 3台 × 1.0m × 0.668kg/m = 2.00 KG`，若有多种规格则逐行清晰分列；
+  3. **配置模型扩展与界面联动 (`Models/CabinetAuxCalcModels.cs`, `Resources/cabinet_aux_calc.html`)**：
+     - `CopperConfig` 扩充 `BranchBusUnitLength`（出线分支铜排单台基准展开长，单位：米，默认 1.0），标注 `--硬编码--`；
+     - 铜排母线定额面板新增“分支排单台长”输入项，更新底部业务提示文字，并在 Vue `initContext` 中补充响应式默认值安全兜底；
+     - 热同步最新前端模板至 `bin\Debug\net48\Resources\cabinet_aux_calc.html`；
+  4. **编译构建与代码规范验证**：
+     - 执行 `dotnet build /t:Compile` 编译通过：0 错误 0 警告；
+     - 严格遵循新增代码每 3 行包含至少 1 行中文注释。
+
+
+- **物料智能匹配悬浮窗 (component_match_overlay.html / ComponentMatchOverlayForm.cs) 必含标签快捷删除、内联编辑与模式 B 双态分流**：
+  1. **痛点消除**：解决因预设型号必含规则过严导致 0 条匹配时，用户在悬浮窗内无法原地调整条件的阻碍；
+  2. **交互升级**：
+     - 必含标签右侧集成 `✕` 快捷删除按钮，Hover 变浅红放大，点击即时移除约束并触发重搜；
+     - 双击标签文字无缝切换为 Mini Input（`inline-rule-input`），支持 Enter 确认保存、Esc 取消；
+     - 管道末尾新增 `+ 必含` 按钮，点击弹出输入框支持动态追加新必含条件；
+     - 键盘防冲突保护：内联编辑拦截 Enter / Esc 冒泡，防止误触发全局回填或关闭窗口；
+  3. **模式 B 双态分流（临时试探 vs 持久化保存/重置）**：
+     - 默认增删改仅在当前窗口运行时过滤管道生效，即时异步重搜；
+     - 检测到改动时界面自动露出 `[⚡ 临时]` 标识、`[💾 保存]` 按钮（调用 C# 写入磁盘 JSON 配置文件）与 `[↺ 重置]` 按钮（还原默认规则）；
+  4. **全流程验证**：
+     - `dotnet build /t:Compile` 编译通过：0 错误；
+     - HTML 模板已热同步至 `bin\Debug\net48\Resources\`；
+     - 通过浏览器自动化子代理完成新增、双击编辑、删除、保存与重置全套交互真机驱动测试并截图/录像存档。
+
+
+- **公式法调费窗口 (formula_adjust_fee.html) A 列(序号)与 B 列(元件名称)横向滚动固定锁定**：
+  1. **固定列扩展**：
+     - 在明细表格 `el-table` 中，为 A 列（序号）和 B 列（元件名称）添加 `fixed` 属性，B 列明确固定宽度 `width="100"`；
+     - 与最左侧的行标记索引列（fixed 36px）联动，在横向拖动滚动条时，序号列与元件名称列紧随其后牢牢固定在左侧，不随 C、D、E、F 等数据列滚动；
+  2. **样式与视觉层级防护**：
+     - 在 CSS 中增强固定列在 `tr:hover` 悬停时的背景底色覆盖（`#f8fafc`），杜绝滚动时单元格穿帮并保持一致的高亮悬停交互；
+  3. **实时热同步与浏览器自动化真机测试**：
+     - 同步更新源码及 `bin\Debug\net48\` 下的 HTML 文件；
+     - 通过浏览器端自动化驱动测试并截图，验证向右拖动滚动条后，行序号、A 列、B 列完全固定在左侧，C/D/E/F 列顺畅滚动隐藏在固定列后方，H/J/K 等列正常露出的预期效果。
+
+- **彻底重构全项目所有 10 个 WebView2 窗口的拖拽架构，彻底消除导致 Excel 卡死与崩溃重启隐患 (全量 C# 窗体与前端 HTML 模板)**：
+  1. **故障根因彻底明确**：
+     - 原无边框窗口通过前端向 C# 发送 `dragWindow`，C# 调用 `SendMessage(WM_NCLBUTTONDOWN, HTCAPTION, 0)` 同步阻塞 API；
+     - 该调用在 Windows 层面启动非客户区模态移动循环（Modal Move Loop），在松开鼠标前霸占主线程；
+     - 窗口均在 Excel STA 主线程上创建，导致 Excel 整个主事件循环与 OLE 管道在拖拽期间完全停摆；
+     - WebView2 的渲染子进程因 IPC 等待宿主应答超时引发挂死检测，叠加 Excel COM 保护机制（Access Violation 0xC0000005）最终使 Excel 崩溃并触发 Office 自动恢复重启。
+  2. **全面落地的统一新标准架构 (PointerEvents + rAF 节流 + 非模态坐标更新)**：
+     - **前端规范**：全部替换为基于 Pointer Events 的 `onHeaderPointerDown`（兼容触控与鼠标）；调用 `setPointerCapture` 保证光标不丢；引入 `window.devicePixelRatio` 精准适配高分屏 1:1 跟踪；通过 `requestAnimationFrame` 合并高频移动，向 C# 派发带物理增量 `{ action: 'moveWindow', deltaX, deltaY }`；CSS 标题栏样式补充 `touch-action: none` 阻断系统手势干扰；
+     - **后端规范**：各窗体统一拦截 `case "moveWindow":`，基于 `SafeInvoke` 直接执行非阻塞的 `this.Location = new Point(this.Left + deltaX, this.Top + deltaY)`，耗时在微秒级，完全不阻塞 STA 线程，不进入任何 Win32 模态循环；保留原有的 `dragWindow` 作为向后兼容兜底；
+  3. **全部 10 个窗口改造清单 (100% 达成)**：
+     - ① `Forms/ComponentManageForm.cs` & `Resources/component_manage.html` (元器件数据管理)
+     - ② `Forms/CategoryForm.cs` & `Resources/category.html` (新建分类)
+     - ③ `Forms/CabinetAuxCalcForm.cs` & `Resources/cabinet_aux_calc.html` (辅材壳体计算)
+     - ④ `Forms/ComponentGroupBuilderForm.cs` & `Resources/component_group_builder.html` (二次元件组构建)
+     - ⑤ `Forms/ComponentMatchForm.cs` & `Resources/component_match_dialog.html` (物料匹配与规则)
+     - ⑥ `Forms/CreateProjectForm.cs` & `Resources/create_project.html` (开始报价/新建项目)
+     - ⑦ `Forms/FormulaAdjustFeeForm.cs` & `Resources/formula_adjust_fee.html` (公式法调费)
+     - ⑧ `Forms/ModelParamParserForm.cs` & `Resources/model_param_parser.html` (规格型号参数提取)
+     - ⑨ `Forms/SmartInputForm.cs` & `Resources/smart_input.html` (智能输入设置，新增 `SafeInvoke` 封装)
+     - ⑩ `Forms/SummaryAdjustPriceForm.cs` & `Resources/summary_adjust_price.html` (汇总调价，支持配置视图与紧凑编辑条双视图平滑拖拽)
+  4. **编译与同步交付验证**：
+     - 全量项目编译通过：`0 个错误`；
+     - 所有前端 HTML 模板已全部热同步至 `bin\Debug\net48\Resources\`。
+
+- **彻底修复“右键切换到旧快捷键（原生菜单）时 Excel 直接卡死且进程无法结束”故障 (`Forms/CustomContextMenuForm.cs`, `ExcelEventManager.cs`)**：
+  1. **故障根因诊断**：
+     - **根因 A (WebView2 与 Windows 模态弹窗 IPC 死锁)**：点击“切换为 Excel 原生右键菜单”时，在 WebView2 的 `WebMessageReceived` 同步回调链条中直接调用了 `MessageBox.Show(...)` 模态弹窗。WebView2 底层 IPC 消息抽泵被 Windows 限制性模态对话框循环阻断，导致 `msedgewebview2.exe` 等待宿主确认与 Excel STA 主线程等待弹窗关闭形成跨进程死锁；
+     - **根因 B (右键事件流中执行全局 CommandBars 遍历与删除)**：在 `OnSheetBeforeRightClick` 中，原生模式与自定义模式下每次右键均调用 `RemoveContextMenuControls()`。在 Excel 触发右键事件（`WM_CONTEXTMENU`）内部组装菜单的瞬间，通过 COM 循环遍历所有 200+ 个 CommandBars 并执行控件查找/删除，直接引发 Excel C++ 菜单管道重入死锁；
+     - **根因 C (进程结束不了的原因)**：Excel 处于 COM RPC/ALPC 同步等待内核态时，常规任务管理器“结束任务”（先发 `WM_CLOSE`）无法唤醒挂起的线程，导致 Excel 沦为占用句柄与 XLL 文件锁的僵尸进程 (Zombie Process)；
+  2. **系统级重构与彻底修复**：
+     - **脱离 WebMessage 回调链**：在 `CustomContextMenuForm.cs` 中，菜单动作点击后立即隐藏/关闭浮窗，通过 `ExcelDna.Integration.ExcelAsyncUtil.QueueAsMacro` 将动作派发到 Excel 纯净宏队列中异步执行，彻底解耦 WebView2 IPC 通信与后续业务/弹窗；
+     - **原生右键 0 干扰、0 延迟放行**：在 `ExcelEventManager.cs` 的 `OnSheetBeforeRightClick` 中，当处于原生右键模式时，执行 `cancel = false; return;` 直接放行，彻底移除事件中的 `RemoveContextMenuControls()` 遍历；
+     - **精准清理 Cell 菜单**：将 `RemoveContextMenuControls` 改造为直接按键名安全读取 `commandBars["Cell"]` 进行单点清理，彻底废止 200+ CommandBars 的全局危险循环；
+  3. **编译与打包验证**：
+     - `dotnet build -c Release /p:ExcelDnaPack=true` 成功编译与打包，0 错误 0 警告，成功生成便携版加壳插件。
+
+- **修复个人物料库在搜索下拉悬浮窗中查询不到的问题 (`Forms/ComponentMatchOverlayForm.cs`, `Services/PersonalComponentDbService.cs`, `Resources/component_match_overlay.html`, `Services/ComponentApiClient.cs`)**：
+  1. **数据源路由补全 (`ComponentMatchOverlayForm.cs`)**：
+     - 在候选初始加载 (`PushInitialCandidates`)、即时模糊搜索 (`searchKeyword`) 与配套附件查询 (`getAttachments`) 中增加针对 `_filterConfig.DataSource == "personal"` 的分支路由，彻底解决之前悬浮框始终请求云端 WebAPI 导致本地库无响应的问题；
+     - 在 `initCandidates` 消息中透传 `dataSource` 状态至前端；
+  2. **智能降级与宽容匹配检索 (`PersonalComponentDbService.cs`)**：
+     - 解除对 `ComponentApiClient` 的外部依赖，内置纯静态无副作用的 `ExtractIntegerCurrent` 与 `NormalizePolesParam` 方法；
+     - 额定电流与极数支持空值宽容匹配（当字段为空时自动在型号字段中匹配 `16A`、`3P` 等规格）；
+     - 增加智能降级机制：当用户在搜索框中主动输入关键字时，若因 Excel 单元格中带入的名称等其他约束导致 0 命中，系统自动以“当前品牌 + 用户搜索关键字”执行宽容检索，确保用户输入如 `16`、`AC30` 时能立即展现匹配的物料列表；
+     - 增加对“全部品牌 / 全部 / All”等统称标签的过滤排除，防止生成错误的 `brand = '全部品牌'` 约束；
+  3. **前端视觉呈现优化 (`component_match_overlay.html`)**：
+     - 在过滤管道标签栏增加数据源徽章（`[💻 个人库]` vs `[🌐 云端库]`），让用户清晰直观获知当前检索管道归属；
+  4. **全流程验证**：
+     - 编译 `dotnet build` 0 错误 0 警告；
+     - 通过反射与多维参数实测验证：输入 `16`、品牌 `国优`、即使行内带入无关名称 `微型断路器`，均能 100% 成功命中并返回本地库中全部 6 条符合物料。
+
+- **全新个人物料库 (SQLite 本地免安装) 与全链路双向联动升级 (`Services/PersonalComponentDbService.cs`, `ExcelAddInDemo.csproj`, `Controllers/ComponentMatchController.cs`, `Controllers/ComponentManageController.cs`, `Forms/ComponentMatchForm.cs`, `Forms/ComponentManageForm.cs`, `Services/ExcelServices.ComponentMatch.cs`, `Services/ExcelServices.ComponentManage.cs`, `Resources/component_match_dialog.html`, `Resources/component_manage.html`)**：
+  1. **免安装绿色便携 SQLite 架构设计与底层实现**：
+     - 引入 `Stub.System.Data.SQLite.Core.NetFramework 1.0.119.0`，在 `.csproj` 中建立 `CopyDependenciesToPublish` 目标，自动发布 `x86/x64` 原生 `SQLite.Interop.dll`，100% 绿色便携免安装；
+     - 建立 `PersonalComponentDbService.cs`，存储定位 `%LocalAppData%\ExcelCTTools\data\personal_components.db`，表结构与云端 MySQL `components` 1:1 镜像对齐，支持自愈建表与复合索引自动创建；
+     - 实现完整的数据层：品牌聚合统计、根据品牌取名称、模糊与必含搜索、事务批量新增、批量更新与删除。
+  2. **图 1【元器件物料匹配与品牌规则设置】升级 (`component_match_dialog.html`, `ComponentMatchForm.cs`, `ComponentMatchController.cs`, `ExcelServices.ComponentMatch.cs`)**：
+     - 在规则设置顶部增加【0. 物料数据源设置 (Data Source)】单选胶囊（`云端公共库` vs `本地个人库`）；
+     - 切换数据源时自动动态刷新品牌聚合统计网格与对应品牌标签数量；
+     - 模拟测试与选区匹配时携带当前选中的数据源，`ExecuteBatchMatchWithDb` 自动按需从本地 SQLite 或云端反查并回填；
+     - 底部操作栏新增 `[📂 管理物料]` 按钮，支持一键调出元器件数据管理窗口。
+  3. **图 2【元器件数据管理】升级 (`component_manage.html`, `ComponentManageForm.cs`, `ComponentManageController.cs`, `ExcelServices.ComponentManage.cs`)**：
+     - 顶部增加【管理物料库源】单选切换（`云端公共库` vs `本地个人库`）；
+     - 切换到本地个人库时，品牌与名称下拉列表自动绑定本地 SQLite 统计数据；
+     - 选区精准更新、新增、删除操作根据所选数据源分流处理，支持在本地个人库中执行增删改并在 Excel 中回填状态与 ID。
+  4. **构建与运行验证**：
+     - `dotnet build` 编译 0 错误；
+     - 实测验证 SQLite 数据库自动建库建表（`components` 表与 3 组复合索引）正常就绪，全链路无缝闭环。
+  1. **规则4与工程算法闭环**：
+     - 实现了多分类长词优先降序匹配（Maximal Match），彻底杜绝短代号吞噬长型号；
+     - 实现了断路器遇漏电自动升格机制（微型断路器+漏电 ➔ 微型漏电，塑壳断路器+漏电 ➔ 塑壳漏电）；
+     - 实现了短字符/单双字母安全边界保护（如阻止 16A 的 A 误判为接触器、阻止 400V 的 V 误判为浪涌，针对施耐德 Acti9 A9 系列设立专用保护）；
+     - 实现了工业命名 KB0 / KBO 兼容归一化与中文品名强直通机制。
+  2. **从 Excel 规则选区一键同步特征库**：
+     - 公共服务层 `ImportCategoryDictFromExcelSelection` 支持纯内存二维数组直读用户在 Excel 中框选的特征表（第一行是类别名称，下方是代号）；
+     - 控制器与窗体安全交互，前端一键同步并即时生效，极大简化字典维护。
+  3. **Excel 批量识别与二维数组极速回填**：
+     - 扩展 `ExecuteBatchModelParse` 支持名称输出列（B列）、最小/最大电流列、极数列、脱扣列的同时解析；
+     - 支持“仅填空白单元格 (OnlyEmpty)”与“强制覆盖 (OverwriteAll)”策略；
+     - 严格遵循规范第 7 条，纯内存二维数组批量读入写回，无 COM 卡顿。
+  4. **Vue 3 + Element Plus 前端界面重构**：
+     - 增加“2. 元器件名称/类别识别通道”配置卡片，提供类别胶囊切换面板与代号 Tag 池；
+     - 升级沙盒实时测试预览，支持透明展示类别决策轨迹。
+  5. **严格代码规范与测试验证**：
+     - 新增代码每 3 行包含至少 1 行中文注释，配置硬编码标注 `--硬编码--`；
+     - 编写反射实测脚本验证微断、微漏升格、塑壳漏电、接触器、施耐德 A9 微断、KB0 等所有用例全部 100% 通过。
+
+- **严格对齐 `tmy.DrawIO` 最新流程图：未满足水平排（塑壳数不足或电流和不足）均流转至垂直母排判定 (`Services/ExcelServices.CabinetAuxCalc.cs` & `Resources/cabinet_aux_calc.html`)**：
+  1. **解析最新流程图连线**：
+     - 节点 6（塑壳电流和比较）的 `false` 分支连线指向节点 16（判定垂直母排）；
+     - 节点 5（塑壳数量比较）的 `false` 分支连线同样指向节点 16；
+     - 明确未做水平排时，只要分路总电流和 $\ge$ 门限且主开电流 $>$ 门限，即可触发垂直母排。
+  2. **核心业务判定代码重构 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+     - 条件一：出线塑壳台数 $\ge$ 门限 且 塑壳电流和 $\ge$ 门限 $\implies$ 采用水平排（按 4 极塑壳数定 3/4 根）；
+     - 条件二（`else if`）：未满足水平排时，若分路总电流和 $\ge$ 门限 且 主开电流 $>$ 门限 $\implies$ 采用垂直母排（按主开极数定 3/4 根）；
+     - 条件三（`else`）：均不满足时主母排置空（不设水平排也不设垂直母排）；
+     - 保持零地排（标配 1 根）、垂直 N 排与大电流分支排的独立核算；
+     - 严格遵循每 3 行包含至少 1 行中文注释。
+  3. **前端界面提示同步 (`Resources/cabinet_aux_calc.html`)**：
+     - 更新铜排定额设置页底部的业务公式提示，并同步发布至 `bin\Debug\net48`；
+  4. **编译验证**：
+     - 执行 `dotnet build /t:Compile` 编译通过，0 错误。
+
 - **优化铜排配置栅格排版与响应式深度合并，彻底解决输入框文字遮挡与数字不显示问题 (`Resources/cabinet_aux_calc.html`)**：
   1. **排版挤压消除**：将每个 `.param-row-item` 后面的 `.param-unit` 精简为纯单位（`台`、`A`、`mm`、`米`），把长篇业务说明剥离并统一收纳至底部的公式与业务提示微卡片中，彻底根除双列网格互相重叠覆盖遮挡输入框的问题；
   2. **响应式深度合并与默认值兜底**：在 `initContext` 中采用细粒度属性赋值保持 Vue 3 `reactive` 对象的响应式追踪，并对历史旧版本 JSON 缺少的新字段（`mccbCountThreshold: 2`, `mccbCurrentSumThreshold: 250`, `branchTotalCurrentThreshold: 300`, `mainSwitchCurrentThreshold: 250`, `fourPoleMccbThreshold: 1` 等）全面自动赋予规范默认值；
@@ -466,8 +639,12 @@
 
 ## [In-Progress]
 
-- 联机环境验证：在 Excel 中测试【一键更新】的反向同步与公式自动重算效果。
+- **二次元件详细表（二次方案与子物料明细）的保存与编辑架构规划**：
+  1. 深度解析用户二次元件截图的数据结构与业务层级（主方案：型号别名、跨门线、开孔、人工、二次组；子明细：物料名称、型号、数量、单位、二次单价/合价）；
+  2. 规划“全局持久化（JSON/SQLite）+ Excel 表格直觉化编辑 + Vue 3 树形表格可视化维护”的双轨协同保存与维护体系；
+  3. 梳理与《CabinetAuxCalc》辅材、开孔及人工计算引擎的闭环联动。
 
 ## [Next]
 
-- 根据用户实际使用场景与反馈进行细节调优。
+- 等待用户确认规划方案与设计细节，明确执行指令后启动代码实施。
+

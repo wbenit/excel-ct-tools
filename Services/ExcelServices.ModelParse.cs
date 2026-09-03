@@ -36,6 +36,353 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 元器件名称/类别解析核心逻辑: 中文强直通 -> 清洗预处理 -> 漏电预检 -> 全字典长词降序优先匹配 -> 单双字母边界防护 -> 漏电自动升格
+        /// </summary>
+        /// <param name="rawModel">原始型号文本</param>
+        /// <param name="config">配置对象</param>
+        /// <param name="hitRuleTitle">命中的规则说明或决策轨迹</param>
+        /// <returns>提取出的元器件分类名称 (如微型断路器、塑壳断路器、微型漏电)</returns>
+        public static string ParseCategory(string rawModel, ModelParserConfig config, out string hitRuleTitle)
+        {
+            // 初始化输出命中规则说明
+            hitRuleTitle = string.Empty;
+            // 校验输入字符串是否为空
+            if (string.IsNullOrWhiteSpace(rawModel)) return string.Empty;
+
+            // 校验配置与特征字典是否存在
+            if (config.CategoryDict == null || config.CategoryDict.Count == 0)
+            {
+                // 字典为空提示
+                hitRuleTitle = "类别特征词典库为空";
+                return string.Empty;
+            }
+
+            // 规整输入文本 (去除多余首尾空格)
+            string trimmedModel = rawModel.Trim();
+
+            // ==================== 1. 中文品名强直通 (最高优先级，零误判) ====================
+            // 优先检查型号文本中是否已显式包含某个类别全名 (按类别名称字符长度降序比对)
+            foreach (var catName in System.Linq.Enumerable.OrderByDescending(config.CategoryDict.Keys, k => k.Length))
+            {
+                // 若原始文本中包含完整的类别名称
+                if (trimmedModel.IndexOf(catName, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    // 记录直接命中中文品名
+                    hitRuleTitle = $"直接命中中文品名 [{catName}]";
+                    // 检查是否需要漏电升格
+                    return CheckLeakageUpgrade(catName, trimmedModel, config, ref hitRuleTitle);
+                }
+            }
+
+            // ==================== 2. 清洗预处理与漏电特征预检 ====================
+            // 检测是否存在漏电特征 (LE, VIGI, L, 漏电等)
+            bool hasLeakage = DetectLeakageFeature(trimmedModel, config);
+
+            // 清洗掉干扰字符：过滤末尾独立的额定电流(如 16A, 32A)、电压(如 400V, 220V)、极数(如 3P, 4P)
+            // 避免单字母 A 误触发接触器，单字母 V 误触发浪涌
+            string sanitizedModel = CleanModelInterference(trimmedModel);
+
+            // 兼容性预处理: 处理工业标准中 KB0 与 KBO 的混淆
+            sanitizedModel = Regex.Replace(sanitizedModel, @"\bKB0\b", "KBO", RegexOptions.IgnoreCase);
+
+            // ==================== 3. 全字典代号按长度降序（从长到短）扁平化匹配 ====================
+            // 收集所有分类的代号项，按代号长度严格降序排列 (实现长词优先原则，避免短词吞噬)
+            var flattenedCodes = new List<(string Category, string Code)>();
+            foreach (var kvp in config.CategoryDict)
+            {
+                // 遍历当前分类下的所有特征代号
+                if (kvp.Value == null) continue;
+                foreach (var code in kvp.Value)
+                {
+                    // 过滤空代号
+                    if (!string.IsNullOrWhiteSpace(code))
+                    {
+                        flattenedCodes.Add((kvp.Key, code.Trim()));
+                    }
+                }
+            }
+
+            // 严格按代号字符长度降序排序 (如 PMAC515A > BM30L > DZ47 > XT > A)
+            var sortedCodes = System.Linq.Enumerable.ToList(System.Linq.Enumerable.OrderByDescending(flattenedCodes, x => x.Code.Length));
+
+            // 循环遍历排序后的代号项逐一比对
+            foreach (var item in sortedCodes)
+            {
+                // 提取当前比对分类与代号
+                string category = item.Category;
+                string code = item.Code;
+
+                // 判断当前代号是否命中型号文本 (区分长代号与短代号边界保护)
+                if (IsCodeMatched(sanitizedModel, code, config.EnableShortCodeBoundaryGuard))
+                {
+                    // 记录命中的代号
+                    hitRuleTitle = $"命中代号 [{code}] ➔ 归类为 [{category}]";
+
+                    // ==================== 4. 漏电自动升格机制 (规则 4) ====================
+                    if (config.EnableLeakageUpgrade && hasLeakage)
+                    {
+                        // 若命中微型断路器且带漏电，升格为微型漏电
+                        if (category.Equals("微型断路器", StringComparison.OrdinalIgnoreCase))
+                        {
+                            hitRuleTitle = $"命中微断代号 [{code}] ➔ 识别漏电特征升格为 [微型漏电]";
+                            return "微型漏电"; // --硬编码-- 升格为微型漏电
+                        }
+                        // 若命中塑壳断路器且带漏电，升格为塑壳漏电
+                        if (category.Equals("塑壳断路器", StringComparison.OrdinalIgnoreCase))
+                        {
+                            hitRuleTitle = $"命中塑壳代号 [{code}] ➔ 识别漏电特征升格为 [塑壳漏电]";
+                            return "塑壳漏电"; // --硬编码-- 升格为塑壳漏电
+                        }
+                    }
+
+                    // 返回命中的元器件分类名称
+                    return category;
+                }
+            }
+
+            // 未命中任何分类代号
+            hitRuleTitle = "未匹配到已知元器件代号";
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// 从当前 Excel 用户选中的规则区域一键导入元器件分类与系列特征代号库 (第一行是类别名称，下方是各代号)
+        /// </summary>
+        /// <param name="message">导入结果汇总提示文本</param>
+        /// <returns>导入成功的字典集合 (若失败返回 null)</returns>
+        public static Dictionary<string, List<string>>? ImportCategoryDictFromExcelSelection(out string message)
+        {
+            try
+            {
+                // 获取当前正在运行的 Excel 顶级 Application 实例
+                dynamic? app = ExcelDna.Integration.ExcelDnaUtil.Application;
+                if (app == null)
+                {
+                    // 无法获取 Excel 应用提示
+                    message = "未检测到运行中的 Excel 应用程序实例";
+                    return null;
+                }
+
+                // 获取用户在 Excel 中当前选中的区域 (Selection)
+                dynamic? selection = app.Selection;
+                if (selection == null)
+                {
+                    // 未选择区域提示
+                    message = "请先在 Excel 中选择包含表头分类与型号字母的区域";
+                    return null;
+                }
+
+                // 获取选区行列数
+                int totalRows = (int)selection.Rows.Count;
+                int totalCols = (int)selection.Columns.Count;
+
+                // 至少需要 2 行 1 列才构成有效的特征表 (第 1 行是类别名称，第 2 行开始是代号)
+                if (totalRows < 2 || totalCols < 1)
+                {
+                    message = "所选区域过小，请选择至少包含 1 行表头分类与下方代号的表格区域";
+                    return null;
+                }
+
+                // ==================== 纯内存一次性直读二维数组 (符合规范第 7 条) ====================
+                object[,] rawArray = ConvertTo2DArray(selection.Value2, totalRows, totalCols);
+
+                // 构造导入的目标分类字典
+                var importedDict = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+                int totalCodesCount = 0;
+
+                // 遍历选区中的每一列
+                for (int col = 1; col <= totalCols; col++)
+                {
+                    // 第一行是元器件分类名称
+                    object headerVal = rawArray[1, col];
+                    string categoryName = headerVal?.ToString()?.Trim() ?? string.Empty;
+
+                    // 若表头名称为空则跳过该列
+                    if (string.IsNullOrWhiteSpace(categoryName)) continue;
+
+                    // 若字典中未包含该分类则初始化代号列表
+                    if (!importedDict.ContainsKey(categoryName))
+                    {
+                        importedDict[categoryName] = new List<string>();
+                    }
+
+                    // 从第 2 行开始往下遍历该列所有代号
+                    for (int row = 2; row <= totalRows; row++)
+                    {
+                        // 获取当前单元格文本
+                        object cellVal = rawArray[row, col];
+                        string code = cellVal?.ToString()?.Trim() ?? string.Empty;
+
+                        // 过滤空值
+                        if (string.IsNullOrWhiteSpace(code)) continue;
+
+                        // 避免同一个分类中代号重复
+                        if (!importedDict[categoryName].Contains(code, StringComparer.OrdinalIgnoreCase))
+                        {
+                            importedDict[categoryName].Add(code);
+                            totalCodesCount++;
+                        }
+                    }
+                }
+
+                // 检查导入成果
+                if (importedDict.Count == 0)
+                {
+                    message = "未能从选区第一行识别到有效的元器件分类名称";
+                    return null;
+                }
+
+                // 成功导入汇总提示
+                message = $"成功从 Excel 选区导入 {importedDict.Count} 个元器件类别，共 {totalCodesCount} 个型号特征代号！";
+                return importedDict;
+            }
+            catch (Exception ex)
+            {
+                // 记录异常信息
+                message = $"从 Excel 导入特征库异常: {ex.Message}";
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 检测型号文本中是否包含漏电保护特征
+        /// </summary>
+        private static bool DetectLeakageFeature(string text, ModelParserConfig config)
+        {
+            // 校验漏电升格开关
+            if (!config.EnableLeakageUpgrade) return false;
+            // 校验漏电关键词列表
+            if (config.LeakageKeywords == null || config.LeakageKeywords.Count == 0) return false;
+
+            // 遍历配置的漏电关键词列表进行正则或包含判断
+            foreach (var kw in config.LeakageKeywords)
+            {
+                // 跳过空关键词
+                if (string.IsNullOrWhiteSpace(kw)) continue;
+
+                // 针对单字母 L: 必须紧随在断路器代号或极数后面 (如 BM30L, HSM1L, CH3L, DZ47L, 3P+L)
+                if (kw.Trim().Equals("L", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 正则匹配断路器常见紧贴 L 后缀 (如 BM30L, DZ47LE, DZ47L, 3300L)
+                    if (Regex.IsMatch(text, @"(?:[A-Za-z0-9]+L\b|[A-Za-z0-9]+L(?=[-\s/]))", RegexOptions.IgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+                // 针对多字符关键词 (如 LE, VIGI, GS, 漏电, 残流)
+                else
+                {
+                    // 使用不区分大小写的包含匹配
+                    if (text.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            // 未检测到漏电特征
+            return false;
+        }
+
+        /// <summary>
+        /// 清洗型号文本中的干扰电气参数 (避免 16A 的 A 误判为接触器, 400V 的 V 误判为浪涌)
+        /// </summary>
+        private static string CleanModelInterference(string raw)
+        {
+            // 空字符串直接返回
+            if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+            // 过滤末尾独立电流单位 A (如 16A, 32A, 100A, 630A)，保留主代号
+            string cleaned = Regex.Replace(raw, @"(?<=\b|\d)(?:\d+(?:\.\d+)?)\s*A\b", " ", RegexOptions.IgnoreCase);
+            // 过滤电压单位 V / VAC / VDC (如 220V, 380V, 400V)
+            cleaned = Regex.Replace(cleaned, @"(?<=\b|\d)(?:220|230|380|400|690)\s*V(?:AC|DC)?\b", " ", RegexOptions.IgnoreCase);
+            // 过滤分断能力 kA (如 4.5kA, 6kA, 10kA)
+            cleaned = Regex.Replace(cleaned, @"(?<=\b|\d)(?:\d+(?:\.\d+)?)\s*kA\b", " ", RegexOptions.IgnoreCase);
+            // 过滤剩余动作电流 mA (如 30mA, 100mA)
+            cleaned = Regex.Replace(cleaned, @"(?<=\b|\d)(?:\d+(?:\.\d+)?)\s*mA\b", " ", RegexOptions.IgnoreCase);
+            // 返回清洗后的字符串
+            return cleaned;
+        }
+
+        /// <summary>
+        /// 判定特定特征代号是否在清洗后的型号文本中有效命中 (结合长短代号与安全边界策略)
+        /// </summary>
+        private static bool IsCodeMatched(string text, string code, bool enableBoundaryGuard)
+        {
+            // 校验入参有效性
+            if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(code)) return false;
+
+            // 1. 针对 3 字符及以上的长代号 (如 DZ47, NXB, NSX, PMAC515A)
+            if (code.Length >= 3)
+            {
+                // 直接使用不区分大小写的匹配
+                return text.IndexOf(code, StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+
+            // 2. 针对 1~2 字符的短代号 (如 A, T, G, SC, VC, DD, DT, XT)
+            if (!enableBoundaryGuard)
+            {
+                // 若未开启安全边界，使用普通包含
+                return text.IndexOf(code, StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+
+            // 3. 针对单字符短代号 (如接触器的 A, 热继电器的 T, 隔离开关的 G)
+            if (code.Length == 1)
+            {
+                // 排除施耐德 A9 微断误判为接触器
+                if (code.Equals("A", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 若是 A9 或 Acti9 开头，绝不是接触器，而是微型断路器
+                    if (Regex.IsMatch(text, @"\bA9[A-Za-z0-9]*\b", RegexOptions.IgnoreCase) ||
+                        text.IndexOf("Acti9", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return false;
+                    }
+                }
+
+                // 单字母必须位于起始位置、或前面有分隔符，且后面紧跟数字或破折号 (如 A9-10, CJX2, T-10)
+                string patternSingle = $@"(?:^|[\s\-_/]){Regex.Escape(code)}(?=[0-9\-_/])";
+                return Regex.IsMatch(text, patternSingle, RegexOptions.IgnoreCase);
+            }
+
+            // 4. 针对双字符短代号 (如 SC, VC, VB, DD, DT, T1~T7, XT)
+            // 必须满足前后不是英文字母 (防止 ISCB 中的 SC, VAC 中的 VC 误命中)
+            string patternDouble = $@"(?<![A-Za-z]){Regex.Escape(code)}(?![A-Za-z])";
+            if (Regex.IsMatch(text, patternDouble, RegexOptions.IgnoreCase))
+            {
+                return true;
+            }
+
+            // 双字母若后面紧跟破折号或数字 (如 XT1, T1-100, VC-40) 亦视为命中
+            string patternWithNumber = $@"(?<![A-Za-z]){Regex.Escape(code)}[0-9\-_/]";
+            return Regex.IsMatch(text, patternWithNumber, RegexOptions.IgnoreCase);
+        }
+
+        /// <summary>
+        /// 检查命中中文品名时是否需进行漏电升格
+        /// </summary>
+        private static string CheckLeakageUpgrade(string catName, string text, ModelParserConfig config, ref string hitRuleTitle)
+        {
+            // 判断是否启用升格并且含有漏电特征
+            if (config.EnableLeakageUpgrade && DetectLeakageFeature(text, config))
+            {
+                // 微型断路器升格为微型漏电
+                if (catName.Equals("微型断路器", StringComparison.OrdinalIgnoreCase))
+                {
+                    hitRuleTitle = $"直接命中中文 [{catName}] ➔ 识别漏电特征升格为 [微型漏电]";
+                    return "微型漏电"; // --硬编码-- 升格为微型漏电
+                }
+                // 塑壳断路器升格为塑壳漏电
+                if (catName.Equals("塑壳断路器", StringComparison.OrdinalIgnoreCase))
+                {
+                    hitRuleTitle = $"直接命中中文 [{catName}] ➔ 识别漏电特征升格为 [塑壳漏电]";
+                    return "塑壳漏电"; // --硬编码-- 升格为塑壳漏电
+                }
+            }
+            // 不需要升格则返回原名称
+            return catName;
+        }
+
+        /// <summary>
         /// 极数解析核心逻辑: 经历前置排除过滤 -> 多级顺位流水线 -> 后置标称白名单校验
         /// </summary>
         /// <param name="rawModel">原始型号文本</param>
@@ -264,6 +611,10 @@ namespace ExcelAddInDemo
                 return result;
             }
 
+            // 0. 执行元器件名称/类别解析 (新通道)
+            result.Category = ParseCategory(rawModel ?? string.Empty, config, out string hitCat);
+            result.HitCategoryRule = hitCat;
+
             // 1. 执行极数流水线解析
             result.Pole = ParsePoles(rawModel ?? string.Empty, config, out string hitPole);
             result.HitPoleRule = hitPole;
@@ -281,18 +632,19 @@ namespace ExcelAddInDemo
             result.HitTripModeRule = hitTrip;
 
             // 综合评估解析结果状态
+            bool hasCat = !string.IsNullOrWhiteSpace(result.Category);
             bool hasPole = !string.IsNullOrWhiteSpace(result.Pole);
             bool hasCur = !string.IsNullOrWhiteSpace(result.MinCurrent) || !string.IsNullOrWhiteSpace(result.MaxCurrent);
             bool hasTrip = !string.IsNullOrWhiteSpace(result.TripMode);
 
-            // 三项均成功提取记为 Success (若未配置脱扣顺位则按两项判定)
+            // 四项核心要素判定：若识别到类别且极数与电流均有效识别，记为 Success
             bool expectTrip = config.TripModePipeline != null && config.TripModePipeline.Exists(r => r.Enabled);
-            if (hasPole && hasCur && (!expectTrip || hasTrip))
+            if ((hasCat || hasPole) && hasCur && (!expectTrip || hasTrip))
             {
                 result.Status = "Success";
             }
             // 任意提取到其中一项记为 Partial
-            else if (hasPole || hasCur || hasTrip)
+            else if (hasCat || hasPole || hasCur || hasTrip)
             {
                 result.Status = "Partial";
             }
@@ -339,15 +691,16 @@ namespace ExcelAddInDemo
                     return batchResult;
                 }
 
-                // 规范化列名 (分类明细表标准: W=Current, X=Poles, Y=trip)
+                // 规范化列名 (分类明细表标准: B=Name, W=Current, X=Poles, Y=trip)
                 string colSrc = string.IsNullOrWhiteSpace(config.SourceColumn) ? "C" : config.SourceColumn.Trim().ToUpper();
+                string colCat = string.IsNullOrWhiteSpace(config.CategoryColumn) ? string.Empty : config.CategoryColumn.Trim().ToUpper();
                 string colMinCur = string.IsNullOrWhiteSpace(config.MinCurrentColumn) ? "W" : config.MinCurrentColumn.Trim().ToUpper();
                 string colMaxCur = string.IsNullOrWhiteSpace(config.MaxCurrentColumn) ? string.Empty : config.MaxCurrentColumn.Trim().ToUpper();
                 string colPole = string.IsNullOrWhiteSpace(config.PoleColumn) ? "X" : config.PoleColumn.Trim().ToUpper();
                 string colTrip = string.IsNullOrWhiteSpace(config.TripModeColumn) ? "Y" : config.TripModeColumn.Trim().ToUpper();
 
                 // 校验列映射冲突，防止相互覆盖
-                string? conflictErr = CheckColumnConflicts(colSrc, colMinCur, colMaxCur, colPole, colTrip);
+                string? conflictErr = CheckColumnConflicts(colSrc, colCat, colMinCur, colMaxCur, colPole, colTrip);
                 // 若存在重复列则终止执行
                 if (conflictErr != null)
                 {
@@ -376,6 +729,9 @@ namespace ExcelAddInDemo
                 int successCount = 0;
                 int failedCount = 0;
 
+                // 判断名称覆盖模式是否仅填充空单元格
+                bool onlyEmptyCat = string.Equals(config.CategoryOverwriteMode, "OnlyEmpty", StringComparison.OrdinalIgnoreCase);
+
                 // 遍历当前选择的所有选区 (支持单个连续选区或按住 Ctrl 的多选区)
                 foreach (dynamic area in selection.Areas)
                 {
@@ -392,7 +748,16 @@ namespace ExcelAddInDemo
                     dynamic srcRange = activeSheet.Range[$"{colSrc}{startRow}:{colSrc}{endRow}"];
                     object[,] rawArray = ConvertTo2DArray(srcRange.Value2, rowCount);
 
+                    // 若开启仅填空白模式且配置了名称输出列，提前整块读入已有名称数据
+                    object[,]? existCatArray = null;
+                    if (!string.IsNullOrWhiteSpace(colCat) && onlyEmptyCat)
+                    {
+                        dynamic catRange = activeSheet.Range[$"{colCat}{startRow}:{colCat}{endRow}"];
+                        existCatArray = ConvertTo2DArray(catRange.Value2, rowCount);
+                    }
+
                     // ==================== 2. 在内存中创建当前选区对应的目标二维数组 ====================
+                    object[,] categoryArray = new object[rowCount, 1];
                     object[,] minCurrentArray = new object[rowCount, 1];
                     object[,] maxCurrentArray = new object[rowCount, 1];
                     object[,] poleArray = new object[rowCount, 1];
@@ -408,6 +773,7 @@ namespace ExcelAddInDemo
                         // 若为空行则置空保留
                         if (string.IsNullOrWhiteSpace(rawModel))
                         {
+                            categoryArray[i, 0] = string.Empty;
                             minCurrentArray[i, 0] = string.Empty;
                             maxCurrentArray[i, 0] = string.Empty;
                             poleArray[i, 0] = string.Empty;
@@ -415,19 +781,34 @@ namespace ExcelAddInDemo
                             continue;
                         }
 
-                        // 调用三通道流水线解析极数、最小/最大电流与脱扣方式
+                        // 调用多通道流水线解析名称、极数、最小/最大电流与脱扣方式
+                        string category = ParseCategory(rawModel, config, out _);
                         string pole = ParsePoles(rawModel, config, out _);
                         var (minCurrent, maxCurrent) = ParseCurrentMinMax(rawModel, config, out _, out _);
                         string tripMode = ParseTripMode(rawModel, config, out _);
 
-                        // 填充内存二维数组
+                        // 填充名称二维数组 (根据覆盖策略判断)
+                        if (onlyEmptyCat && existCatArray != null)
+                        {
+                            object existVal = existCatArray[i + 1, 1];
+                            string existStr = existVal?.ToString()?.Trim() ?? string.Empty;
+                            // 仅当原本单元格为空时才填入识别结果
+                            categoryArray[i, 0] = string.IsNullOrWhiteSpace(existStr) ? category : existStr;
+                        }
+                        else
+                        {
+                            // 强制覆盖模式
+                            categoryArray[i, 0] = category;
+                        }
+
+                        // 填充其余参数内存二维数组
                         minCurrentArray[i, 0] = minCurrent;
                         maxCurrentArray[i, 0] = maxCurrent;
                         poleArray[i, 0] = pole;
                         tripArray[i, 0] = tripMode;
 
-                        // 统计识别成功与失败数
-                        if (!string.IsNullOrWhiteSpace(pole) && (!string.IsNullOrWhiteSpace(minCurrent) || !string.IsNullOrWhiteSpace(maxCurrent)))
+                        // 统计识别成功与失败数 (类别、极数、电流任意有效识别算成功)
+                        if (!string.IsNullOrWhiteSpace(category) || !string.IsNullOrWhiteSpace(pole) || (!string.IsNullOrWhiteSpace(minCurrent) || !string.IsNullOrWhiteSpace(maxCurrent)))
                         {
                             successCount++;
                         }
@@ -437,7 +818,14 @@ namespace ExcelAddInDemo
                         }
                     }
 
-                    // ==================== 3. 一次性将二维数组整块写回当前选区目标列 ====================
+                    // ==================== 3. 一次性将二维数组整块写回当前选区目标列 (符合规范第 7 条) ====================
+                    // 写回元器件名称列
+                    if (!string.IsNullOrWhiteSpace(colCat))
+                    {
+                        dynamic catRange = activeSheet.Range[$"{colCat}{startRow}:{colCat}{endRow}"];
+                        catRange.Value2 = categoryArray;
+                    }
+
                     // 写回最小电流列
                     if (!string.IsNullOrWhiteSpace(colMinCur))
                     {
@@ -526,11 +914,11 @@ namespace ExcelAddInDemo
 
                 // 规范化列名 (转为大写且去除多余首尾空格)
                 string colSrc = string.IsNullOrWhiteSpace(config.SourceColumn) ? string.Empty : config.SourceColumn.Trim().ToUpper();
+                string colCat = string.IsNullOrWhiteSpace(config.CategoryColumn) ? string.Empty : config.CategoryColumn.Trim().ToUpper();
                 string colMinCur = string.IsNullOrWhiteSpace(config.MinCurrentColumn) ? string.Empty : config.MinCurrentColumn.Trim().ToUpper();
                 string colMaxCur = string.IsNullOrWhiteSpace(config.MaxCurrentColumn) ? string.Empty : config.MaxCurrentColumn.Trim().ToUpper();
                 string colPole = string.IsNullOrWhiteSpace(config.PoleColumn) ? string.Empty : config.PoleColumn.Trim().ToUpper();
                 string colTrip = string.IsNullOrWhiteSpace(config.TripModeColumn) ? string.Empty : config.TripModeColumn.Trim().ToUpper();
-
 
                 // 存储待写入表头的列与对应标题文本列表
                 var headersToSet = new List<(string Col, string HeaderText)>();
@@ -540,6 +928,13 @@ namespace ExcelAddInDemo
                 {
                     // 源型号列默认表头为“型号”
                     headersToSet.Add((colSrc, "型号")); // --硬编码-- 默认源型号列表头
+                }
+
+                // 1.5 添加元器件名称列表头 (若配置了名称列)
+                if (!string.IsNullOrWhiteSpace(colCat))
+                {
+                    // 元器件名称列默认表头为“名称”
+                    headersToSet.Add((colCat, "名称")); // --硬编码-- 默认元器件名称列表头
                 }
 
                 // 2. 添加最小电流列表头
@@ -615,12 +1010,13 @@ namespace ExcelAddInDemo
         /// <summary>
         /// 校验列映射配置是否存在重复冲突
         /// </summary>
-        private static string? CheckColumnConflicts(string colSrc, string colMinCur, string colMaxCur, string colPole, string colTrip)
+        private static string? CheckColumnConflicts(string colSrc, string colCat, string colMinCur, string colMaxCur, string colPole, string colTrip)
         {
             // 构造参与校验的列配置清单
             var definedCols = new (string Col, string Name)[]
             {
                 (colSrc, "源型号列"),
+                (colCat, "名称输出列"),
                 (colMinCur, "最小电流列"),
                 (colMaxCur, "最大电流列"),
                 (colPole, "极数输出列"),

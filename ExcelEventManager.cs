@@ -733,23 +733,18 @@ namespace ExcelAddInDemo
                 Microsoft.Office.Interop.Excel.Workbook? wb = null;
                 try { wb = activeSheet.Parent as Microsoft.Office.Interop.Excel.Workbook; } catch { }
 
-                // 若处于【Excel 原生右键菜单模式】：完全放行，不做任何拦截，并清理 CommandBars 注入项
+                // 若处于【Excel 原生右键菜单模式】：完全放行，不做任何拦截与 CommandBar 访问
                 if (!useCustomMenu)
                 {
-                    // 彻底放行原生右键菜单
+                    // 彻底放行原生右键菜单，不做任何 CommandBar 遍历与修改，保证 0 延迟、0 干扰、100% 原生流畅
                     cancel = false;
-                    // 清理任何历史上可能遗留在 CommandBars 中的自定义控件，保持 Excel 原厂菜单 100% 纯净
-                    RemoveContextMenuControls();
-                    // 直接返回
+                    // 直接返回 (切勿在右键点击事件中操作 CommandBars，避免干扰 Excel 菜单管道引发致命死锁)
                     return;
                 }
 
                 // ------------------ 【以下为 WebView 2 业务专属菜单模式】 ------------------
                 // 1. 完全拦截 Excel 原生右键菜单弹窗
                 cancel = true;
-
-                // 2. 清理 CommandBars，确保后台无冗余控件注入
-                RemoveContextMenuControls();
 
                 // 3. 计算箱柜特征：箱柜明细前缀
                 string detPrefix = CabinetPrefixConfig.Current.DetPrefix;
@@ -1109,44 +1104,72 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 清理插件注册的所有右键菜单控件，保持 Excel 原始环境干净整洁
+        /// 安全清理插件注册的所有右键菜单控件，保持 Excel 原始环境干净整洁
         /// </summary>
         public static void RemoveContextMenuControls()
         {
             try
             {
-                // 校验 Excel 全局应用实例
+                // 校验 Excel 全局应用实例是否有效
                 if (_excelApp == null) return;
-                // 读取配置中定义的唯一 Tag 标识
+                // 读取配置中定义的唯一 Tag 标识 (新建箱柜按钮标识)
                 string menuTag = ConfigManager.Instance.Current.Excel.NewCabinetMenuTag ?? "CT_BTN_NEW_CABINET";
+                // 读取配置中定义的唯一 Tag 标识 (物料匹配按钮标识)
                 string matchTag = ConfigManager.Instance.Current.Excel.ParseMatchComponentsMenuTag ?? "CT_BTN_PARSE_MATCH_COMPONENTS";
+                // 预设匹配规则设置按钮唯一 Tag 标识
                 const string settingTag = "CT_BTN_OPEN_MATCH_SETTING";
 
                 // 将 Excel Application 转换为 dynamic 动态对象
                 dynamic dynApp = (dynamic)_excelApp;
+                // 获取 Excel 顶层 CommandBars 集合句柄
                 dynamic commandBars = dynApp.CommandBars;
+                // 校验 CommandBars 对象是否就绪
                 if (commandBars == null) return;
 
-                // 遍历所有 Cell 上下文菜单并安全删除自定义控件
-                foreach (dynamic bar in commandBars)
+                // 直接按名称获取 "Cell" CommandBar 进行精准清理，避免遍历 200+ CommandBars 引发 COM 卡顿与死锁
+                string[] cellBarNames = new string[] { "Cell" };
+                // 遍历预设的右键上下文菜单名称数组
+                foreach (string barName in cellBarNames)
                 {
-                    if (bar.Name == "Cell")
+                    try
                     {
-                        try
+                        // 直接通过键名安全检索 CommandBar 菜单
+                        dynamic bar = commandBars[barName];
+                        // 确认右键菜单对象有效
+                        if (bar != null)
                         {
-                            dynamic? ctrl = bar.FindControl(1, Type.Missing, menuTag);
-                            if (ctrl != null) ctrl.Delete(true);
+                            try
+                            {
+                                // 查找并删除已挂载的“新建箱柜”按钮控件
+                                dynamic? ctrl = bar.FindControl(1, Type.Missing, menuTag);
+                                // 若存在则执行删除
+                                if (ctrl != null) ctrl.Delete(true);
+                            }
+                            catch { }
 
-                            dynamic? matchCtrl = bar.FindControl(1, Type.Missing, matchTag);
-                            if (matchCtrl != null) matchCtrl.Delete(true);
+                            try
+                            {
+                                // 查找并删除已挂载的“识别参数并匹配物料”按钮控件
+                                dynamic? matchCtrl = bar.FindControl(1, Type.Missing, matchTag);
+                                // 若存在则执行删除
+                                if (matchCtrl != null) matchCtrl.Delete(true);
+                            }
+                            catch { }
 
-                            dynamic? settingCtrl = bar.FindControl(1, Type.Missing, settingTag);
-                            if (settingCtrl != null) settingCtrl.Delete(true);
+                            try
+                            {
+                                // 查找并删除已挂载的“物料匹配规则与品牌设置”按钮控件
+                                dynamic? settingCtrl = bar.FindControl(1, Type.Missing, settingTag);
+                                // 若存在则执行删除
+                                if (settingCtrl != null) settingCtrl.Delete(true);
+                            }
+                            catch { }
                         }
-                        catch { }
                     }
+                    catch { }
                 }
-                // 清空引用集合
+
+                // 清空内存缓存中的按钮动态引用集合
                 _contextMenuButtons.Clear();
             }
             catch { }

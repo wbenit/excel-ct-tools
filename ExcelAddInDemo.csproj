@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <!-- 引入 Microsoft.CSharp 以支持 dynamic 绑定 Excel COM 对象 -->
+    <PackageReference Include="Stub.System.Data.SQLite.Core.NetFramework" Version="1.0.119.0" />
     <Reference Include="Microsoft.CSharp" />
     <!-- 引入 System.Windows.Forms 支持窗体与 WebView2 宿主容器 -->
     <Reference Include="System.Windows.Forms" />
@@ -114,6 +115,9 @@
       <PublishDependencies Include="$(TargetDir)*.dll" Exclude="$(TargetDir)$(TargetFileName)" />
       <!-- 获取原生 WebView2 runtimes 架构动态链接库文件 -->
       <RuntimeFiles Include="$(TargetDir)runtimes\**\*.*" />
+      <!-- 获取原生 SQLite x86/x64 架构动态链接库文件 -->
+      <SqliteX86Files Include="$(TargetDir)x86\**\*.*" />
+      <SqliteX64Files Include="$(TargetDir)x64\**\*.*" />
       <!-- 获取 Resources 前端 HTML 资源文件 -->
       <ResourceFiles Include="$(TargetDir)Resources\**\*.*" />
       <!-- 获取 appsettings.json 配置文件 -->
@@ -123,6 +127,10 @@
     <Copy SourceFiles="@(PublishDependencies)" DestinationFolder="$(TargetDir)publish\" SkipUnchangedFiles="true" />
     <!-- 自动复制 runtimes 目录至 publish 发布目录 -->
     <Copy SourceFiles="@(RuntimeFiles)" DestinationFolder="$(TargetDir)publish\runtimes\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <!-- 自动复制 SQLite x86 架构目录至 publish 发布目录 -->
+    <Copy SourceFiles="@(SqliteX86Files)" DestinationFolder="$(TargetDir)publish\x86\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <!-- 自动复制 SQLite x64 架构目录至 publish 发布目录 -->
+    <Copy SourceFiles="@(SqliteX64Files)" DestinationFolder="$(TargetDir)publish\x64\%(RecursiveDir)" SkipUnchangedFiles="true" />
     <!-- 自动复制 Resources 资源目录至 publish 发布目录 -->
     <Copy SourceFiles="@(ResourceFiles)" DestinationFolder="$(TargetDir)publish\Resources\%(RecursiveDir)" SkipUnchangedFiles="true" />
     <!-- 自动复制 appsettings.json 配置文件至 publish 发布目录 -->

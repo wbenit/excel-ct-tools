@@ -71,6 +71,7 @@
         padding-bottom: 8px;
         margin-bottom: 12px;
         cursor: move;
+        touch-action: none; /* 禁用系统手势干扰，保障平滑拖拽 */
       }
 
       .title-text {
@@ -226,8 +227,8 @@
   </head>
   <body>
     <div id="app">
-      <!-- 顶栏标题：使用 @mousedown 支持无边框窗体拖拽，右上角按钮严格阻止 mousedown/click 事件冒泡 -->
-      <div class="title-bar" @mousedown="startDrag">
+      <!-- 顶栏标题：使用 @pointerdown 支持非模态平滑拖拽，右上角按钮严格阻止事件冒泡 -->
+      <div class="title-bar" @pointerdown="onHeaderPointerDown">
         <span class="title-text">新建项目</span>
         <div class="top-actions" @mousedown.stop @click.stop>
           <span title="刷新" @click.stop.prevent="refreshData" @mousedown.stop.prevent>↻</span>
@@ -560,13 +561,80 @@
             }
           };
 
-          const startDrag = () => {
-            if (window.chrome && window.chrome.webview) {
-              window.chrome.webview.postMessage(
-                JSON.stringify({ action: "dragWindow" }),
-              );
-            }
+          // 窗口无模态平滑拖拽处理 (基于 PointerEvents + rAF 节流，彻底杜绝 Win32 模态循环死锁与 Excel 崩溃)
+          const onHeaderPointerDown = (e) => {
+            // 仅响应鼠标主键 (button === 0)
+            if (e.button !== 0) return;
+            // 排除点击右侧刷新、关闭等操作图标
+            if (e.target.closest('.top-actions')) return;
+
+            // 获取物理像素与 CSS 像素缩放比率 (保障高分屏精准 1:1 跟随)
+            const dpi = window.devicePixelRatio || 1;
+            let lastScreenX = e.screenX;
+            let lastScreenY = e.screenY;
+            let pendingDeltaX = 0;
+            let pendingDeltaY = 0;
+            let rafId = null;
+
+            try {
+              e.target.setPointerCapture(e.pointerId);
+            } catch (_) {}
+
+            const onPointerMove = (moveEvt) => {
+              pendingDeltaX += (moveEvt.screenX - lastScreenX) * dpi;
+              pendingDeltaY += (moveEvt.screenY - lastScreenY) * dpi;
+              lastScreenX = moveEvt.screenX;
+              lastScreenY = moveEvt.screenY;
+
+              if (!rafId) {
+                rafId = requestAnimationFrame(() => {
+                  const dx = Math.round(pendingDeltaX);
+                  const dy = Math.round(pendingDeltaY);
+                  if (dx !== 0 || dy !== 0) {
+                    if (window.chrome && window.chrome.webview) {
+                      window.chrome.webview.postMessage(
+                        JSON.stringify({ action: "moveWindow", deltaX: dx, deltaY: dy })
+                      );
+                    }
+                    pendingDeltaX = 0;
+                    pendingDeltaY = 0;
+                  }
+                  rafId = null;
+                });
+              }
+            };
+
+            const onPointerUp = () => {
+              try {
+                e.target.releasePointerCapture(e.pointerId);
+              } catch (_) {}
+              if (rafId) {
+                cancelAnimationFrame(rafId);
+                rafId = null;
+              }
+              const dx = Math.round(pendingDeltaX);
+              const dy = Math.round(pendingDeltaY);
+              if (dx !== 0 || dy !== 0) {
+                if (window.chrome && window.chrome.webview) {
+                  window.chrome.webview.postMessage(
+                    JSON.stringify({ action: "moveWindow", deltaX: dx, deltaY: dy })
+                  );
+                }
+                pendingDeltaX = 0;
+                pendingDeltaY = 0;
+              }
+              window.removeEventListener('pointermove', onPointerMove);
+              window.removeEventListener('pointerup', onPointerUp);
+              window.removeEventListener('pointercancel', onPointerUp);
+            };
+
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerup', onPointerUp);
+            window.addEventListener('pointercancel', onPointerUp);
           };
+
+          // 兼容旧版调用
+          const startDrag = onHeaderPointerDown;
 
           return {
             isExpanded,
@@ -579,6 +647,7 @@
             refreshData,
             cancel,
             startQuotation,
+            onHeaderPointerDown,
             startDrag,
           };
         },

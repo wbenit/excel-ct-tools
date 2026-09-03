@@ -134,8 +134,9 @@ namespace ExcelAddInDemo.Forms
                 {
                     // 1. 前端加载就绪，下发品牌列表与当前保存的配置
                     case "ready":
-                        var brands = _controller.GetBrandStats();
                         var config = _controller.LoadConfig();
+                        string activeDataSource = config?.DataSource ?? "cloud";
+                        var brands = _controller.GetBrandStats(activeDataSource);
                         PostMessageToWeb(new
                         {
                             action = "initData",
@@ -144,7 +145,27 @@ namespace ExcelAddInDemo.Forms
                         });
                         break;
 
-                    // 2. 保存配置
+                    // 2. 切换物料数据源 (云端公共库 vs 本地个人物料库)
+                    case "changeDataSource":
+                        string targetDs = root.TryGetProperty("dataSource", out var dsProp) ? dsProp.GetString() ?? "cloud" : "cloud";
+                        var dsBrands = _controller.GetBrandStats(targetDs);
+                        PostMessageToWeb(new
+                        {
+                            action = "brandsLoaded",
+                            dataSource = targetDs,
+                            brands = dsBrands
+                        });
+                        break;
+
+                    // 3. 打开元器件数据管理窗口 (图2)
+                    case "openComponentManage":
+                        SafeInvoke(() =>
+                        {
+                            ExcelServices.ShowComponentManageDialog();
+                        });
+                        break;
+
+                    // 4. 保存配置
                     case "saveConfig":
                         if (root.TryGetProperty("config", out var saveCfgProp))
                         {
@@ -157,13 +178,14 @@ namespace ExcelAddInDemo.Forms
                         }
                         break;
 
-                    // 3. 运行单条模拟测试
+                    // 5. 运行单条模拟测试
                     case "testMatch":
                         string tName = root.TryGetProperty("name", out var np) ? np.GetString() ?? "" : "";
                         string tCur = root.TryGetProperty("current", out var cp) ? cp.GetString() ?? "" : "";
                         string tPole = root.TryGetProperty("pole", out var pp) ? pp.GetString() ?? "" : "";
                         string tTrip = root.TryGetProperty("tripMode", out var tp) ? tp.GetString() ?? "" : "";
                         string tBrand = root.TryGetProperty("brand", out var bp) ? bp.GetString() ?? "" : "";
+                        string tDs = root.TryGetProperty("dataSource", out var tdsp) ? tdsp.GetString() ?? "cloud" : "cloud";
 
                         List<MustContainRule>? rules = null;
                         if (root.TryGetProperty("rules", out var rp))
@@ -172,7 +194,7 @@ namespace ExcelAddInDemo.Forms
                         }
 
                         var sw = Stopwatch.StartNew();
-                        var testItems = _controller.TestMatch(tName, tCur, tPole, tTrip, tBrand, rules);
+                        var testItems = _controller.TestMatch(tName, tCur, tPole, tTrip, tBrand, rules, tDs);
                         sw.Stop();
 
                         PostMessageToWeb(new
@@ -183,7 +205,7 @@ namespace ExcelAddInDemo.Forms
                         });
                         break;
 
-                    // 4. 立即执行当前选区批量识别反查
+                    // 6. 立即执行当前选区批量识别反查
                     case "executeBatch":
                         ComponentMatchFilterConfig? batchCfg = null;
                         if (root.TryGetProperty("config", out var bCfgProp))
@@ -198,7 +220,21 @@ namespace ExcelAddInDemo.Forms
                         });
                         break;
 
-                    // 5. 窗口拖拽
+                    // 7. 窗口平滑位移拖拽 (基于非模态物理增量，彻底杜绝 Win32 模态循环死锁导致 Excel 崩溃)
+                    case "moveWindow":
+                        int deltaX = root.TryGetProperty("deltaX", out var dxProp) ? dxProp.GetInt32() : 0;
+                        int deltaY = root.TryGetProperty("deltaY", out var dyProp) ? dyProp.GetInt32() : 0;
+                        if (deltaX != 0 || deltaY != 0)
+                        {
+                            SafeInvoke(() =>
+                            {
+                                // 直接更新窗体屏幕坐标，微秒级响应且绝不挂起 STA 消息泵
+                                this.Location = new Point(this.Left + deltaX, this.Top + deltaY);
+                            });
+                        }
+                        break;
+
+                    // 7.1 窗口拖拽 (旧版兼容兜底)
                     case "dragWindow":
                         SafeInvoke(() =>
                         {
@@ -207,7 +243,7 @@ namespace ExcelAddInDemo.Forms
                         });
                         break;
 
-                    // 6. 关闭窗口
+                    // 8. 关闭窗口
                     case "closeWindow":
                         SafeInvoke(this.Close);
                         break;

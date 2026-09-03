@@ -31,8 +31,15 @@ namespace ExcelAddInDemo
         /// </summary>
         static ComponentApiClient()
         {
-            // 强制启用 TLS 1.2 与 TLS 1.3 现代安全加密传输协议
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls13;
+            try
+            {
+                // 优先启用 TLS 1.2 与可选的 TLS 1.3 现代安全加密传输协议
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | (SecurityProtocolType)12288;
+            }
+            catch
+            {
+                try { ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12; } catch { }
+            }
 
             // 初始化 HttpClientHandler 并配置连接生命周期
             var handler = new HttpClientHandler

@@ -60,6 +60,7 @@
       padding: 0 12px;
       cursor: move;
       flex-shrink: 0;
+      touch-action: none; /* 禁用系统手势干扰，保障平滑拖拽 */
     }
 
     .window-title {
@@ -223,12 +224,22 @@
       padding-left: 16px;
       margin-top: 4px;
     }
+
+    /* 数据源切换胶囊样式 (贴合 #009688 主题色) */
+    .datasource-group .el-radio-button__inner {
+      border-color: #009688 !important;
+    }
+    .datasource-group .el-radio-button__original-radio:checked + .el-radio-button__inner {
+      background-color: #009688 !important;
+      border-color: #009688 !important;
+      box-shadow: -1px 0 0 0 #009688 !important;
+    }
   </style>
 </head>
 <body>
   <div id="app">
-    <!-- 顶部拖拽标题栏 -->
-    <div class="window-header" @mousedown="onHeaderMouseDown">
+    <!-- 顶部拖拽标题栏 (采用 PointerEvents 平滑位移，绝无模态死锁) -->
+    <div class="window-header" @pointerdown="onHeaderPointerDown">
       <div class="window-title">
         <i class="fa-solid fa-database"></i>
         <span>元器件数据管理</span>
@@ -245,11 +256,29 @@
 
     <!-- 主体内容 -->
     <div class="main-body">
+      <!-- 0. 物料数据源设置 (Data Source) -->
+      <div class="section-card" style="padding: 10px 14px;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div style="font-size: 13px; font-weight: 600; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-database" style="color: #009688;"></i>
+            <span>管理物料库源:</span>
+          </div>
+          <el-radio-group v-model="dataSource" size="small" @change="onDataSourceChange" class="datasource-group">
+            <el-radio-button label="cloud">
+              <i class="fa-solid fa-cloud" style="margin-right: 4px;"></i>云端公共库
+            </el-radio-button>
+            <el-radio-button label="personal">
+              <i class="fa-solid fa-laptop-file" style="margin-right: 4px;"></i>本地个人库
+            </el-radio-button>
+          </el-radio-group>
+        </div>
+      </div>
+
       <!-- 1. 筛选拉取区域卡片 -->
       <div class="section-card">
         <div class="section-title">
           <i class="fa-solid fa-filter"></i>
-          <span>条件筛选与拉取</span>
+          <span>条件筛选与拉取 ({{ dataSource === 'personal' ? '本地个人库' : '云端公共库' }})</span>
         </div>
         <div class="filter-grid">
           <div class="filter-row">
@@ -303,7 +332,7 @@
               style="width: 100%; font-weight: 600;"
             >
               <i class="fa-solid fa-cloud-arrow-down" style="margin-right: 6px;"></i>
-              查询并呈现至 Excel
+              查询并呈现至 Excel ({{ dataSource === 'personal' ? '个人库' : '云端' }})
             </el-button>
           </div>
         </div>
@@ -335,7 +364,7 @@
       <div class="section-card">
         <div class="section-title">
           <i class="fa-solid fa-bolt"></i>
-          <span>精准选区操作 (改 / 增 / 删)</span>
+          <span>精准选区操作 ({{ dataSource === 'personal' ? '本地个人物料库' : '云端公共库' }})</span>
         </div>
         
         <div class="action-grid">
@@ -347,7 +376,7 @@
               :loading="updating"
               :disabled="selectionInfo.selectedRowCount === 0"
               @click="updateSelectedRows"
-              title="根据 A 列 ID 更新云端数据"
+              :title="dataSource === 'personal' ? '更新本地 SQLite 个人库对应数据' : '根据 A 列 ID 更新云端数据'"
             >
               <i class="fa-solid fa-pen-to-square" style="margin-right: 4px;"></i>
               更新选中行
@@ -360,7 +389,7 @@
               :loading="creating"
               :disabled="selectionInfo.selectedRowCount === 0"
               @click="createSelectedRows"
-              title="忽略原ID，向云端新增物料并回填新分配的ID"
+              :title="dataSource === 'personal' ? '向本地个人库新增物料并回填新分配的ID' : '忽略原ID，向云端新增物料并回填新分配的ID'"
             >
               <i class="fa-solid fa-circle-plus" style="margin-right: 4px;"></i>
               选中行新增
@@ -372,7 +401,7 @@
               :loading="deleting"
               :disabled="selectionInfo.selectedRowCount === 0"
               @click="confirmDeleteSelectedRows"
-              title="永久删除选中的云端物料并从表格移除"
+              :title="dataSource === 'personal' ? '从本地 SQLite 个人物料库及表格中永久删除' : '永久删除选中的云端物料并从表格移除'"
             >
               <i class="fa-solid fa-trash-can" style="margin-right: 4px;"></i>
               删除选中行
@@ -383,11 +412,11 @@
 
       <!-- 4. 业务操作指引说明 -->
       <div class="instructions-box">
-        <strong><i class="fa-solid fa-circle-info"></i> 使用操作指引：</strong>
+        <strong><i class="fa-solid fa-circle-info"></i> 使用操作指引 (当前模式: {{ dataSource === 'personal' ? '本地个人库' : '云端公共库' }})：</strong>
         <ol>
-          <li><strong>更新</strong>：在表格中修改品牌/型号/单价等，鼠标框选要保存的行，点击【更新选中行】。</li>
-          <li><strong>新增</strong>：在空白行填写新物料（或复制现有行微调），框选这几行，点击【选中行新增】，系统自动生成并在 A 列赋予新系统ID。</li>
-          <li><strong>删除</strong>：鼠标框选要移除的物料行，点击【删除选中行】即可同步删除云端并整行移出。</li>
+          <li><strong>更新</strong>：在表格中修改品牌/型号/单价等，鼠标框选要保存的行，点击【更新选中行】保存至当前库。</li>
+          <li><strong>新增</strong>：在空白行填写新物料（或复制现有行微调），框选这几行，点击【选中行新增】，系统自动生成并在 A 列赋予新 ID。</li>
+          <li><strong>删除</strong>：鼠标框选要移除的物料行，点击【删除选中行】即可同步从数据库及 Excel 整行移出。</li>
         </ol>
       </div>
     </div>
@@ -398,6 +427,9 @@
 
     createApp({
       setup() {
+        // 物料数据源 ("cloud" 或 "personal")
+        const dataSource = ref('cloud');
+
         // 品牌列表与筛选参数
         const brandList = ref([]);
         const selectedBrand = ref('');
@@ -420,18 +452,94 @@
           message: ''
         });
 
+        // 切换数据源 (云端公共库 vs 本地个人库)
+        const onDataSourceChange = (val) => {
+          selectedBrand.value = '';
+          searchKeyword.value = '';
+          nameList.value = [];
+          postToHost('changeDataSource', { dataSource: val });
+        };
+
         // 切换品牌时触发：清空当前名称并自动拉取该品牌包含的所有元器件名称
         const onBrandChange = (brand) => {
           searchKeyword.value = '';
           loadingNames.value = true;
-          postToHost('getNamesByBrand', { brand: brand || '' });
+          postToHost('getNamesByBrand', { brand: brand || '', dataSource: dataSource.value });
         };
 
-        // 窗口拖拽处理：仅响应鼠标主键 (左键 button === 0)
-        const onHeaderMouseDown = (e) => {
+        // 窗口无模态平滑拖拽处理 (基于 PointerEvents + rAF 节流，彻底杜绝 Win32 模态循环死锁与 Excel 崩溃)
+        const onHeaderPointerDown = (e) => {
+          // 仅响应鼠标主键 (左键 button === 0)
           if (e.button !== 0) return;
+          // 排除点击右上角控制按钮（最小化、关闭）区域
           if (e.target.closest('.window-controls')) return;
-          postToHost('dragWindow');
+
+          // 获取物理像素与 CSS 像素缩放比率 (保障高分屏/DPI缩放精准 1:1 跟随)
+          const dpi = window.devicePixelRatio || 1;
+          // 记录初始指针屏幕坐标
+          let lastScreenX = e.screenX;
+          let lastScreenY = e.screenY;
+          let pendingDeltaX = 0;
+          let pendingDeltaY = 0;
+          let rafId = null;
+
+          // 捕获指针事件，即使光标快速移出窗口也能持续捕获
+          try {
+            e.target.setPointerCapture(e.pointerId);
+          } catch (_) {}
+
+          // 指针平滑移动监听
+          const onPointerMove = (moveEvt) => {
+            // 计算屏幕物理像素增量并累加
+            pendingDeltaX += (moveEvt.screenX - lastScreenX) * dpi;
+            pendingDeltaY += (moveEvt.screenY - lastScreenY) * dpi;
+            lastScreenX = moveEvt.screenX;
+            lastScreenY = moveEvt.screenY;
+
+            // 使用 requestAnimationFrame 节流合并帧，避免 IPC 跨进程消息堆积
+            if (!rafId) {
+              rafId = requestAnimationFrame(() => {
+                const dx = Math.round(pendingDeltaX);
+                const dy = Math.round(pendingDeltaY);
+                if (dx !== 0 || dy !== 0) {
+                  postToHost('moveWindow', { deltaX: dx, deltaY: dy });
+                  pendingDeltaX = 0;
+                  pendingDeltaY = 0;
+                }
+                rafId = null;
+              });
+            }
+          };
+
+          // 指针释放或取消
+          const onPointerUp = (upEvt) => {
+            // 释放指针捕获
+            try {
+              e.target.releasePointerCapture(e.pointerId);
+            } catch (_) {}
+            // 取消尚未执行的 rAF
+            if (rafId) {
+              cancelAnimationFrame(rafId);
+              rafId = null;
+            }
+            // 将剩余微小位移刷出
+            const dx = Math.round(pendingDeltaX);
+            const dy = Math.round(pendingDeltaY);
+            if (dx !== 0 || dy !== 0) {
+              postToHost('moveWindow', { deltaX: dx, deltaY: dy });
+              pendingDeltaX = 0;
+              pendingDeltaY = 0;
+            }
+            // 注销临时监听器
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+            window.removeEventListener('pointercancel', onPointerUp);
+          };
+
+          // 挂载全局指针移动与松开监听
+          window.addEventListener('pointermove', onPointerMove);
+          window.addEventListener('pointerup', onPointerUp);
+          window.addEventListener('pointercancel', onPointerUp);
         };
 
         // 最小化与关闭
@@ -455,7 +563,8 @@
           loadingData.value = true;
           postToHost('loadComponents', {
             brand: selectedBrand.value,
-            keyword: searchKeyword.value
+            keyword: searchKeyword.value,
+            dataSource: dataSource.value
           });
         };
 
@@ -466,7 +575,7 @@
             return;
           }
           updating.value = true;
-          postToHost('updateSelected');
+          postToHost('updateSelected', { dataSource: dataSource.value });
         };
 
         // 选中行执行【新增】
@@ -476,7 +585,7 @@
             return;
           }
           creating.value = true;
-          postToHost('createSelected');
+          postToHost('createSelected', { dataSource: dataSource.value });
         };
 
         // 选中行执行【删除】(带确认对话框)
@@ -485,8 +594,10 @@
             ElementPlus.ElMessage.warning('请先在 Excel 表格中选中需要删除的行！');
             return;
           }
+          const isPersonal = dataSource.value === 'personal';
+          const srcText = isPersonal ? '本地个人物料库' : '云端公共库';
           ElementPlus.ElMessageBox.confirm(
-            `确定要永久删除选中的 ${selectionInfo.value.selectedRowCount} 条云端元器件物料吗？此操作将同步从 Excel 表格中整行移除！`,
+            `确定要永久删除选中的 ${selectionInfo.value.selectedRowCount} 条【${srcText}】元器件物料吗？此操作将同步从 Excel 表格中整行移除！`,
             '危险操作警告',
             {
               confirmButtonText: '确定删除',
@@ -496,7 +607,7 @@
             }
           ).then(() => {
             deleting.value = true;
-            postToHost('deleteSelected');
+            postToHost('deleteSelected', { dataSource: dataSource.value });
           }).catch(() => {});
         };
 
@@ -508,9 +619,18 @@
               switch (data.action) {
                 // 初始化品牌列表与选区
                 case 'initData':
+                  if (data.dataSource) dataSource.value = data.dataSource;
                   if (data.brands) brandList.value = data.brands;
                   if (data.names) nameList.value = data.names;
                   if (data.selection) selectionInfo.value = data.selection;
+                  break;
+
+                // 切换数据源结果
+                case 'dataSourceChanged':
+                  if (data.dataSource) dataSource.value = data.dataSource;
+                  if (data.brands) brandList.value = data.brands;
+                  if (data.names) nameList.value = data.names;
+                  ElementPlus.ElMessage.info(`已切换至【${dataSource.value === 'personal' ? '本地个人物料库' : '云端公共物料库'}】`);
                   break;
 
                 // 品牌对应的元器件名称列表回发
@@ -559,7 +679,7 @@
 
         // 挂载就绪：初始获取数据，并在窗口重新激活获得焦点时按需探知选区 (彻底废除 setInterval 避免与 COM/拖拽死锁)
         onMounted(() => {
-          postToHost('ready');
+          postToHost('ready', { dataSource: dataSource.value });
 
           // 当用户在 Excel 中选好区域后切回本浮窗时，自动灵敏感知最新选区
           window.addEventListener('focus', () => {
@@ -568,6 +688,7 @@
         });
 
         return {
+          dataSource,
           brandList,
           selectedBrand,
           searchKeyword,
@@ -578,8 +699,10 @@
           creating,
           deleting,
           selectionInfo,
+          onDataSourceChange,
           onBrandChange,
-          onHeaderMouseDown,
+          onHeaderPointerDown,
+          onHeaderMouseDown: onHeaderPointerDown,
           minimizeWindow,
           closeWindow,
           loadComponents,

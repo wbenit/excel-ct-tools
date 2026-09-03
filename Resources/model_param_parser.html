@@ -60,6 +60,7 @@
         cursor: move;
         user-select: none;
         z-index: 1000;
+        touch-action: none; /* 禁用系统手势干扰，保障平滑拖拽 */
       }
 
       .window-title {
@@ -242,6 +243,61 @@
         color: #009688;
       }
 
+      /* 分类特征字典专用样式 */
+      .cat-tabs-wrap {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+        max-height: 105px;
+        overflow-y: auto;
+        padding: 6px;
+        background: #f8fafc;
+        border-radius: 6px;
+        border: 1px solid #e2e8f0;
+      }
+
+      .cat-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 10px;
+        border-radius: 14px;
+        font-size: 12px;
+        cursor: pointer;
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        color: #475569;
+        transition: all 0.2s;
+        user-select: none;
+      }
+
+      .cat-pill:hover {
+        border-color: #009688;
+        color: #009688;
+      }
+
+      .cat-pill.active {
+        background: #009688;
+        border-color: #009688;
+        color: #ffffff;
+        font-weight: 600;
+        box-shadow: 0 2px 4px rgba(0, 150, 136, 0.25);
+      }
+
+      .cat-pill .badge {
+        font-size: 10px;
+        opacity: 0.85;
+      }
+
+      .cat-detail-panel {
+        margin-top: 10px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 10px 12px;
+      }
+
       /* 底部操作工具栏 */
       .footer-bar {
         height: 50px;
@@ -306,11 +362,11 @@
 
   <body>
     <div id="app">
-      <!-- 顶部拖拽标题栏 (折叠后隐藏) -->
+      <!-- 顶部拖拽标题栏 (折叠后隐藏，采用 PointerEvents 平滑位移) -->
       <div
         v-show="!isCollapsed"
         class="window-header"
-        @mousedown="onDragWindow"
+        @pointerdown="onHeaderPointerDown"
       >
         <div class="window-title">
           <i class="fa-solid fa-wand-magic-sparkles"></i>
@@ -355,10 +411,20 @@
               ></el-input>
             </div>
             <div style="display: flex; align-items: center; gap: 4px">
+              <span class="label-text">名称输出列:</span>
+              <el-input
+                v-model="config.categoryColumn"
+                placeholder="B"
+                size="small"
+                @input="(val) => (config.categoryColumn = (val || '').toUpperCase().trim())"
+                style="width: 44px; text-transform: uppercase"
+              ></el-input>
+            </div>
+            <div style="display: flex; align-items: center; gap: 4px">
               <span class="label-text">最小电流列:</span>
               <el-input
                 v-model="config.minCurrentColumn"
-                placeholder="S"
+                placeholder="W"
                 size="small"
                 @input="(val) => (config.minCurrentColumn = (val || '').toUpperCase().trim())"
                 style="width: 44px; text-transform: uppercase"
@@ -378,7 +444,7 @@
               <span class="label-text">极数输出列:</span>
               <el-input
                 v-model="config.poleColumn"
-                placeholder="T"
+                placeholder="X"
                 size="small"
                 @input="(val) => (config.poleColumn = (val || '').toUpperCase().trim())"
                 style="width: 44px; text-transform: uppercase"
@@ -388,7 +454,7 @@
               <span class="label-text">脱扣输出列:</span>
               <el-input
                 v-model="config.tripModeColumn"
-                placeholder="U"
+                placeholder="Y"
                 size="small"
                 @input="(val) => (config.tripModeColumn = (val || '').toUpperCase().trim())"
                 style="width: 44px; text-transform: uppercase"
@@ -426,6 +492,13 @@
             "
           >
             <div style="display: flex; align-items: center; gap: 8px">
+              <span class="label-text">名称回填模式:</span>
+              <el-radio-group v-model="config.categoryOverwriteMode" size="small">
+                <el-radio label="OnlyEmpty">仅填空白单元格</el-radio>
+                <el-radio label="OverwriteAll">强制覆盖全部</el-radio>
+              </el-radio-group>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px">
               <span class="label-text">极数输出格式:</span>
               <el-radio-group v-model="config.poleFormat" size="small">
                 <el-radio label="WithP">带 "P" 标识 (如 3P, 1P+N)</el-radio>
@@ -442,12 +515,228 @@
           </div>
         </div>
 
-        <!-- 2. 极数 (Poles) 识别流水线与双通道过滤 -->
+        <!-- 2. 元器件类别 (Category) 识别通道 (字典匹配 ➔ 漏电自动升格) -->
+        <div class="config-card">
+          <div class="card-header">
+            <div class="card-title">
+              <i class="fa-solid fa-shapes"></i>
+              <span>2. 元器件名称/类别 (Category) 识别通道 (字典匹配 ➔ 漏电自动升格)</span>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center">
+              <el-button
+                type="success"
+                size="small"
+                plain
+                @click="importCategoryFromExcel"
+              >
+                <i class="fa-solid fa-file-excel" style="margin-right: 4px"></i
+                >📊 从 Excel 规则选区一键同步
+              </el-button>
+              <el-button
+                type="primary"
+                size="small"
+                plain
+                @click="promptAddCategory"
+              >
+                <i class="fa-solid fa-folder-plus" style="margin-right: 4px"></i
+                >新建分类
+              </el-button>
+            </div>
+          </div>
+
+          <!-- 顶部开关与漏电升格设置 -->
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              flex-wrap: wrap;
+              gap: 12px;
+              padding: 8px 12px;
+              background: #f0fdf4;
+              border: 1px solid #bbf7d0;
+              border-radius: 6px;
+              margin-bottom: 10px;
+            "
+          >
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 16px;
+                flex-wrap: wrap;
+              "
+            >
+              <el-switch
+                v-model="config.enableLeakageUpgrade"
+                active-text="断路器漏电自动升格 (微断➔微漏，塑壳➔塑壳漏电)"
+              ></el-switch>
+              <el-switch
+                v-model="config.enableShortCodeBoundaryGuard"
+                active-text="短代号安全边界防护 (防16A的A被误识为接触器)"
+              ></el-switch>
+            </div>
+          </div>
+
+          <!-- 漏电特征词库 -->
+          <div style="margin-bottom: 8px" v-if="config.enableLeakageUpgrade">
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+              "
+            >
+              <span style="font-size: 12px; color: #475569; font-weight: 600">
+                <i
+                  class="fa-solid fa-bolt"
+                  style="color: #eab308; margin-right: 4px"
+                ></i
+                >漏电触发特征词库:
+              </span>
+            </div>
+            <div class="tag-container">
+              <el-tag
+                v-for="kw in (config.leakageKeywords || [])"
+                :key="kw"
+                closable
+                size="small"
+                type="warning"
+                @close="removeLeakageKeyword(kw)"
+              >
+                {{ kw }}
+              </el-tag>
+              <el-input
+                v-if="leakageTagInputVisible"
+                ref="leakageTagInputRef"
+                v-model="newLeakageTagValue"
+                size="small"
+                style="width: 70px"
+                @keyup.enter="handleLeakageTagConfirm"
+                @blur="handleLeakageTagConfirm"
+              ></el-input>
+              <el-button
+                v-else
+                size="small"
+                plain
+                @click="showLeakageTagInput"
+              >
+                + 添加特征词
+              </el-button>
+            </div>
+          </div>
+
+          <!-- 分类特征代号字典管理 -->
+          <div>
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 4px;
+              "
+            >
+              <span style="font-size: 12px; color: #475569; font-weight: 600">
+                <i
+                  class="fa-solid fa-table-cells"
+                  style="color: #009688; margin-right: 4px"
+                ></i
+                >元器件分类特征字典库 (已收录 {{ Object.keys(config.categoryDict || {}).length }} 个类别):
+              </span>
+              <span style="font-size: 11px; color: #64748b"
+                >💡 点击胶囊切换类别，可随时增删下方对应的系列代号</span
+              >
+            </div>
+
+            <!-- 分类胶囊按钮列表 -->
+            <div class="cat-tabs-wrap">
+              <div
+                v-for="(codes, catName) in (config.categoryDict || {})"
+                :key="catName"
+                class="cat-pill"
+                :class="{ active: currentCategoryTab === catName }"
+                @click="currentCategoryTab = catName"
+              >
+                <span>{{ catName }}</span>
+                <span class="badge">({{ codes ? codes.length : 0 }})</span>
+              </div>
+            </div>
+
+            <!-- 当前选中类别的代号详情面板 -->
+            <div
+              class="cat-detail-panel"
+              v-if="currentCategoryTab && config.categoryDict && config.categoryDict[currentCategoryTab]"
+            >
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  justify-content: space-between;
+                  margin-bottom: 8px;
+                "
+              >
+                <div style="display: flex; align-items: center; gap: 6px">
+                  <span
+                    style="font-size: 13px; font-weight: 700; color: #0f766e"
+                    >【{{ currentCategoryTab }}】</span
+                  >
+                  <span style="font-size: 11px; color: #64748b"
+                    >识别代号池 (包含即匹配，长词优先):</span
+                  >
+                </div>
+                <el-button
+                  type="danger"
+                  link
+                  size="small"
+                  @click="removeCurrentCategory(currentCategoryTab)"
+                  title="删除当前整个分类"
+                >
+                  <i class="fa-solid fa-trash-can" style="margin-right: 2px"></i
+                  >删除此分类
+                </el-button>
+              </div>
+
+              <!-- 代号标签组 -->
+              <div class="tag-container">
+                <el-tag
+                  v-for="code in config.categoryDict[currentCategoryTab]"
+                  :key="code"
+                  closable
+                  size="small"
+                  type="success"
+                  @close="removeCatCode(currentCategoryTab, code)"
+                >
+                  {{ code }}
+                </el-tag>
+                <el-input
+                  v-if="catCodeInputVisible"
+                  ref="catCodeInputRef"
+                  v-model="newCatCodeValue"
+                  size="small"
+                  style="width: 80px"
+                  @keyup.enter="handleCatCodeConfirm"
+                  @blur="handleCatCodeConfirm"
+                  placeholder="如 DZ47"
+                ></el-input>
+                <el-button
+                  v-else
+                  size="small"
+                  plain
+                  @click="showCatCodeInput"
+                >
+                  + 添加代号
+                </el-button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. 极数 (Poles) 识别流水线与双通道过滤 -->
         <div class="config-card">
           <div class="card-header">
             <div class="card-title">
               <i class="fa-solid fa-code-fork"></i>
-              <span>2. 极数 (Poles) 识别通道 (排除 ➔ 顺位流水线 ➔ 白名单)</span>
+              <span>3. 极数 (Poles) 识别通道 (排除 ➔ 顺位流水线 ➔ 白名单)</span>
             </div>
             <el-button
               type="primary"
@@ -711,13 +1000,13 @@
           </div>
         </div>
 
-        <!-- 3. 电流 (Current) 识别流水线与双通道过滤 -->
+        <!-- 4. 电流 (Current) 识别流水线与双通道过滤 -->
         <div class="config-card">
           <div class="card-header">
             <div class="card-title">
               <i class="fa-solid fa-bolt"></i>
               <span
-                >3. 电流 (Current) 识别通道 (排除 ➔ 顺位流水线 ➔
+                >4. 电流 (Current) 识别通道 (排除 ➔ 顺位流水线 ➔
                 标称范围校验)</span
               >
             </div>
@@ -936,13 +1225,13 @@
           </div>
         </div>
 
-        <!-- 4. 脱扣方式 (Trip Mode) 识别通道 (排除 ➔ 顺位流水线 ➔ 简写代号映射) -->
+        <!-- 5. 脱扣方式 (Trip Mode) 识别通道 (排除 ➔ 顺位流水线 ➔ 简写代号映射) -->
         <div class="config-card">
           <div class="card-header">
             <div class="card-title">
               <i class="fa-solid fa-sliders"></i>
               <span
-                >4. 脱扣方式 (Trip Mode) 识别通道 (输出简写代号：TM / C / D / MA
+                >5. 脱扣方式 (Trip Mode) 识别通道 (输出简写代号：TM / C / D / MA
                 / Elec / LE 等)</span
               >
             </div>
@@ -1150,26 +1439,32 @@
             <el-tag
               size="small"
               style="cursor: pointer"
-              @click="setTestSample('iC65N-3P-C25A 30mA 6kA')"
-              >微断 3P C25A (C)</el-tag
+              @click="setTestSample('DZ47-63 C16 3P')"
+              >微断 3P 16A</el-tag
             >
             <el-tag
               size="small"
               style="cursor: pointer"
-              @click="setTestSample('NXB-63 D20 3P')"
-              >微断 D曲线 (D)</el-tag
+              @click="setTestSample('DZ47LE-63 C25 3P+N 30mA')"
+              >微漏 (漏电升格)</el-tag
             >
             <el-tag
               size="small"
               style="cursor: pointer"
-              @click="setTestSample('NSX250F MicroLogic 2.2 160A')"
-              >电子脱扣 160A (Elec)</el-tag
+              @click="setTestSample('BM30L-100/3300 100A')"
+              >塑壳漏电 (升格)</el-tag
             >
             <el-tag
               size="small"
               style="cursor: pointer"
-              @click="setTestSample('CDM1-225/3200 160A')"
-              >单磁脱扣 160A (MA)</el-tag
+              @click="setTestSample('LC1D09 3P 9A')"
+              >接触器</el-tag
+            >
+            <el-tag
+              size="small"
+              style="cursor: pointer"
+              @click="setTestSample('A9F18116 1P C16A')"
+              >施耐德微断 (防A误判)</el-tag
             >
           </div>
 
@@ -1187,6 +1482,19 @@
                 width: 100%;
               "
             >
+              <div class="result-item">
+                <span class="result-label">类别/名称结果</span>
+                <span class="result-value" style="color: #0f766e"
+                  >{{ testResult.category || '未识别' }}</span
+                >
+                <el-tag v-if="testResult.hitCategoryRule" size="small" type="success"
+                  >{{ testResult.hitCategoryRule }}</el-tag
+                >
+              </div>
+              <el-divider
+                direction="vertical"
+                style="height: 36px"
+              ></el-divider>
               <div class="result-item">
                 <span class="result-label">极数识别结果</span>
                 <span class="result-value"
@@ -1290,11 +1598,11 @@
         </div>
       </div>
 
-      <!-- 底部操作栏 (折叠后仅保留此行状态栏) -->
+      <!-- 底部操作栏 (折叠后仅保留此行状态栏，支持平滑拖拽) -->
       <div
         class="footer-bar"
         :class="{ 'collapsed-footer': isCollapsed }"
-        @mousedown="onFooterMouseDown"
+        @pointerdown="onFooterPointerDown"
       >
         <div
           style="
@@ -1381,6 +1689,12 @@
           // 配置响应式对象
           const config = reactive({
             sourceColumn: "C",
+            categoryColumn: "B",
+            categoryOverwriteMode: "OnlyEmpty",
+            enableLeakageUpgrade: true,
+            leakageKeywords: ["LE", "VIGI", "L", "GS", "漏电", "残流"],
+            enableShortCodeBoundaryGuard: true,
+            categoryDict: {},
             minCurrentColumn: "W",
             maxCurrentColumn: "",
             poleColumn: "X",
@@ -1469,6 +1783,132 @@
           const newCurAllowTagValue = ref("");
           const curAllowTagInputRef = ref(null);
 
+          // 元器件类别管理响应式状态
+          const currentCategoryTab = ref("微型断路器");
+          const leakageTagInputVisible = ref(false);
+          const newLeakageTagValue = ref("");
+          const leakageTagInputRef = ref(null);
+
+          const catCodeInputVisible = ref(false);
+          const newCatCodeValue = ref("");
+          const catCodeInputRef = ref(null);
+
+          // 漏电特征关键词管理
+          const removeLeakageKeyword = (kw) => {
+            if (!config.leakageKeywords) return;
+            const idx = config.leakageKeywords.indexOf(kw);
+            if (idx >= 0) config.leakageKeywords.splice(idx, 1);
+            runTestParse();
+          };
+
+          const showLeakageTagInput = () => {
+            leakageTagInputVisible.value = true;
+            nextTick(() => leakageTagInputRef.value?.focus());
+          };
+
+          const handleLeakageTagConfirm = () => {
+            const val = (newLeakageTagValue.value || "").trim();
+            if (val) {
+              if (!config.leakageKeywords) config.leakageKeywords = [];
+              if (!config.leakageKeywords.includes(val)) {
+                config.leakageKeywords.push(val);
+              }
+              runTestParse();
+            }
+            newLeakageTagValue.value = "";
+            leakageTagInputVisible.value = false;
+          };
+
+          // 分类特征代号管理
+          const removeCatCode = (catName, code) => {
+            if (config.categoryDict && config.categoryDict[catName]) {
+              const list = config.categoryDict[catName];
+              const idx = list.indexOf(code);
+              if (idx >= 0) list.splice(idx, 1);
+              runTestParse();
+            }
+          };
+
+          const showCatCodeInput = () => {
+            catCodeInputVisible.value = true;
+            nextTick(() => catCodeInputRef.value?.focus());
+          };
+
+          const handleCatCodeConfirm = () => {
+            const val = (newCatCodeValue.value || "").trim().toUpperCase();
+            if (val && currentCategoryTab.value && config.categoryDict) {
+              if (!config.categoryDict[currentCategoryTab.value]) {
+                config.categoryDict[currentCategoryTab.value] = [];
+              }
+              const list = config.categoryDict[currentCategoryTab.value];
+              if (!list.includes(val)) {
+                list.push(val);
+              }
+              runTestParse();
+            }
+            newCatCodeValue.value = "";
+            catCodeInputVisible.value = false;
+          };
+
+          // 从 Excel 选区导入分类特征字典库
+          const importCategoryFromExcel = () => {
+            postToHost("importCategoryFromSelection");
+          };
+
+          // 弹窗提示新增分类
+          const promptAddCategory = () => {
+            ElementPlus.ElMessageBox.prompt(
+              "请输入新增元器件分类名称 (如：智能断路器)",
+              "新建元器件分类",
+              {
+                confirmButtonText: "确定创建",
+                cancelButtonText: "取消",
+                inputPattern: /\S+/,
+                inputErrorMessage: "分类名称不能为空",
+              }
+            )
+              .then(({ value }) => {
+                const name = (value || "").trim();
+                if (name) {
+                  if (!config.categoryDict) config.categoryDict = {};
+                  if (!config.categoryDict[name]) {
+                    config.categoryDict[name] = [];
+                    currentCategoryTab.value = name;
+                    ElementPlus.ElMessage.success(
+                      `已成功创建分类 [${name}]，请在下方添加系列代号！`
+                    );
+                    runTestParse();
+                  } else {
+                    ElementPlus.ElMessage.warning(`分类 [${name}] 已存在！`);
+                  }
+                }
+              })
+              .catch(() => {});
+          };
+
+          // 删除当前分类
+          const removeCurrentCategory = (catName) => {
+            ElementPlus.ElMessageBox.confirm(
+              `确定要彻底删除分类【${catName}】及其所有系列特征代号吗？`,
+              "删除确认",
+              {
+                confirmButtonText: "确定删除",
+                cancelButtonText: "取消",
+                type: "warning",
+              }
+            )
+              .then(() => {
+                if (config.categoryDict && config.categoryDict[catName]) {
+                  delete config.categoryDict[catName];
+                  const keys = Object.keys(config.categoryDict);
+                  currentCategoryTab.value = keys.length > 0 ? keys[0] : "";
+                  ElementPlus.ElMessage.success(`已删除分类 [${catName}]`);
+                  runTestParse();
+                }
+              })
+              .catch(() => {});
+          };
+
           // 发送消息给宿主 C# 后端
           const postToHost = (action, payload = {}) => {
             if (window.chrome && window.chrome.webview) {
@@ -1478,8 +1918,87 @@
             }
           };
 
-          // 窗口控制
-          const onDragWindow = () => postToHost("dragWindow");
+          // 窗口无模态平滑拖拽处理 (基于 PointerEvents + rAF 节流，彻底杜绝 Win32 模态循环死锁与 Excel 崩溃)
+          const onHeaderPointerDown = (e) => {
+            // 仅响应鼠标主键 (button === 0)
+            if (e.button !== 0) return;
+            // 排除点击右上角关闭按钮
+            if (e.target.closest('.window-controls') || e.target.closest('.ctrl-btn')) return;
+
+            // 获取物理像素与 CSS 像素缩放比率 (保障高分屏精准 1:1 跟随)
+            const dpi = window.devicePixelRatio || 1;
+            let lastScreenX = e.screenX;
+            let lastScreenY = e.screenY;
+            let pendingDeltaX = 0;
+            let pendingDeltaY = 0;
+            let rafId = null;
+
+            try {
+              e.target.setPointerCapture(e.pointerId);
+            } catch (_) {}
+
+            const onPointerMove = (moveEvt) => {
+              pendingDeltaX += (moveEvt.screenX - lastScreenX) * dpi;
+              pendingDeltaY += (moveEvt.screenY - lastScreenY) * dpi;
+              lastScreenX = moveEvt.screenX;
+              lastScreenY = moveEvt.screenY;
+
+              if (!rafId) {
+                rafId = requestAnimationFrame(() => {
+                  const dx = Math.round(pendingDeltaX);
+                  const dy = Math.round(pendingDeltaY);
+                  if (dx !== 0 || dy !== 0) {
+                    postToHost("moveWindow", { deltaX: dx, deltaY: dy });
+                    pendingDeltaX = 0;
+                    pendingDeltaY = 0;
+                  }
+                  rafId = null;
+                });
+              }
+            };
+
+            const onPointerUp = () => {
+              try {
+                e.target.releasePointerCapture(e.pointerId);
+              } catch (_) {}
+              if (rafId) {
+                cancelAnimationFrame(rafId);
+                rafId = null;
+              }
+              const dx = Math.round(pendingDeltaX);
+              const dy = Math.round(pendingDeltaY);
+              if (dx !== 0 || dy !== 0) {
+                postToHost("moveWindow", { deltaX: dx, deltaY: dy });
+                pendingDeltaX = 0;
+                pendingDeltaY = 0;
+              }
+              window.removeEventListener('pointermove', onPointerMove);
+              window.removeEventListener('pointerup', onPointerUp);
+              window.removeEventListener('pointercancel', onPointerUp);
+            };
+
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerup', onPointerUp);
+            window.addEventListener('pointercancel', onPointerUp);
+          };
+
+          // 折叠状态下底部栏支持平滑拖拽移动窗口
+          const onFooterPointerDown = (e) => {
+            if (isCollapsed.value) {
+              // 排除按钮与交互控件
+              if (
+                !e.target.closest(".el-button") &&
+                !e.target.closest(".ctrl-btn-collapsed-close") &&
+                !e.target.closest("button")
+              ) {
+                onHeaderPointerDown(e);
+              }
+            }
+          };
+
+          // 兼容旧版调用别名
+          const onDragWindow = onHeaderPointerDown;
+          const onFooterMouseDown = onFooterPointerDown;
           const onMinimize = () => postToHost("minimize");
           const onClose = () => postToHost("close");
 
@@ -1495,20 +2014,6 @@
             } else {
               // 展开为 700px 完整窗口
               postToHost("resizeWindow", { width: 960, height: 700 });
-            }
-          };
-
-          // 折叠状态下底部栏支持拖拽移动窗口
-          const onFooterMouseDown = (e) => {
-            if (isCollapsed.value) {
-              // 排除按钮与交互控件
-              if (
-                !e.target.closest(".el-button") &&
-                !e.target.closest(".ctrl-btn-collapsed-close") &&
-                !e.target.closest("button")
-              ) {
-                onDragWindow();
-              }
             }
           };
 
@@ -1820,9 +2325,10 @@
 
           // 校验列映射配置是否存在冲突重叠
           const validateColumnConflicts = () => {
-            // 收集定义好的列名映射列表
+            // 收集定义好的列名映射列表 (含新增的名称输出列)
             const colMap = [
               { name: "源型号列", col: (config.sourceColumn || "").trim().toUpperCase() },
+              { name: "名称输出列", col: (config.categoryColumn || "").trim().toUpperCase() },
               { name: "最小电流列", col: (config.minCurrentColumn || "").trim().toUpperCase() },
               { name: "最大电流列", col: (config.maxCurrentColumn || "").trim().toUpperCase() },
               { name: "极数输出列", col: (config.poleColumn || "").trim().toUpperCase() },
@@ -1872,8 +2378,33 @@
                 if (data.config) {
                   syncMappingToList(data.config);
                   Object.assign(config, data.config);
+                  // 同步选中的当前分类 Tab
+                  if (config.categoryDict) {
+                    const keys = Object.keys(config.categoryDict);
+                    if (keys.length > 0 && !keys.includes(currentCategoryTab.value)) {
+                      currentCategoryTab.value = keys[0];
+                    }
+                  }
                   if (data.message) ElementPlus.ElMessage.success(data.message);
                   runTestParse();
+                }
+                break;
+              case "importCategoryResult":
+                if (data.success) {
+                  if (data.categoryDict) {
+                    config.categoryDict = data.categoryDict;
+                    const keys = Object.keys(data.categoryDict);
+                    if (keys.length > 0) {
+                      currentCategoryTab.value = keys[0];
+                    }
+                  }
+                  ElementPlus.ElMessage.success({
+                    message: data.message,
+                    duration: 5000,
+                  });
+                  runTestParse();
+                } else {
+                  ElementPlus.ElMessage.error(data.message);
                 }
                 break;
               case "saveResult":
@@ -1931,9 +2462,28 @@
             testResult,
             isExecuting,
             batchStatusMsg,
+            onHeaderPointerDown,
+            onFooterPointerDown,
             onDragWindow,
+            onFooterMouseDown,
             onMinimize,
             onClose,
+            currentCategoryTab,
+            leakageTagInputVisible,
+            newLeakageTagValue,
+            leakageTagInputRef,
+            catCodeInputVisible,
+            newCatCodeValue,
+            catCodeInputRef,
+            removeLeakageKeyword,
+            showLeakageTagInput,
+            handleLeakageTagConfirm,
+            removeCatCode,
+            showCatCodeInput,
+            handleCatCodeConfirm,
+            importCategoryFromExcel,
+            promptAddCategory,
+            removeCurrentCategory,
             addPolePipelineItem,
             deletePoleRule,
             movePoleRule,

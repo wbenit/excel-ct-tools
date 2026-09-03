@@ -38,12 +38,32 @@ namespace ExcelAddInDemo.Models
         // 默认源数据型号所在列 (如 C 列)
         public string SourceColumn { get; set; } = "C"; // --硬编码-- 默认源型号列
 
+        // 默认提取后元器件名称/类别输出的目标列 (分类明细表标准: B 列 Name)
+        public string CategoryColumn { get; set; } = "B"; // --硬编码-- 默认类别名称输出列
+
+        // 元器件名称回填覆盖模式: "OnlyEmpty" (仅填充空单元格) 或 "OverwriteAll" (强制覆盖全部)
+        public string CategoryOverwriteMode { get; set; } = "OnlyEmpty"; // --硬编码-- 默认仅填空白
+
+        // 是否开启断路器遇到漏电特征自动升格机制 (如微断->微漏, 塑壳->塑壳漏电)
+        public bool EnableLeakageUpgrade { get; set; } = true; // --硬编码-- 默认开启漏电升格
+
+        // 漏电特征关键词列表 (如 LE, VIGI, L 等)
+        public List<string> LeakageKeywords { get; set; } = new List<string>
+        {
+            "LE", "VIGI", "L", "GS", "漏电", "残流" // --硬编码-- 默认漏电特征词
+        };
+
+        // 是否开启单字母/双字母短代号安全边界保护 (防止 16A 中的 A 误判为接触器)
+        public bool EnableShortCodeBoundaryGuard { get; set; } = true; // --硬编码-- 默认启用安全边界
+
+        // 核心元器件类别特征词典库 (类别名称 -> 型号前缀/特征字母集合)
+        public Dictionary<string, List<string>> CategoryDict { get; set; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
         // 默认提取后最小电流输出的目标列 (分类明细表标准: W 列 Current)
         public string MinCurrentColumn { get; set; } = "W"; // --硬编码-- 默认最小电流输出列
 
         // 默认提取后最大电流输出的目标列 (可自由配置，留空则不写入)
         public string MaxCurrentColumn { get; set; } = string.Empty; // --硬编码-- 默认最大电流输出列
-
 
         // 默认提取后极数输出的目标列 (分类明细表标准: X 列 Poles)
         public string PoleColumn { get; set; } = "X"; // --硬编码-- 默认极数输出列
@@ -133,6 +153,76 @@ namespace ExcelAddInDemo.Models
         {
             // 初始化基础配置实例
             var cfg = new ModelParserConfig();
+
+            // 0. 初始化出厂默认元器件分类特征词库 (对应分类明细表标准)
+            cfg.CategoryDict = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                // 微型断路器特征代号库 (含施耐德 Acti9 系列 A9F/A9N) --硬编码--
+                { "微型断路器", new List<string> { "NXB", "DZ47", "IC65", "IDPN", "DPN", "S20", "CH1", "CH2", "CH3", "C65", "FTB", "ABB1", "EA9AN", "M20", "NB1", "IC60", "MCB", "SP4", "NDB", "HUM18", "HSM8", "NB45", "XA10", "XA5", "A9F", "A9N" } },
+
+                // 微型漏电断路器特征代号库 (含施耐德 A9D) --硬编码--
+                { "微型漏电", new List<string> { "VIGI", "CSH20", "GS20", "ABB1L", "NB1LE", "BM65L", "CH3L", "CH2L", "ESM8NL", "RCCB", "XA10L", "A9D" } },
+
+                // 塑壳断路器特征代号库 --硬编码--
+                { "塑壳断路器", new List<string> { "NM1", "CM1", "NSX", "NS", "CM3", "XT1", "XT2", "XT3", "XT4", "EZD", "GM1", "FTM", "ABBM1", "XT", "NM8", "MCCB", "TS", "CKB", "CVS", "BM30", "RDM", "HUM8", "HSM1", "BM3", "XAM", "T1", "T2", "T3", "T4", "T5", "T6", "T7", "MB50" } },
+
+                // 塑壳漏电断路器特征代号库 --硬编码--
+                { "塑壳漏电", new List<string> { "BM30L", "HSM1L" } },
+
+                // 微型隔离开关特征代号库 --硬编码--
+                { "微型隔离", new List<string> { "IINT", "INT", "EA9D", "FTG11", "E20", "NH42", "SD20", "CH3G", "HSM8D", "XAHL" } },
+
+                // 隔离开关特征代号库 --硬编码--
+                { "隔离开关", new List<string> { "INS", "NH40", "G", "IINS", "OT", "WG", "FTG2", "AEB-GL", "NDC", "HUH", "CM5G", "HSC1" } },
+
+                // 双电源转换开关特征代号库 --硬编码--
+                { "双电源", new List<string> { "VATSG", "WATSN", "XTS", "ATS", "OTM", "FTQ", "VTS", "CAP", "WTS", "NDQ", "ESQ1", "WHKQ8" } },
+
+                // 双投刀开关特征代号库 --硬编码--
+                { "双头刀", new List<string> { "HS11", "HZ10", "HS13" } },
+
+                // 交流接触器特征代号库 --硬编码--
+                { "接触器", new List<string> { "LC1", "MC1", "SC", "AX", "A", "CJ", "BSB", "MDC" } },
+
+                // 热继电器特征代号库 --硬编码--
+                { "热继电器", new List<string> { "LR", "MR1", "TK", "T", "TA", "NDR" } },
+
+                // 变频器特征代号库 --硬编码--
+                { "变频器", new List<string> { "ATV", "ACS510" } },
+
+                // 智能照明控制模块特征代号库 --硬编码--
+                { "智能照明", new List<string> { "A1-MLC", "ALC.PRL", "ASL" } },
+
+                // 直接式电能表特征代号库 --硬编码--
+                { "直接式表", new List<string> { "PMAC903", "ACR", "DD", "DT" } },
+
+                // 多功能电力仪表特征代号库 --硬编码--
+                { "多功能表", new List<string> { "PD760", "IM300" } },
+
+                // 消防电源监控模块特征代号库 --硬编码--
+                { "消防电源监控", new List<string> { "HS-V", "PMAC515A", "AFPM" } },
+
+                // 电气火灾监控探测器特征代号库 --硬编码--
+                { "电气火灾探测器", new List<string> { "PMAC503", "2HSAD", "WEFPT", "HS-L810", "AcuRC", "HS-L", "TEF-T", "ARCM" } },
+
+                // 电流互感器特征代号库 --硬编码--
+                { "互感器", new List<string> { "AKH", "ASH" } },
+
+                // 熔断器特征代号库 --硬编码--
+                { "熔断器", new List<string> { "RT", "NT" } },
+
+                // 控制与保护开关 (CPS) 特征代号库 (兼容 KBO 与 KB0) --硬编码--
+                { "控制与保护开关", new List<string> { "XCPS", "KBO", "KB0", "LBC" } },
+
+                // 电涌后备保护器 (SCB) 特征代号库 --硬编码--
+                { "电涌后备", new List<string> { "ISCB", "CTR-SCB" } },
+
+                // 浪涌保护器 (SPD) 特征代号库 --硬编码--
+                { "电涌保护器", new List<string> { "TDXD", "VB", "VC", "ARD" } },
+
+                // 集中式电能表特征代号库 --硬编码--
+                { "集中电表", new List<string> { "DFKS" } }
+            };
 
             // 1. 初始化极数多级顺位流水线
             cfg.PolePipeline.Add(new PipelineRuleItem
@@ -267,6 +357,12 @@ namespace ExcelAddInDemo.Models
     {
         // 原始输入型号
         public string RawModel { get; set; } = string.Empty;
+
+        // 解析提取出的元器件名称/类别 (如 微型断路器、塑壳断路器、微型漏电)
+        public string Category { get; set; } = string.Empty;
+
+        // 命中的元器件类别规则标题或推导轨迹
+        public string HitCategoryRule { get; set; } = string.Empty;
 
         // 解析提取出的极数
         public string Pole { get; set; } = string.Empty;

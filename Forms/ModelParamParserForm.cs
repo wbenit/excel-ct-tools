@@ -271,10 +271,35 @@ namespace ExcelAddInDemo
                         }, JsonOptions));
                         break;
 
-                    // 6. 窗体窗口拖拽
+                    // 5.2 从当前 Excel 选区导入元器件分类与特征代号字典
+                    case "importCategoryFromSelection":
+                        var (importOk, importMsg, importedDict) = _controller.ImportCategoryFromSelection();
+                        // 向前端发送导入结果与新字典数据
+                        PostWebMessageSafe(JsonSerializer.Serialize(new
+                        {
+                            action = "importCategoryResult",
+                            success = importOk,
+                            message = importMsg,
+                            categoryDict = importedDict
+                        }, JsonOptions));
+                        break;
+
+                    // 6. 窗口平滑位移拖拽 (基于非模态物理增量，彻底杜绝 Win32 模态循环死锁导致 Excel 崩溃)
+                    case "moveWindow":
+                        int deltaX = root.TryGetProperty("deltaX", out var dxProp) ? dxProp.GetInt32() : 0;
+                        int deltaY = root.TryGetProperty("deltaY", out var dyProp) ? dyProp.GetInt32() : 0;
+                        if (deltaX != 0 || deltaY != 0)
+                        {
+                            SafeInvoke(() =>
+                            {
+                                // 直接更新窗体屏幕坐标，微秒级响应且绝不挂起 STA 消息泵
+                                this.Location = new Point(this.Left + deltaX, this.Top + deltaY);
+                            });
+                        }
+                        break;
+
+                    // 6.1 窗体窗口拖拽 (旧版兼容兜底)
                     case "dragWindow":
-
-
                         SafeInvoke(() =>
                         {
                             ReleaseCapture();

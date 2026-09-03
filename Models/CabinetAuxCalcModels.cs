@@ -190,6 +190,10 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("branchMinCurrent")]
         public int BranchMinCurrent { get; set; } = 100;
 
+        // 出线分支铜排单台基准展开长 (单位: 米，默认 1.0) --硬编码--
+        [JsonPropertyName("branchBusUnitLength")]
+        public double BranchBusUnitLength { get; set; } = 1.0;
+
         // 电流区间与对应铜排截面及每米单重对照表 (kg/m)
         [JsonPropertyName("mainBusSpecTable")]
         public List<MainBusSpecItem> MainBusSpecTable { get; set; } = new List<MainBusSpecItem>
@@ -351,7 +355,11 @@ namespace ExcelAddInDemo.Models
             new PrimaryWireSpecItem { MaxCurrent = 63, Spec = "BV-10", CrossSection = 10.0, PricePerMeter = 5.5 },
             new PrimaryWireSpecItem { MaxCurrent = 80, Spec = "BV-16", CrossSection = 16.0, PricePerMeter = 8.5 },
             new PrimaryWireSpecItem { MaxCurrent = 100, Spec = "BV-25", CrossSection = 25.0, PricePerMeter = 13.5 },
-            new PrimaryWireSpecItem { MaxCurrent = 125, Spec = "BV-35", CrossSection = 35.0, PricePerMeter = 18.5 }
+            new PrimaryWireSpecItem { MaxCurrent = 125, Spec = "BV-35", CrossSection = 35.0, PricePerMeter = 18.5 },
+            // 大电流回路无水平排时的导线选型兜底 (160A: BV-50, 250A: BV-70, 400A+: BV-95) --硬编码--
+            new PrimaryWireSpecItem { MaxCurrent = 160, Spec = "BV-50", CrossSection = 50.0, PricePerMeter = 26.5 },
+            new PrimaryWireSpecItem { MaxCurrent = 250, Spec = "BV-70", CrossSection = 70.0, PricePerMeter = 38.0 },
+            new PrimaryWireSpecItem { MaxCurrent = 9999, Spec = "BV-95", CrossSection = 95.0, PricePerMeter = 52.0 }
         };
 
         // 二次元件接线定额库 (根据元件关键字匹配配线根数、线单价与工价)

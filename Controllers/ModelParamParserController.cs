@@ -134,6 +134,28 @@ namespace ExcelAddInDemo.Controllers
             // 调用业务服务层执行按 S/T/U 列参数反查物料库与二维数组整块回填
             return ExcelServices.ExecuteBatchMatchWithColumnConfig(colConfig);
         }
+
+        /// <summary>
+        /// 从 Excel 当前用户选择区域一键导入元器件分类与系列特征代号库 (第一行是类别名称，下方是代号)
+        /// </summary>
+        public (bool Success, string Message, Dictionary<string, List<string>>? CategoryDict) ImportCategoryFromSelection()
+        {
+            // 调用公共服务层读取 Excel 选区
+            var dict = ExcelServices.ImportCategoryDictFromExcelSelection(out string msg);
+            // 校验导入结果是否有效
+            if (dict != null && dict.Count > 0)
+            {
+                // 读取当前配置并更新字典
+                var currentConfig = LoadConfig();
+                currentConfig.CategoryDict = dict;
+                // 保存更新后的配置到磁盘
+                SaveConfig(currentConfig);
+                // 返回成功结果
+                return (true, msg, dict);
+            }
+            // 导入失败或未选有效区域
+            return (false, msg, null);
+        }
     }
 }
 

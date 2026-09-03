@@ -209,8 +209,22 @@ namespace ExcelAddInDemo.Forms
                 if (!root.TryGetProperty("action", out var actionElement)) return;
                 string action = actionElement.GetString() ?? string.Empty;
 
-                // 响应窗口拖拽
-                if (action == "dragWindow")
+                // 响应窗口平滑位移拖拽 (基于非模态物理增量，彻底杜绝 Win32 模态循环死锁导致 Excel 崩溃)
+                if (action == "moveWindow")
+                {
+                    int deltaX = root.TryGetProperty("deltaX", out var dxProp) ? dxProp.GetInt32() : 0;
+                    int deltaY = root.TryGetProperty("deltaY", out var dyProp) ? dyProp.GetInt32() : 0;
+                    if (deltaX != 0 || deltaY != 0)
+                    {
+                        SafeInvoke(() =>
+                        {
+                            // 直接更新窗体屏幕坐标，微秒级响应且绝不挂起 STA 消息泵
+                            this.Location = new Point(this.Left + deltaX, this.Top + deltaY);
+                        });
+                    }
+                }
+                // 响应窗口拖拽 (旧版兼容兜底)
+                else if (action == "dragWindow" || action == "dragMove")
                 {
                     SafeInvoke(() =>
                     {

@@ -336,15 +336,23 @@ namespace ExcelAddInDemo
                         componentNameCountMap[accName] = comp.Quantity;
                 }
 
-                // 电流线头数统计 (线头数 = 极数 * 数量)
+                // 提取并校验有效额定电流 (用于接线空间高度估算)
                 int effectiveCurrent = comp.Current > 0 ? comp.Current : 25;
+                // 保障最小电流基数不低于 25A
                 if (effectiveCurrent < 25) effectiveCurrent = 25;
-                int wireJointCount = comp.PoleCount * comp.Quantity;
 
-                if (currentWireMap.ContainsKey(effectiveCurrent))
-                    currentWireMap[effectiveCurrent] += wireJointCount;
-                else
-                    currentWireMap[effectiveCurrent] = wireJointCount;
+                // 电流线头数统计 (核心约束：首个主元器件 i == 0 不计算分支排也不计算导线，仅出线分路 i > 0 统计导线)
+                if (i > 0 && !comp.IsFireTransformer && !comp.IsCurrentTransformer)
+                {
+                    // 计算出线分路导线线头数 (极数 * 数量)
+                    int wireJointCount = comp.PoleCount * comp.Quantity;
+
+                    // 累加对应电流档位的出线线头数
+                    if (currentWireMap.ContainsKey(effectiveCurrent))
+                        currentWireMap[effectiveCurrent] += wireJointCount;
+                    else
+                        currentWireMap[effectiveCurrent] = wireJointCount;
+                }
 
                 // 计算元件占用面积与接线空间
                 int wireSpace = GetWiringSpace(effectiveCurrent, comp.Name, rules.ShellRules.WiringSpaceGradients);
@@ -430,7 +438,8 @@ namespace ExcelAddInDemo
             int branchMccbCurrentSum = 0;         // 出线塑壳断路器电流之和
             int branch4PoleMccbCount = 0;         // 出线 4 极塑壳断路器数量
             int branchTotalCurrentSum = 0;        // 出线全部元件电流之和
-            int branchLargeMccbCount = 0;         // 出线电流 > branchMinCurrent 的塑壳断路器数量
+            // 记录大电流出线分支排按规格分组统计的字典 (Key: 规格名称, Value: (规格条目, 累计台数, 电流档位列表))
+            var branchBusGroupMap = new Dictionary<string, (MainBusSpecItem SpecItem, int TotalCount, List<int> Currents)>(StringComparer.OrdinalIgnoreCase);
 
             // 特殊元器件匹配判定 (满足配置的特殊关键字或原有 ATS/火灾互感器标记)
             bool hasSpecialComponents = false;
@@ -486,10 +495,26 @@ namespace ExcelAddInDemo
                         branch4PoleMccbCount += comp.Quantity;
                     }
 
-                    // 统计大电流出线分支排台数 (出线电流 > 设定起算门限)
+                    // 统计大电流出线分支排 (出线电流 > 设定起算门限)
                     if (compCur > rules.CopperRules.BranchMinCurrent)
                     {
-                        branchLargeMccbCount += comp.Quantity;
+                        // 核心重构：出线分支排不能按主排来，根据回路自身额定电流独立匹配母排规则表
+                        var branchSpecItem = GetBusbarSpecItem(compCur, rules.CopperRules.MainBusSpecTable);
+                        // 检查当前规格是否已存在于分组字典中
+                        if (branchBusGroupMap.ContainsKey(branchSpecItem.Spec))
+                        {
+                            // 提取已有规格分组信息
+                            var existing = branchBusGroupMap[branchSpecItem.Spec];
+                            // 记录新出现的回路电流档位
+                            if (!existing.Currents.Contains(compCur)) existing.Currents.Add(compCur);
+                            // 累加该规格断路器数量
+                            branchBusGroupMap[branchSpecItem.Spec] = (existing.SpecItem, existing.TotalCount + comp.Quantity, existing.Currents);
+                        }
+                        else
+                        {
+                            // 初始化并记录新规格分组
+                            branchBusGroupMap[branchSpecItem.Spec] = (branchSpecItem, comp.Quantity, new List<int> { compCur });
+                        }
                     }
                 }
             }
@@ -506,42 +531,46 @@ namespace ExcelAddInDemo
 
             // ==========================================
             // 分支一：主母排形态判定 (水平排 vs 垂直母排)
+            // 依据 tmy.DrawIO 最新流程图严格执行
             // ==========================================
             bool hasHorizontalBus = false;
             // 垂直母排命中标志
             bool hasVerticalBus = false;
 
-            // 1.1 判断是否命中水平排 (出线塑壳数量 >= 门限 且 塑壳电流和 >= 门限)
+            // 1.1 判定是否满足水平排 (节点 5 塑壳数量 >= 门限 且 节点 6 塑壳电流和 >= 门限)
             if (branchMccbCount >= rules.CopperRules.MccbCountThreshold &&
                 branchMccbCurrentSum >= rules.CopperRules.MccbCurrentSumThreshold)
             {
+                // 满足水平排触发条件 (节点 12)
                 hasHorizontalBus = true;
-                // 判断 4 极塑壳数量是否达到门限 (>= fourPoleMccbThreshold 采用 4 根水平排，否则 3 根)
+                // 判断 4 极塑壳数量是否达到门限 (节点 42: true 采用 4 根水平排，false 采用 3 根)
                 int horizontalPoleCount = (branch4PoleMccbCount >= rules.CopperRules.FourPoleMccbThreshold) ? 4 : 3;
                 // 水平排总展开长度 (mm) = (柜宽 - 边距) × 排数
                 int horizontalBusLen = effectiveWidth * horizontalPoleCount;
                 // 计算水平排理论重量 (kg)
                 double horizWeight = (mainBusWeightPerMeter * horizontalBusLen) / 1000.0;
-                // 累加铜排重量
+                // 累加铜排总重量
                 copperWeight += horizWeight;
                 // 记录透明的水平主排计算明细
                 copperFormulaDetails.Add($"水平主排 ({horizontalPoleCount}根 | {mainBusSpecItem.Spec} | {mainBusWeightPerMeter:F3}kg/m): {mainBusWeightPerMeter:F3} × [({shellWidth}-{rules.CopperRules.WidthDeduction}) × {horizontalPoleCount}] / 1000 = {horizWeight:F2} KG");
             }
-            // 1.2 若未做水平排，判断是否命中垂直母排 (分路总电流和 >= 门限 且 主进线电流 > 门限)
+            // 1.2 塑壳台数不足(节点 5 false) 或 塑壳电流和不足(节点 6 false)，均流转至垂直母排判定 (节点 16)
             else if (branchTotalCurrentSum >= rules.CopperRules.BranchTotalCurrentThreshold &&
                      mainSwitchCurrent > rules.CopperRules.MainSwitchCurrentThreshold)
             {
+                // 满足垂直母排触发条件 (节点 24)
                 hasVerticalBus = true;
-                // 判断主开关极数是否为 4 极
+                // 判断主开关极数是否为 4 极 (节点 64)
                 int vertPoleCount = (mainSwitchPoleCount >= 4) ? 4 : 3;
                 // 垂直母排单根展开长 (米) = [基准长 + 延伸系数 × (分路电流和 / 步长基数)]
                 double stepBase = rules.CopperRules.LoadExtensionStepCurrent > 0 ? (double)branchTotalCurrentSum / rules.CopperRules.LoadExtensionStepCurrent : 0;
+                // 计算垂直母排单根米数
                 double vertSingleLenMeters = rules.CopperRules.VerticalBaseLength + (rules.CopperRules.LoadExtensionRatio * stepBase);
                 // 垂直母排总长度 (米) = 单根长 × 极数
                 double vertTotalLenMeters = vertSingleLenMeters * vertPoleCount;
                 // 计算垂直母排理论重量 (kg)
                 double vertWeight = mainBusWeightPerMeter * vertTotalLenMeters;
-                // 累加铜排重量
+                // 累加铜排总重量
                 copperWeight += vertWeight;
                 // 记录垂直母排计算明细
                 copperFormulaDetails.Add($"垂直母排 ({vertPoleCount}根 | {mainBusSpecItem.Spec} | {mainBusWeightPerMeter:F3}kg/m): {mainBusWeightPerMeter:F3} × [{rules.CopperRules.VerticalBaseLength:F1} + {rules.CopperRules.LoadExtensionRatio:F2}×({branchTotalCurrentSum}/{rules.CopperRules.LoadExtensionStepCurrent})] × {vertPoleCount} = {vertWeight:F2} KG");
@@ -580,16 +609,27 @@ namespace ExcelAddInDemo
             }
 
             // ==========================================
-            // 分支四：出线分支铜排计算 (出线电流 > 门限的塑壳断路器台数 × 1m)
+            // 分支四：出线分支铜排计算 (根据各出线回路额定电流独立选型)
+            // 规则约束：只有存在水平排时才做出线分支排；若无水平排，出线分支不做排，只能做线
             // ==========================================
-            if (branchLargeMccbCount > 0)
+            if (hasHorizontalBus && branchBusGroupMap.Count > 0)
             {
-                // 出线分支排理论重量 (kg) = 台数 × 1.0m × 主排理论单重
-                double branchBusWeight = branchLargeMccbCount * 1.0 * mainBusWeightPerMeter;
-                // 累加铜排重量
-                copperWeight += branchBusWeight;
-                // 记录出线分支排计算明细
-                copperFormulaDetails.Add($"出线分支排 (出线>{rules.CopperRules.BranchMinCurrent}A共{branchLargeMccbCount}台): {branchLargeMccbCount}台 × 1.0m × {mainBusWeightPerMeter:F3}kg/m = {branchBusWeight:F2} KG");
+                // 获取单台出线分支排基准展开长 (单位: 米，配置默认 1.0m)
+                double branchUnitLen = rules.CopperRules.BranchBusUnitLength > 0 ? rules.CopperRules.BranchBusUnitLength : 1.0;
+
+                // 遍历每个规格分组分别计算理论重量并生成透明算式
+                foreach (var kvp in branchBusGroupMap)
+                {
+                    var group = kvp.Value;
+                    // 分项理论重量 (kg) = 台数 × 单台基准长 × 对应规格理论每米单重
+                    double groupWeight = group.TotalCount * branchUnitLen * group.SpecItem.WeightPerMeter;
+                    // 累加铜排总重量
+                    copperWeight += groupWeight;
+                    // 汇总涉及的回路额定电流描述 (如 "160" 或 "125/160")
+                    string currentDesc = string.Join("/", group.Currents);
+                    // 记录该规格出线分支排的透明推导算式
+                    copperFormulaDetails.Add($"出线分支排 (出线{currentDesc}A共{group.TotalCount}台 | {group.SpecItem.Spec} | {group.SpecItem.WeightPerMeter:F3}kg/m): {group.TotalCount}台 × {branchUnitLen:F1}m × {group.SpecItem.WeightPerMeter:F3}kg/m = {groupWeight:F2} KG");
+                }
             }
 
             // 铜排重量四舍五入保留 1 位小数
@@ -618,8 +658,9 @@ namespace ExcelAddInDemo
             {
                 int cur = kvp.Key;
                 int wireCount = kvp.Value;
-                // 电流小于分支铜排门限时计算一次导线配线
-                if (cur < rules.CopperRules.BranchMinCurrent)
+                // 核心规则联动：若有水平排，电流小于分支门限计算一次导线 (大电流走分支铜排)；
+                // 若无水平排，出线分支不做排只能做线，因此所有电流回路全部走一次导线！
+                if (!hasHorizontalBus || cur < rules.CopperRules.BranchMinCurrent)
                 {
                     // 匹配对应电流的一次线规格与单价
                     var specItem = FindPrimaryWireSpec(cur, rules.AuxRules.PrimaryWireSpecTable);

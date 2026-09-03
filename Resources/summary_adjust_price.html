@@ -55,6 +55,7 @@
       background: linear-gradient(135deg, #009688, #00796b);
       color: #ffffff;
       cursor: move;
+      touch-action: none; /* 禁用系统手势干扰，保障平滑拖拽 */
     }
 
     .window-title-box {
@@ -351,6 +352,7 @@
       background: #ffffff;
       color: #333333;
       cursor: move;
+      touch-action: none; /* 禁用系统手势干扰，保障平滑拖拽 */
     }
 
     .editor-title {
@@ -525,8 +527,8 @@
 
     <!-- ================= 视图 1：图一 分类选择与生成配置面板 ================= -->
     <template v-if="currentView === 'config'">
-      <!-- 顶部标题栏，支持鼠标拖拽与控制 -->
-      <div class="window-header" @mousedown="handleHeaderMouseDown">
+      <!-- 顶部标题栏，支持鼠标拖拽与控制 (采用 PointerEvents 平滑位移) -->
+      <div class="window-header" @pointerdown="handleHeaderPointerDown">
         <div class="window-title-box">
           <el-icon :size="15">
             <Tickets />
@@ -686,8 +688,8 @@
     <!-- ================= 视图 2：图二 紧凑编辑条 (高保真还原) ================= -->
     <template v-else-if="currentView === 'editor'">
       <div class="editor-mode-container">
-        <!-- 顶部浅色拖拽标题栏 -->
-        <div class="editor-header" @mousedown="handleHeaderMouseDown">
+        <!-- 顶部浅色拖拽标题栏 (采用 PointerEvents 平滑位移) -->
+        <div class="editor-header" @pointerdown="handleHeaderPointerDown">
           <div class="editor-title">汇总调价</div>
           <!-- 右上角关闭按钮 -->
           <div class="editor-close-btn" title="关闭窗口" @mousedown.stop @click.stop="closeWindow">
@@ -827,14 +829,76 @@
           // 触发计算属性更新
         };
 
-        // 窗口拖拽处理
-        const handleHeaderMouseDown = (e) => {
+        // 窗口无模态平滑拖拽处理 (基于 PointerEvents + rAF 节流，彻底杜绝 Win32 模态循环死锁与 Excel 崩溃)
+        const handleHeaderPointerDown = (e) => {
+          // 仅响应鼠标主键 (button === 0)
+          if (e.button !== 0) return;
           // 排除点击在控制按钮和链接上的情况
           if (e.target.closest('.action-btn') || e.target.closest('.editor-close-btn') || e.target.closest('.re-summary-link') || e.target.closest('.quick-update-btn') || e.target.closest('.reconfig-icon-btn') || e.target.closest('.el-checkbox')) return;
-          if (window.chrome && window.chrome.webview) {
-            window.chrome.webview.postMessage(JSON.stringify({ action: 'dragWindow' }));
-          }
+
+          // 获取物理像素与 CSS 像素缩放比率 (保障高分屏精准 1:1 跟随)
+          const dpi = window.devicePixelRatio || 1;
+          let lastScreenX = e.screenX;
+          let lastScreenY = e.screenY;
+          let pendingDeltaX = 0;
+          let pendingDeltaY = 0;
+          let rafId = null;
+
+          try {
+            e.target.setPointerCapture(e.pointerId);
+          } catch (_) {}
+
+          const onPointerMove = (moveEvt) => {
+            pendingDeltaX += (moveEvt.screenX - lastScreenX) * dpi;
+            pendingDeltaY += (moveEvt.screenY - lastScreenY) * dpi;
+            lastScreenX = moveEvt.screenX;
+            lastScreenY = moveEvt.screenY;
+
+            if (!rafId) {
+              rafId = requestAnimationFrame(() => {
+                const dx = Math.round(pendingDeltaX);
+                const dy = Math.round(pendingDeltaY);
+                if (dx !== 0 || dy !== 0) {
+                  if (window.chrome && window.chrome.webview) {
+                    window.chrome.webview.postMessage(JSON.stringify({ action: 'moveWindow', deltaX: dx, deltaY: dy }));
+                  }
+                  pendingDeltaX = 0;
+                  pendingDeltaY = 0;
+                }
+                rafId = null;
+              });
+            }
+          };
+
+          const onPointerUp = () => {
+            try {
+              e.target.releasePointerCapture(e.pointerId);
+            } catch (_) {}
+            if (rafId) {
+              cancelAnimationFrame(rafId);
+              rafId = null;
+            }
+            const dx = Math.round(pendingDeltaX);
+            const dy = Math.round(pendingDeltaY);
+            if (dx !== 0 || dy !== 0) {
+              if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage(JSON.stringify({ action: 'moveWindow', deltaX: dx, deltaY: dy }));
+              }
+              pendingDeltaX = 0;
+              pendingDeltaY = 0;
+            }
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+            window.removeEventListener('pointercancel', onPointerUp);
+          };
+
+          window.addEventListener('pointermove', onPointerMove);
+          window.addEventListener('pointerup', onPointerUp);
+          window.addEventListener('pointercancel', onPointerUp);
         };
+
+        // 兼容旧版调用别名
+        const handleHeaderMouseDown = handleHeaderPointerDown;
 
         // 最小化窗口
         const minimizeWindow = () => {
@@ -1104,6 +1168,7 @@
           isIndeterminate,
           handleSelectAllChange,
           handleItemCheckChange,
+          handleHeaderPointerDown,
           handleHeaderMouseDown,
           minimizeWindow,
           closeWindow,

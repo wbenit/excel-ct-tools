@@ -52,6 +52,7 @@
       color: #ffffff;
       cursor: move;
       flex-shrink: 0;
+      touch-action: none; /* 禁用系统手势干扰，保障平滑拖拽 */
     }
 
     .window-title-box {
@@ -177,8 +178,8 @@
 </head>
 <body>
   <div id="app">
-    <!-- 顶部拖拽标题栏 -->
-    <div class="window-header" @mousedown="startDrag">
+    <!-- 顶部拖拽标题栏 (采用 PointerEvents 平滑位移，绝无模态死锁) -->
+    <div class="window-header" @pointerdown="onHeaderPointerDown">
       <div class="window-title-box">
         <svg viewBox="0 0 1024 1024" width="16" height="16" style="fill: currentColor;">
           <path d="M880 298.4H521L437 138H144c-17.7 0-32 14.3-32 32v684c0 17.7 14.3 32 32 32h736c17.7 0 32-14.3 32-32V330.4c0-17.7-14.3-32-32-32zM848 822H176V202h237l84 160.4h351V822z m-304-376h-64v104H376v64h104v104h64V614h104v-64H544z"></path>
@@ -289,10 +290,75 @@
           }
         };
 
-        // 拖拽窗口
-        const startDrag = () => {
-          sendMessage('dragWindow');
+        // 窗口无模态平滑拖拽处理 (基于 PointerEvents + rAF 节流，彻底杜绝 Win32 模态循环死锁与 Excel 崩溃)
+        const onHeaderPointerDown = (e) => {
+          // 仅响应鼠标主键 (左键 button === 0)
+          if (e.button !== 0) return;
+          // 排除点击关闭等按钮区域
+          if (e.target.closest('.window-actions') || e.target.closest('.action-btn')) return;
+
+          // 获取物理像素与 CSS 像素缩放比率 (保障高分屏/DPI缩放精准 1:1 跟随)
+          const dpi = window.devicePixelRatio || 1;
+          let lastScreenX = e.screenX;
+          let lastScreenY = e.screenY;
+          let pendingDeltaX = 0;
+          let pendingDeltaY = 0;
+          let rafId = null;
+
+          // 捕获指针事件
+          try {
+            e.target.setPointerCapture(e.pointerId);
+          } catch (_) {}
+
+          // 指针平滑移动监听
+          const onPointerMove = (moveEvt) => {
+            pendingDeltaX += (moveEvt.screenX - lastScreenX) * dpi;
+            pendingDeltaY += (moveEvt.screenY - lastScreenY) * dpi;
+            lastScreenX = moveEvt.screenX;
+            lastScreenY = moveEvt.screenY;
+
+            if (!rafId) {
+              rafId = requestAnimationFrame(() => {
+                const dx = Math.round(pendingDeltaX);
+                const dy = Math.round(pendingDeltaY);
+                if (dx !== 0 || dy !== 0) {
+                  sendMessage('moveWindow', { deltaX: dx, deltaY: dy });
+                  pendingDeltaX = 0;
+                  pendingDeltaY = 0;
+                }
+                rafId = null;
+              });
+            }
+          };
+
+          // 指针释放或取消
+          const onPointerUp = () => {
+            try {
+              e.target.releasePointerCapture(e.pointerId);
+            } catch (_) {}
+            if (rafId) {
+              cancelAnimationFrame(rafId);
+              rafId = null;
+            }
+            const dx = Math.round(pendingDeltaX);
+            const dy = Math.round(pendingDeltaY);
+            if (dx !== 0 || dy !== 0) {
+              sendMessage('moveWindow', { deltaX: dx, deltaY: dy });
+              pendingDeltaX = 0;
+              pendingDeltaY = 0;
+            }
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+            window.removeEventListener('pointercancel', onPointerUp);
+          };
+
+          window.addEventListener('pointermove', onPointerMove);
+          window.addEventListener('pointerup', onPointerUp);
+          window.addEventListener('pointercancel', onPointerUp);
         };
+
+        // 兼容旧版调用
+        const startDrag = onHeaderPointerDown;
 
         // 关闭窗口
         const closeWindow = () => {
@@ -383,6 +449,7 @@
           isDuplicate,
           submitting,
           startDrag,
+          onHeaderPointerDown,
           closeWindow,
           checkDuplicate,
           submitCreate

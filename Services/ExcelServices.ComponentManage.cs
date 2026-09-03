@@ -132,18 +132,23 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 根据品牌与名称筛选条件拉取数据并一次性写入【元器件数据管理】工作表
+        /// 根据品牌与名称筛选条件拉取数据并一次性写入【元器件数据管理】工作表 (支持云端或本地 SQLite 个人库)
         /// </summary>
         /// <param name="brand">筛选品牌</param>
         /// <param name="nameKeyword">筛选名称关键字</param>
+        /// <param name="dataSource">物料数据源 ("cloud" 或 "personal")</param>
         /// <returns>操作响应结果</returns>
-        public static ComponentManageActionResult LoadComponentsToSheet(string? brand, string? nameKeyword)
+        public static ComponentManageActionResult LoadComponentsToSheet(string? brand, string? nameKeyword, string dataSource = "cloud")
         {
             var result = new ComponentManageActionResult();
             try
             {
-                // 1. 调用远程接口拉取满足条件的所有数据
-                var items = ComponentApiClient.QueryManageComponents(brand, nameKeyword);
+                bool isPersonal = string.Equals(dataSource, "personal", StringComparison.OrdinalIgnoreCase);
+
+                // 1. 调用远程接口或本地 SQLite 个人物料库拉取满足条件的所有数据
+                var items = isPersonal
+                    ? Services.PersonalComponentDbService.QueryManageComponents(brand, nameKeyword)
+                    : ComponentApiClient.QueryManageComponents(brand, nameKeyword);
 
                 dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null || app.ActiveWorkbook == null)
@@ -172,7 +177,7 @@ namespace ExcelAddInDemo
                     {
                         result.Success = true;
                         result.SuccessCount = 0;
-                        result.Message = "未查询到符合条件的元器件数据。";
+                        result.Message = isPersonal ? "未在本地个人库中查询到符合条件的元器件数据。" : "未在云端库中查询到符合条件的元器件数据。";
                         return result;
                     }
 
@@ -180,6 +185,8 @@ namespace ExcelAddInDemo
                     int rowCount = items.Count;
                     int colCount = _manageColCfg.TotalColumns;
                     object[,] dataArray = new object[rowCount, colCount];
+
+                    string statusTag = isPersonal ? "已同步(个人库)" : "已同步(云端)"; // --硬编码-- 同步标识
 
                     for (int i = 0; i < rowCount; i++)
                     {
@@ -195,7 +202,7 @@ namespace ExcelAddInDemo
                         dataArray[i, _manageColCfg.Param1Col - 1] = item.Param1 ?? string.Empty;
                         dataArray[i, _manageColCfg.Param2Col - 1] = item.Param2 ?? string.Empty;
                         dataArray[i, _manageColCfg.RemarkCol - 1] = item.Remark ?? string.Empty;
-                        dataArray[i, _manageColCfg.StatusCol - 1] = "已同步";
+                        dataArray[i, _manageColCfg.StatusCol - 1] = statusTag;
                     }
 
                     // 4. 一次性灌入数据区域
@@ -219,7 +226,9 @@ namespace ExcelAddInDemo
 
                     result.Success = true;
                     result.SuccessCount = rowCount;
-                    result.Message = $"成功拉取并呈现 {rowCount} 条元器件数据！";
+                    result.Message = isPersonal
+                        ? $"成功拉取并呈现 {rowCount} 条【本地个人物料库】数据！"
+                        : $"成功拉取并呈现 {rowCount} 条【云端公共物料库】数据！";
                 }
                 finally
                 {
@@ -230,7 +239,7 @@ namespace ExcelAddInDemo
             catch (Exception ex)
             {
                 result.Success = false;
-                result.Message = $"拉取数据异常: {ex.Message}";
+                result.Message = $"拉取元器件数据异常: {ex.Message}";
                 LogHelper.WriteLog($"[ExcelServices] LoadComponentsToSheet 异常: {ex.Message}");
             }
             return result;
@@ -289,13 +298,16 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 对当前选中的 1 行或多行执行精准【更新】到云端
+        /// 对当前选中的 1 行或多行元器件执行【更新】保存操作 (支持个人物料库 SQLite 或云端 WebAPI)
         /// </summary>
-        public static ComponentManageActionResult UpdateSelectedComponents()
+        /// <param name="dataSource">物料数据源 ("cloud" 或 "personal")</param>
+        public static ComponentManageActionResult UpdateSelectedComponents(string dataSource = "cloud")
         {
             var result = new ComponentManageActionResult();
             try
             {
+                bool isPersonal = string.Equals(dataSource, "personal", StringComparison.OrdinalIgnoreCase);
+
                 dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null || app.ActiveSheet == null)
                 {
@@ -367,17 +379,29 @@ namespace ExcelAddInDemo
                         Remark = Convert.ToString(rowValues[1, _manageColCfg.RemarkCol])?.Trim()
                     };
 
-                    // 调用 API 更新
-                    var updated = ComponentApiClient.UpdateComponent(updateDto);
-                    if (updated != null)
+                    // 根据当前数据源执行更新
+                    bool isOk = false;
+                    if (isPersonal)
+                    {
+                        isOk = Services.PersonalComponentDbService.UpdateComponents(new List<UpdateComponentApiRequest> { updateDto }) > 0;
+                    }
+                    else
+                    {
+                        var updated = ComponentApiClient.UpdateComponent(updateDto);
+                        isOk = updated != null;
+                    }
+
+                    if (isOk)
                     {
                         successCount++;
-                        updateResults.Add((row, true, $"✓ 更新成功 {DateTime.Now:HH:mm:ss}"));
+                        string tag = isPersonal ? "个人库" : "云端";
+                        updateResults.Add((row, true, $"✓ 更新成功({tag}) {DateTime.Now:HH:mm:ss}"));
                     }
                     else
                     {
                         failCount++;
-                        updateResults.Add((row, false, "❌ 云端更新失败"));
+                        string errTag = isPersonal ? "❌ 本地个人库更新失败" : "❌ 云端更新失败";
+                        updateResults.Add((row, false, errTag));
                     }
                 }
 
@@ -414,13 +438,16 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 对当前选中的 1 行或多行内容执行【新增】到云端，并自动将新分配的系统 ID 回填至 A 列
+        /// 对当前选中的 1 行或多行内容执行【新增】保存操作，并自动将新分配的主键 ID 回填至 A 列 (支持个人库 SQLite 或云端 WebAPI)
         /// </summary>
-        public static ComponentManageActionResult CreateSelectedComponents()
+        /// <param name="dataSource">物料数据源 ("cloud" 或 "personal")</param>
+        public static ComponentManageActionResult CreateSelectedComponents(string dataSource = "cloud")
         {
             var result = new ComponentManageActionResult();
             try
             {
+                bool isPersonal = string.Equals(dataSource, "personal", StringComparison.OrdinalIgnoreCase);
+
                 dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null || app.ActiveSheet == null)
                 {
@@ -481,17 +508,29 @@ namespace ExcelAddInDemo
                         Remark = Convert.ToString(rowValues[1, _manageColCfg.RemarkCol])?.Trim()
                     };
 
-                    // 调用 API 新增
-                    var created = ComponentApiClient.CreateComponent(createDto);
+                    // 调用 API 或本地 SQLite 新增
+                    ComponentApiDto? created = null;
+                    if (isPersonal)
+                    {
+                        var createdList = Services.PersonalComponentDbService.CreateComponents(new List<CreateComponentApiRequest> { createDto });
+                        created = createdList.FirstOrDefault();
+                    }
+                    else
+                    {
+                        created = ComponentApiClient.CreateComponent(createDto);
+                    }
+
                     if (created != null && created.Id > 0)
                     {
                         successCount++;
-                        createResults.Add((row, true, created.Id, $"✓ 新增成功 (ID:{created.Id})"));
+                        string tag = isPersonal ? "个人库" : "云端";
+                        createResults.Add((row, true, created.Id, $"✓ 新增成功({tag} ID:{created.Id})"));
                     }
                     else
                     {
                         failCount++;
-                        createResults.Add((row, false, null, "❌ 云端新增失败"));
+                        string errTag = isPersonal ? "❌ 本地个人库新增失败" : "❌ 云端新增失败";
+                        createResults.Add((row, false, null, errTag));
                     }
                 }
 
@@ -524,7 +563,8 @@ namespace ExcelAddInDemo
                 result.Success = failCount == 0;
                 result.SuccessCount = successCount;
                 result.FailCount = failCount;
-                result.Message = $"选中行新增完成：成功新增 {successCount} 条物料 (ID已自动赋码回填)，失败 {failCount} 条。";
+                string srcName = isPersonal ? "本地个人库" : "云端";
+                result.Message = $"选中行新增完成：成功 {successCount} 条，失败 {failCount} 条 ({srcName})。";
             }
             catch (Exception ex)
             {
@@ -536,13 +576,16 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 对当前选中的 1 行或多行执行【删除】(同步调用云端接口并在 Excel 中移除整行)
+        /// 对当前选中的 1 行或多行执行【删除】(同步调用个人库 SQLite 或云端接口并在 Excel 中移除整行)
         /// </summary>
-        public static ComponentManageActionResult DeleteSelectedComponents()
+        /// <param name="dataSource">物料数据源 ("cloud" 或 "personal")</param>
+        public static ComponentManageActionResult DeleteSelectedComponents(string dataSource = "cloud")
         {
             var result = new ComponentManageActionResult();
             try
             {
+                bool isPersonal = string.Equals(dataSource, "personal", StringComparison.OrdinalIgnoreCase);
+
                 dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null || app.ActiveSheet == null)
                 {
@@ -572,7 +615,7 @@ namespace ExcelAddInDemo
                     dynamic idCell = sheet.Cells[row, _manageColCfg.IdCol];
                     string idStr = Convert.ToString(idCell.Value2)?.Trim() ?? string.Empty;
 
-                    // 若无有效 ID，说明尚未存入云端，直接在本地移除行
+                    // 若无有效 ID，说明尚未存入数据库，直接在本地移除行
                     if (!int.TryParse(idStr, out int id) || id <= 0)
                     {
                         successCount++;
@@ -580,8 +623,17 @@ namespace ExcelAddInDemo
                         continue;
                     }
 
-                    // 调用云端接口执行硬删除
-                    bool deleted = ComponentApiClient.DeleteComponent(id);
+                    // 调用本地个人库或云端接口执行硬删除
+                    bool deleted = false;
+                    if (isPersonal)
+                    {
+                        deleted = Services.PersonalComponentDbService.DeleteComponents(new List<int> { id }) > 0;
+                    }
+                    else
+                    {
+                        deleted = ComponentApiClient.DeleteComponent(id);
+                    }
+
                     if (deleted)
                     {
                         successCount++;
@@ -591,7 +643,7 @@ namespace ExcelAddInDemo
                     {
                         failCount++;
                         dynamic statusCell = sheet.Cells[row, _manageColCfg.StatusCol];
-                        statusCell.Value2 = "❌ 云端删除失败";
+                        statusCell.Value2 = isPersonal ? "❌ 本地个人库删除失败" : "❌ 云端删除失败";
                         statusCell.Font.Color = 0x0000FF; // 红色 --硬编码--
                     }
                 }
@@ -616,7 +668,8 @@ namespace ExcelAddInDemo
                 result.Success = failCount == 0;
                 result.SuccessCount = successCount;
                 result.FailCount = failCount;
-                result.Message = $"选中行删除完成：已成功删除 {successCount} 条记录，失败 {failCount} 条。";
+                string delSrcName = isPersonal ? "本地个人物料库" : "云端公共库";
+                result.Message = $"选中行删除完成：从【{delSrcName}】及 Excel 中成功移除 {successCount} 条记录，失败 {failCount} 条。";
             }
             catch (Exception ex)
             {

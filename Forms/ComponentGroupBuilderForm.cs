@@ -267,7 +267,21 @@ namespace ExcelAddInDemo
                         }, JsonOptions));
                         break;
 
-                    // 8. 窗体窗口拖拽
+                    // 8. 窗口平滑位移拖拽 (基于非模态物理增量，彻底杜绝 Win32 模态循环死锁导致 Excel 崩溃)
+                    case "moveWindow":
+                        int deltaX = root.TryGetProperty("deltaX", out var dxProp) ? dxProp.GetInt32() : 0;
+                        int deltaY = root.TryGetProperty("deltaY", out var dyProp) ? dyProp.GetInt32() : 0;
+                        if (deltaX != 0 || deltaY != 0)
+                        {
+                            SafeInvoke(() =>
+                            {
+                                // 直接更新窗体屏幕坐标，微秒级响应且绝不挂起 STA 消息泵
+                                this.Location = new Point(this.Left + deltaX, this.Top + deltaY);
+                            });
+                        }
+                        break;
+
+                    // 8.1 窗体窗口拖拽 (旧版兼容兜底)
                     case "dragWindow":
                         SafeInvoke(() =>
                         {

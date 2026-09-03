@@ -137,22 +137,39 @@ namespace ExcelAddInDemo.Forms
                 {
                     // 1. 前端就绪，初始化品牌列表并探测当前选区
                     case "ready":
-                        var brands = _controller.GetBrandStats();
-                        var defaultNames = _controller.GetNamesByBrand(null);
+                        string initDs = root.TryGetProperty("dataSource", out var initDsp) ? initDsp.GetString() ?? "cloud" : "cloud";
+                        var brands = _controller.GetBrandStats(initDs);
+                        var defaultNames = _controller.GetNamesByBrand(null, initDs);
                         var selection = _controller.DetectSelection();
                         PostMessageToWeb(new
                         {
                             action = "initData",
+                            dataSource = initDs,
                             brands,
                             names = defaultNames,
                             selection
                         });
                         break;
 
-                    // 1.1 根据品牌获取对应的所有元器件名称
+                    // 1.1 切换数据源 (云端 vs 本地个人库)
+                    case "changeDataSource":
+                        string newDs = root.TryGetProperty("dataSource", out var ndsp) ? ndsp.GetString() ?? "cloud" : "cloud";
+                        var dsBrands = _controller.GetBrandStats(newDs);
+                        var dsNames = _controller.GetNamesByBrand(null, newDs);
+                        PostMessageToWeb(new
+                        {
+                            action = "dataSourceChanged",
+                            dataSource = newDs,
+                            brands = dsBrands,
+                            names = dsNames
+                        });
+                        break;
+
+                    // 1.2 根据品牌获取对应的所有元器件名称
                     case "getNamesByBrand":
                         string queryBrand = root.TryGetProperty("brand", out var qbp) ? qbp.GetString() ?? "" : "";
-                        var brandNames = _controller.GetNamesByBrand(queryBrand);
+                        string dsName = root.TryGetProperty("dataSource", out var dsn) ? dsn.GetString() ?? "cloud" : "cloud";
+                        var brandNames = _controller.GetNamesByBrand(queryBrand, dsName);
                         PostMessageToWeb(new
                         {
                             action = "namesResult",
@@ -171,11 +188,12 @@ namespace ExcelAddInDemo.Forms
                         });
                         break;
 
-                    // 3. 根据筛选条件拉取数据灌入 Excel 表格
+                    // 3. 根据筛选条件拉取数据灌入 Excel 表格 (支持云端与个人库)
                     case "loadComponents":
                         string brand = root.TryGetProperty("brand", out var bp) ? bp.GetString() ?? "" : "";
                         string keyword = root.TryGetProperty("keyword", out var kp) ? kp.GetString() ?? "" : "";
-                        var loadRes = _controller.LoadComponents(brand, keyword);
+                        string loadDs = root.TryGetProperty("dataSource", out var lds) ? lds.GetString() ?? "cloud" : "cloud";
+                        var loadRes = _controller.LoadComponents(brand, keyword, loadDs);
                         PostMessageToWeb(new
                         {
                             action = "loadResult",
@@ -183,9 +201,10 @@ namespace ExcelAddInDemo.Forms
                         });
                         break;
 
-                    // 4. 选中行精准【更新】
+                    // 4. 选中行精准【更新】(支持云端与个人库)
                     case "updateSelected":
-                        var updateRes = _controller.UpdateSelected();
+                        string updDs = root.TryGetProperty("dataSource", out var uds) ? uds.GetString() ?? "cloud" : "cloud";
+                        var updateRes = _controller.UpdateSelected(updDs);
                         PostMessageToWeb(new
                         {
                             action = "actionResult",
@@ -194,9 +213,10 @@ namespace ExcelAddInDemo.Forms
                         });
                         break;
 
-                    // 5. 选中行精准【新增】
+                    // 5. 选中行精准【新增】(支持云端与个人库)
                     case "createSelected":
-                        var createRes = _controller.CreateSelected();
+                        string crtDs = root.TryGetProperty("dataSource", out var cds) ? cds.GetString() ?? "cloud" : "cloud";
+                        var createRes = _controller.CreateSelected(crtDs);
                         PostMessageToWeb(new
                         {
                             action = "actionResult",
@@ -205,9 +225,10 @@ namespace ExcelAddInDemo.Forms
                         });
                         break;
 
-                    // 6. 选中行精准【删除】
+                    // 6. 选中行精准【删除】(支持云端与个人库)
                     case "deleteSelected":
-                        var deleteRes = _controller.DeleteSelected();
+                        string delDs = root.TryGetProperty("dataSource", out var dds) ? dds.GetString() ?? "cloud" : "cloud";
+                        var deleteRes = _controller.DeleteSelected(delDs);
                         PostMessageToWeb(new
                         {
                             action = "actionResult",
@@ -216,7 +237,24 @@ namespace ExcelAddInDemo.Forms
                         });
                         break;
 
-                    // 7. 窗口拖拽 (带物理鼠标状态校验与安全防护)
+                    // 7. 窗口平滑位移拖拽 (基于物理屏幕增量，纯非模态调度，彻底杜绝 Win32 模态循环死锁导致 Excel 崩溃)
+                    case "moveWindow":
+                        // 提取水平物理位移增量 deltaX
+                        int deltaX = root.TryGetProperty("deltaX", out var dxp) ? dxp.GetInt32() : 0;
+                        // 提取垂直物理位移增量 deltaY
+                        int deltaY = root.TryGetProperty("deltaY", out var dyp) ? dyp.GetInt32() : 0;
+                        // 仅当发生有效位移时调整窗口位置
+                        if (deltaX != 0 || deltaY != 0)
+                        {
+                            SafeInvoke(() =>
+                            {
+                                // 直接更新窗体屏幕坐标，微秒级响应且绝不挂起 STA 消息泵
+                                this.Location = new Point(this.Left + deltaX, this.Top + deltaY);
+                            });
+                        }
+                        break;
+
+                    // 7.1 旧版窗口拖拽指令兼容兜底 (带物理按键校验)
                     case "dragWindow":
                         SafeInvoke(() =>
                         {

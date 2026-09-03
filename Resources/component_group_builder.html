@@ -56,6 +56,7 @@
       user-select: none;
       z-index: 1000;
       flex-shrink: 0;
+      touch-action: none; /* 禁用系统手势干扰，保障平滑拖拽 */
     }
 
     .window-title {
@@ -571,8 +572,8 @@
 </head>
 <body>
   <div id="app">
-    <!-- 顶部拖拽标题栏 -->
-    <div class="window-header" @mousedown="onHeaderMouseDown" @dblclick="toggleMaximize">
+    <!-- 顶部拖拽标题栏 (采用 PointerEvents 平滑位移，绝无模态死锁) -->
+    <div class="window-header" @pointerdown="onHeaderPointerDown" @dblclick="toggleMaximize">
       <div class="window-title">
         <i class="fa-solid fa-network-wired"></i>
         <span>二次元件组动态规则管道构建器</span>
@@ -1604,13 +1605,74 @@
           });
         };
 
-        // 窗口控制 (仅在点击空白标题栏区域时触发拖拽)
-        const onHeaderMouseDown = (e) => {
+        // 窗口无模态平滑拖拽处理 (基于 PointerEvents + rAF 节流，彻底杜绝 Win32 模态循环死锁与 Excel 崩溃)
+        const onHeaderPointerDown = (e) => {
+          // 仅响应鼠标左键 (button === 0)
+          if (e.button !== 0) return;
+          // 排除点击右上角操作按钮与窗口控制按钮区域
           if (e && e.target && e.target.closest('.header-actions, .window-controls, .ctrl-btn, .el-button')) {
             return;
           }
-          postMessageToHost({ action: 'dragWindow' });
+
+          // 获取物理像素与 CSS 像素缩放比率 (保障高分屏精准 1:1 跟随)
+          const dpi = window.devicePixelRatio || 1;
+          let lastScreenX = e.screenX;
+          let lastScreenY = e.screenY;
+          let pendingDeltaX = 0;
+          let pendingDeltaY = 0;
+          let rafId = null;
+
+          try {
+            e.target.setPointerCapture(e.pointerId);
+          } catch (_) {}
+
+          const onPointerMove = (moveEvt) => {
+            pendingDeltaX += (moveEvt.screenX - lastScreenX) * dpi;
+            pendingDeltaY += (moveEvt.screenY - lastScreenY) * dpi;
+            lastScreenX = moveEvt.screenX;
+            lastScreenY = moveEvt.screenY;
+
+            if (!rafId) {
+              rafId = requestAnimationFrame(() => {
+                const dx = Math.round(pendingDeltaX);
+                const dy = Math.round(pendingDeltaY);
+                if (dx !== 0 || dy !== 0) {
+                  postMessageToHost({ action: 'moveWindow', deltaX: dx, deltaY: dy });
+                  pendingDeltaX = 0;
+                  pendingDeltaY = 0;
+                }
+                rafId = null;
+              });
+            }
+          };
+
+          const onPointerUp = () => {
+            try {
+              e.target.releasePointerCapture(e.pointerId);
+            } catch (_) {}
+            if (rafId) {
+              cancelAnimationFrame(rafId);
+              rafId = null;
+            }
+            const dx = Math.round(pendingDeltaX);
+            const dy = Math.round(pendingDeltaY);
+            if (dx !== 0 || dy !== 0) {
+              postMessageToHost({ action: 'moveWindow', deltaX: dx, deltaY: dy });
+              pendingDeltaX = 0;
+              pendingDeltaY = 0;
+            }
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+            window.removeEventListener('pointercancel', onPointerUp);
+          };
+
+          window.addEventListener('pointermove', onPointerMove);
+          window.addEventListener('pointerup', onPointerUp);
+          window.addEventListener('pointercancel', onPointerUp);
         };
+
+        // 兼容旧版别名
+        const onHeaderMouseDown = onHeaderPointerDown;
         const minimizeWindow = () => {
           postMessageToHost({ action: 'minimize' });
         };
@@ -1714,6 +1776,7 @@
           loadActiveCabinet,
           runSandboxTest,
           executeBatchGenerate,
+          onHeaderPointerDown,
           onHeaderMouseDown,
           minimizeWindow,
           toggleMaximize,

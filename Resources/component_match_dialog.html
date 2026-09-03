@@ -62,6 +62,7 @@
       cursor: move;
       flex-shrink: 0;
       box-shadow: 0 2px 8px rgba(0, 150, 136, 0.25);
+      touch-action: none; /* 禁用系统手势干扰，保障平滑拖拽 */
     }
 
     .title-bar .title-text {
@@ -271,8 +272,8 @@
 
 <body>
   <div id="app">
-    <!-- 顶部标题栏 (按住可拖拽移动窗口) -->
-    <div v-show="!isCollapsed" class="title-bar" @mousedown="onTitleBarMouseDown">
+    <!-- 顶部标题栏 (采用 PointerEvents 平滑位移，绝无模态死锁) -->
+    <div v-show="!isCollapsed" class="title-bar" @pointerdown="onTitleBarPointerDown">
       <div class="title-text">
         <i class="fa-solid fa-sliders"></i>
         <span>元器件物料匹配与品牌规则设置</span>
@@ -284,12 +285,30 @@
 
     <!-- 主滚动容器 -->
     <div v-show="!isCollapsed" class="content-container">
+      <!-- 0. 物料数据源设置 (Data Source) -->
+      <div class="section-card" style="padding: 10px 14px;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div style="font-size: 13px; font-weight: 600; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-database" style="color: #009688;"></i>
+            <span>物料数据源 (Data Source)</span>
+          </div>
+          <el-radio-group v-model="filterConfig.dataSource" size="small" @change="onDataSourceChange" class="datasource-group">
+            <el-radio-button label="cloud">
+              <i class="fa-solid fa-cloud" style="margin-right: 4px;"></i>云端公共库
+            </el-radio-button>
+            <el-radio-button label="personal">
+              <i class="fa-solid fa-laptop-file" style="margin-right: 4px;"></i>本地个人库
+            </el-radio-button>
+          </el-radio-group>
+        </div>
+      </div>
+
       <!-- 1. 目标品牌筛选模块 -->
       <div class="section-card">
         <div class="section-header">
           <div class="section-title">
             <i class="fa-solid fa-tags"></i>
-            <span>1. 目标品牌偏好设置 (Brand Filter)</span>
+            <span>1. 目标品牌偏好设置 ({{ filterConfig.dataSource === 'personal' ? '个人库' : '云端库' }})</span>
           </div>
           <el-tag size="small" type="info" effect="plain">{{ brands.length }} 个品牌可选</el-tag>
         </div>
@@ -300,7 +319,7 @@
             <span class="brand-name">全部品牌</span>
             <span class="brand-count">(不限)</span>
           </div>
-          <!-- 动态从 WebAPI 取得的各品牌 -->
+          <!-- 动态从当前数据源取得的各品牌 -->
           <div v-for="b in brands" :key="b.brand" class="brand-pill"
             :class="{ active: filterConfig.selectedBrand === b.brand }" @click="filterConfig.selectedBrand = b.brand">
             <span class="brand-name">{{ b.brand }}</span>
@@ -390,8 +409,8 @@
       </div>
     </div>
 
-    <!-- 底部操作栏 (折叠后作为轻量悬浮条) -->
-    <div class="footer-bar" :class="{ collapsed: isCollapsed }" @mousedown="onFooterMouseDown">
+    <!-- 底部操作栏 (折叠后作为轻量悬浮条，支持平滑拖拽) -->
+    <div class="footer-bar" :class="{ collapsed: isCollapsed }" @pointerdown="onFooterPointerDown">
       <!-- 左侧：折叠/展开按钮 + 搜索弹起开关 -->
       <div style="display: flex; align-items: center; gap: 6px;">
         <!-- 折叠/展开切换按钮 -->
@@ -412,8 +431,11 @@
         </el-tooltip>
       </div>
 
-      <!-- 右侧：操作按钮组 (保存、立即匹配选区、折叠时关闭小按钮) -->
-      <div style="display: flex; gap: 8px; align-items: center;">
+      <!-- 右侧：操作按钮组 (管理物料、保存、立即匹配选区、折叠时关闭小按钮) -->
+      <div style="display: flex; gap: 6px; align-items: center;">
+        <el-button size="small" text @click="openComponentManage" title="打开元器件数据管理窗口" style="color: #00796b; padding: 4px 8px;">
+          <i class="fa-solid fa-boxes-stacked" style="margin-right: 4px;"></i>管理物料
+        </el-button>
         <el-button type="primary" size="small" plain @click="saveConfig">
           <i class="fa-solid fa-floppy-disk" style="margin-right: 4px;"></i>保存
         </el-button>
@@ -440,8 +462,9 @@
       setup() {
         // 品牌列表
         const brands = ref([]);
-        // 过滤配置对象 (包含品牌、必含规则及搜索弹起开关)
+        // 过滤配置对象 (包含数据源、品牌、必含规则及搜索弹起开关)
         const filterConfig = reactive({
+          dataSource: 'cloud',
           selectedBrand: '',
           mustContainRules: [],
           enableSearchOverlay: false
@@ -486,10 +509,15 @@
             case 'initData':
               if (msg.brands) brands.value = msg.brands;
               if (msg.config) {
+                filterConfig.dataSource = msg.config.dataSource || 'cloud';
                 filterConfig.selectedBrand = msg.config.selectedBrand || '';
                 filterConfig.mustContainRules = msg.config.mustContainRules || [];
                 filterConfig.enableSearchOverlay = !!msg.config.enableSearchOverlay;
               }
+              break;
+
+            case 'brandsLoaded':
+              if (msg.brands) brands.value = msg.brands;
               break;
 
             case 'testResult':
@@ -514,6 +542,17 @@
               ElementPlus.ElMessage.success('匹配规则配置已成功保存！');
               break;
           }
+        };
+
+        // 切换物料数据源 (云端公共库 vs 本地个人物料库)
+        const onDataSourceChange = (val) => {
+          filterConfig.selectedBrand = '';
+          postToHost('changeDataSource', { dataSource: val });
+        };
+
+        // 打开元器件数据管理窗口
+        const openComponentManage = () => {
+          postToHost('openComponentManage');
         };
 
         // 添加必含约束行
@@ -546,14 +585,17 @@
             pole: testForm.pole,
             tripMode: testForm.trip,
             brand: filterConfig.selectedBrand,
-            rules: JSON.parse(JSON.stringify(filterConfig.mustContainRules))
+            rules: JSON.parse(JSON.stringify(filterConfig.mustContainRules)),
+            dataSource: filterConfig.dataSource
           });
         };
 
         // 立即执行当前选区批量匹配
         const executeBatch = () => {
           isExecuting.value = true;
-          statusMsg.value = '正在从远程 WebAPI 检索物料并回填 Excel...';
+          statusMsg.value = filterConfig.dataSource === 'personal'
+            ? '正在从本地个人物料库检索并回填 Excel...'
+            : '正在从云端商城 WebAPI 检索物料并回填 Excel...';
           postToHost('executeBatch', {
             config: JSON.parse(JSON.stringify(filterConfig))
           });
@@ -568,18 +610,80 @@
           postToHost('setCollapseState', { collapsed: isCollapsed.value });
         };
 
-        // 底部栏鼠标按下处理 (折叠状态下支持按住空白处拖拽移动窗口)
-        const onFooterMouseDown = (e) => {
+        // 窗口无模态平滑拖拽处理 (基于 PointerEvents + rAF 节流，彻底杜绝 Win32 模态循环死锁与 Excel 崩溃)
+        const onTitleBarPointerDown = (e) => {
+          // 仅响应鼠标主键 (button === 0)
+          if (e.button !== 0) return;
+          // 排除点击控制按钮区域
+          if (e.target.closest('.ctrl-btn') || e.target.closest('.close-btn')) return;
+
+          // 获取物理像素与 CSS 像素缩放比率 (保障高分屏精准 1:1 跟随)
+          const dpi = window.devicePixelRatio || 1;
+          let lastScreenX = e.screenX;
+          let lastScreenY = e.screenY;
+          let pendingDeltaX = 0;
+          let pendingDeltaY = 0;
+          let rafId = null;
+
+          try {
+            e.target.setPointerCapture(e.pointerId);
+          } catch (_) {}
+
+          const onPointerMove = (moveEvt) => {
+            pendingDeltaX += (moveEvt.screenX - lastScreenX) * dpi;
+            pendingDeltaY += (moveEvt.screenY - lastScreenY) * dpi;
+            lastScreenX = moveEvt.screenX;
+            lastScreenY = moveEvt.screenY;
+
+            if (!rafId) {
+              rafId = requestAnimationFrame(() => {
+                const dx = Math.round(pendingDeltaX);
+                const dy = Math.round(pendingDeltaY);
+                if (dx !== 0 || dy !== 0) {
+                  postToHost('moveWindow', { deltaX: dx, deltaY: dy });
+                  pendingDeltaX = 0;
+                  pendingDeltaY = 0;
+                }
+                rafId = null;
+              });
+            }
+          };
+
+          const onPointerUp = () => {
+            try {
+              e.target.releasePointerCapture(e.pointerId);
+            } catch (_) {}
+            if (rafId) {
+              cancelAnimationFrame(rafId);
+              rafId = null;
+            }
+            const dx = Math.round(pendingDeltaX);
+            const dy = Math.round(pendingDeltaY);
+            if (dx !== 0 || dy !== 0) {
+              postToHost('moveWindow', { deltaX: dx, deltaY: dy });
+              pendingDeltaX = 0;
+              pendingDeltaY = 0;
+            }
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+            window.removeEventListener('pointercancel', onPointerUp);
+          };
+
+          window.addEventListener('pointermove', onPointerMove);
+          window.addEventListener('pointerup', onPointerUp);
+          window.addEventListener('pointercancel', onPointerUp);
+        };
+
+        // 底部栏鼠标按下处理 (折叠状态下支持按住空白处平滑拖拽移动窗口)
+        const onFooterPointerDown = (e) => {
           if (isCollapsed.value && !e.target.closest('button') && !e.target.closest('.el-checkbox') && !e.target.closest('.el-switch')) {
-            postToHost('dragWindow');
+            onTitleBarPointerDown(e);
           }
         };
 
-        // 窗口拖拽
-        const onTitleBarMouseDown = (e) => {
-          if (e.target.closest('.ctrl-btn')) return;
-          postToHost('dragWindow');
-        };
+        // 兼容旧版别名
+        const onTitleBarMouseDown = onTitleBarPointerDown;
+        const onFooterMouseDown = onFooterPointerDown;
 
         // 关闭窗口
         const onClose = () => {
@@ -601,6 +705,8 @@
           isExecuting,
           statusMsg,
           isCollapsed,
+          onDataSourceChange,
+          openComponentManage,
           toggleCollapse,
           onFooterMouseDown,
           addRule,
@@ -608,7 +714,10 @@
           saveConfig,
           runTest,
           executeBatch,
+          onTitleBarPointerDown,
+          onFooterPointerDown,
           onTitleBarMouseDown,
+          onFooterMouseDown,
           onClose
         };
       }

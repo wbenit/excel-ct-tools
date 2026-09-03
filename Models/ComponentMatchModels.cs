@@ -42,6 +42,9 @@ namespace ExcelAddInDemo.Models
     /// </summary>
     public class ComponentMatchFilterConfig
     {
+        // 当前选中的物料数据源 ("cloud": 云端公共库, "personal": 本地个人物料库)
+        public string DataSource { get; set; } = "cloud"; // --硬编码-- 默认物料数据源为云端
+
         // 当前选中的目标品牌筛选 (为空表示匹配全部品牌)
         public string SelectedBrand { get; set; } = string.Empty;
 

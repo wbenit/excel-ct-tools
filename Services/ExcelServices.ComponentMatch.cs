@@ -270,15 +270,17 @@ namespace ExcelAddInDemo
                             continue;
                         }
 
-                        // 调用 WebAPI 客户端根据【名称、电流、极数、脱扣、品牌、必含字段】反查真实数据库
-                        var matchedItems = ComponentApiClient.QueryComponents(
-                            rawName,
-                            minCur,
-                            pole,
-                            tripMode,
-                            selectedBrand,
-                            mustContainRules
-                        );
+                        // 调用 WebAPI 客户端或本地 SQLite 个人物料库反查真实数据库
+                        var matchedItems = string.Equals(activeFilterCfg.DataSource, "personal", StringComparison.OrdinalIgnoreCase)
+                            ? Services.PersonalComponentDbService.SearchComponents(null, rawName, minCur, pole, tripMode, selectedBrand, mustContainRules)
+                            : ComponentApiClient.QueryComponents(
+                                rawName,
+                                minCur,
+                                pole,
+                                tripMode,
+                                selectedBrand,
+                                mustContainRules
+                            );
 
                         // =================================================================
                         // 分支 1: 查询到唯一值 (Count == 1) -> 完整自动回填各字段

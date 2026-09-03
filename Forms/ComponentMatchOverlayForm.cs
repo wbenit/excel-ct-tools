@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Windows.Forms;
 using ExcelAddInDemo.Models;
+using ExcelAddInDemo.Services;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -206,6 +207,7 @@ namespace ExcelAddInDemo.Forms
                     cellParams = _cellParams,
                     filterBrand = _filterConfig.SelectedBrand ?? string.Empty,
                     activeMustRules,
+                    dataSource = _filterConfig.DataSource ?? "cloud",
                     loading = false
                 });
                 return;
@@ -219,6 +221,7 @@ namespace ExcelAddInDemo.Forms
                 cellParams = _cellParams,
                 filterBrand = _filterConfig.SelectedBrand ?? string.Empty,
                 activeMustRules,
+                dataSource = _filterConfig.DataSource ?? "cloud",
                 loading = true
             });
 
@@ -233,15 +236,34 @@ namespace ExcelAddInDemo.Forms
             {
                 try
                 {
-                    var items = await ComponentApiClient.SearchComponentsAsync(
-                        null,
-                        cp.Name,
-                        cp.Current,
-                        cp.Pole,
-                        cp.TripMode,
-                        fc.SelectedBrand,
-                        fc.MustContainRules
-                    ).ConfigureAwait(false);
+                    List<ComponentApiDto> items;
+                    bool isPersonal = string.Equals(fc.DataSource, "personal", StringComparison.OrdinalIgnoreCase);
+                    if (isPersonal)
+                    {
+                        // 从本地 SQLite 个人物料库高速检索
+                        items = PersonalComponentDbService.SearchComponents(
+                            null,
+                            cp.Name,
+                            cp.Current,
+                            cp.Pole,
+                            cp.TripMode,
+                            fc.SelectedBrand,
+                            fc.MustContainRules
+                        );
+                    }
+                    else
+                    {
+                        // 异步调用云端商城 WebAPI 检索
+                        items = await ComponentApiClient.SearchComponentsAsync(
+                            null,
+                            cp.Name,
+                            cp.Current,
+                            cp.Pole,
+                            cp.TripMode,
+                            fc.SelectedBrand,
+                            fc.MustContainRules
+                        ).ConfigureAwait(false);
+                    }
 
                     // 校验请求版本，丢弃过期结果
                     if (reqId == Interlocked.Read(ref _latestSearchReqId))
@@ -288,28 +310,67 @@ namespace ExcelAddInDemo.Forms
                         PushInitialCandidates();
                         break;
 
-                    // 2. 即时模糊搜索 (全异步非阻塞 + 请求防竞态版本保护)
+                    // 2. 即时模糊搜索 (全异步非阻塞 + 请求防竞态版本保护 + 支持个人库与云端分流 + 临时必含规则覆盖)
                     case "searchKeyword":
                         string kw = root.TryGetProperty("keyword", out var kwProp) ? kwProp.GetString() ?? "" : "";
+                        // 自增请求计数器，防止快速打字异步响应乱序覆盖
                         long currentReqId = Interlocked.Increment(ref _searchReqCounter);
                         _latestSearchReqId = currentReqId;
 
                         var searchCp = _cellParams;
                         var searchFc = _filterConfig;
 
+                        // 解析前端当前过滤管道传入的最新必含规则 (支持用户快捷删除/编辑后的临时覆盖)
+                        List<MustContainRule> effectiveMustRules = searchFc.MustContainRules;
+                        if (root.TryGetProperty("overrideMustRules", out var overrideProp) && overrideProp.ValueKind == JsonValueKind.Array)
+                        {
+                            // 构建临时生效的必含规则集合 (模式 B：临时过滤不直接篡改全局配置文件)
+                            var customRules = new List<MustContainRule>();
+                            foreach (var elem in overrideProp.EnumerateArray())
+                            {
+                                // 提取非空白关键字文本
+                                string ruleKw = elem.GetString() ?? string.Empty;
+                                if (!string.IsNullOrWhiteSpace(ruleKw))
+                                {
+                                    // 添加为已启用的临时必含约束项
+                                    customRules.Add(new MustContainRule { Keyword = ruleKw.Trim(), Enabled = true });
+                                }
+                            }
+                            effectiveMustRules = customRules;
+                        }
+
                         Task.Run(async () =>
                         {
                             try
                             {
-                                var searchResults = await ComponentApiClient.SearchComponentsAsync(
-                                    kw,
-                                    searchCp.Name,
-                                    searchCp.Current,
-                                    searchCp.Pole,
-                                    searchCp.TripMode,
-                                    searchFc.SelectedBrand,
-                                    searchFc.MustContainRules
-                                ).ConfigureAwait(false);
+                                List<ComponentApiDto> searchResults;
+                                bool isPersonal = string.Equals(searchFc.DataSource, "personal", StringComparison.OrdinalIgnoreCase);
+                                if (isPersonal)
+                                {
+                                    // 路由到本地 SQLite 个人物料库执行模糊查询 (内置无匹配时自动降级放宽约束，支持动态必含规则)
+                                    searchResults = PersonalComponentDbService.SearchComponents(
+                                        kw,
+                                        searchCp.Name,
+                                        searchCp.Current,
+                                        searchCp.Pole,
+                                        searchCp.TripMode,
+                                        searchFc.SelectedBrand,
+                                        effectiveMustRules
+                                    );
+                                }
+                                else
+                                {
+                                    // 异步调用云端商城 WebAPI 执行动态必含规则约束检索
+                                    searchResults = await ComponentApiClient.SearchComponentsAsync(
+                                        kw,
+                                        searchCp.Name,
+                                        searchCp.Current,
+                                        searchCp.Pole,
+                                        searchCp.TripMode,
+                                        searchFc.SelectedBrand,
+                                        effectiveMustRules
+                                    ).ConfigureAwait(false);
+                                }
 
                                 // 仅当返回结果是最新一次搜索时才推送到前端，彻底消除数据跳变
                                 if (currentReqId == Interlocked.Read(ref _latestSearchReqId))
@@ -332,6 +393,38 @@ namespace ExcelAddInDemo.Forms
                         });
                         break;
 
+                    // 2.1 用户在悬浮窗中点击“保存规则”将当前必含规则持久化为全局默认配置 (模式 B 双态分流)
+                    case "saveMustRules":
+                        if (root.TryGetProperty("rules", out var rulesProp) && rulesProp.ValueKind == JsonValueKind.Array)
+                        {
+                            // 构建需持久化保存的规则列表
+                            var updatedRules = new List<MustContainRule>();
+                            foreach (var elem in rulesProp.EnumerateArray())
+                            {
+                                // 过滤并提取关键字
+                                string ruleKw = elem.GetString() ?? string.Empty;
+                                if (!string.IsNullOrWhiteSpace(ruleKw))
+                                {
+                                    // 封装标准规则实体
+                                    updatedRules.Add(new MustContainRule { Keyword = ruleKw.Trim(), Enabled = true });
+                                }
+                            }
+
+                            // 更新当前运行时的过滤配置对象
+                            _filterConfig.MustContainRules = updatedRules;
+
+                            // 将最新配置持久化写入磁盘 JSON 配置文件
+                            ExcelServices.SaveComponentMatchFilterConfig(_filterConfig);
+
+                            // 回发确认消息通知前端更新快照与状态
+                            PostMessageToWeb(new
+                            {
+                                action = "mustRulesSaved",
+                                success = true
+                            });
+                        }
+                        break;
+
                     // 3. 用户确认选择某一条物料 -> 先隐藏窗口，后台执行 Excel 回填
                     case "selectComponent":
                         SafeInvoke(this.Hide);
@@ -346,7 +439,7 @@ namespace ExcelAddInDemo.Forms
                         }
                         break;
 
-                    // 3.1 用户请求加载当前物料的配套附件列表 (异步非阻塞)
+                    // 3.1 用户请求加载当前物料的配套附件列表 (支持个人库与云端分流)
                     case "getAttachments":
                         string brandToQuery = _filterConfig.SelectedBrand ?? _cellParams.Brand ?? string.Empty;
                         string nameToQuery = _cellParams.Name ?? string.Empty;
@@ -356,7 +449,19 @@ namespace ExcelAddInDemo.Forms
                         {
                             try
                             {
-                                var attachmentList = await ComponentApiClient.GetAttachmentsAsync(brandToQuery, nameToQuery, modelToQuery).ConfigureAwait(false);
+                                List<ComponentApiDto> attachmentList;
+                                bool isPersonal = string.Equals(_filterConfig.DataSource, "personal", StringComparison.OrdinalIgnoreCase);
+                                if (isPersonal)
+                                {
+                                    // 从本地 SQLite 查询配套附件
+                                    attachmentList = PersonalComponentDbService.GetAttachments(brandToQuery, nameToQuery, modelToQuery);
+                                }
+                                else
+                                {
+                                    // 从云端商城 WebAPI 异步查询配套附件
+                                    attachmentList = await ComponentApiClient.GetAttachmentsAsync(brandToQuery, nameToQuery, modelToQuery).ConfigureAwait(false);
+                                }
+
                                 SafeInvoke(() =>
                                 {
                                     PostMessageToWeb(new

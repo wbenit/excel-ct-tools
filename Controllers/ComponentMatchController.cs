@@ -10,12 +10,20 @@ namespace ExcelAddInDemo.Controllers
     public class ComponentMatchController
     {
         /// <summary>
-        /// 从远程商城 WebAPI 获取所有电气元器件品牌及其包含的数据条数统计
+        /// 获取电气元器件品牌统计列表 (支持根据数据源切换云端 WebAPI 或本地 SQLite 个人物料库)
         /// </summary>
+        /// <param name="dataSource">物料数据源: "cloud" (云端) 或 "personal" (本地个人库)</param>
         /// <returns>品牌及其数量统计列表</returns>
-        public List<BrandStatItemDto> GetBrandStats()
+        public List<BrandStatItemDto> GetBrandStats(string dataSource = "cloud")
         {
-            // 调用 API 客户端获取品牌统计
+            // 判断是否为本地个人物料库数据源
+            if (string.Equals(dataSource, "personal", StringComparison.OrdinalIgnoreCase))
+            {
+                // 调用本地 SQLite 个人物料库统计服务
+                return Services.PersonalComponentDbService.GetBrandStats();
+            }
+
+            // 默认调用远程 API 客户端获取品牌统计
             return ComponentApiClient.GetBrandStats();
         }
 
@@ -42,7 +50,7 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
-        /// 单条参数实时模拟匹配测试 (用于在前端界面即时预览过滤效果)
+        /// 单条参数实时模拟匹配测试 (支持选择云端或个人物料库)
         /// </summary>
         /// <param name="name">元器件名称</param>
         /// <param name="current">额定电流</param>
@@ -50,6 +58,7 @@ namespace ExcelAddInDemo.Controllers
         /// <param name="tripMode">脱扣方式</param>
         /// <param name="brand">指定品牌</param>
         /// <param name="rules">动态必含字段规则列表</param>
+        /// <param name="dataSource">物料数据源 ("cloud" 或 "personal")</param>
         /// <returns>匹配到的物料列表</returns>
         public List<ComponentApiDto> TestMatch(
             string name,
@@ -57,8 +66,16 @@ namespace ExcelAddInDemo.Controllers
             string pole,
             string tripMode,
             string? brand,
-            List<MustContainRule>? rules)
+            List<MustContainRule>? rules,
+            string dataSource = "cloud")
         {
+            // 判断是否针对个人物料库执行测试
+            if (string.Equals(dataSource, "personal", StringComparison.OrdinalIgnoreCase))
+            {
+                // 调用 SQLite 个人库检索
+                return Services.PersonalComponentDbService.SearchComponents(null, name, current, pole, tripMode, brand, rules);
+            }
+
             // 调用 API 客户端执行多维检索与管道过滤
             return ComponentApiClient.QueryComponents(name, current, pole, tripMode, brand, rules);
         }

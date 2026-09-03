@@ -57,6 +57,7 @@
       cursor: move;
       flex-shrink: 0;
       border-bottom: 1px solid #00796b;
+      touch-action: none; /* 禁用系统手势干扰，保障平滑拖拽 */
     }
 
     .window-title-box {
@@ -322,8 +323,8 @@
 
 <body>
   <div id="app">
-    <!-- 顶部标题栏 -->
-    <div class="window-header" @mousedown="onHeaderMouseDown">
+    <!-- 顶部标题栏 (采用 PointerEvents 平滑位移，绝无模态死锁) -->
+    <div class="window-header" @pointerdown="onHeaderPointerDown">
       <div class="window-title-box">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -738,7 +739,7 @@
                 <!-- 流程提示 -->
                 <div class="formula-hint-box" style="margin-top: 6px;">
                   <div>• <b>水平排判定</b>：出线塑壳台数 ≥ {{ rules.copperRules.mccbCountThreshold }}台 且 塑壳电流之和 ≥ {{ rules.copperRules.mccbCurrentSumThreshold }}A 时触发（排长 = (柜宽 - {{ rules.copperRules.widthDeduction }}) × 排数）。</div>
-                  <div>• <b>垂直母排判定</b>：未满足水平排时，若分路总电流之和 ≥ {{ rules.copperRules.branchTotalCurrentThreshold }}A 且 主进线电流 &gt; {{ rules.copperRules.mainSwitchCurrentThreshold }}A 时触发（排长 = [{{ rules.copperRules.verticalBaseLength }} + {{ rules.copperRules.loadExtensionRatio }} × (∑I / {{ rules.copperRules.loadExtensionStepCurrent }})] × 极数）。</div>
+                  <div>• <b>垂直母排判定</b>：未满足水平排时（塑壳台数不足或电流和不足），若分路总电流之和 ≥ {{ rules.copperRules.branchTotalCurrentThreshold }}A 且 主进线电流 &gt; {{ rules.copperRules.mainSwitchCurrentThreshold }}A 时触发（排长 = [{{ rules.copperRules.verticalBaseLength }} + {{ rules.copperRules.loadExtensionRatio }} × (∑I / {{ rules.copperRules.loadExtensionStepCurrent }})] × 极数）。</div>
                 </div>
               </div>
 
@@ -764,6 +765,11 @@
                     <span class="param-unit">A</span>
                   </div>
                   <div class="param-row-item">
+                    <span class="param-label">分支排单台长:</span>
+                    <el-input-number v-model="rules.copperRules.branchBusUnitLength" :step="0.1" :min="0.1" :max="5" size="small" style="width: 100px;" controls-position="right"></el-input-number>
+                    <span class="param-unit">米</span>
+                  </div>
+                  <div class="param-row-item">
                     <span class="param-label">垂直排基准展开长:</span>
                     <el-input-number v-model="rules.copperRules.verticalBaseLength" :step="0.1" :min="0.1" :max="5" size="small" style="width: 100px;" controls-position="right"></el-input-number>
                     <span class="param-unit">米</span>
@@ -783,7 +789,7 @@
                 <!-- 提示 -->
                 <div class="formula-hint-box" style="margin-top: 6px;">
                   <div>• <b>垂直 N 排</b>：包含特殊元器件或 4 极主开时触发（长度 = 柜高 - {{ rules.copperRules.heightDeduction }}mm）；<b>零地排</b>：标配（长度 = 柜宽 - {{ rules.copperRules.widthDeduction }}mm）。</div>
-                  <div>• <b>出线分支排</b>：出线额定电流 &gt; {{ rules.copperRules.branchMinCurrent }}A 的塑壳断路器台数 × 1.0 米。</div>
+                  <div>• <b>出线分支排</b>：仅在<b>满足水平排</b>且出线额定电流 &gt; {{ rules.copperRules.branchMinCurrent }}A 时触发（根据回路额定电流在规格表独立选型，每台按 {{ rules.copperRules.branchBusUnitLength || 1.0 }} 米计算）；<b>若未满足水平排，则出线分支不做排，全部按一次导线计算</b>。</div>
                 </div>
               </div>
 
@@ -963,6 +969,7 @@
             loadExtensionRatio: 0.1,
             loadExtensionStepCurrent: 150,
             branchMinCurrent: 100,
+            branchBusUnitLength: 1.0,
             mainBusSpecTable: [
               { maxCurrent: 100, spec: 'TMY-20*3', weightPerMeter: 0.534 },
               { maxCurrent: 160, spec: 'TMY-25*3', weightPerMeter: 0.668 },
@@ -1000,7 +1007,10 @@
               { maxCurrent: 63, spec: 'BV-10', crossSection: 10.0, pricePerMeter: 5.5 },
               { maxCurrent: 80, spec: 'BV-16', crossSection: 16.0, pricePerMeter: 8.5 },
               { maxCurrent: 100, spec: 'BV-25', crossSection: 25.0, pricePerMeter: 13.5 },
-              { maxCurrent: 125, spec: 'BV-35', crossSection: 35.0, pricePerMeter: 18.5 }
+              { maxCurrent: 125, spec: 'BV-35', crossSection: 35.0, pricePerMeter: 18.5 },
+              { maxCurrent: 160, spec: 'BV-50', crossSection: 50.0, pricePerMeter: 26.5 },
+              { maxCurrent: 250, spec: 'BV-70', crossSection: 70.0, pricePerMeter: 38.0 },
+              { maxCurrent: 9999, spec: 'BV-95', crossSection: 95.0, pricePerMeter: 52.0 }
             ],
             secondaryElements: [
               { keyword: '接触器', wireCount: 4, wirePrice: 0.8, laborPrice: 8.0 },
@@ -1033,13 +1043,76 @@
         const newSpecialComponentValue = ref('');
         const specialComponentInputRef = ref(null);
 
-        // 窗体拖拽移动
-        const onHeaderMouseDown = (e) => {
-          if (e.target.closest('.window-actions') || e.target.closest('.nav-tabs-box')) return;
-          if (window.chrome && window.chrome.webview) {
-            window.chrome.webview.postMessage({ action: 'dragMove' });
-          }
+        // 窗口无模态平滑拖拽处理 (基于 PointerEvents + rAF 节流，彻底杜绝 Win32 模态循环死锁与 Excel 崩溃)
+        const onHeaderPointerDown = (e) => {
+          // 仅响应鼠标左键 (button === 0)
+          if (e.button !== 0) return;
+          // 排除点击右上角控制按钮与视图切换卡区域
+          if (e.target.closest('.window-actions') || e.target.closest('.nav-tabs-box') || e.target.closest('.win-btn')) return;
+
+          // 获取物理像素与 CSS 像素缩放比率 (保障高分屏精准 1:1 跟随)
+          const dpi = window.devicePixelRatio || 1;
+          let lastScreenX = e.screenX;
+          let lastScreenY = e.screenY;
+          let pendingDeltaX = 0;
+          let pendingDeltaY = 0;
+          let rafId = null;
+
+          try {
+            e.target.setPointerCapture(e.pointerId);
+          } catch (_) {}
+
+          const onPointerMove = (moveEvt) => {
+            pendingDeltaX += (moveEvt.screenX - lastScreenX) * dpi;
+            pendingDeltaY += (moveEvt.screenY - lastScreenY) * dpi;
+            lastScreenX = moveEvt.screenX;
+            lastScreenY = moveEvt.screenY;
+
+            if (!rafId) {
+              rafId = requestAnimationFrame(() => {
+                const dx = Math.round(pendingDeltaX);
+                const dy = Math.round(pendingDeltaY);
+                if (dx !== 0 || dy !== 0) {
+                  if (window.chrome && window.chrome.webview) {
+                    window.chrome.webview.postMessage({ action: 'moveWindow', deltaX: dx, deltaY: dy });
+                  }
+                  pendingDeltaX = 0;
+                  pendingDeltaY = 0;
+                }
+                rafId = null;
+              });
+            }
+          };
+
+          const onPointerUp = () => {
+            try {
+              e.target.releasePointerCapture(e.pointerId);
+            } catch (_) {}
+            if (rafId) {
+              cancelAnimationFrame(rafId);
+              rafId = null;
+            }
+            const dx = Math.round(pendingDeltaX);
+            const dy = Math.round(pendingDeltaY);
+            if (dx !== 0 || dy !== 0) {
+              if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage({ action: 'moveWindow', deltaX: dx, deltaY: dy });
+              }
+              pendingDeltaX = 0;
+              pendingDeltaY = 0;
+            }
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+            window.removeEventListener('pointercancel', onPointerUp);
+          };
+
+          window.addEventListener('pointermove', onPointerMove);
+          window.addEventListener('pointerup', onPointerUp);
+          window.addEventListener('pointercancel', onPointerUp);
         };
+
+        // 兼容旧版调用
+        const onHeaderMouseDown = onHeaderPointerDown;
 
         const closeWindow = () => {
           if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage({ action: 'close' });
@@ -1090,6 +1163,7 @@
                   rules.copperRules.loadExtensionRatio = (cr.loadExtensionRatio !== undefined && cr.loadExtensionRatio !== null && cr.loadExtensionRatio > 0) ? cr.loadExtensionRatio : 0.1;
                   rules.copperRules.loadExtensionStepCurrent = (cr.loadExtensionStepCurrent !== undefined && cr.loadExtensionStepCurrent !== null && cr.loadExtensionStepCurrent > 0) ? cr.loadExtensionStepCurrent : 150;
                   rules.copperRules.branchMinCurrent = (cr.branchMinCurrent !== undefined && cr.branchMinCurrent !== null && cr.branchMinCurrent > 0) ? cr.branchMinCurrent : 100;
+                  rules.copperRules.branchBusUnitLength = (cr.branchBusUnitLength !== undefined && cr.branchBusUnitLength !== null && cr.branchBusUnitLength > 0) ? cr.branchBusUnitLength : 1.0;
 
                   if (Array.isArray(cr.specialComponentKeywords) && cr.specialComponentKeywords.length > 0) {
                     rules.copperRules.specialComponentKeywords = cr.specialComponentKeywords;
@@ -1319,6 +1393,7 @@
           newSpecialComponentVisible,
           newSpecialComponentValue,
           specialComponentInputRef,
+          onHeaderPointerDown,
           onHeaderMouseDown,
           closeWindow,
           onSheetChange,

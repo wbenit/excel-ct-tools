@@ -306,7 +306,21 @@ namespace ExcelAddInDemo
                         }
                         break;
 
-                    // 6. 窗口顶部拖动响应
+                    // 6. 窗口平滑位移拖拽 (基于非模态物理增量，彻底杜绝 Win32 模态循环死锁导致 Excel 崩溃)
+                    case "moveWindow":
+                        int deltaX = root.TryGetProperty("deltaX", out var dxProp) ? dxProp.GetInt32() : 0;
+                        int deltaY = root.TryGetProperty("deltaY", out var dyProp) ? dyProp.GetInt32() : 0;
+                        if (deltaX != 0 || deltaY != 0)
+                        {
+                            SafeInvoke(() =>
+                            {
+                                // 直接更新窗体屏幕坐标，微秒级响应且绝不挂起 STA 消息泵
+                                this.Location = new Point(this.Left + deltaX, this.Top + deltaY);
+                            });
+                        }
+                        break;
+
+                    // 6.1 窗口顶部拖动响应 (旧版兼容兜底)
                     case "windowDrag":
                         if (this.WindowState == FormWindowState.Normal)
                         {
@@ -361,6 +375,26 @@ namespace ExcelAddInDemo
                 }
             }
             catch { }
+        }
+
+        /// <summary>
+        /// 跨线程安全执行委托操作
+        /// </summary>
+        private void SafeInvoke(Action action)
+        {
+            // 检查窗体是否已经释放或句柄未创建
+            if (this.IsDisposed || !this.IsHandleCreated) return;
+            // 判断是否需要跨线程封送
+            if (this.InvokeRequired)
+            {
+                // 异步派发到 UI 线程执行
+                this.BeginInvoke(action);
+            }
+            else
+            {
+                // 当前即为 UI 线程直接执行
+                action();
+            }
         }
     }
 }

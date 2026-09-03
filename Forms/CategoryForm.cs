@@ -217,8 +217,34 @@ namespace ExcelAddInDemo.Forms
 
                 switch (action)
                 {
+                    // 窗口平滑位移拖拽 (基于物理屏幕增量，纯非模态调度，彻底杜绝 Win32 模态循环死锁导致 Excel 崩溃)
+                    case "moveWindow":
+                        // 提取水平与垂直物理位移增量 deltaX/deltaY (兼容 data 嵌套与扁平属性)
+                        int deltaX = 0;
+                        int deltaY = 0;
+                        if (root.TryGetProperty("data", out var dataElem))
+                        {
+                            deltaX = dataElem.TryGetProperty("deltaX", out var dxp) ? dxp.GetInt32() : 0;
+                            deltaY = dataElem.TryGetProperty("deltaY", out var dyp) ? dyp.GetInt32() : 0;
+                        }
+                        else
+                        {
+                            deltaX = root.TryGetProperty("deltaX", out var dxp) ? dxp.GetInt32() : 0;
+                            deltaY = root.TryGetProperty("deltaY", out var dyp) ? dyp.GetInt32() : 0;
+                        }
+                        // 仅当发生有效位移时调整窗口位置
+                        if (deltaX != 0 || deltaY != 0)
+                        {
+                            SafeInvoke(() =>
+                            {
+                                // 直接更新窗体屏幕坐标，微秒级响应且绝不挂起 STA 消息泵
+                                this.Location = new Point(this.Left + deltaX, this.Top + deltaY);
+                            });
+                        }
+                        break;
+
                     case "dragWindow":
-                        // 处理无边框窗体拖拽移动
+                        // 处理无边框窗体拖拽移动 (旧版兼容兜底)
                         ReleaseCapture();
                         SendMessage(this.Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
                         break;

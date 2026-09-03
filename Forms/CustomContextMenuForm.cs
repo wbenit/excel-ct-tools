@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows.Forms;
 using ExcelAddInDemo;
+using ExcelDna.Integration;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -176,11 +177,27 @@ namespace ExcelAddInDemo.Forms
                     case "openComponentManage":
                     case "openCabinetAuxCalc":
                     case "switchToNativeMenu":
-                        // 收到业务菜单点击指令：先隐藏菜单，后执行对应业务方法
+                        // 收到业务菜单点击指令：先隐藏菜单并关闭浮窗，后通过 ExcelAsyncUtil.QueueAsMacro 异步执行
                         SafeInvoke(() =>
                         {
                             this.Hide();
-                            ExecuteMenuAction(action);
+
+                            // 若是切换为原生模式，彻底关闭并释放当前菜单浮窗
+                            if (action == "switchToNativeMenu")
+                            {
+                                try
+                                {
+                                    this.Close();
+                                    _instance = null;
+                                }
+                                catch { }
+                            }
+
+                            // 关键保障：使用 QueueAsMacro 脱离 WebView2 WebMessage 回调上下文，交由 Excel 纯净主线程调度
+                            ExcelAsyncUtil.QueueAsMacro(() =>
+                            {
+                                ExecuteMenuAction(action);
+                            });
                         });
                         break;
                 }
@@ -197,93 +214,96 @@ namespace ExcelAddInDemo.Forms
         private DateTime _lastActionTime = DateTime.MinValue;
 
         /// <summary>
-        /// 执行具体的菜单业务指令 (含 500ms 双重防抖防重保障)
+        /// 执行具体的菜单业务指令 (在 Excel 纯净宏上下文中执行)
         /// </summary>
         private void ExecuteMenuAction(string actionName)
         {
-            // 通过 WinForms 主线程异步执行，保证 COM 调度安全
-            SafeInvoke(() =>
+            try
             {
-                try
+                // 获取当前时间戳
+                DateTime now = DateTime.Now;
+                // 若 500ms 内重复收到相同指令，直接忽略
+                if (string.Equals(_lastActionName, actionName, StringComparison.OrdinalIgnoreCase) && (now - _lastActionTime).TotalMilliseconds < 500)
                 {
-                    // 获取当前时间戳
-                    DateTime now = DateTime.Now;
-                    // 若 500ms 内重复收到相同指令，直接忽略
-                    if (string.Equals(_lastActionName, actionName, StringComparison.OrdinalIgnoreCase) && (now - _lastActionTime).TotalMilliseconds < 500)
-                    {
-                        return;
-                    }
-                    // 更新最近一次执行状态
-                    _lastActionName = actionName;
-                    _lastActionTime = now;
+                    return;
+                }
+                // 更新最近一次执行状态
+                _lastActionName = actionName;
+                _lastActionTime = now;
 
-                    switch (actionName)
-                    {
-                        case "createCabinet":
-                            // 调度业务层执行“新建箱柜”
-                            ExcelServices.CreateNewCabinetFromSelection();
-                            break;
+                switch (actionName)
+                {
+                    case "createCabinet":
+                        // 调度业务层执行“新建箱柜”
+                        ExcelServices.CreateNewCabinetFromSelection();
+                        break;
 
-                        case "parseAndMatch":
-                            // 调度业务层执行“识别参数并匹配物料”
-                            var result = ExcelServices.ExecuteBatchMatchWithDb(null);
-                            if (result != null)
-                            {
-                                MessageBox.Show(
-                                    result.Message,
-                                    result.Success ? "识别与匹配完成" : "提示",
-                                    MessageBoxButtons.OK,
-                                    result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning
-                                );
-                            }
-                            break;
-
-                        case "openMatchSetting":
-                            // 打开“元器件物料匹配与品牌规则设置”窗口
-                            ExcelServices.ShowComponentMatchDialog();
-                            break;
-
-                        case "openSmartInput":
-                            // 打开“智能输入配置”窗口
-                            ExcelServices.ShowSmartInputDialog();
-                            break;
-
-                        case "openSummaryAdjustPrice":
-                            // 打开“汇总调价”窗口
-                            ExcelServices.ShowSummaryAdjustPriceDialog();
-                            break;
-
-                        case "openComponentManage":
-                            // 打开“元器件数据管理”窗口
-                            ExcelServices.ShowComponentManageDialog();
-                            break;
-
-                        case "openCabinetAuxCalc":
-                            // 打开“智能辅材与壳体计算”窗口
-                            ExcelServices.ShowCabinetAuxCalcDialog();
-                            break;
-
-                        case "switchToNativeMenu":
-                            // 切换为 Excel 原生右键菜单模式并持久化
-                            ConfigManager.Instance.SetCustomContextMenuMode(false);
-                            // 彻底清理 CommandBars 残留
-                            ExcelEventManager.RemoveContextMenuControls();
-                            // 弹出友好提示告知用户已切回原生模式
+                    case "parseAndMatch":
+                        // 调度业务层执行“识别参数并匹配物料”
+                        var result = ExcelServices.ExecuteBatchMatchWithDb(null);
+                        if (result != null)
+                        {
                             MessageBox.Show(
-                                "已成功切换为【Excel 原生右键菜单】！\n\n下次在工作表中右键将直接弹出 Excel 原生菜单。\n如需切回业务菜单，请点击 Excel 顶部功能区“右键菜单模式”按钮。",
-                                "右键菜单模式切换",
+                                result.Message,
+                                result.Success ? "识别与匹配完成" : "提示",
                                 MessageBoxButtons.OK,
-                                MessageBoxIcon.Information
+                                result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning
                             );
-                            break;
-                    }
+                        }
+                        break;
+
+                    case "openMatchSetting":
+                        // 打开“元器件物料匹配与品牌规则设置”窗口
+                        ExcelServices.ShowComponentMatchDialog();
+                        break;
+
+                    case "openSmartInput":
+                        // 打开“智能输入配置”窗口
+                        ExcelServices.ShowSmartInputDialog();
+                        break;
+
+                    case "openSummaryAdjustPrice":
+                        // 打开“汇总调价”窗口
+                        ExcelServices.ShowSummaryAdjustPriceDialog();
+                        break;
+
+                    case "openComponentManage":
+                        // 打开“元器件数据管理”窗口
+                        ExcelServices.ShowComponentManageDialog();
+                        break;
+
+                    case "openCabinetAuxCalc":
+                        // 打开“智能辅材与壳体计算”窗口
+                        ExcelServices.ShowCabinetAuxCalcDialog();
+                        break;
+
+                    case "switchToNativeMenu":
+                        // 1. 切换为 Excel 原生右键菜单模式并持久化
+                        ConfigManager.Instance.SetCustomContextMenuMode(false);
+                        // 2. 彻底安全清理 CommandBars 残留
+                        ExcelEventManager.RemoveContextMenuControls();
+                        // 3. 在 Excel 底部状态栏给出即时提示
+                        try
+                        {
+                            dynamic? app = ExcelDnaUtil.Application;
+                            if (app != null) app.StatusBar = "已切换为【Excel 原生右键菜单】模式";
+                        }
+                        catch { }
+                        // 4. 弹出友好提示告知用户已切回原生模式
+                        MessageBox.Show(
+                            "已成功切换为【Excel 原生右键菜单】！\n\n下次在工作表中右键将直接弹出 Excel 原生菜单。\n如需切回业务专属菜单，请点击 Excel 顶部功能区“右键菜单模式”按钮。",
+                            "右键菜单模式切换",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information
+                        );
+                        break;
                 }
-                catch (Exception ex)
-                {
-                    // 记录业务执行异常日志
-                    LogHelper.WriteLog($"执行菜单动作 [{actionName}] 异常: {ex.Message}");
-                }
-            });
+            }
+            catch (Exception ex)
+            {
+                // 记录业务执行异常日志
+                LogHelper.WriteLog($"执行菜单动作 [{actionName}] 异常: {ex.Message}");
+            }
         }
 
         /// <summary>

@@ -75,11 +75,150 @@
     }
 
     .pipeline-badge {
+      display: inline-flex;
+      align-items: center;
       background: var(--primary-light);
       color: var(--primary-color);
       padding: 1px 6px;
       border-radius: 4px;
       font-weight: 500;
+      font-size: 11px;
+      line-height: 18px;
+    }
+
+    /* 必含标签专属交互样式 */
+    .pipeline-badge-must {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      background: #e0f2f1;
+      color: #00796b;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      cursor: pointer;
+      user-select: none;
+      border: 1px solid #b2dfdb;
+      font-size: 11px;
+      line-height: 18px;
+      transition: all 0.15s ease;
+    }
+
+    .pipeline-badge-must:hover {
+      background: #b2dfdb;
+      border-color: #80cbc4;
+    }
+
+    /* 必含标签双击编辑提示文本 */
+    .badge-must-text {
+      cursor: text;
+    }
+
+    /* 删除叉号按钮 */
+    .rule-remove-icon {
+      font-size: 10px;
+      color: #00796b;
+      opacity: 0.6;
+      border-radius: 50%;
+      padding: 1px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+      cursor: pointer;
+    }
+
+    .rule-remove-icon:hover {
+      opacity: 1;
+      color: #ef4444;
+      background: #fee2e2;
+      transform: scale(1.15);
+    }
+
+    /* 内联编辑 Mini Input */
+    .inline-rule-input {
+      width: 55px;
+      height: 18px;
+      padding: 0 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #00796b;
+      background: #ffffff;
+      border: 1px solid #009688;
+      border-radius: 3px;
+      outline: none;
+      box-sizing: border-box;
+    }
+
+    /* 快捷添加必含微按钮 */
+    .btn-add-must {
+      display: inline-flex;
+      align-items: center;
+      height: 18px;
+      padding: 0 5px;
+      font-size: 10px;
+      font-weight: 600;
+      color: #009688;
+      background: #f0fdf4;
+      border: 1px dashed #86efac;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      line-height: 1;
+    }
+
+    .btn-add-must:hover {
+      background: #dcfce7;
+      border-color: #22c55e;
+      color: #15803d;
+    }
+
+    /* 规则被改动时的提示与操作胶囊 (模式 B 双态分流) */
+    .rule-modified-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      font-size: 10px;
+      font-weight: 700;
+      color: #d97706;
+      background: #fef3c7;
+      border: 1px solid #fde68a;
+      padding: 1px 4px;
+      border-radius: 3px;
+      line-height: 16px;
+    }
+
+    .rule-action-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      height: 18px;
+      padding: 0 5px;
+      font-size: 10px;
+      font-weight: 600;
+      border-radius: 3px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      line-height: 1;
+      transition: all 0.15s ease;
+    }
+
+    .btn-save-rule {
+      background: #009688;
+      color: #ffffff;
+    }
+    .btn-save-rule:hover {
+      background: #00796b;
+    }
+
+    .btn-reset-rule {
+      background: #f1f5f9;
+      color: #64748b;
+      border-color: #cbd5e1;
+    }
+    .btn-reset-rule:hover {
+      background: #e2e8f0;
+      color: #334155;
     }
 
     /* 候选物料列表容器 */
@@ -271,14 +410,88 @@
         <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap; flex: 1; min-width: 0;">
           <template v-if="!isAttachmentMode">
             <span style="color: #64748b;">过滤管道:</span>
+            <span class="pipeline-badge" :style="{ background: dataSource === 'personal' ? '#e0f2f1' : '#e0f2fe', color: dataSource === 'personal' ? '#00796b' : '#0284c7', fontWeight: '600' }">
+              <i :class="dataSource === 'personal' ? 'fa-solid fa-laptop-file' : 'fa-solid fa-cloud'" style="margin-right: 2px;"></i>
+              {{ dataSource === 'personal' ? '个人库' : '云端库' }}
+            </span>
             <span class="pipeline-badge">品牌: {{ filterBrand || '全部' }}</span>
+            <!-- 动态必含约束标签列表 (支持快捷删除与双击编辑) -->
             <span 
               v-for="(r, idx) in activeMustRules" 
               :key="idx" 
-              class="pipeline-badge"
+              class="pipeline-badge-must"
+              :title="editingRuleIndex === idx ? '' : '双击编辑必含词，点击 ✕ 快捷移除'"
             >
-              必含: {{ r }}
+              <!-- 处于编辑态 -->
+              <template v-if="editingRuleIndex === idx">
+                <input 
+                  :ref="setEditRuleInputRef"
+                  v-model="editingRuleText"
+                  class="inline-rule-input"
+                  @keydown.enter.prevent.stop="saveRuleEdit(idx)"
+                  @keydown.esc.prevent.stop="cancelRuleEdit"
+                  @blur="saveRuleEdit(idx)"
+                  @click.stop
+                />
+              </template>
+              <!-- 处于普通展示态 -->
+              <template v-else>
+                <span class="badge-must-text" @dblclick.stop="startRuleEdit(idx, r)">
+                  必含: {{ r }}
+                </span>
+                <i 
+                  class="fa-solid fa-xmark rule-remove-icon" 
+                  @click.stop="removeMustRule(idx)"
+                  title="快捷移除该必含约束"
+                ></i>
+              </template>
             </span>
+
+            <!-- 快捷新增必含规则入口 -->
+            <span v-if="isAddingRule" class="pipeline-badge-must" style="padding: 0 2px;">
+              <input 
+                ref="addRuleInputRef"
+                v-model="newRuleText"
+                class="inline-rule-input"
+                placeholder="输入必含词"
+                @keydown.enter.prevent.stop="confirmAddRule"
+                @keydown.esc.prevent.stop="cancelAddRule"
+                @blur="confirmAddRule"
+                @click.stop
+              />
+            </span>
+            <button 
+              v-else 
+              type="button" 
+              class="btn-add-must" 
+              @click.stop="startAddRule" 
+              title="临时追加新的型号必含约束"
+            >
+              <i class="fa-solid fa-plus" style="margin-right: 2px; font-size: 8px;"></i>必含
+            </button>
+
+            <!-- 模式 B 双态分流：当规则被临时改动时展示临时状态与持久化保存/重置按钮 -->
+            <template v-if="isRulesModified">
+              <span class="rule-modified-badge" title="当前为临时过滤条件，尚未保存为默认配置">
+                <i class="fa-solid fa-bolt"></i> 临时
+              </span>
+              <button 
+                type="button" 
+                class="rule-action-btn btn-save-rule" 
+                @click.stop="saveRulesToDisk"
+                title="将当前必含规则保存为全局默认配置"
+              >
+                <i class="fa-solid fa-floppy-disk"></i> 保存
+              </button>
+              <button 
+                type="button" 
+                class="rule-action-btn btn-reset-rule" 
+                @click.stop="resetRulesToDefault"
+                title="还原为默认配置中的必含规则"
+              >
+                <i class="fa-solid fa-rotate-left"></i> 重置
+              </button>
+            </template>
           </template>
           <template v-else>
             <span style="color: #009688; font-weight: 600; flex-shrink: 0;">配套附件:</span>
@@ -442,6 +655,29 @@
         });
         const filterBrand = ref('');
         const activeMustRules = ref([]);
+        // 当前物料数据源 (cloud=云端公共库, personal=本地个人库)
+        const dataSource = ref('cloud');
+
+        // 必含规则默认快照 (用于模式 B 双态分流判定及一键重置)
+        const originalMustRules = ref([]);
+        // 当前编辑的规则索引 (-1 表示未处于编辑状态)
+        const editingRuleIndex = ref(-1);
+        const editingRuleText = ref('');
+        const editRuleInputRef = ref(null);
+
+        // 新增规则输入状态
+        const isAddingRule = ref(false);
+        const newRuleText = ref('');
+        const addRuleInputRef = ref(null);
+
+        // 计算属性：当前必含规则是否已被临时修改 (模式 B 双态判断)
+        const isRulesModified = computed(() => {
+          if (activeMustRules.value.length !== originalMustRules.value.length) return true;
+          for (let i = 0; i < activeMustRules.value.length; i++) {
+            if (activeMustRules.value[i] !== originalMustRules.value[i]) return true;
+          }
+          return false;
+        });
 
         let debounceTimer = null;
 
@@ -450,6 +686,120 @@
           if (window.chrome && window.chrome.webview) {
             window.chrome.webview.postMessage(JSON.stringify({ action, ...payload }));
           }
+        };
+
+        // 动态绑定内联编辑输入框并在挂载时自动全选
+        const setEditRuleInputRef = (el) => {
+          editRuleInputRef.value = el;
+          if (el) {
+            nextTick(() => {
+              el.focus();
+              el.select();
+            });
+          }
+        };
+
+        // 移除单条必含约束并即时发起重搜
+        const removeMustRule = (idx) => {
+          activeMustRules.value.splice(idx, 1);
+          triggerSearchWithRules();
+        };
+
+        // 开启单条必含规则内联编辑
+        const startRuleEdit = (idx, text) => {
+          editingRuleIndex.value = idx;
+          editingRuleText.value = text;
+        };
+
+        // 保存单条必含规则内联编辑并重搜
+        const saveRuleEdit = (idx) => {
+          if (editingRuleIndex.value === -1) return;
+          const trimmed = (editingRuleText.value || '').trim();
+          if (!trimmed) {
+            // 内容若被完全清空则视同快捷移除
+            activeMustRules.value.splice(idx, 1);
+          } else {
+            activeMustRules.value[idx] = trimmed;
+          }
+          editingRuleIndex.value = -1;
+          editingRuleText.value = '';
+          triggerSearchWithRules();
+        };
+
+        // 取消规则内联编辑
+        const cancelRuleEdit = () => {
+          editingRuleIndex.value = -1;
+          editingRuleText.value = '';
+          // 重新聚焦主搜索框
+          nextTick(() => {
+            if (searchInputRef.value && searchInputRef.value.focus) {
+              searchInputRef.value.focus();
+            }
+          });
+        };
+
+        // 开启新增必含规则输入
+        const startAddRule = () => {
+          isAddingRule.value = true;
+          newRuleText.value = '';
+          nextTick(() => {
+            if (addRuleInputRef.value) {
+              addRuleInputRef.value.focus();
+            }
+          });
+        };
+
+        // 确认新增必含规则并即时重搜
+        const confirmAddRule = () => {
+          if (!isAddingRule.value) return;
+          const trimmed = (newRuleText.value || '').trim();
+          if (trimmed && !activeMustRules.value.includes(trimmed)) {
+            activeMustRules.value.push(trimmed);
+            triggerSearchWithRules();
+          }
+          isAddingRule.value = false;
+          newRuleText.value = '';
+        };
+
+        // 取消新增必含规则
+        const cancelAddRule = () => {
+          isAddingRule.value = false;
+          newRuleText.value = '';
+          nextTick(() => {
+            if (searchInputRef.value && searchInputRef.value.focus) {
+              searchInputRef.value.focus();
+            }
+          });
+        };
+
+        // 模式 B：持久化保存当前必含规则至本地磁盘默认配置
+        const saveRulesToDisk = () => {
+          postToHost('saveMustRules', {
+            rules: activeMustRules.value
+          });
+        };
+
+        // 模式 B：还原为默认配置中的必含规则并即时刷新
+        const resetRulesToDefault = () => {
+          activeMustRules.value = [...originalMustRules.value];
+          editingRuleIndex.value = -1;
+          isAddingRule.value = false;
+          triggerSearchWithRules();
+          if (ElementPlus && ElementPlus.ElMessage) {
+            ElementPlus.ElMessage.info({ message: '已恢复默认必含规则', duration: 1500 });
+          }
+        };
+
+        // 规则变更后触发即时异步重搜 (常规模式下向 C# 派发带 overrideMustRules 的搜索)
+        const triggerSearchWithRules = () => {
+          if (isAttachmentMode.value) return;
+          if (debounceTimer) clearTimeout(debounceTimer);
+          loading.value = true;
+          postToHost('searchKeyword', {
+            keyword: searchKeyword.value,
+            cellParams: cellParams.value,
+            overrideMustRules: activeMustRules.value
+          });
         };
 
         // 数量步进递增
@@ -534,9 +884,15 @@
               selectedIndex.value = 0;
               searchKeyword.value = '';
               attachmentQuantity.value = 1;
+              editingRuleIndex.value = -1;
+              isAddingRule.value = false;
               if (msg.cellParams) cellParams.value = msg.cellParams;
               if (msg.filterBrand !== undefined) filterBrand.value = msg.filterBrand;
-              if (msg.activeMustRules) activeMustRules.value = msg.activeMustRules;
+              if (msg.activeMustRules) {
+                activeMustRules.value = [...msg.activeMustRules];
+                originalMustRules.value = [...msg.activeMustRules];
+              }
+              if (msg.dataSource) dataSource.value = msg.dataSource;
 
               // 自动聚焦到搜索框
               nextTick(() => {
@@ -560,10 +916,18 @@
               items.value = msg.items || [];
               selectedIndex.value = 0;
               break;
+
+            // 必含规则持久化保存至磁盘成功确认 (模式 B)
+            case 'mustRulesSaved':
+              originalMustRules.value = [...activeMustRules.value];
+              if (ElementPlus && ElementPlus.ElMessage) {
+                ElementPlus.ElMessage.success({ message: '已保存为默认必含规则', duration: 1800 });
+              }
+              break;
           }
         };
 
-        // 用户输入即时模糊搜索 (常规模式下走后端防抖搜索，附件模式下直接本地过滤)
+        // 用户输入即时模糊搜索 (常规模式下走后端防抖搜索并附带当前最新必含规则，附件模式下直接本地过滤)
         const onSearchInput = () => {
           if (isAttachmentMode.value) {
             selectedIndex.value = 0;
@@ -575,7 +939,8 @@
           debounceTimer = setTimeout(() => {
             postToHost('searchKeyword', {
               keyword: searchKeyword.value,
-              cellParams: cellParams.value
+              cellParams: cellParams.value,
+              overrideMustRules: activeMustRules.value
             });
           }, 120);
         };
@@ -649,6 +1014,25 @@
           cellParams,
           filterBrand,
           activeMustRules,
+          originalMustRules,
+          editingRuleIndex,
+          editingRuleText,
+          editRuleInputRef,
+          isAddingRule,
+          newRuleText,
+          addRuleInputRef,
+          isRulesModified,
+          dataSource,
+          setEditRuleInputRef,
+          removeMustRule,
+          startRuleEdit,
+          saveRuleEdit,
+          cancelRuleEdit,
+          startAddRule,
+          confirmAddRule,
+          cancelAddRule,
+          saveRulesToDisk,
+          resetRulesToDefault,
           incrementQty,
           decrementQty,
           onQtyInput,
