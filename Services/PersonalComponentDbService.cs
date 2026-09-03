@@ -13,7 +13,7 @@ namespace ExcelAddInDemo.Services
     /// 本地个人物料库 SQLite 数据库访问服务 (结构与云端 components 表 1:1 镜像)
     /// 遵循规范：每 3 行代码至少包含 1 行中文注释，配置与硬编码显式标明
     /// </summary>
-    public static class PersonalComponentDbService
+    public static partial class PersonalComponentDbService
     {
         // 线程安全互斥锁，保障多线程与并发访问 SQLite 安全
         private static readonly object _dbLock = new object();
@@ -118,7 +118,7 @@ namespace ExcelAddInDemo.Services
                     // 打开底层物理连接
                     conn.Open();
 
-                    // 构建建表 DDL 语句 (与服务器 DrawMall.Domain.Models.Component 字段 1:1 对齐)
+                    // 构建建表 DDL 语句 (包含 components 物料表与 secondary_circuit_schemes 二次方案表)
                     string ddl = @"
                         CREATE TABLE IF NOT EXISTS components (
                             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -139,7 +139,25 @@ namespace ExcelAddInDemo.Services
                         CREATE INDEX IF NOT EXISTS idx_comp_brand_name ON components(brand, name);
                         CREATE INDEX IF NOT EXISTS idx_comp_model ON components(model);
                         CREATE INDEX IF NOT EXISTS idx_comp_brand ON components(brand);
-                    "; // --硬编码-- SQLite 建表 DDL 脚本
+
+                        CREATE TABLE IF NOT EXISTS secondary_circuit_schemes (
+                            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                            group_name          TEXT DEFAULT '',
+                            scheme_name         TEXT NOT NULL,
+                            applicable_codes    TEXT NOT NULL DEFAULT '',
+                            cad_drawing_name    TEXT DEFAULT '',
+                            cross_door_count    REAL DEFAULT 0.0,
+                            hole_spec           TEXT DEFAULT '',
+                            labor_cost          REAL DEFAULT 0.0,
+                            bom_json            TEXT NOT NULL DEFAULT '[]',
+                            remark              TEXT DEFAULT '',
+                            created_at          TEXT,
+                            updated_at          TEXT
+                        );
+                        CREATE INDEX IF NOT EXISTS idx_sec_scheme_name ON secondary_circuit_schemes(scheme_name);
+                        CREATE INDEX IF NOT EXISTS idx_sec_group ON secondary_circuit_schemes(group_name);
+                        CREATE INDEX IF NOT EXISTS idx_sec_cad_drawing ON secondary_circuit_schemes(cad_drawing_name);
+                    "; // --硬编码-- SQLite 建表与索引 DDL 脚本
 
                     // 执行 DDL 创建数据表和索引
                     using var cmd = new SQLiteCommand(ddl, conn);

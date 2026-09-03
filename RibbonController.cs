@@ -135,6 +135,8 @@ namespace ExcelAddInDemo
           <button id='btnComponentManage' label='元器件管理' imageMso='TableInsertRowsAbove' size='large' screentip='元器件数据管理' supertip='在 Excel 中按品牌和名称筛选元器件数据，支持对选中行进行精准更新、新增和删除' onAction='OnMenuAction' />
           <!-- 二次元件组规则管道(生成二次) 按钮 -->
           <button id='btnComponentGroupRule' label='生成二次元件' imageMso='TableFormulaDialog' size='large' screentip='二次元件组规则管道' supertip='基于可视化动态规则管道自动识别箱柜元件特征，生成二次元件组并自动写入套数' onAction='OnMenuAction' />
+          <!-- 二次图方案与 BOM 库按钮 -->
+          <button id='btnSecondaryCircuitManage' label='二次方案库' imageMso='QueryShowTable' size='large' screentip='二次图方案与BOM管理' supertip='管理二次原理图控制回路方案、同配置多回路映射、门板开孔、人工工费及BOM物料定额' onAction='OnMenuAction' />
         </group>
         <!-- ③调价格→ 功能分组 -->
         <group id='grpAdjustPrice' label='③调价格→'>
@@ -398,6 +400,12 @@ namespace ExcelAddInDemo
             {
                 // 弹出基于 WebView2 + Vue 3 的“二次元件组规则管道构建器”窗口
                 ExcelServices.ShowComponentGroupBuilderDialog();
+            }
+            // 响应“二次方案库”按钮指令
+            else if (controlId == "btnSecondaryCircuitManage")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“二次图回路方案与 BOM 管理中心”窗口
+                ExcelServices.ShowSecondaryCircuitManageDialog();
             }
             // 响应“元器件管理”按钮指令
             else if (controlId == "btnComponentManage")

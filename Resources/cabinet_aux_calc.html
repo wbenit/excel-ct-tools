@@ -128,15 +128,22 @@
       background-color: #ef4444;
     }
 
-    /* 主内容区 */
+    /* 主内容区：锁定横向溢出，严禁整页发生水平跑偏与滚动，自适应宽度 */
     .main-body {
       flex: 1;
+      /* 彻底禁止整页横向滚动与跑偏，消除左侧组件被卷出视口的隐患 */
+      overflow-x: hidden !important;
+      /* 允许纵向从容滚动 */
       overflow-y: auto;
+      /* 消除 Flex Item 默认 min-width: auto 撑破父容器的问题 */
+      min-width: 0;
+      width: 100%;
       padding: 12px 14px;
       background-color: #f8fafc;
       display: flex;
       flex-direction: column;
       gap: 10px;
+      box-sizing: border-box;
     }
 
     /* 扁平无阴影配置卡片 */
@@ -149,6 +156,9 @@
       display: flex;
       flex-direction: column;
       gap: 10px;
+      /* 允许卡片内部根据视口自适应收缩 */
+      min-width: 0;
+      box-sizing: border-box;
     }
 
     .cfg-card-header {
@@ -167,23 +177,29 @@
       display: grid;
       grid-template-columns: repeat(2, 1fr);
       gap: 12px 24px;
+      min-width: 0;
     }
 
+    /* 三列表单响应式自适应网格：宽屏平铺3列，窄屏或高DPI自动折行，绝不撑破容器 */
     .param-grid.three-col {
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px 16px;
     }
 
     .param-row-item {
       display: flex;
       align-items: center;
       gap: 8px;
+      /* 允许单项弹性收缩 */
+      min-width: 0;
     }
 
     .param-label {
       font-size: 12px;
       font-weight: 500;
       color: #334155;
-      min-width: 125px;
+      /* 紧凑对齐，防止挤占控件宽度 */
+      min-width: 105px;
       flex-shrink: 0;
       text-align: right;
     }
@@ -204,6 +220,8 @@
       font-size: 12px;
       color: #0f766e;
       line-height: 1.6;
+      /* 长提示词安全折行 */
+      word-break: break-all;
     }
 
     /* 扁平无阴影通用按钮 */
@@ -228,11 +246,12 @@
       border-color: #00796b;
     }
 
-    /* 结果展示卡片网格 */
+    /* 结果展示卡片网格：响应式流式布局，宽屏4列，窄屏自动2x2排列 */
     .results-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
       gap: 10px;
+      min-width: 0;
     }
 
     .result-card {
@@ -245,6 +264,9 @@
       gap: 4px;
       box-shadow: none !important;
       transition: border-color 0.15s;
+      /* 消除默认 min-width 撑破父级网格 */
+      min-width: 0;
+      box-sizing: border-box;
     }
 
     .result-card.highlight {
@@ -405,8 +427,8 @@
         </div>
       </div>
 
-      <!-- 推导结果预览卡片 -->
-      <div class="cfg-card" style="flex: 1; overflow-y: auto;">
+      <!-- 推导结果预览卡片 (锁定横向溢出，允许纵向滚动) -->
+      <div class="cfg-card" style="flex: 1; overflow-y: auto; overflow-x: hidden; min-width: 0; box-sizing: border-box;">
         <div class="cfg-card-header">
           <span>📊 智能推导分析预览 ({{ selectedCabinetDet ? selectedCabinetDet : '全部箱柜' }})</span>
           <button type="button" class="btn-flat" @click="onAnalyze">🔍 重新分析</button>
@@ -451,25 +473,26 @@
         </div>
 
         <!-- 铜排推导明细与尺寸联动算式清单 -->
-        <div v-if="calcResult && calcResult.copperFormulaDetails && calcResult.copperFormulaDetails.length > 0" style="margin-top: 10px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 10px;">
-          <div style="font-size: 12px; font-weight: 600; color: #00796b; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+        <div v-if="calcResult && calcResult.copperFormulaDetails && calcResult.copperFormulaDetails.length > 0" style="margin-top: 10px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 10px; min-width: 0; box-sizing: border-box;">
+          <div style="font-size: 12px; font-weight: 600; color: #00796b; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
             <span>⚡ 铜排母线推导明细与尺寸联动算式:</span>
             <span style="font-size: 11px; color: #64748b; font-weight: normal;">(主排展开补偿 + 动态附件排数与宽高联动 + 分支搭接)</span>
           </div>
-          <div style="display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; font-family: Consolas, 'Courier New', monospace; background: #f8fafc; padding: 6px 10px; border-radius: 4px; border-left: 3px solid #009688;">
-            <div v-for="(item, idx) in calcResult.copperFormulaDetails" :key="idx" style="color: #334155; line-height: 1.6;">
+          <div style="display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; font-family: Consolas, 'Courier New', monospace; background: #f8fafc; padding: 6px 10px; border-radius: 4px; border-left: 3px solid #009688; min-width: 0; box-sizing: border-box;">
+            <!-- 增加长文本断词换行，杜绝长算式横向撑破外层布局 -->
+            <div v-for="(item, idx) in calcResult.copperFormulaDetails" :key="idx" style="color: #334155; line-height: 1.6; word-break: break-all; white-space: normal;">
               <span style="color: #009688; font-weight: 600;">{{ idx + 1 }}.</span> {{ item }}
             </div>
           </div>
         </div>
 
         <!-- 一次导线推导用量清单 -->
-        <div v-if="calcResult && calcResult.primaryWireDetails && calcResult.primaryWireDetails.length > 0" style="margin-top: 10px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 10px;">
-          <div style="font-size: 12px; font-weight: 600; color: #00796b; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+        <div v-if="calcResult && calcResult.primaryWireDetails && calcResult.primaryWireDetails.length > 0" style="margin-top: 10px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 10px; min-width: 0; box-sizing: border-box;">
+          <div style="font-size: 12px; font-weight: 600; color: #00796b; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
             <span>⚡ 一次导线推导用量明细:</span>
             <span style="font-size: 11px; color: #64748b; font-weight: normal;">(根据回路电流阶梯选型，结合箱体宽高与互感器高度折算长度)</span>
           </div>
-          <el-table :data="calcResult.primaryWireDetails" size="small" border style="width: 100%;" max-height="160px">
+          <el-table :data="calcResult.primaryWireDetails" size="small" border style="width: 100%; min-width: 0;" max-height="160px">
             <el-table-column prop="spec" label="导线规格" width="110">
               <template #default="scope">
                 <el-tag size="small" type="info">{{ scope.row.spec }}</el-tag>
@@ -511,7 +534,8 @@
 
     <!-- 主体区域：视图 2 【规则与定额配置中心】 (独立 Tab 架构，图3与图4分别独立显示) -->
     <div class="main-body" v-show="currentTab === 'rules'">
-      <div class="cfg-card" style="flex: 1; overflow-y: auto;">
+      <!-- 规则配置大卡片 (锁定横向溢出，允许纵向滚动) -->
+      <div class="cfg-card" style="flex: 1; overflow-y: auto; overflow-x: hidden; min-width: 0; box-sizing: border-box;">
         <el-tabs v-model="activeRuleTab">
 
           <!-- 选项卡 1: 一次导线配线定额 (包含长度生成配置 + 图3 一次导线规格选型与单价表) -->

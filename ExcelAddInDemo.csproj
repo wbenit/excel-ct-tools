@@ -94,6 +94,10 @@
     <None Include="Resources\cabinet_aux_calc.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将二次图回路方案管理前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\secondary_circuit_manage.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将公共主题样式 CSS 文件复制至构建输出路径中 -->
     <None Include="Resources\theme.css">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

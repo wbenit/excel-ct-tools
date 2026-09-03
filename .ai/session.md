@@ -2,6 +2,16 @@
 
 ## [Completed]
 
+- **彻底修复辅材壳体计算中心 (cabinet_aux_calc.html) 界面横向溢出与组件移出屏幕故障**：
+  1. **锁定容器横向滚动**：为 `.main-body` 与各卡片容器增加 `overflow-x: hidden !important; min-width: 0; width: 100%; box-sizing: border-box;`，从源头杜绝页面产生水平滚动条，彻底切断 Chromium/WebView2 焦点自动平移（`scrollIntoView`）导致左侧组件被卷出视口的路径；
+  2. **网格与卡片响应式重构**：
+     - 将 `.param-grid.three-col` 改造为 `repeat(auto-fit, minmax(220px, 1fr))`，在 125%/150% 等高 DPI 缩放或小屏下自适应折行，Label 宽度由 125px 微调至 105px 紧凑对齐；
+     - 将 `.results-grid` 4 列卡片改为 `repeat(auto-fit, minmax(160px, 1fr))`，空间不足时平滑转为 2x2 网格；
+     - 算式明细字符串增加 `word-break: break-all; white-space: normal;`，表格容器设置 `min-width: 0;` 防止撑宽父级；
+  3. **编译与热同步**：
+     - 代码已热同步至 `bin\Debug\net48\Resources\cabinet_aux_calc.html`；
+     - `dotnet build /t:Compile` 编译通过：0 错误。
+
 - **彻底排除主元器件（第1个元件）参与导线与分支排计算的约束修复 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
   1. **问题排查定位**：
      - 在基础特征扫描循环中，原代码对 `i = 0` 的首行主元器件也统计了极数与数量，将其极线头塞入 `currentWireMap` 中，导致主进线总开关被错误折算了一次出线导线；
@@ -632,19 +642,55 @@
 - 汇总调价“合并条件”中“名称”复选框已改为可自由勾选与取消，后端 GroupBy 动态响应；
 - 汇总调价【一键更新】中 N 列折扣生成 `=ROUND((本体*折扣+附件*折扣)/总表价,2)` 样式动态公式已全部落地；
 - 汇总调价【一键更新】反向精准同步回写至各分类表箱柜明细并联动全表公式重算已全部落地；
-- **修复 UpdateFromComponentSummarySheet 中 buildConfig 与 activeWb 变量未定义的编译错误**：
-  1. 在 `ExcelServices.SummaryAdjustPrice.cs` 的 `UpdateFromComponentSummarySheet` 方法中，补齐从 `summarySheet.Range["AB1"].Value2` 中反序列化读取持久化配置 `SummaryBuildConfig` 的逻辑；
-  2. 将 `Tool.GetSheetValidCabinets(sheet, activeWb)` 中的 `activeWb` 修正为当前定义的工作簿变量 `wb`；
-  3. 执行 `dotnet build /t:Compile` 验证通过，0 错误 0 警告。
+- **二次图回路方案与 BOM 数据管理系统落地实施 (全面闭环)**：
+  1. **实体建模与持久化升级**：
+     - 在 `Models/SecondaryCircuitModels.cs` 中实现 `SecondarySchemeEntity` 与 `SecondaryBomItem`，包含同配置回路代号列表（`ApplicableCodes`）、`CadDrawingName`（CAD 图名）、跨门数、开孔、人工费及动态驱动计算属性（材料费、综合总费用）；
+     - 在 `PersonalComponentDbService.cs` 中自愈增加 `secondary_circuit_schemes` 关系表与多维复合索引；并在 `PersonalComponentDbService.SecondaryCircuit.cs` 中实现 CRUD、按代号/CAD图名检索、事务批量导入及物料库最新单价动态对齐机制；
+  2. **Excel 批量智能解析导入**：
+     - 在 `ExcelServices.SecondaryCircuit.cs` 中实现 `ImportSecondarySchemesFromActiveSheet`，严格遵循规则 3 与规则 7，通过 2D 内存数组一次性扫描当前工作表，智能识别主方案行（拆分同配置逗号代号）与子 BOM 明细行；
+  3. **前端控制与 Vue 3 工作台**：
+     - 创建 `Controllers/SecondaryCircuitController.cs` 与 `Forms/SecondaryCircuitForm.cs`，落实 Win32 物理按键检测防幽灵鼠标死锁；
+     - 创建 `Resources/secondary_circuit_manage.html`，遵循项目 `#009688` 扁平设计、`<script setup>` 结构，具备子 BOM 展开行、回路代号 Tag 动态维护、以及从本地个人物料库极速选型的滑出抽屉；
+  4. **菜单集成与构建验证**：
+     - 在 Ribbon XML 中挂载【二次方案库】大图标按钮并绑定打开回调；
+     - 运行 `dotnet build` 编译打包通过，0 警告，0 错误，严格遵循每 3 行至少 1 行中文注释规范。
+
+## [Completed]
+
+- 修复汇总调价【一键更新】中因公式字符串插值缺失 `$` 前缀导致 Excel COM 抛出“内存不足”的底层异常；
+- 汇总调价【一键更新】未勾选名称时覆盖 B 列名称，且无论何种条件均更新 E 列单位已全部落地；
+- 汇总调价【一键更新】基于汇总前配置（工作表范围过滤 + 多维合并条件精准对齐 + AB1 单元格配置持久化）已全部落地；
+- 汇总调价“合并条件”中“名称”复选框已改为可自由勾选与取消，后端 GroupBy 动态响应；
+- 汇总调价【一键更新】中 N 列折扣生成 `=ROUND((本体*折扣+附件*折扣)/总表价,2)` 样式动态公式已全部落地；
+- 汇总调价【一键更新】反向精准同步回写至各分类表箱柜明细并联动全表公式重算已全部落地；
+- 修复 UpdateFromComponentSummarySheet 中 buildConfig 与 activeWb 变量未定义的编译错误；
+- **二次图回路方案与 BOM 数据管理系统（SQLite持久化 + 本地物料库强一致绑定 + CAD图名关联 + 同配置多回路映射 + Excel批量导入 + Vue3管理工作台）全链路落地闭环**；
+- **二次方案管理工作台 5 项细节调优全面落地**：
+  1. 彻底修复主界面右上角关闭按钮失效问题（切断拖拽事件冒泡防 Win32 消息循环吞噬，双向支持 `close` 和 `closeWindow`）；
+  2. “所属二次组”全面更名为“二次排布图”（覆盖主表列头、工具栏下拉筛选、弹窗表单）；
+  3. 彻底去除图二内容（从编辑弹窗和主表格中彻底移除 CAD 图名/图号维护项，紧凑排布）；
+  4. “二次线跨门”全面修改为“二次线跨门根数”（步进器强制整数，表格及导入均四舍五入为整数根数）；
+  5. 二次 BOM 子物料清单受控高度自适应滚动修复（启用 Element Plus 原生 `max-height="220"` 属性，超出行数时自动出现垂直滚动条且表头固定吸顶，弹窗设置 `max-height: 72vh; overflow-y: auto;` 杜绝遮挡底部按钮）；
+  6. 物料库检索抽屉支持品牌搜索，默认指定“二次元件”（抽屉顶部集成品牌筛选/输入下拉框，默认二次元件，支持自动带出全部物料库已有品牌，且支持首屏与空关键字直接按品牌拉取）。
+
+## [Completed]
+
+- 修复汇总调价【一键更新】中因公式字符串插值缺失 `$` 前缀导致 Excel COM 抛出“内存不足”的底层异常；
+- 汇总调价【一键更新】未勾选名称时覆盖 B 列名称，且无论何种条件均更新 E 列单位已全部落地；
+- 汇总调价【一键更新】基于汇总前配置（工作表范围过滤 + 多维合并条件精准对齐 + AB1 单元格配置持久化）已全部落地；
+- 汇总调价“合并条件”中“名称”复选框已改为可自由勾选与取消，后端 GroupBy 动态响应；
+- 汇总调价【一键更新】中 N 列折扣生成 `=ROUND((本体*折扣+附件*折扣)/总表价,2)` 样式动态公式已全部落地；
+- 汇总调价【一键更新】反向精准同步回写至各分类表箱柜明细并联动全表公式重算已全部落地；
+- 修复 UpdateFromComponentSummarySheet 中 buildConfig 与 activeWb 变量未定义的编译错误；
+- 二次图回路方案与 BOM 数据管理系统全链路落地闭环；
+- 主界面关闭按钮修复、二次排布图更名、移除CAD图名项、跨门根数整数化、BOM垂直滚动条自适应等 5 项反馈全面解决；
+- 本地个人物料库检索抽屉支持品牌检索，默认选中“二次元件”，支持全部品牌切换与型号/名称组合搜索。
 
 ## [In-Progress]
 
-- **二次元件详细表（二次方案与子物料明细）的保存与编辑架构规划**：
-  1. 深度解析用户二次元件截图的数据结构与业务层级（主方案：型号别名、跨门线、开孔、人工、二次组；子明细：物料名称、型号、数量、单位、二次单价/合价）；
-  2. 规划“全局持久化（JSON/SQLite）+ Excel 表格直觉化编辑 + Vue 3 树形表格可视化维护”的双轨协同保存与维护体系；
-  3. 梳理与《CabinetAuxCalc》辅材、开孔及人工计算引擎的闭环联动。
+- 监听用户在实际 Excel 环境与图纸交互中的体验反馈与调优需求。
 
 ## [Next]
 
-- 等待用户确认规划方案与设计细节，明确执行指令后启动代码实施。
+- 协助用户进行实际 Excel 二次图表格的导入验证，或根据图纸识别联动需求进一步打通与《CabinetAuxCalc》辅材中心的跨门线及开孔工费一键应用。
 

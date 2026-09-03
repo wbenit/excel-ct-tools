@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>二次图回路方案与 BOM 管理中心</title>
+
+  <!-- 引入基础样式库 -->
+  <link rel="stylesheet" href="theme.css">
+  <!-- 引入 Element Plus 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus@2.4.4/dist/index.css">
+
+  <!-- 引入 Vue 3 与 Element Plus 核心脚本 -->
+  <script src="https://unpkg.com/vue@3.3.11/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.min.js"></script>
+
+  <style>
+    /* 全局重置与工业扁平设计 (纯净无阴影) */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body {
+      background-color: #f1f5f9;
+      color: #1e293b;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background-color: #ffffff;
+      border: 1px solid #cbd5e1;
+      box-shadow: none !important;
+      overflow: hidden;
+    }
+
+    /* 顶部无边框拖拽标题栏 (主色调绿蓝相间 #009688) */
+    .window-header {
+      height: 40px;
+      background: linear-gradient(135deg, #009688 0%, #00796b 100%);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      cursor: move;
+      flex-shrink: 0;
+      border-bottom: 1px solid #00796b;
+      touch-action: none;
+    }
+
+    .window-title-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .window-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .win-btn {
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 3px;
+      cursor: pointer;
+      color: #ffffff;
+      transition: background-color 0.15s;
+    }
+
+    .win-btn:hover {
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .win-btn.close:hover {
+      background-color: #ef4444;
+    }
+
+    /* 主内容区 */
+    .main-container {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      padding: 12px 16px;
+      background-color: #f8fafc;
+      gap: 10px;
+    }
+
+    /* 顶部工具与过滤栏 */
+    .toolbar-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      box-shadow: none !important;
+    }
+
+    .filter-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+    }
+
+    .actions-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 数据表格包装容器 */
+    .table-card {
+      flex: 1;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: none !important;
+    }
+
+    /* 扁平按钮统一样式 */
+    .btn-teal {
+      background-color: #009688 !important;
+      border-color: #009688 !important;
+      color: #ffffff !important;
+      box-shadow: none !important;
+    }
+
+    .btn-teal:hover {
+      background-color: #00796b !important;
+      border-color: #00796b !important;
+    }
+
+    /* 展开行子 BOM 表格样式 */
+    .expand-bom-box {
+      padding: 10px 16px;
+      background-color: #f0fdfa;
+      border-left: 4px solid #009688;
+      border-radius: 0 4px 4px 0;
+      margin: 4px 8px;
+    }
+
+    .expand-bom-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #0f766e;
+      margin-bottom: 8px;
+    }
+
+    /* 适用回路代号标签组 */
+    .tag-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    /* 底部状态汇总条 */
+    .status-footer {
+      height: 28px;
+      background: #f1f5f9;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      font-size: 11.5px;
+      color: #64748b;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app">
+    <!-- 1. 顶部无边框窗口拖拽标题栏 -->
+    <div class="window-header" @mousedown="onHeaderMouseDown">
+      <div class="window-title-box">
+        <span>⚡ 二次图回路方案与 BOM 管理中心</span>
+        <el-tag size="small" effect="plain" style="background: rgba(255,255,255,0.2); color: #fff; border: none;">SQLite 本地持久化</el-tag>
+      </div>
+      <div class="window-actions" @mousedown.stop @pointerdown.stop>
+        <div class="win-btn" title="最小化" @click.stop="minimizeWindow" @mouseup.stop="minimizeWindow">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </div>
+        <div class="win-btn close" title="关闭" @click.stop="closeWindow" @mouseup.stop="closeWindow">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. 主体容器 -->
+    <div class="main-container">
+      <!-- 顶部过滤与操作工具栏 -->
+      <div class="toolbar-card">
+        <div class="filter-left">
+          <el-input v-model="searchKeyword" placeholder="搜索方案名 / 回路代号 / 排布图 / 备注..." clearable size="small" style="width: 260px;" @input="debounceSearch">
+            <template #prefix>
+              <span style="font-size: 12px; color: #94a3b8;">🔍</span>
+            </template>
+          </el-input>
+
+          <el-select v-model="selectedGroup" placeholder="按二次排布图筛选" clearable size="small" style="width: 150px;" @change="loadSchemes">
+            <el-option label="全部二次排布图" value=""></el-option>
+            <el-option v-for="g in groupList" :key="g" :label="g" :value="g"></el-option>
+          </el-select>
+
+          <el-button size="small" class="btn-teal" @click="loadSchemes">
+            刷新列表
+          </el-button>
+        </div>
+
+        <div class="actions-right">
+          <el-button size="small" type="success" @click="openImportExcelConfirm">
+            📥 从当前 Excel 批量识别导入
+          </el-button>
+          <el-button size="small" type="primary" class="btn-teal" @click="openCreateDialog">
+            + 新建二次方案
+          </el-button>
+        </div>
+      </div>
+
+      <!-- 方案主数据表格 (支持展开行查看子 BOM) -->
+      <div class="table-card">
+        <el-table :data="schemeList" size="small" border style="width: 100%; height: 100%;" v-loading="loading" row-key="id">
+          <!-- 展开行: 子物料 BOM 明细清单 -->
+          <el-table-column type="expand" width="40">
+            <template #default="props">
+              <div class="expand-bom-box">
+                <div class="expand-bom-header">
+                  <span>🧩 二次 BOM 子物料清单 (共 {{ props.row.bomItems ? props.row.bomItems.length : 0 }} 项，价格与本地物料库强一致绑定)</span>
+                  <span style="color: #009688;">材料费合计: ¥ {{ props.row.totalMaterialCost }} 元</span>
+                </div>
+                <el-table :data="props.row.bomItems" size="small" border style="width: 100%; background: #ffffff;">
+                  <el-table-column type="index" label="序号" width="55" align="center"></el-table-column>
+                  <el-table-column prop="name" label="元件名称" width="140"></el-table-column>
+                  <el-table-column prop="model" label="规格型号" min-width="180">
+                    <template #default="subScope">
+                      <span style="font-weight: 500; color: #00796b;">{{ subScope.row.model }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="brand" label="厂家品牌" width="110">
+                    <template #default="subScope">
+                      <span>{{ subScope.row.brand || '-' }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="quantity" label="数量" width="80" align="center"></el-table-column>
+                  <el-table-column prop="unit" label="单位" width="70" align="center"></el-table-column>
+                  <el-table-column prop="unitPrice" label="物料库单价" width="110" align="right">
+                    <template #default="subScope">
+                      <span>¥ {{ subScope.row.unitPrice ? subScope.row.unitPrice.toFixed(2) : '0.00' }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="材料费合价" width="120" align="right">
+                    <template #default="subScope">
+                      <span style="font-weight: 600; color: #d97706;">
+                        ¥ {{ (subScope.row.quantity * (subScope.row.unitPrice || 0)).toFixed(2) }}
+                      </span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="remark" label="备注" width="140"></el-table-column>
+                </el-table>
+              </div>
+            </template>
+          </el-table-column>
+
+          <!-- 序号 -->
+          <el-table-column type="index" label="序号" width="50" align="center"></el-table-column>
+
+          <!-- 二次排布图 (原所属二次组) -->
+          <el-table-column prop="groupName" label="二次排布图" width="130">
+            <template #default="scope">
+              <el-tag size="small" type="info">{{ scope.row.groupName || '默认排布图' }}</el-tag>
+            </template>
+          </el-table-column>
+
+          <!-- 方案主名称 -->
+          <el-table-column prop="schemeName" label="二次方案主名称" min-width="170">
+            <template #default="scope">
+              <span style="font-weight: 600; color: #009688;">{{ scope.row.schemeName }}</span>
+            </template>
+          </el-table-column>
+
+          <!-- 适用回路代号 (重点：同配置多回路映射) -->
+          <el-table-column label="同配置适用回路代号 (图号)" min-width="200">
+            <template #default="scope">
+              <div class="tag-group">
+                <el-tag v-for="code in scope.row.applicableCodes" :key="code" size="small" type="primary" effect="light" style="background: #e0f2f1; color: #00796b; border-color: #b2dfdb;">
+                  {{ code }}
+                </el-tag>
+              </div>
+            </template>
+          </el-table-column>
+
+          <!-- 二次线跨门根数 (整数展示) -->
+          <el-table-column prop="crossDoorCount" label="二次线跨门根数" width="120" align="right">
+            <template #default="scope">
+              <span>{{ Math.round(scope.row.crossDoorCount || 0) }} 根</span>
+            </template>
+          </el-table-column>
+
+          <!-- 门板开孔 -->
+          <el-table-column prop="holeSpec" label="开孔" width="80" align="center">
+            <template #default="scope">
+              <el-tag v-if="scope.row.holeSpec" size="small" type="warning">{{ scope.row.holeSpec }}</el-tag>
+              <span v-else style="color: #94a3b8;">-</span>
+            </template>
+          </el-table-column>
+
+          <!-- 人工工费 -->
+          <el-table-column prop="laborCost" label="人工 (元)" width="90" align="right">
+            <template #default="scope">
+              <span style="font-weight: 500;">¥ {{ scope.row.laborCost }}</span>
+            </template>
+          </el-table-column>
+
+          <!-- 二次材料费小计 (实时联动) -->
+          <el-table-column label="二次材料费" width="105" align="right">
+            <template #default="scope">
+              <span style="font-weight: 600; color: #009688;">¥ {{ scope.row.totalMaterialCost }}</span>
+            </template>
+          </el-table-column>
+
+          <!-- 综合总费用 -->
+          <el-table-column label="综合成本" width="105" align="right">
+            <template #default="scope">
+              <span style="font-weight: 700; color: #e11d48;">¥ {{ scope.row.totalCost }}</span>
+            </template>
+          </el-table-column>
+
+          <!-- 操作列 -->
+          <el-table-column label="操作" width="140" align="center" fixed="right">
+            <template #default="scope">
+              <el-button size="small" type="primary" link @click="openEditDialog(scope.row)">编辑</el-button>
+              <el-button size="small" type="success" link @click="cloneScheme(scope.row)">复制</el-button>
+              <el-button size="small" type="danger" link @click="confirmDelete(scope.row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </div>
+
+    <!-- 3. 底部状态栏 -->
+    <div class="status-footer">
+      <span>已加载 {{ schemeList.length }} 套二次控制回路方案 | 数据库: personal_components.db (SQLite)</span>
+      <span>提示：子物料单价已与本地物料库自动对齐，绝无冗余写死数据</span>
+    </div>
+
+    <!-- 4. 方案编辑 / 新建对话框 -->
+    <el-dialog v-model="dialogVisible" :title="isEditMode ? '编辑二次回路方案与 BOM' : '新建二次回路方案'" width="840px" :close-on-click-modal="false" top="4vh">
+      <div style="display: flex; flex-direction: column; gap: 10px; max-height: 72vh; overflow-y: auto; padding-right: 6px;">
+        <!-- 方案基础属性栅格 -->
+        <el-form :model="editingScheme" label-width="120px" size="small">
+          <el-row :gutter="14">
+            <el-col :span="12">
+              <el-form-item label="方案主名称:">
+                <el-input v-model="editingScheme.schemeName" placeholder="如: 双电源1 控制回路"></el-input>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="二次排布图:">
+                <el-input v-model="editingScheme.groupName" placeholder="如: 标准排布图1 / 通用排布"></el-input>
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-row :gutter="14">
+            <el-col :span="24">
+              <el-form-item label="同配置回路代号:">
+                <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center; width: 100%;">
+                  <el-tag v-for="(code, idx) in editingScheme.applicableCodes" :key="idx" closable @close="editingScheme.applicableCodes.splice(idx, 1)">
+                    {{ code }}
+                  </el-tag>
+                  <el-input v-if="newCodeInputVisible" ref="newCodeInputRef" v-model="newCodeInputValue" size="small" style="width: 130px;" placeholder="输入代号按回车" @keyup.enter="addNewCodeTag" @blur="addNewCodeTag"></el-input>
+                  <el-button v-else size="small" @click="showNewCodeInput">+ 添加回路代号</el-button>
+                  <span style="font-size: 11.5px; color: #64748b; margin-left: 4px;">(如同时适用: "双电源1" 和 "CA1B")</span>
+                </div>
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <!-- 重新排布：去除 CAD 图名，跨门修改为整数根数 -->
+          <el-row :gutter="14">
+            <el-col :span="8">
+              <el-form-item label="二次线跨门根数:">
+                <el-input-number v-model="editingScheme.crossDoorCount" :min="0" :step="1" :precision="0" controls-position="right" style="width: 100%;"></el-input-number>
+              </el-form-item>
+            </el-col>
+            <el-col :span="8">
+              <el-form-item label="开孔要求:">
+                <el-input v-model="editingScheme.holeSpec" placeholder="如: 圆2"></el-input>
+              </el-form-item>
+            </el-col>
+            <el-col :span="8">
+              <el-form-item label="装配人工工费:">
+                <el-input-number v-model="editingScheme.laborCost" :min="0" :step="5" :precision="2" controls-position="right" style="width: 100%;"></el-input-number>
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-row :gutter="14">
+            <el-col :span="24">
+              <el-form-item label="方案备注:">
+                <el-input v-model="editingScheme.remark" placeholder="工艺要求或图纸附注"></el-input>
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </el-form>
+
+        <!-- 子物料 BOM 明细编辑区 (带 Element Plus 原生受控滚动 max-height="220") -->
+        <div style="background: #fafafa; border: 1px solid #e2e8f0; border-radius: 4px; padding: 10px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <span style="font-size: 12.5px; font-weight: 600; color: #00796b;">🧩 二次 BOM 子物料清单:</span>
+            <div style="display: flex; gap: 6px;">
+              <el-button size="small" type="primary" class="btn-teal" @click="openMaterialDrawer">
+                🔍 从本地物料库选型添加
+              </el-button>
+              <el-button size="small" @click="addEmptyBomItem">
+                + 自定义临时项
+              </el-button>
+            </div>
+          </div>
+
+          <el-table :data="editingScheme.bomItems" size="small" border max-height="220" style="width: 100%;">
+            <el-table-column type="index" label="序" width="40" align="center"></el-table-column>
+            <el-table-column prop="name" label="元件名称" width="130">
+              <template #default="scope">
+                <el-input v-model="scope.row.name" size="small" placeholder="如: 指示灯"></el-input>
+              </template>
+            </el-table-column>
+            <el-table-column prop="model" label="型号规格" min-width="160">
+              <template #default="scope">
+                <el-input v-model="scope.row.model" size="small" placeholder="如: AD11 AC220V 红"></el-input>
+              </template>
+            </el-table-column>
+            <el-table-column prop="quantity" label="数量" width="85">
+              <template #default="scope">
+                <el-input-number v-model="scope.row.quantity" :min="1" :max="999" size="small" controls-position="right" style="width: 100%;"></el-input-number>
+              </template>
+            </el-table-column>
+            <el-table-column prop="unit" label="单位" width="65">
+              <template #default="scope">
+                <el-input v-model="scope.row.unit" size="small"></el-input>
+              </template>
+            </el-table-column>
+            <el-table-column prop="unitPrice" label="物料库单价" width="105">
+              <template #default="scope">
+                <el-input-number v-model="scope.row.unitPrice" :min="0" :step="0.5" :precision="2" size="small" controls-position="right" style="width: 100%;"></el-input-number>
+              </template>
+            </el-table-column>
+            <el-table-column label="材料费合价" width="105" align="right">
+              <template #default="scope">
+                <span style="font-weight: 600; color: #d97706;">
+                  ¥ {{ (scope.row.quantity * (scope.row.unitPrice || 0)).toFixed(2) }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="65" align="center">
+              <template #default="scope">
+                <el-button size="small" type="danger" link @click="editingScheme.bomItems.splice(scope.$index, 1)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <!-- 对话框内实时成本预览 -->
+          <div style="display: flex; justify-content: flex-end; gap: 16px; margin-top: 8px; font-size: 12px;">
+            <span>二次材料费小计: <b style="color: #009688;">¥ {{ calcDialogMaterialCost.toFixed(2) }}</b></span>
+            <span>人工费: <b style="color: #334155;">¥ {{ (editingScheme.laborCost || 0).toFixed(2) }}</b></span>
+            <span>综合总成本: <b style="color: #e11d48; font-size: 13px;">¥ {{ (calcDialogMaterialCost + (editingScheme.laborCost || 0)).toFixed(2) }}</b></span>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <el-button size="small" @click="dialogVisible = false">取消</el-button>
+          <el-button size="small" type="primary" class="btn-teal" @click="submitScheme">保存方案</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 5. 本地个人物料库快速选择抽屉 (支持品牌搜索，默认“二次元件”) -->
+    <el-drawer v-model="materialDrawerVisible" title="📚 从本地个人物料库检索选取 (价格全局同步)" size="600px">
+      <div style="display: flex; flex-direction: column; height: 100%; gap: 10px;">
+        <!-- 搜索工具条：品牌选择 + 型号/名称关键词输入框 + 搜索按钮 -->
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <el-select v-model="materialSearchBrand" placeholder="选择或输入品牌" filterable allow-create clearable size="small" style="width: 175px;" @change="searchMaterialsNow">
+            <el-option label="二次元件 (默认)" value="二次元件"></el-option>
+            <el-option label="-- 全部品牌 --" value=""></el-option>
+            <el-option v-for="b in materialBrandList.filter(item => item !== '二次元件')" :key="b" :label="b" :value="b"></el-option>
+          </el-select>
+          <el-input v-model="materialSearchKw" placeholder="输入型号或名称 (如: AD11, 熔断器)..." size="small" clearable style="flex: 1;" @input="debounceSearchMaterials" @keyup.enter="searchMaterialsNow">
+          </el-input>
+          <el-button size="small" class="btn-teal" @click="searchMaterialsNow">搜索</el-button>
+        </div>
+
+        <div style="font-size: 11.5px; color: #64748b; display: flex; justify-content: space-between;">
+          <span>💡 当前检索品牌: <b style="color: #009688;">{{ materialSearchBrand || '全部品牌' }}</b></span>
+          <span>选入后自动绑定规范型号与物料库单价</span>
+        </div>
+
+        <el-table :data="materialSearchResult" size="small" border style="flex: 1; width: 100%;" v-loading="materialLoading">
+          <el-table-column prop="brand" label="品牌" width="90"></el-table-column>
+          <el-table-column prop="name" label="名称" width="110"></el-table-column>
+          <el-table-column prop="model" label="规格型号" min-width="160">
+            <template #default="mScope">
+              <span style="font-weight: 500; color: #00796b;">{{ mScope.row.model }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="price" label="参考单价" width="95" align="right">
+            <template #default="mScope">
+              <span style="font-weight: 600; color: #d97706;">¥ {{ (mScope.row.price || 0).toFixed(2) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="选入" width="70" align="center">
+            <template #default="mScope">
+              <el-button size="small" type="primary" class="btn-teal" @click="selectMaterialToBom(mScope.row)">选用</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </el-drawer>
+  </div>
+
+  <!-- Vue 3 核心驱动脚本 (<script setup> 架构规范) -->
+  <script>
+    const { createApp, ref, reactive, computed, nextTick, onMounted } = Vue;
+
+    const app = createApp({
+      setup() {
+        // 数据状态定义
+        const schemeList = ref([]);
+        const groupList = ref([]);
+        const loading = ref(false);
+        const searchKeyword = ref('');
+        const selectedGroup = ref('');
+
+        // 对话框状态
+        const dialogVisible = ref(false);
+        const isEditMode = ref(false);
+        const editingScheme = reactive({
+          id: 0,
+          schemeName: '',
+          groupName: '',
+          applicableCodes: [],
+          cadDrawingName: '',
+          crossDoorCount: 0.0,
+          holeSpec: '',
+          laborCost: 0.0,
+          remark: '',
+          bomItems: []
+        });
+
+        // 适用回路新代号 Tag 编辑状态
+        const newCodeInputVisible = ref(false);
+        const newCodeInputValue = ref('');
+        const newCodeInputRef = ref(null);
+
+        // 物料库快速检索抽屉状态
+        const materialDrawerVisible = ref(false);
+        const materialSearchBrand = ref('二次元件'); // --硬编码-- 默认品牌为二次元件
+        const materialBrandList = ref(['二次元件']); // 可用品牌列表
+        const materialSearchKw = ref('');
+        const materialSearchResult = ref([]);
+        const materialLoading = ref(false);
+
+        // 实时计算当前编辑对话框中的材料费小计
+        const calcDialogMaterialCost = computed(() => {
+          if (!editingScheme.bomItems || editingScheme.bomItems.length === 0) return 0.0;
+          return editingScheme.bomItems.reduce((acc, cur) => acc + (cur.quantity || 0) * (cur.unitPrice || 0), 0);
+        });
+
+        // 与 C# 端无边框窗口交互
+        const onHeaderMouseDown = (e) => {
+          if (e.button !== 0) return;
+          // 防御：若点击发生在操作按钮区或子元素上，严禁向 C# 发送系统模态拖拽指令
+          if (e.target.closest('.window-actions') || e.target.closest('.win-btn')) return;
+          postToCSharp({ action: 'dragWindow' });
+        };
+        const minimizeWindow = () => postToCSharp({ action: 'minimizeWindow' });
+        const closeWindow = () => {
+          postToCSharp({ action: 'closeWindow' });
+          postToCSharp({ action: 'close' });
+        };
+
+        // 发送 IPC 消息助手
+        const postToCSharp = (payload) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify(payload));
+          }
+        };
+
+        // 加载方案列表
+        const loadSchemes = () => {
+          loading.value = true;
+          postToCSharp({
+            action: 'loadSchemes',
+            keyword: searchKeyword.value,
+            groupName: selectedGroup.value
+          });
+        };
+
+        // 防抖搜索
+        let searchTimer = null;
+        const debounceSearch = () => {
+          if (searchTimer) clearTimeout(searchTimer);
+          searchTimer = setTimeout(() => {
+            loadSchemes();
+          }, 300);
+        };
+
+        // 打开新建方案对话框
+        const openCreateDialog = () => {
+          isEditMode.value = false;
+          editingScheme.id = 0;
+          editingScheme.schemeName = '';
+          editingScheme.groupName = selectedGroup.value || '通用排布图';
+          editingScheme.applicableCodes = ['双电源1', 'CA1B']; // --硬编码-- 初始示例代号
+          editingScheme.cadDrawingName = '';
+          editingScheme.crossDoorCount = 3; // 整数根数
+          editingScheme.holeSpec = '圆2';
+          editingScheme.laborCost = 35.0;
+          editingScheme.remark = '';
+          editingScheme.bomItems = [];
+          dialogVisible.value = true;
+        };
+
+        // 打开编辑方案对话框
+        const openEditDialog = (row) => {
+          isEditMode.value = true;
+          editingScheme.id = row.id;
+          editingScheme.schemeName = row.schemeName;
+          editingScheme.groupName = row.groupName;
+          editingScheme.applicableCodes = Array.isArray(row.applicableCodes) ? [...row.applicableCodes] : [];
+          editingScheme.cadDrawingName = row.cadDrawingName || '';
+          editingScheme.crossDoorCount = Math.round(row.crossDoorCount || 0); // 确保整数根数
+          editingScheme.holeSpec = row.holeSpec || '';
+          editingScheme.laborCost = row.laborCost || 0.0;
+          editingScheme.remark = row.remark || '';
+          editingScheme.bomItems = Array.isArray(row.bomItems) ? JSON.parse(JSON.stringify(row.bomItems)) : [];
+          dialogVisible.value = true;
+        };
+
+        // 方案一键克隆
+        const cloneScheme = (row) => {
+          isEditMode.value = false;
+          editingScheme.id = 0;
+          editingScheme.schemeName = row.schemeName + '_副本';
+          editingScheme.groupName = row.groupName;
+          editingScheme.applicableCodes = Array.isArray(row.applicableCodes) ? row.applicableCodes.map(c => c + '_副本') : [];
+          editingScheme.cadDrawingName = row.cadDrawingName || '';
+          editingScheme.crossDoorCount = Math.round(row.crossDoorCount || 0);
+          editingScheme.holeSpec = row.holeSpec || '';
+          editingScheme.laborCost = row.laborCost || 0.0;
+          editingScheme.remark = row.remark || '';
+          editingScheme.bomItems = Array.isArray(row.bomItems) ? JSON.parse(JSON.stringify(row.bomItems)) : [];
+          dialogVisible.value = true;
+        };
+
+        // 适用回路 Tag 增删控制
+        const showNewCodeInput = () => {
+          newCodeInputVisible.value = true;
+          newCodeInputValue.value = '';
+          nextTick(() => {
+            if (newCodeInputRef.value) newCodeInputRef.value.focus();
+          });
+        };
+
+        const addNewCodeTag = () => {
+          if (newCodeInputValue.value && newCodeInputValue.value.trim()) {
+            const val = newCodeInputValue.value.trim();
+            if (!editingScheme.applicableCodes.includes(val)) {
+              editingScheme.applicableCodes.push(val);
+            }
+          }
+          newCodeInputVisible.value = false;
+          newCodeInputValue.value = '';
+        };
+
+        // 子 BOM 项手动添加
+        const addEmptyBomItem = () => {
+          editingScheme.bomItems.push({
+            componentId: 0,
+            name: '',
+            model: '',
+            brand: '',
+            quantity: 1,
+            unit: '只',
+            unitPrice: 0.0,
+            remark: ''
+          });
+        };
+
+        // 打开物料检索抽屉 (默认指定“二次元件”品牌并自动触发首屏检索)
+        const openMaterialDrawer = () => {
+          materialDrawerVisible.value = true;
+          materialSearchBrand.value = '二次元件'; // 默认品牌为二次元件
+          materialSearchKw.value = ''; // 清空关键字，直接展示该品牌下全部物料
+          searchMaterialsNow();
+        };
+
+        // 物料检索 (支持品牌与关键字组合多维查询)
+        const searchMaterialsNow = () => {
+          materialLoading.value = true;
+          postToCSharp({
+            action: 'searchMaterials',
+            brand: materialSearchBrand.value || '',
+            keyword: materialSearchKw.value || ''
+          });
+        };
+
+        let matTimer = null;
+        const debounceSearchMaterials = () => {
+          if (matTimer) clearTimeout(matTimer);
+          matTimer = setTimeout(() => searchMaterialsNow(), 300);
+        };
+
+        // 从物料库选中元器件加入子 BOM (核心价值：保证价格一致性)
+        const selectMaterialToBom = (mat) => {
+          editingScheme.bomItems.push({
+            componentId: mat.id,
+            name: mat.name || '元器件',
+            model: mat.model || '',
+            brand: mat.brand || '',
+            quantity: 1,
+            unit: '只',
+            unitPrice: mat.price || 0.0,
+            remark: mat.remark || ''
+          });
+          ElementPlus.ElMessage.success(`已选入【${mat.name} - ${mat.model}】，单价自动同步为 ¥ ${mat.price}`);
+        };
+
+        // 提交保存方案
+        const submitScheme = () => {
+          if (!editingScheme.schemeName || !editingScheme.schemeName.trim()) {
+            ElementPlus.ElMessage.warning('方案主名称不能为空！');
+            return;
+          }
+          // 确保二次线跨门根数为整数
+          editingScheme.crossDoorCount = Math.round(editingScheme.crossDoorCount || 0);
+
+          postToCSharp({
+            action: 'saveScheme',
+            scheme: editingScheme
+          });
+        };
+
+        // 删除方案
+        const confirmDelete = (row) => {
+          ElementPlus.ElMessageBox.confirm(`确定要彻底删除二次回路方案【${row.schemeName}】吗？`, '删除二次方案', {
+            confirmButtonText: '确定删除',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }).then(() => {
+            postToCSharp({ action: 'deleteScheme', id: row.id });
+          }).catch(() => {});
+        };
+
+        // 从当前活动 Excel 批量识别导入二次方案
+        const openImportExcelConfirm = () => {
+          ElementPlus.ElMessageBox.confirm(
+            '系统将自动读取当前打开的 Excel 活动工作表，基于“主方案行(红色/回路代号) + 子物料清单(名称/型号/数量/单价)”结构批量识别并存入本地 SQLite 数据库。是否立即执行？',
+            '从 Excel 批量导入二次方案库',
+            {
+              confirmButtonText: '立即识别导入',
+              cancelButtonText: '取消',
+              type: 'info'
+            }
+          ).then(() => {
+            loading.value = true;
+            postToCSharp({ action: 'importFromExcel' });
+          }).catch(() => {});
+        };
+
+        // 注册接收 C# 端消息分发器
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (e) => {
+              try {
+                const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+                const action = data.action;
+
+                if (action === 'schemesLoaded') {
+                  schemeList.value = data.schemes || [];
+                  groupList.value = data.groups || [];
+                  if (data.materialBrands && Array.isArray(data.materialBrands)) {
+                    materialBrandList.value = data.materialBrands;
+                  }
+                  loading.value = false;
+                } else if (action === 'materialBrandsLoaded') {
+                  if (data.materialBrands && Array.isArray(data.materialBrands)) {
+                    materialBrandList.value = data.materialBrands;
+                  }
+                } else if (action === 'saveSchemeResult') {
+                  if (data.result && data.result.success) {
+                    ElementPlus.ElMessage.success(data.result.message || '保存成功！');
+                    dialogVisible.value = false;
+                    loadSchemes();
+                  } else {
+                    ElementPlus.ElMessage.error(data.result?.message || '保存失败！');
+                  }
+                } else if (action === 'deleteSchemeResult') {
+                  if (data.result && data.result.success) {
+                    ElementPlus.ElMessage.success(data.result.message || '删除成功！');
+                    loadSchemes();
+                  } else {
+                    ElementPlus.ElMessage.error(data.result?.message || '删除失败！');
+                  }
+                } else if (action === 'materialsLoaded') {
+                  materialSearchResult.value = data.materials || [];
+                  materialLoading.value = false;
+                } else if (action === 'importExcelResult') {
+                  loading.value = false;
+                  if (data.result && data.result.success) {
+                    ElementPlus.ElMessageBox.alert(data.result.message, '导入成功', {
+                      confirmButtonText: '确定',
+                      type: 'success'
+                    });
+                    loadSchemes();
+                  } else {
+                    ElementPlus.ElMessageBox.alert(data.result?.message || '导入失败，请检查工作表格式', '导入失败', {
+                      confirmButtonText: '确定',
+                      type: 'error'
+                    });
+                  }
+                }
+              } catch (err) {
+                console.error('解析 C# 消息失败:', err);
+              }
+            });
+          }
+
+          // 初始加载方案
+          loadSchemes();
+        });
+
+        return {
+          schemeList,
+          groupList,
+          loading,
+          searchKeyword,
+          selectedGroup,
+          dialogVisible,
+          isEditMode,
+          editingScheme,
+          calcDialogMaterialCost,
+          newCodeInputVisible,
+          newCodeInputValue,
+          newCodeInputRef,
+          materialDrawerVisible,
+          materialSearchBrand,
+          materialBrandList,
+          materialSearchKw,
+          materialSearchResult,
+          materialLoading,
+          onHeaderMouseDown,
+          minimizeWindow,
+          closeWindow,
+          loadSchemes,
+          debounceSearch,
+          openCreateDialog,
+          openEditDialog,
+          cloneScheme,
+          showNewCodeInput,
+          addNewCodeTag,
+          addEmptyBomItem,
+          openMaterialDrawer,
+          searchMaterialsNow,
+          debounceSearchMaterials,
+          selectMaterialToBom,
+          submitScheme,
+          confirmDelete,
+          openImportExcelConfirm
+        };
+      }
+    });
+
+    app.use(ElementPlus);
+    app.mount('#app');
+  </script>
+</body>
+
+</html>
