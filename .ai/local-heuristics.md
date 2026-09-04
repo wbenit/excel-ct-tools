@@ -102,6 +102,39 @@
   2. **前端严格限制鼠标主键**：Web 端 `onHeaderMouseDown` 必须增加 `if (e.button !== 0) return;` 防护，排除中键或右键误触；
   3. **废除无休止定时器，改用按需探测**：彻底移除 `setInterval` 轮询 COM，改用 `window.addEventListener('focus', ...)`（用户在 Excel 划选完后点击切回浮窗时自动触发检测），外加界面【刷新选区】手动按钮，彻底规避线程竞争。
 
+### 17. WebView2 与 WinForms 混合应用中，在 WebMessageReceived 同步调用模态对话框（ShowDialog）引发 Chromium IPC 死锁与页面全局冻结
+- **现象**：前端点击按钮通过 `window.chrome.webview.postMessage` 请求 C# 弹出文件夹选择器（`FolderBrowserDialog`）或文件选择器（`OpenFileDialog`），窗口弹出或选定关闭后，整个 WebView2 页面失去响应、无法点击、页面陷入全局假死冻结。
+- **原因**：
+  1. **Chromium IPC 死锁**：前端的 `postMessage` 与 C# 的 `WebMessageReceived` 之间依赖 Chromium 底层的内部 IPC 管道（通过 Windows 消息队列完成握手确认）。如果在 `WebMessageReceived` 回调中**同步调用** `ShowDialog()`，WinForms 会立即进入 Win32 模态消息循环并挂起当前调用栈，导致该次 WebMessage 无法向 Chromium 管道回送完成握手确认。Chromium 渲染进程因此被强制挂起等待，导致整个 WebView2 页面陷入全局死锁与冻结；
+  2. **第三方外壳扩展（Shell Extension）枚举阻塞**：WinForms 传统 `FolderBrowserDialog` 默认枚举根目录外壳空间时，若系统安装了慢速或离线驱动器（如百度网盘同步空间、OneDrive、慢速网络共享），会在枚举时发生数十秒的主线程无响应假死。
+- **结晶解法（终极规范）**：
+  1. **独立 STA 线程异步解耦**：所有由 WebMessage 触发的原生模态对话框（`FolderBrowserDialog`、`OpenFileDialog`、`SaveFileDialog`），必须剥离出 WebMessage 调用栈，移至**独立的后台 STA 线程**中启动：
+     ```csharp
+     var dialogThread = new System.Threading.Thread(() =>
+     {
+         try
+         {
+             using var dialog = new FolderBrowserDialog { ShowNewFolderButton = true };
+             if (dialog.ShowDialog() == DialogResult.OK && !string.IsNullOrWhiteSpace(dialog.SelectedPath))
+             {
+                 string chosen = dialog.SelectedPath;
+                 // 线程安全切回主线程通知前端
+                 SafeInvoke(() => PostWebMessageSafe(JsonSerializer.Serialize(new { action = "dirSelected", path = chosen })));
+             }
+         }
+         catch (Exception ex) { LogHelper.WriteLog($"对话框异常: {ex.Message}"); }
+     });
+     dialogThread.SetApartmentState(System.Threading.ApartmentState.STA);
+     dialogThread.IsBackground = true;
+     dialogThread.Start();
+     ```
+  2. **跨线程安全回传**：对话框执行 `ShowDialog()` 完全在独立线程的模态循环中运行，绝不占用主线程与 Chromium 消息队列；选定结果后，通过窗体的 `SafeInvoke` 切回主线程，使用 `PostWebMessageSafe` 异步通知前端更新，实现 100% 线程解耦；
+  3. **.NET Framework 4.8 属性避坑**：在 .NET Framework 4.8 中，`FolderBrowserDialog` 不支持 `AutoUpgradeEnabled` 属性（该属性仅在 .NET Core / .NET 5+ 或 `FileDialog` 中存在），不可盲目配置以免产生编译错误 `CS0117`；
+  4. **前端交互双轨保障（弹窗浏览 + 极速粘贴）**：在 Web 界面除提供浏览按钮外，同步提供 `✍️ 粘贴路径` 按钮，通过 `ElMessageBox.prompt` 原生输入框支持直接粘贴 Windows 资源管理器地址栏路径，走独立 Manual 接口，零弹窗极速直达。
 
-
-
+### 18. DWG 二进制免安装 CAD 图纸缩略图与元数据快速提取机制
+- **现象**：在无 CAD 环境或后台不启动庞大 AutoCAD 进程的情况下，需要快速展示本地 DWG 图纸缩略图与即时预览。
+- **结晶解法（三级降级梯队）**：
+  1. **第 1 梯队：Windows Shell 原生缩略图工厂 (`IShellItemImageFactory`)**：通过 P/Invoke 调用 Shell32 的 `SHCreateItemFromParsingName` 与 `GetImage`，可无损提取 Windows 资源管理器自身缓存的高清缩略图（支持最高 512x512 位图），毫秒级响应且画质极佳；
+  2. **第 2 梯队：纯 C# 文件流二进制解析（DWG Header IMAGE_SEEK）**：当 Shell 工厂无法提供时，直接通过 `FileStream` 顺序读取 DWG 头部二进制规范（R13~R2018 跨版本兼容），定位 `0x0D` 偏移行处的 `IMAGE_SEEK` 4字节指针，直接提取 DWG 文件内部内嵌保存的标准 256 色/真彩色 BMP 图像流，完全零外部进程依赖；
+  3. **第 3 梯队：动态矢量占位符降级**：若图纸保存时未勾选内嵌预览或文件损坏，通过 GDI+ 动态绘制工业蓝图网格并居中渲染文件名作为兜底预览，提供一键外部关联 CAD 打开与资源管理器高亮定位。

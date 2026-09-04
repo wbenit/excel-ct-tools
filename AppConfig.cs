@@ -13,6 +13,10 @@ namespace ExcelAddInDemo
         // Excel 业务处理与样式相关的配置选项分节
         [JsonPropertyName("ExcelSettings")]
         public ExcelSettings Excel { get; set; } = new ExcelSettings();
+
+        // 二次图回路方案与 DWG 图纸本地目录配置选项分节
+        [JsonPropertyName("SecondaryCircuitSettings")]
+        public SecondaryCircuitSettings SecondaryCircuit { get; set; } = new SecondaryCircuitSettings();
     }
 
     // 后端 API 接口连接配置数据模型
@@ -110,6 +114,19 @@ namespace ExcelAddInDemo
 
         // 是否启用基于 WebView2 + Vue 3 的自定义业务右键菜单 (默认: true，若为 false 则完全使用 Excel 原生右键菜单)
         public bool UseCustomContextMenu { get; set; } = true;
+    }
+
+    /// <summary>
+    /// 二次图回路方案管理与 DWG 本地图纸目录配置实体
+    /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+    /// </summary>
+    public class SecondaryCircuitSettings
+    {
+        // 二次排布图 DWG 本地图纸目录绝对路径
+        public string LayoutDwgDirectory { get; set; } = string.Empty;
+
+        // 回路代号原理图 DWG 本地图纸目录绝对路径
+        public string CircuitDwgDirectory { get; set; } = string.Empty;
     }
 }
 

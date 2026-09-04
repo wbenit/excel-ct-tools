@@ -8,6 +8,7 @@ using ExcelAddInDemo.Controllers;
 using ExcelAddInDemo.Models;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
+using ExcelDna.Integration;
 
 namespace ExcelAddInDemo
 {
@@ -73,12 +74,14 @@ namespace ExcelAddInDemo
         {
             // 设置窗体标题
             this.Text = "二次图回路方案与 BOM 管理中心";
-            // 默认窗口宽度
-            this.Width = 1180; // --硬编码-- 窗口默认宽度
-            // 默认窗口高度
-            this.Height = 740; // --硬编码-- 窗口默认高度
-            // 最小窗口限制
-            this.MinimumSize = new Size(980, 600);
+            // 获取用户当前主显示器的工作区有效几何尺寸
+            var workingArea = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1920, 1080);
+            // 默认窗口宽度：自适应 1420 像素宽屏呈现，且不超过工作区 95%
+            this.Width = Math.Max(1280, Math.Min(1460, (int)(workingArea.Width * 0.94))); // --硬编码-- 窗口默认宽度
+            // 默认窗口高度：自适应 880 像素舒展呈现，且不超过工作区 92%
+            this.Height = Math.Max(780, Math.Min(920, (int)(workingArea.Height * 0.90))); // --硬编码-- 窗口默认高度
+            // 最小窗口尺寸门禁，保障图纸视口与表格完整展示
+            this.MinimumSize = new Size(1180, 720);
             // 启动时在桌面居中显示
             this.StartPosition = FormStartPosition.CenterScreen;
             // 彻底去除系统原生边框以呈现纯净现代扁平效果
@@ -146,10 +149,19 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 导航至 HTML 页面
+                // 导航至 HTML 页面 (使用 VirtualHostName 映射为安全域名，确保 WebWorker 与 WebAssembly 零跨域阻断)
                 if (!string.IsNullOrEmpty(htmlPath) && File.Exists(htmlPath))
                 {
-                    _webView.Source = new Uri(htmlPath);
+                    // 提取资源根目录路径
+                    string resDir = Path.GetDirectoryName(htmlPath)!;
+                    // 将本地资源目录安全映射为 https://appassets.local
+                    _webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                        "appassets.local",
+                        resDir,
+                        Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
+
+                    // 导航至虚拟主机安全页面
+                    _webView.Source = new Uri("https://appassets.local/secondary_circuit_manage.html");
                 }
                 else
                 {
@@ -261,6 +273,193 @@ namespace ExcelAddInDemo
                             action = "importExcelResult",
                             result = impRes
                         }, JsonOptions));
+                        break;
+
+                    // 5.1 获取排布图与回路代号 DWG 本地图纸目录及文件列表
+                    case "getDwgDirs":
+                        var dwgData = _controller.GetDwgDirectoriesAndFiles();
+                        PostWebMessageSafe(JsonSerializer.Serialize(new
+                        {
+                            action = "dwgDirsLoaded",
+                            data = dwgData
+                        }, JsonOptions));
+                        break;
+
+                    // 5.2 调起 WinForms 现代文件夹选择器设置图纸目录 (独立 STA 线程异步运行，彻底杜绝阻塞 WebView2 与 Excel 主线程)
+                    case "selectDwgDir":
+                        string target = root.TryGetProperty("target", out var tgProp) ? (tgProp.GetString() ?? "layout") : "layout";
+                        // 启动独立的 STA 工作线程弹出文件夹对话框，确保绝对不阻塞主事件循环与 Chromium IPC
+                        var dialogThread = new System.Threading.Thread(() =>
+                        {
+                            try
+                            {
+                                // 实例化文件夹选取器
+                                using var fbd = new FolderBrowserDialog
+                                {
+                                    Description = target == "layout" ? "请选择【二次排布图 DWG 文件】存放目录" : "请选择【同配置回路代号 DWG 原理图】存放目录",
+                                    ShowNewFolderButton = true
+                                };
+
+                                // 优先使用当前已配置的目录作为初始定位目录
+                                var currentCfg = ConfigManager.Instance.Current?.SecondaryCircuit;
+                                string? initialPath = target == "layout" ? currentCfg?.LayoutDwgDirectory : currentCfg?.CircuitDwgDirectory;
+                                if (!string.IsNullOrWhiteSpace(initialPath) && Directory.Exists(initialPath))
+                                {
+                                    fbd.SelectedPath = initialPath;
+                                }
+
+                                // 模态弹窗在独立线程中独立运行，完全不阻塞主窗体与 WebView2
+                                if (fbd.ShowDialog() == DialogResult.OK && !string.IsNullOrWhiteSpace(fbd.SelectedPath))
+                                {
+                                    string chosenPath = fbd.SelectedPath;
+                                    // 线程安全切回主线程更新业务配置并推送给前端
+                                    SafeInvoke(() =>
+                                    {
+                                        var setRes = _controller.SetDwgDirectory(target, chosenPath);
+                                        PostWebMessageSafe(JsonSerializer.Serialize(new
+                                        {
+                                            action = "dwgDirSelected",
+                                            result = setRes
+                                        }, JsonOptions));
+                                    });
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                // 记录独立线程弹窗异常
+                                LogHelper.WriteLog($"[SecondaryCircuitForm] selectDwgDir 线程异常: {ex.Message}");
+                            }
+                        });
+                        // 显式指定 STA 单元模型以支持 Win32 Shell 接口
+                        dialogThread.SetApartmentState(System.Threading.ApartmentState.STA);
+                        dialogThread.IsBackground = true;
+                        dialogThread.Start();
+                        break;
+
+                    // 5.3 重新扫描指定本地目录下的 DWG 文件
+                    case "scanDwgDir":
+                        string? scanPath = root.TryGetProperty("dirPath", out var dpProp) ? dpProp.GetString() : null;
+                        if (!string.IsNullOrWhiteSpace(scanPath))
+                        {
+                            // 扫描该目录下 DWG 文件
+                            var files = _controller.ScanDwgFiles(scanPath);
+                            PostWebMessageSafe(JsonSerializer.Serialize(new
+                            {
+                                action = "dwgFilesScanned",
+                                dirPath = scanPath,
+                                files = files
+                            }, JsonOptions));
+                        }
+                        break;
+
+                    // 5.3.1 扫描目录层级结构 (包含子文件夹与 DWG 图纸，支持双击下钻与面包屑)
+                    case "scanDirectoryHierarchy":
+                        string? hierPath = root.TryGetProperty("dirPath", out var hpProp) ? hpProp.GetString() : null;
+                        if (!string.IsNullOrWhiteSpace(hierPath))
+                        {
+                            // 调度控制器执行综合层级扫描
+                            var hierData = _controller.ScanDirectoryHierarchy(hierPath);
+                            PostWebMessageSafe(JsonSerializer.Serialize(new
+                            {
+                                action = "directoryHierarchyScanned",
+                                data = hierData
+                            }, JsonOptions));
+                        }
+                        break;
+
+                    // 5.3.3 全局递归定位指定回路图号或文件名的具体物理路径及其所在父目录 (跨目录穿透反显图纸)
+                    case "locateAndHighlightDwg":
+                        string? locCode = root.TryGetProperty("code", out var lcProp) ? lcProp.GetString() : null;
+                        string? locRoot = root.TryGetProperty("rootDir", out var lrProp) ? lrProp.GetString() : null;
+                        if (!string.IsNullOrWhiteSpace(locCode))
+                        {
+                            // 异步在后台线程池执行全局穿透嗅探定位，确保 UI 极速响应
+                            System.Threading.Tasks.Task.Run(() =>
+                            {
+                                var locResult = _controller.LocateDwgFile(locRoot, locCode);
+                                PostWebMessageSafe(JsonSerializer.Serialize(new
+                                {
+                                    action = "dwgLocated",
+                                    targetCode = locCode,
+                                    result = locResult
+                                }, JsonOptions));
+                            });
+                        }
+                        break;
+
+                    // 5.3.2 提取 DWG 原始二进制 Base64 数据供真实矢量视口 WebGL 渲染
+                    case "getDwgBinary":
+                        string? binPath = root.TryGetProperty("filePath", out var bpProp) ? bpProp.GetString() : null;
+                        string? binPref = root.TryGetProperty("preferredType", out var bprefProp) ? bprefProp.GetString() : null;
+                        if (!string.IsNullOrWhiteSpace(binPath))
+                        {
+                            // 调度控制器读取二进制流
+                            var binData = _controller.GetDwgBinary(binPath, binPref);
+                            PostWebMessageSafe(JsonSerializer.Serialize(new
+                            {
+                                action = "dwgBinaryLoaded",
+                                data = binData
+                            }, JsonOptions));
+                        }
+                        break;
+
+                    // 5.5 外部调起 AutoCAD 或系统关联程序打开 DWG
+                    case "openInCad":
+                        string? cadPath = root.TryGetProperty("filePath", out var cpProp) ? cpProp.GetString() : null;
+                        string? cadPref = root.TryGetProperty("preferredType", out var cprefProp) ? cprefProp.GetString() : null;
+                        if (!string.IsNullOrWhiteSpace(cadPath))
+                        {
+                            // 启动外部关联软件
+                            var cadRes = _controller.OpenInCad(cadPath, cadPref);
+                            PostWebMessageSafe(JsonSerializer.Serialize(new
+                            {
+                                action = "openInCadResult",
+                                result = cadRes
+                            }, JsonOptions));
+                        }
+                        break;
+
+
+                    // 5.7 扫描当前活动 Excel 工作表中的全部二次元件组 (按型号去重输出)
+                    case "scanExcelComponentGroups":
+                        // 使用 QueueAsMacro 交由 Excel 原生主线程执行，确保 COM 状态就绪
+                        ExcelAsyncUtil.QueueAsMacro(() =>
+                        {
+                            // 调度 Excel 业务服务提取活动表格中的二次元件组清单 (去重聚合)
+                            var groupRows = ExcelServices.ScanExcelComponentGroups();
+                            // 序列化并通过 IPC 异步推送回前端 WebView2
+                            PostWebMessageSafe(JsonSerializer.Serialize(new
+                            {
+                                action = "excelComponentGroupsScanned",
+                                groups = groupRows
+                            }, JsonOptions));
+                        });
+                        break;
+
+                    // 5.8 批量将二次元件组与回路图号绑定持久化写入 Excel 对应行的第 32 列
+                    case "saveExcelComponentGroupBindings":
+                        if (root.TryGetProperty("bindings", out var bProp))
+                        {
+                            // 反序列化待保存的绑定映射数组
+                            var bindList = JsonSerializer.Deserialize<List<ExcelServices.ComponentGroupBindingSaveDto>>(bProp.GetRawText(), JsonOptions);
+                            // 关键保障：使用 QueueAsMacro 脱离 WebView2 回调上下文，交由 Excel 纯净主线程调度
+                            ExcelAsyncUtil.QueueAsMacro(() =>
+                            {
+                                // 调度 Excel 服务批量回写第 32 列
+                                var bindRes = ExcelServices.SaveExcelComponentGroupBindings(bindList);
+                                // 将写入结果安全回传给前端
+                                PostWebMessageSafe(JsonSerializer.Serialize(new
+                                {
+                                    action = "excelComponentGroupBindingsSaved",
+                                    result = new
+                                    {
+                                        success = bindRes.Success,
+                                        count = bindRes.UpdatedCount,
+                                        message = bindRes.Message
+                                    }
+                                }, JsonOptions));
+                            });
+                        }
                         break;
 
                     // 6. 无边框窗口拖拽 (严格基于物理按键检测防幽灵死锁)

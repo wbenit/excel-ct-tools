@@ -25,37 +25,15 @@ namespace ExcelAddInDemo.Services
         private static string? _connectionString;
 
         /// <summary>
-        /// 获取或初始化本地个人物料库 SQLite 数据库文件的绝对物理路径
+        /// 获取或初始化本地个人物料库 SQLite 数据库文件的绝对物理路径 (纯粹使用 Tool.GetAppDataDirectory 统一规范)
         /// </summary>
         /// <returns>数据库文件全路径</returns>
         public static string GetDatabaseFilePath()
         {
-            try
-            {
-                // 获取 Windows LocalAppData 标准目录
-                string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                // 拼接 ExcelCTTools 专属数据目录
-                string dataFolder = Path.Combine(localAppData, "ExcelCTTools", "data"); // --硬编码-- 默认应用数据子目录
-
-                // 校验目录是否存在，不存在则自动递归创建
-                if (!Directory.Exists(dataFolder))
-                {
-                    // 递归创建 data 数据保存目录
-                    Directory.CreateDirectory(dataFolder);
-                }
-
-                // 组合生成个人物料库数据库文件全路径
-                return Path.Combine(dataFolder, DefaultDbFileName);
-            }
-            catch (Exception ex)
-            {
-                // 记录日志并在异常时使用插件目录降级兜底
-                LogHelper.WriteLog($"[PersonalDb] 获取数据库路径异常: {ex.Message}，降级至应用目录");
-                // 获取插件 data 目录
-                string fallbackDir = Tool.GetAppDataDirectory();
-                // 拼接返回降级路径
-                return Path.Combine(fallbackDir, DefaultDbFileName);
-            }
+            // 调用公共工具类获取插件根运行目录下的 data 标准存储路径
+            string appDataDir = Tool.GetAppDataDirectory();
+            // 拼接并返回 data 目录下的 SQLite 数据库文件绝对路径
+            return Path.Combine(appDataDir, DefaultDbFileName);
         }
 
         /// <summary>

@@ -95,7 +95,7 @@ namespace ExcelAddInDemo
             return defaultConfig;
         }
 
-        // 将修改后的配置序列化并保存至磁盘文件中
+        // 将修改后的配置序列化并保存至磁盘文件中 (双写持久化：插件同级目录优先 + AppData 用户专属目录兜底)
         public void SaveConfig(AppConfig config)
         {
             try
@@ -110,8 +110,44 @@ namespace ExcelAddInDemo
                 // 将配置模型对象序列化为格式化 JSON 字符串
                 string json = JsonSerializer.Serialize(config, options);
 
-                // 将 JSON 内容安全写入配置文件中
-                File.WriteAllText(_configFilePath, json);
+                // 1. 尝试将配置同步写回插件 DLL/XLL 运行的物理目录 (保证便携性优先生效)
+                try
+                {
+                    // 获取当前运行物理目录
+                    string currentDir = Tool.GetAppDirectory();
+                    if (!string.IsNullOrWhiteSpace(currentDir) && Directory.Exists(currentDir))
+                    {
+                        // 拼接插件目录下的 appsettings.json 绝对路径
+                        string localConfigPath = Path.Combine(currentDir, "appsettings.json");
+                        // 写入插件同级目录
+                        File.WriteAllText(localConfigPath, json);
+                    }
+                }
+                catch (Exception localEx)
+                {
+                    // 记录本地写入异常 (可能因权限不足等)
+                    System.Diagnostics.Debug.WriteLine($"写入插件同级 appsettings.json 异常: {localEx.Message}");
+                }
+
+                // 2. 将配置写入 AppData 用户专属配置目录 (全局兜底保障)
+                try
+                {
+                    // 确保 AppData 目标目录已存在
+                    string? appDataDir = Path.GetDirectoryName(_configFilePath);
+                    if (!string.IsNullOrWhiteSpace(appDataDir) && !Directory.Exists(appDataDir))
+                    {
+                        // 自动递归创建目录
+                        Directory.CreateDirectory(appDataDir);
+                    }
+
+                    // 写入 AppData 配置文件中
+                    File.WriteAllText(_configFilePath, json);
+                }
+                catch (Exception appDataEx)
+                {
+                    // 记录 AppData 写入异常
+                    System.Diagnostics.Debug.WriteLine($"写入 AppData appsettings.json 异常: {appDataEx.Message}");
+                }
 
                 // 同步更新内存中的当前配置引用
                 Current = config;
@@ -155,6 +191,37 @@ namespace ExcelAddInDemo
             SetCustomContextMenuMode(targetMode);
             // 返回更新后的目标模式状态
             return targetMode;
+        }
+
+        /// <summary>
+        /// 更新并持久化二次排布图与回路代号的本地 DWG 图纸目录配置
+        /// </summary>
+        /// <param name="layoutDir">二次排布图本地目录路径 (为 null 则不更新)</param>
+        /// <param name="circuitDir">回路代号原理图本地目录路径 (为 null 则不更新)</param>
+        public void UpdateSecondaryDwgDirectories(string? layoutDir, string? circuitDir)
+        {
+            // 读取当前全局配置
+            var cfg = Current ?? new AppConfig();
+            // 确保配置节已被初始化
+            if (cfg.SecondaryCircuit == null)
+            {
+                cfg.SecondaryCircuit = new SecondaryCircuitSettings();
+            }
+
+            // 更新排布图目录
+            if (layoutDir != null)
+            {
+                cfg.SecondaryCircuit.LayoutDwgDirectory = layoutDir;
+            }
+
+            // 更新回路代号图纸目录
+            if (circuitDir != null)
+            {
+                cfg.SecondaryCircuit.CircuitDwgDirectory = circuitDir;
+            }
+
+            // 持久化保存至磁盘配置文件
+            SaveConfig(cfg);
         }
     }
 }

@@ -720,5 +720,76 @@ namespace ExcelAddInDemo.Services
         }
 
         #endregion
+
+        #region 回路代号全局唯一性防重检测
+
+        /// <summary>
+        /// 回路代号全局唯一性冲突检测结果结构
+        /// </summary>
+        public class CodeConflictResult
+        {
+            // 发生冲突的代号文本
+            public string Code { get; set; } = string.Empty;
+            // 占用该代号的已有方案主名称
+            public string SchemeName { get; set; } = string.Empty;
+            // 占用该代号的已有方案主键 ID
+            public int SchemeId { get; set; }
+        }
+
+        /// <summary>
+        /// 检查一组回路代号是否已被其他方案绑定占用 (全局防重门禁校验)
+        /// </summary>
+        /// <param name="codes">待检查的回路代号列表</param>
+        /// <param name="excludeSchemeId">排除当前正在编辑的方案 ID (新建为 0)</param>
+        /// <returns>若存在冲突则返回首个冲突详情，完全无冲突则返回 null</returns>
+        public static CodeConflictResult? CheckApplicableCodeConflict(IEnumerable<string>? codes, int excludeSchemeId = 0)
+        {
+            // 若列表为空则直接放行
+            if (codes == null) return null;
+            // 清洗并提取有效非空代号列表 (去重且去除首尾空白字符)
+            var codeList = codes.Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            // 若有效代号数量为 0 则无需检查
+            if (codeList.Count == 0) return null;
+
+            try
+            {
+                // 获取当前本地 SQLite 方案库中的全量方案数据
+                var allSchemes = GetAllSecondarySchemes();
+                // 排除当前正在编辑的方案自身
+                var otherSchemes = allSchemes.Where(s => s.Id != excludeSchemeId).ToList();
+
+                // 逐个遍历待检查的代号
+                foreach (var code in codeList)
+                {
+                    // 遍历其他既有方案
+                    foreach (var other in otherSchemes)
+                    {
+                        // 检查其他方案的适用回路代号列表中是否包含该代号 (大小写不敏感匹配)
+                        if (other.ApplicableCodes != null && other.ApplicableCodes.Any(c => string.Equals(c?.Trim(), code, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            // 发现全局同名冲突，封装冲突详情返回
+                            return new CodeConflictResult
+                            {
+                                Code = code,
+                                SchemeName = other.SchemeName,
+                                SchemeId = other.Id
+                            };
+                        }
+                    }
+                }
+
+                // 所有代号均具备全局唯一性，校验通过
+                return null;
+            }
+            catch (Exception ex)
+            {
+                // 记录防重检测异常日志
+                LogHelper.WriteLog($"[SecondaryDb] CheckApplicableCodeConflict 异常: {ex.Message}");
+                // 异常情况下安全放行
+                return null;
+            }
+        }
+
+        #endregion
     }
 }

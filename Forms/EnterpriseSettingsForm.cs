@@ -310,50 +310,63 @@ namespace ExcelAddInDemo
         /// <summary>
         /// 弹出本地图片选择对话框并将 Logo 转为 Base64 发送至前端
         /// </summary>
+        /// <summary>
+        /// 弹出本地图片选择对话框并将 Logo 转为 Base64 发送至前端
+        /// 遵循规范：独立 STA 线程异步执行，绝不阻塞主消息循环
+        /// </summary>
         private void SelectLogoImage()
         {
-            // 在 STA 主线程打开 OpenFileDialog
-            SafeInvoke(() =>
+            // 启动独立 STA 工作线程打开 OpenFileDialog
+            var dialogThread = new System.Threading.Thread(() =>
             {
-                // 实例化 OpenFileDialog 对话框对象
-                using var dialog = new OpenFileDialog();
-
-                // 限制支持的图片文件后缀格式
-                dialog.Filter = "图片文件 (*.png;*.jpg;*.jpeg;*.gif;*.bmp)|*.png;*.jpg;*.jpeg;*.gif;*.bmp";
-
-                // 设置对话框标题
-                dialog.Title = "选择企业 Logo 图片";
-
-                // 如果用户确认选择了图片文件
-                if (dialog.ShowDialog() == DialogResult.OK)
+                try
                 {
-                    try
+                    // 实例化 OpenFileDialog 对话框对象
+                    using var dialog = new OpenFileDialog
                     {
-                        // 读取所选图片的字节数组
-                        byte[] imageBytes = File.ReadAllBytes(dialog.FileName);
+                        Filter = "图片文件 (*.png;*.jpg;*.jpeg;*.gif;*.bmp)|*.png;*.jpg;*.jpeg;*.gif;*.bmp",
+                        Title = "选择企业 Logo 图片",
+                        AutoUpgradeEnabled = true
+                    };
 
-                        // 获取文件扩展名并转小写
-                        string ext = Path.GetExtension(dialog.FileName).ToLower().TrimStart('.');
-
-                        // 处理 jpg 命名格式
-                        if (ext == "jpg") ext = "jpeg";
-
-                        // 组装 Data URI Base64 格式串
-                        string base64Str = $"data:image/{ext};base64,{Convert.ToBase64String(imageBytes)}";
-
-                        // 构造回发给前端更新 Logo 的 JSON 消息
-                        var msg = new { action = "setLogo", logoBase64 = base64Str };
-
-                        // 发送 Base64 图片消息给 Vue 3 预览 (跨线程安全)
-                        PostWebMessageSafe(JsonSerializer.Serialize(msg));
-                    }
-                    catch (Exception ex)
+                    // 模态弹窗在独立线程中独立运行
+                    if (dialog.ShowDialog() == DialogResult.OK)
                     {
-                        // 读取转换图片失败提示
-                        MessageBox.Show($"读取图片失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        try
+                        {
+                            // 读取所选图片的字节数组
+                            byte[] imageBytes = File.ReadAllBytes(dialog.FileName);
+
+                            // 获取文件扩展名并转小写
+                            string ext = Path.GetExtension(dialog.FileName).ToLower().TrimStart('.');
+
+                            // 处理 jpg 命名格式
+                            if (ext == "jpg") ext = "jpeg";
+
+                            // 组装 Data URI Base64 格式串
+                            string base64Str = $"data:image/{ext};base64,{Convert.ToBase64String(imageBytes)}";
+
+                            // 构造回发给前端更新 Logo 的 JSON 消息并在主线程推送
+                            SafeInvoke(() =>
+                            {
+                                var msg = new { action = "setLogo", logoBase64 = base64Str };
+                                PostWebMessageSafe(JsonSerializer.Serialize(msg));
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            LogHelper.WriteLog($"[EnterpriseSettingsForm] 读取图片失败: {ex.Message}");
+                        }
                     }
                 }
+                catch (Exception ex)
+                {
+                    LogHelper.WriteLog($"[EnterpriseSettingsForm] SelectLogoImage 异常: {ex.Message}");
+                }
             });
+            dialogThread.SetApartmentState(System.Threading.ApartmentState.STA);
+            dialogThread.IsBackground = true;
+            dialogThread.Start();
         }
     }
 }

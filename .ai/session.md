@@ -1,6 +1,194 @@
 # Session State
 
-## [Completed]
+- **彻底去除 CAD 视口顶部左侧“矢量预览”文本与右侧“定位”按钮及关联代码 (`Resources/secondary_circuit_manage.html`, `Forms/SecondaryCircuitForm.cs`)**：
+  1. **前端界面与交互精简**：
+     - 去除视口顶部左侧冗余前缀 `<span style="color: #64748b;">矢量预览: </span>`，直接精简呈现图纸名称 `📐 {{ currentVectorDwg.fileName }}`；
+     - 移除右侧 `<el-button size="small" type="info" link @click="openInExplorerFromViewer">📂 定位</el-button>` 按钮，保留调起外部 AutoCAD 打开功能；
+     - 彻底清除 `openInExplorerFromViewer` 函数定义、`action === 'openInExplorerResult'` 消息响应及 `setup()` 导出声明；
+  2. **后端 C# 调度代码同步清理**：
+     - 在 `Forms/SecondaryCircuitForm.cs` 中移除 `case "openInExplorer":` 消息接收与响应分支；
+  3. **静态资源热同步与验证**：
+     - 已将修改后的 `secondary_circuit_manage.html` 同步复制至 `bin\Debug\net48\Resources\` 和 `publish\Resources\`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
+
+  1. **靠顶部根因排查**：
+     - 二次回路图纸对齐与绑定工作台此前显式配置了 `top="1.5vh"`，且编辑弹窗配置了 `top="2.5vh"`；
+     - 同时 CSS 中 `.circuit-binding-dialog` 声明了 `margin: 0 auto !important;`，导致弹窗完全贴在主窗口顶部，缺乏视觉纵向居中平衡感；
+  2. **全面启用原生 `align-center` 与弹性居中架构**：
+     - 在 `<el-dialog v-model="circuitDwgDialogVisible"` 与 `<el-dialog v-model="dialogVisible"` 上统一移除 `top` 偏置属性，启用 Element Plus 原生 `align-center` 居中引擎；
+     - 在 CSS 中增强全局遮罩 `.el-overlay-dialog { display: flex !important; align-items: center !important; justify-content: center !important; overflow: hidden !important; }`，彻底锁定居中视口；
+     - 统一配置 `.circuit-binding-dialog` 与 `.scheme-edit-dialog` 为 `margin: auto !important; max-height: 94vh !important;`，确保在任何屏幕分辨率及最大化/窗口化切换时，弹窗均优雅、绝对居中于屏幕/窗体正中央；
+  3. **静态资源热同步与验证**：
+     - 已将修改后的 `secondary_circuit_manage.html` 同步复制至 `bin\Debug\net48\Resources\` 和 `publish\Resources\`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误 0 警告。
+
+  1. **左侧未反显的深层根因分析**：
+     - **引用不一致**：左侧表格数据源 `:data="filteredDirItems"` 是基于 `dirDwgFiles` 实时 map 计算出来的新对象集合，此前用原数组项调用 `setCurrentRow` 无法命中 Element Plus 的引用对比（`===` 为 false），导致行浅绿色高亮未附着；
+     - **跨目录物理分布差异**：用户图纸按分类存放在不同的子文件夹中（如 `双电源`、`功能表互感表`、`变频器` 等）。当用户处于“双电源”子目录时，点击绑定了其它子目录图纸的元件组（如 `接触器变频器`），左侧当前列表中根本不存在该文件，导致无法呈现反显与开图；
+  2. **全面重构反显机制与跨目录穿透寻图**：
+     - **精准引用匹配与平滑滚动 (`highlightLeftDwg`)**：必须在 `filteredDirItems.value` 中提取同一引用对象调用 `circuitDwgTableRef.value.setCurrentRow(targetItem)`，确保 100% 亮起 `.current-row` 浅绿底色，并自动调用 `scrollIntoView` 滚动到视口中央；
+     - **C# 后端全局递归穿透定位 (`LocateDwgInDirectory` / `LocateDwgFile`)**：当当前目录未搜寻到图纸时，自动向 C# 发送 `locateAndHighlightDwg` 并在图纸库全目录中进行深搜枚举；
+     - **前端自动下钻跳转与延迟反显**：一旦定位到图纸所在父目录，自动触发 `browseToDirectory(parentDir)` 切换左侧目录，并在层级加载完毕后瞬间高亮反显目标图纸，中间 CAD 视口即刻同步渲染该图纸大图；
+  3. **编译与热同步交付**：
+     - HTML 静态模板已覆盖至 `bin\Debug\net48\Resources\` 与 `publish\Resources\`；
+     - `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
+       - **【人工】**：如 `¥ 30.00`
+       - **【二次组】**（方案主名称）：如 `多功能表1` / `热水泵31台`
+     - 中间 CAD 矢量视口顶部同步加入参数微章预览群，一边看图一边掌握 5 大工艺定额参数；
+  5. **构建验证与热同步交付**：
+     - 资源已覆盖同步至 `bin\Debug\net48\Resources\` 与 `publish\Resources\`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
+
+- **彻底修复保存无效、按型号去重聚合、严格B列元件组判别及移除搜索框 (`Resources/secondary_circuit_manage.html`, `Services/ExcelServices.SecondaryCircuit.cs`, `Forms/SecondaryCircuitForm.cs`)**：
+  1. **彻底解决保存无效问题**：
+     - 在 `Forms/SecondaryCircuitForm.cs` 中将保存与扫描操作交由 `ExcelAsyncUtil.QueueAsMacro` 调度至 Excel 纯净主线程执行，彻底解除 WebView2 跨线程直接操作 COM 导致的异常阻断；
+     - 使用全工程标准的 `Tool.GetActiveExcelContext()` 稳健获取 Excel 实例与活动工作表，避免非前台激活状态下的空引用；
+     - 将 `postToCSharp` IPC 助手函数提升至 `setup()` 最顶层，彻底杜绝任何调用顺序时序问题；
+  2. **严格 B 列类别判别，剔除机械尺寸开孔行**：
+     - 彻底废除 `model.Contains("*")` 误判逻辑；
+     - 严格限定：B 列必须为“元件组”（或 B 列为空且以 `*` 开头），若 B 列已有其他明确分类（如开孔 `HK91*91` 等），坚决排除；
+  3. **右侧列表按型号规格全局去重聚合**：
+     - 扫描服务重构为按 `GroupModel` 进行 Dictionary 聚合，输出 `ExcelComponentGroupItemDto`；
+     - 列表不再重复罗列同一个型号（如不再出现十几个 `*KM变频器`），而是聚合成单行，并醒目标注 `共 X 处` 徽章与涵盖箱柜详情；
+     - 保存时，一次绑定自动将图号批量覆盖写入全表该型号对应的所有物理行第 32 列；
+  4. **取消右侧顶部搜索框，扩展表格高度**：
+     - 彻底移除顶部搜索输入框，界面更加清爽专业；
+     - 表格有效可视高度扩展至 `445px`，按钮排版自适应优化；
+  5. **构建与热同步**：
+     - 页面已热同步至 `bin\Debug\net48\Resources\` 与 `publish\Resources\`；
+     - `dotnet build /t:Compile /p:DebugType=none` 顺利通过：0 错误 0 警告。
+
+
+  1. **多重安全防重门禁全链路闭环**：
+     - **门禁 1 (批量选图拦截)**：在 `confirmAddCircuitDwgCodes` 中，用户勾选图纸确认选入时，系统自动扫描当前全库所有既有方案，若图号已被其他方案绑定（例如 `CA1B` 已被【双电源互投】绑定），自动进行友好拦截与详细弹窗警示，只放行全库真正唯一的图纸；
+     - **门禁 2 (手动输入拦截)**：在 `addNewCodeTag` 中，用户手动输入代号按回车时，先查当前方案内部重复，再查全局跨方案占用，发现冲突立即阻止添加并告知占用方案名；
+     - **门禁 3 (前端保存前拦截)**：在 `submitScheme` 中执行终极代号扫描，一旦待保存方案包含跨方案重复代号，阻断提交并弹出阻断警示；
+     - **门禁 4 (后端底层兜底保护)**：在 `PersonalComponentDbService.SecondaryCircuit.cs` 中增加 `CheckApplicableCodeConflict` 方法，并在 `SecondaryCircuitController.SaveScheme` 中接入拦截，确保数据库层绝对无同名回路代号落盘；
+  2. **热更新与编译验证**：
+     - 资源已热同步至 `bin\Debug\net48\Resources\secondary_circuit_manage.html` 与 `publish\Resources\`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
+
+- **纯粹直接使用 `Tool.GetAppDataDirectory()` 统一二次方案与物料库存储路径，彻底去除旧路径兼容 (`Services/PersonalComponentDbService.cs`)**：
+  1. **彻底精简路径获取逻辑**：
+     - 去除 `GetDatabaseFilePath()` 中所有关于历史版本 LocalAppData 的环境探测、迁移复制与降级回退代码；
+     - 直接纯粹调用公共工具类 `Tool.GetAppDataDirectory()` 拼接返回 `Path.Combine(appDataDir, DefaultDbFileName)`；
+  2. **物理文件与编译验证**：
+     - 数据完全以插件运行目录下的 `data\personal_components.db` 作为唯一物理存储；
+     - 现有 113 套方案数据文件已同步至便携数据目录；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误 0 警告。
+
+- **加大方案编辑弹窗操作高度，并彻底消除弹窗底部水平滚动条 (`Resources/secondary_circuit_manage.html`)**：
+  1. **弹窗操作高度整体扩充**：
+     - 将 `<el-dialog>` 宽度由 840px 微调扩展至 `860px`，顶部距离调优为 `top="2.5vh"`，留出更舒展的纵向视野；
+     - 弹窗主滚动内容容器显式配置 `min-height: 560px; max-height: 84vh;`，无论物料行数多少，均提供开阔挺拔的编辑空间；
+     - 下方“二次 BOM 子物料清单”卡片容器设定 `min-height: 330px;`，并将物料表格由原先容易引起视觉坍缩的 `max-height="220"` 替换为固定展开的受控自适应高度 `height="280"`，无论物料数据只有 1 行还是多行，均呈现规整大气的表格视图，内部行多时自适应纵向滚动；
+  2. **彻底消除箭头所指的底部水平滚动条**：
+     - **排查根因**：Element Plus 的 `<el-row :gutter="14">` 内部应用了负边距（`margin-left: -7px; margin-right: -7px;`），使得表单宽度扩展至 `100% + 14px`；而外层滚动容器此前仅指定了 `overflow-y: auto;` 未设定 `overflow-x: hidden;`，负边距溢出触发了父容器在底部渲染一条横向水平滚动条；
+     - **全局与局部双重熔断防溢出**：
+       - 在 CSS 样式表中注入 `.el-dialog__body { overflow-x: hidden !important; padding: 16px 20px !important; box-sizing: border-box; }`；
+       - 在编辑对话框主滚动容器上明确配置 `overflow-y: auto; overflow-x: hidden !important; padding: 2px 4px 2px 2px; box-sizing: border-box;`；
+       - 在表单层级配置 `style="width: 100%; overflow-x: hidden; box-sizing: border-box;"`，完全吸收 row gutter 负外边距，100% 杜绝水平横向滚动条产生；
+  3. **编译构建与热更新同步**：
+     - 已将前端页面热更新拷贝至 `bin\Debug\net48\Resources\secondary_circuit_manage.html` 与 `publish\Resources\`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误 0 警告。
+
+- **去除旧眼睛预览与粘贴路径功能，强化 DWG 目录双写持久化保存机制 (`ConfigManager.cs`, `Resources/secondary_circuit_manage.html`, `Forms/SecondaryCircuitForm.cs`)**：
+  1. **彻底去除箭头所指旧预览功能**：
+     - 主方案表格：移除“同配置适用回路代号”列中 Tag 内部的 👁️ 预览图标及点击事件，恢复纯净 Tag 呈现；
+     - 编辑方案对话框：移除排布图输入框右侧的 👁️ 预览按钮，移除回路代号 Tag 内部的 👁️ 预览图标，移除“点击 Tag 上的 👁️ 可即刻预览图纸”提示文字；
+     - 彻底清理旧的 `dwgPreviewVisible` 模态弹窗 DOM 结构，清除 `openDwgPreview`、`previewData`、`dwgPreviewLoading`、`dwgPreviewLoaded` 及其关联代码；
+  2. **彻底去除粘贴路径及关联代码**：
+     - 编辑对话框中移除排布图右侧 `✍️`（粘贴路径）按钮与回路代号右侧 `✍️ 粘贴目录` 按钮；
+     - 回路图纸选择弹窗中移除顶部 `✍️ 粘贴路径` 按钮；
+     - 清除前端 `inputLayoutDirPrompt`、`inputCircuitDirPrompt` 及后端 `setDwgDirManual` 消息处理分支；
+  3. **强化目录设置的配置文件持久化记忆 (`ConfigManager.cs`)**：
+     - 排查修复了原 `SaveConfig` 仅写入 AppData 目录而在重启时被同级 `appsettings.json` 覆盖还原的问题；
+     - 改造为**双写持久化**：优先同步写回插件运行目录下的 `appsettings.json`（便携优先），同时写入 `%LocalAppData%\ExcelCTTools\appsettings.json`（全局兜底）；
+     - 确保用户点击【📁 浏览目录】后，选择的新目录立即写入配置文件，以后重新打开管理中心或重启 Excel 均能持续读取并记忆使用；
+  4. **编译构建与热同步**：
+     - 静态模板已热同步至 `bin\Debug\net48\Resources\` 与 `publish\Resources\`；
+     - `dotnet build /t:Compile` 编译通过：0 错误。
+
+- **彻底修复回路图纸选择弹窗左侧表格“大小”列被遮挡问题 (`Resources/secondary_circuit_manage.html`)**：
+  1. **遮挡根因诊断**：
+     - 用户将左侧容器宽度收窄至 250px 时，表格总列宽（勾选列 32px + 名称列原先 `min-width="145"` + 大小列 68px + 垂直滚动条 15px = 260px）超过了容器内减去 padding 后的实际可用净宽（234px），导致表格产生横向溢出，最右侧的大小列被推至可视区外边缘遮挡；
+  2. **系统级紧凑表格排版重构**：
+     - **CSS 专用紧凑样式 (`.dwg-file-table`)**：将表格单元格默认的大内边距（`12px`）收缩至 `padding: 4px 4px !important;`，并将垂直滚动条优化为 5px 细窄半透明滚动条，瞬间释放近 25px 横向布局空间；
+     - **列宽与边距精确匹配**：
+       - 左侧容器设为 `260px`（极紧凑宽度），`padding: 6px`，净可用宽度为 248px；
+       - 勾选列明确为 `32px`，大小列给足 `62px`（文字“大小”、“64.3 KB”、“目录”均留有充裕空间，右对齐完整展露）；
+       - 名称列解除过大的硬性 min-width 约束，改为自适应弹性填充（`min-width="95"`），表头精简为 `名称 (双击进入)`；
+  3. **编译与热同步交付**：
+     - 资源已热同步至 `bin\Debug\net48\Resources\` 与 `publish\Resources\`；
+     - `dotnet build /t:Compile` 编译通过：0 错误 0 警告。
+
+- **优化回路图纸选择弹窗左右分栏排版，调小左侧文件列表宽度至 290px (`Resources/secondary_circuit_manage.html`)**：
+  1. **空间分配优化**：将左侧文件/目录表格容器宽度从 430px 精简调小至 290px，让出 140px 横向空间给右侧 WebGL 矢量 CAD 画布，显著提升工程图纸可视化面积；
+  2. **紧凑排版适配**：
+     - 搜索工具条精简按钮边距，将“全选图纸”精简为“全选”，与“清空”按钮在 290px 下平滑单行并列不折行；
+     - 表格列宽紧凑微调（勾选列 36px，大小列 68px，名称列 145px），表头精炼为 `名称 (双击进目录)`；
+     - 底部状态提示条文字精简为 `X 目录, Y 图纸 | 已选 Z 项`；
+  3. **编译与热同步**：
+     - 资源已热同步至 `bin\Debug\net48\Resources\` 与 `publish\Resources\`；
+     - `dotnet build /t:Compile` 编译通过：0 错误 0 警告。
+
+- **落地回路图纸目录层级双击下钻展开与真实矢量 WebGL 纯净视口预览架构 (`Services/DwgPreviewService.cs`, `Controllers/SecondaryCircuitController.cs`, `Forms/SecondaryCircuitForm.cs`, `Resources/secondary_circuit_manage.html`, `ExcelAddInDemo.csproj`)**：
+  1. **纯前端 WebGL + WebAssembly 矢量引擎离线化与全局打包**：
+     - 在前端项目 `draw-code-pcui` 中基于 `esbuild` 将 `@flyfish-dev/cad-viewer` 纯前端 CAD 核心打包为全局独立 IIFE 包 `cad-viewer.bundle.js`（导出 `window.CadViewerLib`）；
+     - 将配套核心资源 `style.css`、`wasm/`（`libredwg-web.wasm` 6.3MB, `dwg-worker.js` 133KB, `libredwg-web.js`, `dwfv-render.wasm`）完整复制至 `Resources/cad-viewer/`；
+     - 在 `ExcelAddInDemo.csproj` 中配置 `Resources\cad-viewer\**\*.*` 编译与打包拷贝，实现 100% 离线绿色便携运行；
+  2. **WebView2 安全源域名映射与 Worker/WASM 跨域穿透 (`SecondaryCircuitForm.cs`)**：
+     - 在 WebView2 初始化时调用 `SetVirtualHostNameToFolderMapping("appassets.local", resDir, Allow)`，将页面加载协议升级为 `https://appassets.local/secondary_circuit_manage.html`；
+     - 彻底解除了 Chromium 在 `file:///` 协议下对 Web Worker 与 `.wasm` 加载的跨域安全阻断；
+  3. **后端层级扫描与二进制流通道 (`Services/DwgPreviewService.cs`, `Controllers/SecondaryCircuitController.cs`)**：
+     - 新增 `DwgDirectoryItem` 与 `DirectoryHierarchyResult` 模型，支持提取当前目录下的子文件夹、父级目录路径以及当前层级的 DWG 文件；
+     - 实现 `ScanDirectoryHierarchy(dirPath)` 扫描方法与 `ReadDwgBinaryBase64(filePath)` 二进制 Base64 读取流；
+     - 实现了跨线程安全派发与异常安全捕获；
+  4. **前端左右分栏与工具栏纯净化视口交互 (`Resources/secondary_circuit_manage.html`)**：
+     - **左右分栏布局**：弹窗重构为 1060px 舒展大屏，左侧 430px 展示文件夹与图纸混合表格，右侧自适应呈现黑色 WebGL 矢量视口；
+     - **文件夹双击下钻**：文件夹标注 📁 图标与 `(双击进入)` 提示，双击自动深入下一级子目录；顶部提供动态面包屑与“⬆️ 返回上级”按钮；
+     - **多选防误选保护**：表格勾选列通过 `:selectable="(row) => !row.isDir"` 禁用文件夹复选框，批量将选中的 DWG 图纸代号批量加入方案适用回路 Tag；
+     - **纯净视口 (关闭所有工具栏)**：在 CSS 中通过 `.pure-cad-container .cad-toolbar, .cad-layers, .cad-inspector { display: none !important; }` 强力隐藏原生多余面板，仅保留纯净画布视口；
+     - **原生手势全支持**：视口支持鼠标滚轮平滑缩放、左键拖拽平移、双击全图居中拟合，并支持顶部一键【🚀 CAD打开】与【📂 定位】；
+  5. **代码规范与编译验证**：
+     - 严格遵循每 3 行包含至少 1 行中文注释，配置硬编码显式标明 `--硬编码--`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误 0 警告；
+     - 静态资源已全量热同步至 `bin\Debug\net48\Resources\` 与 `publish\Resources\`。
+
+- **彻底修复文件夹选择器导致的 WebView2 页面卡死与假死问题，并在全工程排查修复同类模态对话框阻塞隐患 (`SecondaryCircuitForm.cs`, `CreateProjectForm.cs`, `EnterpriseSettingsForm.cs`, `Resources/secondary_circuit_manage.html`)**：
+  1. **卡死根因定位分析**：
+     - **根因 1 (Chromium IPC 死锁)**：前端通过 `window.chrome.webview.postMessage` 向 C# 发送 `selectDwgDir`。C# 在 WebView2 自身的 `WebMessageReceived` 事件处理回调中同步调用 `ShowDialog()`，启动了 Win32 阻塞式模态消息循环，导致主线程被挂起，无法向 WebView2 管道回传确认信号，Chromium 渲染进程因此被全局挂起，引发整个界面彻底冻结；
+     - **根因 2 (Shell 扩展枚举阻塞)**：WinForms 传统 `FolderBrowserDialog` 默认枚举用户安装的第三方外壳扩展（如“百度网盘同步空间”等慢速驱动器），网络或云盘响应缓慢时会产生极长时间的同步假死；
+  2. **全工程排查与线程模型彻底重构 (3 处全部修复)**：
+     - **`SecondaryCircuitForm.cs` (选择 DWG 排布图/回路图纸目录)**：将 `selectDwgDir` 重构成通过独立的 STA 线程（`ApartmentState.STA`, `IsBackground = true`）异步弹出 `FolderBrowserDialog`，选择完成后通过 `SafeInvoke` 切回主线程通知前端，完全解耦主消息循环与 Chromium IPC；
+     - **`CreateProjectForm.cs` (新建项目选择保存目录)**：同样改造为独立 STA 线程异步运行 `FolderBrowserDialog`，安全回传选定路径；
+     - **`EnterpriseSettingsForm.cs` (选择企业 Logo 本地图片)**：同样改造为独立 STA 线程异步运行 `OpenFileDialog`，选定后安全回传 Base64，杜绝主线程卡死；
+  3. **前端双轨操作体验提升 (`secondary_circuit_manage.html`)**：
+     - 在“二次排布图”与“同配置回路代号”配置区，以及“从回路图纸目录选择 DWG”弹窗中，全面新增 `✍️ 粘贴路径` / `✍️ 粘贴目录` 按钮；
+     - 用户既可在无卡死风险的情况下点击 `📁 浏览目录`，也可直接复制 Windows 资源管理器路径通过 `ElMessageBox.prompt` 快速粘贴，零弹窗极速设定；
+     - C# 后端新增 `setDwgDirManual` 接口，自动验证非空目录、持久化配置并自动扫描提取 DWG 图纸清单；
+  4. **编译验证与资源热同步**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误；
+     - 资源已热同步至 `bin\Debug\net48\Resources\secondary_circuit_manage.html`。
+
+- **落实方案 A：二次排布图与回路代号 DWG 目录分别就近独立设置、直接加载选入与即时预览 (`SecondaryCircuitForm.cs`, `SecondaryCircuitController.cs`, `Services/DwgPreviewService.cs`, `AppConfig.cs`, `ConfigManager.cs`, `Resources/secondary_circuit_manage.html`)**：
+  1. **实体业务对应明确**：
+     - 将“二次排布图”（如 `BDY`）与“同配置回路代号”（如 `风机2DY`）从纯手工文本输入升级为实体 DWG 图纸文件关联绑定；
+  2. **方案 A 就近配置与本地持久化**：
+     - 在“二次排布图”输入项与“同配置回路代号”输入区就近添加 📁 目录设置按钮，调用 WinForms 原生 `FolderBrowserDialog` 选取本地文件夹，自动扫描提取其下所有 `*.dwg` 文件；
+     - 在 `AppConfig.cs` 与 `ConfigManager.cs` 中增加 `SecondaryCircuitSettings`（`LayoutDwgDirectory` 与 `CircuitDwgDirectory`），实现路径的本地持久化自动记忆与跨会话保留；
+  3. **直接加载目录图纸选入**：
+     - **排布图**：输入框支持基于 `el-autocomplete` 自动加载排布图目录下的 DWG 文件进行联想补全与快捷下拉选择；
+     - **回路代号**：点击“+ 从目录加载 DWG 选择”弹出模态选择窗口，支持按图名模糊搜索、全选/清空、表格多选勾选并批量加入 Tag，且保留手动输入兜底；
+  4. **双通道高可靠 DWG 图纸即时预览与 CAD 调起 (`Services/DwgPreviewService.cs`)**：
+     - **通道 1 (Shell 原生)**：调用 Windows Shell `IShellItemImageFactory` 提取系统缓存的高清 CAD 缩略图；
+     - **通道 2 (二进制文件流)**：读取 DWG Header `IMAGE_SEEK` 区域直接解析提取内嵌 BMP 缩略图；
+     - **通道 3 (兜底占位)**：动态生成工业黑绿风 CAD 占位图并提示直接打开；
+     - **交互闭环**：在主方案表格、编辑框排布图输入区、回路代号 Tag 内部均集成 👁️ 预览图标，点击调起预览大弹窗展示缩略图、文件物理路径、大小与更新时间，并支持一键【🚀 在 AutoCAD 中打开图纸】与【📂 在资源管理器中定位】；
+  5. **编译构建与热同步**：
+     - 执行 `dotnet build /t:Compile` 编译通过：0 错误 0 警告；
+     - HTML 模板已热同步至 `bin\Debug\net48\Resources\secondary_circuit_manage.html` 与 `publish\Resources\`。
+
 
 - **彻底修复辅材壳体计算中心 (cabinet_aux_calc.html) 界面横向溢出与组件移出屏幕故障**：
   1. **锁定容器横向滚动**：为 `.main-body` 与各卡片容器增加 `overflow-x: hidden !important; min-width: 0; width: 100%; box-sizing: border-box;`，从源头杜绝页面产生水平滚动条，彻底切断 Chromium/WebView2 焦点自动平移（`scrollIntoView`）导致左侧组件被卷出视口的路径；

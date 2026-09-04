@@ -288,5 +288,237 @@ namespace ExcelAddInDemo
         }
 
         #endregion
+
+        #region Excel 元件组与二次回路图号绑定业务
+
+        /// <summary>
+        /// Excel 二次元件组按型号聚合去重后的 DTO
+        /// </summary>
+        public class ExcelComponentGroupItemDto
+        {
+            // 元件组规格型号 (如 *KM变频器，唯一键)
+            public string GroupModel { get; set; } = string.Empty;
+            // 绑定的回路图号 (如 接触器变频器)
+            public string BoundDwgCode { get; set; } = string.Empty;
+            // 在当前工作表中出现的总次数
+            public int OccurrenceCount { get; set; }
+            // 涵盖的箱柜名称列表 (如 ["1AA1", "1AA2"])
+            public List<string> Cabinets { get; set; } = new List<string>();
+            // 对应的全部物理行号列表 (如 [346, 415, 480, 514])
+            public List<int> RowIndexes { get; set; } = new List<int>();
+        }
+
+        /// <summary>
+        /// 保存绑定的请求入参 DTO
+        /// </summary>
+        public class ComponentGroupBindingSaveDto
+        {
+            // 元件组型号规格
+            public string GroupModel { get; set; } = string.Empty;
+            // 绑定的回路图号 (如 接触器变频器)
+            public string BoundDwgCode { get; set; } = string.Empty;
+            // 目标物理行号列表
+            public List<int>? RowIndexes { get; set; }
+            // 兼容单行号传递
+            public int RowIndex { get; set; }
+        }
+
+        /// <summary>
+        /// 扫描当前活动 Excel 工作表中所有的二次元件组 (严格判定 B 列='元件组'，按型号去重输出)
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释，操作在服务层完成
+        /// </summary>
+        /// <returns>去重后的二次元件组集合</returns>
+        public static List<ExcelComponentGroupItemDto> ScanExcelComponentGroups()
+        {
+            var resultList = new List<ExcelComponentGroupItemDto>();
+            try
+            {
+                // 使用公共上下文安全获取当前活动 Excel 实例与活动工作表
+                var context = Tool.GetActiveExcelContext();
+                if (context == null || context.Sheet == null)
+                {
+                    return resultList;
+                }
+
+                dynamic sheet = context.Sheet;
+                dynamic? activeWb = context.Wb;
+
+                // 获取当前工作表定义的所有有效箱柜
+                var cabinets = Tool.GetSheetValidCabinets(sheet, activeWb);
+                if (cabinets == null || cabinets.Count == 0) return resultList;
+
+                // 使用字典按型号规格进行唯一去重聚合
+                var groupMap = new Dictionary<string, ExcelComponentGroupItemDto>(StringComparer.OrdinalIgnoreCase);
+
+                // 遍历每一个箱柜
+                foreach (var cab in cabinets)
+                {
+                    int k = cab.Key;
+                    // 获取该箱柜的标准行索引定义 (柜信息行、元器件起始行、小计行)
+                    var (sumRow, detRow, subsumRow, tolsumRow) = Tool.FindStandardCategoryRowIndexes((object)sheet, k);
+                    // 元器件起始行与截止行
+                    int compStartRow = detRow + 2;
+                    int compEndRow = subsumRow - 1;
+                    if (compStartRow > compEndRow) continue;
+
+                    // 提取箱柜物理名称 (如 1AA1)
+                    string cabName = sheet.Cells[detRow, 1]?.Value?.ToString()?.Trim() ?? $"柜{k}";
+                    // 若 A 列是定义标签，尝试提取其具体展示名称
+                    if (cabName.StartsWith("Cab_Det_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cabName = sheet.Cells[detRow, 2]?.Value?.ToString()?.Trim() ?? $"柜{k}";
+                    }
+
+                    // 逐行扫描该箱柜中的元器件
+                    for (int r = compStartRow; r <= compEndRow; r++)
+                    {
+                        // 提取 B 列: 类别 (第 2 列)
+                        string category = sheet.Cells[r, 2]?.Value?.ToString()?.Trim() ?? string.Empty;
+                        // 提取 C 列: 型号规格 (第 3 列)
+                        string model = sheet.Cells[r, 3]?.Value?.ToString()?.Trim() ?? string.Empty;
+
+                        // 判别准则修正 (严格识别)：
+                        // 1. B 列明确等于 "元件组"
+                        // 2. 若 B 列为空白且 C 列以 "*" 开头作为辅助兜底
+                        // 3. 绝不使用 Contains("*")，排除任何 B 列非元件组的行 (如开孔 HK91*91)
+                        bool isCategoryGroup = string.Equals(category, "元件组", StringComparison.OrdinalIgnoreCase);
+                        bool isModelStar = string.IsNullOrWhiteSpace(category) && model.StartsWith("*");
+                        bool isComponentGroup = (isCategoryGroup || isModelStar) && !string.IsNullOrWhiteSpace(model);
+
+                        if (isComponentGroup)
+                        {
+                            // 提取第 32 列 (AF列) 中已持久化绑定的图号
+                            string boundCode = sheet.Cells[r, 32]?.Value?.ToString()?.Trim() ?? string.Empty;
+
+                            // 查找或创建该型号对应的聚合实体
+                            if (!groupMap.TryGetValue(model, out var item))
+                            {
+                                item = new ExcelComponentGroupItemDto
+                                {
+                                    GroupModel = model,
+                                    BoundDwgCode = boundCode,
+                                    OccurrenceCount = 0,
+                                    Cabinets = new List<string>(),
+                                    RowIndexes = new List<int>()
+                                };
+                                groupMap[model] = item;
+                            }
+
+                            // 累加出现次数
+                            item.OccurrenceCount++;
+                            // 记录物理行号
+                            item.RowIndexes.Add(r);
+                            // 记录涵盖箱柜 (去重)
+                            if (!string.IsNullOrWhiteSpace(cabName) && !item.Cabinets.Contains(cabName))
+                            {
+                                item.Cabinets.Add(cabName);
+                            }
+                            // 若之前未获取到图号但当前行有图号，补齐图号
+                            if (string.IsNullOrWhiteSpace(item.BoundDwgCode) && !string.IsNullOrWhiteSpace(boundCode))
+                            {
+                                item.BoundDwgCode = boundCode;
+                            }
+                        }
+                    }
+                }
+
+                // 将聚合去重后的结果转为列表输出
+                resultList.AddRange(groupMap.Values);
+            }
+            catch (Exception ex)
+            {
+                // 记录扫描异常日志
+                LogHelper.WriteLog($"[SecondaryBind] ScanExcelComponentGroups 异常: {ex.Message}");
+            }
+
+            // 返回去重后的元件组列表
+            return resultList;
+        }
+
+        /// <summary>
+        /// 批量将二次元件组绑定的回路图号持久化写入 Excel 对应行的第 32 列 (AF 列)
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+        /// </summary>
+        /// <param name="bindings">待写入的绑定映射列表</param>
+        /// <returns>写入成功行数与结果信息</returns>
+        public static (bool Success, int UpdatedCount, string Message) SaveExcelComponentGroupBindings(List<ComponentGroupBindingSaveDto>? bindings)
+        {
+            if (bindings == null || bindings.Count == 0)
+            {
+                return (false, 0, "提交的绑定映射列表为空！");
+            }
+
+            try
+            {
+                // 使用公共上下文安全获取当前活动 Excel 实例与活动工作表
+                var context = Tool.GetActiveExcelContext();
+                if (context == null || context.App == null || context.Sheet == null)
+                {
+                    return (false, 0, "未检测到可操作的活动 Excel 工作表，请确保工作簿处于打开状态！");
+                }
+
+                dynamic app = context.App;
+                dynamic sheet = context.Sheet;
+
+                // 挂起屏幕刷新与自动计算以提速
+                app.ScreenUpdating = false;
+                app.Calculation = -4135; // xlCalculationManual --硬编码-- 手动计算常量
+
+                int count = 0;
+                int modelCount = 0;
+                try
+                {
+                    // 遍历所有待写入的绑定映射
+                    foreach (var item in bindings)
+                    {
+                        string code = item.BoundDwgCode?.Trim() ?? string.Empty;
+                        bool modelUpdated = false;
+
+                        // 1. 若提供了具体的行号列表，全量回写这些行
+                        if (item.RowIndexes != null && item.RowIndexes.Count > 0)
+                        {
+                            foreach (int r in item.RowIndexes)
+                            {
+                                if (r > 0)
+                                {
+                                    sheet.Cells[r, 32].Value = code;
+                                    count++;
+                                    modelUpdated = true;
+                                }
+                            }
+                        }
+                        // 2. 兼容单行号模式
+                        else if (item.RowIndex > 0)
+                        {
+                            sheet.Cells[item.RowIndex, 32].Value = code;
+                            count++;
+                            modelUpdated = true;
+                        }
+
+                        if (modelUpdated)
+                        {
+                            modelCount++;
+                        }
+                    }
+                }
+                finally
+                {
+                    // 恢复屏幕刷新与自动计算
+                    app.Calculation = -4105; // xlCalculationAutomatic --硬编码-- 自动计算常量
+                    app.ScreenUpdating = true;
+                }
+
+                // 返回成功结果
+                return (true, count, $"成功将 {modelCount} 个元件组型号 (共计覆盖 {count} 处单元格) 持久化写入 Excel 第 32 列 (AF列)！");
+            }
+            catch (Exception ex)
+            {
+                // 记录写入异常日志
+                LogHelper.WriteLog($"[SecondaryBind] SaveExcelComponentGroupBindings 异常: {ex.Message}");
+                return (false, 0, $"持久化保存至 Excel 发生异常: {ex.Message}");
+            }
+        }
+
+        #endregion
     }
 }

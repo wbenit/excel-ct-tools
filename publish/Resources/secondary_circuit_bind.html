@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>绑定二次回路方案与图号</title>
+  <!-- 引入 Element Plus 样式 (从本地 WebView2 虚拟域或 CDN 加载) -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <style>
+    /* 全局重置与工业绿蓝主题色彩变量 */
+    :root {
+      --primary-color: #009688;
+      --primary-hover: #00796b;
+      --primary-light: #e0f2f1;
+      --bg-color: #f8fafc;
+      --card-bg: #ffffff;
+      --text-main: #1e293b;
+      --text-muted: #64748b;
+      --border-color: #e2e8f0;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid #cbd5e1;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    /* 1. 顶部无边框窗口拖拽标题栏 */
+    .window-header {
+      height: 38px;
+      background: linear-gradient(90deg, #00796b 0%, #009688 100%);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      cursor: move;
+      flex-shrink: 0;
+    }
+
+    .window-title-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .window-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: default;
+    }
+
+    .win-btn {
+      width: 28px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 3px;
+      color: #e2e8f0;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .win-btn:hover {
+      background-color: rgba(255, 255, 255, 0.2);
+      color: #ffffff;
+    }
+
+    .win-btn.close:hover {
+      background-color: #e11d48;
+      color: #ffffff;
+    }
+
+    /* 2. 主体容器 */
+    .main-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 12px 16px;
+      gap: 10px;
+      overflow: hidden;
+    }
+
+    /* 当前选中行上下文卡片 */
+    .current-row-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+
+    .card-header-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .group-tag-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #0f766e;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .card-options-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px dashed var(--border-color);
+      padding-top: 8px;
+      font-size: 12.5px;
+    }
+
+    /* 检索工具栏 */
+    .search-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    /* 方案表格卡片容器 */
+    .table-container {
+      flex: 1;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 底部操作工具条 */
+    .bottom-bar {
+      height: 46px;
+      background: #f1f5f9;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      flex-shrink: 0;
+    }
+
+    /* 主色调按钮覆盖 */
+    .btn-teal {
+      background-color: var(--primary-color) !important;
+      border-color: var(--primary-color) !important;
+      color: #ffffff !important;
+    }
+
+    .btn-teal:hover {
+      background-color: var(--primary-hover) !important;
+      border-color: var(--primary-hover) !important;
+    }
+
+    /* 表格选中行高亮 */
+    .el-table .selected-row {
+      background-color: #f0fdf4 !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 1. 顶部无边框标题栏 -->
+    <div class="window-header" @mousedown="onHeaderMouseDown">
+      <div class="window-title-box">
+        <span>⚡ 绑定二次回路方案与图号 (持久化写入第 32 列)</span>
+        <el-tag size="small" effect="plain" style="background: rgba(255,255,255,0.2); color: #fff; border: none;">AF列就地存储</el-tag>
+      </div>
+      <div class="window-actions" @mousedown.stop @pointerdown.stop>
+        <div class="win-btn" title="最小化" @click.stop="minimizeWindow">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </div>
+        <div class="win-btn close" title="关闭" @click.stop="closeWindow">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. 主体操作区域 -->
+    <div class="main-container" v-loading="loading" element-loading-text="正在读取当前 Excel 上下文...">
+      <!-- 当前选中的元件组信息卡片 -->
+      <div class="current-row-card">
+        <div class="card-header-line">
+          <div class="group-tag-title">
+            <span>📦 当前操作对象:</span>
+            <el-tag type="primary" size="small" effect="dark" style="background-color: #009688; border: none;">
+              {{ currentRow?.norms || '未选定元件组' }}
+            </el-tag>
+            <span style="font-size: 12px; color: var(--text-muted); font-weight: normal;">
+              (箱柜: <b>{{ currentRow?.cabinetName || '-' }}</b> | 行号: <b>第 {{ currentRow?.rowIndex || '-' }} 行</b> | 数量: <b>{{ currentRow?.quantity || 1 }} 套</b>)
+            </span>
+          </div>
+
+          <!-- 绑定状态徽章 -->
+          <div>
+            <el-tag v-if="currentRow?.boundCode" type="success" effect="plain" size="small">
+              已绑定回路: <b>{{ currentRow.boundCode }}</b> ({{ currentRow.boundSchemeName || '未知方案' }})
+            </el-tag>
+            <el-tag v-else type="warning" effect="plain" size="small">
+              ⚠️ 尚未绑定任何二次回路
+            </el-tag>
+          </div>
+        </div>
+
+        <div class="card-options-line">
+          <!-- 自动化联动配置项 -->
+          <div style="display: flex; gap: 16px; align-items: center;">
+            <el-checkbox v-model="updatePrice">
+              同步将方案材料费回填为单价 (G列) 并刷新总价 (H列)
+            </el-checkbox>
+            <el-checkbox v-model="batchApplyAll" :disabled="!currentRow?.norms">
+              同时应用到全表所有同名元件组
+              <span v-if="sameNormsCount > 1" style="color: #00796b; font-weight: 600;">(共匹配 {{ sameNormsCount }} 行)</span>
+            </el-checkbox>
+          </div>
+
+          <el-button size="small" @click="refreshContext" :icon="'Refresh'">
+            刷新当前行状态
+          </el-button>
+        </div>
+      </div>
+
+      <!-- 搜索过滤工具条 -->
+      <div class="search-toolbar">
+        <div style="display: flex; gap: 8px; align-items: center; flex: 1;">
+          <el-input
+            v-model="searchKw"
+            placeholder="快速检索回路代号(如 CA1B)、方案名称、排布图..."
+            size="small"
+            clearable
+            style="max-width: 380px;"
+          ></el-input>
+
+          <el-select v-model="selectedGroup" placeholder="全部二次排布图" clearable size="small" style="width: 170px;">
+            <el-option label="全部二次排布图" value=""></el-option>
+            <el-option v-for="g in groupOptions" :key="g" :label="g" :value="g"></el-option>
+          </el-select>
+        </div>
+
+        <span style="font-size: 12px; color: var(--text-muted);">
+          候选图号: <b>{{ filteredCandidates.length }}</b> 个 (源头全局唯一校验已生效)
+        </span>
+      </div>
+
+      <!-- 候选方案/图号展示表格 -->
+      <div class="table-container">
+        <el-table
+          ref="candidateTableRef"
+          :data="filteredCandidates"
+          size="small"
+          border
+          highlight-current-row
+          style="width: 100%; flex: 1;"
+          @current-change="handleCurrentCandidateChange"
+          @row-dblclick="handleRowDblClick"
+        >
+          <el-table-column prop="code" label="回路代号 (图号)" width="150">
+            <template #default="{ row }">
+              <span style="font-weight: 600; color: #00796b;">⚡ {{ row.code }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="schemeName" label="所属二次控制方案" min-width="170"></el-table-column>
+          <el-table-column prop="groupName" label="二次排布图" width="110">
+            <template #default="{ row }">
+              <el-tag size="small" type="info" effect="plain">{{ row.groupName || '通用排布' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="materialCost" label="材料费合价" width="105" align="right">
+            <template #default="{ row }">
+              <span style="color: #d97706; font-weight: 600;">¥ {{ (row.materialCost || 0).toFixed(2) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="laborCost" label="装配人工" width="90" align="right">
+            <template #default="{ row }">
+              <span style="color: #334155;">¥ {{ (row.laborCost || 0).toFixed(2) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="crossDoorCount" label="跨门线" width="75" align="center">
+            <template #default="{ row }">
+              <span>{{ row.crossDoorCount || 0 }} 根</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="holeSpec" label="开孔规格" width="90" align="center">
+            <template #default="{ row }">
+              <span style="color: #475569;">{{ row.holeSpec || '-' }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </div>
+
+    <!-- 3. 底部操作状态条 -->
+    <div class="bottom-bar">
+      <div>
+        <el-button
+          v-if="currentRow?.boundCode"
+          size="small"
+          type="danger"
+          plain
+          @click="handleUnbind"
+        >
+          解除当前绑定 (清空第 32 列)
+        </el-button>
+        <span v-else style="font-size: 12px; color: var(--text-muted);">
+          提示：选中上方目标回路代号，点击右侧按钮即可写入第 32 列并联动单价
+        </span>
+      </div>
+
+      <div style="display: flex; gap: 8px;">
+        <el-button size="small" @click="closeWindow">取消</el-button>
+        <el-button
+          size="small"
+          type="primary"
+          class="btn-teal"
+          :disabled="!selectedCandidate || !currentRow"
+          @click="handleConfirmBind"
+        >
+          确认绑定选中的回路【{{ selectedCandidate?.code || '未选' }}】
+        </el-button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 引入 Vue 3 与 Element Plus 核心库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+  <script>
+    const { createApp, ref, reactive, computed, onMounted } = Vue;
+
+    const app = createApp({
+      setup() {
+        // 状态定义
+        const loading = ref(false);
+        const searchKw = ref('');
+        const selectedGroup = ref('');
+        const updatePrice = ref(true); // 默认开启回填单价
+        const batchApplyAll = ref(true); // 默认开启批量应用同名
+
+        const currentRow = ref(null);
+        const allGroups = ref([]);
+        const candidates = ref([]);
+        const selectedCandidate = ref(null);
+
+        // 与 C# 端无边框窗口交互
+        const onHeaderMouseDown = (e) => {
+          if (e.button !== 0) return;
+          if (e.target.closest('.window-actions') || e.target.closest('.win-btn')) return;
+          postToCSharp({ action: 'dragWindow' });
+        };
+        const minimizeWindow = () => postToCSharp({ action: 'minimizeWindow' });
+        const closeWindow = () => postToCSharp({ action: 'closeWindow' });
+
+        // 发送 IPC 消息助手
+        const postToCSharp = (payload) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify(payload));
+          }
+        };
+
+        // 刷新读取当前 Excel 上下文
+        const refreshContext = () => {
+          loading.value = true;
+          postToCSharp({ action: 'getBindContext' });
+        };
+
+        // 计算排布图下拉选项列表
+        const groupOptions = computed(() => {
+          const set = new Set();
+          candidates.value.forEach(item => {
+            if (item.groupName) set.add(item.groupName);
+          });
+          return Array.from(set);
+        });
+
+        // 匹配当前同名元件组行数
+        const sameNormsCount = computed(() => {
+          if (!currentRow.value || !currentRow.value.norms) return 0;
+          const target = currentRow.value.norms.trim().toLowerCase();
+          return allGroups.value.filter(g => (g.norms || '').trim().toLowerCase() === target).length;
+        });
+
+        // 过滤候选方案回路代号
+        const filteredCandidates = computed(() => {
+          return candidates.value.filter(item => {
+            const kw = searchKw.value ? searchKw.value.trim().toLowerCase() : '';
+            const matchKw = !kw || 
+              (item.code || '').toLowerCase().includes(kw) || 
+              (item.schemeName || '').toLowerCase().includes(kw) ||
+              (item.groupName || '').toLowerCase().includes(kw);
+
+            const matchGrp = !selectedGroup.value || item.groupName === selectedGroup.value;
+            return matchKw && matchGrp;
+          });
+        });
+
+        // 表格行单选切换
+        const handleCurrentCandidateChange = (val) => {
+          selectedCandidate.value = val;
+        };
+
+        // 双击某行直接触发绑定
+        const handleRowDblClick = (row) => {
+          selectedCandidate.value = row;
+          handleConfirmBind();
+        };
+
+        // 执行确认绑定
+        const handleConfirmBind = () => {
+          if (!currentRow.value) {
+            ElementPlus.ElMessage.warning('当前 Excel 未定位到有效的二次元件组行！');
+            return;
+          }
+          if (!selectedCandidate.value) {
+            ElementPlus.ElMessage.warning('请先在列表中选中一个目标回路代号！');
+            return;
+          }
+
+          loading.value = true;
+          postToCSharp({
+            action: 'executeBind',
+            targetRow: currentRow.value.rowIndex,
+            groupNorms: currentRow.value.norms,
+            circuitCode: selectedCandidate.value.code,
+            updatePrice: updatePrice.value,
+            batchApplyAll: batchApplyAll.value
+          });
+        };
+
+        // 解除绑定
+        const handleUnbind = () => {
+          if (!currentRow.value) return;
+          ElementPlus.ElMessageBox.confirm(
+            `确定要清空该元件组在第 32 列的回路代号绑定吗？${batchApplyAll.value ? ' (将同时清空全表所有同名元件组)' : ''}`,
+            '解除绑定确认',
+            { confirmButtonText: '确定解除', cancelButtonText: '取消', type: 'warning' }
+          ).then(() => {
+            loading.value = true;
+            postToCSharp({
+              action: 'executeBind',
+              targetRow: currentRow.value.rowIndex,
+              groupNorms: currentRow.value.norms,
+              circuitCode: '', // 空字符串表示解绑
+              updatePrice: false,
+              batchApplyAll: batchApplyAll.value
+            });
+          }).catch(() => {});
+        };
+
+        // 监听来自 C# 的 IPC 消息
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (e) => {
+              try {
+                const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+                const action = data.action;
+
+                if (action === 'bindContextLoaded') {
+                  loading.value = false;
+                  const res = data.data;
+                  if (res && res.success) {
+                    currentRow.value = res.currentRow;
+                    allGroups.value = res.allGroups || [];
+                    candidates.value = res.candidates || [];
+                  } else {
+                    ElementPlus.ElMessage.warning(res?.message || '读取 Excel 数据异常！');
+                  }
+                } else if (action === 'executeBindResult') {
+                  loading.value = false;
+                  const res = data.result;
+                  if (res && res.success) {
+                    ElementPlus.ElMessage.success(res.message || '绑定成功！');
+                    // 绑定成功后自动刷新状态
+                    refreshContext();
+                  } else {
+                    ElementPlus.ElMessage.error(res?.message || '执行绑定失败！');
+                  }
+                }
+              } catch (err) {
+                loading.value = false;
+                console.error('[SecondaryBind] 解析消息异常:', err);
+              }
+            });
+          }
+
+          // 首屏加载上下文
+          refreshContext();
+        });
+
+        return {
+          loading,
+          searchKw,
+          selectedGroup,
+          updatePrice,
+          batchApplyAll,
+          currentRow,
+          allGroups,
+          candidates,
+          selectedCandidate,
+          groupOptions,
+          sameNormsCount,
+          filteredCandidates,
+          onHeaderMouseDown,
+          minimizeWindow,
+          closeWindow,
+          refreshContext,
+          handleCurrentCandidateChange,
+          handleRowDblClick,
+          handleConfirmBind,
+          handleUnbind
+        };
+      }
+    });
+
+    app.use(ElementPlus);
+    app.mount('#app');
+  </script>
+</body>
+</html>

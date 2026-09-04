@@ -387,20 +387,45 @@ namespace ExcelAddInDemo
 
         /// <summary>
         /// 弹出文件夹选择对话框更新保存路径
+        /// <summary>
+        /// 弹出本地文件夹选择对话框以选定项目新建与出报表的目标路径
+        /// 遵循规范：独立 STA 线程异步执行，彻底杜绝模态循环阻塞 WebView2
         /// </summary>
         private void SelectSaveFolder()
         {
-            SafeInvoke(() =>
+            // 启动独立的 STA 工作线程弹出文件夹对话框
+            var dialogThread = new System.Threading.Thread(() =>
             {
-                using var dialog = new FolderBrowserDialog();
-                dialog.Description = "请选择项目新建与出报表保存目录";
-
-                if (dialog.ShowDialog() == DialogResult.OK)
+                try
                 {
-                    var msg = new { action = "setSavePath", savePath = dialog.SelectedPath };
-                    PostWebMessageSafe(JsonSerializer.Serialize(msg, JsonOptions));
+                    using var dialog = new FolderBrowserDialog
+                    {
+                        Description = "请选择项目新建与出报表保存目录",
+                        ShowNewFolderButton = true
+                    };
+
+                    // 独立模态循环执行，绝不阻塞 UI 主线程与 WebView2
+                    if (dialog.ShowDialog() == DialogResult.OK && !string.IsNullOrWhiteSpace(dialog.SelectedPath))
+                    {
+                        string chosenPath = dialog.SelectedPath;
+                        // 线程安全切回主线程通知前端
+                        SafeInvoke(() =>
+                        {
+                            var msg = new { action = "setSavePath", savePath = chosenPath };
+                            PostWebMessageSafe(JsonSerializer.Serialize(msg, JsonOptions));
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // 记录异常日志
+                    LogHelper.WriteLog($"[CreateProjectForm] SelectSaveFolder 异常: {ex.Message}");
                 }
             });
+            // 设定为 STA 单线程单元模式
+            dialogThread.SetApartmentState(System.Threading.ApartmentState.STA);
+            dialogThread.IsBackground = true;
+            dialogThread.Start();
         }
     }
 }

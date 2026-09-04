@@ -98,6 +98,10 @@
     <None Include="Resources\secondary_circuit_manage.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将 CAD 矢量渲染器静态资源复制至构建输出路径中 -->
+    <None Include="Resources\cad-viewer\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将公共主题样式 CSS 文件复制至构建输出路径中 -->
     <None Include="Resources\theme.css">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
