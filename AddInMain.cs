@@ -23,6 +23,13 @@ namespace ExcelAddInDemo
             {
                 // 统一注册 Excel 全局事件与右键菜单
                 ExcelEventManager.RegisterEvents();
+
+                // 若之前配置开启了聚光灯，自动恢复开启
+                if (Models.SpotlightConfig.Current.IsEnabled)
+                {
+                    // 启动聚光灯服务 (内部已具备工作簿就绪判断，未就绪时自动静默)
+                    ExcelServices.EnableSpotlight();
+                }
             });
         }
 

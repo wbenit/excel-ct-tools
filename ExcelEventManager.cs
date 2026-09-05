@@ -56,6 +56,16 @@ namespace ExcelAddInDemo
                 _excelApp.SheetBeforeDoubleClick -= OnSheetBeforeDoubleClick;
                 // 重新绑定 SheetBeforeDoubleClick 事件，双击 D 列单元格可快速触发物料智能联想
                 _excelApp.SheetBeforeDoubleClick += OnSheetBeforeDoubleClick;
+
+                // 解除已有的 SheetActivate 事件绑定，避免重复挂载
+                _excelApp.SheetActivate -= OnSheetActivate;
+                // 重新绑定 SheetActivate 事件，新建表格或切换工作表时即时唤醒聚光灯
+                _excelApp.SheetActivate += OnSheetActivate;
+
+                // 解除已有的 WorkbookActivate 事件绑定
+                _excelApp.WorkbookActivate -= OnWorkbookActivate;
+                // 重新绑定 WorkbookActivate 事件，激活或新建工作簿时自动挂载视口
+                _excelApp.WorkbookActivate += OnWorkbookActivate;
             }
             catch (Exception ex)
             {
@@ -83,11 +93,18 @@ namespace ExcelAddInDemo
                     _excelApp.SheetSelectionChange -= OnSheetSelectionChange;
                     // 解除 SheetBeforeDoubleClick 事件绑定
                     _excelApp.SheetBeforeDoubleClick -= OnSheetBeforeDoubleClick;
+                    // 解除 SheetActivate 事件绑定
+                    _excelApp.SheetActivate -= OnSheetActivate;
+                    // 解除 WorkbookActivate 事件绑定
+                    _excelApp.WorkbookActivate -= OnWorkbookActivate;
                 }
 
                 // 隐藏覆盖输入框与物料联想下拉浮窗
                 ExcelServices.HideSmartInputOverlay();
                 ExcelServices.HideComponentMatchOverlay();
+
+                // 释放聚光灯浮窗与视口消息钩子
+                ExcelServices.DisableSpotlight();
 
                 // 彻底清理注册的右键菜单控件
                 RemoveContextMenuControls();
@@ -104,6 +121,13 @@ namespace ExcelAddInDemo
             {
                 // 校验目标单元格与全局 Application
                 if (target == null || _excelApp == null) return;
+
+                // 0. 若开启了聚光灯高亮功能，即时计算并更新当前选中单元格的行列十字高亮区域
+                if (ExcelServices.IsSpotlightEnabled)
+                {
+                    // 调用聚光灯公共服务更新浮窗高亮区域
+                    ExcelServices.UpdateSpotlightPosition(target);
+                }
 
                 // 1. 判断选区是否包含 C 列 (第 3 列: 规格型号) 或选中了整行
                 int startCol = target.Column;
@@ -228,6 +252,42 @@ namespace ExcelAddInDemo
                 ExcelServices.HideSmartInputOverlay();
                 ExcelServices.HideComponentMatchOverlay();
             }
+        }
+
+        /// <summary>
+        /// 响应工作表激活事件，当新建表格或切换工作表时自动同步聚光灯
+        /// </summary>
+        /// <param name="sh">激活的工作表对象</param>
+        private static void OnSheetActivate(object sh)
+        {
+            try
+            {
+                // 若聚光灯功能处于激活状态，刷新聚光灯高亮位置
+                if (ExcelServices.IsSpotlightEnabled)
+                {
+                    // 调用聚光灯公共服务更新浮窗高亮区域
+                    ExcelServices.UpdateSpotlightPosition(null);
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 响应工作簿激活事件，当新建或打开工作簿时自愈点亮聚光灯
+        /// </summary>
+        /// <param name="wb">激活的工作簿对象</param>
+        private static void OnWorkbookActivate(Microsoft.Office.Interop.Excel.Workbook wb)
+        {
+            try
+            {
+                // 若聚光灯功能处于激活状态，自动附着新视口并渲染高亮
+                if (ExcelServices.IsSpotlightEnabled)
+                {
+                    // 刷新聚光灯位置
+                    ExcelServices.UpdateSpotlightPosition(null);
+                }
+            }
+            catch { }
         }
 
         /// <summary>

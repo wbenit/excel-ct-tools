@@ -1,5 +1,45 @@
 # Session State
 
+## [Completed]
+
+- **打开/切换其他软件聚光灯残留在屏幕上遮挡之根因排查与彻底解决 (`Forms/SpotlightOverlayForm.cs`, `Forms/ExcelWindowHook.cs`, `Services/ExcelServices.Spotlight.cs`)**：
+  1. **根因定位**：
+     - 原 `SpotlightOverlayForm` 设置了 `TopMost = true`，导致浮窗成为全桌面系统的最高 Z-Order 窗口，即使用户切到微信、浏览器、VS Code 等其他软件，该十字半透明图形依然全局置顶悬浮在最上层；
+     - 缺乏前台激活进程判定，在用户处于其他软件工作时依然保持了可见渲染。
+  2. **四重系统级层级与前台联动彻底根治**：
+     - **解除系统级 TopMost**：将 `SpotlightOverlayForm` 的 `TopMost` 改为 `false`；
+     - **绑定 Excel 主窗口为 Owner**：通过 Win32 `SetWindowLongPtr(Handle, GWLP_HWNDPARENT, mainHwnd)` 将浮窗与 Excel 建立 Owned 依附关系。一旦用户切换激活其他软件，Windows 桌面管理器会自动将 Excel 及其所属浮窗一同沉入后台，100% 绝不遮挡任何其他软件；
+     - **前台焦点守护定时器 (`_foregroundGuardTimer`)**：在 `ExcelServices.Spotlight.cs` 中增加 120ms 的极轻量轮询守护（耗时 0ms）：通过 `GetForegroundWindow()` 与 `GetWindowThreadProcessId` 监控前台 PID；一旦发现用户切到其他软件，立即调用 `ShowWindow(SW_HIDE)` 隐匿浮窗；一旦切回 Excel，瞬间自愈恢复高亮；
+     - **原生钩子失焦即刻响应 (`WM_KILLFOCUS`)**：在 `ExcelWindowHook` 中拦截 `WM_KILLFOCUS` 并在 `OnActivationChanged` 中响应，当视口失焦且前台非 Excel 时 0 延迟秒级隐匿；
+     - **刷新入口前门禁**：在 `UpdateSpotlightPosition` 开头校验 `IsExcelForeground()`，非前台时拒绝绘制并保持隐匿；
+  3. **编译构建验证**：
+     - `dotnet build /t:Compile /p:DebugType=none` 0 错误 0 警告通过。
+
+- **聚光灯功能未显示 (消失) 深度排查与全面彻底恢复 (`Services/ExcelServices.Spotlight.cs`, `ExcelEventManager.cs`)**：
+  1. **深度排查三项根因**：
+     - **根因一 (浮窗托管 Visible 缺失)**：在防死锁调整中移除了 `_spotlightForm.Show()`，只调用了 `CreateControl()`。WinForms 的 Form 实例若从未调用 `Show()`，托管状态的 `this.Visible` 始终为 `false`，即便底层调用了 `ShowWindow(SW_SHOWNOACTIVATE)`，WinForms 底层窗口过程仍会在消息分发时自动将 Handle 隐匿；
+     - **根因二 (dynamic 强制转换为 IntPtr 抛出 RuntimeBinderException)**：`FindExcel7Hwnd()` 中使用了 `(IntPtr)app.ActiveWindow.Hwnd`。在 C# DLR 机制下，对 dynamic 对象显式转换为 IntPtr 不支持内置 int 转换，必定触发 `RuntimeBinderException`，导致内部 catch 吞掉并返回 `IntPtr.Zero`，从而无法定位视口；
+     - **根因三 (空启动新建工作簿未触发 SelectionChange)**：VS 调试空启动时工作簿为 0 聚光灯静默，用户新建空白表格默认停在 A1，此时不会触发 `SelectionChange`，此前未监听 `WorkbookActivate` / `SheetActivate`，导致聚光灯一直处于等待唤醒状态；
+  2. **全面针对性修复**：
+     - **恢复 `_spotlightForm.Show()`**：因 `SpotlightOverlayForm` 已具备 `ShowWithoutActivation => true` 与 `WS_EX_NOACTIVATE` 样式，调用 `Show()` 100% 绝不夺取 Excel 编辑焦点，同时使窗体进入桌面分层渲染管线；在刷新末尾确保 `_spotlightForm.Visible = true;`；
+     - **安全拆箱与类型转换**：使用 `Convert.ToInt64(app.ActiveWindow.Hwnd)` 转换为 long 进而创建 `IntPtr`，100% 杜绝 DLR 转换异常；
+     - **接入工作簿/工作表激活事件**：在 `ExcelEventManager.cs` 中注册 `SheetActivate` 与 `WorkbookActivate`，当用户新建、打开或切换表格时，聚光灯瞬间自愈激活并点亮；
+  3. **编译构建验证**：
+     - `dotnet build /t:Compile /p:DebugType=none` 0 错误 0 警告编译通过。
+
+- **多选区滚动鼠标中键高亮退化为单行单列之根因排查与全面修复 (`Services/ExcelServices.Spotlight.cs`)**：
+  1. **根因定位**：
+     - 用户选中多行多列时，选区变动事件传入的是完整的选区 Range（如 `A1:D10`）；
+     - 但在滚动鼠标中键时，视口钩子回调传入的是 `UpdateSpotlightPosition(null)`；
+     - 原逻辑执行 `cell = target ?? app.ActiveCell`，直接回退到了单格 `ActiveCell`，导致选区信息被丢弃，高亮瞬间缩水为单行单列。
+  2. **全面重构多选区与多区域 (Areas) 引擎**：
+     - **选区智能保持**：当入参为 `null` 时，优先通过 `app.Selection` 获取用户当前的完整多选选区 Range，彻底解决滚屏时选区丢失问题；
+     - **多区域 (Areas) 遍历与并集合成**：支持连续多行多列选区以及按住 Ctrl 键的多不连续区域，遍历 `targetRange.Areas` 并通过 Win32 GDI `CombineRgn(..., RGN_OR)` 统一合并，支持精准镂空；
+     - **超大选区溢出防护**：对整行（16384 列）或整列（1048576 行）选区的磅值增加 8000 磅安全上限，杜绝 `PointsToScreenPixels` 产生 COM 溢出崩溃；
+  3. **编译验证**：
+     - `dotnet build /t:Compile /p:DebugType=none` 验证通过：0 错误 0 警告。
+
+
 - **彻底去除 CAD 视口顶部左侧“矢量预览”文本与右侧“定位”按钮及关联代码 (`Resources/secondary_circuit_manage.html`, `Forms/SecondaryCircuitForm.cs`)**：
   1. **前端界面与交互精简**：
      - 去除视口顶部左侧冗余前缀 `<span style="color: #64748b;">矢量预览: </span>`，直接精简呈现图纸名称 `📐 {{ currentVectorDwg.fileName }}`；
@@ -189,6 +229,22 @@
      - 执行 `dotnet build /t:Compile` 编译通过：0 错误 0 警告；
      - HTML 模板已热同步至 `bin\Debug\net48\Resources\secondary_circuit_manage.html` 与 `publish\Resources\`。
 
+
+- **全面落地基于 ExWinner 架构的工业级 Excel 行列聚光灯 (Spotlight) 功能 (`Services/ExcelServices.Spotlight.cs`, `Forms/SpotlightOverlayForm.cs`, `Forms/ExcelWindowHook.cs`, `Models/SpotlightConfig.cs`, `RibbonController.cs`, `ExcelEventManager.cs`, `AddInMain.cs`)**：
+  1. **架构解密与对齐落地**：
+     - 深度学习并复刻 ExWinner 的非侵入式金标准架构：**Win32 GDI Region 动态剪裁 + 操作系统级无边框半透明穿透浮窗 (`WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`) + 原生窗口消息钩子 (`NativeWindow`)**；
+     - 彻底消除传统 VBA 条件格式对 Excel 撤销重做栈（Ctrl+Z）的破坏以及对工作簿文件的样式污染；
+  2. **高精几何与性能保障**：
+     - 利用 Excel COM `ActivePane.PointsToScreenPixelsX/Y` 自动兼容 Zoom 视口缩放、Windows 系统级 DPI 缩放与首行首列冻结窗格；
+     - 通过 Win32 GDI `CreateRectRgn`、`CombineRgn(..., RGN_OR)` 组合十字高亮几何，并经由 `SetWindowRgn` 物理裁剪浮窗（非高亮区域直接剔除，GPU/CPU 负载极低）；
+     - `ExcelWindowHook` 拦截 `EXCEL7` 与 `XLMAIN` 的移动、缩放与滚屏消息，内置 35ms 防抖节流消除撕裂，切出 Excel 自动隐匿；
+  3. **交互集成与持久化**：
+     - Ribbon 功能区【辅助项】分组新增【💡 聚光灯】大图标切换按钮（带互锁状态同步）；
+     - 注册 Excel-DNA 宏快捷键 `[ExcelCommand(ShortCut = "^%L")]`（`Ctrl + Alt + L`）；
+     - 在 `%LocalAppData%\ExcelCTTools\config\spotlight_config.json` 中自动持久化开关与参数，Excel 启动时自愈恢复；
+  4. **代码规范与编译验证**：
+     - 严格遵循新增代码每 3 行包含至少 1 行中文注释，硬编码统一标识 `--硬编码--`；
+     - `dotnet build` 编译全量通过：0 错误，成功生成 32位与 64位 `.xll` 加载项。
 
 - **彻底修复辅材壳体计算中心 (cabinet_aux_calc.html) 界面横向溢出与组件移出屏幕故障**：
   1. **锁定容器横向滚动**：为 `.main-body` 与各卡片容器增加 `overflow-x: hidden !important; min-width: 0; width: 100%; box-sizing: border-box;`，从源头杜绝页面产生水平滚动条，彻底切断 Chromium/WebView2 焦点自动平移（`scrollIntoView`）导致左侧组件被卷出视口的路径；

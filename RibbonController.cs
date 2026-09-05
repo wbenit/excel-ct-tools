@@ -15,6 +15,21 @@ namespace ExcelAddInDemo
     {
         // 缓存 Ribbon UI 控制接口句柄
         private IRibbonUI? _ribbon;
+        // 静态缓存 Ribbon UI 控制接口，支持跨类触发 Ribbon 状态重绘
+        private static IRibbonUI? _ribbonInstance;
+
+        /// <summary>
+        /// 全局静态触发 Ribbon 界面状态刷新
+        /// </summary>
+        public static void InvalidateRibbon()
+        {
+            try
+            {
+                // 调用原生 Invalidate 刷新选项卡各控件状态
+                _ribbonInstance?.Invalidate();
+            }
+            catch { }
+        }
 
         /// <summary>
         /// 重写 GetCustomUI 方法，返回 Excel 选项卡 UI 结构的 XML 源码
@@ -207,6 +222,8 @@ namespace ExcelAddInDemo
         </group>
         <!-- 辅助项 功能分组 -->
         <group id='grpAuxiliary' label='辅助项'>
+          <!-- 聚光灯行列高亮切换按钮 -->
+          <toggleButton id='btnToggleSpotlight' label='聚光灯' imageMso='PivotTableVisualFilter' size='large' getPressed='GetSpotlightPressed' onAction='OnSpotlightAction' screentip='行列聚光灯 (Ctrl+Alt+L)' supertip='以十字半透明柔和色彩高亮选中单元格所在行与列，无损Excel撤销重做(Ctrl+Z)且零文件修改' />
           <!-- 联动CAD夹点显示切换按钮 -->
           <toggleButton id='btnToggleCadSync' label='联动CAD' imageMso='SelectionPane' size='large' getPressed='GetCadSyncPressed' onAction='OnCadSyncAction' screentip='联动AutoCAD夹点' supertip='选中行时自动读取AA列句柄，在AutoCAD中即时高亮并激活夹点显示' />
           <!-- 右键菜单模式切换按钮 -->
@@ -235,6 +252,33 @@ namespace ExcelAddInDemo
     </tabs>
   </ribbon>
 </customUI>";
+        }
+
+        /// <summary>
+        /// 聚光灯切换按钮状态获取回调：读取当前聚光灯激活状态
+        /// </summary>
+        public bool GetSpotlightPressed(IRibbonControl control)
+        {
+            // 读取 ExcelServices 中的聚光灯开关状态
+            return ExcelServices.IsSpotlightEnabled;
+        }
+
+        /// <summary>
+        /// 聚光灯切换按钮点击回调：开启或关闭聚光灯功能
+        /// </summary>
+        public void OnSpotlightAction(IRibbonControl control, bool isPressed)
+        {
+            // 同步切换聚光灯状态
+            if (isPressed)
+            {
+                // 开启聚光灯
+                ExcelServices.EnableSpotlight();
+            }
+            else
+            {
+                // 关闭聚光灯
+                ExcelServices.DisableSpotlight();
+            }
         }
 
         /// <summary>
@@ -271,6 +315,8 @@ namespace ExcelAddInDemo
         {
             // 保存 Ribbon UI 对象引用以便需要时刷新 UI
             _ribbon = ribbon;
+            // 同步更新静态实例引用以支持外部类调用 InvalidateRibbon
+            _ribbonInstance = ribbon;
         }
 
         /// <summary>
