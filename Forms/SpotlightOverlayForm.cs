@@ -118,6 +118,34 @@ namespace ExcelAddInDemo.Forms
         }
 
         /// <summary>
+        /// 针对指定十六进制颜色与不透明度即时应用外观样式 (用于实时预览)
+        /// </summary>
+        /// <param name="colorHex">十六进制颜色字符串 (如 #009688)</param>
+        /// <param name="opacity">半透明不透明度 (0.05 ~ 0.85)</param>
+        public void ApplyStyle(string colorHex, double opacity)
+        {
+            try
+            {
+                // 解析十六进制颜色字符串
+                Color parsedColor = ColorTranslator.FromHtml(colorHex);
+                // 设置窗口背景底色
+                this.BackColor = parsedColor;
+
+                // 限制不透明度安全取值范围在 0.05 ~ 0.85 之间
+                double safeOpacity = Math.Max(0.05, Math.Min(0.85, opacity));
+                // 赋予窗口不透明度属性
+                this.Opacity = safeOpacity;
+
+                // 同步分层窗口 Alpha 混合值
+                SyncLayeredAttributes();
+            }
+            catch
+            {
+                // 异常静默兜底，不中断前端实时交互
+            }
+        }
+
+        /// <summary>
         /// 显式调用 Win32 API 同步当前分层窗口的透明度与色彩键
         /// </summary>
         public void SyncLayeredAttributes()

@@ -1,0 +1,289 @@
+{
+  "general": {
+    "elementMarkupRatio": 1,
+    "taxAndManageRatio": 1.1299999999999999,
+    "copperPricePerKg": 76,
+    "primaryCalcComponents": [
+      "断路器",
+      "隔离开关",
+      "双电源",
+      "漏电",
+      "电涌后备"
+    ]
+  },
+  "shellRules": {
+    "shellMatchName": "箱体",
+    "boxAreaSafetyFactor": 1.2,
+    "cabinetAreaSafetyFactor": 1.3,
+    "cabinetMinHeight": 1500,
+    "cabinetCurrentThreshold": 250,
+    "standardSizes": [
+      "400*500",
+      "500*600",
+      "600*700",
+      "600*800",
+      "700*900",
+      "800*1000",
+      "800*1200",
+      "800*1600",
+      "800*1800",
+      "800*2000",
+      "800*2200",
+      "1000*2200"
+    ],
+    "wiringSpaceGradients": [
+      {
+        "maxCurrent": 40,
+        "space": 100
+      },
+      {
+        "maxCurrent": 63,
+        "space": 110
+      },
+      {
+        "maxCurrent": 100,
+        "space": 125
+      },
+      {
+        "maxCurrent": 140,
+        "space": 155
+      },
+      {
+        "maxCurrent": 160,
+        "space": 200
+      },
+      {
+        "maxCurrent": 9999,
+        "space": 370
+      }
+    ],
+    "transformerSpacing": {
+      "fireTransformer": 50,
+      "oneSet": 100,
+      "twoToFiveSets": 350,
+      "overFiveSets": 600
+    }
+  },
+  "copperRules": {
+    "mccbCountThreshold": 2,
+    "mccbCurrentSumThreshold": 250,
+    "branchTotalCurrentThreshold": 300,
+    "mainSwitchCurrentThreshold": 250,
+    "fourPoleMccbThreshold": 1,
+    "specialComponentKeywords": [
+      "双电源",
+      "ATS",
+      "火灾探测器",
+      "火灾互感器",
+      "电气火灾"
+    ],
+    "widthDeduction": 120,
+    "heightDeduction": 300,
+    "verticalBaseLength": 1.2,
+    "loadExtensionRatio": 0.10000000000000001,
+    "loadExtensionStepCurrent": 150,
+    "branchMinCurrent": 99,
+    "branchBusUnitLength": 1,
+    "mainBusSpecTable": [
+      {
+        "maxCurrent": 100,
+        "spec": "TMY-20*3",
+        "weightPerMeter": 0.53400000000000003
+      },
+      {
+        "maxCurrent": 160,
+        "spec": "TMY-25*3",
+        "weightPerMeter": 0.66800000000000004
+      },
+      {
+        "maxCurrent": 250,
+        "spec": "TMY-30*4",
+        "weightPerMeter": 1.0680000000000001
+      },
+      {
+        "maxCurrent": 400,
+        "spec": "TMY-40*4",
+        "weightPerMeter": 1.4239999999999999
+      },
+      {
+        "maxCurrent": 630,
+        "spec": "TMY-50*5",
+        "weightPerMeter": 2.2250000000000001
+      },
+      {
+        "maxCurrent": 800,
+        "spec": "TMY-60*6",
+        "weightPerMeter": 3.2040000000000002
+      },
+      {
+        "maxCurrent": 1250,
+        "spec": "TMY-80*8",
+        "weightPerMeter": 5.6959999999999997
+      },
+      {
+        "maxCurrent": 1600,
+        "spec": "TMY-100*10",
+        "weightPerMeter": 8.9000000000000004
+      },
+      {
+        "maxCurrent": 9999,
+        "spec": "TMY-120*10",
+        "weightPerMeter": 10.68
+      }
+    ],
+    "invertedTCurrent": 300,
+    "iStructureCurrent": 140,
+    "fourPoleExtra": 1400,
+    "threePoleExtra": 1200,
+    "atsInvertedTExtra": 4800,
+    "atsIExtra": 4200,
+    "attachmentRules": []
+  },
+  "auxRules": {
+    "auxMatchName": "辅材",
+    "baseFee": 10,
+    "smallBoxGroundBarFee": 30,
+    "highCabinetExtraFee": 40,
+    "wireLengthConfig": {
+      "baseVerticalHeight": 130,
+      "fireTransformerExtraHeight": 100,
+      "normalTransformerExtraHeight": 130,
+      "extraHeightRules": [
+        {
+          "keyword": "火灾",
+          "extraHeight": 100,
+          "description": "火灾漏电/探测元件垂直加成"
+        },
+        {
+          "keyword": "互感器",
+          "extraHeight": 130,
+          "description": "普通电流互感器垂直加成"
+        }
+      ],
+      "cabinetMinHeight": 1600,
+      "cabinetWidthFactor": 0.7,
+      "cabinetHeightFactor": 0.4,
+      "cabinetLengthMargin": 1.1,
+      "boxWidthFactor": 0.6,
+      "boxHeightFactor": 0.3,
+      "boxLengthMargin": 1.05
+    },
+    "primaryWireSpecTable": [
+      {
+        "maxCurrent": 16,
+        "spec": "BV-2.5",
+        "crossSection": 2.5,
+        "pricePerMeter": 1.5
+      },
+      {
+        "maxCurrent": 25,
+        "spec": "BV-4.0",
+        "crossSection": 4,
+        "pricePerMeter": 2.2000000000000002
+      },
+      {
+        "maxCurrent": 40,
+        "spec": "BV-6.0",
+        "crossSection": 6,
+        "pricePerMeter": 3.2000000000000002
+      },
+      {
+        "maxCurrent": 63,
+        "spec": "BV-10",
+        "crossSection": 10,
+        "pricePerMeter": 5.5
+      },
+      {
+        "maxCurrent": 80,
+        "spec": "BV-16",
+        "crossSection": 16,
+        "pricePerMeter": 8.5
+      },
+      {
+        "maxCurrent": 100,
+        "spec": "BV-25",
+        "crossSection": 25,
+        "pricePerMeter": 13.5
+      },
+      {
+        "maxCurrent": 125,
+        "spec": "BV-35",
+        "crossSection": 35,
+        "pricePerMeter": 18.5
+      }
+    ],
+    "secondaryWirePrice": 0.80000000000000004,
+    "secondaryWidthFactor": 0.80000000000000004,
+    "secondaryHeightFactor": 0.29999999999999999,
+    "secondaryMarginLength": 300,
+    "secondaryElements": [
+      {
+        "keyword": "接触器",
+        "wireCount": 4,
+        "wirePrice": 0.80000000000000004,
+        "laborPrice": 8
+      },
+      {
+        "keyword": "中间继电器",
+        "wireCount": 4,
+        "wirePrice": 0.80000000000000004,
+        "laborPrice": 6
+      },
+      {
+        "keyword": "热继电器",
+        "wireCount": 2,
+        "wirePrice": 0.80000000000000004,
+        "laborPrice": 4
+      },
+      {
+        "keyword": "按钮",
+        "wireCount": 2,
+        "wirePrice": 0.80000000000000004,
+        "laborPrice": 3
+      },
+      {
+        "keyword": "指示灯",
+        "wireCount": 2,
+        "wirePrice": 0.80000000000000004,
+        "laborPrice": 3
+      },
+      {
+        "keyword": "多功能表",
+        "wireCount": 8,
+        "wirePrice": 0.80000000000000004,
+        "laborPrice": 15
+      },
+      {
+        "keyword": "电度表",
+        "wireCount": 6,
+        "wirePrice": 0.80000000000000004,
+        "laborPrice": 12
+      },
+      {
+        "keyword": "变频器",
+        "wireCount": 8,
+        "wirePrice": 0.80000000000000004,
+        "laborPrice": 30
+      },
+      {
+        "keyword": "断路器附件",
+        "wireCount": 3,
+        "wirePrice": 0.80000000000000004,
+        "laborPrice": 5
+      }
+    ],
+    "fixedLengthRules": [
+      {
+        "keyword": "接触器",
+        "fixedLengthMm": 300,
+        "description": "接触器短接跳线"
+      }
+    ]
+  },
+  "laborRules": {
+    "laborMatchName": "人工费",
+    "areaBaseRate": 2.95,
+    "reservedCircuitDiscount": 0.4,
+    "reservedMaxBreakersThreshold": 3
+  }
+}

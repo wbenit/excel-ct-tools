@@ -98,6 +98,10 @@
     <None Include="Resources\secondary_circuit_manage.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将聚光灯个性化设置前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\spotlight_setting.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将 CAD 矢量渲染器静态资源复制至构建输出路径中 -->
     <None Include="Resources\cad-viewer\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -108,6 +112,14 @@
     </None>
     <!-- 自动将箱柜模板 Excel 文件复制至构建输出路径中 -->
     <None Include="Resources\CabinetTemplate.xlsx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- 自动将常规样式投标报表前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\tender_report_regular.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- 自动将常规样式投标报表 Excel 模板文件复制至构建输出路径中 -->
+    <None Include="Resources\TenderReport_Regular.xlsx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <!-- 自动将 JSON 配置文件复制至构建输出路径中 -->

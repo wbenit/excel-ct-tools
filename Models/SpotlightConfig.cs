@@ -165,5 +165,77 @@ namespace ExcelAddInDemo.Models
                 // 异常捕获保障健壮性
             }
         }
+
+        /// <summary>
+        /// 全局更新当前运行的单例配置并自动持久化到本地磁盘
+        /// </summary>
+        /// <param name="newConfig">待应用的新配置对象</param>
+        public static void UpdateCurrent(SpotlightConfig newConfig)
+        {
+            // 加锁保障线程安全
+            lock (_lock)
+            {
+                // 校验传入对象非空
+                if (newConfig == null) return;
+                // 将新配置实例赋值给单例引用
+                _current = newConfig;
+                // 执行持久化保存至磁盘
+                _current.SaveToDisk();
+            }
+        }
+
+        /// <summary>
+        /// 重置聚光灯配置为系统推荐的工业级默认值
+        /// </summary>
+        /// <returns>重置后的全新配置对象</returns>
+        public static SpotlightConfig ResetToDefault()
+        {
+            // 加锁保障线程安全
+            lock (_lock)
+            {
+                // 保留当前的开启或关闭状态标志
+                bool wasEnabled = _current?.IsEnabled ?? false;
+                // 实例化全新的默认配置并恢复开启状态
+                _current = new SpotlightConfig
+                {
+                    // 继承先前的开关状态
+                    IsEnabled = wasEnabled,
+                    // 默认模式为十字交叉
+                    Mode = SpotlightMode.Crosshair,
+                    // 默认主题颜色为绿蓝相间
+                    ColorHex = "#009688", // --硬编码: 默认主题色绿蓝相间--
+                    // 默认不透明度为 22%
+                    Opacity = 0.22, // --硬编码: 默认不透明度 22%--
+                    // 默认活动单元格不镂空
+                    ExcludeActiveCell = false
+                };
+                // 保存默认配置至本地磁盘
+                _current.SaveToDisk();
+                // 返回重置后的配置对象
+                return _current;
+            }
+        }
+
+        /// <summary>
+        /// 深度克隆当前配置对象副本，用于设置面板打开时的初始快照备份
+        /// </summary>
+        /// <returns>克隆的独立配置对象副本</returns>
+        public SpotlightConfig Clone()
+        {
+            // 构造新的配置对象并逐项浅拷贝值类型属性
+            return new SpotlightConfig
+            {
+                // 复制开启状态
+                IsEnabled = this.IsEnabled,
+                // 复制高亮模式
+                Mode = this.Mode,
+                // 复制十六进制色值
+                ColorHex = this.ColorHex,
+                // 复制半透明不透明度
+                Opacity = this.Opacity,
+                // 复制活动单元格镂空开关
+                ExcludeActiveCell = this.ExcludeActiveCell
+            };
+        }
     }
 }

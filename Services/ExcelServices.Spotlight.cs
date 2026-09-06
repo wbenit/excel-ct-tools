@@ -141,6 +141,12 @@ namespace ExcelAddInDemo
         // 线程安全互斥锁
         private static readonly object _spotlightSyncRoot = new object();
 
+        // 聚光灯设置面板宿主窗口单例实例
+        private static Forms.SpotlightSettingForm? _spotlightSettingForm = null;
+
+        // 临时实时预览配置覆盖对象 (用于设置面板滑动调色时的即时反馈)
+        private static SpotlightConfig? _previewConfigOverride = null;
+
         #endregion
 
         #region 公开控制属性与方法
@@ -149,6 +155,120 @@ namespace ExcelAddInDemo
         /// 查询当前聚光灯是否处于开启状态
         /// </summary>
         public static bool IsSpotlightEnabled => _isSpotlightEnabled;
+
+        /// <summary>
+        /// 启动并弹出基于 WebView2 + Vue 3 的聚光灯外观个性化设置窗口 (非模态)
+        /// </summary>
+        public static void ShowSpotlightSettingDialog()
+        {
+            try
+            {
+                // 以标准非模态方式展示聚光灯设置面板，保持 Excel 处于可交互编辑状态
+                ShowModelessForm(ref _spotlightSettingForm, () => new Forms.SpotlightSettingForm());
+            }
+            catch (Exception ex)
+            {
+                // 捕获异常防止崩溃闪退
+                MessageBox.Show($"弹出聚光灯设置窗口失败: {ex.Message}", "系统提示", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// 立即应用聚光灯新配置并刷新 Excel 视图中的高亮形态
+        /// </summary>
+        /// <param name="config">可选指定的新配置</param>
+        public static void ApplySpotlightConfig(SpotlightConfig? config = null)
+        {
+            // 清除临时预览覆盖状态
+            _previewConfigOverride = null;
+
+            // 若提供了配置则更新全局单例
+            if (config != null)
+            {
+                // 全局持久化更新
+                SpotlightConfig.UpdateCurrent(config);
+            }
+
+            // 若聚光灯当前已激活，立即应用最新样式与几何区域
+            if (_isSpotlightEnabled && _spotlightForm != null && !_spotlightForm.IsDisposed)
+            {
+                // 应用持久化样式与半透明度
+                _spotlightForm.ApplyStyleFromConfig();
+
+                // 强制重新计算高亮位置并刷新窗口 GDI Region
+                UpdateSpotlightPosition(null);
+            }
+        }
+
+        /// <summary>
+        /// 针对指定配置进行临时实时联动预览 (拖动滑块/切模式/选色时即时触发)
+        /// </summary>
+        /// <param name="tempConfig">临时预览配置</param>
+        public static void ApplyTemporarySpotlightStyle(SpotlightConfig tempConfig)
+        {
+            // 校验临时配置有效性
+            if (tempConfig == null) return;
+
+            // 记录当前临时预览配置引用
+            _previewConfigOverride = tempConfig;
+
+            // 若聚光灯处于开启状态，立即在浮窗上呈现临时色彩与半透明度
+            if (_isSpotlightEnabled && _spotlightForm != null && !_spotlightForm.IsDisposed)
+            {
+                // 即时应用临时颜色与透明度
+                _spotlightForm.ApplyStyle(tempConfig.ColorHex, tempConfig.Opacity);
+
+                // 强制重新计算几何区域 (以防模式改变或活动格镂空切换)
+                UpdateSpotlightPosition(null);
+            }
+        }
+
+        /// <summary>
+        /// 撤销临时预览并还原至当前正式生效的持久化配置
+        /// </summary>
+        public static void CancelPreviewSpotlight()
+        {
+            // 清空临时预览配置引用
+            _previewConfigOverride = null;
+
+            // 若聚光灯处于开启状态，立即重置为持久化样式
+            if (_isSpotlightEnabled && _spotlightForm != null && !_spotlightForm.IsDisposed)
+            {
+                // 还原持久化样式
+                _spotlightForm.ApplyStyleFromConfig();
+
+                // 刷新高亮几何区域
+                UpdateSpotlightPosition(null);
+            }
+        }
+
+        /// <summary>
+        /// 快捷切换聚光灯高亮模式 (十字 / 仅行 / 仅列)
+        /// </summary>
+        /// <param name="mode">目标高亮模式</param>
+        public static void SetSpotlightMode(SpotlightMode mode)
+        {
+            // 获取当前有效配置
+            var cfg = SpotlightConfig.Current;
+
+            // 修改模式
+            cfg.Mode = mode;
+
+            // 写入本地持久化
+            cfg.SaveToDisk();
+
+            // 若未开启聚光灯，顺便自动开启
+            if (!_isSpotlightEnabled)
+            {
+                // 开启聚光灯
+                EnableSpotlight();
+            }
+            else
+            {
+                // 刷新生效
+                ApplySpotlightConfig(cfg);
+            }
+        }
 
         /// <summary>
         /// 切换聚光灯开启/关闭状态 (提供给 Ribbon 按钮与快捷键调用)
@@ -410,8 +530,8 @@ namespace ExcelAddInDemo
                     return;
                 }
 
-                // 获取聚光灯全局配置
-                var cfg = SpotlightConfig.Current;
+                // 获取聚光灯全局配置 (优先采用临时预览配置以支持设置面板滑块拖拽实时联动，若无则使用正式持久化配置)
+                var cfg = _previewConfigOverride ?? SpotlightConfig.Current;
                 // 创建初始空的 Windows GDI 组合区域
                 IntPtr hCombined = CreateRectRgn(0, 0, 0, 0);
                 // 标记当前视口内是否生成了任何有效的高亮区域

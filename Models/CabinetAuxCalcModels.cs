@@ -46,6 +46,14 @@ namespace ExcelAddInDemo.Models
         // 铜排基准市场单价 (单位: 元/KG，默认 76.0) --硬编码--
         [JsonPropertyName("copperPricePerKg")]
         public double CopperPricePerKg { get; set; } = 76.0;
+
+        // 参与一次导线与铜排计算的元器件自定义集合 (关键字列表) --硬编码--
+        [JsonPropertyName("primaryCalcComponents")]
+        public List<string> PrimaryCalcComponents { get; set; } = new List<string>
+        {
+            // 默认包含主流断路器、隔离开关与双电源等一次元件关键字
+             "断路器", "漏电", "开关", "双电源"
+        };
     }
 
     /// <summary>
@@ -291,6 +299,42 @@ namespace ExcelAddInDemo.Models
     }
 
     /// <summary>
+    /// 元器件垂直预留高度加成映射规则模型
+    /// </summary>
+    public class ComponentExtraHeightRule
+    {
+        // 匹配元器件名称或型号的关键字 (如 "火灾", "互感器")
+        [JsonPropertyName("keyword")]
+        public string Keyword { get; set; } = string.Empty;
+
+        // 增加的垂直尺寸高度 (单位: mm，默认 100) --硬编码--
+        [JsonPropertyName("extraHeight")]
+        public int ExtraHeight { get; set; } = 100;
+
+        // 规则说明与用途描述
+        [JsonPropertyName("description")]
+        public string Description { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// 固定长度元器件映射规则模型 (如接触器短跳线固定长度 300mm)
+    /// </summary>
+    public class FixedLengthComponentRule
+    {
+        // 匹配元器件名称或型号的关键字 (如 "接触器", "热继电器")
+        [JsonPropertyName("keyword")]
+        public string Keyword { get; set; } = string.Empty;
+
+        // 单根固定接线导线长度 (单位: mm，默认 300) --硬编码--
+        [JsonPropertyName("fixedLengthMm")]
+        public int FixedLengthMm { get; set; } = 300;
+
+        // 规则说明与用途描述
+        [JsonPropertyName("description")]
+        public string Description { get; set; } = string.Empty;
+    }
+
+    /// <summary>
     /// 一次导线长度生成与折算参数配置模型
     /// </summary>
     public class PrimaryWireLengthConfig
@@ -299,13 +343,21 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("baseVerticalHeight")]
         public int BaseVerticalHeight { get; set; } = 130;
 
-        // 火灾互感器垂直高度增量 (单位: mm，默认 100) --硬编码--
+        // 火灾互感器垂直高度增量 (兼容保留字段，单位: mm，默认 100) --硬编码--
         [JsonPropertyName("fireTransformerExtraHeight")]
         public int FireTransformerExtraHeight { get; set; } = 100;
 
-        // 普通互感器垂直高度增量 (单位: mm，默认 130) --硬编码--
+        // 普通互感器垂直高度增量 (兼容保留字段，单位: mm，默认 130) --硬编码--
         [JsonPropertyName("normalTransformerExtraHeight")]
         public int NormalTransformerExtraHeight { get; set; } = 130;
+
+        // 元器件垂直预留高度加成映射规则列表 (单柜命中按类去重只加一次)
+        [JsonPropertyName("extraHeightRules")]
+        public List<ComponentExtraHeightRule> ExtraHeightRules { get; set; } = new List<ComponentExtraHeightRule>
+        {
+            new ComponentExtraHeightRule { Keyword = "火灾", ExtraHeight = 100, Description = "火灾漏电/探测元件垂直加成" },
+            new ComponentExtraHeightRule { Keyword = "互感器", ExtraHeight = 130, Description = "普通电流互感器垂直加成" }
+        };
 
         // 落地柜判定高度门限 (单位: mm，默认 1600) --硬编码--
         [JsonPropertyName("cabinetMinHeight")]
@@ -315,6 +367,10 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("cabinetWidthFactor")]
         public double CabinetWidthFactor { get; set; } = 0.7;
 
+        // 落地柜一次导线柜高比例系数 (默认 0.4) --硬编码--
+        [JsonPropertyName("cabinetHeightFactor")]
+        public double CabinetHeightFactor { get; set; } = 0.4;
+
         // 落地柜一次导线长度裕量放大系数 (默认 1.1) --硬编码--
         [JsonPropertyName("cabinetLengthMargin")]
         public double CabinetLengthMargin { get; set; } = 1.1;
@@ -322,6 +378,14 @@ namespace ExcelAddInDemo.Models
         // 配电箱一次导线箱宽系数 (默认 0.6) --硬编码--
         [JsonPropertyName("boxWidthFactor")]
         public double BoxWidthFactor { get; set; } = 0.6;
+
+        // 配电箱一次导线箱高比例系数 (默认 0.3) --硬编码--
+        [JsonPropertyName("boxHeightFactor")]
+        public double BoxHeightFactor { get; set; } = 0.3;
+
+        // 配电箱一次导线长度裕量放大系数 (默认 1.05) --硬编码--
+        [JsonPropertyName("boxLengthMargin")]
+        public double BoxLengthMargin { get; set; } = 1.05;
     }
 
     /// <summary>
@@ -329,6 +393,10 @@ namespace ExcelAddInDemo.Models
     /// </summary>
     public class AuxConfig
     {
+        // 辅材匹配名称 (默认 "辅材"，优先在计费区查找，找不到在元器件区查找) --硬编码--
+        [JsonPropertyName("auxMatchName")]
+        public string AuxMatchName { get; set; } = "辅材";
+
         // 基础辅材起步费 (单位: 元，默认 10.0) --硬编码--
         [JsonPropertyName("baseFee")]
         public double BaseFee { get; set; } = 10.0;
@@ -362,19 +430,31 @@ namespace ExcelAddInDemo.Models
             new PrimaryWireSpecItem { MaxCurrent = 9999, Spec = "BV-95", CrossSection = 95.0, PricePerMeter = 52.0 }
         };
 
-        // 二次元件接线定额库 (根据元件关键字匹配配线根数、线单价与工价)
+        // 二次配线每米单价 (单位: 元/米，默认 0.8) --硬编码--
+        [JsonPropertyName("secondaryWirePrice")]
+        public double SecondaryWirePrice { get; set; } = 0.8;
+
+        // 二次跨门导线柜宽折算系数 (默认 0.8) --硬编码--
+        [JsonPropertyName("secondaryWidthFactor")]
+        public double SecondaryWidthFactor { get; set; } = 0.8;
+
+        // 二次跨门导线柜高比例折算系数 (默认 0.3) --硬编码--
+        [JsonPropertyName("secondaryHeightFactor")]
+        public double SecondaryHeightFactor { get; set; } = 0.3;
+
+        // 二次跨门导线端头剥线与接线预留裕量 (单位: mm，默认 300) --硬编码--
+        [JsonPropertyName("secondaryMarginLength")]
+        public int SecondaryMarginLength { get; set; } = 300;
+
+        // 旧版二次元件接线定额库 (已升级为二次方案绑定，此处保留字段做向后兼容兜底)
         [JsonPropertyName("secondaryElements")]
-        public List<SecondaryElementRule> SecondaryElements { get; set; } = new List<SecondaryElementRule>
+        public List<SecondaryElementRule> SecondaryElements { get; set; } = new List<SecondaryElementRule>();
+
+        // 固定长度元器件接线映射规则列表 (短跳线免计算箱体宽高，如接触器 300mm)
+        [JsonPropertyName("fixedLengthRules")]
+        public List<FixedLengthComponentRule> FixedLengthRules { get; set; } = new List<FixedLengthComponentRule>
         {
-            new SecondaryElementRule { Keyword = "接触器", WireCount = 4, WirePrice = 0.8, LaborPrice = 8.0 },
-            new SecondaryElementRule { Keyword = "中间继电器", WireCount = 4, WirePrice = 0.8, LaborPrice = 6.0 },
-            new SecondaryElementRule { Keyword = "热继电器", WireCount = 2, WirePrice = 0.8, LaborPrice = 4.0 },
-            new SecondaryElementRule { Keyword = "按钮", WireCount = 2, WirePrice = 0.8, LaborPrice = 3.0 },
-            new SecondaryElementRule { Keyword = "指示灯", WireCount = 2, WirePrice = 0.8, LaborPrice = 3.0 },
-            new SecondaryElementRule { Keyword = "多功能表", WireCount = 8, WirePrice = 0.8, LaborPrice = 15.0 },
-            new SecondaryElementRule { Keyword = "电度表", WireCount = 6, WirePrice = 0.8, LaborPrice = 12.0 },
-            new SecondaryElementRule { Keyword = "变频器", WireCount = 8, WirePrice = 0.8, LaborPrice = 30.0 },
-            new SecondaryElementRule { Keyword = "断路器附件", WireCount = 3, WirePrice = 0.8, LaborPrice = 5.0 }
+            new FixedLengthComponentRule { Keyword = "接触器", FixedLengthMm = 300, Description = "接触器短接跳线" }
         };
     }
 
@@ -453,6 +533,10 @@ namespace ExcelAddInDemo.Models
     /// </summary>
     public class LaborConfig
     {
+        // 人工匹配名称 (默认 "人工费"，优先在计费区查找，找不到在元器件区查找) --硬编码--
+        [JsonPropertyName("laborMatchName")]
+        public string LaborMatchName { get; set; } = "人工费";
+
         // 壳体面积平铺制作工价系数 (单位: 元/分米² 即 元/0.01㎡，默认 2.95) --硬编码--
         [JsonPropertyName("areaBaseRate")]
         public double AreaBaseRate { get; set; } = 2.95;
@@ -460,6 +544,10 @@ namespace ExcelAddInDemo.Models
         // 预留回路工价折减系数 (默认 0.4) --硬编码--
         [JsonPropertyName("reservedCircuitDiscount")]
         public double ReservedCircuitDiscount { get; set; } = 0.4;
+
+        // 预留回路打折判定的整柜断路器最大台数门限 (单位: 台，默认 3) --硬编码--
+        [JsonPropertyName("reservedMaxBreakersThreshold")]
+        public int ReservedMaxBreakersThreshold { get; set; } = 3;
     }
 
     /// <summary>
@@ -550,6 +638,58 @@ namespace ExcelAddInDemo.Models
 
         // 是否为预留回路
         public bool IsReserved { get; set; }
+
+        // 第 32 列 (AF 列) 绑定的回路代号或图号 (如 "CA1B", "接触器变频器")
+        public string BoundDwgCode { get; set; } = string.Empty;
+
+        // 是否为二次元件组 (B列='元件组' 或以 '*' 开头，或第 32 列绑定了图号)
+        public bool IsComponentGroup { get; set; }
+    }
+
+    /// <summary>
+    /// 单个箱柜命中的二次回路方案定额计算条目
+    /// </summary>
+    public class SecondarySchemeCalcItem
+    {
+        // 方案 ID
+        [JsonPropertyName("schemeId")]
+        public int SchemeId { get; set; }
+
+        // 方案名称 (如 "双电源标准控制回路方案A")
+        [JsonPropertyName("schemeName")]
+        public string SchemeName { get; set; } = string.Empty;
+
+        // 绑定的回路代号或图号 (如 "CA1B")
+        [JsonPropertyName("circuitCode")]
+        public string CircuitCode { get; set; } = string.Empty;
+
+        // 该方案在箱柜中出现的数量 / 回路套数 (默认 1) --硬编码--
+        [JsonPropertyName("quantity")]
+        public int Quantity { get; set; } = 1;
+
+        // 方案级二次线跨门根数 (单套)
+        [JsonPropertyName("crossDoorCount")]
+        public double CrossDoorCount { get; set; }
+
+        // 单套回路二次导线推导长度 (单位: 米)
+        [JsonPropertyName("singleWireLength")]
+        public double SingleWireLength { get; set; }
+
+        // 该方案二次导线累计推导总长度 (单位: 米)
+        [JsonPropertyName("totalWireLength")]
+        public double TotalWireLength { get; set; }
+
+        // 二次配线辅材费用小计 (元)
+        [JsonPropertyName("wireCost")]
+        public double WireCost { get; set; }
+
+        // 单套二次装配与接线人工工费 (元)
+        [JsonPropertyName("unitLaborCost")]
+        public double UnitLaborCost { get; set; }
+
+        // 二次装配与接线人工工费小计 (元)
+        [JsonPropertyName("laborCost")]
+        public double LaborCost { get; set; }
     }
 
     /// <summary>
@@ -597,6 +737,18 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("shellMatchedInFeeArea")]
         public bool ShellMatchedInFeeArea { get; set; }
 
+        // 辅材回写目标位置说明 (如 "计费区域第 46 行" 或 "元器件区域第 30 行")
+        [JsonPropertyName("auxTargetLocation")]
+        public string AuxTargetLocation { get; set; } = string.Empty;
+
+        // 人工回写目标位置说明 (如 "计费区域第 47 行" 或 "元器件区域第 31 行")
+        [JsonPropertyName("laborTargetLocation")]
+        public string LaborTargetLocation { get; set; } = string.Empty;
+
+        // 铜排回写目标位置说明 (如 "元器件区域第 32 行")
+        [JsonPropertyName("copperTargetLocation")]
+        public string CopperTargetLocation { get; set; } = string.Empty;
+
         // 铜排总重量 (单位: KG)
         [JsonPropertyName("copperWeight")]
         public double CopperWeight { get; set; }
@@ -625,6 +777,22 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("primaryWireDetails")]
         public List<PrimaryWireUsageItem> PrimaryWireDetails { get; set; } = new List<PrimaryWireUsageItem>();
 
+        // 命中的二次回路方案计算明细列表
+        [JsonPropertyName("secondarySchemeDetails")]
+        public List<SecondarySchemeCalcItem> SecondarySchemeDetails { get; set; } = new List<SecondarySchemeCalcItem>();
+
+        // 单根二次跨门线基准推导长度 (单位: 米)
+        [JsonPropertyName("secondarySingleWireLength")]
+        public double SecondarySingleWireLength { get; set; }
+
+        // 箱柜二次跨门导线总根数
+        [JsonPropertyName("secondaryTotalWireCount")]
+        public double SecondaryTotalWireCount { get; set; }
+
+        // 箱柜二次导线推导消耗总长度 (单位: 米)
+        [JsonPropertyName("secondaryTotalWireLength")]
+        public double SecondaryTotalWireLength { get; set; }
+
         // 铜排各分项算式明细列表 (展示主母排、各动态附件排、分支排的具体计算式与尺寸联动)
         [JsonPropertyName("copperFormulaDetails")]
         public List<string> CopperFormulaDetails { get; set; } = new List<string>();
@@ -632,5 +800,9 @@ namespace ExcelAddInDemo.Models
         // 推导过程与说明明细
         [JsonPropertyName("description")]
         public string Description { get; set; } = string.Empty;
+
+        // 未填写电流等计算警告与提醒列表 (如提示某些断路器W列为空未计入计算)
+        [JsonPropertyName("warnings")]
+        public List<string> Warnings { get; set; } = new List<string>();
     }
 }

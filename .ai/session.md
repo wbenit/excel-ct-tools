@@ -1,6 +1,256 @@
 # Session State
 
+## [In-Progress]
+
+- **公式法调费更新当前分类未删除旧计费区域深层原因排查与架构分析**：
+  1. 现场还原：图一中第 78~85 行为新写入的 8 行【多费用公式】，86~87 行为残留空行，88~93 行则是原封未动的旧计费区域（小计、管理费、利润、税金、单台合计、总计）；
+  2. 根本原因一：`Tool.FixAndFillCabinetNamesForSheet` 在探测小计行时硬编码要求公式含 `INDEX`，探测总计行时要求上一行 A 列为 `ROW()-ROW(` 公式，导致真实小计与总计行均无法命中，直接触发了兜底逻辑 `curDetRow + 24`，错将第 78 行误认为旧计费起始行；
+  3. 根本原因二：`ApplyFormulaAdjustFeeToExcel` 在多箱柜更新遍历时，前序箱柜插行导致后续箱柜行号偏移，但代码持有静态旧行号；且写入逻辑仅盲目在错误行号处插入并覆盖，未能识别并彻底删除下方真实旧计费区域；
+  4. 根本原因三：规则 6 规定 `Cab_Subsum` 为小计行、计费区域不可有空行，而当前【多费用公式】将辅材和箱体置于小计之前，且未清理元器件到小计之间的空行，导致结构错位。
+
+
 ## [Completed]
+
+- **小箱免铜排全局短路门禁与电流门限配置化界面迁移全面交付 (`Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`)**：
+  1. **小箱零地电流门限(原140A)彻底抽取为界面可设置参数**：
+     - 将原写死在【🛠️ 费率与补贴】静态文本中的 `(电流<140A)` 改造为动态响应式联动：`元 (电流 < {{ rules.copperRules.iStructureCurrent || 140 }}A)`；
+     - 迁移并在图 2【⚡ 铜排母线定额】下的【📐 主母排形态与排数智能决策门限】卡片中新增【⚡ 小箱免铜排门限:】输入框（绑定 `rules.copperRules.iStructureCurrent`，步长 10A，单位 A）；
+     - 与原跨两列的“4极水平排门限”形成 1:1 左右对称整齐排版，下方公式提示框追加小箱免铜排短路判定机制说明；
+     - 在 Vue setup 的 `initContext` 中补充了 `iStructureCurrent` 的深度合并与 140A 缺省安全兜底。
+  2. **建立小箱免铜排顶层短路门禁机制**：
+     - 当箱柜整柜最大电流小于用户设定的门限（`maxCurrent < smallBoxCurrentThreshold`）时，自动判定为小箱；
+     - 铜排计算中实行短路直通门禁：`copperWeight = 0.0`，透明记录小箱免排明细说明，彻底跳过水平/垂直主排、垂直N排、标准零地排以及大电流出线分支排的所有计算；
+     - 辅材计算中同步联动，小于该门限时自动计入小箱零地排固定补贴（默认 30 元）；
+     - 提升 `hasHorizontalBus` 变量作用域至小箱判定前，确保后续出线导线全量平滑计入一次导线，消除了编译未定义引用错误。
+  3. **工程构建与热同步**：
+     - `cabinet_aux_calc.html` 已热同步复制到 `bin/Debug/net48/Resources/` 与 `publish/Resources/`；
+     - 运行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 错误**；
+     - 新增代码严格遵循每 3 行代码至少 1 行中文注释，硬编码均打标 `--硬编码--`。
+
+
+- **预留断路器台数上限参数配置化与微型漏电识别覆盖优化全面交付 (`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`, `quotation_rules.json`)**：
+  1. **明确解答微型漏电的归属与判定**：
+     - 微型漏电在系统中**算断路器**；
+     - 优化统计条件，全面支持元件名称与型号中含有“断路器”、“漏电”、“微断”的匹配，微型漏电（如带漏保断路器、微型漏电开关等）均精准计入整柜断路器总台数。
+  2. **将预留回路打折判定台数（原硬编码 3 台）彻底抽取为界面可配置项**：
+     - 在 `LaborConfig` 模型中新增 `ReservedMaxBreakersThreshold`（默认 3 台）；
+     - 在【装配人工费率与综合税费】配置卡片中新增【预留断路器上限: 3 台】独立输入框与联动微卡片提示；
+     - 后台算法动态读取该门限，当柜内含预留回路且整柜断路器台数 $\le$ 该门限时，自动触发打折（$\times 0.4$），支持用户任意调整门限；
+     - 配置文件 `quotation_rules.json` 写入默认值，HTML 资源已热同步至运行与发布目录；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 错误**。
+
+
+- **一次配线定额中导线规格选型与单价表样式完全对齐固定长度表且彻底根除截断遮挡修复全面交付 (`Resources/cabinet_aux_calc.html`)**：
+  1. **彻底解决行高截断与添加新规格被遮挡问题**：
+     - 移除了原 `style` 中写死的 `max-height: 220px;`，解除表格内部强制截断机制，让表格随导线规格数据项自然平铺展开；
+     - 彻底杜绝了原有第 6 行文字和输入框被拦腰截断一半、以及点击“添加导线规格”后新行被挡在可视区域外的严重体验缺陷。
+  2. **全面对齐固定长度元器件映射表（模块 B-2）的排版与交互样式**：
+     - 卡片头部 `cfg-card-header`、标题说明、绿色扁平 `btn-flat` 按钮与加号矢量图标全面对齐；
+     - 表格设置自适应列（`spec` 导线规格型号列设为 `min-width="140"`，不设固定 width），整张表格 100% 优雅填满卡片剩余宽度，彻底消除了原表格右侧多余的白色 gutter 空隙与错位；
+     - 底部新增统一风格的 `formula-hint-box` 导线选型机制说明微卡片；
+     - 模块 A-2 和模块 B-2 表格同步统一移除 `max-height` 限制，确保所有规则子表均无遮挡、平滑展开。
+  3. **热同步覆盖**：
+     - `cabinet_aux_calc.html` 已热同步覆盖至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`。
+
+
+- **一次导线计算体系重构（垂直预留高度映射、配电箱裕量系数、固定长度元器件映射）全面交付 (`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`, `quotation_rules.json`)**：
+  1. **元器件垂直预留高度加成映射表**：
+     - 淘汰原写死的“火灾互感器(100mm)”和“普通互感器(130mm)”两项输入框，升级为通用关键字与尺寸映射表 `ExtraHeightRules`；
+     - 严格遵循语音确认原则：**单柜同类元器件去重，每类只算一次**（例如柜内有 3 套互感器只加 1 次 130mm；有火灾只加 1 次 100mm；两者兼有则各加 1 次共 +230mm）；
+     - 前端增加卡片【📏 元器件垂直预留高度加成映射表】及动态增删表格，底部公式提示同步更新。
+  2. **配电箱裕量系数引入**：
+     - 在配电箱导线总长公式中加入 `BoxLengthMargin`（默认 1.05），赋予配电箱与落地柜一致的可调放量能力；
+     - 前端配置中心提供独立可调输入框，配电箱提示公式同步联动。
+  3. **固定长度元器件接线映射表**：
+     - 新增短跳线元器件映射表 `FixedLengthRules`（默认：接触器固定 300mm）；
+     - 命中该表的出线分路元件不走箱体长宽公式，直接按 $\text{数量} \times \text{极数(3P为3)} \times \frac{\text{固定长度(300mm)}}{1000}$ 独立计算总长；
+     - 根据该元器件自身额定电流匹配导线截面与规格（如 65A 匹配 BV-16），汇总计入一次导线规格表；
+     - 前端增加卡片【🔗 固定长度元器件接线映射表】及动态增删表格。
+  4. **工程构建与热同步**：
+     - `bin/Debug/net48/data/quotation_rules.json` 与 `publish/data/quotation_rules.json` 写入默认配置；
+     - `cabinet_aux_calc.html` 已热同步覆盖至调试目录与发布目录；
+     - 运行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 警告，0 错误**；
+     - 新增代码严格遵循**每 3 行代码至少 1 行中文注释**，避免 Element Plus 自闭合标签陷阱，硬编码均打标 `--硬编码--`。
+
+
+- **一次线与铜排计算范围自定义集合门禁及电流列为空告警提醒机制全面交付 (`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`, `data/quotation_rules.json`)**：
+  1. **彻底取消电流列为空时的型号正则自动提取**：
+     - 在 `ScanCabinetData` 中，当 W 列（第 23 列）为空时，直接保留 `current = 0`，坚决停止调用 `ParseCurrentFromModel` 正则解析；彻底根除了将热继电器 `NDR2-3822(16-24A)` 中的规格代号 `3822` 误当成 `3822A` 额定电流并触发超大出线分支铜排的深层隐患。
+  2. **新增参与一次线与铜排计算的自定义元器件集合门禁**：
+     - 在 `QuotationRules.General` 与 `quotation_rules.json` 中新增 `PrimaryCalcComponents` 配置属性（默认包含：塑壳断路器、塑壳、微断、小型断路器、断路器、隔离开关、负荷开关、框架断路器、双电源、ATS，标记 `--硬编码--`）；
+     - 实现 `IsComponentInPrimaryCalcSet` 门禁过滤方法：只有命中自定义集合的元器件，才计算一次导线用量和出线分支铜排；非集合内元器件（热继电器、接触器、电涌保护器、指示灯等二次/辅助元件）坚决排除，杜绝误算。
+  3. **未填电流只提醒告警机制**：
+     - 在 `CabinetCalcResult` 中增加 `Warnings` 列表属性；
+     - 当扫描到属于一次计算集合的元器件但 W 列电流为空（`current <= 0`）时，自动记录告警提醒（格式：`第 X 行【名称 型号】W列电流为空，不做自动提取，已跳过一次线与分支铜排计算！`）；
+     - 在【📊 智能推导与回写】看板顶部增加醒目的 ⚠️ 告警提醒条幅（带警告图标、黄色高亮背景与详细清单），并在推导说明 `Description` 中同步提示。
+  4. **前端配置中心与看板无缝升级**：
+     - 在【⚙️ 规则与定额配置】的“🔌 一次配线定额”顶部新增【🏷️ 参与一次线与铜排计算的元器件集合 (门禁规则)】配置卡片，支持以 Tag 形式展示、动态新增和删除关键字，并可一键保存至磁盘持久化；
+     - 前端 JS 增加响应式兜底兼容，确保历史老配置平滑无感升级。
+  5. **构建与热同步**：
+     - `cabinet_aux_calc.html` 已热同步至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`；
+     - `quotation_rules.json` 已写入默认集合配置；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译全量通过：0 错误 0 警告。
+
+- **二次回路图纸对齐与绑定工作台彻底移除右下角红框卡片与表格全高展开优化全面交付 (`Resources/secondary_circuit_manage.html`)**：
+  1. **右下角冗余参数卡片彻底移除**：
+     - 彻底移除了右下角红框处的【关联二次方案参数】双排卡片及占位提示容器，彻底消除了底部高度挤压与边框截断问题；
+     - 结构更清爽，DOM 树复杂度降低。
+  2. **右侧元件组表格自适应撑满全高**：
+     - 将表格包裹层设为 `min-height: 0; flex: 1; height: 100%;`，让【Excel 元件组清单】表格纵向 100% 独占整个右侧工作区；
+     - 表格支持完整的内部虚拟平滑滚动与表头吸顶，能同时纵向一览更多元件组型号。
+  3. **数据零丢失：平移 BOM 项数至 CAD 视口顶部**：
+     - 将原卡片右上角的 BOM 物料项数平移至中间 DWG 矢量视口顶部的彩色定额胶囊末尾：`📦 BOM: X项`；
+     - 与既有的【二次组、跨门、二次材料、开孔、人工】形成完整六大核心方案定额胶囊，看图与看方案参数浑然一体。
+  4. **构建与热同步**：
+     - AST 标签栈校验通过：0 个未闭合，0 个多余；
+     - 已热同步复制至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`。
+
+- **VS 启动调试托管调试助手 "FatalExecutionEngineError" (0x80131623, 0x9fa1cae5) 致命崩溃第三阶段核心根除全面交付 (`Forms/ExcelWindowHook.cs`, `Services/ExcelServices.Spotlight.cs`)**：
+  1. **现场还原与深层根因锁定**：
+     - 用户在 Visual Studio 启动调试时，光标精准停留在 `Forms/ExcelWindowHook.cs` 第 152 行（`GuardTimer_Tick` 回调中读取原点坐标后的比较行）；
+     - 崩溃报告地址 `0x9fa1cae5`（低 16 位 `0xCAE5`，即 `EXCEL7` 视口句柄）。CLR MDA 拦截原因是：后台定时器在主线程高频触发，执行 `GetClientRect` / `ClientToScreen` 跨语言 P/Invoke 调用破坏了 JIT 栈帧平衡；当非托管调用返回恢复执行托管 IL 指令（第 152 行）时，被 CLR 栈探测捕捉到寄存器/返回地址被句柄值覆盖，直接触发 `FatalExecutionEngineError (0x80131623)`；
+     - 同时，工程中还存在 `_foregroundGuardTimer`（120ms）与 `_guardTimer`（200ms）两个后台定时器高频轰炸主消息循环，形成严重的调用栈撕裂温床。
+  2. **第三阶段极简纯净安全架构重构**：
+     - **措施 1 (彻底清除 ExcelWindowHook 内部定时器与 P/Invoke)**：重构 `ExcelWindowHook.cs` 为纯托管安全适配器类，彻底移除所有 `System.Windows.Forms.Timer` 定时器及其 Tick 回调，不再调用 `GetClientRect` 和 `ClientToScreen`，零跨语言调用，零栈破坏隐患，100% 保持类库公开接口兼容；
+     - **措施 2 (彻底移除前台焦点守护定时器)**：在 `ExcelServices.Spotlight.cs` 中彻底移除 `_foregroundGuardTimer`（120ms 轮询）及 `StartForegroundGuard`、`StopForegroundGuard`、`ForegroundGuardTimer_Tick` 方法；由于聚光灯浮窗属于 Excel 主窗口的 Owned 窗口，系统 DWM 天然将其压在外部软件下方，无需任何轮询；
+     - **措施 3 (原子级 GetWindowRect 单次获取视口绝对物理矩形)**：在 `UpdateSpotlightPosition` 中废弃 `GetClientRect` + `ClientToScreen` 的双重组合调用，改用 Win32 原生原子安全 API `GetWindowRect(excel7Hwnd, out RECT winRect)` 一步直接拿到绝对屏幕坐标和宽高，彻底消灭所有不稳定的 P/Invoke 转换；
+     - **措施 4 (聚光灯全面由 Excel 原生 COM 事件模型驱动)**：选区移动跟随 `SheetSelectionChange`、切换表跟随 `SheetActivate`、切换工作簿跟随 `WorkbookActivate`，0 个定时器、0 个后台轮询、0% CPU 占用，彻底杜绝所有崩溃可能。
+  3. **构建验证**：
+     - 执行 `dotnet build /t:Compile` 编译通过：0 错误；
+     - 执行完整 `dotnet build` 成功打包生成 `ExcelAddInDemo-AddIn64.xll`，0 警告，0 错误；
+     - 代码严格满足每 3 行至少 1 行中文注释。
+
+- **VS 启动调试托管调试助手 "FatalExecutionEngineError" (0x80131623, 0x9f9ecae5, 0x9fa1cae5) 致命崩溃第二阶段终极排查与彻底根除全面交付 (`AddInMain.cs`, `Forms/ExcelWindowHook.cs`, `Services/ExcelServices.Spotlight.cs`, `Forms/SpotlightOverlayForm.cs`)**：
+  1. **深度根因排查与定位**：
+     - 用户在 Visual Studio 启动调试时再次出现 `FatalExecutionEngineError (0x80131623)`，地址变为 `0x9fa1cae5`（与上一次地址低 16 位完全一致为 `0xCAE5`），经过系统句柄与模块跟踪，确认为 Win32 原生视口句柄；
+     - **根因一 (启动抢跑争抢 COM 初始化栈)**：`AddInMain.AutoOpen()` 在 `QueueAsMacro` 延迟宏中若判断聚光灯曾开启过，会过早调用 `ExcelServices.EnableSpotlight()`。Excel 启动初期 COM 消息泵与主视口窗口树仍在动态构造中，此时过早探测视口与展示浮窗极易破坏初始化调用栈；
+     - **根因二 (EnumChildWindows 反向 P/Invoke 委托 Thunk 栈溢出与 GC 风险)**：`FindExcel7Hwnd` 中使用了 `EnumChildWindows(mainHwnd, (childHwnd, lParam) => ...)`。Excel 顶层主窗口包含数百个子窗口，每次调用都会在非托管线程中高频反向回调托管动态 Lambda 委托，缺少固定强引用与确切的 `CallingConvention`，在 VS 调试器监控下引发 CLR 执行引擎内部 Thunk 崩溃；
+     - **根因三 (缺少显式 Winapi 调用约定与高频 40ms 定时器)**：`ExcelWindowHook` 中包含 40ms 极高频巡检定时器，频繁调用 `ClientToScreen`，且所有 Win32 DllImport 均未显式指定 `CallingConvention = CallingConvention.Winapi`，触发 MDA 堆栈平衡检查崩溃。
+  2. **第二阶段四重精准根除措施**：
+     - **措施 1 (启动安全解耦)**：在 `AddInMain.cs` 中彻底移除启动时的 `EnableSpotlight()` 自动抢跑调用，插件启动仅注册 COM 事件与右键菜单，聚光灯改为按需由用户点击 Ribbon 或快捷键开启，保障 F5 启动 100% 纯净、安全；
+     - **措施 2 (FindWindowEx 替代 EnumChildWindows 零回调重构)**：在 `ExcelServices.Spotlight.cs` 中彻底废弃 `EnumChildWindows` 及回调委托，改用纯原生原子查找 Win32 `FindWindowEx`（`XLMAIN` -> `XLDESK` -> `EXCEL7`），零委托分配、零非托管回调、彻底根绝反向 P/Invoke 堆栈损坏；
+     - **措施 3 (全量 P/Invoke 显式 Winapi 规范化)**：为 `ExcelServices.Spotlight.cs`、`ExcelWindowHook.cs`、`SpotlightOverlayForm.cs` 中的所有 Win32 API 统一显式标注 `CallingConvention = CallingConvention.Winapi`，彻底消除 MDA 对栈指针平衡的质疑与拦截；
+     - **措施 4 (巡检定时器门禁与 200ms 防抖)**：在 `ExcelWindowHook` 的 `GuardTimer_Tick` 中增加 `!ExcelServices.IsSpotlightEnabled` 门禁，关闭状态瞬间静默退出；将定时器轮询间隔从 40ms 优化为安全合理的 200ms 防抖检测，杜绝高频轰炸主消息循环。
+  3. **编译与验证结果**：
+     - 执行 `dotnet build /t:Compile` 编译通过：0 错误；
+     - 执行完整 `dotnet build` 生成 `ExcelAddInDemo-AddIn64.xll` 成功：0 警告，0 错误；所有新增代码严格满足每 3 行至少 1 行中文注释。
+
+- **二次回路图纸对齐与绑定工作台布局修复与体验增强全面交付 (`Resources/secondary_circuit_manage.html`)**：
+  1. **彻底根治白板与错乱布局问题**：
+     - 排查并修复了前期修改遗留的未闭合 `<div>` 标签问题，补全了 `#app` 根容器闭合 `</div>`，使模板 AST 标签栈完全平衡归零（0 个未闭合）；
+     - 解决了历史编码冲突导致的 `?/div>` 问题，标签完全规范化；
+     - 增加了 `.circuit-binding-dialog .el-dialog__body` 的紧凑内边距（`padding: 8px 12px !important; overflow: hidden !important;`），释放多达 24px+ 垂直空间。
+  2. **三栏空间重构与 DWG 视口显著调宽**：
+     - 左侧文件夹/图纸栏由 260px 缩窄至 230px；
+     - 右侧元件组看板栏由 480px 缩窄至 360px（右侧表格列宽精细适配为 145/125px，字体 12/11px，两列紧凑并排无横向滚动条）；
+     - 中间 WebGL CAD 矢量视口获得高达 **150px** 的额外宽度，大幅提升看图体验。
+  3. **DWG 视口顶部胶囊完整展示**：
+     - 左侧文件名限制最大宽度 `150px` 并允许弹性缩进，杜绝挤占右侧空间；
+     - 中间参数胶囊添加 `flex-shrink: 0;`、间距设为 `6px`，每个参数配备悬浮 `:title` 提示，保障在任何屏幕下都不会被截断。
+  4. **最右下角参数卡片双排布局且杜绝下边界截断**：
+     - 表格使用 `<div style="flex: 1; min-height: 120px; overflow: hidden; position: relative;">` 包裹，搭配 `height="100%"` 受控滚动，表头固定吸顶，绝不向下挤压卡片；
+     - 最右下角关联二次方案参数卡片升级为双排精致紧凑栅格（第 1 排：跨门线、二次材料、开孔；第 2 排：人工、二次组方案名），加上 `margin-top: auto; flex-shrink: 0;`；
+     - 所有指标数字垂直居中、不折行且带 Tooltip，卡片完整露于视口内，下边框和数字下半截截断问题彻底消除。
+  5. **热同步与清理**：
+     - 文件已热同步至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`；
+     - 清理所有中间辅助脚本，保持工程干净整洁；
+     - 新增代码严格遵循每 3 行代码 1 行中文注释规范。
+
+- **辅材与人工匹配名可配置及双区查找（计费区优先、元器件区备用）与铜排改填元器件最末行（无空位自动插行）全面交付 (`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`)**：
+  1. **数据模型扩展 (`CabinetAuxCalcModels.cs`)**：
+     - `AuxConfig` 新增 `AuxMatchName`（默认 `"辅材"`，标注 `--硬编码--`）；
+     - `LaborConfig` 新增 `LaborMatchName`（默认 `"人工费"`，标注 `--硬编码--`）；
+     - `CabinetCalcResult` 增加 `AuxTargetLocation`、`LaborTargetLocation`、`CopperTargetLocation` 记录回写定位。
+  2. **前端配置中心与推导看板升级 (`Resources/cabinet_aux_calc.html`)**：
+     - 在【🛠️ 费率与补贴】中新增【辅材匹配名称】与【人工匹配名称】可编辑配置输入项；
+     - 底部说明区域升级为清晰呈现壳体、辅材、人工与铜排的回写规则与实际回写位置反馈；
+     - `rules` 初始化与合并逻辑提供平滑安全兜底。
+  3. **核心回写与插行引擎重构 (`ExcelServices.CabinetAuxCalc.cs`)**：
+     - 重构 `WriteCabinetCalcResultToSheet`；
+     - **辅材与人工**：先在计费区域遍历 B 列匹配（辅材匹配 `auxMatchName`，人工匹配 `laborMatchName` 或兼容 `"人工"`），命中则将推导金额公式写入 **H 列（销售总价列）**；若计费区未命中，自动穿透至元器件区域查找 B 列，命中则写入 H 列并将数量 F 列置为 1；
+     - **铜排**：调整至元器件区域最下面一行；先检测既有铜排行实现原位更新防重复；若无既有行且最后一行已有元件（无空位），则在小计行 `Cab_Subsum` 位置执行向下插入新行；写入 17 列完整元器件数据（A 列序号、B 列 "铜排"、C 列 "TMY"、E 列 "KG"、F 列数量公式、G 列单价、H 列合价、J/K 列成本、Q 列 "材料" 等）；若发生插行，调用 `RefreshCabinetFeeAreaFormulas` 自动刷新小计公式与 A 列序号；
+     - 清理计费区历史遗留的铜排行数据，杜绝重复计费。
+  4. **构建与热同步**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误 0 警告；
+     - 资源已同步复制至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`。
+
+- **二次导线推导长度呈现与一次/二次计算引入柜高比例参数全面实施 (`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`)**：
+  1. **数据模型深度扩展 (`CabinetAuxCalcModels.cs`)**：
+     - `PrimaryWireLengthConfig`：增加 `CabinetHeightFactor` (落地柜柜高系数，默认 0.4) 与 `BoxHeightFactor` (配电箱柜高系数，默认 0.3)，标注 `--硬编码--`；
+     - `AuxConfig`：增加 `SecondaryWidthFactor` (跨门柜宽系数，默认 0.8)、`SecondaryHeightFactor` (跨门柜高比例，默认 0.3)、`SecondaryMarginLength` (端头接线预留裕量，默认 300mm)，标注 `--硬编码--`；
+     - `SecondarySchemeCalcItem`：增加 `SingleWireLength` (方案单套二次线长，米)、`TotalWireLength` (方案累计推导总长，米)；
+     - `CabinetCalcResult`：增加 `SecondarySingleWireLength` (单根跨门基准长)、`SecondaryTotalWireCount` (二次线总根数)、`SecondaryTotalWireLength` (推导总长度)。
+  2. **核心计算引擎双维空间走线模型升级 (`ExcelServices.CabinetAuxCalc.cs`)**：
+     - 一次导线计算：在垂直落差计算中引入柜高比例项：落地柜叠加 `shellHeight * cabHeightFactor`、配电箱叠加 `shellHeight * boxHeightFactor`，彻底解决高柜与矮箱走线落差不明显问题；
+     - 二次导线计算：将原有固定的单维 `(柜宽+300)/1000` 升级为严密的双维跨门空间模型：
+       `单根长 = (柜宽 × 柜宽系数 + 柜高 × 柜高比例 + 端头裕量) / 1000`；
+       `方案单套长 = 方案跨门根数 × 单根长`；
+       `方案累计总长 = 单套长 × 方案套数`；
+     - 回写与推导说明增强：计算结果回填 `CabinetCalcResult`，并在 `Description` 中详细输出二次方案套数、总根数、单根长与总线长推导算式。
+  3. **前端工作台看板与配置中心升级 (`Resources/cabinet_aux_calc.html`)**：
+     - **推导结果视图**：新增【⚡ 二次导线推导长度与用量明细】独立看板，包含顶部指标条（单根跨门基准长、总根数、推导总长度、导线规格、参考单价）及方案级推导表格（二次方案名、回路代号、套数、跨门线、单套线长、累计推导总长、辅材小计、工费小计）；
+     - **规则配置模块 A**：在一次导线参数区补充落地柜柜高系数、配电箱柜高系数输入项与动态联动公式提示；
+     - **规则配置模块 C**：在二次回路参数区提供控制线单价、跨门柜宽系数、跨门柜高比例、端头接线裕量输入项与详尽推导公式；
+     - **前端 JS 兼容与默认值兜底**：在 `rules` 初始化对象及 `initContext` 报文反序列化逻辑中增加安全兜底，保证历史配置文件平滑无缝升级。
+  4. **热同步与构建验证**：
+     - 前端静态文件已热同步至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译验证通过：0 错误。
+
+- **智能辅材与壳体计算中心接入二次回路方案定额并彻底下线旧“二次元件定额” (`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`)**：
+  1. **步骤 1：重构辅材与人工计算引擎为方案驱动 (`ExcelServices.CabinetAuxCalc.cs`, `CabinetAuxCalcModels.cs`)**：
+     - **扫描范围扩展**：将工作表扫描由第 28 列（AB 列）扩展至第 32 列（AF 列），一次性读入二维数组，提取绑定的二次回路代号/图号 `boundDwgCode` 与二次元件组标记 `isComponentGroup`；
+     - **联动二次方案数据库**：一次性加载本地全量二次方案（`PersonalComponentDbService.GetAllSecondarySchemes()`），按回路代号、CAD 图名、方案名称或型号去星号精确检索匹配；
+     - **参数精准继承与算式透明化**：
+       - 二次配线辅材：继承方案级 `CrossDoorCount`（跨门线根数），按 `跨门根数 × (柜宽+300)/1000 × 线单价 × 套数` 计算辅材并累加；
+       - 二次装配工价：继承方案级 `LaborCost`（人工工费），按 `单套工价 × 套数` 累加至人工总额，并在算式字符串中清晰列示（如 `45.0*1`）；
+       - 记录命中的方案明细列表 `SecondarySchemeDetails`，并在推导说明 `Description` 中标注命中方案统计与未绑定警告；
+     - **模型升级**：`CabinetComponentItem` 增加 `BoundDwgCode` 与 `IsComponentGroup`；新增 `SecondarySchemeCalcItem`；`AuxiliaryRulesConfig` 增加 `SecondaryWirePrice`（默认 0.8 元/米，标记 `--硬编码--`）；
+  2. **步骤 2：下线前端二次元件定额 Tab 与废弃逻辑 (`cabinet_aux_calc.html`)**：
+     - **界面彻底下线**：移除“二次元件定额”Tab 页及其添加/删除按钮，移除 `addSecondaryElement` 及 setup 导出项；
+     - **联动说明与配置集成**：在“一次配线定额”Tab 末尾添加“二次回路方案定额参数联动说明”卡片，提供二次控制线单价调节输入项并明确指引至【二次回路方案管理中心】统一维护；
+     - **结果透明呈现**：在“智能推导与回写”界面新增“命中的二次回路方案定额明细”表格卡片，清晰展示方案名、代号、套数、跨门线、辅材小计与工费小计；
+  3. **静态资源同步与编译验证**：
+     - 静态模板已热同步至 `bin\Debug\net48\Resources\cabinet_aux_calc.html` 与 `publish\Resources\cabinet_aux_calc.html`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译全量通过：0 错误 0 警告。
+
+- **聚光灯设置面板点击关闭/取消无响应 (不能关闭) 之根因排查与彻底修复 (`Forms/SpotlightSettingForm.cs`, `Resources/spotlight_setting.html`)**：
+  1. **深度排查三大根因**：
+     - **根因一 (WebView2 消息反序列化通道阻断)**：前端调用 `postMessage(payload)` 直接传递原生 JavaScript Object，而在 C# 端仅使用了 `e.TryGetWebMessageAsString()`。当收到非字符串类型时，该方法直接抛出异常或返回空，而此前未捕获 `e.WebMessageAsJson` 进行兜底，导致 `string.IsNullOrWhiteSpace` 成立直接 `return`，所有操作（关闭、保存、取消、拖拽、联动）均未被执行；
+     - **根因二 (参数节点键名不一致)**：前端传递的配置键名为 `config: { ...form }`，而 C# 端此前只尝试提取 `data` 节点，导致保存与预览指令即使送达也因找不到 `data` 被忽略；
+     - **根因三 (指针事件穿透与冒泡干扰)**：右上角关闭按钮父级具有 `@pointerdown="onHeaderPointerDown"` 拖拽监听，点击叉叉时若未阻断冒泡会被标题栏拖拽逻辑拦截抢占；
+  2. **全面针对性修复**：
+     - **双轨消息解析与容错兼容**：在 `SpotlightSettingForm.cs` 中先尝试 `TryGetWebMessageAsString()`，若为空则自动读取 `e.WebMessageAsJson`，彻底兼容原生对象与 JSON 字符串；
+     - **前端显式 JSON 序列化**：在 `spotlight_setting.html` 的 `postToCSharp` 中统一使用 `JSON.stringify(payload)` 发送；
+     - **全别名指令与双节点兼容**：C# 端 `close` 分支同时支持 `close`、`closeWindow`、`cancel`；`previewConfig` 与 `saveConfig` 同时支持 `data` 与 `config` 节点，保存后立即安全调用 `SafeInvoke(this.Close)` 关闭窗口；
+     - **事件阻断**：在关闭按钮上添加 `@pointerdown.stop @click.stop="closeWindow"`，彻底隔离拖拽与点击；
+  3. **编译与热部署验证**：
+     - 页面已同步复制至 `bin\Debug\net48\Resources\spotlight_setting.html`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
+
+- **聚光灯 (Spotlight) 个性化设置中心完整制作与交付 (`Resources/spotlight_setting.html`, `Controllers/SpotlightController.cs`, `Forms/SpotlightSettingForm.cs`, `Services/ExcelServices.Spotlight.cs`, `Models/SpotlightConfig.cs`, `RibbonController.cs`)**：
+  1. **前端现代 Vue 3 工作台 (`Resources/spotlight_setting.html`)**：
+     - 基于 Vue 3 (`<script setup>`) + Element Plus + CSS Glassmorphism；
+     - 主色调采用 `#009688` 绿蓝相间，圆角卡片化布局；
+     - **非阻塞物理增量平滑拖拽**：使用 PointerEvents + `requestAnimationFrame` 发送 `{ action: 'moveWindow', deltaX, deltaY }`，彻底杜绝 Win32 `WM_NCLBUTTONDOWN` 模态消息循环导致的 Excel/WebView2 卡死；
+     - **功能模块一览**：
+       - 高亮模式卡片切换（十字交叉 / 仅高亮行 / 仅高亮列）；
+       - 6 种工业精选预设色（绿蓝相间、天空蓝、薄荷绿、暖金琥珀、薰衣草紫、珊瑚粉）+ `el-color-picker` 调色盘；
+       - 不透明度调节滑块（5% ~ 80% 步长 1%）；
+       - 活动单元格镂空开关（保持输入文字清晰纯净）；
+       - 实时联动效果预览视窗与实时 Excel 联动同步；
+       - 【恢复默认】、【取消】与【保存并应用】完整闭环。
+  2. **后端服务与控制器体系 (`SpotlightController.cs`, `SpotlightSettingForm.cs`, `ExcelServices.Spotlight.cs`)**：
+     - **实时联动预览引擎**：用户在面板中拖动透明度滑块或选色时，即时派发 `previewConfig`，C# 内存更新浮窗样式与 GDI Region，用户可边调边在 Excel 中看到真实效果；若点击取消，自动无损还原至打开设置面板前的备份快照；
+     - **非模态安全依附**：使用 `ShowModelessForm` 打开设置面板，尺寸 520x480 居中弹出，保持 Excel 处于可交互编辑状态；
+     - **配置持久化**：`SpotlightConfig.UpdateCurrent` 自动保存至 LocalAppData JSON 文件并即时生效。
+  3. **Ribbon 界面无缝集成 (`RibbonController.cs`)**：
+     - 将辅助项中的 `btnToggleSpotlight` 升级为 `splitButton id='splitSpotlight'`；
+     - 上半部保留大图标快速开启/关闭开关；
+     - 下半部下拉菜单提供【⚙️ 聚光灯设置...】快速打开设置面板，以及快捷切换高亮模式（十字 / 仅行 / 仅列）；
+  4. **工程构建与验证**：
+     - `ExcelAddInDemo.csproj` 已加入 `spotlight_setting.html` 复制输出项；
+     - 静态文件已自动部署至 `bin\Debug\net48\Resources\spotlight_setting.html`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 验证通过：0 错误。
 
 - **打开/切换其他软件聚光灯残留在屏幕上遮挡之根因排查与彻底解决 (`Forms/SpotlightOverlayForm.cs`, `Forms/ExcelWindowHook.cs`, `Services/ExcelServices.Spotlight.cs`)**：
   1. **根因定位**：
@@ -928,13 +1178,47 @@
 - 修复 UpdateFromComponentSummarySheet 中 buildConfig 与 activeWb 变量未定义的编译错误；
 - 二次图回路方案与 BOM 数据管理系统全链路落地闭环；
 - 主界面关闭按钮修复、二次排布图更名、移除CAD图名项、跨门根数整数化、BOM垂直滚动条自适应等 5 项反馈全面解决；
-- 本地个人物料库检索抽屉支持品牌检索，默认选中“二次元件”，支持全部品牌切换与型号/名称组合搜索。
+- 本地个人物料库检索抽屉支持品牌检索，默认选中“二次元件”，支持全部品牌切换与型号/名称组合搜索；
+- **常规样式甲方投标报表迁移实施全面落地闭环**：
+  1. **标准模板资产引入**：将 ExWinner 官方母版 `自定义示例1_常规样式.xlsx` 规范化迁入 `Resources/TenderReport_Regular.xlsx`，并在 `.csproj` 中配置自动同步至输出与发布目录；
+  2. **Ribbon 菜单多级对齐**：将功能区【④出报表】下的【标书报表】扩展为 1:1 对齐的多级级联菜单，挂载【甲方投标报表】（常规样式、高级样式、国网报表、用户定制报表）、【原始样式报表】、【内部审核报表】与【报表市场】，并完成常规样式报表点击路由绑定；
+  3. **强类型模型与交互控制器**：新增 `Models/TenderReportModels.cs` 与 `Controllers/TenderReportRegularController.cs`，统一前后端数据规范与文件快速定位；
+  4. **现代前端导出向导**：新增 `Resources/tender_report_regular.html`，基于 Vue 3 `<script setup>` + Element Plus 构建，遵循绿蓝相间主色调 `#009688`，支持工程信息核对、分类表格多选统计及导出偏好配置；
+  5. **高性能生成引擎**：在 `Services/ExcelServices.TenderReport.cs` 中实现二维数组一次性抓取当前工程箱柜与元器件数据，动态克隆模板生成《封面》、《屏柜汇总表》与《屏柜分项表》，自动刷新公式求和、大写金额转换并彻底脱敏内部成本底价；
+  6. **编译构建**：执行 `dotnet build` 编译打包 0 错误，严格遵循每 3 行包含一行中文注释规范。
+
+- **二次回路图纸对齐与元件组绑定工作台布局与显示调优 (全面闭环)**：
+  1. **DWG 矢量视口拓宽与右侧列表收窄**：
+     - 左侧列表由 260px 微调为 230px；
+     - 右侧元件组看板由 480px 调窄为 340px，内部两列表格列宽由 180/160px 自适应微调为 150/130px；
+     - 中间 DWG 视口额外获得 160px+ 宽度，大幅扩容近 40%；
+  2. **视口顶部胶囊与图纸名称防止截断**：
+     - 文件名容器设置弹性收缩与 `:title` 悬浮提示；
+     - 5 项定额参数胶囊设置 `flex-shrink: 0;`、紧凑间距与悬浮浮窗，消除被 CAD 打开按钮或边界裁切截断现象；
+  3. **底部关联二次方案参数卡片双排显示**：
+     - 将原单排 5 列拥挤网格改造为【双排清爽栅格】：第一排 3 列（二次线跨门、二次材料费、开孔），第二排 2 列（人工安装费、二次组方案名，大宽度保证长名称不截断）；
+     - 表格启用 `min-height: 100px; height: 0; flex: 1;` 弹性内部滚动，参数卡片添加 `margin-top: auto; flex-shrink: 0;`，彻底根除数值下半截被容器裁切问题；
+  4. **资产热同步与构建验证**：
+     - 页面已同步热更新至 `bin/Debug/net48/Resources` 与 `publish/Resources`。
+
+- **二次回路图纸对齐工作台最右下方参数区域不全深度根治 (全面闭环)**：
+  1. **弹窗与主体高度释放**：弹窗显式声明 `height: 92vh`，主体容器彻底转为 `flex: 1; min-height: 0;` 纯弹性结构，解绑之前写死的 640px 限制，释放充足的垂直净空；
+  2. **表格绝对定位隔离包裹层**：在右侧面板内为 `<el-table>` 建立独立的 `flex: 1; min-height: 110px; position: relative;` 包裹层，并设置 `height="100%"`，让表格在内部虚拟滚动，彻底杜绝表格行把底部参数卡片推挤出容器下边框的结构性隐患；
+  3. **参数卡片双排紧凑精调**：面板宽度微调为 360px，参数卡片各指标方块采用 32px 紧凑高度与 `white-space: nowrap` 布局，行高严格受控，头部与边距极致优化，确保整张卡片（包括第二排方案名与人工）100% 完整展示；
+  4. **资产热同步与构建验证**：页面已热复制更新至 `bin/Debug/net48/Resources` 与 `publish/Resources`。
+
+## [Completed]
+
+- 二次回路图纸对齐工作台最右下方参数区域显示不全彻底修复闭环。
 
 ## [In-Progress]
 
-- 监听用户在实际 Excel 环境与图纸交互中的体验反馈与调优需求。
+- 监听用户在实际 Excel 环境中使用对齐工作台的反馈。
 
 ## [Next]
 
-- 协助用户进行实际 Excel 二次图表格的导入验证，或根据图纸识别联动需求进一步打通与《CabinetAuxCalc》辅材中心的跨门线及开孔工费一键应用。
+- 根据用户节奏推进后续优化任务。
+
+
+
 

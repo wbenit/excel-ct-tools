@@ -209,10 +209,25 @@ namespace ExcelAddInDemo
         </group>
         <!-- ④出报表 功能分组 -->
         <group id='grpExportReports' label='④出报表'>
-          <!-- 标书报表下拉菜单 -->
+          <!-- 标书报表下拉菜单 (支持多级级联导出) -->
           <menu id='menuTenderReport' label='标书报表' imageMso='PrintPreviewAndPrint' size='large'>
-            <!-- 标书报表项 -->
-            <button id='btnTenderReportSub' label='标书报表' onAction='OnMenuAction' />
+            <!-- 甲方投标报表 级联子菜单 -->
+            <menu id='menuPartyAReport' label='甲方投标报表' imageMso='FileSaveAsExcelXlsx'>
+              <!-- 常规样式报表 (核心实施项) -->
+              <button id='btnReportRegular' label='常规样式报表' imageMso='TableStyles' onAction='OnMenuAction' screentip='常规样式报表' supertip='生成标准甲方商务投标报表，包含《封面》、《屏柜汇总表》及《屏柜分项表》' />
+              <!-- 高级样式报表 -->
+              <button id='btnReportAdvanced' label='高级样式报表' imageMso='ChartInsert' onAction='OnMenuAction' screentip='高级样式报表' supertip='包含外形尺寸、CAD图号等高级工程技术规格的分栏投标报表' />
+              <!-- 国网报表 -->
+              <button id='btnReportSGCC' label='国网报表' imageMso='WebPagePreview' onAction='OnMenuAction' screentip='国网招标报表' supertip='生成符合国家电网标准的货物清单汇总表与单价分析表' />
+              <!-- 用户定制报表 (暂未配置模板) -->
+              <button id='btnReportCustomUser' label='用户定制报表' imageMso='FileNew' enabled='false' onAction='OnMenuAction' />
+            </menu>
+            <!-- 原始样式报表 -->
+            <button id='btnReportOriginal' label='原始样式报表' imageMso='TableInsertRowsAbove' onAction='OnMenuAction' screentip='原始样式报表' supertip='导出当前工程各分类表脱敏脱壳的原始清单副本' />
+            <!-- 内部审核报表 -->
+            <button id='btnReportInternalAudit' label='内部审核报表' imageMso='ReviewAcceptChange' onAction='OnMenuAction' screentip='内部审核报表' supertip='对内核算物料底价成本、辅材壳体定额、二次元件工价及真实毛利率' />
+            <!-- 报表市场(原自定义报表) -->
+            <button id='btnReportMarket' label='报表市场(原自定义报表)' imageMso='DesignMode' onAction='OnMenuAction' screentip='报表市场' supertip='管理报表模板库与自定义字段映射规则' />
           </menu>
           <!-- 材料统计下拉菜单 -->
           <menu id='menuMaterialStat' label='材料统计' imageMso='ChartInsert' size='large'>
@@ -222,8 +237,19 @@ namespace ExcelAddInDemo
         </group>
         <!-- 辅助项 功能分组 -->
         <group id='grpAuxiliary' label='辅助项'>
-          <!-- 聚光灯行列高亮切换按钮 -->
-          <toggleButton id='btnToggleSpotlight' label='聚光灯' imageMso='PivotTableVisualFilter' size='large' getPressed='GetSpotlightPressed' onAction='OnSpotlightAction' screentip='行列聚光灯 (Ctrl+Alt+L)' supertip='以十字半透明柔和色彩高亮选中单元格所在行与列，无损Excel撤销重做(Ctrl+Z)且零文件修改' />
+          <!-- 聚光灯复合分割按钮 (快速开关 + 样式设置与模式选择菜单) -->
+          <splitButton id='splitSpotlight' size='large'>
+            <!-- 上半部主按钮：快速开启/关闭聚光灯 -->
+            <toggleButton id='btnToggleSpotlight' label='聚光灯' imageMso='PivotTableVisualFilter' getPressed='GetSpotlightPressed' onAction='OnSpotlightAction' screentip='行列聚光灯 (Ctrl+Alt+L)' supertip='点击快速开启/关闭聚光灯。以半透明柔和色彩高亮选中单元格所在行与列，无损Excel撤销重做(Ctrl+Z)且零文件修改' />
+            <!-- 下半部下拉菜单：模式切换与个性化外观设置 -->
+            <menu id='menuSpotlightOptions' itemSize='normal'>
+              <button id='btnSpotlightSettings' label='⚙️ 聚光灯设置...' imageMso='PropertySheet' onAction='OnMenuAction' screentip='聚光灯外观设置' supertip='打开聚光灯设置面板，自定义颜色、透明度、模式及活动单元格镂空效果' />
+              <menuSeparator id='sepSpotlightModes' title='高亮模式' />
+              <button id='btnSpotlightModeCross' label='十字高亮 (行+列)' imageMso='ShapeCross' onAction='OnMenuAction' />
+              <button id='btnSpotlightModeRow' label='仅高亮当前行' imageMso='TableRowSelect' onAction='OnMenuAction' />
+              <button id='btnSpotlightModeCol' label='仅高亮当前列' imageMso='TableColumnSelect' onAction='OnMenuAction' />
+            </menu>
+          </splitButton>
           <!-- 联动CAD夹点显示切换按钮 -->
           <toggleButton id='btnToggleCadSync' label='联动CAD' imageMso='SelectionPane' size='large' getPressed='GetCadSyncPressed' onAction='OnCadSyncAction' screentip='联动AutoCAD夹点' supertip='选中行时自动读取AA列句柄，在AutoCAD中即时高亮并激活夹点显示' />
           <!-- 右键菜单模式切换按钮 -->
@@ -470,6 +496,46 @@ namespace ExcelAddInDemo
             {
                 // 调度宏一键切换右键菜单模式并提示
                 ExcelEventManager.MacroToggleContextMenuMode();
+            }
+            // 响应“聚光灯设置”按钮指令
+            else if (controlId == "btnSpotlightSettings")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“聚光灯外观个性化设置”工作台
+                ExcelServices.ShowSpotlightSettingDialog();
+            }
+            // 响应“聚光灯十字模式”切换指令
+            else if (controlId == "btnSpotlightModeCross")
+            {
+                // 切换为十字交叉高亮模式
+                ExcelServices.SetSpotlightMode(Models.SpotlightMode.Crosshair);
+            }
+            // 响应“聚光灯仅行模式”切换指令
+            else if (controlId == "btnSpotlightModeRow")
+            {
+                // 切换为仅高亮整行模式
+                ExcelServices.SetSpotlightMode(Models.SpotlightMode.RowOnly);
+            }
+            // 响应“聚光灯仅列模式”切换指令
+            else if (controlId == "btnSpotlightModeCol")
+            {
+                // 切换为仅高亮整列模式
+                ExcelServices.SetSpotlightMode(Models.SpotlightMode.ColumnOnly);
+            }
+            // 响应“常规样式报表”及“标书报表”指令
+            else if (controlId == "btnReportRegular" || controlId == "btnTenderReportSub")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“常规样式投标报表导出向导”窗口
+                ExcelServices.ShowTenderReportRegularDialog();
+            }
+            // 响应“内部审核报表”指令 (预留直达)
+            else if (controlId == "btnReportInternalAudit")
+            {
+                System.Windows.Forms.MessageBox.Show("内部审核报表功能正在接入中，敬请期待！", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+            }
+            // 响应“高级样式报表”/“国网报表”/“原始样式报表”/“报表市场”指令 (友好提示)
+            else if (controlId == "btnReportAdvanced" || controlId == "btnReportSGCC" || controlId == "btnReportOriginal" || controlId == "btnReportMarket")
+            {
+                System.Windows.Forms.MessageBox.Show("该报表样式正在迁移流水线中，可先使用【常规样式报表】导出！", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
     }
