@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using ExcelDna.Integration;
 using ExcelAddInDemo.Models;
 using static ExcelAddInDemo.Tool;
@@ -37,135 +38,331 @@ namespace ExcelAddInDemo
         /// <param name="targetScope">调费作用域 (currentCabinet/currentCategory/allCabinets/selectedCabinet)</param>
         /// <param name="groupName">选中的公式组名称</param>
         /// <param name="items">前端编辑传递的公式明细项</param>
-        public static void ApplyFormulaAdjustFeeToExcel(string targetScope, string groupName, System.Collections.Generic.List<Controllers.FormulaItemModel>? items = null)
+        /// <returns>返回包含是否成功、更新工作表数、更新箱柜数和提示文本的执行结果元组</returns>
+        public static (bool Success, int UpdatedSheets, int UpdatedCabinets, string Message) ApplyFormulaAdjustFeeToExcel(
+            string targetScope,
+            string groupName,
+            System.Collections.Generic.List<Controllers.FormulaItemModel>? items = null)
         {
             try
             {
                 // 获取当前运行的 Excel Application COM 接口实例 (安全调用)
                 dynamic? app = ExcelDnaSafeAccessor.GetApplication();
-                if (app == null) return;
+                if (app == null) return (false, 0, 0, "无法连接到 Excel 应用程序。");
 
                 // 获取当前激活的工作簿
                 dynamic activeWb = app.ActiveWorkbook;
-                if (activeWb == null) return;
-
-                // 获取当前活动工作表
-                dynamic activeSheet = activeWb.ActiveSheet;
-                if (activeSheet == null) return;
+                if (activeWb == null) return (false, 0, 0, "当前没有打开的 Excel 工作簿。");
 
                 // 若前端未显式传递 items，则从控制器读取预置公式明细
                 if (items == null || items.Count == 0)
                 {
+                    // 实例化公式控制器
                     var controller = new Controllers.FormulaAdjustFeeController();
+                    // 读取对应组名的公式明细
                     items = controller.GetFormulaDetails(groupName);
                 }
 
-                if (items == null || items.Count == 0) return;
+                // 校验公式项集合有效性
+                if (items == null || items.Count == 0)
+                {
+                    return (false, 0, 0, $"未获取到公式组【{groupName}】的明细项，请检查配置。");
+                }
 
-                // 读取 4 种定义名称前缀配置项 (零堆分配)
+                // 读取 4 种定义名称前缀配置项 (零堆分配元组解构)
                 var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
 
-                // 构建当前工作表有效箱柜映射 (显式强类型复用 Tool 公共方法)
-                List<KeyValuePair<int, Models.CabinetAnchorModel>> validCabinets = Tool.GetSheetValidCabinets(activeSheet);
-
-                var targetCabinets = new System.Collections.Generic.List<KeyValuePair<int, Models.CabinetAnchorModel>>();
-
-                // 自动补齐定义名称
-                if (validCabinets.Count == 0)
-                {
-                    // 补齐定义名称
-                    Tool.FixAndFillCabinetNamesForSheet(activeSheet);
-                    // 重新扫描有效箱柜
-                    validCabinets = Tool.GetSheetValidCabinets(activeSheet);
-                }
-
-                // 作用域筛选
-                if (targetScope == "currentCabinet")
-                {
-                    // 智能匹配当前光标所属箱柜 (显式强类型声明)
-                    KeyValuePair<int, Models.CabinetAnchorModel>? matched = Tool.GetActiveCabinet(app, validCabinets, fallbackSingle: true);
-                    // 校验是否命中箱柜 (强类型 HasValue 判定)
-                    if (matched.HasValue)
-                    {
-                        // 加入目标箱柜列表
-                        targetCabinets.Add(matched.Value);
-                    }
-                }
-                else
-                {
-                    // 包含所有箱柜
-                    targetCabinets.AddRange(validCabinets);
-                }
-
-                if (targetCabinets.Count == 0) return;
-
-                // 关闭刷新提升计算与写入性能
+                // 临时关闭刷新与提示以提升批量计算与写入性能
                 app.ScreenUpdating = false;
                 app.DisplayAlerts = false;
 
                 try
                 {
-                    int N = items.Count;
-                    foreach (var cab in targetCabinets)
+                    // 1. 若作用域为“更新所有箱柜” (allCabinets): 遍历工作簿中所有的分类工作表
+                    if (targetScope == "allCabinets")
                     {
-                        int k = cab.Key;
-                        int cabDetRow = Convert.ToInt32(cab.Value.Det.Row);
-                        int oldSubsumRow = Convert.ToInt32(cab.Value.Subsum.Row);
-                        int oldTolsumRow = Convert.ToInt32(cab.Value.Tolsum.Row);
-                        int compStartRow = cabDetRow + 2;
+                        // 记录原始活动工作表以便最后安全切回
+                        dynamic? origActiveSheet = null;
+                        try { origActiveSheet = activeWb.ActiveSheet; } catch { }
 
-                        int oldM = oldTolsumRow - oldSubsumRow + 1;
-                        int delta = N - oldM;
+                        int totalSheets = 0;
+                        int totalCabinets = 0;
 
-                        // 差额插入或删除行以对齐计费行数
-                        if (delta > 0)
+                        // 遍历当前活动工作簿下的每一个 Worksheet
+                        foreach (dynamic ws in activeWb.Worksheets)
                         {
-                            activeSheet.Rows[$"{oldSubsumRow}:{oldSubsumRow + delta - 1}"].Insert(-4121);
+                            try
+                            {
+                                // 提取工作表纯文本名称
+                                string wsName = Convert.ToString(ws.Name) ?? "";
+                                string trimmed = wsName.Trim();
+
+                                // 排除明确的系统非分类辅助表 (如 项目信息、元件汇总表) --硬编码--
+                                if (string.Equals(trimmed, "项目信息", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(trimmed, Models.ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    continue;
+                                }
+
+                                // 探测当前工作表的有效箱柜集合 (显式传入所属工作簿)
+                                List<KeyValuePair<int, Models.CabinetAnchorModel>> sheetCabinets = Tool.GetSheetValidCabinets((object)ws, activeWb);
+
+                                // 若未探测到箱柜，尝试自动触发一次定义名称识别补齐
+                                if (sheetCabinets.Count == 0)
+                                {
+                                    // 触发定义名称补齐
+                                    Tool.FixAndFillCabinetNamesForSheet(ws);
+                                    sheetCabinets = Tool.GetSheetValidCabinets((object)ws, activeWb);
+                                }
+
+                                // 若确认该表为分类表且包含有效箱柜，执行整表箱柜自底向上倒序调费更新
+                                if (sheetCabinets.Count > 0)
+                                {
+                                    // 临时激活目标工作表，规避非活动表跨表执行行操作或公式写入时的 COM 异常
+                                    try { ws.Activate(); } catch { }
+
+                                    // 执行该表箱柜计费区倒序原子替换
+                                    int updatedCount = UpdateCabinetsForSheet(ws, app, activeWb, sheetCabinets, items, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                                    if (updatedCount > 0)
+                                    {
+                                        // 累计分类表数
+                                        totalSheets++;
+                                        // 累计更新箱柜数
+                                        totalCabinets += updatedCount;
+                                    }
+                                }
+                            }
+                            catch (Exception exSheet)
+                            {
+                                // 单个工作表异常记录日志并继续遍历后续工作表
+                                LogHelper.WriteLog($"遍历更新工作表调费异常: {exSheet.Message}");
+                            }
                         }
-                        else if (delta < 0)
+
+                        // 安全切回原本激活的工作表
+                        try { origActiveSheet?.Activate(); } catch { }
+
+                        // 统计结果并返回
+                        if (totalCabinets > 0)
                         {
-                            int deleteCount = -delta;
-                            activeSheet.Rows[$"{oldSubsumRow}:{oldSubsumRow + deleteCount - 1}"].Delete(-4121);
+                            return (true, totalSheets, totalCabinets, $"成功更新 {totalSheets} 个分类表，共 {totalCabinets} 个箱柜！");
+                        }
+                        else
+                        {
+                            return (false, 0, 0, "未在当前工作簿中识别到包含有效箱柜的分类表。");
+                        }
+                    }
+                    // 2. 否则为“当前箱柜” (currentCabinet) 或“当前分类” (currentCategory): 仅在当前活动表执行
+                    else
+                    {
+                        // 获取当前活动工作表
+                        dynamic activeSheet = activeWb.ActiveSheet;
+                        if (activeSheet == null) return (false, 0, 0, "当前没有打开或激活的 Excel 工作表。");
+
+                        // 构建当前工作表有效箱柜映射
+                        List<KeyValuePair<int, Models.CabinetAnchorModel>> validCabinets = Tool.GetSheetValidCabinets((object)activeSheet, activeWb);
+                        // 若有效箱柜为空自动触发单表识别补齐
+                        if (validCabinets.Count == 0)
+                        {
+                            // 补齐定义名称
+                            Tool.FixAndFillCabinetNamesForSheet(activeSheet);
+                            validCabinets = Tool.GetSheetValidCabinets((object)activeSheet, activeWb);
                         }
 
-                        int newSubsumRow = oldSubsumRow;
-                        int newTolsumRow = newSubsumRow + N - 1;
-                        int compEndRow = newSubsumRow - 1;
-
-                        // 构建计费矩阵 (规则 7)
-                        object[,] feeMatrix = Tool.BuildFeeMatrix(items, cabDetRow, newSubsumRow, compStartRow, compEndRow, 17);
-
-                        // 批量覆盖写入 Excel 计费区域
-                        dynamic feeRange = activeSheet.Range[$"A{newSubsumRow}:Q{newTolsumRow}"];
-                        feeRange.Formula = feeMatrix;
-
-                        // 更新工作表级别的定义名称锚点 (规则 6)
-                        string sheetName = Convert.ToString(activeSheet.Name) ?? "";
-                        // 覆盖更新当前箱柜小计行定义名称
-                        Tool.SafeSetSheetName(activeSheet, sheetName, $"{subsumPrefix}{k}", newSubsumRow);
-                        // 覆盖更新当前箱柜总计行定义名称
-                        Tool.SafeSetSheetName(activeSheet, sheetName, $"{tolsumPrefix}{k}", newTolsumRow);
-
-                        // 同步更新顶部汇总行公式
-                        if (cab.Value.Sum != null)
+                        // 校验是否识别到有效箱柜
+                        if (validCabinets.Count == 0)
                         {
-                            int sumRow = Convert.ToInt32(cab.Value.Sum.Row);
-                            activeSheet.Cells[sumRow, 7].Formula = $"=H{newTolsumRow}";
-                            activeSheet.Cells[sumRow, 10].Formula = $"=K{newTolsumRow}";
+                            return (false, 0, 0, "当前工作表未识别到有效箱柜，请确认是否为标准分类表。");
+                        }
+
+                        // 初始化目标箱柜集合
+                        var targetCabinets = new List<KeyValuePair<int, Models.CabinetAnchorModel>>();
+
+                        // 依据目标作用域筛选
+                        if (targetScope == "currentCabinet")
+                        {
+                            // 智能匹配当前光标所属的单个箱柜
+                            KeyValuePair<int, Models.CabinetAnchorModel>? matched = Tool.GetActiveCabinet(app, validCabinets, fallbackSingle: true);
+                            if (matched.HasValue)
+                            {
+                                targetCabinets.Add(matched.Value);
+                            }
+                            else
+                            {
+                                return (false, 0, 0, "未识别到当前光标所在的箱柜。");
+                            }
+                        }
+                        else
+                        {
+                            // 包含当前分类表中的所有箱柜
+                            targetCabinets.AddRange(validCabinets);
+                        }
+
+                        // 执行当前工作表目标箱柜调费更新
+                        int updated = UpdateCabinetsForSheet(activeSheet, app, activeWb, targetCabinets, items, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                        if (updated > 0)
+                        {
+                            // 组织反馈描述文本
+                            string desc = targetScope == "currentCabinet" ? $"箱柜(序号 {targetCabinets[0].Key})" : $"当前分类共 {updated} 个箱柜";
+                            return (true, 1, updated, $"成功更新{desc}的公式计费区间！");
+                        }
+                        else
+                        {
+                            return (false, 0, 0, "未能成功更新任何箱柜的计费区间。");
                         }
                     }
                 }
                 finally
                 {
+                    // 安全恢复 Excel 屏幕刷新与系统提示
                     app.ScreenUpdating = true;
                     app.DisplayAlerts = true;
                 }
             }
             catch (Exception ex)
             {
+                // 异常日志记录
                 LogHelper.WriteLog($"执行公式法调费异常: {ex.Message}");
-                System.Windows.Forms.MessageBox.Show($"执行公式法调费失败: {ex.Message}", "错误提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+                return (false, 0, 0, $"执行公式法调费失败: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 私有辅助方法: 在指定的工作表上按行号倒序批量更新目标箱柜的计费区域 (原子覆盖替换)
+        /// 遵循规则 6 与规则 7
+        /// </summary>
+        /// <returns>成功更新的箱柜数量</returns>
+        private static int UpdateCabinetsForSheet(
+            dynamic sheet,
+            dynamic app,
+            dynamic activeWb,
+            List<KeyValuePair<int, Models.CabinetAnchorModel>> targetCabinets,
+            List<Controllers.FormulaItemModel> items,
+            string sumPrefix,
+            string detPrefix,
+            string subsumPrefix,
+            string tolsumPrefix)
+        {
+            // 校验工作表与目标箱柜列表有效性
+            if (sheet == null || targetCabinets == null || targetCabinets.Count == 0) return 0;
+
+            // 获取新公式组总项数 N
+            int N = items.Count;
+            // 统计成功更新的箱柜数
+            int updatedCount = 0;
+
+            // 规则：多箱柜批量调费必须自底向上 (按箱柜物理行号降序) 遍历
+            // 确保下方箱柜的增删行完全不会破坏上方箱柜在 Excel 中的物理行号
+            var sortedCabinets = targetCabinets
+                .OrderByDescending(c => Convert.ToInt32(c.Value.Det.Row))
+                .ToList();
+
+            // 遍历当前工作表中的所有目标箱柜
+            foreach (var cab in sortedCabinets)
+            {
+                // 提取箱柜数字序号
+                int k = cab.Key;
+                // 提取箱柜信息行物理行号
+                int cabDetRow = Convert.ToInt32(cab.Value.Det.Row);
+                // 安全提取小计行物理行号 (基于 SUM+INDEX 双关键词判定)
+                int oldSubsumRow = cab.Value.Subsum != null ? Convert.ToInt32(cab.Value.Subsum.Row) : 0;
+                // 安全提取总计行物理行号 (基于 G 列公式引用其他行判定)
+                int oldTolsumRow = cab.Value.Tolsum != null ? Convert.ToInt32(cab.Value.Tolsum.Row) : 0;
+
+                // 若定义名称缺失或行号倒挂，自动调用双锚点识别重新校准
+                if (oldSubsumRow <= 0 || oldTolsumRow <= oldSubsumRow)
+                {
+                    // 触发当前工作表的定义名称校准
+                    Tool.FixAndFillCabinetNamesForSheet(sheet);
+                    // 重新提取当前工作表有效箱柜
+                    List<KeyValuePair<int, Models.CabinetAnchorModel>> refreshedCabinets = Tool.GetSheetValidCabinets((object)sheet, activeWb);
+                    // 遍历提取当前序号对应的新锚点
+                    foreach (var refreshedCab in refreshedCabinets)
+                    {
+                        if (refreshedCab.Key == k && refreshedCab.Value?.Subsum != null && refreshedCab.Value?.Tolsum != null)
+                        {
+                            oldSubsumRow = Convert.ToInt32(refreshedCab.Value.Subsum.Row);
+                            oldTolsumRow = Convert.ToInt32(refreshedCab.Value.Tolsum.Row);
+                            break;
+                        }
+                    }
+                }
+
+                // 校验校准后行号有效性，无效则跳过防止破坏表格
+                if (oldSubsumRow <= 0 || oldTolsumRow <= oldSubsumRow) continue;
+
+                // 计算元器件起始行 (依据规则 6: Cab_Det + 2)
+                int compStartRow = cabDetRow + 2;
+                // 计算原旧计费区间的总行数
+                int oldM = oldTolsumRow - oldSubsumRow + 1;
+                // 计算新旧计费行数差额 (delta > 0 需插行，delta < 0 需删行)
+                int delta = N - oldM;
+
+                // 差额插入或删除行以对齐计费行数 (规则 6: 计费区域可以替换，不能有空行)
+                if (delta > 0)
+                {
+                    // 在旧总计行处向下插入差额空白行以对齐空间 (总计行自然下移，保留底边框)
+                    sheet.Rows[$"{oldTolsumRow}:{oldTolsumRow + delta - 1}"].Insert(-4121);
+                }
+                else if (delta < 0)
+                {
+                    // 差额删除多余行: 在总计行上方删除，绝不删除总计行本身，确保总计行底边框完好上浮
+                    int deleteCount = -delta;
+                    int delStart = oldTolsumRow - deleteCount;
+                    int delEnd = oldTolsumRow - 1;
+                    sheet.Rows[$"{delStart}:{delEnd}"].Delete(-4121);
+                }
+
+                // 新小计起始物理行号保持与旧计费起点对齐
+                int newSubsumRow = oldSubsumRow;
+                // 新总计行物理行号
+                int newTolsumRow = newSubsumRow + N - 1;
+                // 元器件终止行 (依据规则 6: Cab_Subsum - 1)
+                int compEndRow = newSubsumRow - 1;
+
+                // 构建 17 列完整二维计费公式矩阵 (规则 7: 内存一次性生成)
+                object[,] feeMatrix = Tool.BuildFeeMatrix(items, cabDetRow, newSubsumRow, compStartRow, compEndRow, 17);
+
+                // 批量一次性覆盖写入 Excel 计费区域 (彻底替换旧计费区域)
+                dynamic feeRange = sheet.Range[$"A{newSubsumRow}:Q{newTolsumRow}"];
+                feeRange.Formula = feeMatrix;
+
+                // 确保总计行底边框实线完好 (xlEdgeBottom = -4107, xlContinuous = 1, xlThin = 2) --硬编码--
+                try
+                {
+                    // 获取总计行 Range 区域
+                    dynamic tolsumRange = sheet.Range[$"A{newTolsumRow}:Q{newTolsumRow}"];
+                    // 设置底边框为连续实线
+                    tolsumRange.Borders[-4107].LineStyle = 1;
+                    // 设置底边框线宽为细线
+                    tolsumRange.Borders[-4107].Weight = 2;
+                }
+                catch { }
+
+                // 获取当前工作表纯文本名称
+                string sheetName = Convert.ToString(sheet.Name) ?? "";
+                // 覆盖更新当前箱柜小计行定义名称 (规则 6)
+                Tool.SafeSetSheetName(sheet, sheetName, $"{subsumPrefix}{k}", newSubsumRow);
+                // 覆盖更新当前箱柜总计行定义名称 (规则 6)
+                Tool.SafeSetSheetName(sheet, sheetName, $"{tolsumPrefix}{k}", newTolsumRow);
+
+                // 同步更新顶部汇总行公式联动
+                if (cab.Value.Sum != null)
+                {
+                    // 读取顶部汇总行行号
+                    int sumRow = Convert.ToInt32(cab.Value.Sum.Row);
+                    // G 列销售单价公式指向明细总计行的销售总价 H 列
+                    sheet.Cells[sumRow, 7].Formula = $"=H{newTolsumRow}";
+                    // J 列成本单价公式指向明细总计行的成本总价 K 列
+                    sheet.Cells[sumRow, 10].Formula = $"=K{newTolsumRow}";
+                }
+
+                // 成功计数累加
+                updatedCount++;
+            }
+
+            // 返回成功更新的箱柜总数
+            return updatedCount;
         }
 
         /// <summary>

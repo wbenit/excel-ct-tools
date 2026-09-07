@@ -2,14 +2,41 @@
 
 ## [In-Progress]
 
-- **公式法调费更新当前分类未删除旧计费区域深层原因排查与架构分析**：
-  1. 现场还原：图一中第 78~85 行为新写入的 8 行【多费用公式】，86~87 行为残留空行，88~93 行则是原封未动的旧计费区域（小计、管理费、利润、税金、单台合计、总计）；
-  2. 根本原因一：`Tool.FixAndFillCabinetNamesForSheet` 在探测小计行时硬编码要求公式含 `INDEX`，探测总计行时要求上一行 A 列为 `ROW()-ROW(` 公式，导致真实小计与总计行均无法命中，直接触发了兜底逻辑 `curDetRow + 24`，错将第 78 行误认为旧计费起始行；
-  3. 根本原因二：`ApplyFormulaAdjustFeeToExcel` 在多箱柜更新遍历时，前序箱柜插行导致后续箱柜行号偏移，但代码持有静态旧行号；且写入逻辑仅盲目在错误行号处插入并覆盖，未能识别并彻底删除下方真实旧计费区域；
-  4. 根本原因三：规则 6 规定 `Cab_Subsum` 为小计行、计费区域不可有空行，而当前【多费用公式】将辅材和箱体置于小计之前，且未清理元器件到小计之间的空行，导致结构错位。
-
 
 ## [Completed]
+
+- **公式法调费总计行下边框线条保护与自动修复全面交付 (`Services/ExcelServices.FormulaAdjustFee.cs`)**：
+  1. **总计行封底实线丢失根因排查与差额删行位置重构**：
+     - **根因**：原差额删行逻辑直接在计费区末尾执行 `Delete`，当新公式项数少于原计费区行数时，直接将末尾带有黑色封底线条的旧总计行整行删除，而新上浮的行只有内部虚线，导致第 325 行总计下方线条丢失露白底；
+     - **删行位置调整**：差额删除行时严格限定在总计行上方（`oldTolsumRow - deleteCount` 至 `oldTolsumRow - 1`）删除，绝对不碰总计行本身，确保旧总计行的边框格式自然上浮；
+     - **显式确保总计行底边框（双保险）**：在公式矩阵写入完成后，对新总计行 `A{newTolsumRow}:Q{newTolsumRow}` 显式设置底边框 `tolsumRange.Borders[-4107].LineStyle = 1; tolsumRange.Borders[-4107].Weight = 2;`，不仅杜绝新破坏，更能自动一键修复历史已丢失线条的表格。
+  2. **编译验证**：
+     - 运行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 错误**，代码注释规范完备。
+
+- **公式法调费更新所有箱柜全工作簿多分类表遍历支持与精准执行反馈全面交付 (`Services/ExcelServices.FormulaAdjustFee.cs`, `Forms/FormulaAdjustFeeForm.cs`, `Tool.cs`)**：
+  1. **“更新所有箱柜”失败根因彻底排查与全工作簿遍历重构**：
+     - **原失败根因**：旧版 `ApplyFormulaAdjustFeeToExcel` 中根本没有遍历整个工作簿 `Worksheets` 的逻辑，仅仅在 `ActiveSheet` 上执行，若用户在非分类表点击则因有效箱柜为 0 直接静默退出，且外部 UI 盲目弹窗提示“应用成功”，导致虚假成功与实际上全未更新；
+     - **全工作簿多表倒序更新支持**：当 `targetScope == "allCabinets"` 时，遍历当前活动工作簿下的所有工作表，安全跳过“项目信息”与元件汇总表等辅助表；
+     - **安全激活与 COM 异常规避**：在更新具体工作表前调用 `ws.Activate()` 避免非激活表跨表行操作或公式写入时的 Excel 内部 1004 / 0x800A03EC 异常，遍历结束后平滑恢复原始活动工作表；
+     - **精准结果统计与反馈**：重构 `ApplyFormulaAdjustFeeToExcel` 返回 `(bool Success, int UpdatedSheets, int UpdatedCabinets, string Message)` 元组；在 `FormulaAdjustFeeForm.cs` 中根据实际执行结果精准弹窗展示“成功更新 X 个分类表，共 Y 个箱柜！”或警告提示，彻底消除误导。
+  2. **总计行识别特征进一步稳健强化 (`Tool.cs:FixAndFillCabinetNamesForSheet`)**：
+     - 将总计行 G 列公式引用行号的判断条件优化为 `refRow > 0 && refRow != r`，彻底包容总计行引用工作表内部任意其他行（如单台合计行）的场景，严格落实用户指示“总计行的G列公式一定引用了其他行”。
+  3. **编译与构建验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 错误**，生成的 `ExcelAddInDemo.dll` 成功输出；
+     - 新增与修改代码严格遵循每 3 行代码至少 1 行中文注释规范。
+
+- **公式法调费更新计费区间未替换反插入缺陷深度根除与双锚点稳健重构全面交付 (`Tool.cs`, `Services/ExcelServices.FormulaAdjustFee.cs`)**：
+  1. **小计行与总计行双黄金锚点识别算法重构 (`Tool.cs:FixAndFillCabinetNamesForSheet`)**：
+     - **小计行 (Cab_Subsum)**：严格恪守用户指示，坚决不依赖 B 列文本（不假设叫“小计”），扫描明细区间内公式同时包含 `SUM` 与 `INDEX` 的单元格行精准锚定小计行物理位置；
+     - **总计行 (Cab_Tolsum)**：采纳用户精准指示，总计行位于小计行下方，且 **G 列 (第 7 列，销售单价) 公式一定引用了其他行**，彻底废除原先依赖上一行 A 列必须包含 `ROW()-ROW(` 的脆弱判定；
+     - **安全兜底重构**：废除原末尾 `curTolsumRow = curDetRow + 27; curSubsumRow = curTolsumRow - 3;` 盲目篡改已识别行号的致命硬编码，当小计行已准确命中时坚决保留，杜绝将第 78 行误判为计费起点的隐患。
+  2. **计费区间精准差额替换与多箱柜倒序遍历 (`ExcelServices.FormulaAdjustFee.cs:ApplyFormulaAdjustFeeToExcel`)**：
+     - **多箱柜倒序更新**：对 `targetCabinets` 按物理行号倒序遍历（`OrderByDescending`，从底向上），下方箱柜的插行删行 100% 绝不影响上方箱柜物理行号；
+     - **动态行号自愈校验**：对每个箱柜执行有效性校验，若锚点缺失或倒挂自动调用双锚点重构算法刷新；
+     - **精准对齐与矩阵覆盖替换**：在旧总计行处根据差额精准对齐行数（`delta > 0` 插入空白行，`delta < 0` 删除多余行），随后将 N 行新公式矩阵一次性覆盖写回，彻底消除图一中上方凭空插入、下方旧计费区残留的 Bug，上方元器件预留空行保持纯净。
+  3. **编译与构建验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 错误**，生成的 `ExcelAddInDemo.dll` 成功输出；
+     - 新增与修改代码严格遵循每 3 行代码至少 1 行中文注释规范。
 
 - **小箱免铜排全局短路门禁与电流门限配置化界面迁移全面交付 (`Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`)**：
   1. **小箱零地电流门限(原140A)彻底抽取为界面可设置参数**：

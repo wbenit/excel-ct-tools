@@ -1214,61 +1214,100 @@ namespace ExcelAddInDemo
                     // 确定当前箱柜对应的汇总行（若汇总行充足则对应取，否则按默认顺序排列）
                     int curSumRow = (i < sumRows.Count) ? sumRows[i] : (cabSumStartRow + i);
 
-                    // 寻找小计行 Cab_Subsum (规则: 含有公式且公式包含 SUM)
+                    // 寻找小计行 Cab_Subsum (规则: 含有公式且公式同时包含 SUM 与 INDEX，不依赖 B 列名称)
                     int curSubsumRow = 0;
-                    // 寻找总计行 Cab_Tolsum (规则: A 列包含总计)
+                    // 寻找总计行 Cab_Tolsum (规则: 位于小计行下方，且 G 列公式一定引用了其他行)
                     int curTolsumRow = 0;
 
                     // 在明细块区间内部寻找小计行与总计行
                     for (int r = curDetRow + 2; r < nextBoundaryRow; r++)
                     {
-                        // 提取 A 列文本
-                        string aText = GetText(r, 1);
-
-                        // 优先检查小计行 (若未找到小计行且本行任意单元格公式含 SUM)
+                        // 1. 优先定位小计行 (若未找到小计行且本行任意单元格公式同时包含 SUM 和 INDEX)
                         if (curSubsumRow == 0)
                         {
-                            // 扫描前 12 列的公式内容
+                            // 扫描前 12 列 (覆盖 H/K 列等主要金额汇总列) 的公式内容
                             for (int c = 1; c <= Math.Min(arrCols, 12); c++)
                             {
+                                // 安全读取单元格公式字符串
                                 string f = GetFormula(r, c);
-                                // 判定公式中是否含有 SUM
-                                if (!string.IsNullOrEmpty(f) && f.IndexOf("SUM", StringComparison.OrdinalIgnoreCase) >= 0 && f.IndexOf("INDEX", StringComparison.OrdinalIgnoreCase) >= 0)
+                                // 判定公式中是否同时含有 SUM 与 INDEX 关键字 (不依赖 B 列名称)
+                                if (!string.IsNullOrEmpty(f) &&
+                                    f.IndexOf("SUM", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                                    f.IndexOf("INDEX", StringComparison.OrdinalIgnoreCase) >= 0)
                                 {
+                                    // 锁定当前行号为小计行物理行号
                                     curSubsumRow = r;
                                     break;
                                 }
                             }
                         }
-
-                        // 检查总计行 (判断条件: 自身 A 列不含公式，且上一行 A 列公式包含 "ROW()-ROW(")
-                        if (curTolsumRow == 0)
+                        // 2. 小计行已定位后，继续向下搜寻总计行
+                        else if (curTolsumRow == 0)
                         {
-                            // 获取当前行 A 列公式文本
-                            string curAFormula = GetFormula(r, 1);
-                            // 获取上一行 A 列公式文本
-                            string prevAFormula = GetFormula(r - 1, 1);
-
-                            // 判断当前行 A 列无公式且上一行包含 ROW()-ROW(
-                            if (string.IsNullOrEmpty(curAFormula) &&
-                                !string.IsNullOrEmpty(prevAFormula) &&
-                                prevAFormula.IndexOf("ROW()-ROW(", StringComparison.OrdinalIgnoreCase) >= 0)
+                            // 获取总计行 G 列 (第 7 列，销售单价) 公式
+                            string gFormula = GetFormula(r, 7);
+                            // 校验 G 列是否包含有效公式
+                            if (!string.IsNullOrEmpty(gFormula) && gFormula.StartsWith("="))
                             {
-                                // 记录当前识别到的总计行物理行号
+                                // 正则匹配公式中引用的单元格行号 (如 H75, $H$75, H5 等)
+                                var matches = System.Text.RegularExpressions.Regex.Matches(gFormula, @"[A-Za-z]+\$?(\d+)");
+                                // 标记该公式是否引用了其他有效行
+                                bool referencesOtherRow = false;
+                                // 遍历所有提取到的引用行号
+                                foreach (System.Text.RegularExpressions.Match m in matches)
+                                {
+                                    // 尝试解析被引用的行号数字
+                                    if (int.TryParse(m.Groups[1].Value, out int refRow))
+                                    {
+                                        // 核心特征：总计行的 G 列公式一定引用了其他行 (通常为单台合计行)
+                                        if (refRow > 0 && refRow != r)
+                                        {
+                                            // 确认为引用了其他行
+                                            referencesOtherRow = true;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                // 若命中了引用其他行的特征，锁定为总计行
+                                if (referencesOtherRow)
+                                {
+                                    curTolsumRow = r;
+                                }
+                            }
+
+                            // 辅助容错：若 A 列文本显式包含“总计”，亦可安全确认
+                            if (curTolsumRow == 0 && GetText(r, 1).Contains("总计"))
+                            {
+                                // 锁定总计行
                                 curTolsumRow = r;
                             }
                         }
 
-                        // 若小计与总计行均已确定，可提前结束当前箱柜区间的扫描
+                        // 若小计与总计行均已确定，提前结束当前箱柜区间的扫描
                         if (curSubsumRow > 0 && curTolsumRow > 0)
                         {
                             break;
                         }
                     }
 
-                    // 兜底策略：若未识别到小计或总计行，按标准模板间距估算 --硬编码--
-                    if (curTolsumRow == 0) curTolsumRow = curDetRow + 27;
-                    if (curSubsumRow == 0) curSubsumRow = curTolsumRow - 3;
+                    // 安全兜底策略：杜绝破坏已精准识别的锚点 --硬编码--
+                    if (curSubsumRow > 0 && curTolsumRow == 0)
+                    {
+                        // 小计已准确找到但总计未命中，总计行默认在小计下方 5 行 (对应标准计费 6 行)
+                        curTolsumRow = curSubsumRow + 5;
+                    }
+                    else if (curSubsumRow == 0 && curTolsumRow > 0)
+                    {
+                        // 总计已命中但小计未识别，小计行在总计行上方 5 行
+                        curSubsumRow = Math.Max(curDetRow + 2, curTolsumRow - 5);
+                    }
+                    else if (curSubsumRow == 0 && curTolsumRow == 0)
+                    {
+                        // 两者均未识别，按标准模板间距估算 --硬编码--
+                        curTolsumRow = curDetRow + 27;
+                        curSubsumRow = curTolsumRow - 5;
+                    }
 
                     // 4. 【在工作表级别校准覆盖绑定 4 个定义名称】
                     SafeSetSheetName(sheet, sheetName, $"{sumPrefix}{k}", curSumRow);

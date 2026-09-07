@@ -284,12 +284,22 @@ namespace ExcelAddInDemo
                         }
 
                         // 跨线程安全委托给公共 Excel 服务层执行具体计算与写入
-                        ExcelServices.ApplyFormulaAdjustFeeToExcel(scope, gName, items);
+                        var result = ExcelServices.ApplyFormulaAdjustFeeToExcel(scope, gName, items);
 
-                        // 弹出操作完成友好提示 (UI 线程执行)
+                        // 弹出操作结果友好提示 (UI 线程安全执行)
                         SafeInvoke(() =>
                         {
-                            MessageBox.Show($"公式调费应用成功！范围: {scope}, 公式组: {gName}", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            // 依据调费执行结果状态展示不同图标与精准信息
+                            if (result.Success)
+                            {
+                                // 成功完成更新提示
+                                MessageBox.Show(result.Message, "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            }
+                            else
+                            {
+                                // 失败或未找到箱柜警告提示
+                                MessageBox.Show(result.Message, "警告", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            }
                         });
                         break;
 

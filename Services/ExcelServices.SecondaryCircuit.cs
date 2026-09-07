@@ -196,8 +196,8 @@ namespace ExcelAddInDemo
                             currentScheme.LaborCost = labor;
                         }
 
-                        // 解析 J 列: 二次排布图 (若为空则自动默认赋予通用排布图)
-                        currentScheme.GroupName = string.IsNullOrWhiteSpace(colJ) ? "通用排布图" : colJ.Trim(); // --硬编码-- 默认排布图名称
+                        // 解析 J 列: 二次排布图 (若为空则自动默认赋予)
+                        currentScheme.GroupName = string.IsNullOrWhiteSpace(colJ) ? "" : colJ.Trim(); // --硬编码-- 默认排布图名称
 
                         // 解析 K 列: CAD 图名 (若有)
                         if (!string.IsNullOrWhiteSpace(colK))
