@@ -1101,6 +1101,15 @@
                     detailList.value = data.details;
                   }
                 }
+                // 挂载调费应用回发结果响应监听，使用非模态 ElMessage 代替原生模态弹窗
+                else if (data && data.action === "applyFormulaResult") {
+                  // 判断调费执行结果状态并弹出 Element Plus 友好提示
+                  if (data.success) {
+                    ElementPlus.ElMessage.success(data.message || "公式调费应用成功！");
+                  } else {
+                    ElementPlus.ElMessage.warning(data.message || "公式调费应用未完成");
+                  }
+                }
               });
             }
           });

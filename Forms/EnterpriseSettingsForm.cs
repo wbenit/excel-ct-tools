@@ -231,22 +231,18 @@ namespace ExcelAddInDemo
                                 // 异步保存至本地磁盘文件
                                 bool success = await _controller.SaveSettingsAsync(saveModel);
 
-                                // 判断保存结果 (切回 UI 线程执行提示与关闭)
+                                // 判断保存结果 (切回 UI 线程回发异步结果消息，彻底杜绝模态阻塞与 Chromium IPC 死锁)
                                 SafeInvoke(() =>
                                 {
-                                    if (success)
+                                    // 组装回发前端的消息数据包
+                                    var resMsg = new
                                     {
-                                        // 弹出成功保存提示消息框
-                                        MessageBox.Show("企业设置数据已成功保存至本地！", "保存成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                                        // 保存成功后关闭当前配置窗口
-                                        this.Close();
-                                    }
-                                    else
-                                    {
-                                        // 保存失败时提示消息
-                                        MessageBox.Show("保存数据到本地失败，请检查文件写入权限。", "保存失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                                    }
+                                        action = "saveSettingsResult",
+                                        success = success,
+                                        message = success ? "企业设置数据已成功保存至本地！" : "保存数据到本地失败，请检查文件写入权限。"
+                                    };
+                                    // 异步安全向前端推送结果，交由 Web 界面非模态提示
+                                    PostWebMessageSafe(JsonSerializer.Serialize(resMsg));
                                 });
                             }
                         }
@@ -367,6 +363,28 @@ namespace ExcelAddInDemo
             dialogThread.SetApartmentState(System.Threading.ApartmentState.STA);
             dialogThread.IsBackground = true;
             dialogThread.Start();
+        }
+
+        /// <summary>
+        /// 窗体关闭时显式释放 WebView2 控件资源，杜绝进程残留与 Excel 退出阻塞
+        /// </summary>
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            try
+            {
+                // 解绑 WebMessageReceived 事件防止悬空引用
+                if (_webView?.CoreWebView2 != null)
+                {
+                    _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+                }
+                // 显式销毁 WebView2 控件释放底层 Chromium 句柄
+                _webView?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[EnterpriseSettingsForm] OnFormClosing 释放异常: {ex.Message}");
+            }
+            base.OnFormClosing(e);
         }
     }
 }

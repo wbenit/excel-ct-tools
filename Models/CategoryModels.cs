@@ -29,6 +29,15 @@ namespace ExcelAddInDemo.Models
         // 当前工作簿中已存在的分类工作表名称列表 (用于前端查重校验)
         public List<string> ExistingCategories { get; set; } = new List<string>();
 
+        // 当前处于激活聚焦状态的分类表名称 (编辑分类时默认使用)
+        public string ActiveCategoryName { get; set; } = string.Empty;
+
+        // 剪贴板中暂存的被复制源分类工作表名称 (插入复制分类时使用)
+        public string CopiedCategoryName { get; set; } = string.Empty;
+
+        // 当前窗口启动模式 (例如: create / edit / insertCopied)
+        public string Mode { get; set; } = "create";
+
         // 可供选择的调费公式组选项集合
         public List<CategoryFormulaGroupOption> FormulaGroups { get; set; } = new List<CategoryFormulaGroupOption>();
     }
@@ -59,7 +68,31 @@ namespace ExcelAddInDemo.Models
         // 提示反馈消息文本
         public string Message { get; set; } = string.Empty;
 
-        // 成功创建的分类工作表名称
+        // 成功创建或变更的分类工作表名称
         public string CategoryName { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// 编辑分类请求数据传输模型
+    /// </summary>
+    public class EditCategoryRequest
+    {
+        // 原始旧分类工作表名称
+        public string OldCategoryName { get; set; } = string.Empty;
+
+        // 变更后的新分类工作表名称
+        public string NewCategoryName { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// 插入复制分类请求数据传输模型
+    /// </summary>
+    public class InsertCopiedCategoryRequest
+    {
+        // 来源被复制的分类工作表名称
+        public string SourceCategoryName { get; set; } = string.Empty;
+
+        // 复制生成的新分类工作表名称
+        public string TargetCategoryName { get; set; } = string.Empty;
     }
 }

@@ -370,5 +370,27 @@ namespace ExcelAddInDemo
                 catch { }
             }
         }
+
+        /// <summary>
+        /// 窗体关闭时显式释放 WebView2 控件资源，杜绝进程残留与 Excel 退出阻塞
+        /// </summary>
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            try
+            {
+                // 解绑 WebMessageReceived 事件防止悬空引用
+                if (_webView?.CoreWebView2 != null)
+                {
+                    _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+                }
+                // 显式销毁 WebView2 控件释放底层 Chromium 句柄
+                _webView?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[ComponentGroupBuilderForm] OnFormClosing 释放异常: {ex.Message}");
+            }
+            base.OnFormClosing(e);
+        }
     }
 }

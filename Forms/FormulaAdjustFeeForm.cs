@@ -286,21 +286,16 @@ namespace ExcelAddInDemo
                         // 跨线程安全委托给公共 Excel 服务层执行具体计算与写入
                         var result = ExcelServices.ApplyFormulaAdjustFeeToExcel(scope, gName, items);
 
-                        // 弹出操作结果友好提示 (UI 线程安全执行)
-                        SafeInvoke(() =>
+                        // 组装回发前端的消息数据包，坚决不调用 MessageBox.Show 避免 Chromium IPC 模态死锁
+                        var applyResData = new
                         {
-                            // 依据调费执行结果状态展示不同图标与精准信息
-                            if (result.Success)
-                            {
-                                // 成功完成更新提示
-                                MessageBox.Show(result.Message, "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                            }
-                            else
-                            {
-                                // 失败或未找到箱柜警告提示
-                                MessageBox.Show(result.Message, "警告", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                            }
-                        });
+                            action = "applyFormulaResult",
+                            success = result.Success,
+                            message = result.Message
+                        };
+
+                        // 异步安全向 Vue 前端回发执行结果，交由 Element Plus ElMessage 友好无阻塞提示
+                        PostWebMessageSafe(JsonSerializer.Serialize(applyResData, JsonOptions));
                         break;
 
                     // 最小化窗口
@@ -382,6 +377,28 @@ namespace ExcelAddInDemo
                 // 主 UI 线程直接同步执行
                 action();
             }
+        }
+
+        /// <summary>
+        /// 窗体关闭时显式释放 WebView2 控件资源，杜绝进程残留与 Excel 退出阻塞
+        /// </summary>
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            try
+            {
+                // 解绑 WebMessageReceived 事件防止悬空引用
+                if (_webView?.CoreWebView2 != null)
+                {
+                    _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+                }
+                // 显式销毁 WebView2 控件释放底层 Chromium 句柄
+                _webView?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[FormulaAdjustFeeForm] OnFormClosing 资源释放异常: {ex.Message}");
+            }
+            base.OnFormClosing(e);
         }
     }
 }

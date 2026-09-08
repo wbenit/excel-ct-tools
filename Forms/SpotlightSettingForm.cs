@@ -351,10 +351,19 @@ namespace ExcelAddInDemo.Forms
                     // 恢复至打开设置面板前的备份快照
                     _controller.SaveConfig(_backupConfig);
                 }
+
+                // 解绑 WebMessageReceived 事件防止悬空引用
+                if (_webView?.CoreWebView2 != null)
+                {
+                    _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+                }
+                // 显式销毁 WebView2 控件释放底层 Chromium 句柄
+                _webView?.Dispose();
             }
-            catch
+            catch (Exception ex)
             {
-                // 静默容错保护
+                // 记录释放异常日志
+                LogHelper.WriteLog($"[SpotlightSettingForm] OnFormClosing 释放异常: {ex.Message}");
             }
         }
 

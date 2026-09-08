@@ -347,9 +347,10 @@
 
   <body>
     <div id="app">
-      <!-- 1. 顶部无边框窗口拖拽标题栏 (支持双击最大化/还原) -->
+      <!-- 1. 顶部无边框窗口拖拽标题栏 (支持非模态物理增量拖拽与双击最大化/还原) -->
       <div
         class="window-header"
+        @pointerdown="handleHeaderPointerDown"
         @mousedown="onHeaderMouseDown"
         @dblclick="toggleMaximizeWindow"
       >
@@ -2822,7 +2823,69 @@
             );
           });
 
-          // 与 C# 端无边框窗口交互
+          // 窗口无模态平滑拖拽处理 (基于 PointerEvents + rAF 节流，彻底杜绝 Win32 模态循环死锁与 Excel 崩溃)
+          const handleHeaderPointerDown = (e) => {
+            // 仅响应鼠标主键 (button === 0)
+            if (e.button !== 0) return;
+            // 排除点击右上角控制按钮
+            if (e.target.closest(".window-actions") || e.target.closest(".win-btn")) return;
+
+            // 获取物理像素与 CSS 像素缩放比率 (保障高分屏精准 1:1 跟随)
+            const dpi = window.devicePixelRatio || 1;
+            let lastScreenX = e.screenX;
+            let lastScreenY = e.screenY;
+            let pendingDeltaX = 0;
+            let pendingDeltaY = 0;
+            let rafId = null;
+
+            try {
+              e.target.setPointerCapture(e.pointerId);
+            } catch (_) {}
+
+            const onPointerMove = (moveEvt) => {
+              pendingDeltaX += (moveEvt.screenX - lastScreenX) * dpi;
+              pendingDeltaY += (moveEvt.screenY - lastScreenY) * dpi;
+              lastScreenX = moveEvt.screenX;
+              lastScreenY = moveEvt.screenY;
+
+              if (rafId === null) {
+                rafId = requestAnimationFrame(() => {
+                  const dx = Math.round(pendingDeltaX);
+                  const dy = Math.round(pendingDeltaY);
+                  pendingDeltaX = 0;
+                  pendingDeltaY = 0;
+                  rafId = null;
+                  if (dx !== 0 || dy !== 0) {
+                    postToCSharp({ action: "moveWindow", deltaX: dx, deltaY: dy });
+                  }
+                });
+              }
+            };
+
+            const onPointerUp = (upEvt) => {
+              if (rafId !== null) {
+                cancelAnimationFrame(rafId);
+                rafId = null;
+              }
+              const dx = Math.round(pendingDeltaX);
+              const dy = Math.round(pendingDeltaY);
+              if (dx !== 0 || dy !== 0) {
+                postToCSharp({ action: "moveWindow", deltaX: dx, deltaY: dy });
+              }
+              try {
+                e.target.releasePointerCapture(upEvt.pointerId);
+              } catch (_) {}
+              window.removeEventListener("pointermove", onPointerMove);
+              window.removeEventListener("pointerup", onPointerUp);
+              window.removeEventListener("pointercancel", onPointerUp);
+            };
+
+            window.addEventListener("pointermove", onPointerMove);
+            window.addEventListener("pointerup", onPointerUp);
+            window.addEventListener("pointercancel", onPointerUp);
+          };
+
+          // 与 C# 端无边框窗口交互 (旧版兜底)
           const onHeaderMouseDown = (e) => {
             if (e.button !== 0) return;
             // 防御：若点击发生在操作按钮区或子元素上，严禁向 C# 发送系统模态拖拽指令
@@ -3437,6 +3500,7 @@
             handleRowDblClick,
             handleRowClick,
             navigateBackParent,
+            handleHeaderPointerDown,
             onHeaderMouseDown,
             minimizeWindow,
             closeWindow,

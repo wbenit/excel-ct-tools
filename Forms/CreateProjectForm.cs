@@ -25,6 +25,13 @@ namespace ExcelAddInDemo
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
+        // 导入 Windows 原生 user32.dll 接口检测物理鼠标按键状态
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int vKey);
+
+        // Win32 常量: 鼠标左键虚拟键码
+        private const int VK_LBUTTON = 0x01;
+
         // 声明项目控制器
         private readonly ProjectController _projectController;
 
@@ -298,8 +305,14 @@ namespace ExcelAddInDemo
                                     {
                                         // 记录异常日志
                                         LogHelper.WriteLog($"执行 startQuotation 异常: {ex.Message}");
-                                        // 弹出错误提示
-                                        MessageBox.Show($"创建项目发生异常: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                        // 向前端异步回传失败结果，坚决不调用阻塞式 MessageBox.Show 避免 Chromium IPC 模态死锁
+                                        var failMsg = new
+                                        {
+                                            action = "startQuotationResult",
+                                            success = false,
+                                            message = $"创建项目发生异常: {ex.Message}"
+                                        };
+                                        PostWebMessageSafe(JsonSerializer.Serialize(failMsg, JsonOptions));
                                     }
                                 });
                             }
@@ -329,21 +342,22 @@ namespace ExcelAddInDemo
                     case "dragWindow":
                         SafeInvoke(() =>
                         {
-                            // 释放当前鼠标捕获句柄
-                            ReleaseCapture();
-
-                            // 发送 WM_NCLBUTTONDOWN (0xA1) 消息触发原生无边框窗口拖拽
-                            SendMessage(this.Handle, 0xA1, (IntPtr)0x2, IntPtr.Zero);
+                            // 物理校验：若用户在消息派发延迟期间已松开鼠标左键，直接丢弃，绝不触发系统模态拖拽死锁
+                            if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0)
+                            {
+                                // 释放当前鼠标捕获句柄
+                                ReleaseCapture();
+                                // 发送 WM_NCLBUTTONDOWN (0xA1) 消息触发原生无边框窗口拖拽
+                                SendMessage(this.Handle, 0xA1, (IntPtr)0x2, IntPtr.Zero);
+                            }
                         });
                         break;
                 }
             }
             catch (Exception ex)
             {
-                SafeInvoke(() =>
-                {
-                    MessageBox.Show($"处理消息发生错误: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                });
+                // 记录异常日志，避免在消息循环抛出阻断性模态弹窗导致死锁
+                LogHelper.WriteLog($"[CreateProjectForm] 处理消息发生错误: {ex.Message}");
             }
         }
 
@@ -426,6 +440,28 @@ namespace ExcelAddInDemo
             dialogThread.SetApartmentState(System.Threading.ApartmentState.STA);
             dialogThread.IsBackground = true;
             dialogThread.Start();
+        }
+
+        /// <summary>
+        /// 窗体关闭时显式释放 WebView2 控件资源，杜绝进程残留与 Excel 退出阻塞
+        /// </summary>
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            try
+            {
+                // 解绑 WebMessageReceived 事件防止悬空引用
+                if (_webView?.CoreWebView2 != null)
+                {
+                    _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+                }
+                // 显式销毁 WebView2 控件释放底层 Chromium 句柄
+                _webView?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[CreateProjectForm] OnFormClosing 释放异常: {ex.Message}");
+            }
+            base.OnFormClosing(e);
         }
     }
 }

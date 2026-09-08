@@ -23,24 +23,31 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
-        /// WebAPI 接口: 获取分类新建引导与初始化配置数据
+        /// WebAPI 接口: 获取分类新建/编辑/插入复制引导与初始化配置数据
         /// </summary>
+        /// <param name="mode">操作模式: create / edit / insertCopied</param>
         /// <returns>分类建议与公式组集合数据模型</returns>
-        public CategorySuggestInfo GetCategorySuggestInfo()
+        public CategorySuggestInfo GetCategorySuggestInfo(string mode = "create")
         {
             // 初始化返回实体
             var result = new CategorySuggestInfo();
 
             try
             {
-                // 1. 调用 Excel 底层服务探测当前工作簿已存在的分类列表与下一个推荐名称
-                var excelSuggest = ExcelServices.GetSuggestedCategoryInfo();
+                // 1. 调用 Excel 底层服务探测当前工作簿已存在的分类列表、激活分类与下一个推荐名称
+                var excelSuggest = ExcelServices.GetSuggestedCategoryInfo(mode);
                 if (excelSuggest != null)
                 {
                     // 设置推荐分类名
                     result.SuggestedName = excelSuggest.SuggestedName;
                     // 设置已有分类表名称列表
                     result.ExistingCategories = excelSuggest.ExistingCategories ?? new List<string>();
+                    // 设置当前处于激活聚焦状态的分类表
+                    result.ActiveCategoryName = excelSuggest.ActiveCategoryName;
+                    // 设置暂存的被复制分类表
+                    result.CopiedCategoryName = excelSuggest.CopiedCategoryName;
+                    // 设置当前模式
+                    result.Mode = excelSuggest.Mode;
                 }
 
                 // 2. 加载系统所有调费公式组选项列表
@@ -100,6 +107,78 @@ namespace ExcelAddInDemo.Controllers
                     Success = false,
                     Message = $"创建分类发生错误: {ex.Message}"
                 };
+            }
+        }
+
+        /// <summary>
+        /// WebAPI 接口: 执行编辑/重命名分类工作表
+        /// </summary>
+        /// <param name="request">编辑分类表单提交请求</param>
+        /// <returns>操作执行结果对象</returns>
+        public CategoryOperationResult EditCategory(EditCategoryRequest request)
+        {
+            // 校验请求有效性
+            if (request == null || string.IsNullOrWhiteSpace(request.OldCategoryName) || string.IsNullOrWhiteSpace(request.NewCategoryName))
+            {
+                return new CategoryOperationResult { Success = false, Message = "原分类名称与新分类名称均不能为空！" };
+            }
+
+            try
+            {
+                // 调度业务服务层重命名工作表并同步项目信息表
+                return ExcelServices.EditCategoryName(request);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"控制器编辑分类异常: {ex.Message}");
+                return new CategoryOperationResult { Success = false, Message = $"编辑分类失败: {ex.Message}" };
+            }
+        }
+
+        /// <summary>
+        /// WebAPI 接口: 执行插入复制的分类工作表
+        /// </summary>
+        /// <param name="request">插入复制分类请求</param>
+        /// <returns>操作执行结果对象</returns>
+        public CategoryOperationResult InsertCopiedCategory(InsertCopiedCategoryRequest request)
+        {
+            // 校验入参
+            if (request == null || string.IsNullOrWhiteSpace(request.TargetCategoryName))
+            {
+                return new CategoryOperationResult { Success = false, Message = "目标分类名称不能为空！" };
+            }
+
+            try
+            {
+                // 调度业务服务层克隆工作表并重新绑定定义名称与项目信息汇总
+                return ExcelServices.InsertCopiedCategory(request);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"控制器插入复制分类异常: {ex.Message}");
+                return new CategoryOperationResult { Success = false, Message = $"插入复制分类失败: {ex.Message}" };
+            }
+        }
+
+        /// <summary>
+        /// WebAPI 接口: 执行删除指定分类工作表
+        /// </summary>
+        /// <param name="categoryName">分类工作表名称</param>
+        /// <returns>操作执行结果对象</returns>
+        public CategoryOperationResult DeleteCategory(string categoryName)
+        {
+            try
+            {
+                // 调度业务服务层安全删除分类及联动项目信息表行
+                return ExcelServices.DeleteCategory(categoryName);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"控制器删除分类异常: {ex.Message}");
+                return new CategoryOperationResult { Success = false, Message = $"删除分类失败: {ex.Message}" };
             }
         }
     }
