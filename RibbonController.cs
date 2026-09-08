@@ -479,6 +479,12 @@ namespace ExcelAddInDemo
                 // 弹出基于 WebView2 + Vue 3 的“二次图回路方案与 BOM 管理中心”窗口
                 ExcelServices.ShowSecondaryCircuitManageDialog();
             }
+            // 响应“云方案”按钮指令
+            else if (controlId == "btnCloudSolution")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“云方案中心 (行业方案/企业方案)”窗口
+                ExcelServices.ShowCloudSolutionDialog();
+            }
             // 响应“元器件管理”按钮指令
             else if (controlId == "btnComponentManage")
             {

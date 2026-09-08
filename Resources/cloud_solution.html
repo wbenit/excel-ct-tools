@@ -1,0 +1,1780 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <!-- 设置字符编码为 UTF-8 -->
+    <meta charset="UTF-8" />
+    <!-- 适配视口与缩放 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>鑫壬云方案中心</title>
+    <!-- 引入 Element Plus CSS 样式库 -->
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <!-- 引入 FontAwesome 图标库 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <!-- 引入 Vue 3 核心库 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- 引入 Element Plus 核心库 -->
+    <script src="https://unpkg.com/element-plus"></script>
+    <!-- 引入主题通用样式 -->
+    <link rel="stylesheet" href="theme.css" />
+
+    <style>
+      /* 全局重置与工业扁平设计 */
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        user-select: none;
+      }
+      html, body {
+        height: 100%;
+        overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+        background-color: #f1f5f9;
+        color: #1e293b;
+      }
+      #app {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        background: #ffffff;
+      }
+
+      /* 绿色与青蓝工业主色调定义 */
+      :root {
+        --primary-color: #009688;
+        --primary-hover: #00897b;
+        --primary-light: #e0f2f1;
+        --primary-dark: #004d40;
+        --primary-gradient: linear-gradient(135deg, #009688 0%, #00796b 100%);
+      }
+
+      /* 顶部自定义标题拖拽栏 */
+      .window-header {
+        height: 48px;
+        background: var(--primary-gradient);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 16px;
+        color: #ffffff;
+        cursor: move;
+        flex-shrink: 0;
+      }
+      .window-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+      .window-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: default;
+      }
+      .ctrl-btn {
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        color: #e0f2f1;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .ctrl-btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+        color: #ffffff;
+      }
+      .ctrl-btn.close:hover {
+        background: #ef4444;
+      }
+
+      /* 一级顶级 Tab 栏 (行业方案 vs 企业方案) */
+      .top-tabs-bar {
+        background: #ffffff;
+        border-bottom: 2px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 24px;
+        height: 52px;
+        flex-shrink: 0;
+      }
+      .top-tabs-left {
+        display: flex;
+        gap: 32px;
+        height: 100%;
+      }
+      .top-tab-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        color: #64748b;
+        cursor: pointer;
+        position: relative;
+        transition: color 0.2s;
+        height: 100%;
+      }
+      .top-tab-item:hover {
+        color: var(--primary-color);
+      }
+      .top-tab-item.active {
+        color: var(--primary-color);
+      }
+      .top-tab-item.active::after {
+        content: '';
+        position: absolute;
+        bottom: -2px;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: var(--primary-color);
+        border-radius: 3px 3px 0 0;
+      }
+
+      /* 二级业务 Tab 栏 (一次方案 / 二次方案 / 我的收藏) */
+      .sub-tabs-bar {
+        background: var(--primary-color);
+        display: flex;
+        align-items: center;
+        padding: 0 24px;
+        height: 44px;
+        gap: 16px;
+        flex-shrink: 0;
+      }
+      .sub-tab-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 18px;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 500;
+        color: #e0f2f1;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .sub-tab-item:hover {
+        background: rgba(255, 255, 255, 0.15);
+        color: #ffffff;
+      }
+      .sub-tab-item.active {
+        background: #ffffff;
+        color: var(--primary-dark);
+        font-weight: 600;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      /* 页面主体内容区 */
+      .main-body {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+        position: relative;
+      }
+
+      /* 企业方案专属左侧分类树抽屉 */
+      .left-category-sidebar {
+        width: 220px;
+        background: #f8fafc;
+        border-right: 1px solid #e2e8f0;
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+      }
+      .category-header {
+        padding: 12px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #475569;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .category-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px;
+      }
+      .category-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: #334155;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-bottom: 4px;
+      }
+      .category-item:hover {
+        background: #e2e8f0;
+      }
+      .category-item.active {
+        background: var(--primary-light);
+        color: var(--primary-color);
+        font-weight: 600;
+      }
+
+      /* 右侧卡片浏览主容器 */
+      .content-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      /* 检索与多维筛选工具栏 */
+      .filter-toolbar {
+        padding: 12px 20px;
+        background: #ffffff;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-shrink: 0;
+      }
+      .filter-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .filter-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      /* 方案 4 列卡片网格展示容器 (Grid Layout) */
+      .card-grid-container {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px 20px;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        align-content: start;
+      }
+
+      /* 单张方案卡片 (Card) */
+      .scheme-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: pointer;
+        position: relative;
+      }
+      .scheme-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 10px 15px -3px rgba(0, 150, 136, 0.15), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        border-color: var(--primary-color);
+      }
+      .card-img-wrapper {
+        position: relative;
+        width: 100%;
+        height: 140px;
+        background: #f8fafc;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        border-bottom: 1px solid #f1f5f9;
+      }
+      .card-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.3s;
+      }
+      .scheme-card:hover .card-img {
+        transform: scale(1.05);
+      }
+      .card-checkbox {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        z-index: 2;
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 4px;
+        padding: 2px 4px;
+      }
+      .multi-img-badge {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        z-index: 2;
+        background: rgba(0, 77, 64, 0.75);
+        color: #ffffff;
+        font-size: 11px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .card-stats-bar {
+        height: 26px;
+        background: rgba(15, 23, 42, 0.7);
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 10px;
+        color: #e2e8f0;
+        font-size: 11px;
+      }
+      .stat-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .card-content {
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        gap: 6px;
+      }
+      .card-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: #1e293b;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .card-meta {
+        font-size: 11px;
+        color: #64748b;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .card-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: auto;
+        padding-top: 6px;
+        border-top: 1px dashed #f1f5f9;
+        font-size: 11px;
+        color: #64748b;
+      }
+      .tag-badge {
+        font-size: 10px;
+        font-weight: 600;
+        padding: 1px 5px;
+        border-radius: 3px;
+        background: #ef4444;
+        color: #ffffff;
+      }
+      .tag-badge.ent {
+        background: var(--primary-color);
+      }
+
+      /* 底部操作与分页底栏 */
+      .bottom-bar {
+        height: 52px;
+        background: #ffffff;
+        border-top: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 20px;
+        flex-shrink: 0;
+      }
+
+      /* ========================================================
+         方案详情主视图 (完整复刻参考图 1 & 图 2 样式与交互)
+         ======================================================== */
+      .detail-view-container {
+        position: absolute;
+        top: 100px; /* 顶部保留 window-header(48px) + top-tabs-bar(52px) */
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #ffffff;
+        z-index: 50;
+        display: flex;
+        flex-direction: column;
+        animation: fadeIn 0.2s ease-out;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: scale(0.99); }
+        to { opacity: 1; transform: scale(1); }
+      }
+      .detail-header-bar {
+        height: 48px;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 20px;
+        background: #ffffff;
+        position: relative;
+        flex-shrink: 0;
+      }
+      /* 返回按钮样式：带金橙色边框与圆角，与截图1红箭头100%一致 --硬编码-- */
+      .btn-return {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        height: 30px;
+        padding: 0 14px;
+        border: 1px solid #f59e0b; /* 橙黄高亮边框 --硬编码-- */
+        background-color: #ffffff;
+        color: #d97706; /* 橙黄文字 --硬编码-- */
+        border-radius: 4px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .btn-return:hover {
+        background-color: #fffbeb;
+        border-color: #d97706;
+        color: #b45309;
+        transform: translateX(-1px);
+      }
+      /* BOM 表格高保真样式与复选框高亮定制 --硬编码-- */
+      .bom-table-box .el-checkbox__input.is-checked .el-checkbox__inner,
+      .bom-table-box .el-checkbox__input.is-indeterminate .el-checkbox__inner {
+        background-color: #f59e0b !important;
+        border-color: #f59e0b !important;
+      }
+      .bom-table-box .el-checkbox__input.is-focus .el-checkbox__inner {
+        border-color: #f59e0b !important;
+      }
+      .detail-header-title {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 16px;
+        font-weight: 600;
+        color: #334155;
+      }
+      .wl-tip {
+        background-color: #0284c7;
+        color: #ffffff;
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-size: 11px;
+      }
+      .detail-scheme-meta {
+        padding: 14px 24px;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        background: #ffffff;
+        flex-shrink: 0;
+      }
+      .scheme-main-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .scheme-meta-row {
+        display: flex;
+        gap: 24px;
+        font-size: 12px;
+        color: #64748b;
+      }
+
+      /* 详情三大子 Tab (图纸 / BOM / 描述) */
+      .detail-nav-tabs {
+        height: 44px;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 24px;
+        background: #ffffff;
+        flex-shrink: 0;
+      }
+      .detail-tabs-group {
+        display: flex;
+        gap: 24px;
+        height: 100%;
+      }
+      .detail-tab-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #64748b;
+        cursor: pointer;
+        position: relative;
+        height: 100%;
+        transition: color 0.2s;
+      }
+      .detail-tab-btn.active {
+        color: #f59e0b;
+      }
+      .detail-tab-btn.active::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: #f59e0b;
+      }
+      .total-amount-badge {
+        font-size: 15px;
+        font-weight: 700;
+        color: #e11d48;
+      }
+
+      /* 详情子页面内容容器 */
+      .detail-tab-content {
+        flex: 1;
+        overflow: hidden;
+        display: flex;
+      }
+
+      /* 图纸画廊视口 (DrawingUrls 多图支持) */
+      .drawing-gallery {
+        flex: 1;
+        display: flex;
+        background: #0f172a;
+        overflow: hidden;
+      }
+      .drawing-filmstrip {
+        width: 140px;
+        background: #1e293b;
+        border-right: 1px solid #334155;
+        overflow-y: auto;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        flex-shrink: 0;
+      }
+      .filmstrip-item {
+        border: 2px solid transparent;
+        border-radius: 6px;
+        overflow: hidden;
+        cursor: pointer;
+        transition: all 0.2s;
+        background: #0f172a;
+      }
+      .filmstrip-item.active {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 10px rgba(0, 150, 136, 0.5);
+      }
+      .filmstrip-thumb {
+        width: 100%;
+        height: 80px;
+        object-fit: cover;
+        display: block;
+      }
+      .filmstrip-title {
+        font-size: 11px;
+        color: #94a3b8;
+        padding: 4px;
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .drawing-main-canvas {
+        flex: 1;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      .preview-image {
+        max-width: 90%;
+        max-height: 90%;
+        object-fit: contain;
+        transition: transform 0.2s ease-out;
+        user-select: none;
+      }
+      .drawing-toolbar {
+        position: absolute;
+        bottom: 20px;
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid #334155;
+        border-radius: 20px;
+        padding: 6px 16px;
+        display: flex;
+        gap: 12px;
+        color: #ffffff;
+      }
+      .tool-btn {
+        cursor: pointer;
+        font-size: 14px;
+        transition: color 0.2s;
+      }
+      .tool-btn:hover {
+        color: var(--primary-color);
+      }
+
+      /* BOM 表格与滚动条 (完全对齐图 2 与图 3) */
+      .bom-view-panel {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        padding: 12px 20px;
+        background: #ffffff;
+      }
+      .bom-table-scroll-wrapper {
+        flex: 1;
+        overflow: auto;
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+      }
+      .bom-grid-table {
+        width: 100%;
+        min-width: 1560px;
+        border-collapse: collapse;
+        font-size: 12px;
+        table-layout: fixed;
+      }
+      .bom-grid-table th {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        background-color: #f8fafc;
+        color: #475569;
+        font-weight: 500;
+        padding: 9px 6px;
+        border: 1px solid #e2e8f0;
+        border-top: none;
+        user-select: none;
+        white-space: nowrap;
+      }
+      .bom-grid-table td {
+        padding: 6px 8px;
+        border: 1px solid #e2e8f0;
+        color: #1e293b;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        background: #ffffff;
+      }
+      .bom-grid-table tbody tr:hover td {
+        background-color: #f8fafc;
+      }
+      .th-select-box {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        cursor: pointer;
+        user-select: none;
+      }
+      /* 高保真复选框 (与图 2 图 3 完全一致) */
+      .custom-chk {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 14px;
+        height: 14px;
+        border: 1px solid #cbd5e1;
+        border-radius: 2px;
+        background-color: #ffffff;
+        cursor: pointer;
+        vertical-align: middle;
+        position: relative;
+        box-sizing: border-box;
+      }
+      .custom-chk.checked {
+        background-color: #f59e0b; /* 橙黄色填充 */
+        border-color: #f59e0b;
+      }
+      .custom-chk.checked::after {
+        content: "";
+        width: 3px;
+        height: 7px;
+        border: solid #ffffff;
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+        margin-bottom: 2px;
+      }
+      .custom-chk.indeterminate {
+        background-color: #f59e0b; /* 橙黄色半选方块 */
+        border-color: #f59e0b;
+      }
+      .custom-chk.indeterminate::after {
+        content: "";
+        width: 8px;
+        height: 2px;
+        background-color: #ffffff;
+      }
+      /* 操作列小图标 ↑ ↓ ✕ */
+      .row-op-group {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        font-size: 13px;
+        color: #64748b;
+      }
+      .op-sym {
+        cursor: pointer;
+        line-height: 1;
+        padding: 2px 4px;
+        transition: color 0.15s;
+        user-select: none;
+      }
+      .op-sym:hover:not(.disabled) {
+        color: #0f172a;
+      }
+      .op-sym.del:hover {
+        color: #ef4444;
+      }
+      .op-sym.disabled {
+        color: #cbd5e1;
+        cursor: not-allowed;
+      }
+      .bom-footnote {
+        padding: 8px 12px;
+        font-size: 12px;
+        color: #64748b;
+        background: #f8fafc;
+        border-top: 1px solid #e2e8f0;
+        display: flex;
+        justify-content: space-between;
+      }
+      /* 方案描述面板 */
+      .description-view-panel {
+        flex: 1;
+        overflow-y: auto;
+        padding: 24px;
+        line-height: 1.8;
+        font-size: 14px;
+        color: #334155;
+      }
+      /* 详情底部控制台 */
+      .detail-action-footer {
+        height: 56px;
+        background: #ffffff;
+        border-top: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 24px;
+        flex-shrink: 0;
+      }
+      .multiplier-box {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 500;
+      }
+      /* 橙黄色高保真控制按钮 */
+      .btn-img-orange {
+        height: 32px;
+        padding: 0 16px;
+        background-color: #f59e0b;
+        color: #ffffff;
+        border: none;
+        border-radius: 4px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .btn-img-orange:hover {
+        background-color: #d97706;
+      }
+      .btn-img-outline {
+        height: 32px;
+        padding: 0 16px;
+        background-color: #ffffff;
+        color: #f59e0b;
+        border: 1px solid #f59e0b;
+        border-radius: 4px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .btn-img-outline:hover {
+        background-color: #fffbeb;
+      }
+
+      /* 按钮自定义覆盖 */
+      .el-button--primary {
+        background-color: var(--primary-color) !important;
+        border-color: var(--primary-color) !important;
+      }
+      .el-button--primary:hover {
+        background-color: var(--primary-hover) !important;
+        border-color: var(--primary-hover) !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <!-- 1. 顶部自定义拖拽栏 -->
+      <div class="window-header" @mousedown="onDragWindow">
+        <div class="window-title">
+          <i class="fa-solid fa-cloud-bolt"></i>
+          <span>鑫壬成套电气 · 云方案中心</span>
+        </div>
+        <div class="window-controls" @mousedown.stop>
+          <div class="ctrl-btn" title="最小化" @click="minimizeWindow">
+            <i class="fa-solid fa-minus"></i>
+          </div>
+          <div class="ctrl-btn" title="最大化/还原" @click="toggleMaximizeWindow">
+            <i class="fa-regular fa-square"></i>
+          </div>
+          <div class="ctrl-btn close" title="关闭" @click="closeWindow">
+            <i class="fa-solid fa-xmark"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 一级顶级 Tab 栏 (行业方案 vs 企业方案) -->
+      <div class="top-tabs-bar">
+        <div class="top-tabs-left">
+          <div
+            class="top-tab-item"
+            :class="{ active: currentScope === 'industry' }"
+            @click="switchScope('industry')"
+          >
+            <i class="fa-solid fa-building-shield"></i>
+            <span>行业方案</span>
+          </div>
+          <div
+            class="top-tab-item"
+            :class="{ active: currentScope === 'enterprise' }"
+            @click="switchScope('enterprise')"
+          >
+            <i class="fa-solid fa-shield-halved"></i>
+            <span>企业方案</span>
+          </div>
+        </div>
+        <div>
+          <el-tag size="small" type="success" effect="plain" v-if="currentScope === 'industry'">
+            <i class="fa-solid fa-lock"></i> 官方标准母版库 (只读)
+          </el-tag>
+          <el-tag size="small" type="primary" effect="plain" v-else>
+            <i class="fa-solid fa-users"></i> 企业私有资产库 (支持自建与修改)
+          </el-tag>
+        </div>
+      </div>
+
+      <!-- 3. 二级业务 Tab 栏 (一次方案 / 二次方案 / 我的收藏) -->
+      <div class="sub-tabs-bar">
+        <div
+          class="sub-tab-item"
+          :class="{ active: currentSchemeType === 'primary' }"
+          @click="switchSchemeType('primary')"
+        >
+          <i class="fa-solid fa-bolt"></i>
+          <span>一次方案</span>
+        </div>
+        <div
+          class="sub-tab-item"
+          :class="{ active: currentSchemeType === 'secondary' }"
+          @click="switchSchemeType('secondary')"
+        >
+          <i class="fa-solid fa-diagram-project"></i>
+          <span>二次方案</span>
+        </div>
+        <div
+          class="sub-tab-item"
+          :class="{ active: currentSchemeType === 'favorite' }"
+          @click="switchSchemeType('favorite')"
+        >
+          <i class="fa-solid fa-star"></i>
+          <span>我的收藏</span>
+        </div>
+      </div>
+
+      <!-- 4. 主内容视口区 -->
+      <div class="main-body">
+        <!-- 企业方案专属：左侧分类文件夹树 -->
+        <div class="left-category-sidebar" v-if="currentScope === 'enterprise'">
+          <div class="category-header">
+            <span><i class="fa-regular fa-folder-open"></i> 分类目录</span>
+            <el-button link type="primary" size="small" @click="onAddCategoryPrompt">
+              <i class="fa-solid fa-plus"></i> 新建
+            </el-button>
+          </div>
+          <div class="category-list">
+            <div
+              class="category-item"
+              :class="{ active: selectedCategoryId === '' }"
+              @click="onSelectCategory('')"
+            >
+              <i class="fa-solid fa-layer-group"></i>
+              <span>全部分类</span>
+            </div>
+            <div
+              v-for="cat in enterpriseCategories"
+              :key="cat.id"
+              class="category-item"
+              :class="{ active: selectedCategoryId === cat.id }"
+              @click="onSelectCategory(cat.id)"
+            >
+              <i class="fa-regular fa-folder"></i>
+              <span>{{ cat.name }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右侧卡片网格与检索栏 -->
+        <div class="content-area">
+          <!-- 检索过滤工具条 -->
+          <div class="filter-toolbar">
+            <div class="filter-left">
+              <el-select v-model="filterCabinetModel" placeholder="柜型过滤" size="small" style="width: 130px;" clearable @change="onSearch">
+                <el-option label="全部柜型" value="" />
+                <el-option label="KYN28-12" value="KYN28-12" />
+                <el-option label="MNS" value="MNS" />
+                <el-option label="GGD" value="GGD" />
+                <el-option label="PZ30" value="PZ30" />
+                <el-option label="XL-21" value="XL-21" />
+              </el-select>
+
+              <el-input
+                v-model="searchKeyword"
+                placeholder="搜索方案名称、柜型、作者或关键字..."
+                size="small"
+                style="width: 260px;"
+                clearable
+                @keyup.enter="onSearch"
+              >
+                <template #prefix>
+                  <i class="fa-solid fa-magnifying-glass"></i>
+                </template>
+              </el-input>
+
+              <el-button type="primary" size="small" @click="onSearch">
+                搜索
+              </el-button>
+            </div>
+
+            <div class="filter-right">
+              <el-select v-model="sortBy" size="small" style="width: 110px;" @change="onSearch">
+                <el-option label="热门排序" value="hot" />
+                <el-option label="最新发布" value="latest" />
+              </el-select>
+
+              <!-- 企业方案下支持一键新建或从当前 Excel 柜体抓取另存为 -->
+              <el-button
+                v-if="currentScope === 'enterprise'"
+                type="success"
+                size="small"
+                plain
+                @click="onCaptureCabinetPrompt"
+              >
+                <i class="fa-solid fa-file-import"></i> 存当前柜为方案
+              </el-button>
+            </div>
+          </div>
+
+          <!-- 4 列响应式卡片网格 -->
+          <div class="card-grid-container" v-loading="loading">
+            <div
+              v-for="scheme in schemeList"
+              :key="scheme.id"
+              class="scheme-card"
+              @click="openSchemeDetail(scheme)"
+            >
+              <!-- 卡片封面图片视口 -->
+              <div class="card-img-wrapper">
+                <!-- 左上角勾选框 -->
+                <div class="card-checkbox" @click.stop>
+                  <el-checkbox v-model="scheme.checked" />
+                </div>
+                <!-- 右上角多图徽标 (DrawingUrls 支持) -->
+                <div class="multi-img-badge" v-if="scheme.drawingUrls && scheme.drawingUrls.length > 1">
+                  <i class="fa-regular fa-images"></i>
+                  <span>{{ scheme.drawingUrls.length }} 张图</span>
+                </div>
+                <!-- 封面图 -->
+                <img
+                  :src="(scheme.drawingUrls && scheme.drawingUrls.length > 0) ? scheme.drawingUrls[0] : (scheme.thumbnailUrl || defaultCover)"
+                  class="card-img"
+                  loading="lazy"
+                  @error="onImgError"
+                />
+                <!-- 数据统计栏 (浏览量、收藏量) -->
+                <div class="card-stats-bar">
+                  <div class="stat-item">
+                    <i class="fa-regular fa-eye"></i>
+                    <span>{{ formatNumber(scheme.viewCount) }}</span>
+                  </div>
+                  <div class="stat-item">
+                    <i class="fa-solid fa-star" :style="{ color: scheme.isFavorite ? '#fbbf24' : '#e2e8f0' }"></i>
+                    <span>{{ formatNumber(scheme.favCount) }}</span>
+                  </div>
+                  <div class="stat-item">
+                    <i class="fa-regular fa-comment-dots"></i>
+                    <span>5</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 卡片主体内容 -->
+              <div class="card-content">
+                <div class="card-title" :title="scheme.schemeName">
+                  {{ scheme.schemeName }}
+                </div>
+                <div class="card-meta">
+                  <span>柜型: {{ scheme.cabinetModel || '通用' }}</span>
+                  <span>{{ scheme.dimensions || '标准尺寸' }}</span>
+                </div>
+                <div class="card-footer">
+                  <span><i class="fa-regular fa-user"></i> {{ scheme.creatorName || '系统' }}</span>
+                  <span class="tag-badge" :class="{ ent: scheme.scope === 'enterprise' }" v-if="scheme.tag">
+                    {{ scheme.tag }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 空状态提示 -->
+            <el-empty
+              v-if="!loading && schemeList.length === 0"
+              description="暂未找到匹配的方案，请调整过滤条件或自建方案"
+              style="grid-column: span 4; margin: 40px auto;"
+            />
+          </div>
+
+          <!-- 底部批量插入与分页栏 -->
+          <div class="bottom-bar">
+            <div>
+              <el-button type="primary" size="default" :disabled="selectedCount === 0" @click="onBatchInsert">
+                <i class="fa-solid fa-download"></i> 批量插入已选方案 ({{ selectedCount }})
+              </el-button>
+            </div>
+            <el-pagination
+              v-model:current-page="pageIndex"
+              v-model:page-size="pageSize"
+              :page-sizes="[12, 24, 36]"
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="totalCount"
+              @size-change="onPageChange"
+              @current-change="onPageChange"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- ========================================================
+           5. 方案详情主视图 (完整复刻参考图 2 & 图 3 样式与三大 Tab)
+           ======================================================== -->
+      <div class="detail-view-container" v-if="detailVisible">
+        <!-- 顶部返回与方案详情标题 (完全复刻图 2 标头布局与带边框返回按钮) -->
+        <div class="detail-header-bar">
+          <button class="btn-return" @click="detailVisible = false">
+            <i class="fa-solid fa-chevron-left"></i> 返回
+          </button>
+          <div class="detail-header-title">方案详情</div>
+          <div style="width: 80px;"></div>
+        </div>
+           <!-- 方案头部核心参数 (型号、尺寸、作者、时间完全居中) -->
+        <div class="detail-scheme-meta" v-if="currentDetail">
+          <div class="scheme-main-title">{{ currentDetail.schemeName || 'KYN28-12 PT柜(630A)' }}</div>
+          <div class="scheme-meta-row">
+            <span>箱柜型号: {{ currentDetail.cabinetModel || '' }}</span>
+            <span>箱柜尺寸: {{ currentDetail.dimensions || '' }}</span>
+            <span>修改人: {{ currentDetail.creatorName || '电气天下' }}</span>
+            <span>修改时间: {{ currentDetail.updateTime || '2017-12-08 09:44:28' }}</span>
+          </div>
+        </div>
+
+        <!-- 详情三大子 Tab (图纸 / BOM / 描述，纯文字无图标无张数，总计28222.42红字居右) -->
+        <div class="detail-nav-tabs">
+          <div class="detail-tabs-group">
+            <div
+              class="detail-tab-btn"
+              :class="{ active: detailActiveTab === 'drawing' }"
+              @click="detailActiveTab = 'drawing'"
+            >
+              <span>图纸</span>
+            </div>
+            <div
+              class="detail-tab-btn"
+              :class="{ active: detailActiveTab === 'bom' }"
+              @click="detailActiveTab = 'bom'"
+            >
+              <span>BOM</span>
+            </div>
+            <div
+              class="detail-tab-btn"
+              :class="{ active: detailActiveTab === 'description' }"
+              @click="detailActiveTab = 'description'"
+            >
+              <span>描述</span>
+            </div>
+          </div>
+
+          <div class="total-amount-badge" v-if="detailActiveTab === 'bom'">
+            总计: {{ calculatedTotalAmount.toFixed(2) }}
+          </div>
+        </div>
+
+        <!-- 详情主体内容区 -->
+        <div class="detail-tab-content">
+          <!-- ①【图纸】子面板 (DrawingUrls 画廊模式) -->
+          <div class="drawing-gallery" v-if="detailActiveTab === 'drawing'">
+            <!-- 左侧多图胶卷微缩栏 -->
+            <div class="drawing-filmstrip" v-if="currentDetail?.drawingUrls && currentDetail.drawingUrls.length > 0">
+              <div
+                v-for="(url, idx) in currentDetail.drawingUrls"
+                :key="idx"
+                class="filmstrip-item"
+                :class="{ active: activeDrawingIndex === idx }"
+                @click="activeDrawingIndex = idx"
+              >
+                <img :src="url" class="filmstrip-thumb" />
+                <div class="filmstrip-title">图纸 {{ idx + 1 }}</div>
+              </div>
+            </div>
+
+            <!-- 中央高精度图片缩放预览舞台 -->
+            <div class="drawing-main-canvas">
+              <img
+                :src="activeDrawingUrl"
+                class="preview-image"
+                :style="{ transform: `scale(${imgScale}) rotate(${imgRotation}deg)` }"
+              />
+              <div class="drawing-toolbar">
+                <div class="tool-btn" title="放大" @click="imgScale = Math.min(3, imgScale + 0.2)">
+                  <i class="fa-solid fa-magnifying-glass-plus"></i>
+                </div>
+                <div class="tool-btn" title="缩小" @click="imgScale = Math.max(0.5, imgScale - 0.2)">
+                  <i class="fa-solid fa-magnifying-glass-minus"></i>
+                </div>
+                <div class="tool-btn" title="顺时针旋转90°" @click="imgRotation = (imgRotation + 90) % 360">
+                  <i class="fa-solid fa-rotate-right"></i>
+                </div>
+                <div class="tool-btn" title="重置视角" @click="imgScale = 1; imgRotation = 0;">
+                  <i class="fa-solid fa-arrows-rotate"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ②【BOM 明细】子面板 (原生高精度网格表格，完整还原图2与图3的18列与横向滚动) -->
+          <div class="bom-view-panel" v-if="detailActiveTab === 'bom'">
+            <div class="bom-table-scroll-wrapper">
+              <table class="bom-grid-table">
+                <thead>
+                  <tr>
+                    <th style="width: 75px; text-align: center;">
+                      <div class="th-select-box" @click="onToggleAllBomClick">
+                        <span class="custom-chk" :class="{ checked: allBomChecked, indeterminate: isBomIndeterminate }"></span>
+                        <span>选择</span>
+                      </div>
+                    </th>
+                    <th style="width: 55px; text-align: center;">序号</th>
+                    <th style="width: 140px; text-align: left;">名称</th>
+                    <th style="width: 160px; text-align: left;">型号</th>
+                    <th style="width: 120px; text-align: left;">品牌</th>
+                    <th style="width: 55px; text-align: center;">单位</th>
+                    <th style="width: 75px; text-align: right;">数量</th>
+                    <th style="width: 55px; text-align: center;">WL</th>
+                    <th style="width: 85px; text-align: right;">表价</th>
+                    <th style="width: 65px; text-align: right;">折扣</th>
+                    <th style="width: 65px; text-align: right;">报出</th>
+                    <th style="width: 85px; text-align: right;">单价</th>
+                    <th style="width: 95px; text-align: right;">总价</th>
+                    <th style="width: 100px; text-align: left;">备注</th>
+                    <th style="width: 110px; text-align: left;">物料编码</th>
+                    <th style="width: 80px; text-align: left;">产地</th>
+                    <th style="width: 85px; text-align: center;">类别</th>
+                    <th style="width: 85px; text-align: center;">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, index) in currentDetail?.bomItems || []" :key="index">
+                    <td style="text-align: center;">
+                      <span class="custom-chk" :class="{ checked: row.selected }" @click="row.selected = !row.selected"></span>
+                    </td>
+                    <td style="text-align: center;">{{ row.sortOrder || index + 1 }}</td>
+                    <td style="text-align: left;" :title="row.componentName">{{ row.componentName }}</td>
+                    <td style="text-align: left;" :title="row.modelSpec">{{ row.modelSpec }}</td>
+                    <td style="text-align: left;" :title="row.brand">{{ row.brand }}</td>
+                    <td style="text-align: center;">{{ row.unit || '台' }}</td>
+                    <td style="text-align: right;">{{ (row.isWlDoubled ? (row.quantity * loopMultiplier) : row.quantity).toFixed(1) }}</td>
+                    <td style="text-align: center;">
+                      <span class="custom-chk" :class="{ checked: row.isWlDoubled }" @click="row.isWlDoubled = !row.isWlDoubled"></span>
+                    </td>
+                    <td style="text-align: right;">{{ (row.catalogPrice || 0).toFixed(2) }}</td>
+                    <td style="text-align: right;">{{ (row.discount ?? 1.0).toFixed(1) }}</td>
+                    <td style="text-align: right;">{{ (row.quoteDiscount ?? 1.0).toFixed(1) }}</td>
+                    <td style="text-align: right;">{{ (row.quotePrice || 0).toFixed(2) }}</td>
+                    <td style="text-align: right; font-weight: 600;">
+                      {{ ((row.isWlDoubled ? row.quantity * loopMultiplier : row.quantity) * (row.quotePrice || 0)).toFixed(2) }}
+                    </td>
+                    <td style="text-align: left;" :title="row.remark">{{ row.remark }}</td>
+                    <td style="text-align: left;" :title="row.materialCode">{{ row.materialCode }}</td>
+                    <td style="text-align: left;" :title="row.origin">{{ row.origin }}</td>
+                    <td style="text-align: center;" :title="row.category">{{ row.category }}</td>
+                    <td style="text-align: center;">
+                      <div class="row-op-group">
+                        <span class="op-sym" :class="{ disabled: index === 0 }" @click="moveRowUp(index)" title="上移">↑</span>
+                        <span class="op-sym" :class="{ disabled: index === (currentDetail?.bomItems?.length || 0) - 1 }" @click="moveRowDown(index)" title="下移">↓</span>
+                        <span class="op-sym del" @click="deleteBomRow(index)" title="删除">✕</span>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="bom-footnote">
+              <span>选择: 选择所需BOM,插入/导出...</span>
+              <span class="wl-tip" style="background: none; color: #475569; padding: 0;">WL: 表示加入箱柜时，数量按回路数翻倍。</span>
+            </div>
+          </div>
+
+          <!-- ③【描述说明】子面板 -->
+          <div class="description-view-panel" v-if="detailActiveTab === 'description'">
+            <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px;">技术规格与使用说明</div>
+            <p>{{ currentDetail?.description || '暂无详细描述信息。' }}</p>
+          </div>
+        </div>
+
+        <!-- 详情底部控制台 (全屏、回路倍数、插入、下载、分享、收藏) -->
+        <div class="detail-action-footer">
+          <div>
+            <el-button link @click="toggleDetailFullscreen" title="全屏切换">
+              <i class="fa-solid fa-expand" style="font-size: 16px;"></i>
+            </el-button>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div class="multiplier-box">
+              <el-input-number v-model="loopMultiplier" :min="1" :max="100" size="small" style="width: 100px;" />
+              <span style="font-size: 13px; color: #475569;">个回路</span>
+            </div>
+
+            <button class="btn-img-orange" @click="onInsertCurrentDetail">
+              插入
+            </button>
+            <button class="btn-img-orange" @click="onExportBomExcel">
+              下载BOM
+            </button>
+            <button class="btn-img-orange" @click="onShareScheme">
+              分享
+            </button>
+            <button class="btn-img-outline" @click="onToggleFavoriteCurrent">
+              <i class="fa-solid fa-star" :style="{ color: currentDetail?.isFavorite ? '#ef4444' : '#f59e0b' }"></i>
+              {{ currentDetail?.isFavorite ? '已收藏' : '加入收藏' }}
+            </button>
+          </div>
+        </div>ick="deleteBomRow($index)" title="删除">
+                        <i class="fa-solid fa-xmark"></i>
+                      </el-button>
+                    </div>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+            <div class="bom-footnote">
+              <span>选择: 选择所需BOM,插入/导出...</span>
+              <span class="wl-tip">WL: 表示加入箱柜时，数量按回路数翻倍。</span>
+            </div>
+          </div>
+
+          <!-- ③【描述说明】子面板 -->
+          <div class="description-view-panel" v-if="detailActiveTab === 'description'">
+            <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px;">技术规格与使用说明</div>
+            <p>{{ currentDetail?.description || '暂无详细描述信息。' }}</p>
+          </div>
+        </div>
+
+        <!-- 详情底部控制台 (全屏、回路倍数、插入、下载、分享、收藏) -->
+        <div class="detail-action-footer">
+          <div>
+            <el-button link @click="toggleDetailFullscreen" title="全屏切换">
+              <i class="fa-solid fa-expand" style="font-size: 16px;"></i>
+            </el-button>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div class="multiplier-box">
+              <el-input-number v-model="loopMultiplier" :min="1" :max="100" size="small" style="width: 100px;" />
+              <span style="font-size: 13px; color: #475569;">个回路</span>
+            </div>
+
+            <el-button type="primary" @click="onInsertCurrentDetail">
+              插入
+            </el-button>
+            <el-button type="warning" plain @click="onExportBomExcel">
+              下载BOM
+            </el-button>
+            <el-button type="warning" plain @click="onShareScheme">
+              分享
+            </el-button>
+            <el-button link :type="currentDetail?.isFavorite ? 'danger' : 'warning'" @click="onToggleFavoriteCurrent">
+              <i class="fa-solid fa-star"></i> {{ currentDetail?.isFavorite ? '已收藏' : '加入收藏' }}
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 核心逻辑脚本 -->
+    <script setup>
+      const { createApp, ref, computed, onMounted } = Vue;
+
+      const app = createApp({
+        setup() {
+          // 状态定义
+          const currentScope = ref("industry"); // 'industry' | 'enterprise'
+          const currentSchemeType = ref("primary"); // 'primary' | 'secondary' | 'favorite'
+          const selectedCategoryId = ref("");
+          const filterCabinetModel = ref("");
+          const searchKeyword = ref("");
+          const sortBy = ref("hot");
+          const pageIndex = ref(1);
+          const pageSize = ref(12);
+          const totalCount = ref(0);
+          const schemeList = ref([]);
+          const loading = ref(false);
+
+          // 默认占位图
+          const defaultCover = "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=500&q=80";
+
+          // 企业方案自定义分类树
+          const enterpriseCategories = ref([
+            { id: "cat_ent_1", name: "低压进线方案" },
+            { id: "cat_ent_2", name: "电容补偿柜方案" },
+            { id: "cat_ent_3", name: "双电源切换方案" },
+            { id: "cat_ent_4", name: "风机水泵控制箱" }
+          ]);
+
+          // 方案详情模态状态
+          const detailVisible = ref(false);
+          const currentDetail = ref(null);
+          const detailActiveTab = ref("bom"); // 'drawing' | 'bom' | 'description'
+          const activeDrawingIndex = ref(0);
+          const imgScale = ref(1);
+          const imgRotation = ref(0);
+          const loopMultiplier = ref(1);
+          // 计算 BOM 是否处于半选状态
+          const isBomIndeterminate = computed(() => {
+            if (!currentDetail.value || !currentDetail.value.bomItems || currentDetail.value.bomItems.length === 0) return false;
+            const checkedCount = currentDetail.value.bomItems.filter(item => item.selected).length;
+            return checkedCount > 0 && checkedCount < currentDetail.value.bomItems.length;
+          });
+          // 全选/全不选 BOM 响应式计算属性
+          const allBomChecked = computed({
+            get() {
+              if (!currentDetail.value || !currentDetail.value.bomItems || currentDetail.value.bomItems.length === 0) return false;
+              return currentDetail.value.bomItems.every(item => item.selected);
+            },
+            set(val) {
+              if (!currentDetail.value || !currentDetail.value.bomItems) return;
+              currentDetail.value.bomItems.forEach(item => {
+                item.selected = val;
+              });
+            }
+          });
+
+          // 计算当前选中的卡片数量
+          const selectedCount = computed(() => {
+            return schemeList.value.filter(s => s.checked).length;
+          });
+
+          // 计算当前主视口图纸地址
+          const activeDrawingUrl = computed(() => {
+            if (!currentDetail.value || !currentDetail.value.drawingUrls || currentDetail.value.drawingUrls.length === 0) {
+              return currentDetail.value?.thumbnailUrl || defaultCover;
+            }
+            return currentDetail.value.drawingUrls[activeDrawingIndex.value] || currentDetail.value.drawingUrls[0];
+          });
+
+          // 动态重算当前详情勾选的 BOM 总金额
+          const calculatedTotalAmount = computed(() => {
+            if (!currentDetail.value || !currentDetail.value.bomItems) return 0;
+            return currentDetail.value.bomItems
+              .filter(item => item.selected)
+              .reduce((sum, item) => {
+                const qty = item.isWlDoubled ? (item.quantity * loopMultiplier.value) : item.quantity;
+                return sum + qty * (item.quotePrice || 0);
+              }, 0);
+          });
+
+          // 数字格式化 (如 12250 -> 1.2万)
+          const formatNumber = (num) => {
+            if (!num) return "0";
+            if (num >= 10000) return (num / 10000).toFixed(1) + "万";
+            if (num >= 1000) return (num / 1000).toFixed(1) + "k";
+            return num.toString();
+          };
+
+          // 切换一级 Tab
+          const switchScope = (scope) => {
+            currentScope.value = scope;
+            selectedCategoryId.value = "";
+            pageIndex.value = 1;
+            fetchSchemes();
+          };
+
+          // 切换二级 Tab
+          const switchSchemeType = (type) => {
+            currentSchemeType.value = type;
+            pageIndex.value = 1;
+            fetchSchemes();
+          };
+
+          // 切换分类
+          const onSelectCategory = (catId) => {
+            selectedCategoryId.value = catId;
+            pageIndex.value = 1;
+            fetchSchemes();
+          };
+
+          // 检索
+          const onSearch = () => {
+            pageIndex.value = 1;
+            fetchSchemes();
+          };
+
+          // 分页变化
+          const onPageChange = () => {
+            fetchSchemes();
+          };
+
+          // 异步向 C# 发送请求拉取方案列表
+          const fetchSchemes = () => {
+            loading.value = true;
+            const query = {
+              scope: currentScope.value,
+              schemeType: currentSchemeType.value,
+              categoryId: selectedCategoryId.value,
+              cabinetModel: filterCabinetModel.value,
+              keyword: searchKeyword.value,
+              sortBy: sortBy.value,
+              pageIndex: pageIndex.value,
+              pageSize: pageSize.value
+            };
+            postToHost("querySchemes", query);
+          };
+
+          // 打开方案详情
+          const openSchemeDetail = (scheme) => {
+            loading.value = true;
+            postToHost("getSchemeDetail", { id: scheme.id });
+          };
+
+          // 全选/反选 BOM
+          const onToggleAllBom = (val) => {
+            if (!currentDetail.value || !currentDetail.value.bomItems) return;
+            currentDetail.value.bomItems.forEach(item => {
+              item.selected = val;
+            });
+          };
+
+          // 点击表头全选/全不选 BOM
+          const onToggleAllBomClick = () => {
+            if (!currentDetail.value || !currentDetail.value.bomItems) return;
+            const target = !allBomChecked.value;
+            currentDetail.value.bomItems.forEach(item => {
+              item.selected = target;
+            });
+          };
+
+          // BOM 行上移
+          const moveRowUp = (index) => {
+            if (!currentDetail.value || !currentDetail.value.bomItems || index <= 0) return;
+            const items = currentDetail.value.bomItems;
+            const temp = items[index];
+            items[index] = items[index - 1];
+            items[index - 1] = temp;
+            items.forEach((item, idx) => {
+              item.sortOrder = idx + 1;
+            });
+          };
+
+          // BOM 行下移
+          const moveRowDown = (index) => {
+            if (!currentDetail.value || !currentDetail.value.bomItems || index >= currentDetail.value.bomItems.length - 1) return;
+            const items = currentDetail.value.bomItems;
+            const temp = items[index];
+            items[index] = items[index + 1];
+            items[index + 1] = temp;
+            items.forEach((item, idx) => {
+              item.sortOrder = idx + 1;
+            });
+          };
+
+          // BOM 行删除
+          const deleteBomRow = (index) => {
+            if (!currentDetail.value || !currentDetail.value.bomItems) return;
+            currentDetail.value.bomItems.splice(index, 1);
+            currentDetail.value.bomItems.forEach((item, idx) => {
+              item.sortOrder = idx + 1;
+            });
+          };
+
+          // 详情页全屏切换
+          const toggleDetailFullscreen = () => {
+            toggleMaximizeWindow();
+          };
+
+          // 切换收藏状态
+          const onToggleFavoriteCurrent = () => {
+            if (!currentDetail.value) return;
+            postToHost("toggleFavorite", { id: currentDetail.value.id });
+          };
+
+          // 插入当前方案 BOM 到 Excel
+          const onInsertCurrentDetail = () => {
+            if (!currentDetail.value) return;
+            const selectedItems = (currentDetail.value.bomItems || []).filter(item => item.selected);
+            if (selectedItems.length === 0) {
+              ElementPlus.ElMessage.warning("请至少勾选一项 BOM 元器件！");
+              return;
+            }
+            const dto = {
+              schemeId: currentDetail.value.id,
+              loopMultiplier: loopMultiplier.value,
+              insertMode: "newCabinet",
+              selectedBomItems: selectedItems
+            };
+            postToHost("insertSchemeToExcel", dto);
+          };
+
+          // 批量插入选中的卡片方案
+          const onBatchInsert = () => {
+            const checkedSchemes = schemeList.value.filter(s => s.checked);
+            if (checkedSchemes.length === 0) return;
+            ElementPlus.ElMessageBox.confirm(
+              `确定要将选中的 ${checkedSchemes.length} 个方案批量插入到当前工作表中吗？`,
+              "确认批量插入",
+              { confirmButtonText: "确定插入", cancelButtonText: "取消", type: "info" }
+            ).then(() => {
+              // 逐一插入
+              checkedSchemes.forEach(s => {
+                postToHost("getSchemeDetail", { id: s.id, autoInsert: true });
+              });
+            }).catch(() => {});
+          };
+
+          // 下载导出 BOM
+          const onExportBomExcel = () => {
+            ElementPlus.ElMessage.success("正在导出 BOM 清单到新工作簿...");
+          };
+
+          // 分享方案
+          const onShareScheme = () => {
+            ElementPlus.ElMessage.success("方案链接已复制到剪贴板！");
+          };
+
+          // 存当前柜为方案 Prompt
+          const onCaptureCabinetPrompt = () => {
+            ElementPlus.ElMessageBox.prompt(
+              "请输入新方案名称：",
+              "将 Excel 当前柜存入企业方案库",
+              { confirmButtonText: "立即保存", cancelButtonText: "取消", inputValue: "新企业箱柜方案" }
+            ).then(({ value }) => {
+              if (value && value.trim()) {
+                const newScheme = {
+                  schemeName: value.trim(),
+                  cabinetModel: "企业标准柜",
+                  dimensions: "800*800*2200",
+                  description: "从当前 Excel 工作表一键提炼沉淀的企业方案",
+                  scope: "enterprise",
+                  schemeType: currentSchemeType.value === "secondary" ? "secondary" : "primary",
+                  drawingUrls: [defaultCover],
+                  bomItems: [
+                    { sortOrder: 1, componentName: "塑壳断路器", modelSpec: "NM1-250S/3300", brand: "正泰", unit: "台", quantity: 1, isWlDoubled: false, quotePrice: 380 },
+                    { sortOrder: 2, componentName: "微型断路器", modelSpec: "DZ47-63 1P 16A", brand: "正泰", unit: "台", quantity: 6, isWlDoubled: true, quotePrice: 15 }
+                  ]
+                };
+                postToHost("saveEnterpriseScheme", newScheme);
+              }
+            }).catch(() => {});
+          };
+
+          // 新增分类
+          const onAddCategoryPrompt = () => {
+            ElementPlus.ElMessageBox.prompt("请输入新分类名称:", "新建分类", {
+              confirmButtonText: "添加",
+              cancelButtonText: "取消"
+            }).then(({ value }) => {
+              if (value && value.trim()) {
+                enterpriseCategories.value.push({
+                  id: "cat_ent_" + Date.now(),
+                  name: value.trim()
+                });
+                ElementPlus.ElMessage.success(`成功创建分类【${value.trim()}】`);
+              }
+            }).catch(() => {});
+          };
+
+          // 图片加载失败降级
+          const onImgError = (e) => {
+            e.target.src = defaultCover;
+          };
+
+          // 窗口原生交互指令
+          const onDragWindow = () => postToHost("dragWindow");
+          const minimizeWindow = () => postToHost("minimize");
+          const toggleMaximizeWindow = () => postToHost("toggleMaximize");
+          const closeWindow = () => postToHost("close");
+
+          // 与 C# WebView2 宿主通信信使
+          const postToHost = (action, data = null) => {
+            if (window.chrome?.webview) {
+              window.chrome.webview.postMessage({ action, data, id: data?.id });
+            }
+          };
+
+          // 监听 C# 回传的消息响应
+          window.addEventListener("DOMContentLoaded", () => {
+            if (window.chrome?.webview) {
+              window.chrome.webview.addEventListener("message", (event) => {
+                const envelope = event.data;
+                if (!envelope) return;
+                const { action, data } = envelope;
+
+                // 1. 查询方案列表响应
+                if (action === "querySchemesResult") {
+                  loading.value = false;
+                  if (data) {
+                    schemeList.value = (data.items || []).map(item => ({ ...item, checked: false }));
+                    totalCount.value = data.totalCount || 0;
+                  }
+                }
+                // 2. 获取详情响应
+                else if (action === "getSchemeDetailResult") {
+                  loading.value = false;
+                  if (data) {
+                    currentDetail.value = data;
+                    // 初始化 BOM 选中状态
+                    if (currentDetail.value.bomItems) {
+                      currentDetail.value.bomItems.forEach(b => {
+                        if (typeof b.selected === 'undefined') {
+                          b.selected = true;
+                        }
+                      });
+                    }
+                    activeDrawingIndex.value = 0;
+                    imgScale.value = 1;
+                    imgRotation.value = 0;
+                    loopMultiplier.value = 1;
+                    detailVisible.value = true;
+                  }
+                }
+                // 3. 切换收藏响应
+                else if (action === "toggleFavoriteResult") {
+                  if (currentDetail.value && currentDetail.value.id === data.id) {
+                    currentDetail.value.isFavorite = data.isFavorite;
+                  }
+                  // 同步刷新卡片状态
+                  const targetCard = schemeList.value.find(s => s.id === data.id);
+                  if (targetCard) {
+                    targetCard.isFavorite = data.isFavorite;
+                    targetCard.favCount += (data.isFavorite ? 1 : -1);
+                  }
+                  ElementPlus.ElMessage.success(data.isFavorite ? "已加入我的收藏！" : "已取消收藏！");
+                }
+                // 4. 保存企业方案响应
+                else if (action === "saveEnterpriseSchemeResult") {
+                  if (data.success) {
+                    ElementPlus.ElMessage.success("企业方案保存成功！");
+                    fetchSchemes();
+                  } else {
+                    ElementPlus.ElMessage.error("保存方案失败！");
+                  }
+                }
+                // 5. 插入 Excel 响应
+                else if (action === "insertSchemeToExcelResult") {
+                  if (data.success) {
+                    ElementPlus.ElMessage.success(data.message || "插入成功！");
+                  } else {
+                    ElementPlus.ElMessage.error(data.message || "插入失败！");
+                  }
+                }
+              });
+            }
+            // 首次启动拉取数据
+            fetchSchemes();
+          });
+
+          return {
+            currentScope,
+            currentSchemeType,
+            selectedCategoryId,
+            filterCabinetModel,
+            searchKeyword,
+            sortBy,
+            pageIndex,
+            pageSize,
+            totalCount,
+            schemeList,
+            loading,
+            defaultCover,
+            enterpriseCategories,
+            detailVisible,
+            currentDetail,
+            detailActiveTab,
+            activeDrawingIndex,
+            activeDrawingUrl,
+            imgScale,
+            imgRotation,
+            loopMultiplier,
+            allBomChecked,
+            isBomIndeterminate,
+            selectedCount,
+            calculatedTotalAmount,
+            formatNumber,
+            switchScope,
+            switchSchemeType,
+            onSelectCategory,
+            onSearch,
+            onPageChange,
+            openSchemeDetail,
+            onToggleAllBom,
+            onToggleAllBomClick,
+            moveRowUp,
+            moveRowDown,
+            deleteBomRow,
+            toggleDetailFullscreen,
+            onToggleFavoriteCurrent,
+            onInsertCurrentDetail,
+            onBatchInsert,
+            onExportBomExcel,
+            onShareScheme,
+            onCaptureCabinetPrompt,
+            onAddCategoryPrompt,
+            onImgError,
+            onDragWindow,
+            minimizeWindow,
+            toggleMaximizeWindow,
+            closeWindow
+          };
+        }
+      });
+
+      app.use(ElementPlus);
+      app.mount("#app");
+    </script>
+  </body>
+</html>
