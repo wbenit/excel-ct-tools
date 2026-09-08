@@ -366,6 +366,17 @@
               // 更新 Logo 数据
               form.logoBase64 = res.logoBase64;
             }
+            // 若响应动作为 saveSettingsResult，非模态提示保存结果并安全退出
+            else if (res && res.action === 'saveSettingsResult') {
+              if (res.success) {
+                ElementPlus.ElMessage.success(res.message || '企业设置数据已成功保存至本地！');
+                setTimeout(() => {
+                  window.chrome.webview.postMessage(JSON.stringify({ action: 'cancel' }));
+                }, 600);
+              } else {
+                ElementPlus.ElMessage.warning(res.message || '保存失败，请检查文件写入权限');
+              }
+            }
           } catch (e) {
             // 捕获打印异常 log
             console.error('解析后端反显数据发生异常:', e);

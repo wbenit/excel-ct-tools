@@ -394,12 +394,12 @@
           />
         </el-form-item>
 
-        <!-- 保存目录表单项：使用显式闭合标签 </el-input> 防止 HTML 解析器误将同级 el-button 当作子元素吞掉 -->
+        <!-- 保存目录表单项：支持弹窗浏览 + 极速粘贴双轨保障，防止系统外壳慢速枚举卡死 -->
         <el-form-item label="保存目录：" class="save-dir-item">
           <el-input
             class="underline-input dir-input"
             v-model="form.savePath"
-            placeholder="选择保存目录"
+            placeholder="选择或直接粘贴保存目录"
           ></el-input>
           <el-button
             type="primary"
@@ -407,7 +407,18 @@
             class="dir-btn"
             @click.stop="selectFolder"
             @mousedown.stop
+            title="调用系统原生文件夹浏览选择器"
             >更改目录</el-button
+          >
+          <el-button
+            type="success"
+            plain
+            size="small"
+            class="dir-btn paste-btn"
+            @click.stop="pasteFolderManual"
+            @mousedown.stop
+            title="直接粘贴 Windows 资源管理器路径，零弹窗极速直达"
+            >✍️ 粘贴路径</el-button
           >
         </el-form-item>
 
@@ -528,6 +539,30 @@
             }
           };
 
+          // 前端双轨保障机制：通过 ElMessageBox.prompt 支持直接粘贴 Windows 资源管理器路径，零弹窗极速直达
+          const pasteFolderManual = () => {
+            ElementPlus.ElMessageBox.prompt(
+              '请将 Windows 资源管理器地址栏路径直接粘贴在下方：',
+              '✍️ 极速粘贴保存目录',
+              {
+                confirmButtonText: '确定设定',
+                cancelButtonText: '取消',
+                inputValue: form.savePath || '',
+                inputPlaceholder: '例如: D:\\项目\\2026工程报价',
+                inputValidator: (val) => {
+                  if (!val || !val.trim()) return '保存目录路径不可为空';
+                  return true;
+                }
+              }
+            ).then(({ value }) => {
+              const cleanPath = (value || '').trim();
+              if (cleanPath) {
+                form.savePath = cleanPath;
+                ElementPlus.ElMessage.success('已成功设定保存目录！');
+              }
+            }).catch(() => {});
+          };
+
           const handleTodo = () => {
             ElementPlus.ElMessage.success("已将该项目加入待办任务列表");
           };
@@ -643,6 +678,7 @@
             toggleExpand,
             refreshQuoteNumber,
             selectFolder,
+            pasteFolderManual,
             handleTodo,
             refreshData,
             cancel,

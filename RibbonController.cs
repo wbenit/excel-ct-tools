@@ -95,13 +95,22 @@ namespace ExcelAddInDemo
             <!-- 国网报价项 -->
             <button id='btnStateGridQuoteSub' label='国网报价' onAction='OnMenuAction' />
           </menu>
-          <!-- 分类功能按钮 (SplitButton 支持大图标一键直达与下拉菜单) -->
+          <!-- 分类功能按钮 (SplitButton 支持大图标与下拉菜单，完整对齐 ExWinner 布局) -->
           <splitButton id='splitCategory' size='large'>
             <!-- 顶部大图标一键直接触发新建分类 -->
-            <button id='btnCategorySub' label='新建分类' imageMso='GroupOutline' onAction='OnMenuAction' />
+            <button id='btnCategorySub' label='分类' imageMso='GroupOutline' onAction='OnMenuAction' />
             <!-- 下拉菜单列表 -->
             <menu id='menuCategory' label='分类'>
-              <button id='btnCategorySubMenu' label='新建分类' onAction='OnMenuAction' />
+              <!-- 1. 新建分类 -->
+              <button id='btnNewCategory' label='新建分类' imageMso='GroupOutline' onAction='OnMenuAction' />
+              <!-- 2. 编辑分类 -->
+              <button id='btnEditCategory' label='编辑分类' imageMso='EditPage' onAction='OnMenuAction' />
+              <!-- 3. 复制分类 -->
+              <button id='btnCopyCategory' label='复制分类' imageMso='Copy' onAction='OnMenuAction' />
+              <!-- 4. 插入复制的分类 -->
+              <button id='btnInsertCopiedCategory' label='插入复制的分类' imageMso='Paste' onAction='OnMenuAction' />
+              <!-- 5. 删除分类 -->
+              <button id='btnDeleteCategory' label='删除分类' imageMso='Delete' onAction='OnMenuAction' />
             </menu>
           </splitButton>
           <!-- 箱柜下拉菜单 -->
@@ -443,11 +452,35 @@ namespace ExcelAddInDemo
                 // 弹出基于 WebView2 + Vue 3 的“公式法调费”窗口
                 ExcelServices.ShowFormulaAdjustFeeDialog();
             }
-            // 响应“新建分类”按钮指令 (支持 splitButton 顶部直达与下拉菜单项)
-            else if (controlId == "btnCategorySub" || controlId == "btnCategorySubMenu")
+            // 响应“新建分类”按钮指令 (支持 splitButton 顶部直达与下拉菜单新建项)
+            else if (controlId == "btnCategorySub" || controlId == "btnNewCategory" || controlId == "btnCategorySubMenu")
             {
-                // 弹出基于 WebView2 + Vue 3 的“新建分类”窗口
-                ExcelServices.ShowCategoryDialog();
+                // 弹出基于 WebView2 + Vue 3 的新建分类窗口
+                ExcelServices.ShowCategoryDialog("create");
+            }
+            // 响应“编辑分类”按钮指令
+            else if (controlId == "btnEditCategory")
+            {
+                // 弹出基于 WebView2 + Vue 3 的编辑分类名称窗口
+                ExcelServices.ShowEditCategoryDialog();
+            }
+            // 响应“复制分类”按钮指令
+            else if (controlId == "btnCopyCategory")
+            {
+                // 暂存记忆当前选中的分类工作表
+                ExcelServices.CopyCurrentCategory();
+            }
+            // 响应“插入复制的分类”按钮指令
+            else if (controlId == "btnInsertCopiedCategory")
+            {
+                // 弹出插入复制分类确认窗口并执行克隆与项目信息联动
+                ExcelServices.ShowInsertCopiedCategoryDialog();
+            }
+            // 响应“删除分类”按钮指令
+            else if (controlId == "btnDeleteCategory")
+            {
+                // 执行删除分类全流程 (含防呆二次确认与项目信息汇总行同步物理移除)
+                ExcelServices.DeleteCurrentCategory();
             }
             // 响应“汇总调价”按钮指令
             else if (controlId == "btnSummaryAdjustPrice")

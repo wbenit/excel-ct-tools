@@ -41,11 +41,18 @@ namespace ExcelAddInDemo.Forms
             WriteIndented = true
         };
 
+        // 当前窗口的操作模式 (create / edit / insertCopied)
+        private readonly string _mode;
+
         /// <summary>
-        /// 构造函数: 初始化控制器与 WebView2 控件属性
+        /// 构造函数: 初始化控制器与 WebView2 控件属性并指定业务模式
         /// </summary>
-        public CategoryForm()
+        /// <param name="mode">模式标识: create / edit / insertCopied</param>
+        public CategoryForm(string mode = "create")
         {
+            // 保存模式标识
+            _mode = string.IsNullOrWhiteSpace(mode) ? "create" : mode.Trim();
+
             // 实例化分类控制器
             _controller = new CategoryController();
 
@@ -60,15 +67,27 @@ namespace ExcelAddInDemo.Forms
         }
 
         /// <summary>
-        /// 配置窗体基本外观与尺寸 (480x420 像素)
+        /// 配置窗体基本外观与尺寸 (根据业务模式自适应)
         /// </summary>
         private void InitializeFormProperties()
         {
-            // 设置窗体标题文本
-            this.Text = "新建分类";
-
-            // 依据界面布局与元素高度设定尺寸为 480x420 像素，确保底部确定与取消按钮完整展示
-            this.ClientSize = new Size(480, 420);
+            // 根据不同的模式设定标题与高度
+            if (_mode == "edit")
+            {
+                this.Text = "编辑分类";
+                this.ClientSize = new Size(460, 320);
+            }
+            else if (_mode == "insertCopied")
+            {
+                this.Text = "插入复制的分类";
+                this.ClientSize = new Size(460, 320);
+            }
+            else
+            {
+                // 默认新建模式
+                this.Text = "新建分类";
+                this.ClientSize = new Size(480, 420);
+            }
 
             // 设置屏幕中央弹出
             this.StartPosition = FormStartPosition.CenterScreen;
@@ -250,10 +269,10 @@ namespace ExcelAddInDemo.Forms
                         break;
 
                     case "getSuggestInfo":
-                        // 前端页面加载时请求分类建议与公式组数据
+                        // 前端页面加载时请求分类建议与公式组数据，传递当前窗口业务模式
                         SafeInvoke(() =>
                         {
-                            var suggestInfo = _controller.GetCategorySuggestInfo();
+                            var suggestInfo = _controller.GetCategorySuggestInfo(_mode);
                             var resObj = new
                             {
                                 action = "renderSuggestInfo",
@@ -302,6 +321,82 @@ namespace ExcelAddInDemo.Forms
                         }
                         break;
 
+                    case "editCategory":
+                        // 响应前端提交编辑分类请求
+                        if (root.TryGetProperty("data", out var editProp))
+                        {
+                            var req = JsonSerializer.Deserialize<EditCategoryRequest>(editProp.GetRawText(), JsonOptions);
+                            if (req != null)
+                            {
+                                SafeInvoke(() =>
+                                {
+                                    // 调度控制器执行重命名操作
+                                    var result = _controller.EditCategory(req);
+
+                                    // 回发操作结果消息
+                                    var resObj = new
+                                    {
+                                        action = "editCategoryResult",
+                                        data = result
+                                    };
+                                    string resJson = JsonSerializer.Serialize(resObj, JsonOptions);
+                                    _webView.CoreWebView2.PostWebMessageAsString(resJson);
+
+                                    // 若重命名成功，延时关闭窗口
+                                    if (result.Success)
+                                    {
+                                        var closeTimer = new System.Windows.Forms.Timer { Interval = 300 };
+                                        closeTimer.Tick += (s, args) =>
+                                        {
+                                            closeTimer.Stop();
+                                            closeTimer.Dispose();
+                                            this.Close();
+                                        };
+                                        closeTimer.Start();
+                                    }
+                                });
+                            }
+                        }
+                        break;
+
+                    case "insertCopiedCategory":
+                        // 响应前端提交插入复制分类请求
+                        if (root.TryGetProperty("data", out var copyProp))
+                        {
+                            var req = JsonSerializer.Deserialize<InsertCopiedCategoryRequest>(copyProp.GetRawText(), JsonOptions);
+                            if (req != null)
+                            {
+                                SafeInvoke(() =>
+                                {
+                                    // 调度控制器执行复制克隆与项目信息联动
+                                    var result = _controller.InsertCopiedCategory(req);
+
+                                    // 回发操作结果消息
+                                    var resObj = new
+                                    {
+                                        action = "insertCopiedCategoryResult",
+                                        data = result
+                                    };
+                                    string resJson = JsonSerializer.Serialize(resObj, JsonOptions);
+                                    _webView.CoreWebView2.PostWebMessageAsString(resJson);
+
+                                    // 若插入成功，延时关闭窗口
+                                    if (result.Success)
+                                    {
+                                        var closeTimer = new System.Windows.Forms.Timer { Interval = 300 };
+                                        closeTimer.Tick += (s, args) =>
+                                        {
+                                            closeTimer.Stop();
+                                            closeTimer.Dispose();
+                                            this.Close();
+                                        };
+                                        closeTimer.Start();
+                                    }
+                                });
+                            }
+                        }
+                        break;
+
                     case "cancel":
                     case "close":
                         // 关闭当前新建分类窗口
@@ -313,6 +408,28 @@ namespace ExcelAddInDemo.Forms
             {
                 LogHelper.WriteLog($"处理新建分类 WebMessage 异常: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 窗体关闭时显式释放 WebView2 控件资源，杜绝进程残留与 Excel 退出阻塞
+        /// </summary>
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            try
+            {
+                // 解绑 WebMessageReceived 事件防止悬空引用
+                if (_webView?.CoreWebView2 != null)
+                {
+                    _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+                }
+                // 显式销毁 WebView2 控件释放底层 Chromium 句柄
+                _webView?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[CategoryForm] OnFormClosing 释放异常: {ex.Message}");
+            }
+            base.OnFormClosing(e);
         }
     }
 }

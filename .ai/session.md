@@ -3,7 +3,40 @@
 ## [In-Progress]
 
 
-## [Completed]
+- **分类跳转超链接挂载位置对齐 ExWinner 原生规范（A 列数字超链接跳转、B 列纯名称展示与历史错乱自愈引擎）全面交付 (`Services/ExcelServices.Category.cs`)**：
+  1. **A 列序号挂载超链接**：
+     - 在 `UpdateProjectInfoCategorySummary` 中将超链接挂载列彻底从 B 列迁移至 A 列（`Anchor: infoSheet.Range[$"A{targetInfoRow}"]`）；
+     - 超链接 SubAddress 精准指向 `$"'{categorySheetName}'!A1"`，屏幕提示（ScreenTip）规范设置为 `"点击进入本分类报价清单"`（打标 `--硬编码: 屏幕提示文本--`）；
+     - 写入动态序号公式 `=ROW()-ROW(A${headerRowIndex})`，公式计算出的数字 1, 2, 3... 自动具备超链接蓝色下划线与手型光标，点击数字直接激活目标分类表！
+  2. **B 列写入 CELL("filename") 动态工作表名公式（随 Sheet 改名自动无感级联联动）**：
+     - 在 `UpdateProjectInfoCategorySummary`、`RenameProjectInfoCategorySummary` 与 `NormalizeCategorySummaryLinks` 中，将 B 列改为写入 `=MID(CELL("filename",'{categoryName}'!$A$1),FIND("]",CELL("filename",'{categoryName}'!$A$1))+1,31)` 动态公式；
+     - 显式调用 `infoSheet.Range[$"B{r}"].Hyperlinks.Delete()` 彻底清除超链接下划线，恢复纯净单元格公式；
+     - 只要用户在底栏 Tab 或通过程序修改了分类工作表名称，B 列分类名称由 Excel 引擎原生自动刷新，无需后台重复遍历改写。
+  3. **分类重命名与插入复制全面同步**：
+     - 在 `RenameProjectInfoCategorySummary` 中同步更新 A 列超链接的 SubAddress 至最新分类工作表名，B 列清除超链接并更新为新名称；
+     - 在 `InitializeCategorySheet` 与 `InsertCopiedCategory` 的箱柜汇总行 A 列超链接中补全 `ScreenTip: "点击进入本箱柜明细表"`。
+  4. **构建全工作簿分类汇总超链接自愈规范化引擎 (`NormalizeCategorySummaryLinks`)**：
+     - 提供跨表自愈引擎：自动扫描【项目信息】表的分类汇总区域，智能排查并修复历史文件中因模板名称丢失导致的 `#NAME?`、B 列误挂超链接、A 列缺超链接等格式缺陷；
+     - 在打开分类管理窗口（`GetSuggestedCategoryInfo`）时自动静默自愈，确保用户既有文件一键无感对齐。
+  5. **工程编译验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 错误**；代码注释规范完整，硬编码均打标 `--硬编码--`。
+
+  1. **彻底根除 `MessageBox.Show` 阻塞死锁，升级为异步非模态通信**：
+     - 在 `FormulaAdjustFeeForm` 中移除 `applyFormula` 下的 `MessageBox.Show`，改为通过 `PostWebMessageSafe` 回传 `applyFormulaResult`，由前端 `ElMessage` 友好提示；
+     - 在 `EnterpriseSettingsForm` 中移除保存成功/失败的 `MessageBox.Show`，改为回传 `saveSettingsResult`，前端通过 `ElMessage` 提示并延时平滑退出；
+     - 在 `CreateProjectForm` 中将异常直接回传 `startQuotationResult` 并打标日志，彻底杜绝 Chromium IPC 模态死锁。
+  2. **全面对齐 local-heuristics.md:L133：新建项目补充“✍️ 粘贴路径”双轨保障**：
+     - 在 `create_project.html` 的保存目录旁新增 `✍️ 粘贴路径` 绿色扁平按钮；
+     - 通过 `ElMessageBox.prompt` 弹出原生输入框，支持直接粘贴 Windows 资源管理器路径，零弹窗极速设定，彻底绕过系统外壳慢速磁盘枚举卡顿。
+  3. **二次方案管理中心拖拽机制升级 (杜绝系统级全局鼠标捕获死锁)**：
+     - 在 `SecondaryCircuitForm.cs` 中增加 `moveWindow` 物理增量坐标位移处理；
+     - 将 `secondary_circuit_manage.html` 标题栏拖拽全面升级为现代 `pointerdown` + `moveWindow`（带 `rAF` 节流与 DPI 适配）；
+     - 在 `dragWindow` 兜底中引入 `(GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0` 物理按键检测，物理按键弹起时坚决丢弃，彻底根绝全屏幕鼠标锁死。
+  4. **建立全工程窗体生命周期释放保护机制 (杜绝 Excel 进程残留)**：
+     - 在 `FormulaAdjustFeeForm`、`EnterpriseSettingsForm`、`CreateProjectForm`、`SecondaryCircuitForm`、`CabinetAuxCalcForm`、`CategoryForm`、`SummaryAdjustPriceForm`、`TenderReportRegularForm`、`ModelParamParserForm`、`ComponentManageForm`、`ComponentGroupBuilderForm`、`SmartInputForm`、`SpotlightSettingForm` 中全部显式重写 `OnFormClosing`，解绑 WebMessageReceived 事件并显式调用 `_webView?.Dispose()`，彻底根除关闭 Excel 时由于后台 Chromium 子进程等待导致的进程僵死残留问题。
+  5. **工程构建与热同步**：
+     - `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 错误**；
+     - 修改的 HTML 资源已全量热同步至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`。
 
 - **公式法调费总计行下边框线条保护与自动修复全面交付 (`Services/ExcelServices.FormulaAdjustFee.cs`)**：
   1. **总计行封底实线丢失根因排查与差额删行位置重构**：
@@ -1236,15 +1269,20 @@
 
 ## [Completed]
 
-- 二次回路图纸对齐工作台最右下方参数区域显示不全彻底修复闭环。
+- **基于 ExWinner 工业标准的【分类】全功能与【项目信息】表双向联动落地 (`RibbonController.cs`, `Services/ExcelServices.Category.cs`, `Forms/CategoryForm.cs`, `Resources/category.html`, `Controllers/CategoryController.cs`, `Models/CategoryModels.cs`)**：
+  1. **Ribbon 功能区 5 大操作对齐**：完整实现【分类】下拉菜单：新建分类、编辑分类、复制分类、插入复制的分类、删除分类；
+  2. **项目信息表标准联动公式体系**：写入与母版 100% 对齐的 C~H 列公式（箱柜数量、总价、成本、毛利、毛利率、箱变智能识别），并集成遇小计行自动插入物理行 (`Insert(-4121)`) 的防覆盖机制；
+  3. **删除与重命名的强自愈**：删除分类时同步物理删除【项目信息】中的对应行，序号公式 `=ROW()-ROW(A$28)` 自动递补，彻底消除 `#REF!`；重命名分类时自动更新超链接与公式表名引用；
+  4. **复制分类与定义名称唯一性**：克隆源工作表并清洗跨表公式，重新扫描全工作簿并为新表分配全局递增唯一的定义名称（`Cab_Sum_K`、`Cab_Det_K` 等），彻底杜绝跨表名称冲突；
+  5. **自适应三合一 WebView2 窗体**：`category.html` 升级为新建/编辑/插入复制三合一自适应界面，微秒级平滑位移拖拽，已全量同步并编译通过 (0 Errors)。
 
 ## [In-Progress]
 
-- 监听用户在实际 Excel 环境中使用对齐工作台的反馈。
+- 等待用户在 Excel 环境中实测体验【分类】下拉菜单 5 大功能及与【项目信息】表的联动效果。
 
 ## [Next]
 
-- 根据用户节奏推进后续优化任务。
+- 根据用户实际反馈推进下一阶段优化。
 
 
 

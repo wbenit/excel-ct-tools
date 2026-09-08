@@ -462,7 +462,21 @@ namespace ExcelAddInDemo
                         }
                         break;
 
-                    // 6. 无边框窗口拖拽 (严格基于物理按键检测防幽灵死锁)
+                    // 6.0 响应窗口平滑物理增量位移指令 (彻底杜绝 Win32 模态拖拽卡死与 Excel 崩溃)
+                    case "moveWindow":
+                        int deltaX = root.TryGetProperty("deltaX", out var dxProp) ? dxProp.GetInt32() : 0;
+                        int deltaY = root.TryGetProperty("deltaY", out var dyProp) ? dyProp.GetInt32() : 0;
+                        if (deltaX != 0 || deltaY != 0)
+                        {
+                            SafeInvoke(() =>
+                            {
+                                // 直接更新窗体屏幕物理坐标，微秒级响应且绝不挂起 STA 消息泵
+                                this.Location = new Point(this.Left + deltaX, this.Top + deltaY);
+                            });
+                        }
+                        break;
+
+                    // 6.1 无边框窗口拖拽 (旧版兼容兜底，严格基于物理按键检测防幽灵死锁)
                     case "dragWindow":
                         SafeInvoke(() =>
                         {
@@ -536,6 +550,28 @@ namespace ExcelAddInDemo
             {
                 action();
             }
+        }
+
+        /// <summary>
+        /// 窗体关闭时显式释放 WebView2 控件资源，杜绝进程残留与 Excel 退出阻塞
+        /// </summary>
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            try
+            {
+                // 解绑 WebMessageReceived 事件防止悬空引用
+                if (_webView?.CoreWebView2 != null)
+                {
+                    _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+                }
+                // 显式销毁 WebView2 控件释放底层 Chromium 句柄
+                _webView?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[SecondaryCircuitForm] OnFormClosing 释放异常: {ex.Message}");
+            }
+            base.OnFormClosing(e);
         }
     }
 }
