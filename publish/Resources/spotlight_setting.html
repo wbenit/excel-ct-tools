@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>聚光灯设置</title>
+  <!-- 引入 Element Plus 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <!-- 引入 Font Awesome 图标库 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- 引入 Vue 3 核心库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入 Element Plus 组件库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <!-- 引入公共绿蓝相间主题样式 (主色调 #009688) -->
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    /* 全局重置与基础设定 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+      user-select: none;
+      background-color: #f8fafc;
+      color: #1e293b;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      border: 1px solid #cbd5e1;
+      background-color: #ffffff;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+    }
+
+    /* 顶部可拖拽标题栏 */
+    .window-header {
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      background: var(--theme-gradient, linear-gradient(135deg, #009688 0%, #00796b 100%));
+      color: #ffffff;
+      cursor: move;
+      flex-shrink: 0;
+      touch-action: none; /* 禁用系统触控手势干扰 */
+    }
+
+    .window-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13.5px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    .window-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .action-btn {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      transition: background-color 0.2s ease;
+      color: #ffffff;
+    }
+
+    .action-btn:hover {
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .action-btn.close:hover {
+      background-color: #ef4444;
+    }
+
+    /* 主体设置滚动区域 */
+    .setting-body {
+      flex: 1;
+      padding: 16px 20px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* 设置卡片容器 */
+    .setting-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 14px 16px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    }
+
+    .setting-card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .setting-card-title i {
+      color: var(--theme-main, #009688);
+    }
+
+    /* 模式切换卡片网格 */
+    .mode-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .mode-card {
+      border: 2px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      cursor: pointer;
+      background: #ffffff;
+      transition: all 0.2s ease;
+    }
+
+    .mode-card:hover {
+      border-color: #80cbc4;
+      background: #f0fdf4;
+    }
+
+    .mode-card.active {
+      border-color: var(--theme-main, #009688);
+      background: #e0f2f1;
+      color: var(--theme-main, #009688);
+      font-weight: 600;
+    }
+
+    .mode-icon {
+      font-size: 20px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .mode-name {
+      font-size: 12.5px;
+    }
+
+    /* 颜色配置行 */
+    .color-section {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .preset-colors {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .color-dot {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .color-dot:hover {
+      transform: scale(1.15);
+    }
+
+    .color-dot.active {
+      border-color: #ffffff;
+      outline: 2px solid var(--theme-main, #009688);
+      transform: scale(1.1);
+    }
+
+    .color-dot i {
+      color: #ffffff;
+      font-size: 11px;
+      filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.4));
+    }
+
+    /* 滑块与数值行 */
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .slider-row .el-slider {
+      flex: 1;
+    }
+
+    .slider-val-badge {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--theme-main, #009688);
+      background: #e0f2f1;
+      padding: 2px 8px;
+      border-radius: 4px;
+      min-width: 44px;
+      text-align: center;
+    }
+
+    /* 开关行 */
+    .switch-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .switch-desc {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .switch-title {
+      font-size: 12.5px;
+      font-weight: 500;
+      color: #1e293b;
+    }
+
+    .switch-sub {
+      font-size: 11.5px;
+      color: #64748b;
+    }
+
+    /* 实时预览提醒条 */
+    .preview-tip-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #15803d;
+    }
+
+    /* 底部操作工具栏 */
+    .window-footer {
+      height: 52px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid #e2e8f0;
+      background: #f8fafc;
+      flex-shrink: 0;
+    }
+
+    .footer-left {
+      display: flex;
+      align-items: center;
+    }
+
+    .footer-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部拖拽标题栏 (无阻塞物理增量移动) -->
+    <div class="window-header" @pointerdown="onHeaderPointerDown">
+      <div class="window-title">
+        <i class="fa-solid fa-lightbulb"></i>
+        <span>聚光灯个性化设置</span>
+      </div>
+      <div class="window-actions">
+        <div class="action-btn close" title="关闭窗口" @pointerdown.stop @click.stop="closeWindow">
+          <i class="fa-solid fa-xmark"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主体设置内容 -->
+    <div class="setting-body">
+      <!-- 实时联动提示条 -->
+      <div class="preview-tip-box">
+        <i class="fa-solid fa-circle-check"></i>
+        <span>实时联动已就绪：修改任何参数，背后的 Excel 表格即时同步预览！</span>
+      </div>
+
+      <!-- 1. 高亮展示模式 -->
+      <div class="setting-card">
+        <div class="setting-card-title">
+          <i class="fa-solid fa-table-cells"></i>
+          <span>高亮展示模式</span>
+        </div>
+        <div class="mode-grid">
+          <div class="mode-card" :class="{ active: form.mode === 0 }" @click="changeMode(0)">
+            <div class="mode-icon"><i class="fa-solid fa-crosshairs"></i></div>
+            <div class="mode-name">十字高亮</div>
+          </div>
+          <div class="mode-card" :class="{ active: form.mode === 1 }" @click="changeMode(1)">
+            <div class="mode-icon"><i class="fa-solid fa-arrows-left-right"></i></div>
+            <div class="mode-name">仅行高亮</div>
+          </div>
+          <div class="mode-card" :class="{ active: form.mode === 2 }" @click="changeMode(2)">
+            <div class="mode-icon"><i class="fa-solid fa-arrows-up-down"></i></div>
+            <div class="mode-name">仅列高亮</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 主题色彩设置 -->
+      <div class="setting-card">
+        <div class="setting-card-title">
+          <i class="fa-solid fa-palette"></i>
+          <span>高亮色彩搭配</span>
+        </div>
+        <div class="color-section">
+          <!-- 预设色彩方块 -->
+          <div class="preset-colors">
+            <div 
+              v-for="c in presetColors" 
+              :key="c.hex" 
+              class="color-dot" 
+              :style="{ backgroundColor: c.hex }" 
+              :class="{ active: form.colorHex.toLowerCase() === c.hex.toLowerCase() }"
+              :title="c.name"
+              @click="changeColor(c.hex)"
+            >
+              <i v-if="form.colorHex.toLowerCase() === c.hex.toLowerCase()" class="fa-solid fa-check"></i>
+            </div>
+          </div>
+          <!-- 自定义拾色器 -->
+          <el-color-picker v-model="form.colorHex" size="default" @change="onColorPickerChange" />
+        </div>
+      </div>
+
+      <!-- 3. 半透明不透明度调节 -->
+      <div class="setting-card">
+        <div class="setting-card-title">
+          <i class="fa-solid fa-droplet"></i>
+          <span>透明度调节 (数值越大越浓，推荐 22%)</span>
+        </div>
+        <div class="slider-row">
+          <el-slider 
+            v-model="displayOpacity" 
+            :min="5" 
+            :max="80" 
+            :step="1" 
+            @input="onOpacityChange" 
+          />
+          <div class="slider-val-badge">{{ displayOpacity }}%</div>
+        </div>
+      </div>
+
+      <!-- 4. 活动单元格镂空选项 -->
+      <div class="setting-card">
+        <div class="switch-row">
+          <div class="switch-desc">
+            <div class="switch-title">镂空当前活动单元格</div>
+            <div class="switch-sub">开启后，正在编辑的单元格中心不覆盖颜色，避免遮挡光标与文字</div>
+          </div>
+          <el-switch v-model="form.excludeActiveCell" @change="onExcludeCellChange" />
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部操作按钮 -->
+    <div class="window-footer">
+      <div class="footer-left">
+        <el-button type="info" link @click="resetToDefault">
+          <i class="fa-solid fa-rotate-left" style="margin-right: 4px;"></i> 恢复默认
+        </el-button>
+      </div>
+      <div class="footer-right">
+        <el-button @click="closeWindow">取消</el-button>
+        <el-button type="primary" @click="saveConfig">
+          <i class="fa-solid fa-floppy-disk" style="margin-right: 4px;"></i> 保存设置
+        </el-button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, computed, onMounted } = Vue;
+
+    createApp({
+      setup() {
+        // 表单响应式数据
+        const form = reactive({
+          isEnabled: true,
+          mode: 0,
+          colorHex: '#009688',
+          opacity: 0.22,
+          excludeActiveCell: false
+        });
+
+        // 预设高颜值配色方案
+        const presetColors = [
+          { name: '经典青绿 (默认)', hex: '#009688' },
+          { name: '薄荷翠绿', hex: '#10B981' },
+          { name: '科技天青', hex: '#06B6D4' },
+          { name: '商务蔚蓝', hex: '#3B82F6' },
+          { name: '暖阳浅橙', hex: '#F59E0B' },
+          { name: '优雅浅紫', hex: '#8B5CF6' }
+        ];
+
+        // 整数百分比显示属性 (5 ~ 80)
+        const displayOpacity = ref(22);
+
+        // 向 C# 后端安全发送 WebMessage 消息 (显式 JSON 字符串化，彻底兼容 WebView2 C# 底层解析)
+        const postToCSharp = (payload) => {
+          if (window.chrome && window.chrome.webview) {
+            try {
+              window.chrome.webview.postMessage(JSON.stringify(payload));
+            } catch (err) {
+              window.chrome.webview.postMessage(payload);
+            }
+          }
+        };
+
+        // 触发即时预览
+        const triggerPreview = () => {
+          // 同步 opacity 浮点值 (0.05 ~ 0.80)
+          form.opacity = Math.round(displayOpacity.value) / 100.0;
+          postToCSharp({
+            action: 'previewConfig',
+            data: { ...form },
+            config: { ...form }
+          });
+        };
+
+        // 切换高亮模式
+        const changeMode = (m) => {
+          form.mode = m;
+          triggerPreview();
+        };
+
+        // 切换预设颜色
+        const changeColor = (hex) => {
+          form.colorHex = hex;
+          triggerPreview();
+        };
+
+        // 拾色器颜色改变
+        const onColorPickerChange = (val) => {
+          if (val) {
+            form.colorHex = val;
+            triggerPreview();
+          }
+        };
+
+        // 滑块数值拖动更新
+        const onOpacityChange = (val) => {
+          displayOpacity.value = val;
+          triggerPreview();
+        };
+
+        // 镂空开关切换
+        const onExcludeCellChange = (val) => {
+          form.excludeActiveCell = val;
+          triggerPreview();
+        };
+
+        // 保存配置
+        const saveConfig = () => {
+          form.opacity = Math.round(displayOpacity.value) / 100.0;
+          postToCSharp({
+            action: 'saveConfig',
+            data: { ...form },
+            config: { ...form }
+          });
+        };
+
+        // 恢复默认配置
+        const resetToDefault = () => {
+          form.mode = 0;
+          form.colorHex = '#009688';
+          displayOpacity.value = 22;
+          form.opacity = 0.22;
+          form.excludeActiveCell = false;
+          postToCSharp({ action: 'resetDefault' });
+          ElementPlus.ElMessage.success('已恢复为默认配置！');
+        };
+
+        // 关闭窗口 (取消并还原初始配置)
+        const closeWindow = () => {
+          postToCSharp({
+            action: 'closeWindow'
+          });
+        };
+
+        // ------------------ 物理增量非模态平滑拖拽 ------------------
+        let isDragging = false;
+        let startClientX = 0;
+        let startClientY = 0;
+        let rAFId = null;
+        let accumulatedDx = 0;
+        let accumulatedDy = 0;
+
+        const onHeaderPointerDown = (e) => {
+          if (e.target.closest('.action-btn')) return;
+          isDragging = true;
+          startClientX = e.clientX;
+          startClientY = e.clientY;
+          accumulatedDx = 0;
+          accumulatedDy = 0;
+          e.currentTarget.setPointerCapture(e.pointerId);
+
+          const onPointerMove = (moveEvent) => {
+            if (!isDragging) return;
+            const currentDx = moveEvent.clientX - startClientX;
+            const currentDy = moveEvent.clientY - startClientY;
+            startClientX = moveEvent.clientX;
+            startClientY = moveEvent.clientY;
+
+            const scale = window.devicePixelRatio || 1;
+            accumulatedDx += currentDx * scale;
+            accumulatedDy += currentDy * scale;
+
+            if (!rAFId) {
+              rAFId = requestAnimationFrame(() => {
+                const sendX = Math.round(accumulatedDx);
+                const sendY = Math.round(accumulatedDy);
+                accumulatedDx -= sendX;
+                accumulatedDy -= sendY;
+                rAFId = null;
+
+                if (sendX !== 0 || sendY !== 0) {
+                  postToCSharp({
+                    action: 'moveWindow',
+                    deltaX: sendX,
+                    deltaY: sendY
+                  });
+                }
+              });
+            }
+          };
+
+          const onPointerUp = (upEvent) => {
+            isDragging = false;
+            if (rAFId) {
+              cancelAnimationFrame(rAFId);
+              rAFId = null;
+            }
+            try {
+              upEvent.currentTarget.releasePointerCapture(upEvent.pointerId);
+            } catch {}
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+          };
+
+          window.addEventListener('pointermove', onPointerMove);
+          window.addEventListener('pointerup', onPointerUp);
+        };
+
+        // 挂载消息侦听与初始化
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (event) => {
+              try {
+                let data = event.data;
+                if (typeof data === 'string') data = JSON.parse(data);
+                if (!data || !data.action) return;
+
+                if (data.action === 'initData' || data.action === 'onResetDefault') {
+                  const cfg = data.config || data.data;
+                  if (cfg) {
+                    // 加载并应用当前最新配置
+                    Object.assign(form, cfg);
+                    displayOpacity.value = Math.round((cfg.opacity || 0.22) * 100);
+                  }
+                } else if (data.action === 'saveSuccess') {
+                  ElementPlus.ElMessage.success('配置已成功保存并生效！');
+                }
+              } catch (e) {
+                console.error('解析后端消息失败:', e);
+              }
+            });
+
+            // 请求初始化配置
+            postToCSharp({ action: 'getInitData' });
+          }
+        });
+
+        return {
+          form,
+          presetColors,
+          displayOpacity,
+          changeMode,
+          changeColor,
+          onColorPickerChange,
+          onOpacityChange,
+          onExcludeCellChange,
+          saveConfig,
+          resetToDefault,
+          closeWindow,
+          onHeaderPointerDown
+        };
+      }
+    }).use(ElementPlus).mount('#app');
+  </script>
+</body>
+</html>

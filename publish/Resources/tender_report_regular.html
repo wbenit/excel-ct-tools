@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>常规样式投标报表导出</title>
+    <!-- 引入 Element Plus CSS 样式库 -->
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <!-- 引入 Vue 3 核心构建库 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- 引入 Element Plus 组件库 -->
+    <script src="https://unpkg.com/element-plus"></script>
+    <!-- 引入公共主题样式 CSS (主色调 #009688) -->
+    <link rel="stylesheet" href="theme.css" />
+
+    <style>
+      /* 全局基础重置 */
+      * {
+        box-sizing: border-box;
+      }
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+        background-color: #f8fafc;
+        color: #1e293b;
+        user-select: none;
+      }
+
+      /* 主体弹性垂直布局容器 */
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+
+      /* 顶部拟态无边框标题栏 */
+      .window-header {
+        height: 38px;
+        background: linear-gradient(135deg, #009688 0%, #00796b 100%);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 14px;
+        color: #ffffff;
+        cursor: move;
+        flex-shrink: 0;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+      }
+      .window-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+      }
+      .window-close {
+        cursor: pointer;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        font-size: 16px;
+        transition: background 0.2s;
+      }
+      .window-close:hover {
+        background-color: rgba(255, 255, 255, 0.25);
+      }
+
+      /* 主体滚动内容区 */
+      .main-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      /* 精致紧凑滚动条 */
+      .main-content::-webkit-scrollbar {
+        width: 6px;
+      }
+      .main-content::-webkit-scrollbar-thumb {
+        background-color: #cbd5e1;
+        border-radius: 3px;
+      }
+      .main-content::-webkit-scrollbar-thumb:hover {
+        background-color: #94a3b8;
+      }
+
+      /* 信息卡片通用样式 */
+      .panel-card {
+        background: #ffffff;
+        border-radius: 6px;
+        border: 1px solid #e2e8f0;
+        padding: 8px 12px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+      }
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 6px;
+        padding-bottom: 4px;
+        border-bottom: 1px solid #f1f5f9;
+        font-size: 12px;
+        font-weight: 600;
+        color: #0f766e;
+      }
+
+      /* 表单精简排列 */
+      .el-form-item {
+        margin-bottom: 5px !important;
+      }
+      .el-form-item__label {
+        font-size: 12px !important;
+        padding-right: 6px !important;
+        color: #475569 !important;
+      }
+
+      /* 表格紧凑呈现 */
+      .category-table .el-table__cell {
+        padding: 3px 0 !important;
+        font-size: 12px !important;
+      }
+
+      /* 底部统计栏 */
+      .summary-stat-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 5px 10px;
+        background: #f0fdfa;
+        border: 1px solid #ccfbf1;
+        border-radius: 4px;
+        font-size: 12px;
+        color: #0f766e;
+      }
+      .summary-highlight {
+        font-weight: 700;
+        color: #009688;
+        font-size: 13px;
+        margin: 0 2px;
+      }
+
+      /* 底部按钮栏 */
+      .window-footer {
+        height: 46px;
+        background: #ffffff;
+        border-top: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        padding: 0 16px;
+        gap: 10px;
+        flex-shrink: 0;
+      }
+
+      /* 主题色按钮覆盖：排除 link / text 按钮，防止文字按钮被染成实心色块 */
+      .el-button--primary:not(.is-link):not(.is-text) {
+        background-color: #009688 !important;
+        border-color: #009688 !important;
+        color: #ffffff !important;
+      }
+      .el-button--primary:not(.is-link):not(.is-text):hover {
+        background-color: #00796b !important;
+        border-color: #00796b !important;
+      }
+
+      /* 针对 link 链接按钮样式隔离 */
+      .el-button.is-link {
+        background-color: transparent !important;
+        border-color: transparent !important;
+        padding: 0 4px !important;
+        height: auto !important;
+        line-height: 1 !important;
+        font-size: 12px !important;
+      }
+      .el-button.is-link.el-button--primary {
+        color: #009688 !important;
+      }
+      .el-button.is-link.el-button--primary:hover {
+        color: #00796b !important;
+        text-decoration: underline;
+      }
+      .el-button.is-link.el-button--info {
+        color: #64748b !important;
+      }
+      .el-button.is-link.el-button--info:hover {
+        color: #334155 !important;
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <!-- 顶部拟态无边框拖拽标题栏 -->
+      <div class="window-header" @mousedown="onHeaderMouseDown">
+        <div class="window-title">
+          <span>📊</span>
+          <span>常规样式投标报表导出 (标书报表)</span>
+        </div>
+        <div class="window-close" @click="closeWindow" title="关闭窗口">✕</div>
+      </div>
+
+      <!-- 中间可滚动表单与配置内容 -->
+      <div class="main-content">
+        <!-- 卡片 1: 工程与单位基础信息 -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <span>📋 工程与供需单位核对</span>
+            <el-tag size="small" type="success" effect="plain">自动匹配自当前算价底稿</el-tag>
+          </div>
+          <el-form :model="projectInfo" label-width="75px" size="small">
+            <el-row :gutter="12">
+              <el-col :span="12">
+                <el-form-item label="项目名称">
+                  <el-input v-model="projectInfo.projectName" placeholder="请输入工程项目全称" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="6">
+                <el-form-item label="报价单号">
+                  <el-input v-model="projectInfo.quotationNumber" placeholder="例如: BJ-2026-001" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="6">
+                <el-form-item label="报价日期">
+                  <el-date-picker
+                    v-model="projectInfo.quotationDate"
+                    type="date"
+                    value-format="YYYY-MM-DD"
+                    style="width: 100%"
+                    placeholder="选择日期"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="12">
+              <el-col :span="12">
+                <el-form-item label="客户单位">
+                  <el-input v-model="projectInfo.customerName" placeholder="客户单位 / 甲方招标方全称" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="6">
+                <el-form-item label="客户联系人">
+                  <el-input v-model="projectInfo.customerContact" placeholder="甲方联系人" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="6">
+                <el-form-item label="联系电话">
+                  <el-input v-model="projectInfo.customerPhone" placeholder="联系电话 / 传真" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="12">
+              <el-col :span="12">
+                <el-form-item label="供货单位">
+                  <el-input v-model="projectInfo.factoryName" placeholder="本单位 / 投标方名称" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="6">
+                <el-form-item label="供货联系人">
+                  <el-input v-model="projectInfo.factoryContact" placeholder="业务经理 / 编制人" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="6">
+                <el-form-item label="报价编制人">
+                  <el-input v-model="projectInfo.bidder" placeholder="报价人" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+          </el-form>
+        </div>
+
+        <!-- 卡片 2: 参与导出的分类工作表列表 -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <span>📦 选择参与导出的分类工作表</span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <el-button link type="primary" size="small" @click="checkAllCategories(true)">全选</el-button>
+              <span style="color: #cbd5e1; font-size: 12px;">|</span>
+              <el-button link type="info" size="small" @click="checkAllCategories(false)">全不选</el-button>
+            </div>
+          </div>
+          <el-table
+            :data="categories"
+            size="small"
+            class="category-table"
+            border
+            stripe
+            max-height="150"
+          >
+            <el-table-column width="45" align="center">
+              <template #header>
+                <el-checkbox
+                  v-model="isAllChecked"
+                  :indeterminate="isIndeterminate"
+                  @change="handleCheckAllChange"
+                />
+              </template>
+              <template #default="{ row }">
+                <el-checkbox v-model="row.isSelected" @change="handleCategorySelectionChange" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="categoryName" label="分类工作表名称" min-width="140">
+              <template #default="{ row }">
+                <span style="font-weight: 600; color: #334155;">📁 {{ row.categoryName }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="totalCabinetCount" label="箱柜台数" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" type="info">{{ row.totalCabinetCount }} 台</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="totalAmount" label="报出合价 (元)" width="130" align="right">
+              <template #default="{ row }">
+                <span style="color: #009688; font-weight: 600;">¥ {{ formatMoney(row.totalAmount) }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <!-- 勾选统计统计条 -->
+          <div class="summary-stat-bar" style="margin-top: 8px;">
+            <span>已选分类: <span class="summary-highlight">{{ selectedCount }}</span> / {{ categories.length }} 个</span>
+            <span>箱柜总台数: <span class="summary-highlight">{{ selectedCabinetCount }}</span> 台</span>
+            <span>总报价金额: <span class="summary-highlight">¥ {{ formatMoney(selectedTotalAmount) }}</span></span>
+          </div>
+        </div>
+
+        <!-- 卡片 3: 报表导出偏好选项 -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <span>⚙️ 报表输出配置</span>
+          </div>
+          <el-row :gutter="16">
+            <el-col :span="6">
+              <el-checkbox v-model="exportConfig.includeCover">包含《封面》</el-checkbox>
+            </el-col>
+            <el-col :span="6">
+              <el-checkbox v-model="exportConfig.includeSummary">包含《屏柜汇总表》</el-checkbox>
+            </el-col>
+            <el-col :span="6">
+              <el-checkbox v-model="exportConfig.includeDetail">包含《屏柜分项表》</el-checkbox>
+            </el-col>
+            <el-col :span="6">
+              <el-checkbox v-model="exportConfig.autoOpen">导出后自动打开展示</el-checkbox>
+            </el-col>
+          </el-row>
+        </div>
+      </div>
+
+      <!-- 底部操作按钮栏 -->
+      <div class="window-footer">
+        <el-button size="small" @click="closeWindow">取消</el-button>
+        <el-button
+          type="primary"
+          size="small"
+          :loading="isExporting"
+          :disabled="selectedCount === 0"
+          @click="startExport"
+        >
+          🚀 立即生成常规投标报表
+        </el-button>
+      </div>
+    </div>
+
+    <script>
+      const { createApp, ref, computed, onMounted } = Vue;
+
+      const app = createApp({
+        setup() {
+          // 工程基础数据
+          const projectInfo = ref({
+            projectName: '',
+            quotationNumber: '',
+            quotationDate: '',
+            customerName: '',
+            customerContact: '',
+            customerPhone: '',
+            factoryName: '',
+            factoryContact: '',
+            factoryPhone: '',
+            bidder: '',
+            projectRemark: '',
+            amountUnit: '人民币元'
+          });
+
+          // 分类列表
+          const categories = ref([]);
+          // 导出加载中状态
+          const isExporting = ref(false);
+
+          // 导出选项
+          const exportConfig = ref({
+            includeCover: true,
+            includeSummary: true,
+            includeDetail: true,
+            autoOpen: true
+          });
+
+          // 统一向 C# 后端发送指令 (优先对象，兼顾字符串)
+          const postToCSharp = (obj) => {
+            if (window.chrome && window.chrome.webview) {
+              try {
+                window.chrome.webview.postMessage(obj);
+              } catch (e) {
+                window.chrome.webview.postMessage(JSON.stringify(obj));
+              }
+            }
+          };
+
+          // 计算属性：选中的分类数量
+          const selectedCount = computed(() => {
+            return categories.value.filter(c => c.isSelected).length;
+          });
+
+          // 计算属性：选中的箱柜总台数
+          const selectedCabinetCount = computed(() => {
+            return categories.value
+              .filter(c => c.isSelected)
+              .reduce((sum, c) => sum + (c.totalCabinetCount || 0), 0);
+          });
+
+          // 计算属性：选中的总报出金额
+          const selectedTotalAmount = computed(() => {
+            return categories.value
+              .filter(c => c.isSelected)
+              .reduce((sum, c) => sum + (c.totalAmount || 0), 0);
+          });
+
+          // 全选勾选状态
+          const isAllChecked = computed(() => {
+            return categories.value.length > 0 && selectedCount.value === categories.value.length;
+          });
+
+          // 半选状态
+          const isIndeterminate = computed(() => {
+            return selectedCount.value > 0 && selectedCount.value < categories.value.length;
+          });
+
+          // 全选变更
+          const handleCheckAllChange = (val) => {
+            categories.value.forEach(c => c.isSelected = val);
+          };
+
+          // 快速全选/全不选
+          const checkAllCategories = (checked) => {
+            categories.value.forEach(c => c.isSelected = checked);
+          };
+
+          const handleCategorySelectionChange = () => {};
+
+          // 金额格式化
+          const formatMoney = (val) => {
+            if (val === undefined || val === null || isNaN(val)) return '0.00';
+            return Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          };
+
+          // 窗口平滑拖拽监听
+          let isDragging = false;
+          let lastMouseX = 0;
+          let lastMouseY = 0;
+
+          const onHeaderMouseDown = (e) => {
+            if (e.target.classList.contains('window-close')) return;
+            isDragging = true;
+            lastMouseX = e.screenX;
+            lastMouseY = e.screenY;
+
+            const onMouseMove = (moveEvent) => {
+              if (!isDragging) return;
+              const deltaX = moveEvent.screenX - lastMouseX;
+              const deltaY = moveEvent.screenY - lastMouseY;
+              lastMouseX = moveEvent.screenX;
+              lastMouseY = moveEvent.screenY;
+              if (deltaX !== 0 || deltaY !== 0) {
+                postToCSharp({ action: 'moveWindow', deltaX, deltaY });
+              }
+            };
+
+            const onMouseUp = () => {
+              isDragging = false;
+              window.removeEventListener('mousemove', onMouseMove);
+              window.removeEventListener('mouseup', onMouseUp);
+            };
+
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', onMouseUp);
+          };
+
+          // 关闭窗口
+          const closeWindow = () => {
+            postToCSharp({ action: 'closeWindow' });
+          };
+
+          // 执行导出
+          const startExport = () => {
+            if (selectedCount.value === 0) {
+              ElementPlus.ElMessage.warning('请至少选择一个参与导出的分类工作表！');
+              return;
+            }
+
+            isExporting.value = true;
+            const payload = {
+              projectInfo: projectInfo.value,
+              selectedCategories: categories.value.filter(c => c.isSelected).map(c => c.categoryName),
+              includeCover: exportConfig.value.includeCover,
+              includeSummary: exportConfig.value.includeSummary,
+              includeDetail: exportConfig.value.includeDetail,
+              autoOpen: exportConfig.value.autoOpen
+            };
+
+            postToCSharp({
+              action: 'exportReport',
+              config: payload
+            });
+          };
+
+          // 页面初始化：向后端请求初始工程与分类数据
+          onMounted(() => {
+            if (window.chrome && window.chrome.webview) {
+              // 注册后端推送消息监听
+              window.chrome.webview.addEventListener('message', (event) => {
+                try {
+                  const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                  if (!data) return;
+
+                  if (data.action === 'initialDataLoaded') {
+                    const payload = data.payload;
+                    if (payload) {
+                      const pData = payload.data || payload.Data || payload;
+                      const rawProject = pData.projectInfo || pData.ProjectInfo;
+                      if (rawProject) {
+                        projectInfo.value.projectName = rawProject.projectName || rawProject.ProjectName || projectInfo.value.projectName;
+                        projectInfo.value.quotationNumber = rawProject.quotationNumber || rawProject.QuotationNumber || '';
+                        projectInfo.value.quotationDate = rawProject.quotationDate || rawProject.QuotationDate || '';
+                        projectInfo.value.customerName = rawProject.customerName || rawProject.CustomerName || '';
+                        projectInfo.value.customerContact = rawProject.customerContact || rawProject.CustomerContact || '';
+                        projectInfo.value.customerPhone = rawProject.customerPhone || rawProject.CustomerPhone || '';
+                        projectInfo.value.factoryName = rawProject.factoryName || rawProject.FactoryName || '';
+                        projectInfo.value.factoryContact = rawProject.factoryContact || rawProject.FactoryContact || '';
+                        projectInfo.value.factoryPhone = rawProject.factoryPhone || rawProject.FactoryPhone || '';
+                        projectInfo.value.bidder = rawProject.bidder || rawProject.Bidder || '';
+                        projectInfo.value.projectRemark = rawProject.projectRemark || rawProject.ProjectRemark || '';
+                      }
+                      const rawCategories = pData.categories || pData.Categories;
+                      if (Array.isArray(rawCategories)) {
+                        categories.value = rawCategories.map(c => ({
+                          categoryName: c.categoryName || c.CategoryName || '',
+                          totalCabinetCount: c.totalCabinetCount !== undefined ? c.totalCabinetCount : (c.TotalCabinetCount || 0),
+                          totalAmount: c.totalAmount !== undefined ? c.totalAmount : (c.TotalAmount || 0),
+                          isSelected: true,
+                          cabinets: c.cabinets || c.Cabinets || []
+                        }));
+                      }
+                    }
+                  } else if (data.action === 'exportReportResult') {
+                    isExporting.value = false;
+                    const res = data.payload;
+                    if (res && res.Success) {
+                      ElementPlus.ElMessageBox.confirm(
+                        res.Message || '常规样式投标报表导出成功！',
+                        '导出完成',
+                        {
+                          confirmButtonText: '打开文件所在文件夹',
+                          cancelButtonText: '完成并关闭',
+                          type: 'success'
+                        }
+                      ).then(() => {
+                        if (res.OutputFilePath) {
+                          postToCSharp({
+                            action: 'openExportedFileLocation',
+                            filePath: res.OutputFilePath
+                          });
+                        }
+                        closeWindow();
+                      }).catch(() => {
+                        closeWindow();
+                      });
+                    } else {
+                      ElementPlus.ElMessage.error(res.Message || '报表导出失败');
+                    }
+                  }
+                } catch (e) {
+                  console.error('解析后端消息异常:', e);
+                }
+              });
+
+              // 请求初始化数据
+              postToCSharp({ action: 'getInitialData' });
+            }
+          });
+
+          return {
+            projectInfo,
+            categories,
+            exportConfig,
+            isExporting,
+            selectedCount,
+            selectedCabinetCount,
+            selectedTotalAmount,
+            isAllChecked,
+            isIndeterminate,
+            handleCheckAllChange,
+            checkAllCategories,
+            handleCategorySelectionChange,
+            formatMoney,
+            onHeaderMouseDown,
+            closeWindow,
+            startExport
+          };
+        }
+      });
+
+      app.use(ElementPlus);
+      app.mount('#app');
+    </script>
+  </body>
+</html>

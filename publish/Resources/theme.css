@@ -1,0 +1,130 @@
+/* ========================================================================== */
+/* CTtools 插件公共主题样式文件                                               */
+/* 主题规范：绿蓝相间主题，主色调为 #009688                                   */
+/* ========================================================================== */
+
+/* 1. Element Plus 与系统全局主题变量定义 */
+:root {
+  /* 主色调定义为深绿蓝 #009688 */
+  --el-color-primary: #009688;
+  /* 主色调 3 阶浅色变体 */
+  --el-color-primary-light-3: #4db6ac;
+  /* 主色调 5 阶浅色变体 */
+  --el-color-primary-light-5: #80cbd4;
+  /* 主色调 7 阶浅色变体 */
+  --el-color-primary-light-7: #b2dfdb;
+  /* 主色调 9 阶极浅背景变体 */
+  --el-color-primary-light-9: #e0f2f1;
+  /* 主色调 2 阶深色激活态变体 */
+  --el-color-primary-dark-2: #00796b;
+  
+  /* 自定义主题核心色值快捷变量 */
+  --theme-main: #009688;
+  /* 自定义主题悬停态色值 */
+  --theme-main-hover: #00796b;
+  /* 自定义主题浅色背景色值 */
+  --theme-main-light: #e0f2f1;
+  /* 绿蓝双色线性渐变主背景 */
+  --theme-gradient: linear-gradient(135deg, #009688 0%, #00796b 100%);
+}
+
+/* 2. 全局通用重置与无边框窗体拖拽标题栏样式 */
+.window-header {
+  /* 标题栏统一固定高度 32 像素 */
+  height: 32px;
+  /* 使用绿蓝渐变作为标题栏背景 */
+  background: var(--theme-gradient);
+  /* 标题栏文字与图标统一为白色 */
+  color: #ffffff;
+  /* 开启弹性盒水平对齐 */
+  display: flex;
+  /* 垂直居中对齐所有子项 */
+  align-items: center;
+  /* 两端贴边分布标题区与控制按钮区 */
+  justify-content: space-between;
+  /* 设置内边距 */
+  padding: 0 10px 0 12px;
+  /* 拖拽手势光标提示 */
+  cursor: move;
+  /* 禁止文本框被鼠标选蓝高亮 */
+  user-select: none;
+  /* 提高层级防止被遮挡 */
+  z-index: 1000;
+}
+
+/* 标题栏文字区域样式 */
+.window-header .window-title {
+  /* 开启弹性水平对齐 */
+  display: flex;
+  /* 垂直居中图标与文字 */
+  align-items: center;
+  /* 图标与文字间距 */
+  gap: 8px;
+  /* 标题文字大小 */
+  font-size: 13px;
+  /* 标题加粗展示 */
+  font-weight: 600;
+}
+
+/* 标题栏右侧最小化与关闭按钮容器 */
+.window-header .window-controls {
+  /* 开启弹性水平对齐 */
+  display: flex;
+  /* 控制按钮间距 */
+  gap: 4px;
+}
+
+/* 窗口通用控制按钮基础样式 */
+.window-header .ctrl-btn {
+  /* 按钮宽度 */
+  width: 24px;
+  /* 按钮高度 */
+  height: 24px;
+  /* 边框圆角 */
+  border-radius: 4px;
+  /* 居中内容对齐 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 鼠标指针交互提示 */
+  cursor: pointer;
+  /* 背景平滑过渡动画 */
+  transition: background-color 0.2s;
+  /* 默认白色字体 */
+  color: #ffffff;
+}
+
+/* 通用控制按钮鼠标悬停效果 */
+.window-header .ctrl-btn:hover {
+  /* 悬停时半透明白色背景 */
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* 关闭按钮危险悬停效果 */
+.window-header .ctrl-btn.close-btn:hover {
+  /* 悬停关闭按钮时使用红色高亮警示 */
+  background-color: #ef4444 !important;
+}
+
+/* 3. 基础滚动条与全局工具类 */
+::-webkit-scrollbar {
+  /* 纵向与横向滚动条宽度 */
+  width: 6px;
+  height: 6px;
+}
+
+/* 滚动条轨道底色 */
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+/* 滚动条滑块颜色与圆角 */
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+/* 滚动条滑块悬停高亮色 */
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
