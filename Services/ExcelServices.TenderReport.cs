@@ -648,104 +648,233 @@ namespace ExcelAddInDemo
                 }
                 headRange.Value2 = headMatrix;
 
-                // 2. 获取模板中的母版行锚点
-                // 模板原结构：Row 11 为分类标题，Row 12 为表头，Row 13 为箱柜数据行模板，Row 14 为小计模板，Row 15 为总计模板
-                int templateCatTitleRow = 11;
-                int templateHeaderRow = 12;
+                // 2. 创建临时工作表，暂存母版行（格式、字体、背景色与单元格合并）
+                dynamic app = reportWb.Application;
+                // 新建临时母版工作表用于存放纯净母版格式
+                dynamic tempWs = reportWb.Worksheets.Add();
+                // 确保临时工作表删除时不被警告弹窗打扰 --硬编码--
+                try { app.DisplayAlerts = false; } catch { }
 
-                // 记录所有生成的小计行行号，用于项目总计求和
-                var subtotalRows = new List<int>();
-                int currentRow = templateCatTitleRow;
-                int globalIndex = 1;
-
-                // 循环填充各个分类块
-                for (int catIdx = 0; catIdx < categories.Count; catIdx++)
+                try
                 {
-                    var cat = categories[catIdx];
+                    // 模板原结构（图 4）：
+                    // Row 11: 分类标题行 [分类名称] (绿色底色)
+                    sumSheet.Rows[11].Copy(tempWs.Rows[1]);
+                    // Row 12: 分类表头行 (灰底带边框)
+                    sumSheet.Rows[12].Copy(tempWs.Rows[2]);
+                    // Row 13: 箱柜数据模板行 (白底细网格边框，包含各字段占位符)
+                    sumSheet.Rows[13].Copy(tempWs.Rows[3]);
+                    // Row 14: 分类合计行 (浅绿底色，包含 [分类台数]、[分类总价])
+                    sumSheet.Rows[14].Copy(tempWs.Rows[4]);
+                    // Row 15: 项目总计行 (深绿底色，包含 [项目总价]、[项目台数]、[项目总价大写])
+                    sumSheet.Rows[15].Copy(tempWs.Rows[5]);
+                    // Row 16: 报价说明标签
+                    sumSheet.Rows[16].Copy(tempWs.Rows[6]);
+                    // Row 17: 报价说明内容 ([报价说明])
+                    sumSheet.Rows[17].Copy(tempWs.Rows[7]);
+                    // Row 18: 签名落款行 ([报价人]、[报价日期])
+                    sumSheet.Rows[18].Copy(tempWs.Rows[8]);
 
-                    // 写入分类标题行
-                    sumSheet.Rows[currentRow].Value2 = sumSheet.Rows[templateCatTitleRow].Value2;
-                    sumSheet.Cells[currentRow, 1].Value2 = $"分类：{cat.CategoryName}";
-                    currentRow++;
+                    // 清空 Row 11 及以后的全部旧行内容与格式，避免原有文字残留错位
+                    sumSheet.Range["A11:Z1000"].Clear();
 
-                    // 写入表头行
-                    sumSheet.Rows[currentRow].Value2 = sumSheet.Rows[templateHeaderRow].Value2;
-                    currentRow++;
+                    // 【核心机制：占位符动态列映射】：扫描母版数据行，自动识别字段对应物理列号
+                    dynamic tplRowRange = tempWs.Range["A3:Z3"];
+                    object[,] tplRowMatrix = (object[,])tplRowRange.Value2;
+                    int maxCol = Math.Max(9, tplRowMatrix.GetLength(1));
 
-                    int catDataStartRow = currentRow;
-                    int catItemCount = cat.Cabinets.Count;
+                    // 默认兜底列号 (1-based)
+                    int colCabSeq = 1;     // [箱柜序号]
+                    int colCabNo = 2;      // [箱柜柜号] / [柜号]
+                    int colCabName = 3;    // [箱柜名称]
+                    int colCabModel = 4;   // [箱柜型号]
+                    int colCabUnit = 5;    // [单位]
+                    int colCabQty = 6;     // [数量]
+                    int colCabPrice = 7;   // [箱柜单价] / [单价]
+                    int colCabTotal = 8;   // [箱柜总价] / [总价]
+                    int colCabRemark = 9;  // [备注]
 
-                    if (catItemCount > 0)
+                    // 遍历母版数据行，依据单元格中的占位符标签自适应解析列号
+                    for (int c = 1; c <= maxCol; c++)
                     {
-                        // 准备二维数组批量灌入当前分类的全部箱柜行 (规则 12)
-                        object[,] catMatrix = new object[catItemCount, 9];
-                        for (int k = 0; k < catItemCount; k++)
+                        string tag = Convert.ToString(tplRowMatrix[1, c]) ?? "";
+                        if (string.IsNullOrWhiteSpace(tag)) continue;
+                        if (tag.Contains("[箱柜序号]") || tag.Contains("[序号]")) colCabSeq = c;
+                        else if (tag.Contains("[箱柜柜号]") || tag.Contains("[柜号]")) colCabNo = c;
+                        else if (tag.Contains("[箱柜名称]")) colCabName = c;
+                        else if (tag.Contains("[箱柜型号]")) colCabModel = c;
+                        else if (tag.Contains("[单位]")) colCabUnit = c;
+                        else if (tag.Contains("[数量]")) colCabQty = c;
+                        else if (tag.Contains("[箱柜单价]") || tag.Contains("[单价]")) colCabPrice = c;
+                        else if (tag.Contains("[箱柜总价]") || tag.Contains("[总价]")) colCabTotal = c;
+                        else if (tag.Contains("[备注]")) colCabRemark = c;
+                    }
+
+                    // 动态计算数量与单价所在的 Excel 列字母 (例如 F 列、G 列、H 列)
+                    string qtyColLetter = GetExcelColumnLetter(colCabQty);
+                    string priceColLetter = GetExcelColumnLetter(colCabPrice);
+                    string totalColLetter = GetExcelColumnLetter(colCabTotal);
+
+                    // 记录所有生成的小计行行号，用于项目总计求和
+                    var subtotalRows = new List<int>();
+                    // 当前行游标，从第 11 行开始自顶向下单向克隆
+                    int currentRow = 11;
+                    // 全局箱柜序号计数器
+                    int globalIndex = 1;
+
+                    // 循环填充各个分类块
+                    for (int catIdx = 0; catIdx < categories.Count; catIdx++)
+                    {
+                        var cat = categories[catIdx];
+
+                        // ① 克隆分类标题行 (浅绿底色)
+                        tempWs.Rows[1].Copy(sumSheet.Rows[currentRow]);
+                        // 自适应替换单元格中的 [分类名称] 占位符
+                        ReplaceRowPlaceholders(sumSheet.Range[$"A{currentRow}:Z{currentRow}"], new Dictionary<string, string>
                         {
-                            var cab = cat.Cabinets[k];
-                            catMatrix[k, 0] = globalIndex++;                  // 序号 (Col 1)
-                            catMatrix[k, 1] = cab.CabinetNo;                   // 柜号 (Col 2)
-                            catMatrix[k, 2] = cab.CabinetName;                 // 箱柜名称 (Col 3)
-                            catMatrix[k, 3] = cab.CabinetModel;                // 箱柜型号 (Col 4)
-                            catMatrix[k, 4] = string.IsNullOrWhiteSpace(cab.Unit) ? "台" : cab.Unit; // 单位 (Col 5)
-                            catMatrix[k, 5] = cab.Quantity;                    // 数量 (Col 6)
-                            catMatrix[k, 6] = cab.UnitPrice;                   // 单价 (Col 7)
-                            catMatrix[k, 7] = $"=F{currentRow + k}*G{currentRow + k}"; // 总价动态公式 (Col 8)
-                            catMatrix[k, 8] = cab.Remark;                      // 备注 (Col 9)
+                            { "[分类名称]", $"分类：{cat.CategoryName}" }
+                        }, fallbackCol: 1, fallbackValue: $"分类：{cat.CategoryName}");
+                        currentRow++;
+
+                        // ② 克隆表头行 (灰底)
+                        tempWs.Rows[2].Copy(sumSheet.Rows[currentRow]);
+                        currentRow++;
+
+                        // 记录当前分类数据起始行号
+                        int catDataStartRow = currentRow;
+                        int catItemCount = cat.Cabinets.Count;
+
+                        if (catItemCount > 0)
+                        {
+                            // 批量复制母版数据行格式至目标多行区域 (继承白底与细网格线)
+                            dynamic targetDataRange = sumSheet.Range[sumSheet.Rows[currentRow], sumSheet.Rows[currentRow + catItemCount - 1]];
+                            tempWs.Rows[3].Copy();
+                            // 复制母版行的单元格样式、边框与对齐方式 --硬编码--
+                            targetDataRange.PasteSpecial(-4104);
+                            try { app.CutCopyMode = false; } catch { }
+
+                            // 准备二维数组批量灌入当前分类的全部箱柜行 (规则 7 / 规则 12)
+                            object[,] catMatrix = new object[catItemCount, maxCol];
+                            for (int k = 0; k < catItemCount; k++)
+                            {
+                                var cab = cat.Cabinets[k];
+                                int realRow = currentRow + k;
+
+                                // 智能清洗前缀，杜绝重复叠加
+                                string cleanCabNo = System.Text.RegularExpressions.Regex.Replace(cab.CabinetNo ?? "", @"^柜号[:：]\s*", "");
+                                string cleanModel = System.Text.RegularExpressions.Regex.Replace(cab.CabinetModel ?? "", @"^型号[:：]\s*", "");
+                                string cleanName = System.Text.RegularExpressions.Regex.Replace(cab.CabinetName ?? "", @"^名称[:：]\s*", "");
+                                string cleanRemark = System.Text.RegularExpressions.Regex.Replace(cab.Remark ?? "", @"^备注[:：]\s*", "");
+
+                                // 严格根据自适应扫描到的列号灌入数据 (0-based)
+                                if (colCabSeq > 0) catMatrix[k, colCabSeq - 1] = globalIndex++;
+                                if (colCabNo > 0) catMatrix[k, colCabNo - 1] = cleanCabNo;
+                                if (colCabName > 0) catMatrix[k, colCabName - 1] = cleanName;
+                                if (colCabModel > 0) catMatrix[k, colCabModel - 1] = cleanModel;
+                                if (colCabUnit > 0) catMatrix[k, colCabUnit - 1] = string.IsNullOrWhiteSpace(cab.Unit) ? "台" : cab.Unit;
+                                if (colCabQty > 0) catMatrix[k, colCabQty - 1] = cab.Quantity;
+                                if (colCabPrice > 0) catMatrix[k, colCabPrice - 1] = cab.UnitPrice;
+                                if (colCabTotal > 0) catMatrix[k, colCabTotal - 1] = $"={qtyColLetter}{realRow}*{priceColLetter}{realRow}";
+                                if (colCabRemark > 0) catMatrix[k, colCabRemark - 1] = cleanRemark;
+                            }
+
+                            // 批量写入数据区域 (规则 12)
+                            dynamic dataRange = sumSheet.Range[sumSheet.Cells[currentRow, 1], sumSheet.Cells[currentRow + catItemCount - 1, maxCol]];
+                            dataRange.Value2 = catMatrix;
+                            currentRow += catItemCount;
                         }
 
-                        // 批量写入数据区域 (规则 12)
-                        dynamic dataRange = sumSheet.Range[sumSheet.Cells[currentRow, 1], sumSheet.Cells[currentRow + catItemCount - 1, 9]];
-                        dataRange.Value2 = catMatrix;
-                        currentRow += catItemCount;
+                        // 记录当前分类数据终止行号
+                        int catDataEndRow = currentRow - 1;
+
+                        // ③ 克隆分类合计行 (浅绿底色)
+                        tempWs.Rows[4].Copy(sumSheet.Rows[currentRow]);
+                        dynamic subtotalRange = sumSheet.Range[$"A{currentRow}:Z{currentRow}"];
+                        object[,] subtotalMatrix = (object[,])subtotalRange.Value2;
+
+                        string catQtyFormula = catDataEndRow >= catDataStartRow ? $"=SUM({qtyColLetter}{catDataStartRow}:{qtyColLetter}{catDataEndRow})" : "0";
+                        string catTotalFormula = catDataEndRow >= catDataStartRow ? $"=SUM({totalColLetter}{catDataStartRow}:{totalColLetter}{catDataEndRow})" : "0";
+
+                        // 遍历合计行单元格，依据占位符自适应注入公式
+                        for (int sc = 1; sc <= maxCol; sc++)
+                        {
+                            string sVal = Convert.ToString(subtotalMatrix[1, sc]) ?? "";
+                            if (sVal.Contains("[分类台数]") || sVal.Contains("[台数]") || (sc == colCabQty && sVal.Contains("[")))
+                            {
+                                subtotalRange.Cells[1, sc].Formula = catQtyFormula;
+                            }
+                            else if (sVal.Contains("[分类总价]") || sVal.Contains("[总价]") || (sc == colCabTotal && sVal.Contains("[")))
+                            {
+                                subtotalRange.Cells[1, sc].Formula = catTotalFormula;
+                            }
+                        }
+
+                        // 记录该小计行行号，用于汇总最终总计
+                        subtotalRows.Add(currentRow);
+                        currentRow++;
                     }
 
-                    int catDataEndRow = currentRow - 1;
+                    // 3. 写入项目总计行 (克隆深绿底色母版)
+                    int grandTotalRow = currentRow;
+                    tempWs.Rows[5].Copy(sumSheet.Rows[grandTotalRow]);
+                    dynamic grandRange = sumSheet.Range[$"A{grandTotalRow}:Z{grandTotalRow}"];
+                    object[,] grandMatrix = (object[,])grandRange.Value2;
 
-                    // 写入分类小计行
-                    sumSheet.Cells[currentRow, 2].Value2 = "合计";
-                    sumSheet.Cells[currentRow, 5].Value2 = "台";
-                    if (catDataEndRow >= catDataStartRow)
-                    {
-                        sumSheet.Cells[currentRow, 6].Formula = $"=SUM(F{catDataStartRow}:F{catDataEndRow})";
-                        sumSheet.Cells[currentRow, 8].Formula = $"=SUM(H{catDataStartRow}:H{catDataEndRow})";
-                    }
-                    else
-                    {
-                        sumSheet.Cells[currentRow, 6].Value2 = 0;
-                        sumSheet.Cells[currentRow, 8].Value2 = 0;
-                    }
-
-                    subtotalRows.Add(currentRow);
-                    currentRow++;
-                }
-
-                // 3. 写入项目总计行
-                int grandTotalRow = currentRow;
-                sumSheet.Cells[grandTotalRow, 2].Value2 = "总计";
-                sumSheet.Cells[grandTotalRow, 5].Value2 = "台";
-
-                if (subtotalRows.Count > 0)
-                {
-                    // 拼接所有分类合计行的求和公式
-                    string qtySumFormula = "=" + string.Join("+", subtotalRows.Select(r => $"F{r}"));
-                    string amtSumFormula = "=" + string.Join("+", subtotalRows.Select(r => $"H{r}"));
-                    sumSheet.Cells[grandTotalRow, 6].Formula = qtySumFormula;
-                    sumSheet.Cells[grandTotalRow, 3].Formula = amtSumFormula; // 总计小计数字 (Col 3)
-
-                    // 计算总金额大写并写入 Col 7
+                    string qtySumFormula = subtotalRows.Count > 0 ? "=" + string.Join("+", subtotalRows.Select(r => $"{qtyColLetter}{r}")) : "0";
+                    string amtSumFormula = subtotalRows.Count > 0 ? "=" + string.Join("+", subtotalRows.Select(r => $"{totalColLetter}{r}")) : "0";
                     decimal grandTotalAmount = categories.Sum(c => c.TotalAmount);
-                    sumSheet.Cells[grandTotalRow, 7].Value2 = ConvertAmountToChineseUpper(grandTotalAmount);
-                }
-                currentRow++;
+                    string upperAmount = ConvertAmountToChineseUpper(grandTotalAmount);
 
-                // 4. 写入报价说明与签名尾栏 (报价人、审核人等)
-                sumSheet.Cells[currentRow, 1].Value2 = "报价说明:";
-                currentRow++;
-                sumSheet.Cells[currentRow, 2].Value2 = proj.ProjectRemark;
-                currentRow++;
-                sumSheet.Cells[currentRow, 2].Value2 = $"报价人：{proj.Bidder}";
-                sumSheet.Cells[currentRow, 4].Value2 = $"报价日期：{proj.QuotationDate}";
-                sumSheet.Cells[currentRow, 8].Value2 = "审核人：";
+                    // 遍历总计行单元格，依据占位符自适应填充
+                    for (int gc = 1; gc <= maxCol; gc++)
+                    {
+                        string gVal = Convert.ToString(grandMatrix[1, gc]) ?? "";
+                        if (gVal.Contains("[项目台数]") || gVal.Contains("[总台数]"))
+                        {
+                            grandRange.Cells[1, gc].Formula = qtySumFormula;
+                        }
+                        else if (gVal.Contains("[项目总价大写]") || gVal.Contains("[大写]"))
+                        {
+                            grandRange.Cells[1, gc].Value2 = upperAmount;
+                        }
+                        else if (gVal.Contains("[项目总价]") || gVal.Contains("[总金额]"))
+                        {
+                            grandRange.Cells[1, gc].Formula = amtSumFormula;
+                        }
+                    }
+                    currentRow++;
+
+                    // 4. 写入报价说明与签名尾栏 (自适应占位符替换)
+                    tempWs.Rows[6].Copy(sumSheet.Rows[currentRow]);
+                    currentRow++;
+
+                    tempWs.Rows[7].Copy(sumSheet.Rows[currentRow]);
+                    ReplaceRowPlaceholders(sumSheet.Range[$"A{currentRow}:Z{currentRow}"], new Dictionary<string, string>
+                    {
+                        { "[报价说明]", proj.ProjectRemark }
+                    }, fallbackCol: 2, fallbackValue: proj.ProjectRemark);
+                    currentRow++;
+
+                    // 空一行留出视觉间距
+                    currentRow++;
+
+                    tempWs.Rows[8].Copy(sumSheet.Rows[currentRow]);
+                    ReplaceRowPlaceholders(sumSheet.Range[$"A{currentRow}:Z{currentRow}"], new Dictionary<string, string>
+                    {
+                        { "[报价人]", proj.Bidder },
+                        { "[报价日期]", proj.QuotationDate }
+                    });
+                }
+                finally
+                {
+                    // 安全移除临时母版工作表，防止残留工作簿
+                    try
+                    {
+                        tempWs.Delete();
+                        app.DisplayAlerts = true;
+                    }
+                    catch { }
+                }
             }
             catch (Exception ex)
             {
@@ -754,7 +883,7 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 填充《屏柜分项表》工作表
+        /// 填充《屏柜分项表》工作表 (基于模板占位符自适应驱动)
         /// </summary>
         private static void PopulateDetailWorksheet(dynamic reportWb, TenderReportProjectInfo proj, List<TenderReportCategoryGroup> categories, bool includeDetail)
         {
@@ -795,88 +924,191 @@ namespace ExcelAddInDemo
                 }
                 headRange.Value2 = headMatrix;
 
-                // 2. 母版基准行 (Row 11 箱柜信息，Row 12 元件表头，Row 13 元件模板，Row 14 箱柜总计)
-                int templateCabInfoRow = 11;
+                // 2. 创建临时工作表，暂存母版行 (浅蓝柜头/灰底表头/白底元件行/橙底总计行)
+                dynamic app = reportWb.Application;
+                // 新建临时母版工作表用于存放明细表纯净母版格式
+                dynamic tempWs = reportWb.Worksheets.Add();
+                // 确保临时工作表删除时不被警告弹窗打扰 --硬编码--
+                try { app.DisplayAlerts = false; } catch { }
 
-                int currentRow = templateCabInfoRow;
-                int globalCabIndex = 1;
-
-                // 循环每个分类中的每个箱柜进行展开
-                for (int cIdx = 0; cIdx < categories.Count; cIdx++)
+                try
                 {
-                    var cat = categories[cIdx];
+                    // 模板原结构（图 5）：
+                    // Row 11: 箱柜信息行 (浅蓝底色与单元格合并，包含 柜号：[柜号]、型号：[箱柜型号] 等)
+                    detSheet.Rows[11].Copy(tempWs.Rows[1]);
+                    // Row 12: 元件表头行 (灰底带边框)
+                    detSheet.Rows[12].Copy(tempWs.Rows[2]);
+                    // Row 13: 元件明细行模板 (白底细网格边框，包含各元件占位符)
+                    detSheet.Rows[13].Copy(tempWs.Rows[3]);
+                    // Row 14: 箱柜总计行 (橙底加粗带边框，包含 [箱柜数量]、[箱柜总价])
+                    detSheet.Rows[14].Copy(tempWs.Rows[4]);
 
-                    for (int cabIdx = 0; cabIdx < cat.Cabinets.Count; cabIdx++)
+                    // 清空 Row 11 及以后的全部旧行内容与格式，防止残留
+                    detSheet.Range["A11:Z10000"].Clear();
+
+                    // 【核心机制：占位符动态列映射】：扫描第 3 行母版数据行，自适应识别各列号
+                    dynamic tplCompRange = tempWs.Range["A3:Z3"];
+                    object[,] tplCompMatrix = (object[,])tplCompRange.Value2;
+                    int maxCompCol = Math.Max(9, tplCompMatrix.GetLength(1));
+
+                    // 默认兜底列号 (1-based)
+                    int colCompSeq = 1;     // [元件序号] / [序号]
+                    int colCompName = 2;    // [元件名称]
+                    int colCompModel = 3;   // [元件型号]
+                    int colCompUnit = 4;    // [元件单位] / [单位]
+                    int colCompQty = 5;     // [元件数量] / [数量]
+                    int colCompPrice = 6;   // [元件单价] / [单价]
+                    int colCompTotal = 7;   // [元件总价] / [总价]
+                    int colCompMfr = 8;     // [生产厂家] / [厂家]
+                    int colCompRemark = 9;  // [元件备注] / [备注]
+
+                    // 遍历母版元件行，依据占位符自适应锁定列号
+                    for (int c = 1; c <= maxCompCol; c++)
                     {
-                        var cab = cat.Cabinets[cabIdx];
+                        string tag = Convert.ToString(tplCompMatrix[1, c]) ?? "";
+                        if (string.IsNullOrWhiteSpace(tag)) continue;
+                        if (tag.Contains("[元件序号]") || tag.Contains("[序号]")) colCompSeq = c;
+                        else if (tag.Contains("[元件名称]")) colCompName = c;
+                        else if (tag.Contains("[元件型号]")) colCompModel = c;
+                        else if (tag.Contains("[元件单位]") || tag.Contains("[单位]")) colCompUnit = c;
+                        else if (tag.Contains("[元件数量]") || tag.Contains("[数量]")) colCompQty = c;
+                        else if (tag.Contains("[元件单价]") || tag.Contains("[单价]")) colCompPrice = c;
+                        else if (tag.Contains("[元件总价]") || tag.Contains("[总价]")) colCompTotal = c;
+                        else if (tag.Contains("[生产厂家]") || tag.Contains("[厂家]")) colCompMfr = c;
+                        else if (tag.Contains("[元件备注]") || tag.Contains("[备注]")) colCompRemark = c;
+                    }
 
-                        // ① 写入箱柜信息栏 (Row 11 样式)
-                        detSheet.Cells[currentRow, 1].Value2 = globalCabIndex++;
-                        detSheet.Cells[currentRow, 2].Value2 = $"柜号：{cab.CabinetNo}";
-                        detSheet.Cells[currentRow, 3].Value2 = "型号：";
-                        detSheet.Cells[currentRow, 4].Value2 = cab.CabinetModel;
-                        detSheet.Cells[currentRow, 7].Value2 = "名称：";
-                        detSheet.Cells[currentRow, 8].Value2 = cab.CabinetName;
-                        detSheet.Cells[currentRow, 9].Value2 = string.IsNullOrWhiteSpace(cab.Remark) ? "" : $"备注:{cab.Remark}";
-                        currentRow++;
+                    // 动态计算元件数量与单价、总价的 Excel 列字母 (例如 E 列、F 列、G 列)
+                    string compQtyColLetter = GetExcelColumnLetter(colCompQty);
+                    string compPriceColLetter = GetExcelColumnLetter(colCompPrice);
+                    string compTotalColLetter = GetExcelColumnLetter(colCompTotal);
 
-                        // ② 写入元件表头栏 (序号 | 元件名称 | 型号规格 | 单位 | 数量 | 单价 | 总价 | 生产厂家 | 备注)
-                        detSheet.Cells[currentRow, 1].Value2 = "序号";
-                        detSheet.Cells[currentRow, 2].Value2 = "元件名称";
-                        detSheet.Cells[currentRow, 3].Value2 = "型号规格";
-                        detSheet.Cells[currentRow, 4].Value2 = "单位";
-                        detSheet.Cells[currentRow, 5].Value2 = "数量";
-                        detSheet.Cells[currentRow, 6].Value2 = "单   价";
-                        detSheet.Cells[currentRow, 7].Value2 = "总   价";
-                        detSheet.Cells[currentRow, 8].Value2 = "生产厂家";
-                        detSheet.Cells[currentRow, 9].Value2 = "备注";
-                        currentRow++;
+                    // 当前行游标，从第 11 行开始自顶向下单向克隆
+                    int currentRow = 11;
+                    // 全局箱柜序号计数器
+                    int globalCabIndex = 1;
 
-                        // ③ 批量灌入元器件明细行 (采用二维数组一次性回写，规则 12)
-                        int compCount = cab.Components.Count;
-                        int compStartRow = currentRow;
+                    // 循环每个分类中的每个箱柜进行展开
+                    for (int cIdx = 0; cIdx < categories.Count; cIdx++)
+                    {
+                        var cat = categories[cIdx];
 
-                        if (compCount > 0)
+                        for (int cabIdx = 0; cabIdx < cat.Cabinets.Count; cabIdx++)
                         {
-                            object[,] compMatrix = new object[compCount, 9];
-                            for (int ci = 0; ci < compCount; ci++)
+                            var cab = cat.Cabinets[cabIdx];
+
+                            // ① 克隆箱柜信息栏 (浅蓝底色与单元格合并)
+                            tempWs.Rows[1].Copy(detSheet.Rows[currentRow]);
+
+                            // 智能清洗源数据可能自带的重复前缀
+                            string cleanCabNo = System.Text.RegularExpressions.Regex.Replace(cab.CabinetNo ?? "", @"^柜号[:：]\s*", "");
+                            string cleanCabModel = System.Text.RegularExpressions.Regex.Replace(cab.CabinetModel ?? "", @"^型号[:：]\s*", "");
+                            string cleanCabName = System.Text.RegularExpressions.Regex.Replace(cab.CabinetName ?? "", @"^名称[:：]\s*", "");
+                            string cleanCabRemark = System.Text.RegularExpressions.Regex.Replace(cab.Remark ?? "", @"^备注[:：]\s*", "");
+
+                            // 【核心机制：占位符自适应替换】：整行按占位符自然替换，模板自带的“柜号：”完美保留，绝不重复！
+                            ReplaceRowPlaceholders(detSheet.Range[$"A{currentRow}:Z{currentRow}"], new Dictionary<string, string>
                             {
-                                var item = cab.Components[ci];
-                                compMatrix[ci, 0] = item.Index;
-                                compMatrix[ci, 1] = item.Name;
-                                compMatrix[ci, 2] = item.Model;
-                                compMatrix[ci, 3] = item.Unit;
-                                compMatrix[ci, 4] = item.Quantity;
-                                compMatrix[ci, 5] = item.UnitPrice;
-                                compMatrix[ci, 6] = $"=E{currentRow + ci}*F{currentRow + ci}"; // 动态总价公式
-                                compMatrix[ci, 7] = item.Manufacturer;
-                                compMatrix[ci, 8] = item.Remark;
+                                { "[箱柜序号]", globalCabIndex.ToString() },
+                                { "[柜号]", cleanCabNo },
+                                { "[箱柜型号]", cleanCabModel },
+                                { "[箱柜名称]", cleanCabName },
+                                { "[箱柜备注]", cleanCabRemark }
+                            });
+                            globalCabIndex++;
+                            currentRow++;
+
+                            // ② 克隆元件表头栏 (灰底)
+                            tempWs.Rows[2].Copy(detSheet.Rows[currentRow]);
+                            currentRow++;
+
+                            // ③ 批量写入元器件明细行 (白底细网格)
+                            int compCount = cab.Components.Count;
+                            int compStartRow = currentRow;
+
+                            if (compCount > 0)
+                            {
+                                // 批量复制母版数据行格式至目标多行区域 (继承白色底与细网格线)
+                                dynamic compTargetRange = detSheet.Range[detSheet.Rows[currentRow], detSheet.Rows[currentRow + compCount - 1]];
+                                tempWs.Rows[3].Copy();
+                                // 复制母版行的单元格样式与边框 --硬编码--
+                                compTargetRange.PasteSpecial(-4104);
+                                try { app.CutCopyMode = false; } catch { }
+
+                                // 准备二维数组一次性回写 (规则 7 / 规则 12)
+                                object[,] compMatrix = new object[compCount, maxCompCol];
+                                for (int ci = 0; ci < compCount; ci++)
+                                {
+                                    var item = cab.Components[ci];
+                                    int realRow = currentRow + ci;
+
+                                    if (colCompSeq > 0) compMatrix[ci, colCompSeq - 1] = item.Index;
+                                    if (colCompName > 0) compMatrix[ci, colCompName - 1] = item.Name;
+                                    if (colCompModel > 0) compMatrix[ci, colCompModel - 1] = item.Model;
+                                    if (colCompUnit > 0) compMatrix[ci, colCompUnit - 1] = item.Unit;
+                                    if (colCompQty > 0) compMatrix[ci, colCompQty - 1] = item.Quantity;
+                                    if (colCompPrice > 0) compMatrix[ci, colCompPrice - 1] = item.UnitPrice;
+                                    if (colCompTotal > 0) compMatrix[ci, colCompTotal - 1] = $"={compQtyColLetter}{realRow}*{compPriceColLetter}{realRow}";
+                                    if (colCompMfr > 0) compMatrix[ci, colCompMfr - 1] = item.Manufacturer;
+                                    if (colCompRemark > 0) compMatrix[ci, colCompRemark - 1] = item.Remark;
+                                }
+
+                                dynamic compRange = detSheet.Range[detSheet.Cells[currentRow, 1], detSheet.Cells[currentRow + compCount - 1, maxCompCol]];
+                                compRange.Value2 = compMatrix;
+                                currentRow += compCount;
                             }
 
-                            dynamic compRange = detSheet.Range[detSheet.Cells[currentRow, 1], detSheet.Cells[currentRow + compCount - 1, 9]];
-                            compRange.Value2 = compMatrix;
-                            currentRow += compCount;
+                            int compEndRow = currentRow - 1;
+
+                            // ④ 克隆箱柜总计栏 (橙底加粗带边框)
+                            tempWs.Rows[4].Copy(detSheet.Rows[currentRow]);
+                            dynamic cabTotalRange = detSheet.Range[$"A{currentRow}:Z{currentRow}"];
+                            object[,] cabTotalMatrix = (object[,])cabTotalRange.Value2;
+
+                            // 动态识别总计行中的数量列字母
+                            string cabQtyColLetter = compQtyColLetter;
+                            for (int tc = 1; tc <= maxCompCol; tc++)
+                            {
+                                string tVal = Convert.ToString(cabTotalMatrix[1, tc]) ?? "";
+                                if (tVal.Contains("[箱柜数量]") || tVal.Contains("[数量]"))
+                                {
+                                    cabQtyColLetter = GetExcelColumnLetter(tc);
+                                    cabTotalRange.Cells[1, tc].Value2 = cab.Quantity;
+                                }
+                            }
+
+                            // 动态识别总计行中的总价列并写入求和公式
+                            for (int tc = 1; tc <= maxCompCol; tc++)
+                            {
+                                string tVal = Convert.ToString(cabTotalMatrix[1, tc]) ?? "";
+                                if (tVal.Contains("[箱柜总价]") || tVal.Contains("[总价]"))
+                                {
+                                    if (compEndRow >= compStartRow)
+                                    {
+                                        cabTotalRange.Cells[1, tc].Formula = $"=SUM({compTotalColLetter}{compStartRow}:{compTotalColLetter}{compEndRow})*{cabQtyColLetter}{currentRow}";
+                                    }
+                                    else
+                                    {
+                                        cabTotalRange.Cells[1, tc].Value2 = cab.TotalPrice;
+                                    }
+                                }
+                            }
+                            currentRow++;
+
+                            // 箱柜块之间空一行保持美观间距
+                            currentRow++;
                         }
-
-                        int compEndRow = currentRow - 1;
-
-                        // ④ 写入箱柜总计栏 (数量、总价)
-                        detSheet.Cells[currentRow, 2].Value2 = "总计";
-                        detSheet.Cells[currentRow, 4].Value2 = "台";
-                        detSheet.Cells[currentRow, 5].Value2 = cab.Quantity; // 箱柜台数
-
-                        // 若有元件明细，总价采用对上方求和并乘以台数的公式，或直接写入计算金额
-                        if (compEndRow >= compStartRow)
-                        {
-                            detSheet.Cells[currentRow, 7].Formula = $"=SUM(G{compStartRow}:G{compEndRow})*E{currentRow}";
-                        }
-                        else
-                        {
-                            detSheet.Cells[currentRow, 7].Value2 = cab.TotalPrice;
-                        }
-
-                        currentRow += 2; // 箱柜块之间空一行保持美观间距
                     }
+                }
+                finally
+                {
+                    // 安全移除临时母版工作表，防止残留工作簿
+                    try
+                    {
+                        tempWs.Delete();
+                        app.DisplayAlerts = true;
+                    }
+                    catch { }
                 }
             }
             catch (Exception ex)
@@ -886,6 +1118,89 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 将 1-based 数字列号转换为标准 Excel 列字母 (例如 1->A, 2->B, 26->Z, 27->AA)
+        /// </summary>
+        /// <param name="colIndex">1-based 数字列号</param>
+        /// <returns>Excel 列字母大写字符串</returns>
+        private static string GetExcelColumnLetter(int colIndex)
+        {
+            // 兜底防御，若列号非法默认返回首列 A --硬编码--
+            if (colIndex <= 0) return "A";
+            int div = colIndex;
+            string colLetter = string.Empty;
+
+            // 循环整除 26 进制基数
+            while (div > 0)
+            {
+                // 计算当前位对应的 ASCII 字母
+                int mod = (div - 1) % 26;
+                colLetter = (char)('A' + mod) + colLetter;
+                // 计算下一位商
+                div = (div - mod) / 26;
+            }
+
+            // 返回最终计算出的列英文字母
+            return colLetter;
+        }
+
+        /// <summary>
+        /// 在指定单行区域内自适应匹配并替换占位符文本 (保留模板原汁原味的排版、前缀与格式)
+        /// </summary>
+        /// <param name="rowRange">目标单行 Excel 区域 (如 A11:Z11)</param>
+        /// <param name="replacements">占位符与目标值映射字典 (例如 ["[柜号]"] = "SW-APKT")</param>
+        /// <param name="fallbackCol">兜底列号 (可选，若整行未找到占位符时兜底写入的列号)</param>
+        /// <param name="fallbackValue">兜底写入内容 (可选)</param>
+        private static void ReplaceRowPlaceholders(
+            dynamic rowRange,
+            Dictionary<string, string> replacements,
+            int fallbackCol = 0,
+            string fallbackValue = "")
+        {
+            try
+            {
+                // 一次性将该单行读入内存二维数组 (规则 7 / 规则 12)
+                object[,] matrix = (object[,])rowRange.Value2;
+                int cols = matrix.GetLength(1);
+                bool matchedAny = false;
+
+                // 遍历每个单元格，执行占位符精准替换
+                for (int c = 1; c <= cols; c++)
+                {
+                    string cellText = Convert.ToString(matrix[1, c]) ?? "";
+                    if (string.IsNullOrWhiteSpace(cellText)) continue;
+
+                    bool changed = false;
+                    foreach (var kv in replacements)
+                    {
+                        // 若单元格内容包含当前占位符
+                        if (cellText.Contains(kv.Key))
+                        {
+                            // 执行自适应原地字符串替换
+                            cellText = cellText.Replace(kv.Key, kv.Value ?? "");
+                            changed = true;
+                            matchedAny = true;
+                        }
+                    }
+
+                    if (changed)
+                    {
+                        // 单元格值发生变更，回写到对应单元格
+                        rowRange.Cells[1, c].Value2 = cellText;
+                    }
+                }
+
+                // 若整行均未命中且提供了兜底列号，执行安全回退写入
+                if (!matchedAny && fallbackCol > 0 && !string.IsNullOrWhiteSpace(fallbackValue))
+                {
+                    rowRange.Cells[1, fallbackCol].Value2 = fallbackValue;
+                }
+            }
+            catch (Exception ex)
+            {
+                // 捕获异常记录日志
+                LogHelper.WriteLog($"[TenderReport] 替换单行占位符异常: {ex.Message}");
+            }
+        }
         /// 激活工作簿中第一个可见工作表
         /// </summary>
         private static void ActivateFirstVisibleSheet(dynamic wb)
