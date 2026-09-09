@@ -2,6 +2,127 @@
 
 ## [In-Progress]
 
+- **剪切/复制箱柜运行时异常 `运算符“==”无法应用于 KeyValuePair 和 null` 彻底修复 (`Services/ExcelServices.CabinetManage.cs`, `Services/ExcelServices.Cabinet.cs`)**：
+  1. **异常根因深度剖析**：
+     - 用户点击【剪切箱柜】时，`CutCurrentCabinet` 内部调用 `CaptureActiveCabinetToClipboard`；
+     - 原代码第 207 行 `dynamic app = context.App;`，导致第 220 行 `var activeCab = Tool.GetActiveCabinet(app, ...)` 传入了 `dynamic` 实参；
+     - 依据 C# 语言规范，一旦方法入参含 `dynamic`，返回值类型即被编译器推导为 `dynamic`，调用推迟至 DLR 运行期绑定；
+     - 运行期 `GetActiveCabinet` 命中并返回了结构体 `KeyValuePair<int, CabinetAnchorModel>`，紧随其后的第 221 行 `if (activeCab == null)` 在 DLR 动态求值时试图寻找 `KeyValuePair` 与 `null` 的 `==` 运算符，因值类型结构体无法直接与 `null` 做 `==` 比较，DLR 抛出致命异常 `运算符“==”无法应用于“KeyValuePair<...>”和“<null>”类型的操作数`；
+  2. **彻底闭环修复**：
+     - 在 `CabinetManage.cs`（第 86、220、334、501 行）与 `Cabinet.cs`（第 83、748 行）中，显式将 `app` 转为 `(object)app`，切断 DLR 动态推导；
+     - 接收变量统一显式声明为强类型可空结构体 `KeyValuePair<int, Models.CabinetAnchorModel>? activeCab`；
+     - 将空值判断严格使用 `!activeCab.HasValue || activeCab.Value.Key <= 0` 标准 Nullable 语法，100% 在编译期静态绑定，杜绝 DLR 运行期介入；
+     - 编译验证：`dotnet build /t:Compile /p:DebugType=none` 完整编译通过：**0 错误**。
+
+
+- **明细行 detRow B 列超链接彻底清除与元器件行 A 列序号公式修复 (`Services/ExcelServices.Cabinet.cs`, `Services/ExcelServices.CabinetManage.cs`, `Services/ExcelServices.FormulaAdjustFee.cs`, `Tool.cs`)**：
+  1. **用户核心指令与缺陷定位**：
+     - **指令 1 (det 行的 B 列不需要链接)**：明细信息行（如第 296 行 `Cab_Det_6`）B 列箱柜名称（`箱柜6`）原本存在超链接；根因是 `FormulaAdjustFee.cs` 历史代码向模板 `Cells[cabDetRow, 2]` 添加了超链接，且从模板或源箱柜复制后未清理超链接属性；
+     - **指令 2 (底部元器件行的 A 列公式应该是 `=ROW()-ROW(A$49)`，49 应该是 det+1 行)**：从模板克隆出来的箱柜，元器件区域（`compStartRow` 至 `subsumRow - 1`）A 列序号沿用了模板写死的静态公式 `=ROW()-ROW(A$49)`，导致行号较大时（如第 298 行）显示异常序号 `298 - 49 = 249`；此处的 49 应严格自适应为当前箱柜自身明细表头行（`detRow + 1`，如第 297 行）。
+  2. **闭环修复措施**：
+     - **增强 `RefreshCabinetFeeAreaFormulas` (`ExcelServices.Cabinet.cs`)**：
+       a. 显式彻底清除明细表头 B 列超链接：`try { sheet.Cells[detRow, 2].Hyperlinks.Delete(); } catch { }`；
+       b. 内存构建二维数组一次性批量将元器件区域（`compStartRow` 至 `subsumRow - 1`）A 列序号公式刷新为 `$"=ROW()-ROW(A${detRow + 1})"`（契合规则 6 & 规则 7）；
+       c. 小计行求和公式与计费区域自适应公式同步联动刷新；
+     - **模板复制与箱柜新增链路挂接 (`ExcelServices.Cabinet.cs:CopyCabinetDetailFromTemplate`, `AddCabinetCore`)**：
+       明细块复制完成后，显式清除 `newDetRow, 2` 的超链接，并立即调度 `RefreshCabinetFeeAreaFormulas` 刷新元器件序号与计费公式；
+     - **箱柜复制与剪贴板链路挂接 (`ExcelServices.CabinetManage.cs:InsertCopiedCabinet`)**：
+       粘贴明细块后显式清除 `newDetRow, 2` 超链接，并调度 `RefreshCabinetFeeAreaFormulas` 修复元器件序号与计费公式；
+     - **调费设为默认链路清理 (`ExcelServices.FormulaAdjustFee.cs`)**：
+       定位并根除了向模板 B 列写超链接的罪魁祸首：将原代码中误写为 B 列的 `Anchor: catSheet.Cells[cabSumRow, 2]` 彻底纠正为 A 列（`Cells[cabSumRow, 1]`），并为明细行 A 列添加返回链接，B 列（汇总与明细）一律禁止添加超链接，从源头彻底切断模板污染；
+     - **全表自动校准自愈引擎升级 (`Tool.cs:FixAndFillCabinetNamesForSheet`)**：
+       在扫描箱柜并校准定义名称时，同步执行 `sheet.Cells[curDetRow, 2].Hyperlinks.Delete()` 并调用 `RefreshCabinetFeeAreaFormulas`，对已有工作表中残留的带超链接 B 列与显示 249 的历史箱柜实现瞬间自动修复；
+     - 编译验证：`dotnet build /t:Compile /p:DebugType=none` 完整编译通过：**0 错误**。
+
+- **图二二次方案集成至图一云方案中心可行性与架构需求分析**：
+  1. **背景**：用户询问图二（本地 SQLite 113 套二次回路方案与 BOM 管理中心）是否能按照图一（云方案中心 二次方案 Tab）的方式进行集成；
+  2. **现状研判**：
+     - 图一 (`cloud_solution.html`)：顶部二级 Tab 包含【一次方案】与【二次方案】，但目前数据源来自 `cloud_schemes.json`，企业方案下的二次方案为空（0 条），左侧分类为一次配电柜分类（低压进线、电容补偿等）；
+     - 图二 (`secondary_circuit_manage.html`)：数据持久化存储于本地 SQLite (`personal_components.db: secondary_circuit_schemes`)，已有 113 套真实二次控制方案，包含二次排布图分组、适用回路代号、跨门线根数、开孔、人工、材料费、子 BOM 清单及 CAD 图纸绑定；
+  3. **分析结论**：完全可行，且是云方案中心实现“一次+二次”全流程闭环的最佳路径；
+  4. **门控状态**：严格执行“需求分析门控”，仅输出全方位需求分析与架构方案，等待用户决策后再执行具体代码实施。
+
+- **批建与新建箱柜明细块插入行回归规范 `Tolsum + 4` 修复 (`Services/ExcelServices.Cabinet.cs`)**：
+  1. **现象与根因剖析**：
+     - **用户现象**：批建箱柜本应在上一台箱柜的 `Tolsum + 4` 行紧凑插入，但实际却在 `Tolsum + 5` 插入，导致两台箱柜明细块之间凭空多出了一行空白行；
+     - **深层根因定位**：在模板结构中，总计行 `Tolsum` 在第 71 行，第 72~74 行为 3 行附注与报价人落款，下一台箱柜明细块起始行正好紧随第 74 行之后，即 `71 + 4 = 75`（`Tolsum + 4`）。而在上一轮代码中，在第 131~135 行错误增加了一句 `targetDetailStartRow += 1`，导致原本已精准计算好的 `cabTolsumRow + 4` 被累加变成了 `Tolsum + 5`，两箱柜之间产生了多余空行；
+  2. **修复实施**：
+     - 彻底移除了 `Services/ExcelServices.Cabinet.cs` 中多余的 `targetDetailStartRow += 1`，使明细块起始插入行严格、精准锁定为 `Tolsum + 4`；
+     - 编译验证：`dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 错误**。
+
+- **新增箱柜插在无明细箱柜前面及无明细箱柜顶部汇总表定义名称丢失缺陷根治 (`Tool.cs`, `Services/ExcelServices.CabinetManage.cs`, `Services/ExcelServices.Cabinet.cs`)**：
+  1. **四大致命根因定位**：
+     - **根因一 (`Tool.FindStandardCategoryRowIndexes` 强绑定检测抹杀无明细箱柜)**：原代码强校验 `if (sumR > 0 && detR > 0 && tolR > 0)`，无明细箱柜无底表明细（`detR == 0, tolR == 0`），导致探测全表末尾基准行时无明细箱柜被判定为非法数据直接丢弃，回退至系统默认值 `cabSumRow = 7`，新建箱柜在第 8 行插入，硬生生插到无明细箱柜前面；
+     - **根因二 (`Tool.FixAndFillCabinetNamesForSheet` 自动校准重建除名抹杀)**：自动校准定义名称时写死 `int cabCount = detRows.Count;`（以明细块数量为基准），若表内有无明细箱柜，循环只跑明细块次数，多出的无明细箱柜根本未被绑定 `Cab_Sum_k`，直接变成“黑户”导致后续扫描无法识别；
+     - **根因三 (`CreateNewCabinetNoDetail` 与 `InsertCopiedCabinet` 注册作用域不一致)**：普通箱柜使用 `Tool.SafeSetSheetName` 注册工作表级局部名称（Sheet-level），而无明细箱柜原先使用 `wb.Names.Add` 注册在工作簿级，易引发多表同名遮蔽与跨表过滤剔除；
+     - **根因四 (`CopyCabinetDetailFromTemplate` 插入定位策略偏差)**：新建普通箱柜时未考虑末尾可能存在无明细箱柜，且插入 1 行汇总行后明细块起始行未做平移对齐。
+  2. **一揽子闭环修复实施**：
+     - **解耦末尾基准探测算法 (`Tool.cs:FindStandardCategoryRowIndexes`)**：彻底解耦汇总行末尾与明细行末尾：`cabSumRow` 精准取全表所有有效箱柜（普通柜+无明细柜）`Sum.Row` 的绝对最大值；`cabTolsumRow` 精准取全表有明细箱柜 `Tolsum.Row` 的绝对最大值；废除 `detR > 0 && tolR > 0` 绑定判定，无明细箱柜的 `sumR` 100% 精确返回；
+     - **全量兼容自动扫描补齐 (`Tool.cs:FixAndFillCabinetNamesForSheet`)**：箱柜总数重构为 `Math.Max(detRows.Count, sumRows.Count)`；对所有扫描到的汇总行 `sumRows` 100% 绑定 `Cab_Sum_k`；仅在存在明细块时绑定 `Det/Subsum/Tolsum`，杜绝无明细箱柜被除名；
+     - **统一定义名称注册规范 (`ExcelServices.CabinetManage.cs`)**：`CreateNewCabinetNoDetail` 与 `InsertCopiedCabinet` 全面迁移至 `Tool.SafeSetSheetName`，全工程 100% 统一为工作表级别规范定义名称；
+     - **优化箱柜插入与明细平移 (`ExcelServices.Cabinet.cs`)**：在末尾追加时严格在全表最大汇总行下方插入，普通箱柜明细块追加在全表最大明细块后方，且汇总行插行后明细行起始行号自适应平移 +1，杜绝碰撞错位；
+     - 执行 `dotnet build` 完整编译构建通过：**0 错误**。
+
+- **编辑箱柜“卡死”深度根因根治与非模态架构一揽子闭环升级 (`Controllers/CabinetController.cs`, `Forms/CabinetManageForm.cs`, `Services/ExcelServices.CabinetManage.cs`, `Tool.cs`, `Resources/cabinet_manage.html`)**：
+  1. **卡死致命根因定位**：
+     - **根因一 (`ShowDialog` 模态消息循环与 WebView2 COM 互锁死锁)**：原 `CabinetController.ShowCabinetDialog` 使用 `form.ShowDialog()` 启动 WinForms 模态消息循环，挂起了 Excel 主线程 COM 消息泵；而 WebView2 的 Chromium 内核初始化与 `getInitData` IPC 消息又在主线程等待 Excel COM 响应，导致跨单元 RPC 调用瞬间永久死锁卡死。
+     - **根因二 (`Tool.BuildCabinetMap` 暴力过滤丢弃无明细箱柜)**：原代码硬编码 `.Where(x => x.Value.Det != null && x.Value.Sum != null)`，因无明细箱柜只有 `Cab_Sum_k` 而无 `Cab_Det_k`，导致无明细箱柜被 100% 过滤丢弃，`GetActiveCabinetEditInfo` 始终返回 null 并弹出阻塞式 `MessageBox.Show`。
+  2. **一揽子闭环修复实施**：
+     - **全面升级为 `ShowModelessForm` 非模态架构**：彻底废除 `ShowDialog`，使用 `ExcelServices.ShowModelessForm` 挂载在 Excel 主窗口 HWND，实现不阻塞 Excel COM 泵的非模态展示，彻底消灭 Chromium 与 Excel 的死锁根源；
+     - **窗体实例复用与平滑切换**：在 `CabinetController` 与 `CabinetManageForm` 中引入 `SwitchMode`，支持单例复用，并在 `OnFormClosing` 中解绑事件并释放 `_webView`，杜绝进程残留；
+     - **根基过滤器兼容无明细箱柜**：将 `Tool.BuildCabinetMap` 升级为 `.Where(x => x.Value.Sum != null || x.Value.Det != null)`，纯汇总箱柜与标准箱柜均可精准扫描识别；
+     - **三级智能探测与兜底识别**：在 `GetActiveCabinetEditInfo` 中增加“定义名称精准匹配 -> 活动光标物理行号匹配 -> 当前表首台箱柜默认保底”三级探测，彻底移除阻断性 `MessageBox.Show`；
+     - **前端支持多箱柜自由下拉切换**：在 `cabinet_manage.html` 编辑表单顶部增加 `<el-select>` 切换箱柜下拉框，支持在编辑窗口内直接切换当前分类表的所有箱柜进行快速修改与同步回写；
+     - 资源已热同步至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`，`dotnet build /t:Compile` 编译通过：**0 错误**。
+
+- **云方案点击白板/打不开深度根因排查与一揽子闭环修复 (`Resources/cloud_solution.html`, `Forms/CloudSolutionForm.cs`, `ExcelAddInDemo.csproj`, `Services/ExcelServices.CloudSolution.cs`, `Forms/CabinetManageForm.cs`)**：
+  1. **双重白板致命根因定位**：
+     - **根因一 (HTML 代码撕裂残渣破坏 DOM 树)**：`cloud_solution.html` 第 1288 行存在一段未完成合并的代码撕裂残渣（`</div>ick="deleteBomRow($index)" title="删除">` 及后续 49 行重复的面板与按钮），且内含未闭合的 `</el-button>`、`</template>`、`</el-table-column>`。Vue 3 挂载编译时抛出致命模板语法错误，Vue 实例崩溃导致页面呈现空白白屏。
+     - **根因二 (违反 HTML5 Vue 自定义组件自闭合规范)**：依据 `local-heuristics.md:L27`，模板内存在 `<el-option ... />`、`<el-checkbox ... />`、`<el-empty ... />`、`<el-pagination ... />` 等自闭合标签，被原生 HTML 解析器吞噬后续同级节点，加剧了 DOM 树崩塌。
+     - **根因三 (输出目录缺失 HTML 文件)**：`ExcelAddInDemo.csproj` 未配置 `cloud_solution.html` 自动复制；实测 `bin\Debug\net48\Resources\cloud_solution.html` 物理文件此前根本不存在，导致 WebView2 未加载任何有效网页，默认全白。
+     - **根因四 (C# 寻址路径单一脆弱)**：`CloudSolutionForm.cs` 原先仅探测 `AppDomain.CurrentDomain.BaseDirectory`，未结合 `Tool.GetAppDirectory()` 与多级源码目录兜底，寻址失败时缺少友好页面兜底。
+     - **根因五 (后台 STA 线程 Application.Run 隐患)**：`ShowCloudSolutionDialog` 使用独立后台线程启动模态循环，存在跨线程 COM 访问与 `local-heuristics.md:L8` 记录的硬禁用风险。
+  2. **已执行的一揽子彻底修复措施**：
+     - **前端模板净化**：彻底清除了第 1288-1336 行重复代码撕裂残渣；将所有自闭合 `el-` 标签规范重构为显式闭合标签；经 AST 标签栈算法严密校验：**0 个未闭合，0 个多余标签，标签栈平衡归零**；
+     - **工程复制配置补全**：在 `ExcelAddInDemo.csproj` 中补全 `<None Include="Resources\cloud_solution.html"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>`，并已热同步至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`；
+     - **窗体寻址与容错增强**：在 `CloudSolutionForm.cs` 中引入 `Tool.GetAppDirectory()` 与多级备选路径；若发生异常输出带样式的 404 诊断页，杜绝静默白板；引入鼠标物理键检测，防范幽灵拖拽；重写 `OnFormClosing` 释放 WebView2 杜绝进程残留；
+     - **弹窗模式升级对齐**：重构 `ShowCloudSolutionDialog` 为依附 Excel 主窗口 HWND 的安全非模态弹出，杜绝多开与后台 COM 线程冲突；
+     - **修复 CabinetManageForm.cs CS0111 编译冲突**：消除冗余 `SwitchMode` 并修正 `_mode` 的 `readonly` 修饰符，`dotnet build /t:Compile` 编译通过：**0 错误**。
+
+
+- **DotRush 与 C# 扩展失效根因排查与底层运行时修复**：
+  1. **双重崩溃根因**：检查 `C#.log` 发现，不仅 DotRush 崩溃，连原本备用的 `dotnetdev-kr-custom.csharp` 的底层语言服务器 `Microsoft.CodeAnalysis.LanguageServer.exe` 也强依赖 **.NET 10.0 (`Microsoft.NETCore.App 10.0.0`)**。
+  2. **关键异常目录定位**：`ms-dotnettools.vscode-dotnet-runtime` 本地存储的 `10.0.11~x64` 目录下此前只有 8.0.30，而真正的 `10.0.11` 被备份在 `10.0.11~x64.bak` 中，导致插件每次启动都在虚假的 10.0.11 目录中找不到 .NET 10.0.0 运行时，两个插件全部崩溃闪退。
+  3. **已执行底层修复**：
+     - 已将完整的 `Microsoft.NETCore.App 10.0.11` 与 `host\fxr\10.0.11` 恢复并合并至 `globalStorage\ms-dotnettools.vscode-dotnet-runtime\.dotnet\10.0.11~x64\`；
+     - 同步部署至 `D:\Program Files\dotnet\dotnet-sdk-8.0.424-win-x64\`，并持久化写入用户级环境变量 `DOTNET_ROOT`；
+     - 验证成功：`dotnet --info` 已正确包含 8.0.30 与 10.0.11，命令行实测 `Microsoft.CodeAnalysis.LanguageServer` 与 `DotRush.dll` 均已能正常加载且退出码为 0；
+  4. **后续步骤**：用户重新执行一次 Reload Window 即可正常拉起语言服务器。
+
+- **箱柜功能对齐 ExWinner 原生规范（9 项箱柜管理功能闭环：新建/新建无明细/批建/编辑/剪切/复制/插入复制/删除/调序）全面交付 (`Models/CabinetModels.cs`, `Services/ExcelServices.CabinetManage.cs`, `Services/ExcelServices.Cabinet.cs`, `Controllers/CabinetController.cs`, `Forms/CabinetManageForm.cs`, `Resources/cabinet_manage.html`, `RibbonController.cs`, `ExcelAddInDemo.csproj`)**：
+  1. **无明细箱柜核心机制实现 (`CreateNewCabinetNoDetail`)**：
+     - 严格落实用户指令：无明细箱柜不需要底部明细区域，仅在分类表顶部汇总表插入 1 行，分配全局递增名称 `Cab_Sum_k`；
+     - **A 列自适应动态序号公式**：全面废除静态数字写死，A 列统一写入公式 `=ROW()-ROW(A$6)`，随着增删插改自适应变动；
+     - 单价与成本支持直接录入或后续填入，合价公式 `=F*G` 自动重算并联动汇总至【项目信息】表；
+     - 在 `DeleteCabinets` 中增加 `detRow > 0` 安全防护，无明细箱柜删除时不触发底层空明细删除异常。
+  1.1. **标准箱柜与批量新增、复制插入、调序的 A 列公式对齐 (`CopyCabinetDetailFromTemplate`, `BatchCreateCabinets`, `InsertCopiedCabinet`, `ApplyCabinetReorder`)**：
+     - 在 `Hyperlinks.Add` 挂载超链接后，将 `Formula` 设置为 `=ROW()-ROW(A$6)`，彻底移除 `TextToDisplay` 静态文本覆盖，完美兼备“超链接点击跳转明细”与“自适应动态序号计算”；
+     - 调序与单箱柜自愈时自动维护 A 列公式 `=ROW()-ROW(A$6)`。
+  2. **剪切/复制/插入箱柜内存整块快照吞吐 (`CopyCurrentCabinet`, `CutCurrentCabinet`, `InsertCopiedCabinet`)**：
+     - 依据规则 7，整块读取汇总行（A:M 列）与明细区域（A:Q 列）至内存模型 `CopiedCabinetContext`；
+     - 剪切保护：点击【剪切箱柜】时仅标记 `IsCut = true` 并深度快照，绝不提前破坏物理表格；在目标位置成功执行【插入复制的箱柜】并重新分配 `newK` 与定义名称后，后置安全执行物理删除源行；
+     - 支持普通有明细箱柜与纯汇总无明细箱柜的跨表复制与插入，公式与超链接自愈重建。
+  3. **批建箱柜 / 编辑箱柜信息 / 箱柜调序工作台 (`CabinetManageForm`, `cabinet_manage.html`)**：
+     - 前端采用 WebView2 + Vue 3 + Element Plus，严格遵循 `<script setup>` 结构与绿蓝相间主题（`#009688`），所有标签显式闭合；
+     - **批建箱柜**：支持从剪贴板多列自动解析（柜号、名称、型号、数量、单价、成本），支持一键批量开关“无明细”；
+     - **编辑箱柜**：支持双向回写柜号、名称、型号、数量、单价、成本，自动同步汇总行与明细行；
+     - **箱柜调序（ExWinner 核心内存整块重排算法）**：解决物理 `Cut`/`Insert` 导致公式与超链接 `#REF!` 的缺陷，整块内存读入 -> 内存重排 -> 顺序覆盖写回，100% 保持公式完整性。
+  4. **Ribbon 菜单接通与项目集成**：
+     - 在 `RibbonController.cs` 的 `OnMenuAction` 中完整接通 9 个按钮分支；
+     - 在 `ExcelAddInDemo.csproj` 中配置 `cabinet_manage.html` 的自动复制输出，并同步至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`；
+     - 代码注释规范完整（每 3 行至少 1 行中文注释），硬编码均标明 `--硬编码--`；
+     - 执行 `dotnet build` 编译构建通过：**0 错误**。
+
 
 - **分类跳转超链接挂载位置对齐 ExWinner 原生规范（A 列数字超链接跳转、B 列纯名称展示与历史错乱自愈引擎）全面交付 (`Services/ExcelServices.Category.cs`)**：
   1. **A 列序号挂载超链接**：
@@ -1295,13 +1416,42 @@
   4. **复制分类与定义名称唯一性**：克隆源工作表并清洗跨表公式，重新扫描全工作簿并为新表分配全局递增唯一的定义名称（`Cab_Sum_K`、`Cab_Det_K` 等），彻底杜绝跨表名称冲突；
   5. **自适应三合一 WebView2 窗体**：`category.html` 升级为新建/编辑/插入复制三合一自适应界面，微秒级平滑位移拖拽，已全量同步并编译通过 (0 Errors)。
 
+- **深度调研并学习 ExWinner（利驰智能电气报价软件）中箱柜下拉菜单 11 大核心功能架构与业务逻辑 (`D:\Program Files\ExWinner\`)**：
+  1. **软件与架构底层摸排**：
+     - ExWinner 同样基于 Excel-DNA (`ExcelDna.Integration.CustomUI.ExcelRibbon`) 框架开发，主功能位于 `leadsoft.superwinner.BLL.dll`、`leadsoft.superwinner.DAL.dll`、`ExcelAddIn4Scm.dll`；
+     - 箱柜菜单 11 大按钮在 ExWinner 中与 `RibbonControlIdsConst` 逐一对应（`addCabinetButton`、`addNoDetailCabinetButton`、`batchAddCabinetButton`、`editCabinetButton`、`cutCabinetButton`、`copyCabinetButton`、`pasteCabinetButton`、`deleteCabinetButton`、`orderCabinetButton`、`importCabinetBomButton`、`importAICabinetBomButton`）；
+  2. **核心业务与数据模型逻辑解析**：
+     - **箱柜与定义名称四元组映射**：ExWinner 的 `Cabinet` 实体由 `TableName` (`Cab_Det_K`)、`DataName` (元器件数据区)、`ReserveName` (`Cab_Subsum_K` 计费/保留区) 与汇总行 `Cab_Sum_K` 构成，严格遵循行首到小计行、总计行的块级管理；
+     - **新建/无明细箱柜机制**：普通箱柜复制预置模板块并分配递增 `K`，建立双向超链接；无明细箱柜（`SGCC_NoModel.xlsx`）则省去元器件明细行，直接汇总计价；
+     - **批建箱柜与甲方清单对齐**：`frmBatchAddCabinet.html` 接收外部表格多列快速粘贴，校验后批量关更新渲染并并发写表，提供自动匹配云方案组价扩展；
+     - **剪切/复制/插入/删除**：通过整块二维内存数组进行暂存（`Formula[,]`、值、格式），插入时动态计算全表 `maxK + 1`，彻底规避跨表覆盖，剪切后执行物理下移整块清除；
+     - **箱柜调序核心**：`frmOrderCabinetByList.html` 与 `FrmMoveCabinet`，采用“内存抽取全部箱柜对象 -> 按目标顺序重排 -> 清空重建”算法，彻底根除 Excel 逐行搬移导致的公式撕裂与卡死；
+     - **普通/智能BOM导入**：`FrmImportCabinetBom` 按柜号分组填充元器件行，遇空位不足向下自动插行并刷新增量公式，智能导入则结合正则/AI拆解复杂型号。
+
+- **彻底修复【复制箱柜】与【插入复制的箱柜】表格边框丢失、底色丢失及 #VALUE! 计算错误 (`Models/CabinetModels.cs`, `Tool.cs`, `Services/ExcelServices.CabinetManage.cs`)**：
+  1. **深度根因定位与排查**：
+     - 原 `InsertCopiedCabinet` 在插入空白行后，仅对单元格的 `Value2` 和 `Formula` 进行了赋值，完全未复制 Excel 单元格样式（边框线、表头底色、字体、行高、合并单元格全部丢失，视觉上成为纯无边框文字）；
+     - 原逻辑直接将源箱柜的静态公式字符串灌入新单元格，导致单价、总价公式中的相对行号错位，直接引发 `#VALUE!` 错误；
+  2. **模型扩展与物理行号映射 (`Models/CabinetModels.cs`, `Services/ExcelServices.CabinetManage.cs`)**：
+     - 在 `CopiedCabinetContext` 中补充 `SourceSumRow`、`SourceDetStartRow`、`SourceDetEndRow`、`SourceDetRow`、`SourceSubsumRow`、`SourceTolsumRow` 物理行号快照；
+     - 在 `CaptureActiveCabinetToClipboard` 抓取时完整沉淀源行号与内部结构；
+  3. **架构升级为 Excel 原生 Range.Copy 完整克隆体系 (`Tool.cs`, `Services/ExcelServices.CabinetManage.cs`)**：
+     - **汇总行格式复刻**：在插入空白行后，执行 `srcSumRange.Copy(dstSumRange)`，实现汇总行边框线、背景底色、行高 100% 完整克隆；
+     - **定义名称自适应寻址**：在插入汇总行后，通过 `Tool.SafeGetSheetName` 读取定义名称最新位置，精准推算明细块当前源行号与目标行号，彻底杜绝同表上下插入导致的物理行号错位；
+     - **明细块 100% 格式与公式相对平移克隆**：调用 `srcDetailRange.Copy(dstDetailRange)`，利用 Excel 原生机制自动平移所有相对公式（单价、总价、合价），彻底杜绝 `#VALUE!` 计算错误；
+     - **清洗与刷新闭环**：调用 `Tool.CleanRangeFormulas` 擦除外部工作簿残留路径，调用 `RefreshCabinetFeeAreaFormulas` 自适应刷新 A 列序号与小计/总计公式；
+     - **坚固降级兜底**：保留内存二维数组回填与标准细线边框设置，双轨保障极端异常下的稳健运行；
+  4. **编译构建与验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
+
 ## [In-Progress]
 
-- 等待用户在 Excel 环境中实测体验【分类】下拉菜单 5 大功能及与【项目信息】表的联动效果。
+- 复制与插入箱柜功能测试与用户验收。
 
 ## [Next]
 
-- 根据用户实际反馈推进下一阶段优化。
+- 与用户确认箱柜功能具体实施优先级，并按计划推进实施。
+
 
 
 

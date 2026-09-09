@@ -400,16 +400,8 @@
           </div>
 
           <div class="param-row-item">
-            <span class="param-label">计算范围:</span>
-            <el-radio-group v-model="calcScope" size="small">
-              <el-radio-button label="single">单台箱柜</el-radio-button>
-              <el-radio-button label="all">整表全部箱柜</el-radio-button>
-            </el-radio-group>
-          </div>
-
-          <div class="param-row-item" v-if="calcScope === 'single'">
             <span class="param-label">选择箱柜:</span>
-            <el-select v-model="selectedCabinetDet" placeholder="选择箱柜" size="small" style="width: 150px;" @change="onAnalyze">
+            <el-select v-model="selectedCabinetDet" placeholder="选择箱柜" size="small" style="width: 170px;" @change="onAnalyze">
               <el-option v-for="cab in cabinets" :key="cab.detName" :label="cab.cabinetName + ' (' + cab.detName + ')'" :value="cab.detName"></el-option>
             </el-select>
           </div>
@@ -1181,9 +1173,12 @@
         </span>
       </div>
 
-      <div style="display: flex; gap: 10px;">
-        <el-button v-if="currentTab === 'calc'" type="primary" size="small" :loading="isApplying" @click="onApply">
-          🚀 确认写入 Excel 表格
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <el-button v-if="currentTab === 'calc'" type="primary" size="small" :loading="isWritingCurrent" @click="onWriteCurrentCabinet">
+          写入当前箱柜
+        </el-button>
+        <el-button v-if="currentTab === 'calc'" type="success" size="small" :loading="isUpdatingCurrentCategory" @click="onUpdateCurrentCategory">
+          更新当前分类
         </el-button>
         <el-button v-if="currentTab === 'rules'" type="primary" size="small" :loading="isSavingRules" @click="onSaveRules">
           💾 保存当前规则配置
@@ -1207,7 +1202,8 @@
 
         // 加载与分析状态
         const isAnalyzing = ref(false);
-        const isApplying = ref(false);
+        const isWritingCurrent = ref(false);
+        const isUpdatingCurrentCategory = ref(false);
         const isSavingRules = ref(false);
 
         // 工作表与箱柜数据
@@ -1215,7 +1211,6 @@
         const selectedSheet = ref('');
         const cabinets = ref([]);
         const selectedCabinetDet = ref('');
-        const calcScope = ref('single');
 
         // 规则配置对象响应式实体
         const rules = reactive({
@@ -1525,8 +1520,24 @@
                 ElementPlus.ElMessage.warning('未能成功推导出结果，请检查箱柜元件区域');
               }
             }
+            else if (msg.action === 'writeCurrentCabinetResult') {
+              isWritingCurrent.value = false;
+              if (msg.success) {
+                ElementPlus.ElMessage.success(msg.message || `成功写入箱柜【${msg.cabinetName}】！`);
+              } else {
+                ElementPlus.ElMessage.error(msg.message || '写入当前箱柜失败，请检查工作表');
+              }
+            }
+            else if (msg.action === 'updateCurrentCategoryResult') {
+              isUpdatingCurrentCategory.value = false;
+              if (msg.success) {
+                ElementPlus.ElMessage.success(msg.message || `成功更新当前分类表共 ${msg.count} 台箱柜！`);
+              } else {
+                ElementPlus.ElMessage.error(msg.message || '更新当前分类失败，请检查工作表');
+              }
+            }
             else if (msg.action === 'applyResult') {
-              isApplying.value = false;
+              isWritingCurrent.value = false;
               if (msg.success) {
                 ElementPlus.ElMessage.success(`成功写入 ${msg.count} 台箱柜的数据与公式！`);
               } else {
@@ -1578,33 +1589,42 @@
           }
         };
 
-        const onApply = () => {
+        // 1. 写入当前箱柜
+        const onWriteCurrentCabinet = () => {
           if (!selectedSheet.value) {
-            ElementPlus.ElMessage.warning('请选择目标工作表');
+            ElementPlus.ElMessage.warning('请选择目标分类表');
             return;
           }
-          let detNames = [];
-          if (calcScope.value === 'single') {
-            if (!selectedCabinetDet.value) {
-              ElementPlus.ElMessage.warning('请选择目标箱柜');
-              return;
-            }
-            detNames.push(selectedCabinetDet.value);
-          } else {
-            detNames = cabinets.value.map(c => c.detName);
-          }
-
-          if (detNames.length === 0) {
-            ElementPlus.ElMessage.warning('未找到待处理的箱柜');
+          if (!selectedCabinetDet.value) {
+            ElementPlus.ElMessage.warning('请先选择目标箱柜');
             return;
           }
-
-          isApplying.value = true;
+          isWritingCurrent.value = true;
           if (window.chrome && window.chrome.webview) {
             window.chrome.webview.postMessage({
-              action: 'applyCalculation',
+              action: 'writeCurrentCabinet',
               sheetName: selectedSheet.value,
-              detNames: detNames,
+              detName: selectedCabinetDet.value,
+              rules: rules
+            });
+          }
+        };
+
+        // 2. 更新当前分类 (当前工作表下的全部箱柜)
+        const onUpdateCurrentCategory = () => {
+          if (!selectedSheet.value) {
+            ElementPlus.ElMessage.warning('请选择目标分类表');
+            return;
+          }
+          if (cabinets.value.length === 0) {
+            ElementPlus.ElMessage.warning('当前分类表下未检测到有效箱柜');
+            return;
+          }
+          isUpdatingCurrentCategory.value = true;
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage({
+              action: 'updateCurrentCategory',
+              sheetName: selectedSheet.value,
               rules: rules
             });
           }
@@ -1774,13 +1794,13 @@
           currentTab,
           activeRuleTab,
           isAnalyzing,
-          isApplying,
+          isWritingCurrent,
+          isUpdatingCurrentCategory,
           isSavingRules,
           sheetNames,
           selectedSheet,
           cabinets,
           selectedCabinetDet,
-          calcScope,
           rules,
           calcResult,
           newSizeInputVisible,
@@ -1796,7 +1816,8 @@
           onRefreshContext,
           triggerAutoAnalyze,
           onAnalyze,
-          onApply,
+          onWriteCurrentCabinet,
+          onUpdateCurrentCategory,
           onSaveRules,
           onResetRules,
           showNewSizeInput,

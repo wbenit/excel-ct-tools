@@ -334,6 +334,82 @@ namespace ExcelAddInDemo.Forms
                     }, JsonOptions);
                     SafeInvoke(() => _webView.CoreWebView2.PostWebMessageAsString(resJson));
                 }
+                // 响应写入当前选中的箱柜
+                else if (action == "writeCurrentCabinet")
+                {
+                    // 提取目标工作表名称
+                    string sheetName = root.TryGetProperty("sheetName", out var sn) ? sn.GetString() ?? string.Empty : string.Empty;
+                    // 提取目标箱柜 Det 定义名称
+                    string detName = root.TryGetProperty("detName", out var dn) ? dn.GetString() ?? string.Empty : string.Empty;
+                    QuotationRules? rules = null;
+                    // 反序列化规则配置
+                    if (root.TryGetProperty("rules", out var rulesElem))
+                    {
+                        rules = JsonSerializer.Deserialize<QuotationRules>(rulesElem.GetRawText(), JsonOptions);
+                    }
+
+                    // 调度单台箱柜写入业务
+                    var res = _controller.WriteSingleCabinet(sheetName, detName, rules ?? new QuotationRules());
+                    // 序列化回执报文
+                    string resJson = JsonSerializer.Serialize(new
+                    {
+                        action = "writeCurrentCabinetResult",
+                        success = res.Success,
+                        cabinetName = res.CabinetName,
+                        message = res.Message
+                    }, JsonOptions);
+                    // 线程安全回传前端
+                    SafeInvoke(() => _webView.CoreWebView2.PostWebMessageAsString(resJson));
+                }
+                // 响应更新当前分类表所有箱柜
+                else if (action == "updateCurrentCategory")
+                {
+                    // 提取目标分类工作表名称
+                    string sheetName = root.TryGetProperty("sheetName", out var sn) ? sn.GetString() ?? string.Empty : string.Empty;
+                    QuotationRules? rules = null;
+                    // 反序列化规则配置
+                    if (root.TryGetProperty("rules", out var rulesElem))
+                    {
+                        rules = JsonSerializer.Deserialize<QuotationRules>(rulesElem.GetRawText(), JsonOptions);
+                    }
+
+                    // 调度当前分类表批量更新
+                    var res = _controller.UpdateCurrentCategory(sheetName, rules ?? new QuotationRules());
+                    // 序列化回执报文
+                    string resJson = JsonSerializer.Serialize(new
+                    {
+                        action = "updateCurrentCategoryResult",
+                        success = res.Success,
+                        count = res.UpdatedCabinets,
+                        message = res.Message
+                    }, JsonOptions);
+                    // 线程安全回传前端
+                    SafeInvoke(() => _webView.CoreWebView2.PostWebMessageAsString(resJson));
+                }
+                // 响应更新全工作簿所有分类表
+                else if (action == "updateAllCategories")
+                {
+                    QuotationRules? rules = null;
+                    // 反序列化规则配置
+                    if (root.TryGetProperty("rules", out var rulesElem))
+                    {
+                        rules = JsonSerializer.Deserialize<QuotationRules>(rulesElem.GetRawText(), JsonOptions);
+                    }
+
+                    // 调度全工作簿批量更新
+                    var res = _controller.UpdateAllCategories(rules ?? new QuotationRules());
+                    // 序列化回执报文
+                    string resJson = JsonSerializer.Serialize(new
+                    {
+                        action = "updateAllCategoriesResult",
+                        success = res.Success,
+                        sheetCount = res.UpdatedSheets,
+                        cabinetCount = res.UpdatedCabinets,
+                        message = res.Message
+                    }, JsonOptions);
+                    // 线程安全回传前端
+                    SafeInvoke(() => _webView.CoreWebView2.PostWebMessageAsString(resJson));
+                }
             }
             catch (Exception ex)
             {

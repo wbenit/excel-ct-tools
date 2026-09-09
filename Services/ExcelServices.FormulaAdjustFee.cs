@@ -516,23 +516,31 @@ namespace ExcelAddInDemo
                 catSheet.Cells[cabSumRow, 11].Formula = $"=H{cabSumRow}-J{cabSumRow}";
                 catSheet.Cells[cabSumRow, 12].Formula = $"=IF(H{cabSumRow}=0,0,K{cabSumRow}/H{cabSumRow})";
 
-                // 双向超链接绑定
+                // 双向超链接绑定 (严格挂载于 A 列，B 列箱柜名称严禁添加超链接)
                 try
                 {
-                    // 汇总行 B 列超链接指向明细 A 列
+                    // 汇总行 A 列超链接指向明细行
+                    dynamic sumAnchor = catSheet.Cells[cabSumRow, 1];
                     catSheet.Hyperlinks.Add(
-                        Anchor: catSheet.Cells[cabSumRow, 2],
+                        Anchor: sumAnchor,
                         Address: "",
                         SubAddress: $"{sheetName}!A{cabDetRow}",
-                        ScreenTip: "点击跳转至明细行"
+                        ScreenTip: "点击进入本箱柜明细表" // --硬编码: 屏幕提示文本--
                     );
-                    // 明细行 B 列超链接指向汇总 A 列
+                    // 汇总行 A 列序号自适应动态公式
+                    sumAnchor.Formula = "=ROW()-ROW(A$6)"; // --硬编码: 公式表达式--
+
+                    // 明细行 A 列超链接返回顶部汇总行
                     catSheet.Hyperlinks.Add(
-                        Anchor: catSheet.Cells[cabDetRow, 2],
+                        Anchor: catSheet.Cells[cabDetRow, 1],
                         Address: "",
                         SubAddress: $"{sheetName}!A{cabSumRow}",
-                        ScreenTip: "点击返回汇总行"
+                        ScreenTip: "返回汇总行" // --硬编码: 屏幕提示文本--
                     );
+
+                    // 确保汇总行与明细行 B 列从源头杜绝任何超链接
+                    try { catSheet.Cells[cabSumRow, 2].Hyperlinks.Delete(); } catch { }
+                    try { catSheet.Cells[cabDetRow, 2].Hyperlinks.Delete(); } catch { }
                 }
                 catch { }
 

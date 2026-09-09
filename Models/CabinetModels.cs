@@ -621,6 +621,139 @@ namespace ExcelAddInDemo.Models
         // 快速生成第 K 台箱柜的总计行定义名称 (如 "Cab_Tolsum_1")
         public string GetTolsumName(int k) => $"{TolsumPrefix}{k}";
     }
+
+    /// <summary>
+    /// 箱柜类型枚举：区分标准有明细箱柜与纯汇总无明细箱柜
+    /// </summary>
+    public enum CabinetKind
+    {
+        // 标准有明细箱柜 (包含 4 个定义名称及底部明细区域)
+        Normal = 0,
+        // 纯汇总无明细箱柜 (仅在顶部汇总表占 1 行，注册 1 个 Cab_Sum_k，无底部明细)
+        NoDetail = 1
+    }
+
+    /// <summary>
+    /// 内存中暂存的复制/剪切箱柜上下文实体对象
+    /// 支持整块二维数组、公式与格式的内存驻留，跨分类表粘贴
+    /// </summary>
+    public class CopiedCabinetContext
+    {
+        // 原始箱柜序号 K
+        public int SourceCabinetK { get; set; }
+        // 原始柜号 (如 "1#进线柜")
+        public string CabinetNo { get; set; } = string.Empty;
+        // 箱柜名称
+        public string Name { get; set; } = string.Empty;
+        // 箱柜型号
+        public string Model { get; set; } = string.Empty;
+        // 箱柜数量
+        public double Quantity { get; set; } = 1.0;
+        // 计量单位 (如 "台")
+        public string Unit { get; set; } = "台"; // --硬编码--
+        // 箱柜类型 (普通有明细 / 纯汇总无明细)
+        public CabinetKind Kind { get; set; } = CabinetKind.Normal;
+        // 是否属于剪切操作 (若为剪切，在插入粘贴成功后需物理删除原源箱柜)
+        public bool IsCut { get; set; }
+        // 来源工作表名称
+        public string SourceSheetName { get; set; } = string.Empty;
+        // 顶部汇总行的一维/二维值数组快照
+        public object[,] SumRowValues { get; set; } = new object[0, 0];
+        // 顶部汇总行的公式数组快照
+        public object[,] SumRowFormulas { get; set; } = new object[0, 0];
+        // 底部明细整块物理行数值二维数组快照 (仅普通箱柜有效)
+        public object[,] DetailBlockValues { get; set; } = new object[0, 0];
+        // 底部明细整块物理行公式二维数组快照 (仅普通箱柜有效)
+        public object[,] DetailBlockFormulas { get; set; } = new object[0, 0];
+        // 底部明细整块物理行总行数
+        public int DetailBlockRowCount { get; set; }
+        // 来源箱柜汇总行原始物理行号
+        public int SourceSumRow { get; set; }
+        // 来源箱柜明细起始物理行号 (通常为 detRow - 3)
+        public int SourceDetStartRow { get; set; }
+        // 来源箱柜明细终止物理行号 (通常为 tolsumRow + 3)
+        public int SourceDetEndRow { get; set; }
+        // 来源箱柜明细表头行号 (Cab_Det)
+        public int SourceDetRow { get; set; }
+        // 来源箱柜明细小计行号 (Cab_Subsum)
+        public int SourceSubsumRow { get; set; }
+        // 来源箱柜明细总计行号 (Cab_Tolsum)
+        public int SourceTolsumRow { get; set; }
+    }
+
+    /// <summary>
+    /// 批建箱柜前端传入的单项数据传输模型
+    /// </summary>
+    public class BatchCabinetItemDto
+    {
+        // 分类/工作表名称 (如 "分类1")
+        public string Category { get; set; } = string.Empty;
+        // 柜号 (如 "1#进线柜")
+        public string CabinetNo { get; set; } = string.Empty;
+        // 箱柜名称 (如 "低压开关柜")
+        public string Name { get; set; } = string.Empty;
+        // 型号规格 (如 "GGD")
+        public string Model { get; set; } = string.Empty;
+        // 数量
+        public double Quantity { get; set; } = 1.0;
+        // 单位
+        public string Unit { get; set; } = "台"; // --硬编码--
+        // 单价 (无明细柜时使用)
+        public double UnitPrice { get; set; }
+        // 成本单价 (无明细柜时使用)
+        public double CostPrice { get; set; }
+        // 是否建为无明细箱柜
+        public bool IsNoDetail { get; set; }
+    }
+
+    /// <summary>
+    /// 编辑箱柜信息的前后端交互模型
+    /// </summary>
+    public class CabinetEditDto
+    {
+        // 箱柜序号 K
+        public int CabinetIndex { get; set; }
+        // 柜号
+        public string CabinetNo { get; set; } = string.Empty;
+        // 箱柜名称
+        public string Name { get; set; } = string.Empty;
+        // 型号规格
+        public string Model { get; set; } = string.Empty;
+        // 数量
+        public double Quantity { get; set; } = 1.0;
+        // 单位
+        public string Unit { get; set; } = "台"; // --硬编码--
+        // 销售单价 (仅针对无明细箱柜开放直接修改)
+        public double UnitPrice { get; set; }
+        // 成本单价 (仅针对无明细箱柜开放直接修改)
+        public double CostPrice { get; set; }
+        // 箱柜类型是否为无明细
+        public bool IsNoDetail { get; set; }
+    }
+
+    /// <summary>
+    /// 箱柜调序列表中单项模型
+    /// </summary>
+    public class CabinetOrderItemDto
+    {
+        // 箱柜全局唯一序号 K
+        public int CabinetIndex { get; set; }
+        // 柜号
+        public string CabinetNo { get; set; } = string.Empty;
+        // 箱柜名称
+        public string Name { get; set; } = string.Empty;
+        // 箱柜型号
+        public string Model { get; set; } = string.Empty;
+        // 数量
+        public double Quantity { get; set; } = 1.0;
+        // 单位
+        public string Unit { get; set; } = "台"; // --硬编码--
+        // 是否为无明细箱柜
+        public bool IsNoDetail { get; set; }
+        // 当前展示排序顺序 (1-based)
+        public int DisplayOrder { get; set; }
+    }
 }
+
 
 

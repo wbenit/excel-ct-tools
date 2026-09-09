@@ -62,6 +62,10 @@
     <None Include="Resources\category.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将箱柜综合管理(批建/编辑/调序)前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\cabinet_manage.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将智能输入前端 Vue 3 页面复制至构建输出路径中 -->
     <None Include="Resources\smart_input.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -96,6 +100,10 @@
     </None>
     <!-- 自动将二次图回路方案管理前端 Vue 3 页面复制至构建输出路径中 -->
     <None Include="Resources\secondary_circuit_manage.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- 自动将云方案中心前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\cloud_solution.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <!-- 自动将聚光灯个性化设置前端 Vue 3 页面复制至构建输出路径中 -->

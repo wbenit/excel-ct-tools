@@ -422,11 +422,53 @@ namespace ExcelAddInDemo
                 // 调用业务层服务：直接在顶部“成套产品报价清单”插入行并复制模板明细
                 ExcelServices.CreateNewCabinetFromSelection();
             }
+            // 响应“新建无明细箱柜”按钮指令
+            else if (controlId == "btnNewCabinetNoDetail")
+            {
+                // 调用业务层服务：在顶部汇总表插入 1 行无明细箱柜，不创建底部明细与超链接
+                ExcelServices.CreateNewCabinetNoDetailFromSelection();
+            }
+            // 响应“批建箱柜”按钮指令
+            else if (controlId == "btnBatchNewCabinet")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“批建箱柜”管理窗口
+                ExcelServices.ShowBatchNewCabinetDialog();
+            }
+            // 响应“编辑箱柜信息”按钮指令
+            else if (controlId == "btnEditCabinet")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“编辑箱柜信息”窗口
+                ExcelServices.ShowEditCabinetDialog();
+            }
+            // 响应“剪切箱柜”按钮指令
+            else if (controlId == "btnCutCabinet")
+            {
+                // 调用业务层服务：整块暂存当前箱柜至内存并打标剪切模式
+                ExcelServices.CutCurrentCabinet();
+            }
+            // 响应“复制箱柜”按钮指令
+            else if (controlId == "btnCopyCabinet")
+            {
+                // 调用业务层服务：整块暂存当前箱柜数据至内存剪贴板
+                ExcelServices.CopyCurrentCabinet();
+            }
+            // 响应“插入复制的箱柜”按钮指令
+            else if (controlId == "btnInsertCopiedCabinet")
+            {
+                // 调用业务层服务：在目标位置安全插入复制或剪切的箱柜
+                ExcelServices.InsertCopiedCabinet();
+            }
             // 响应“删除箱柜”按钮指令
             else if (controlId == "btnDeleteCabinet")
             {
                 // 调用业务层服务：删除当前选中的箱柜及其明细数据
                 ExcelServices.DeleteCabinetFromSelection();
+            }
+            // 响应“箱柜调序”按钮指令
+            else if (controlId == "btnReorderCabinet")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“箱柜调序”窗口
+                ExcelServices.ShowCabinetReorderDialog();
             }
             // 响应“企业设置”按钮指令
             else if (controlId == "btnEnterprise")

@@ -23,6 +23,9 @@ namespace ExcelAddInDemo
         // 方案默认存储子目录名称
         private const string DataDirectoryName = "data"; // --硬编码-- 数据持久化子目录
 
+        // 维持云方案窗口的静态单例引用，杜绝重复多开
+        private static CloudSolutionForm? _cloudSolutionForm = null;
+
         // 线程安全互斥锁
         private static readonly object _schemeLock = new object();
 
@@ -38,41 +41,51 @@ namespace ExcelAddInDemo
         };
 
         /// <summary>
-        /// 在独立后台 STA 线程中启动并弹出“云方案中心”现代化窗口
-        /// 遵循 WebView2 与 Chromium IPC 解耦规范，杜绝界面冻结
+        /// 启动并弹出“云方案中心”现代化窗口 (非模态弹出，安全依附 Excel 主窗口)
+        /// 彻底根除独立后台线程 COM 跨线程死锁与 Excel 硬禁用风险
         /// </summary>
         public static void ShowCloudSolutionDialog()
         {
             try
             {
-                // 创建专用的 STA 工作线程
-                var thread = new Thread(() =>
+                // 若窗体已打开且未释放，直接还原、置顶并聚焦
+                if (_cloudSolutionForm != null && !_cloudSolutionForm.IsDisposed)
                 {
-                    try
+                    // 若处于最小化状态则恢复正常尺寸
+                    if (_cloudSolutionForm.WindowState == FormWindowState.Minimized)
                     {
-                        // 实例化云方案窗口宿主窗体
-                        using var form = new CloudSolutionForm();
-                        // 启动 Windows 模态消息循环
-                        Application.Run(form);
+                        _cloudSolutionForm.WindowState = FormWindowState.Normal;
                     }
-                    catch (Exception ex)
-                    {
-                        // 记录异常日志
-                        LogHelper.WriteLog($"[CloudSolution] 启动方案中心窗体异常: {ex.Message}");
-                    }
-                });
+                    // 推至最前台
+                    _cloudSolutionForm.BringToFront();
+                    // 激活窗口焦点
+                    _cloudSolutionForm.Activate();
+                    return;
+                }
 
-                // 设置单元线程模式为 STA
-                thread.SetApartmentState(ApartmentState.STA);
-                // 设置为后台线程
-                thread.IsBackground = true;
-                // 启动线程
-                thread.Start();
+                // 实例化全新云方案窗口
+                _cloudSolutionForm = new CloudSolutionForm();
+                // 绑定窗口关闭事件，置空单例句柄
+                _cloudSolutionForm.FormClosed += (s, e) => _cloudSolutionForm = null;
+
+                // 安全获取 Excel 主窗口 HWND 句柄
+                IntPtr excelHwnd = ExcelDnaSafeAccessor.GetWindowHandle();
+                if (excelHwnd != IntPtr.Zero)
+                {
+                    // 作为 Excel 主窗口的 Owned 窗口非模态展示
+                    _cloudSolutionForm.Show(new ExcelWin32Window(excelHwnd));
+                }
+                else
+                {
+                    // 独立非模态弹出
+                    _cloudSolutionForm.Show();
+                }
             }
             catch (Exception ex)
             {
-                // 捕获顶层启动错误
-                LogHelper.WriteLog($"[CloudSolution] 调度 STA 线程失败: {ex.Message}");
+                // 记录启动异常日志
+                LogHelper.WriteLog($"[CloudSolution] 启动方案中心窗体异常: {ex.Message}");
+                MessageBox.Show($"启动云方案中心失败: {ex.Message}", "系统提示", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -81,10 +94,8 @@ namespace ExcelAddInDemo
         /// </summary>
         private static string GetCloudSchemesFilePath()
         {
-            // 获取当前程序集根目录
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            // 拼接 data 目录
-            string dataDir = Path.Combine(baseDir, DataDirectoryName);
+            // 获取插件专属 data 目录物理路径 (优先检测 XLL 真实所在目录)
+            string dataDir = Tool.GetAppDataDirectory();
             // 确保 data 目录存在
             if (!Directory.Exists(dataDir))
             {

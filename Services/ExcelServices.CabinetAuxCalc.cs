@@ -1681,5 +1681,242 @@ namespace ExcelAddInDemo
             if (poles.Contains("1")) return 1;
             return 3;
         }
+
+        /// <summary>
+        /// 针对单个指定箱柜执行智能推导分析并写入 Excel 工作表
+        /// </summary>
+        /// <param name="ws">目标工作表</param>
+        /// <param name="detName">箱柜 Det 定义名称 (如 Cab_Det_1)</param>
+        /// <param name="rules">定额与规则实体</param>
+        /// <returns>包含操作结果、箱柜名称与反馈信息的元组</returns>
+        public static (bool Success, string CabinetName, string Message) WriteSingleCabinetAuxAndShell(
+            Worksheet ws,
+            string detName,
+            QuotationRules rules)
+        {
+            // 基础空值防御校验
+            if (ws == null || string.IsNullOrWhiteSpace(detName))
+            {
+                // 参数缺失时直接返回失败
+                return (false, string.Empty, "工作表或箱柜标识为空。");
+            }
+
+            try
+            {
+                // 扫描目标箱柜的元器件区域与行号信息
+                var scanData = ScanCabinetData(ws, detName);
+                if (scanData == null)
+                {
+                    // 扫描失败返回明确提示信息
+                    return (false, string.Empty, $"未找到箱柜【{detName}】的有效数据或锚点定义。");
+                }
+
+                // 执行壳体、铜排、辅材与装配人工费的智能推导
+                var result = CalculateCabinetAuxAndShell(scanData, rules);
+                if (result == null)
+                {
+                    // 推导失败提示
+                    return (false, scanData.CabinetName, $"箱柜【{scanData.CabinetName}】推导计算失败。");
+                }
+
+                // 将计算结果与动态算式公式批量回写至 Excel
+                bool ok = WriteCabinetCalcResultToSheet(ws, scanData, result, rules);
+                if (ok)
+                {
+                    // 回写成功返回箱柜名称
+                    return (true, scanData.CabinetName, $"成功写入箱柜【{scanData.CabinetName}】的推导数据与公式！");
+                }
+                else
+                {
+                    // 回写异常提示
+                    return (false, scanData.CabinetName, $"箱柜【{scanData.CabinetName}】回写数据至工作表失败。");
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志并安全返回
+                System.Diagnostics.Debug.WriteLine($"[WriteSingleCabinetAuxAndShell] 写入单柜异常: {ex.Message}");
+                return (false, string.Empty, $"写入过程发生异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 更新当前指定分类表中的所有箱柜 (自底向上倒序更新，保障行号绝对稳定)
+        /// </summary>
+        /// <param name="ws">目标分类工作表</param>
+        /// <param name="rules">定额与规则实体</param>
+        /// <returns>包含是否成功、更新箱柜数量与反馈消息的元组</returns>
+        public static (bool Success, int UpdatedCabinets, string Message) UpdateCurrentCategoryAuxAndShell(
+            Worksheet ws,
+            QuotationRules rules)
+        {
+            // 基础空值校验
+            if (ws == null) return (false, 0, "工作表对象为空。");
+
+            try
+            {
+                // 获取当前工作表的所属工作簿引用
+                Workbook wb = ws.Parent as Workbook;
+                // 探测当前分类表下的所有有效箱柜定义
+                var validCabinets = Tool.GetSheetValidCabinets(ws, wb);
+
+                // 若未识别到箱柜锚点，尝试执行一次定义名称补齐自愈
+                if (validCabinets.Count == 0)
+                {
+                    // 触发工作表定义名称自动探测补齐
+                    Tool.FixAndFillCabinetNamesForSheet(ws);
+                    // 重新提取有效箱柜列表
+                    validCabinets = Tool.GetSheetValidCabinets(ws, wb);
+                }
+
+                // 筛选出包含 Det 明细行的有效箱柜
+                var targetCabinets = new List<KeyValuePair<int, CabinetAnchorModel>>();
+                foreach (var kvp in validCabinets)
+                {
+                    // 仅处理具备明细块的箱柜
+                    if (kvp.Value?.Det != null)
+                    {
+                        targetCabinets.Add(kvp);
+                    }
+                }
+
+                // 若无有效箱柜，直接安全返回
+                if (targetCabinets.Count == 0)
+                {
+                    // 返回无箱柜提示
+                    return (false, 0, $"工作表【{ws.Name}】中未检测到有效的明细箱柜。");
+                }
+
+                // 核心法则: 按照 Det 物理行号从大到小倒序排列 (自底向上遍历)
+                // 优势: 即使下方箱柜因缺少空行插入了新铜排行，绝不影响上方任何箱柜的物理行号！
+                targetCabinets.Sort((a, b) =>
+                {
+                    int rowA = Convert.ToInt32(a.Value.Det.Row);
+                    int rowB = Convert.ToInt32(b.Value.Det.Row);
+                    return rowB.CompareTo(rowA);
+                });
+
+                int successCount = 0;
+                // 遍历倒序箱柜集合执行推导与回写
+                foreach (var kvp in targetCabinets)
+                {
+                    // 拼接当前箱柜的 Det 定义名称
+                    string detName = $"Cab_Det_{kvp.Key}";
+                    // 动态重新扫描该箱柜数据 (每次读取最新实际行号)
+                    var scanData = ScanCabinetData(ws, detName);
+                    if (scanData == null) continue;
+
+                    // 计算推导结果
+                    var result = CalculateCabinetAuxAndShell(scanData, rules);
+                    if (result == null) continue;
+
+                    // 回写计算结果至当前工作表
+                    bool ok = WriteCabinetCalcResultToSheet(ws, scanData, result, rules);
+                    if (ok)
+                    {
+                        // 递增成功计数器
+                        successCount++;
+                    }
+                }
+
+                // 返回成功更新的箱柜总台数
+                return (successCount > 0, successCount, $"成功更新分类表【{ws.Name}】共 {successCount} 台箱柜的数据与公式！");
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                System.Diagnostics.Debug.WriteLine($"[UpdateCurrentCategoryAuxAndShell] 更新当前分类异常: {ex.Message}");
+                return (false, 0, $"更新分类表【{ws.Name}】发生异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 更新当前工作簿中所有分类表的全部箱柜 (全工作簿多表倒序更新，带屏幕刷新性能保护)
+        /// </summary>
+        /// <param name="rules">定额与规则实体</param>
+        /// <returns>包含是否成功、更新工作表总数、更新箱柜总数与提示消息的元组</returns>
+        public static (bool Success, int UpdatedSheets, int UpdatedCabinets, string Message) UpdateAllCategoriesAuxAndShell(
+            QuotationRules rules)
+        {
+            // 获取当前 Excel Application COM 接口实例
+            dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+            if (app == null) return (false, 0, 0, "无法连接到 Excel 应用程序。");
+
+            // 获取当前活动工作簿
+            Workbook activeWb = app.ActiveWorkbook;
+            if (activeWb == null) return (false, 0, 0, "当前没有打开的 Excel 工作簿。");
+
+            // 记录原始活动工作表，以便处理完成后平滑恢复激活
+            Worksheet? origActiveSheet = null;
+            try { origActiveSheet = app.ActiveSheet as Worksheet; } catch { }
+
+            // 临时关闭屏幕刷新与系统提示以提升 5~10 倍批量更新吞吐性能
+            app.ScreenUpdating = false;
+            app.DisplayAlerts = false;
+
+            int totalUpdatedSheets = 0;
+            int totalUpdatedCabinets = 0;
+
+            try
+            {
+                // 遍历活动工作簿下的每一个 Worksheet
+                foreach (Worksheet ws in activeWb.Worksheets)
+                {
+                    try
+                    {
+                        // 跳过隐藏工作表
+                        if (ws.Visible != XlSheetVisibility.xlSheetVisible) continue;
+
+                        // 提取纯文本工作表名称
+                        string wsName = Convert.ToString(ws.Name)?.Trim() ?? string.Empty;
+
+                        // 排除明确的系统非分类辅助表 (如 项目信息、元件汇总表、元器件数据管理) --硬编码: 系统保留辅助工作表名称--
+                        if (string.Equals(wsName, "项目信息", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(wsName, Models.ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(wsName, "元器件数据管理", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        // 激活工作表以避免跨表操作时的 Excel 内部 1004 COM 异常
+                        ws.Activate();
+
+                        // 调用当前分类表的批量倒序更新方法
+                        var categoryResult = UpdateCurrentCategoryAuxAndShell(ws, rules);
+                        if (categoryResult.Success && categoryResult.UpdatedCabinets > 0)
+                        {
+                            // 累加成功更新的工作表数量与箱柜数量
+                            totalUpdatedSheets++;
+                            totalUpdatedCabinets += categoryResult.UpdatedCabinets;
+                        }
+                    }
+                    catch (Exception exSheet)
+                    {
+                        // 记录单表处理异常，不阻断后续工作表处理
+                        System.Diagnostics.Debug.WriteLine($"[UpdateAllCategoriesAuxAndShell] 处理表【{ws.Name}】异常: {exSheet.Message}");
+                    }
+                }
+
+                // 构建成功返回消息
+                string msg = totalUpdatedSheets > 0
+                    ? $"成功更新 {totalUpdatedSheets} 个分类表，共 {totalUpdatedCabinets} 台箱柜的数据与公式！"
+                    : "未在工作簿中检测到可更新的有效分类表。";
+
+                return (totalUpdatedSheets > 0, totalUpdatedSheets, totalUpdatedCabinets, msg);
+            }
+            finally
+            {
+                // 恢复原始活动工作表焦点
+                try
+                {
+                    origActiveSheet?.Activate();
+                }
+                catch { }
+
+                // 强制恢复系统屏幕刷新与警告提示，杜绝界面冻结
+                app.ScreenUpdating = true;
+                app.DisplayAlerts = true;
+            }
+        }
     }
 }

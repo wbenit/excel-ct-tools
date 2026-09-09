@@ -22,12 +22,19 @@ namespace ExcelAddInDemo.Forms
         private readonly CloudSolutionController _controller;
 
         // 导入 Windows 原生 user32.dll 接口以支持无边框窗体拖拽
-        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        [System.Runtime.InteropServices.DllImport("user32.dll", CallingConvention = System.Runtime.InteropServices.CallingConvention.Winapi)]
         private static extern bool ReleaseCapture();
 
         // 导入 SendMessage 消息接口
-        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        [System.Runtime.InteropServices.DllImport("user32.dll", CallingConvention = System.Runtime.InteropServices.CallingConvention.Winapi)]
         private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        // 导入 GetAsyncKeyState 检测鼠标物理按键状态，防止幽灵拖拽死锁
+        [System.Runtime.InteropServices.DllImport("user32.dll", CallingConvention = System.Runtime.InteropServices.CallingConvention.Winapi)]
+        private static extern short GetAsyncKeyState(int vKey);
+
+        // Win32 常量: 鼠标左键虚拟键码
+        private const int VK_LBUTTON = 0x01;
 
         // Win32 常量: 标题栏拖拽消息标识
         private const int WM_NCLBUTTONDOWN = 0xA1;
@@ -116,7 +123,7 @@ namespace ExcelAddInDemo.Forms
                     // 禁用内置右键菜单，保障界面整洁纯净
                     _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
 
-                    // 禁用原生开发者工具（生产环境防误触）
+                    // 启用原生开发者工具（便于排查前端渲染）
                     _webView.CoreWebView2.Settings.AreDevToolsEnabled = true;
 
                     // 绑定接收前端发来的 WebMessage 消息路由
@@ -136,31 +143,58 @@ namespace ExcelAddInDemo.Forms
 
         /// <summary>
         /// 寻址并导航加载 cloud_solution.html 前端页面
+        /// 支持多重路径降级检测，避免在调试或独立部署路径下白屏
         /// </summary>
         private void LoadHtmlPage()
         {
             try
             {
-                // 获取基准路径
+                // 获取插件运行根目录
+                string appDir = Tool.GetAppDirectory();
+                // 获取当前应用域基准目录
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
 
-                // 候选路径1: 运行根目录下的 Resources/cloud_solution.html
-                string path1 = Path.Combine(baseDir, "Resources", "cloud_solution.html");
-                // 候选路径2: 源码工程目录下的 Resources/cloud_solution.html
-                string path2 = Path.Combine(baseDir, "..", "..", "Resources", "cloud_solution.html");
+                // 构造多级备选查找路径集合
+                string[] candidatePaths = new[]
+                {
+                    Path.Combine(appDir, "Resources", "cloud_solution.html"),
+                    Path.Combine(appDir, "publish", "Resources", "cloud_solution.html"),
+                    Path.Combine(baseDir, "Resources", "cloud_solution.html"),
+                    Path.Combine(baseDir, "publish", "Resources", "cloud_solution.html"),
+                    Path.Combine(baseDir, "..", "..", "Resources", "cloud_solution.html"),
+                    Path.Combine(baseDir, "..", "..", "..", "Resources", "cloud_solution.html"),
+                    @"d:\code\excel-ct-tools\Resources\cloud_solution.html" // --硬编码: 本地开发源码目录兜底--
+                };
 
-                // 优先检查候选路径1
-                string targetHtml = File.Exists(path1) ? path1 : (File.Exists(path2) ? path2 : "");
+                // 遍历寻找首个物理存在的 HTML 页面
+                string targetHtml = string.Empty;
+                foreach (var candidate in candidatePaths)
+                {
+                    if (File.Exists(candidate))
+                    {
+                        targetHtml = Path.GetFullPath(candidate);
+                        break;
+                    }
+                }
 
+                // 若找到有效 HTML 物理文件则执行导航
                 if (!string.IsNullOrEmpty(targetHtml))
                 {
                     // 导航加载本地 HTML 文件
-                    _webView.CoreWebView2.Navigate(new Uri(Path.GetFullPath(targetHtml)).AbsoluteUri);
+                    _webView.CoreWebView2.Navigate(new Uri(targetHtml).AbsoluteUri);
                 }
                 else
                 {
-                    // 未找到物理文件提示
-                    LogHelper.WriteLog($"[CloudSolutionForm] 未找到 cloud_solution.html 页面文件，查找路径: {path1}");
+                    // 未找到物理文件时，在 WebView2 内部呈现友好错误页，彻底杜绝静默空白白板
+                    string notFoundHtml = "<div style='font-family:Segoe UI,sans-serif;padding:30px;color:#dc2626;'>" +
+                                          "<h2>⚠️ 未找到云方案页面文件 (cloud_solution.html)</h2>" +
+                                          "<p>请确保 <code>Resources/cloud_solution.html</code> 存在并已复制至输出目录。</p>" +
+                                          "<p>检索路径列表:<ul>" +
+                                          string.Join("", Array.ConvertAll(candidatePaths, p => $"<li>{p}</li>")) +
+                                          "</ul></p></div>";
+                    _webView.CoreWebView2.NavigateToString(notFoundHtml);
+                    // 记录未找到页面日志
+                    LogHelper.WriteLog($"[CloudSolutionForm] 未找到 cloud_solution.html 页面文件，已呈现错误提示。");
                 }
             }
             catch (Exception ex)
@@ -190,12 +224,16 @@ namespace ExcelAddInDemo.Forms
 
                 switch (action)
                 {
-                    // 1. 无边框拖拽移动窗体
+                    // 1. 无边框拖拽移动窗体 (带物理鼠标状态检测，杜绝幽灵捕获死锁)
                     case "dragWindow":
                         if (this.WindowState == FormWindowState.Normal)
                         {
-                            ReleaseCapture();
-                            SendMessage(this.Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
+                            // 检测物理按键是否仍在按下状态
+                            if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0)
+                            {
+                                ReleaseCapture();
+                                SendMessage(this.Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
+                            }
                         }
                         break;
 
@@ -298,6 +336,33 @@ namespace ExcelAddInDemo.Forms
                     LogHelper.WriteLog($"[CloudSolutionForm] 投递消息失败: {ex.Message}");
                 }
             }));
+        }
+
+        /// <summary>
+        /// 窗体关闭时解绑 WebMessage 事件并释放 WebView2 控件资源
+        /// 杜绝后台 Chromium 子进程僵死残留
+        /// </summary>
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            // 执行基类关闭生命周期逻辑
+            base.OnFormClosing(e);
+
+            try
+            {
+                // 安全解绑前后端消息接收事件处理器
+                if (_webView.CoreWebView2 != null)
+                {
+                    _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+                }
+
+                // 显式释放并销毁 WebView2 控件
+                _webView.Dispose();
+            }
+            catch (Exception ex)
+            {
+                // 记录释放异常日志
+                LogHelper.WriteLog($"[CloudSolutionForm] 释放 WebView2 异常: {ex.Message}");
+            }
         }
     }
 }

@@ -947,12 +947,12 @@
           <div class="filter-toolbar">
             <div class="filter-left">
               <el-select v-model="filterCabinetModel" placeholder="柜型过滤" size="small" style="width: 130px;" clearable @change="onSearch">
-                <el-option label="全部柜型" value="" />
-                <el-option label="KYN28-12" value="KYN28-12" />
-                <el-option label="MNS" value="MNS" />
-                <el-option label="GGD" value="GGD" />
-                <el-option label="PZ30" value="PZ30" />
-                <el-option label="XL-21" value="XL-21" />
+                <el-option label="全部柜型" value=""></el-option>
+                <el-option label="KYN28-12" value="KYN28-12"></el-option>
+                <el-option label="MNS" value="MNS"></el-option>
+                <el-option label="GGD" value="GGD"></el-option>
+                <el-option label="PZ30" value="PZ30"></el-option>
+                <el-option label="XL-21" value="XL-21"></el-option>
               </el-select>
 
               <el-input
@@ -975,8 +975,8 @@
 
             <div class="filter-right">
               <el-select v-model="sortBy" size="small" style="width: 110px;" @change="onSearch">
-                <el-option label="热门排序" value="hot" />
-                <el-option label="最新发布" value="latest" />
+                <el-option label="热门排序" value="hot"></el-option>
+                <el-option label="最新发布" value="latest"></el-option>
               </el-select>
 
               <!-- 企业方案下支持一键新建或从当前 Excel 柜体抓取另存为 -->
@@ -1004,7 +1004,7 @@
               <div class="card-img-wrapper">
                 <!-- 左上角勾选框 -->
                 <div class="card-checkbox" @click.stop>
-                  <el-checkbox v-model="scheme.checked" />
+                  <el-checkbox v-model="scheme.checked"></el-checkbox>
                 </div>
                 <!-- 右上角多图徽标 (DrawingUrls 支持) -->
                 <div class="multi-img-badge" v-if="scheme.drawingUrls && scheme.drawingUrls.length > 1">
@@ -1058,7 +1058,7 @@
               v-if="!loading && schemeList.length === 0"
               description="暂未找到匹配的方案，请调整过滤条件或自建方案"
               style="grid-column: span 4; margin: 40px auto;"
-            />
+            ></el-empty>
           </div>
 
           <!-- 底部批量插入与分页栏 -->
@@ -1076,7 +1076,7 @@
               :total="totalCount"
               @size-change="onPageChange"
               @current-change="onPageChange"
-            />
+            ></el-pagination>
           </div>
         </div>
       </div>
@@ -1267,7 +1267,7 @@
 
           <div style="display: flex; align-items: center; gap: 12px;">
             <div class="multiplier-box">
-              <el-input-number v-model="loopMultiplier" :min="1" :max="100" size="small" style="width: 100px;" />
+              <el-input-number v-model="loopMultiplier" :min="1" :max="100" size="small" style="width: 100px;"></el-input-number>
               <span style="font-size: 13px; color: #475569;">个回路</span>
             </div>
 
@@ -1284,54 +1284,6 @@
               <i class="fa-solid fa-star" :style="{ color: currentDetail?.isFavorite ? '#ef4444' : '#f59e0b' }"></i>
               {{ currentDetail?.isFavorite ? '已收藏' : '加入收藏' }}
             </button>
-          </div>
-        </div>ick="deleteBomRow($index)" title="删除">
-                        <i class="fa-solid fa-xmark"></i>
-                      </el-button>
-                    </div>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </div>
-            <div class="bom-footnote">
-              <span>选择: 选择所需BOM,插入/导出...</span>
-              <span class="wl-tip">WL: 表示加入箱柜时，数量按回路数翻倍。</span>
-            </div>
-          </div>
-
-          <!-- ③【描述说明】子面板 -->
-          <div class="description-view-panel" v-if="detailActiveTab === 'description'">
-            <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px;">技术规格与使用说明</div>
-            <p>{{ currentDetail?.description || '暂无详细描述信息。' }}</p>
-          </div>
-        </div>
-
-        <!-- 详情底部控制台 (全屏、回路倍数、插入、下载、分享、收藏) -->
-        <div class="detail-action-footer">
-          <div>
-            <el-button link @click="toggleDetailFullscreen" title="全屏切换">
-              <i class="fa-solid fa-expand" style="font-size: 16px;"></i>
-            </el-button>
-          </div>
-
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <div class="multiplier-box">
-              <el-input-number v-model="loopMultiplier" :min="1" :max="100" size="small" style="width: 100px;" />
-              <span style="font-size: 13px; color: #475569;">个回路</span>
-            </div>
-
-            <el-button type="primary" @click="onInsertCurrentDetail">
-              插入
-            </el-button>
-            <el-button type="warning" plain @click="onExportBomExcel">
-              下载BOM
-            </el-button>
-            <el-button type="warning" plain @click="onShareScheme">
-              分享
-            </el-button>
-            <el-button link :type="currentDetail?.isFavorite ? 'danger' : 'warning'" @click="onToggleFavoriteCurrent">
-              <i class="fa-solid fa-star"></i> {{ currentDetail?.isFavorite ? '已收藏' : '加入收藏' }}
-            </el-button>
           </div>
         </div>
       </div>
