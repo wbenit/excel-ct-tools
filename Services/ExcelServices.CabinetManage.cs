@@ -979,121 +979,274 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 应用箱柜调序（ExWinner 核心内存整块重排算法）
-        /// 将所有箱柜对象读入内存，按照用户指定的新顺序重排写回，零公式撕裂
+        /// 应用箱柜调序（ExWinner 核心内存整块物理重排算法）
+        /// 完整双向联动：同步按用户指定新顺序对顶部汇总表与底部分类明细表进行零公式撕裂重排
         /// </summary>
         /// <param name="newOrderKList">用户排列好的箱柜序号顺序列表</param>
         /// <returns>调序是否成功</returns>
         public static bool ApplyCabinetReorder(List<int> newOrderKList)
         {
+            // 校验输入序号列表有效性
             if (newOrderKList == null || newOrderKList.Count <= 1) return true;
 
             try
             {
+                // 获取当前活动 Excel 运行环境上下文
                 var context = Tool.GetActiveExcelContext();
                 if (context == null) return false;
                 dynamic app = context.App;
                 dynamic wb = context.Wb;
                 dynamic activeSheet = context.Sheet;
 
-                var validCabinets = Tool.GetSheetValidCabinets(activeSheet, wb);
+                // 读取箱柜定义名称前缀配置对象
+                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
+
+                // 扫描获取当前工作表中所有已识别的有效箱柜列表 (显式强类型接收，断开 dynamic 推导)
+                List<KeyValuePair<int, Models.CabinetAnchorModel>> validCabinets = Tool.GetSheetValidCabinets((object)activeSheet, (object)wb);
                 if (validCabinets.Count <= 1) return true;
 
-                // 1. 抓取每个箱柜的整块数据快照
-                var memoryBlocks = new Dictionary<int, Models.CopiedCabinetContext>();
-                foreach (var cab in validCabinets)
+                // 提取当前物理排列顺序并与用户指定顺序对比
+                var currentOrder = validCabinets.Select(c => c.Key).ToList();
+                // 若新旧顺序完全一致则无需任何物理行变动
+                if (currentOrder.SequenceEqual(newOrderKList)) return true;
+
+                // 构造有效箱柜序号哈希集合进行存在性过滤
+                var validKSet = new HashSet<int>(validCabinets.Select(c => c.Key));
+                var sanitizedOrder = newOrderKList.Where(k => validKSet.Contains(k)).ToList();
+                // 容错补偿：补充可能未在传入列表中声明的已有箱柜序号
+                foreach (var k in currentOrder)
                 {
-                    int k = cab.Key;
-                    var anchor = cab.Value;
-                    int sumRow = anchor.Sum != null ? Convert.ToInt32(anchor.Sum.Row) : 0;
-                    int detRow = anchor.Det != null ? Convert.ToInt32(anchor.Det.Row) : 0;
-                    int tolsumRow = anchor.Tolsum != null ? Convert.ToInt32(anchor.Tolsum.Row) : 0;
-                    bool isNoDet = (detRow <= 0);
+                    // 若列表中缺少当前箱柜则追加在末尾
+                    if (!sanitizedOrder.Contains(k)) sanitizedOrder.Add(k);
+                }
+                // 校验清洗后的有效排序集合数量
+                if (sanitizedOrder.Count <= 1) return true;
 
-                    var block = new Models.CopiedCabinetContext
+                // 预先搜集所有拥有明细块的箱柜及其明细块物理总行数
+                var detCabinets = validCabinets.Where(c => c.Value.Det != null).OrderBy(c => (int)c.Value.Det.Row).ToList();
+                var detRowCountMap = new Dictionary<int, int>();
+                int firstDetStartRow = 0;
+
+                // 若存在拥有明细块的箱柜则计算明细区域参数
+                if (detCabinets.Count > 0)
+                {
+                    // 获取全表首个明细块的起始物理行号 (Det行减3)
+                    int firstDetRow = Convert.ToInt32(detCabinets[0].Value.Det.Row);
+                    firstDetStartRow = firstDetRow - 3;
+                    // 容错校验起始行必须大于等于1
+                    if (firstDetStartRow < 1) firstDetStartRow = firstDetRow;
+
+                    // 遍历所有有明细箱柜计算各自明细块完整物理行数
+                    for (int i = 0; i < detCabinets.Count; i++)
                     {
-                        SourceCabinetK = k,
-                        CabinetNo = Convert.ToString(activeSheet.Cells[sumRow, 2].Value)?.Trim() ?? $"箱柜{k}",
-                        Name = Convert.ToString(activeSheet.Cells[sumRow, 3].Value)?.Trim() ?? "",
-                        Model = Convert.ToString(activeSheet.Cells[sumRow, 4].Value)?.Trim() ?? "",
-                        Unit = Convert.ToString(activeSheet.Cells[sumRow, 5].Value)?.Trim() ?? "台", // --硬编码--
-                        Kind = isNoDet ? Models.CabinetKind.NoDetail : Models.CabinetKind.Normal
-                    };
-                    try { block.Quantity = Convert.ToDouble(activeSheet.Cells[sumRow, 6].Value); } catch { }
+                        var cab = detCabinets[i];
+                        int k = cab.Key;
+                        // 获取当前明细信息行与总计行物理行号
+                        int curDet = Convert.ToInt32(cab.Value.Det.Row);
+                        int curTol = cab.Value.Tolsum != null ? Convert.ToInt32(cab.Value.Tolsum.Row) : (curDet + 27);
+                        // 计算起始行 (大标题行)
+                        int curStart = curDet - 3;
+                        if (curStart < 1) curStart = curDet;
 
-                    dynamic sumRange = activeSheet.Range[$"A{sumRow}:M{sumRow}"];
-                    block.SumRowValues = (object[,])sumRange.Value2;
-                    block.SumRowFormulas = (object[,])sumRange.Formula;
+                        // 计算结束行 (总计行及附注落款共3行)
+                        int curEnd = curTol + 3;
+                        // 若存在紧随其后的下一个明细块且中间有空行则平滑包含空行
+                        if (i < detCabinets.Count - 1)
+                        {
+                            // 获取下一个明细块的起始行号
+                            int nextDet = Convert.ToInt32(detCabinets[i + 1].Value.Det.Row);
+                            int nextStart = nextDet - 3;
+                            // 若下一个起始行大于当前结束行加1则将间隙包含在当前块内
+                            if (nextStart > curEnd + 1)
+                            {
+                                curEnd = nextStart - 1;
+                            }
+                        }
 
-                    if (!isNoDet && detRow > 0)
-                    {
-                        int detStart = detRow - 3;
-                        if (detStart < 1) detStart = detRow;
-                        int detEnd = tolsumRow + 3;
-                        block.DetailBlockRowCount = detEnd - detStart + 1;
-                        dynamic dRange = activeSheet.Range[$"A{detStart}:Q{detEnd}"];
-                        block.DetailBlockValues = (object[,])dRange.Value2;
-                        block.DetailBlockFormulas = (object[,])dRange.Formula;
+                        // 计算并登记当前箱柜明细块总行数
+                        int rowCount = curEnd - curStart + 1;
+                        detRowCountMap[k] = rowCount;
                     }
-
-                    memoryBlocks[k] = block;
                 }
 
-                // 2. 按照用户最新指定的顺序组织排好序的箱柜块集合
-                var sortedBlocks = new List<Models.CopiedCabinetContext>();
-                foreach (var k in newOrderKList)
-                {
-                    if (memoryBlocks.TryGetValue(k, out var b))
-                    {
-                        sortedBlocks.Add(b);
-                    }
-                }
+                // 记录首个汇总行当前的物理行号锚点
+                int firstSumRow = Convert.ToInt32(validCabinets[0].Value.Sum.Row);
 
-                // 3. 全量物理重排：采用逐一复制插入新行并清空旧行的稳健事务
-                // 关闭屏幕更新与事件
+                // 关闭屏幕更新、弹窗拦截与事件循环以提升执行性能
                 app.ScreenUpdating = false;
                 app.DisplayAlerts = false;
                 app.EnableEvents = false;
 
                 try
                 {
-                    // 按照 sortedBlocks 重写顶部汇总表行内容
-                    int firstSumRow = Convert.ToInt32(validCabinets[0].Value.Sum.Row);
-                    for (int i = 0; i < sortedBlocks.Count; i++)
+                    // ==========================================
+                    // 阶段一：顶部汇总行物理整行剪切插入重排
+                    // ==========================================
+                    int targetSumRow = firstSumRow;
+                    foreach (int k in sanitizedOrder)
                     {
-                        int curRow = firstSumRow + i;
-                        var b = sortedBlocks[i];
-                        // 确保 A 列为自适应动态序号公式 =ROW()-ROW(A$6)
-                        activeSheet.Cells[curRow, 1].Formula = "=ROW()-ROW(A$6)"; // --硬编码: 公式表达式--
-                        activeSheet.Cells[curRow, 2].Value = b.CabinetNo;
-                        activeSheet.Cells[curRow, 3].Value = b.Name;
-                        activeSheet.Cells[curRow, 4].Value = b.Model;
-                        activeSheet.Cells[curRow, 5].Value = b.Unit;
-                        activeSheet.Cells[curRow, 6].Value = b.Quantity;
+                        // 实时动态获取箱柜 k 当前的最新汇总行物理行号 (定义名称自适应平移)
+                        dynamic? sumName = Tool.SafeGetSheetName(activeSheet, $"{sumPrefix}{k}");
+                        int curSumRow = sumName != null ? Convert.ToInt32(sumName.RefersToRange.Row) : 0;
+                        if (curSumRow <= 0) continue;
 
-                        if (b.Kind == Models.CabinetKind.NoDetail)
+                        // 若当前行号与目标行号不一致则执行原生整行剪切插入
+                        if (curSumRow != targetSumRow)
                         {
-                            object uPrice = b.SumRowValues.GetLength(1) >= 7 ? b.SumRowValues[1, 7] : 0;
-                            object cPrice = b.SumRowValues.GetLength(1) >= 10 ? b.SumRowValues[1, 10] : 0;
-                            activeSheet.Cells[curRow, 7].Value = uPrice;
-                            activeSheet.Cells[curRow, 10].Value = cPrice;
+                            // 提取源行与目标行范围
+                            dynamic cutRow = activeSheet.Rows[$"{curSumRow}:{curSumRow}"];
+                            dynamic targetRow = activeSheet.Rows[$"{targetSumRow}:{targetSumRow}"];
+                            // 原生 Cut 紧随 Insert 插入剪切单元格 (-4121 对应 xlShiftDown)
+                            cutRow.Cut();
+                            targetRow.Insert(-4121);
+                        }
+
+                        // 目标汇总行指针单步下移
+                        targetSumRow++;
+                    }
+
+                    // ==========================================
+                    // 阶段二：底部分类明细块物理整块剪切插入重排
+                    // ==========================================
+                    if (detCabinets.Count > 0 && firstDetStartRow > 0)
+                    {
+                        // 筛选新排序列表中拥有明细块的箱柜序列
+                        var orderedDetKs = sanitizedOrder.Where(k => detRowCountMap.ContainsKey(k)).ToList();
+                        int targetDetStartRow = firstDetStartRow;
+
+                        foreach (int k in orderedDetKs)
+                        {
+                            // 提取预先锁定的该箱柜明细块物理行数
+                            if (!detRowCountMap.TryGetValue(k, out int blockLen) || blockLen <= 0) continue;
+
+                            // 实时动态获取箱柜 k 当前最新的明细信息行行号
+                            dynamic? detName = Tool.SafeGetSheetName(activeSheet, $"{detPrefix}{k}");
+                            int curDetRow = detName != null ? Convert.ToInt32(detName.RefersToRange.Row) : 0;
+                            if (curDetRow <= 0) continue;
+
+                            // 推导当前明细块起始行与结束行范围
+                            int curStart = curDetRow - 3;
+                            if (curStart < 1) curStart = curDetRow;
+                            int curEnd = curStart + blockLen - 1;
+
+                            // 若当前起始行与目标起始行不一致则执行整块原生剪切插入
+                            if (curStart != targetDetStartRow)
+                            {
+                                // 提取源明细块多行范围与目标行
+                                dynamic cutBlock = activeSheet.Rows[$"{curStart}:{curEnd}"];
+                                dynamic targetBlock = activeSheet.Rows[$"{targetDetStartRow}:{targetDetStartRow}"];
+                                // 原生 Cut 紧随 Insert 插入整块明细行 (-4121 对应 xlShiftDown)
+                                cutBlock.Cut();
+                                targetBlock.Insert(-4121);
+                            }
+
+                            // 目标明细起始行指针累加当前块总行数
+                            targetDetStartRow += blockLen;
                         }
                     }
 
-                    // 刷新公式链
+                    // ==========================================
+                    // 阶段三：全局校准自愈与公式超链接双向联动刷新
+                    // ==========================================
+                    string curSheetName = Convert.ToString(activeSheet.Name) ?? "";
+                    // 重新全量扫描重排后的最新有效箱柜物理映射 (显式强类型接收，断开 dynamic 推导)
+                    List<KeyValuePair<int, Models.CabinetAnchorModel>> refreshedCabinets = Tool.GetSheetValidCabinets((object)activeSheet, (object)wb);
+
+                    foreach (var cab in refreshedCabinets)
+                    {
+                        int k = cab.Key;
+                        var anc = cab.Value;
+                        // 读取各锚点当前最新的绝对物理行号
+                        int sRow = anc.Sum != null ? Convert.ToInt32(anc.Sum.Row) : 0;
+                        int dRow = anc.Det != null ? Convert.ToInt32(anc.Det.Row) : 0;
+                        int subRow = anc.Subsum != null ? Convert.ToInt32(anc.Subsum.Row) : 0;
+                        int tolRow = anc.Tolsum != null ? Convert.ToInt32(anc.Tolsum.Row) : 0;
+
+                        if (sRow > 0)
+                        {
+                            // 1. 刷新汇总行 A 列自适应动态序号公式
+                            activeSheet.Cells[sRow, 1].Formula = "=ROW()-ROW(A$6)"; // --硬编码: 公式表达式--
+
+                            // 2. 普通有明细箱柜联动公式与超链接校准
+                            if (dRow > 0 && tolRow > 0)
+                            {
+                                // 汇总行 G 列单价指向明细总计行销售总价 H 列
+                                activeSheet.Cells[sRow, 7].Formula = $"=H{tolRow}";
+                                // 汇总行 H 列销售合价 = 数量 * 单价
+                                activeSheet.Cells[sRow, 8].Formula = $"=F{sRow}*G{sRow}";
+                                // 汇总行 J 列成本单价指向明细总计行成本总价 K 列
+                                activeSheet.Cells[sRow, 10].Formula = $"=K{tolRow}";
+                                // 汇总行 K 列毛利 = 销售合价 - 成本总价
+                                activeSheet.Cells[sRow, 11].Formula = $"=H{sRow}-J{sRow}";
+                                // 汇总行 L 列毛利率计算公式
+                                activeSheet.Cells[sRow, 12].Formula = $"=IF(H{sRow}=0,0,K{sRow}/H{sRow})";
+
+                                // 重新绑定汇总行至明细行的超链接 (保护 A 列公式)
+                                try
+                                {
+                                    dynamic sumAnchorCell = activeSheet.Cells[sRow, 1];
+                                    string detTag = $"{detPrefix}{k}";
+                                    // 汇总行 A 列设置跳转明细表头超链接
+                                    activeSheet.Hyperlinks.Add(
+                                        Anchor: sumAnchorCell,
+                                        Address: "",
+                                        SubAddress: $"'{curSheetName}'!{detTag}",
+                                        ScreenTip: "点击进入本箱柜明细表" // --硬编码: 屏幕提示文本--
+                                    );
+                                    // 恢复 A 列为自适应序号公式
+                                    sumAnchorCell.Formula = "=ROW()-ROW(A$6)"; // --硬编码: 公式表达式--
+
+                                    // 明细行 A 列设置返回顶部汇总行超链接
+                                    dynamic detAnchorCell = activeSheet.Cells[dRow, 1];
+                                    string sumTag = $"{sumPrefix}{k}";
+                                    activeSheet.Hyperlinks.Add(
+                                        Anchor: detAnchorCell,
+                                        Address: "",
+                                        SubAddress: $"'{curSheetName}'!{sumTag}",
+                                        ScreenTip: "返回汇总行"
+                                    );
+                                }
+                                catch { }
+
+                                // 确保明细行 B 列无超链接 (遵循规则 6 架构规范)
+                                try { activeSheet.Cells[dRow, 2].Hyperlinks.Delete(); } catch { }
+
+                                // 刷新明细块元器件区域序号公式、小计公式及计费公式
+                                int compStart = dRow + 2;
+                                if (subRow > compStart && tolRow >= subRow)
+                                {
+                                    // 调度批量公式自愈刷新服务 (内存二维数组批量写回)
+                                    RefreshCabinetFeeAreaFormulas(activeSheet, dRow, compStart, subRow, tolRow);
+                                }
+                            }
+                        }
+                    }
+
+                    // 触发当前活动工作表公式链全量重新计算
                     activeSheet.Calculate();
+
+                    // 重新激活工作表并聚焦首个箱柜汇总行
+                    activeSheet.Activate();
+                    if (firstSumRow > 0)
+                    {
+                        // 选中首行柜号单元格
+                        activeSheet.Cells[firstSumRow, 2].Select();
+                    }
                 }
                 finally
                 {
+                    // 恢复 Excel 屏幕更新、弹窗告警与事件响应
                     app.ScreenUpdating = true;
                     app.DisplayAlerts = true;
                     app.EnableEvents = true;
                 }
 
+                // 调序成功返回 true
                 return true;
             }
             catch (Exception ex)
             {
+                // 记录调序异常日志
                 LogHelper.WriteLog($"ApplyCabinetReorder 异常: {ex.Message}");
                 return false;
             }
