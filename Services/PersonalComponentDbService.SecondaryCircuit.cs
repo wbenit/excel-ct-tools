@@ -87,7 +87,7 @@ namespace ExcelAddInDemo.Services
                     // 构建参数化查询 SQL 语句
                     var sb = new StringBuilder(@"
                         SELECT id, group_name, scheme_name, applicable_codes, cad_drawing_name, 
-                               cross_door_count, hole_spec, labor_cost, bom_json, remark, created_at, updated_at
+                               cross_door_count, hole_spec, labor_cost, bom_json, brand, description, remark, created_at, updated_at
                         FROM secondary_circuit_schemes
                         WHERE 1=1 
                     ");
@@ -104,13 +104,15 @@ namespace ExcelAddInDemo.Services
                         cmd.Parameters.AddWithValue("@group", groupName.Trim());
                     }
 
-                    // 2. 若指定了关键字，则在方案名、适用回路、CAD图名、备注中模糊检索
+                    // 2. 若指定了关键字，则在方案名、适用回路、CAD图名、品牌、描述、备注中模糊检索
                     if (!string.IsNullOrWhiteSpace(keyword))
                     {
                         // 拼接多字段模糊查询条件
                         sb.Append(@"AND (scheme_name LIKE @kw 
                                       OR applicable_codes LIKE @kw 
                                       OR cad_drawing_name LIKE @kw 
+                                      OR brand LIKE @kw 
+                                      OR description LIKE @kw 
                                       OR remark LIKE @kw) ");
                         // 绑定模糊参数
                         cmd.Parameters.AddWithValue("@kw", $"%{keyword.Trim()}%");
@@ -172,7 +174,7 @@ namespace ExcelAddInDemo.Services
                     // 查询单条方案 SQL
                     string sql = @"
                         SELECT id, group_name, scheme_name, applicable_codes, cad_drawing_name, 
-                               cross_door_count, hole_spec, labor_cost, bom_json, remark, created_at, updated_at
+                               cross_door_count, hole_spec, labor_cost, bom_json, brand, description, remark, created_at, updated_at
                         FROM secondary_circuit_schemes
                         WHERE id = @id LIMIT 1;
                     ";
@@ -262,6 +264,60 @@ namespace ExcelAddInDemo.Services
         }
 
         /// <summary>
+        /// 根据 DWG 文件名称 (去扩展名，如 "WATSG") 精准匹配对应的二次回路方案
+        /// 严格遵循业务规则：applicable_codes 为逗号分隔的图名集合，优先集合匹配，次之匹配方案名或图纸名
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+        /// </summary>
+        /// <param name="dwgNameWithoutExt">去除 .dwg 扩展名的文件名</param>
+        /// <returns>匹配到的二次方案实体 (未匹配返回 null)</returns>
+        public static SecondarySchemeEntity? FindSchemeByDwgName(string dwgNameWithoutExt)
+        {
+            // 空文件名直接返回
+            if (string.IsNullOrWhiteSpace(dwgNameWithoutExt)) return null;
+
+            // 清洗图纸文件名 (去前后空白)
+            string cleanName = dwgNameWithoutExt.Trim();
+            // 读取全量二次方案列表
+            var allSchemes = GetAllSecondarySchemes();
+
+            // 1. 优先在 applicable_codes 逗号集合中精确匹配
+            foreach (var scheme in allSchemes)
+            {
+                // 检查适用回路代号集合中是否存在
+                if (scheme.ApplicableCodes != null && scheme.ApplicableCodes.Any(c => string.Equals(c?.Trim(), cleanName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    // 命中代号集合则直接返回
+                    return scheme;
+                }
+            }
+
+            // 2. 其次匹配方案主名称 (如某些方案直接以图纸名作为方案名)
+            foreach (var scheme in allSchemes)
+            {
+                // 比对 schemeName
+                if (string.Equals(scheme.SchemeName?.Trim(), cleanName, StringComparison.OrdinalIgnoreCase))
+                {
+                    // 命中方案名返回
+                    return scheme;
+                }
+            }
+
+            // 3. 再次匹配二次排布图/CAD 图纸名称
+            foreach (var scheme in allSchemes)
+            {
+                // 比对 cadDrawingName
+                if (!string.IsNullOrWhiteSpace(scheme.CadDrawingName) && string.Equals(scheme.CadDrawingName.Trim(), cleanName, StringComparison.OrdinalIgnoreCase))
+                {
+                    // 命中排布图返回
+                    return scheme;
+                }
+            }
+
+            // 未命中返回 null
+            return null;
+        }
+
+        /// <summary>
         /// 保存或更新单个二次回路方案
         /// </summary>
         /// <param name="scheme">二次方案实体</param>
@@ -296,9 +352,9 @@ namespace ExcelAddInDemo.Services
                         // 插入新方案 SQL
                         string insertSql = @"
                             INSERT INTO secondary_circuit_schemes 
-                            (group_name, scheme_name, applicable_codes, cad_drawing_name, cross_door_count, hole_spec, labor_cost, bom_json, remark, created_at, updated_at)
+                            (group_name, scheme_name, applicable_codes, cad_drawing_name, cross_door_count, hole_spec, labor_cost, bom_json, brand, description, remark, created_at, updated_at)
                             VALUES 
-                            (@group, @name, @codes, @cad, @cross, @hole, @labor, @bom, @remark, @created, @updated);
+                            (@group, @name, @codes, @cad, @cross, @hole, @labor, @bom, @brand, @desc, @remark, @created, @updated);
                             SELECT last_insert_rowid();
                         ";
 
@@ -313,6 +369,8 @@ namespace ExcelAddInDemo.Services
                         cmd.Parameters.AddWithValue("@hole", scheme.HoleSpec?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@labor", scheme.LaborCost);
                         cmd.Parameters.AddWithValue("@bom", bomJson);
+                        cmd.Parameters.AddWithValue("@brand", scheme.Brand?.Trim() ?? string.Empty);
+                        cmd.Parameters.AddWithValue("@desc", scheme.Description?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@remark", scheme.Remark?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@created", nowTime);
                         cmd.Parameters.AddWithValue("@updated", nowTime);
@@ -336,6 +394,8 @@ namespace ExcelAddInDemo.Services
                                 hole_spec = @hole,
                                 labor_cost = @labor,
                                 bom_json = @bom,
+                                brand = @brand,
+                                description = @desc,
                                 remark = @remark,
                                 updated_at = @updated
                             WHERE id = @id;
@@ -353,6 +413,8 @@ namespace ExcelAddInDemo.Services
                         cmd.Parameters.AddWithValue("@hole", scheme.HoleSpec?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@labor", scheme.LaborCost);
                         cmd.Parameters.AddWithValue("@bom", bomJson);
+                        cmd.Parameters.AddWithValue("@brand", scheme.Brand?.Trim() ?? string.Empty);
+                        cmd.Parameters.AddWithValue("@desc", scheme.Description?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@remark", scheme.Remark?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@updated", nowTime);
 
@@ -448,9 +510,9 @@ namespace ExcelAddInDemo.Services
                     // 预编译插入 SQL 语句
                     string sql = @"
                         INSERT INTO secondary_circuit_schemes 
-                        (group_name, scheme_name, applicable_codes, cad_drawing_name, cross_door_count, hole_spec, labor_cost, bom_json, remark, created_at, updated_at)
+                        (group_name, scheme_name, applicable_codes, cad_drawing_name, cross_door_count, hole_spec, labor_cost, bom_json, brand, description, remark, created_at, updated_at)
                         VALUES 
-                        (@group, @name, @codes, @cad, @cross, @hole, @labor, @bom, @remark, @created, @updated);
+                        (@group, @name, @codes, @cad, @cross, @hole, @labor, @bom, @brand, @desc, @remark, @created, @updated);
                     ";
 
                     // 循环保存每一个方案
@@ -472,6 +534,8 @@ namespace ExcelAddInDemo.Services
                         cmd.Parameters.AddWithValue("@hole", scheme.HoleSpec?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@labor", scheme.LaborCost);
                         cmd.Parameters.AddWithValue("@bom", bomJson);
+                        cmd.Parameters.AddWithValue("@brand", scheme.Brand?.Trim() ?? string.Empty);
+                        cmd.Parameters.AddWithValue("@desc", scheme.Description?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@remark", scheme.Remark?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@created", nowTime);
                         cmd.Parameters.AddWithValue("@updated", nowTime);
@@ -566,6 +630,10 @@ namespace ExcelAddInDemo.Services
                 HoleSpec = reader.IsDBNull(reader.GetOrdinal("hole_spec")) ? string.Empty : reader.GetString(reader.GetOrdinal("hole_spec")),
                 // 读取人工工费
                 LaborCost = reader.IsDBNull(reader.GetOrdinal("labor_cost")) ? 0.0 : reader.GetDouble(reader.GetOrdinal("labor_cost")),
+                // 读取方案品牌
+                Brand = SafeGetColumnString(reader, "brand"),
+                // 读取方案描述
+                Description = SafeGetColumnString(reader, "description"),
                 // 读取备注
                 Remark = reader.IsDBNull(reader.GetOrdinal("remark")) ? string.Empty : reader.GetString(reader.GetOrdinal("remark")),
                 // 读取创建时间
@@ -787,6 +855,26 @@ namespace ExcelAddInDemo.Services
                 LogHelper.WriteLog($"[SecondaryDb] CheckApplicableCodeConflict 异常: {ex.Message}");
                 // 异常情况下安全放行
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// 安全从 DataReader 中读取指定列名的字符串值，列不存在或为 Null 时返回空串
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+        /// </summary>
+        private static string SafeGetColumnString(SQLiteDataReader reader, string columnName)
+        {
+            try
+            {
+                // 获取列序号
+                int ord = reader.GetOrdinal(columnName);
+                // 检查是否为 DBNull 并读取
+                return (ord >= 0 && !reader.IsDBNull(ord)) ? reader.GetString(ord) : string.Empty;
+            }
+            catch
+            {
+                // 捕获列不存在等异常安全兜底
+                return string.Empty;
             }
         }
 

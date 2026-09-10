@@ -435,13 +435,19 @@ namespace ExcelAddInDemo.Services
                 result.LastModifiedFormatted = fi.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss");
 
                 // 通道 1：尝试通过 Windows 原生 Shell 提取系统缓存的高清 CAD 缩略图
-                Bitmap? shellBitmap = TryExtractShellThumbnail(filePath, 320, 240);
+                Bitmap? shellBitmap = TryExtractShellThumbnail(filePath, 640, 480);
                 if (shellBitmap != null)
                 {
+                    // 释放原始句柄前进行智能 Auto-Zoom 裁剪放大
                     using (shellBitmap)
+                    // 自动识别图形实体外包围框，像 AutoCAD ZOOM Extents 一样居中最大化
+                    using (var zoomedBmp = AutoZoomContent(shellBitmap))
                     {
-                        result.Base64Image = BitmapToBase64DataUrl(shellBitmap);
+                        // 转换放大后的高清位图为 Data URL
+                        result.Base64Image = BitmapToBase64DataUrl(zoomedBmp);
+                        // 标记提取成功状态
                         result.Success = true;
+                        // 标明不是缺省占位图
                         result.IsPlaceholder = false;
                         return result;
                     }
@@ -451,10 +457,16 @@ namespace ExcelAddInDemo.Services
                 Bitmap? headerBitmap = TryExtractDwgHeaderBitmap(filePath);
                 if (headerBitmap != null)
                 {
+                    // 释放原始流前进行智能 Auto-Zoom 裁剪放大
                     using (headerBitmap)
+                    // 自动聚焦核心图元并消除周围冗余白纸与空隙
+                    using (var zoomedBmp = AutoZoomContent(headerBitmap))
                     {
-                        result.Base64Image = BitmapToBase64DataUrl(headerBitmap);
+                        // 转换为前端可直接呈现的 Base64 格式
+                        result.Base64Image = BitmapToBase64DataUrl(zoomedBmp);
+                        // 标记成功
                         result.Success = true;
+                        // 标明真实图纸位图
                         result.IsPlaceholder = false;
                         return result;
                     }
@@ -529,6 +541,154 @@ namespace ExcelAddInDemo.Services
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// 智能自动识别 DWG 缩略图中的图形实体外包围盒，执行类似 AutoCAD ZOOM Extents 的居中最大化裁剪
+        /// </summary>
+        /// <param name="srcBmp">原始输入的缩略图位图</param>
+        /// <returns>自适应居中放大裁剪后的高质量位图</returns>
+        private static Bitmap AutoZoomContent(Bitmap srcBmp)
+        {
+            // 基础空值或微型位图保护性校验
+            if (srcBmp == null || srcBmp.Width < 20 || srcBmp.Height < 20)
+            {
+                // 异常或过小位图直接返回安全副本
+                return srcBmp != null ? new Bitmap(srcBmp) : new Bitmap(100, 100);
+            }
+
+            try
+            {
+                // 缓存位图尺寸变量
+                int width = srcBmp.Width;
+                int height = srcBmp.Height;
+
+                // 采样左上角像素作为基准暗背景颜色
+                Color cTopLeft = srcBmp.GetPixel(Math.Min(5, width - 1), Math.Min(5, height - 1));
+
+                // 初始化图形实体包围盒边界
+                int minX = width;
+                int minY = height;
+                int maxX = 0;
+                int maxY = 0;
+                // 统计有效前景像素命中数量
+                int hitCount = 0;
+
+                // 步长为 2 采样扫描全图，毫秒级快速定位 CAD 图元
+                for (int y = 0; y < height; y += 2)
+                {
+                    // 横向像素迭代扫描
+                    for (int x = 0; x < width; x += 2)
+                    {
+                        // 提取当前坐标像素色彩
+                        Color p = srcBmp.GetPixel(x, y);
+
+                        // 计算当前像素与基准深色背景的色差距离
+                        int diffDark = Math.Abs(p.R - cTopLeft.R) + Math.Abs(p.G - cTopLeft.G) + Math.Abs(p.B - cTopLeft.B);
+                        // 计算当前像素与纯白色纸张背景的色差距离
+                        int diffWhite = Math.Abs(p.R - 255) + Math.Abs(p.G - 255) + Math.Abs(p.B - 255);
+
+                        // 既不是深色底衬也不是纯白纸张，判定为有效图形要素
+                        if (diffDark > 35 && diffWhite > 35)
+                        {
+                            // 累加图元有效像素数
+                            hitCount++;
+                            // 动态收缩最小 X 边界
+                            if (x < minX) minX = x;
+                            // 动态扩张最大 X 边界
+                            if (x > maxX) maxX = x;
+                            // 动态收缩最小 Y 边界
+                            if (y < minY) minY = y;
+                            // 动态扩张最大 Y 边界
+                            if (y > maxY) maxY = y;
+                        }
+                    }
+                }
+
+                // 存在足够图形特征时执行智能自动缩放居中裁切
+                if (hitCount > 30 && maxX > minX && maxY > minY)
+                {
+                    // 计算实际图形宽度跨度
+                    int contentW = maxX - minX;
+                    // 计算实际图形高度跨度
+                    int contentH = maxY - minY;
+
+                    // 预留 8% 呼吸边距，杜绝尺寸标注与文字贴边
+                    int padX = Math.Max(12, (int)(contentW * 0.08));
+                    // 预留纵向呼吸边距
+                    int padY = Math.Max(12, (int)(contentH * 0.08));
+
+                    // 换算源图裁剪起始坐标与尺寸 (严格限定在有效绘图区域内，防止吸入底部白纸)
+                    int srcX = Math.Max(0, minX - padX);
+                    int srcY = Math.Max(0, minY - padY);
+                    int srcW = Math.Min(width - srcX, contentW + padX * 2);
+                    int srcH = Math.Min(height - srcY, contentH + padY * 2);
+
+                    // 目标黄金视口比例 16:9 --硬编码-- 视口标准宽高比
+                    double targetRatio = 16.0 / 9.0;
+                    int canvasW, canvasH;
+
+                    // 计算当前裁剪块宽高比
+                    double curRatio = (double)srcW / srcH;
+                    if (curRatio < targetRatio)
+                    {
+                        // 偏窄/正方形：以高度为基准，向两侧拓宽画布至 16:9
+                        canvasH = srcH;
+                        canvasW = (int)Math.Round(srcH * targetRatio);
+                    }
+                    else
+                    {
+                        // 偏宽：以宽度为基准，向上下拓高画布至 16:9
+                        canvasW = srcW;
+                        canvasH = (int)Math.Round(srcW / targetRatio);
+                    }
+
+                    // 规范化输出分辨率 (至少 480 像素宽度以保障清晰度)
+                    int finalW = Math.Max(480, canvasW);
+                    int finalH = (int)Math.Round(finalW / targetRatio);
+
+                    // 创建最终最大化居中的位图对象
+                    var zoomedBmp = new Bitmap(finalW, finalH);
+                    // 启用高质量图形绘制管道
+                    using (var g = Graphics.FromImage(zoomedBmp))
+                    {
+                        // 开启三次双线性高平滑插值
+                        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                        // 开启抗锯齿绘制模式
+                        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+                        // 开启高质量像素偏移对齐
+                        g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+
+                        // 统一使用背景色平涂整图底色，消除留白
+                        g.Clear(cTopLeft);
+
+                        // 计算图元在最终画布中的居中渲染矩形 (缩放至 92% 充满画布)
+                        double scale = Math.Min((double)(finalW * 0.92) / srcW, (double)(finalH * 0.92) / srcH);
+                        int drawW = (int)(srcW * scale);
+                        int drawH = (int)(srcH * scale);
+                        int drawX = (finalW - drawW) / 2;
+                        int drawY = (finalH - drawH) / 2;
+
+                        // 构造源图裁剪截取矩形
+                        var srcRect = new Rectangle(srcX, srcY, srcW, srcH);
+                        // 构造目标视口贴合居中矩形
+                        var destRect = new Rectangle(drawX, drawY, drawW, drawH);
+                        // 将主体图元绘制至目标缩放画布
+                        g.DrawImage(srcBmp, destRect, srcRect, GraphicsUnit.Pixel);
+                    }
+
+                    // 返回已放大居中的高质量缩略图
+                    return zoomedBmp;
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录裁剪异常日志并优雅降级
+                LogHelper.WriteLog($"[DwgPreviewService] AutoZoomContent 发生异常: {ex.Message}");
+            }
+
+            // 图元特征不明显或异常时返回原图完整副本
+            return new Bitmap(srcBmp);
         }
 
         /// <summary>

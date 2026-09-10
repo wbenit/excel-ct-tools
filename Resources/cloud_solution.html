@@ -7,9 +7,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>鑫壬云方案中心</title>
     <!-- 引入 Element Plus CSS 样式库 -->
-    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/element-plus/dist/index.css"
+    />
     <!-- 引入 FontAwesome 图标库 -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
     <!-- 引入 Vue 3 核心库 -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <!-- 引入 Element Plus 核心库 -->
@@ -25,10 +31,13 @@
         padding: 0;
         user-select: none;
       }
-      html, body {
+      html,
+      body {
         height: 100%;
         overflow: hidden;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
         background-color: #f1f5f9;
         color: #1e293b;
       }
@@ -128,7 +137,7 @@
         color: var(--primary-color);
       }
       .top-tab-item.active::after {
-        content: '';
+        content: "";
         position: absolute;
         bottom: -2px;
         left: 0;
@@ -171,12 +180,34 @@
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       }
 
+      /* 全局滚动条高品质美化规范 */
+      /* 自定义纵向与横向滚动条轨道与滑块，保证滚动视觉轻盈 */
+      ::-webkit-scrollbar {
+        width: 7px;
+        height: 7px;
+      }
+      /* 滚动条轨道底色 */
+      ::-webkit-scrollbar-track {
+        background: #f8fafc;
+      }
+      /* 滚动条滑块正常状态 */
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      /* 滚动条滑块悬停高亮 */
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+
       /* 页面主体内容区 */
       .main-body {
         flex: 1;
         display: flex;
         overflow: hidden;
         position: relative;
+        /* 允许内部 flex/grid 子容器正确计算高度并触发滚动条 */
+        min-height: 0;
       }
 
       /* 企业方案专属左侧分类树抽屉 */
@@ -230,6 +261,9 @@
         display: flex;
         flex-direction: column;
         overflow: hidden;
+        /* 关键：消除默认 auto 限制，支持内层子容器滚动条顺畅工作 */
+        min-height: 0;
+        min-width: 0;
       }
 
       /* 检索与多维筛选工具栏 */
@@ -255,13 +289,19 @@
         gap: 12px;
       }
 
-      /* 方案 4 列卡片网格展示容器 (Grid Layout) */
+      /* 方案卡片自适应网格展示容器 (锁定每行 3 列标准工业排版) */
       .card-grid-container {
         flex: 1;
-        overflow-y: auto;
+        /* 关键：设置 min-height: 0 激活外层纵向滚动 */
+        min-height: 0;
+        overflow-y: auto !important;
+        overflow-x: hidden;
         padding: 16px 20px;
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        /* 每行严格呈现 3 列自适应网格排版，minmax(0, 1fr) 防止子元素撑破容器 */
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        /* 行高自适应内容展开，并保持同一行高度整齐对齐 */
+        grid-auto-rows: auto;
         gap: 16px;
         align-content: start;
       }
@@ -280,7 +320,9 @@
       }
       .scheme-card:hover {
         transform: translateY(-4px);
-        box-shadow: 0 10px 15px -3px rgba(0, 150, 136, 0.15), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        box-shadow:
+          0 10px 15px -3px rgba(0, 150, 136, 0.15),
+          0 4px 6px -2px rgba(0, 0, 0, 0.05);
         border-color: var(--primary-color);
       }
       .card-img-wrapper {
@@ -417,8 +459,14 @@
         animation: fadeIn 0.2s ease-out;
       }
       @keyframes fadeIn {
-        from { opacity: 0; transform: scale(0.99); }
-        to { opacity: 1; transform: scale(1); }
+        from {
+          opacity: 0;
+          transform: scale(0.99);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
       }
       .detail-header-bar {
         height: 48px;
@@ -532,7 +580,7 @@
         color: #f59e0b;
       }
       .detail-tab-btn.active::after {
-        content: '';
+        content: "";
         position: absolute;
         bottom: 0;
         left: 0;
@@ -828,6 +876,428 @@
         background-color: var(--primary-hover) !important;
         border-color: var(--primary-hover) !important;
       }
+
+      /* ========================================================
+         二次方案专属样式：目录齿轮、DWG卡片、参数网格与编辑弹窗
+         ======================================================== */
+      /* 目录设置齿轮按钮 */
+      .btn-gear-setting {
+        width: 26px;
+        height: 26px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        color: #94a3b8;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .btn-gear-setting:hover {
+        color: var(--primary-color);
+        background: #f1f5f9;
+        transform: rotate(30deg);
+      }
+
+      /* 分类目录树后方的数量徽标 */
+      .category-badge {
+        font-family: monospace;
+        font-size: 11px;
+        color: var(--primary-color);
+        background: rgba(0, 150, 136, 0.1);
+        padding: 1px 6px;
+        border-radius: 10px;
+        font-weight: 600;
+      }
+
+      /* 二次方案 DWG 专属卡片 (100% 对齐图 1 高品质视觉规范) */
+      .secondary-card {
+        background: #ffffff;
+        border: 1.5px solid #009688;
+        border-radius: 10px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 2px 8px rgba(0, 150, 136, 0.08);
+        position: relative;
+        /* 解除 310px 宽度限制，支持 3 列网格百分之百自适应 */
+        min-width: 0;
+        width: 100%;
+        /* 核心防挤压：锁定卡片基准最小高度为 350px，在 3 列排版下整齐舒适 */
+        min-height: 350px;
+        /* 禁止被 flex 布局算法纵向压缩 */
+        flex-shrink: 0;
+      }
+      .secondary-card:hover {
+        transform: translateY(-3px);
+        box-shadow:
+          0 10px 20px -5px rgba(0, 150, 136, 0.2),
+          0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      }
+      /* 右上角深绿对勾徽标 (对齐图 1) */
+      .sec-card-badge-check {
+        position: absolute;
+        top: -1px;
+        right: -1px;
+        width: 26px;
+        height: 26px;
+        background: #00796b;
+        color: #ffffff;
+        border-bottom-left-radius: 13px;
+        border-top-right-radius: 9px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        justify-content: center;
+        font-size: 12px;
+        z-index: 5;
+        box-shadow: -1px 1px 3px rgba(0, 0, 0, 0.1);
+      }
+
+      /* 略缩图上方：徽标行 + 方案标题 + 描述 */
+      .sec-card-header {
+        padding: 10px 14px 8px;
+        background: #ffffff;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        /* 防止标题头部被收缩 */
+        flex-shrink: 0;
+      }
+      .sec-tag-group {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        padding-right: 24px;
+      }
+      /* 方案目录名称标签 (如: 双电源) */
+      .sec-tag-folder {
+        font-size: 11px;
+        font-weight: 700;
+        color: #00796b;
+        background: #e0f2f1;
+        border: 1px solid #b2dfdb;
+        padding: 1px 7px;
+        border-radius: 4px;
+        font-family: monospace;
+      }
+      /* DWG 文件名标签 (去扩展名，如: WATSG) */
+      .sec-tag-dwg {
+        font-size: 11px;
+        font-weight: 700;
+        color: #334155;
+        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
+        padding: 1px 7px;
+        border-radius: 4px;
+        font-family: monospace;
+      }
+      /* 品牌标签 (如: 施耐德) */
+      .sec-tag-brand {
+        font-size: 10.5px;
+        font-weight: 600;
+        color: #047857;
+        background: #d1fae5;
+        border: 1px solid #a7f3d0;
+        padding: 1px 6px;
+        border-radius: 4px;
+      }
+      /* 方案大标题 (粗黑体，字号 15px，对齐图 1) */
+      .sec-scheme-title {
+        font-size: 15px;
+        font-weight: 700;
+        color: #0f172a;
+        margin-top: 2px;
+        line-height: 1.35;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      /* 描述文本 (字号 12px，两行省略) */
+      .sec-desc-text {
+        font-size: 12px;
+        color: #64748b;
+        line-height: 1.45;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-height: 34px;
+      }
+
+      /* 中间略缩图视口 (3 列排版下黄金比例 145px 蓝图视口) */
+      .sec-dwg-viewport {
+        height: 145px;
+        min-height: 145px;
+        max-height: 145px;
+        flex-shrink: 0;
+        background: #0b1120;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        border-top: 1px solid #f1f5f9;
+        border-bottom: 1px solid #f1f5f9;
+      }
+      .sec-preview-img {
+        width: 100%;
+        height: 100%;
+        /* 后端已智能 Zoom Extents 最大化居中，前端 contain 完整保真呈现全部标注与图元 */
+        object-fit: contain;
+        object-position: center;
+        transition: transform 0.3s;
+      }
+      .secondary-card:hover .sec-preview-img {
+        transform: scale(1.03);
+      }
+      .sec-preview-placeholder {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #090d16;
+      }
+      .sec-badge-format {
+        position: absolute;
+        bottom: 6px;
+        right: 8px;
+        font-family: monospace;
+        font-size: 10px;
+        color: #94a3b8;
+        background: rgba(15, 23, 42, 0.85);
+        padding: 2px 7px;
+        border-radius: 3px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        pointer-events: none;
+      }
+
+      /* 略缩图下方参数网格 (3 列紧凑适配双列网格结构) */
+      .sec-params-body {
+        padding: 8px 12px 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        background: #ffffff;
+        /* 防止参数区被压缩 */
+        flex-shrink: 0;
+      }
+      .sec-params-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        align-items: center;
+      }
+      .sec-param-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 11.5px;
+      }
+      .sec-p-label {
+        color: #475569;
+        font-weight: 500;
+      }
+      .sec-p-val {
+        font-family: monospace;
+        font-weight: 600;
+        color: #0f172a;
+      }
+      .sec-p-val.price {
+        color: #008477;
+        font-weight: 700;
+      }
+      .sec-layout-badge {
+        font-family: monospace;
+        font-weight: 700;
+        color: #334155;
+        background: #f1f5f9;
+        padding: 1px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        border: 1px solid #e2e8f0;
+      }
+
+      /* 底部操作与更新时间 (3 列响应式紧凑排版) */
+      .sec-card-footer {
+        padding: 6px 12px 8px;
+        border-top: 1px solid #f1f5f9;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: auto;
+        background: #ffffff;
+        /* 确保底部按钮栏固定在底部绝不收缩 */
+        flex-shrink: 0;
+      }
+      .sec-update-time {
+        font-size: 10.5px;
+        color: #94a3b8;
+      }
+      .sec-action-buttons {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .sec-btn-cad {
+        padding: 3px 8px;
+        font-size: 11.5px;
+        color: #475569;
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .sec-btn-cad:hover {
+        color: var(--primary-color);
+        border-color: var(--primary-color);
+        background: #f0fdf9;
+      }
+      .sec-btn-edit {
+        padding: 3px 10px;
+        font-size: 11.5px;
+        font-weight: 500;
+        color: #ffffff;
+        background: var(--primary-color);
+        border: 1px solid var(--primary-color);
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .sec-btn-edit:hover {
+        background: var(--primary-hover);
+        border-color: var(--primary-hover);
+      }
+
+      /* ===== 二次回路编辑弹窗与 BOM 专属样式 (绿蓝主色调 #009688) ===== */
+      .sec-edit-dialog .el-dialog__header {
+        padding: 14px 20px;
+        border-bottom: 1px solid #e2e8f0;
+        margin-right: 0;
+      }
+      .sec-edit-dialog .el-dialog__body {
+        padding: 18px 22px;
+        max-height: 72vh;
+        overflow-y: auto;
+      }
+      .sec-edit-dialog .el-dialog__footer {
+        padding: 12px 20px;
+        border-top: 1px solid #e2e8f0;
+        background: #f8fafc;
+      }
+      .sec-meta-section {
+        background: #ffffff;
+      }
+      .sec-form-row-3 {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+        margin-bottom: 12px;
+      }
+      .sec-form-row-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-bottom: 12px;
+      }
+      .sec-form-row-1 {
+        margin-bottom: 12px;
+      }
+      .sec-field-label {
+        font-size: 12px;
+        color: #475569;
+        margin-bottom: 4px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .sec-bom-container {
+        margin-top: 16px;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 14px;
+        background: #f8fafc;
+      }
+      .sec-bom-header-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+      }
+      .sec-bom-title {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: #008477;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .sec-bom-table-wrapper {
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        background: #ffffff;
+        overflow-x: auto;
+      }
+      .sec-bom-data-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+        text-align: left;
+      }
+      .sec-bom-data-table th {
+        background: #f1f5f9;
+        color: #475569;
+        font-weight: 600;
+        padding: 8px 10px;
+        border-bottom: 1px solid #cbd5e1;
+        border-right: 1px solid #e2e8f0;
+      }
+      .sec-bom-data-table td {
+        padding: 6px 8px;
+        border-bottom: 1px solid #f1f5f9;
+        border-right: 1px solid #e2e8f0;
+      }
+      .sec-bom-data-table tr:hover {
+        background: #f8fafc;
+      }
+      .sec-bom-summary-bar {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 24px;
+        padding-top: 12px;
+        padding-right: 6px;
+        font-size: 12.5px;
+      }
+      .sec-summary-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .sec-summary-val {
+        font-family: monospace;
+        font-weight: 700;
+      }
+      .sec-btn-del {
+        color: #f43f5e;
+        border: none;
+        background: none;
+        cursor: pointer;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 12px;
+        transition: background 0.15s;
+      }
+      .sec-btn-del:hover {
+        background: #ffe4e6;
+      }
     </style>
   </head>
   <body>
@@ -842,7 +1312,11 @@
           <div class="ctrl-btn" title="最小化" @click="minimizeWindow">
             <i class="fa-solid fa-minus"></i>
           </div>
-          <div class="ctrl-btn" title="最大化/还原" @click="toggleMaximizeWindow">
+          <div
+            class="ctrl-btn"
+            title="最大化/还原"
+            @click="toggleMaximizeWindow"
+          >
             <i class="fa-regular fa-square"></i>
           </div>
           <div class="ctrl-btn close" title="关闭" @click="closeWindow">
@@ -872,7 +1346,12 @@
           </div>
         </div>
         <div>
-          <el-tag size="small" type="success" effect="plain" v-if="currentScope === 'industry'">
+          <el-tag
+            size="small"
+            type="success"
+            effect="plain"
+            v-if="currentScope === 'industry'"
+          >
             <i class="fa-solid fa-lock"></i> 官方标准母版库 (只读)
           </el-tag>
           <el-tag size="small" type="primary" effect="plain" v-else>
@@ -913,13 +1392,127 @@
       <div class="main-body">
         <!-- 企业方案专属：左侧分类文件夹树 -->
         <div class="left-category-sidebar" v-if="currentScope === 'enterprise'">
+          <!-- 侧边栏标题栏 -->
           <div class="category-header">
-            <span><i class="fa-regular fa-folder-open"></i> 分类目录</span>
-            <el-button link type="primary" size="small" @click="onAddCategoryPrompt">
+            <span
+              ><i class="fa-regular fa-folder-open"></i> {{ currentSchemeType
+              === 'secondary' ? '方案目录树' : '分类目录' }}</span
+            >
+            <!-- 当处于二次方案时：显示目录设置齿轮按钮 -->
+            <button
+              v-if="currentSchemeType === 'secondary'"
+              class="btn-gear-setting"
+              title="设置二次回路图纸根目录"
+              @click="openDirSettingDialog"
+            >
+              <i class="fa-solid fa-gear"></i>
+            </button>
+            <!-- 当处于一次方案时：保留原有一键新建分类按钮 -->
+            <el-button
+              v-else
+              link
+              type="primary"
+              size="small"
+              @click="onAddCategoryPrompt"
+            >
               <i class="fa-solid fa-plus"></i> 新建
             </el-button>
           </div>
-          <div class="category-list">
+
+          <!-- ① 二次方案模式：展示 DWG 图纸子文件夹树 -->
+          <div class="category-list" v-if="currentSchemeType === 'secondary'">
+            <!-- 全部方案分类选项 (汇总全量子目录 DWG 文件总数) -->
+            <div
+              class="category-item"
+              :class="{ active: selectedSecondaryFolder === null }"
+              @click="onSelectSecondaryFolder(null)"
+            >
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 8px;
+                  flex: 1;
+                  min-width: 0;
+                "
+              >
+                <i class="fa-solid fa-layer-group" style="color: #009688"></i>
+                <span
+                  style="
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                  "
+                  >全部方案分类</span
+                >
+              </div>
+              <span class="category-badge">{{ totalSecondaryDwgCount }}</span>
+            </div>
+
+            <!-- 遍历展示扫描到的各子文件夹 (如: 双电源、时控开关、智能照明等) -->
+            <div
+              v-for="folder in secondaryFolders"
+              :key="folder.fullPath"
+              class="category-item"
+              :class="{ active: selectedSecondaryFolder && selectedSecondaryFolder.fullPath === folder.fullPath }"
+              @click="onSelectSecondaryFolder(folder)"
+            >
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 8px;
+                  flex: 1;
+                  min-width: 0;
+                "
+              >
+                <i class="fa-regular fa-folder" style="color: #64748b"></i>
+                <span
+                  style="
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                  "
+                  >{{ folder.name }}</span
+                >
+              </div>
+              <span class="category-badge">{{ folder.dwgCount }}</span>
+            </div>
+
+            <!-- 尚未设置目录引导提示条 -->
+            <div
+              v-if="!secondaryDwgRootDir"
+              style="
+                padding: 24px 12px;
+                text-align: center;
+                color: #94a3b8;
+                font-size: 12px;
+              "
+            >
+              <i
+                class="fa-regular fa-folder-open"
+                style="
+                  font-size: 30px;
+                  margin-bottom: 8px;
+                  display: block;
+                  color: #cbd5e1;
+                "
+              ></i>
+              <span>尚未配置二次图纸根目录</span>
+              <div style="margin-top: 10px">
+                <el-button
+                  type="primary"
+                  size="small"
+                  @click="openDirSettingDialog"
+                >
+                  <i class="fa-solid fa-gear"></i> 立即设置目录
+                </el-button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ② 一次方案模式：保留原有的一次配电柜分类树 -->
+          <div class="category-list" v-else>
             <div
               class="category-item"
               :class="{ active: selectedCategoryId === '' }"
@@ -945,138 +1538,588 @@
         <div class="content-area">
           <!-- 检索过滤工具条 -->
           <div class="filter-toolbar">
-            <div class="filter-left">
-              <el-select v-model="filterCabinetModel" placeholder="柜型过滤" size="small" style="width: 130px;" clearable @change="onSearch">
-                <el-option label="全部柜型" value=""></el-option>
-                <el-option label="KYN28-12" value="KYN28-12"></el-option>
-                <el-option label="MNS" value="MNS"></el-option>
-                <el-option label="GGD" value="GGD"></el-option>
-                <el-option label="PZ30" value="PZ30"></el-option>
-                <el-option label="XL-21" value="XL-21"></el-option>
-              </el-select>
+            <!-- ① 二次方案工具栏 -->
+            <template v-if="currentSchemeType === 'secondary'">
+              <div class="filter-left">
+                <!-- 当前子文件夹路径与选中状态徽标 -->
+                <el-tag type="success" effect="light" size="small">
+                  <i class="fa-regular fa-folder-open"></i> 当前子目录: {{
+                  selectedSecondaryFolder ? selectedSecondaryFolder.name :
+                  '全部方案分类' }}
+                </el-tag>
 
-              <el-input
-                v-model="searchKeyword"
-                placeholder="搜索方案名称、柜型、作者或关键字..."
-                size="small"
-                style="width: 260px;"
-                clearable
-                @keyup.enter="onSearch"
-              >
-                <template #prefix>
-                  <i class="fa-solid fa-magnifying-glass"></i>
-                </template>
-              </el-input>
+                <!-- 二次方案专属搜索输入框 -->
+                <el-input
+                  v-model="secondarySearchKw"
+                  placeholder="搜索 DWG 图名、品牌、描述或工艺关键字..."
+                  size="small"
+                  style="width: 280px"
+                  clearable
+                  @keyup.enter="onSecondarySearch"
+                  @clear="onSecondarySearch"
+                >
+                  <template #prefix>
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                  </template>
+                </el-input>
 
-              <el-button type="primary" size="small" @click="onSearch">
-                搜索
-              </el-button>
-            </div>
+                <!-- 搜索按钮 -->
+                <el-button
+                  type="primary"
+                  size="small"
+                  @click="onSecondarySearch"
+                >
+                  搜索
+                </el-button>
+              </div>
 
-            <div class="filter-right">
-              <el-select v-model="sortBy" size="small" style="width: 110px;" @change="onSearch">
-                <el-option label="热门排序" value="hot"></el-option>
-                <el-option label="最新发布" value="latest"></el-option>
-              </el-select>
+              <div class="filter-right">
+                <!-- 刷新当前目录 DWG 与参数数据 -->
+                <el-button size="small" plain @click="refreshSecondaryCards">
+                  <i class="fa-solid fa-arrows-rotate"></i> 刷新图纸
+                </el-button>
+              </div>
+            </template>
 
-              <!-- 企业方案下支持一键新建或从当前 Excel 柜体抓取另存为 -->
-              <el-button
-                v-if="currentScope === 'enterprise'"
-                type="success"
-                size="small"
-                plain
-                @click="onCaptureCabinetPrompt"
-              >
-                <i class="fa-solid fa-file-import"></i> 存当前柜为方案
-              </el-button>
-            </div>
+            <!-- ② 一次方案与通用工具栏 -->
+            <template v-else>
+              <div class="filter-left">
+                <el-select
+                  v-model="filterCabinetModel"
+                  placeholder="柜型过滤"
+                  size="small"
+                  style="width: 130px"
+                  clearable
+                  @change="onSearch"
+                >
+                  <el-option label="全部柜型" value=""></el-option>
+                  <el-option label="KYN28-12" value="KYN28-12"></el-option>
+                  <el-option label="MNS" value="MNS"></el-option>
+                  <el-option label="GGD" value="GGD"></el-option>
+                  <el-option label="PZ30" value="PZ30"></el-option>
+                  <el-option label="XL-21" value="XL-21"></el-option>
+                </el-select>
+
+                <el-input
+                  v-model="searchKeyword"
+                  placeholder="搜索方案名称、柜型、作者或关键字..."
+                  size="small"
+                  style="width: 260px"
+                  clearable
+                  @keyup.enter="onSearch"
+                >
+                  <template #prefix>
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                  </template>
+                </el-input>
+
+                <el-button type="primary" size="small" @click="onSearch">
+                  搜索
+                </el-button>
+              </div>
+
+              <div class="filter-right">
+                <el-select
+                  v-model="sortBy"
+                  size="small"
+                  style="width: 110px"
+                  @change="onSearch"
+                >
+                  <el-option label="热门排序" value="hot"></el-option>
+                  <el-option label="最新发布" value="latest"></el-option>
+                </el-select>
+
+                <!-- 企业方案下支持一键新建或从当前 Excel 柜体抓取另存为 -->
+                <el-button
+                  v-if="currentScope === 'enterprise'"
+                  type="success"
+                  size="small"
+                  plain
+                  @click="onCaptureCabinetPrompt"
+                >
+                  <i class="fa-solid fa-file-import"></i> 存当前柜为方案
+                </el-button>
+              </div>
+            </template>
           </div>
 
           <!-- 4 列响应式卡片网格 -->
           <div class="card-grid-container" v-loading="loading">
-            <div
-              v-for="scheme in schemeList"
-              :key="scheme.id"
-              class="scheme-card"
-              @click="openSchemeDetail(scheme)"
-            >
-              <!-- 卡片封面图片视口 -->
-              <div class="card-img-wrapper">
-                <!-- 左上角勾选框 -->
-                <div class="card-checkbox" @click.stop>
-                  <el-checkbox v-model="scheme.checked"></el-checkbox>
+            <!-- 【板块 A：二次方案 DWG 图纸与参数卡片】 -->
+            <template v-if="currentSchemeType === 'secondary'">
+              <div
+                v-for="card in secondaryDwgCards"
+                :key="card.fullPath"
+                class="secondary-card"
+              >
+                <!-- 右上角绿色圆角对勾徽标 (100% 对齐图 1) -->
+                <div
+                  class="sec-card-badge-check"
+                  title="已成功关联标准二次控制原理图"
+                >
+                  <i class="fa-solid fa-check"></i>
                 </div>
-                <!-- 右上角多图徽标 (DrawingUrls 支持) -->
-                <div class="multi-img-badge" v-if="scheme.drawingUrls && scheme.drawingUrls.length > 1">
-                  <i class="fa-regular fa-images"></i>
-                  <span>{{ scheme.drawingUrls.length }} 张图</span>
+
+                <!-- 略缩图上方：徽标行 + 方案大标题 + 工艺描述 (对齐图 1) -->
+                <div class="sec-card-header">
+                  <!-- 标签徽标组: 方案目录 + DWG图名(去后缀) + 品牌 -->
+                  <div class="sec-tag-group">
+                    <span
+                      class="sec-tag-folder"
+                      :title="'方案目录: ' + card.folderName"
+                      >{{ card.folderName || '双电源' }}</span
+                    >
+                    <span
+                      class="sec-tag-dwg"
+                      :title="'DWG图名: ' + card.dwgName"
+                      >{{ card.dwgName }}</span
+                    >
+                    <span
+                      class="sec-tag-brand"
+                      :title="'品牌: ' + (card.brand || '施耐德')"
+                      >{{ card.brand || '施耐德' }}</span
+                    >
+                  </div>
+                  <!-- 方案大标题 (如: 双电源自动切换控制原理图) -->
+                  <div
+                    class="sec-scheme-title"
+                    :title="card.schemeName || card.dwgName"
+                  >
+                    {{ card.schemeName || card.dwgName }}
+                  </div>
+                  <!-- 工艺描述说明 (两行紧凑自适应带提示) -->
+                  <div
+                    class="sec-desc-text"
+                    :title="card.description || '暂无工艺描述说明'"
+                  >
+                    {{ card.description ||
+                    '适用于重要用电负荷双回路供电系统，具备自投自复与电磁/机械双重闭锁。'
+                    }}
+                  </div>
                 </div>
-                <!-- 封面图 -->
-                <img
-                  :src="(scheme.drawingUrls && scheme.drawingUrls.length > 0) ? scheme.drawingUrls[0] : (scheme.thumbnailUrl || defaultCover)"
-                  class="card-img"
-                  loading="lazy"
-                  @error="onImgError"
-                />
-                <!-- 数据统计栏 (浏览量、收藏量) -->
-                <div class="card-stats-bar">
-                  <div class="stat-item">
-                    <i class="fa-regular fa-eye"></i>
-                    <span>{{ formatNumber(scheme.viewCount) }}</span>
+
+                <!-- 中间略缩图视口 (高度严格锁定 180px，支持真实DWG与图1同款电路图矢量降级) -->
+                <div class="sec-dwg-viewport">
+                  <!-- 真实 DWG 缩略图 -->
+                  <img
+                    v-if="card.previewBase64"
+                    :src="card.previewBase64"
+                    class="sec-preview-img"
+                    alt="CAD图纸缩略图"
+                  />
+                  <!-- 图 1 原型同款精美电气原理蓝图 SVG 占位视口 -->
+                  <div v-else class="sec-preview-placeholder">
+                    <svg
+                      width="100%"
+                      height="100%"
+                      viewBox="0 0 320 180"
+                      xmlns="http://www.w3.org/2000/svg"
+                      style="background: #090d16"
+                    >
+                      <!-- CAD 点阵参考网格背景 -->
+                      <defs>
+                        <pattern
+                          id="cadGrid"
+                          width="20"
+                          height="20"
+                          patternUnits="userSpaceOnUse"
+                        >
+                          <circle cx="1" cy="1" r="0.8" fill="#1e293b" />
+                        </pattern>
+                      </defs>
+                      <rect width="100%" height="100%" fill="url(#cadGrid)" />
+
+                      <!-- 顶部机械电气互锁提示与虚线桥 -->
+                      <text
+                        x="160"
+                        y="52"
+                        fill="#10b981"
+                        font-size="10.5"
+                        font-family="sans-serif"
+                        font-weight="600"
+                        text-anchor="middle"
+                      >
+                        电气机械双互锁
+                      </text>
+                      <path
+                        d="M 100 62 L 120 62 L 120 48 L 200 48 L 200 62 L 220 62"
+                        fill="none"
+                        stroke="#ef4444"
+                        stroke-width="1.5"
+                        stroke-dasharray="4 3"
+                      />
+
+                      <!-- 左右两端回路端点与母线 -->
+                      <line
+                        x1="40"
+                        y1="80"
+                        x2="60"
+                        y2="80"
+                        stroke="#06b6d4"
+                        stroke-width="2"
+                      />
+                      <circle cx="55" cy="80" r="4" fill="#06b6d4" />
+                      <line
+                        x1="55"
+                        y1="80"
+                        x2="55"
+                        y2="105"
+                        stroke="#009688"
+                        stroke-width="1.8"
+                      />
+                      <line
+                        x1="55"
+                        y1="105"
+                        x2="75"
+                        y2="105"
+                        stroke="#009688"
+                        stroke-width="1.8"
+                      />
+
+                      <line
+                        x1="280"
+                        y1="80"
+                        x2="260"
+                        y2="80"
+                        stroke="#06b6d4"
+                        stroke-width="2"
+                      />
+                      <circle cx="265" cy="80" r="4" fill="#06b6d4" />
+                      <line
+                        x1="265"
+                        y1="80"
+                        x2="265"
+                        y2="105"
+                        stroke="#009688"
+                        stroke-width="1.8"
+                      />
+                      <line
+                        x1="265"
+                        y1="105"
+                        x2="245"
+                        y2="105"
+                        stroke="#009688"
+                        stroke-width="1.8"
+                      />
+
+                      <!-- KM1 接触器/断路器框体 -->
+                      <rect
+                        x="75"
+                        y="90"
+                        width="36"
+                        height="30"
+                        rx="3"
+                        fill="#064e3b"
+                        stroke="#10b981"
+                        stroke-width="1.5"
+                      />
+                      <text
+                        x="93"
+                        y="109"
+                        fill="#a7f3d0"
+                        font-size="10"
+                        font-family="monospace"
+                        font-weight="700"
+                        text-anchor="middle"
+                      >
+                        KM1
+                      </text>
+
+                      <!-- KM2 接触器/断路器框体 -->
+                      <rect
+                        x="209"
+                        y="90"
+                        width="36"
+                        height="30"
+                        rx="3"
+                        fill="#064e3b"
+                        stroke="#10b981"
+                        stroke-width="1.5"
+                      />
+                      <text
+                        x="227"
+                        y="109"
+                        fill="#a7f3d0"
+                        font-size="10"
+                        font-family="monospace"
+                        font-weight="700"
+                        text-anchor="middle"
+                      >
+                        KM2
+                      </text>
+
+                      <!-- 中间回路汇流母线 -->
+                      <line
+                        x1="111"
+                        y1="105"
+                        x2="160"
+                        y2="105"
+                        stroke="#009688"
+                        stroke-width="1.8"
+                      />
+                      <line
+                        x1="209"
+                        y1="105"
+                        x2="160"
+                        y2="105"
+                        stroke="#009688"
+                        stroke-width="1.8"
+                      />
+
+                      <!-- 垂直引下线与负载指示 -->
+                      <line
+                        x1="160"
+                        y1="105"
+                        x2="160"
+                        y2="135"
+                        stroke="#eab308"
+                        stroke-width="2"
+                      />
+                      <circle cx="160" cy="112" r="3.5" fill="#eab308" />
+                      <text
+                        x="160"
+                        y="148"
+                        fill="#10b981"
+                        font-size="10"
+                        font-family="sans-serif"
+                        font-weight="700"
+                        text-anchor="middle"
+                      >
+                        负载 LOAD
+                      </text>
+                    </svg>
                   </div>
-                  <div class="stat-item">
-                    <i class="fa-solid fa-star" :style="{ color: scheme.isFavorite ? '#fbbf24' : '#e2e8f0' }"></i>
-                    <span>{{ formatNumber(scheme.favCount) }}</span>
+                  <!-- 右下角图纸标准格式徽标 -->
+                  <span class="sec-badge-format">DWG / EPLAN P8</span>
+                </div>
+
+                <!-- 略缩图下方参数网格 (100% 对齐图 1 双列参数排版) -->
+                <div class="sec-params-body">
+                  <div class="sec-params-row">
+                    <div class="sec-param-item">
+                      <span class="sec-p-label">跨门线:</span>
+                      <span class="sec-p-val"
+                        ><b style="font-size: 13px"
+                          >{{ card.crossDoorCount > 0 ? card.crossDoorCount : 3
+                          }}</b
+                        >
+                        根</span
+                      >
+                    </div>
+                    <div class="sec-param-item">
+                      <span class="sec-p-label">人工费用:</span>
+                      <span class="sec-p-val price"
+                        >¥{{ formatMoney(card.laborCost > 0 ? card.laborCost :
+                        103) }}</span
+                      >
+                    </div>
                   </div>
-                  <div class="stat-item">
-                    <i class="fa-regular fa-comment-dots"></i>
-                    <span>5</span>
+                  <div class="sec-params-row">
+                    <div class="sec-param-item">
+                      <span class="sec-p-label">二次材料:</span>
+                      <span class="sec-p-val"
+                        >¥{{ formatMoney(card.materialCost > 0 ?
+                        card.materialCost : 120) }}</span
+                      >
+                    </div>
+                    <div class="sec-param-item">
+                      <span class="sec-p-label">开孔需求:</span>
+                      <span class="sec-p-val"
+                        >{{ card.holeSpec || '圆孔 2个' }}</span
+                      >
+                    </div>
+                  </div>
+                  <div
+                    class="sec-params-row"
+                    style="border-top: 1px dashed #f1f5f9; padding-top: 6px"
+                  >
+                    <div
+                      class="sec-param-item"
+                      style="
+                        grid-column: span 2;
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                      "
+                    >
+                      <span class="sec-p-label">二次排布图:</span>
+                      <span class="sec-layout-badge"
+                        >{{ card.layoutDwgName || 'FA' }}</span
+                      >
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 底部操作与更新时间 (对齐图 1) -->
+                <div class="sec-card-footer">
+                  <span class="sec-update-time"
+                    >更新于 {{ card.updateTime ? card.updateTime.substring(0,
+                    10) : '2025-01-14' }}</span
+                  >
+                  <div class="sec-action-buttons">
+                    <button
+                      class="sec-btn-cad"
+                      type="button"
+                      title="使用外部 CAD 软件打开当前 DWG 图纸"
+                      @click="openCadDrawing(card)"
+                    >
+                      打开图纸
+                    </button>
+                    <button
+                      class="sec-btn-edit"
+                      type="button"
+                      title="编辑二次回路方案与 BOM"
+                      @click="openSecondaryEditModal(card)"
+                    >
+                      编辑
+                    </button>
                   </div>
                 </div>
               </div>
 
-              <!-- 卡片主体内容 -->
-              <div class="card-content">
-                <div class="card-title" :title="scheme.schemeName">
-                  {{ scheme.schemeName }}
+              <!-- 二次方案空状态提示 -->
+              <el-empty
+                v-if="!loading && secondaryDwgCards.length === 0"
+                description="当前文件夹下暂未检索到 DWG 图纸，请点击左侧子文件夹或检查目录设置"
+                style="grid-column: span 4; margin: 40px auto"
+              ></el-empty>
+            </template>
+
+            <!-- 【板块 B：一次方案标准卡片】 -->
+            <template v-else>
+              <div
+                v-for="scheme in schemeList"
+                :key="scheme.id"
+                class="scheme-card"
+                @click="openSchemeDetail(scheme)"
+              >
+                <!-- 卡片封面图片视口 -->
+                <div class="card-img-wrapper">
+                  <!-- 左上角勾选框 -->
+                  <div class="card-checkbox" @click.stop>
+                    <el-checkbox v-model="scheme.checked"></el-checkbox>
+                  </div>
+                  <!-- 右上角多图徽标 (DrawingUrls 支持) -->
+                  <div
+                    class="multi-img-badge"
+                    v-if="scheme.drawingUrls && scheme.drawingUrls.length > 1"
+                  >
+                    <i class="fa-regular fa-images"></i>
+                    <span>{{ scheme.drawingUrls.length }} 张图</span>
+                  </div>
+                  <!-- 封面图 -->
+                  <img
+                    :src="(scheme.drawingUrls && scheme.drawingUrls.length > 0) ? scheme.drawingUrls[0] : (scheme.thumbnailUrl || defaultCover)"
+                    class="card-img"
+                    loading="lazy"
+                    @error="onImgError"
+                  />
+                  <!-- 数据统计栏 (浏览量、收藏量) -->
+                  <div class="card-stats-bar">
+                    <div class="stat-item">
+                      <i class="fa-regular fa-eye"></i>
+                      <span>{{ formatNumber(scheme.viewCount) }}</span>
+                    </div>
+                    <div class="stat-item">
+                      <i
+                        class="fa-solid fa-star"
+                        :style="{ color: scheme.isFavorite ? '#fbbf24' : '#e2e8f0' }"
+                      ></i>
+                      <span>{{ formatNumber(scheme.favCount) }}</span>
+                    </div>
+                    <div class="stat-item">
+                      <i class="fa-regular fa-comment-dots"></i>
+                      <span>5</span>
+                    </div>
+                  </div>
                 </div>
-                <div class="card-meta">
-                  <span>柜型: {{ scheme.cabinetModel || '通用' }}</span>
-                  <span>{{ scheme.dimensions || '标准尺寸' }}</span>
-                </div>
-                <div class="card-footer">
-                  <span><i class="fa-regular fa-user"></i> {{ scheme.creatorName || '系统' }}</span>
-                  <span class="tag-badge" :class="{ ent: scheme.scope === 'enterprise' }" v-if="scheme.tag">
-                    {{ scheme.tag }}
-                  </span>
+
+                <!-- 卡片主体内容 -->
+                <div class="card-content">
+                  <div class="card-title" :title="scheme.schemeName">
+                    {{ scheme.schemeName }}
+                  </div>
+                  <div class="card-meta">
+                    <span>柜型: {{ scheme.cabinetModel || '通用' }}</span>
+                    <span>{{ scheme.dimensions || '标准尺寸' }}</span>
+                  </div>
+                  <div class="card-footer">
+                    <span
+                      ><i class="fa-regular fa-user"></i> {{ scheme.creatorName
+                      || '系统' }}</span
+                    >
+                    <span
+                      class="tag-badge"
+                      :class="{ ent: scheme.scope === 'enterprise' }"
+                      v-if="scheme.tag"
+                    >
+                      {{ scheme.tag }}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <!-- 空状态提示 -->
-            <el-empty
-              v-if="!loading && schemeList.length === 0"
-              description="暂未找到匹配的方案，请调整过滤条件或自建方案"
-              style="grid-column: span 4; margin: 40px auto;"
-            ></el-empty>
+              <!-- 空状态提示 -->
+              <el-empty
+                v-if="!loading && schemeList.length === 0"
+                description="暂未找到匹配的方案，请调整过滤条件或自建方案"
+                style="grid-column: span 4; margin: 40px auto"
+              ></el-empty>
+            </template>
           </div>
 
           <!-- 底部批量插入与分页栏 -->
           <div class="bottom-bar">
-            <div>
-              <el-button type="primary" size="default" :disabled="selectedCount === 0" @click="onBatchInsert">
-                <i class="fa-solid fa-download"></i> 批量插入已选方案 ({{ selectedCount }})
-              </el-button>
-            </div>
-            <el-pagination
-              v-model:current-page="pageIndex"
-              v-model:page-size="pageSize"
-              :page-sizes="[12, 24, 36]"
-              layout="total, sizes, prev, pager, next, jumper"
-              :total="totalCount"
-              @size-change="onPageChange"
-              @current-change="onPageChange"
-            ></el-pagination>
+            <!-- 二次方案底栏 -->
+            <template v-if="currentSchemeType === 'secondary'">
+              <div style="display: flex; align-items: center; gap: 8px">
+                <span style="font-size: 13px; color: #475569">
+                  当前子分类:
+                  <b style="color: #009688"
+                    >{{ selectedSecondaryFolder ? selectedSecondaryFolder.name :
+                    '全部方案分类' }}</b
+                  >，共检索到
+                  <b
+                    style="
+                      color: #009688;
+                      font-family: monospace;
+                      font-size: 14px;
+                    "
+                    >{{ secondaryDwgCards.length }}</b
+                  >
+                  个二次回路图纸方案
+                </span>
+              </div>
+              <div
+                style="font-size: 12px; color: #94a3b8; font-family: monospace"
+              >
+                目录: {{ secondaryDwgRootDir || '未设置' }}
+              </div>
+            </template>
+
+            <!-- 一次方案底栏 -->
+            <template v-else>
+              <div>
+                <el-button
+                  type="primary"
+                  size="default"
+                  :disabled="selectedCount === 0"
+                  @click="onBatchInsert"
+                >
+                  <i class="fa-solid fa-download"></i> 批量插入已选方案 ({{
+                  selectedCount }})
+                </el-button>
+              </div>
+              <el-pagination
+                v-model:current-page="pageIndex"
+                v-model:page-size="pageSize"
+                :page-sizes="[12, 24, 36]"
+                layout="total, sizes, prev, pager, next, jumper"
+                :total="totalCount"
+                @size-change="onPageChange"
+                @current-change="onPageChange"
+              ></el-pagination>
+            </template>
           </div>
         </div>
       </div>
@@ -1091,16 +2134,21 @@
             <i class="fa-solid fa-chevron-left"></i> 返回
           </button>
           <div class="detail-header-title">方案详情</div>
-          <div style="width: 80px;"></div>
+          <div style="width: 80px"></div>
         </div>
-           <!-- 方案头部核心参数 (型号、尺寸、作者、时间完全居中) -->
+        <!-- 方案头部核心参数 (型号、尺寸、作者、时间完全居中) -->
         <div class="detail-scheme-meta" v-if="currentDetail">
-          <div class="scheme-main-title">{{ currentDetail.schemeName || 'KYN28-12 PT柜(630A)' }}</div>
+          <div class="scheme-main-title">
+            {{ currentDetail.schemeName || 'KYN28-12 PT柜(630A)' }}
+          </div>
           <div class="scheme-meta-row">
             <span>箱柜型号: {{ currentDetail.cabinetModel || '' }}</span>
             <span>箱柜尺寸: {{ currentDetail.dimensions || '' }}</span>
             <span>修改人: {{ currentDetail.creatorName || '电气天下' }}</span>
-            <span>修改时间: {{ currentDetail.updateTime || '2017-12-08 09:44:28' }}</span>
+            <span
+              >修改时间: {{ currentDetail.updateTime || '2017-12-08 09:44:28'
+              }}</span
+            >
           </div>
         </div>
 
@@ -1140,7 +2188,10 @@
           <!-- ①【图纸】子面板 (DrawingUrls 画廊模式) -->
           <div class="drawing-gallery" v-if="detailActiveTab === 'drawing'">
             <!-- 左侧多图胶卷微缩栏 -->
-            <div class="drawing-filmstrip" v-if="currentDetail?.drawingUrls && currentDetail.drawingUrls.length > 0">
+            <div
+              class="drawing-filmstrip"
+              v-if="currentDetail?.drawingUrls && currentDetail.drawingUrls.length > 0"
+            >
               <div
                 v-for="(url, idx) in currentDetail.drawingUrls"
                 :key="idx"
@@ -1161,16 +2212,32 @@
                 :style="{ transform: `scale(${imgScale}) rotate(${imgRotation}deg)` }"
               />
               <div class="drawing-toolbar">
-                <div class="tool-btn" title="放大" @click="imgScale = Math.min(3, imgScale + 0.2)">
+                <div
+                  class="tool-btn"
+                  title="放大"
+                  @click="imgScale = Math.min(3, imgScale + 0.2)"
+                >
                   <i class="fa-solid fa-magnifying-glass-plus"></i>
                 </div>
-                <div class="tool-btn" title="缩小" @click="imgScale = Math.max(0.5, imgScale - 0.2)">
+                <div
+                  class="tool-btn"
+                  title="缩小"
+                  @click="imgScale = Math.max(0.5, imgScale - 0.2)"
+                >
                   <i class="fa-solid fa-magnifying-glass-minus"></i>
                 </div>
-                <div class="tool-btn" title="顺时针旋转90°" @click="imgRotation = (imgRotation + 90) % 360">
+                <div
+                  class="tool-btn"
+                  title="顺时针旋转90°"
+                  @click="imgRotation = (imgRotation + 90) % 360"
+                >
                   <i class="fa-solid fa-rotate-right"></i>
                 </div>
-                <div class="tool-btn" title="重置视角" @click="imgScale = 1; imgRotation = 0;">
+                <div
+                  class="tool-btn"
+                  title="重置视角"
+                  @click="imgScale = 1; imgRotation = 0;"
+                >
                   <i class="fa-solid fa-arrows-rotate"></i>
                 </div>
               </div>
@@ -1183,61 +2250,120 @@
               <table class="bom-grid-table">
                 <thead>
                   <tr>
-                    <th style="width: 75px; text-align: center;">
+                    <th style="width: 75px; text-align: center">
                       <div class="th-select-box" @click="onToggleAllBomClick">
-                        <span class="custom-chk" :class="{ checked: allBomChecked, indeterminate: isBomIndeterminate }"></span>
+                        <span
+                          class="custom-chk"
+                          :class="{ checked: allBomChecked, indeterminate: isBomIndeterminate }"
+                        ></span>
                         <span>选择</span>
                       </div>
                     </th>
-                    <th style="width: 55px; text-align: center;">序号</th>
-                    <th style="width: 140px; text-align: left;">名称</th>
-                    <th style="width: 160px; text-align: left;">型号</th>
-                    <th style="width: 120px; text-align: left;">品牌</th>
-                    <th style="width: 55px; text-align: center;">单位</th>
-                    <th style="width: 75px; text-align: right;">数量</th>
-                    <th style="width: 55px; text-align: center;">WL</th>
-                    <th style="width: 85px; text-align: right;">表价</th>
-                    <th style="width: 65px; text-align: right;">折扣</th>
-                    <th style="width: 65px; text-align: right;">报出</th>
-                    <th style="width: 85px; text-align: right;">单价</th>
-                    <th style="width: 95px; text-align: right;">总价</th>
-                    <th style="width: 100px; text-align: left;">备注</th>
-                    <th style="width: 110px; text-align: left;">物料编码</th>
-                    <th style="width: 80px; text-align: left;">产地</th>
-                    <th style="width: 85px; text-align: center;">类别</th>
-                    <th style="width: 85px; text-align: center;">操作</th>
+                    <th style="width: 55px; text-align: center">序号</th>
+                    <th style="width: 140px; text-align: left">名称</th>
+                    <th style="width: 160px; text-align: left">型号</th>
+                    <th style="width: 120px; text-align: left">品牌</th>
+                    <th style="width: 55px; text-align: center">单位</th>
+                    <th style="width: 75px; text-align: right">数量</th>
+                    <th style="width: 55px; text-align: center">WL</th>
+                    <th style="width: 85px; text-align: right">表价</th>
+                    <th style="width: 65px; text-align: right">折扣</th>
+                    <th style="width: 65px; text-align: right">报出</th>
+                    <th style="width: 85px; text-align: right">单价</th>
+                    <th style="width: 95px; text-align: right">总价</th>
+                    <th style="width: 100px; text-align: left">备注</th>
+                    <th style="width: 110px; text-align: left">物料编码</th>
+                    <th style="width: 80px; text-align: left">产地</th>
+                    <th style="width: 85px; text-align: center">类别</th>
+                    <th style="width: 85px; text-align: center">操作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(row, index) in currentDetail?.bomItems || []" :key="index">
-                    <td style="text-align: center;">
-                      <span class="custom-chk" :class="{ checked: row.selected }" @click="row.selected = !row.selected"></span>
+                  <tr
+                    v-for="(row, index) in currentDetail?.bomItems || []"
+                    :key="index"
+                  >
+                    <td style="text-align: center">
+                      <span
+                        class="custom-chk"
+                        :class="{ checked: row.selected }"
+                        @click="row.selected = !row.selected"
+                      ></span>
                     </td>
-                    <td style="text-align: center;">{{ row.sortOrder || index + 1 }}</td>
-                    <td style="text-align: left;" :title="row.componentName">{{ row.componentName }}</td>
-                    <td style="text-align: left;" :title="row.modelSpec">{{ row.modelSpec }}</td>
-                    <td style="text-align: left;" :title="row.brand">{{ row.brand }}</td>
-                    <td style="text-align: center;">{{ row.unit || '台' }}</td>
-                    <td style="text-align: right;">{{ (row.isWlDoubled ? (row.quantity * loopMultiplier) : row.quantity).toFixed(1) }}</td>
-                    <td style="text-align: center;">
-                      <span class="custom-chk" :class="{ checked: row.isWlDoubled }" @click="row.isWlDoubled = !row.isWlDoubled"></span>
+                    <td style="text-align: center">
+                      {{ row.sortOrder || index + 1 }}
                     </td>
-                    <td style="text-align: right;">{{ (row.catalogPrice || 0).toFixed(2) }}</td>
-                    <td style="text-align: right;">{{ (row.discount ?? 1.0).toFixed(1) }}</td>
-                    <td style="text-align: right;">{{ (row.quoteDiscount ?? 1.0).toFixed(1) }}</td>
-                    <td style="text-align: right;">{{ (row.quotePrice || 0).toFixed(2) }}</td>
-                    <td style="text-align: right; font-weight: 600;">
-                      {{ ((row.isWlDoubled ? row.quantity * loopMultiplier : row.quantity) * (row.quotePrice || 0)).toFixed(2) }}
+                    <td style="text-align: left" :title="row.componentName">
+                      {{ row.componentName }}
                     </td>
-                    <td style="text-align: left;" :title="row.remark">{{ row.remark }}</td>
-                    <td style="text-align: left;" :title="row.materialCode">{{ row.materialCode }}</td>
-                    <td style="text-align: left;" :title="row.origin">{{ row.origin }}</td>
-                    <td style="text-align: center;" :title="row.category">{{ row.category }}</td>
-                    <td style="text-align: center;">
+                    <td style="text-align: left" :title="row.modelSpec">
+                      {{ row.modelSpec }}
+                    </td>
+                    <td style="text-align: left" :title="row.brand">
+                      {{ row.brand }}
+                    </td>
+                    <td style="text-align: center">{{ row.unit || '台' }}</td>
+                    <td style="text-align: right">
+                      {{ (row.isWlDoubled ? (row.quantity * loopMultiplier) :
+                      row.quantity).toFixed(1) }}
+                    </td>
+                    <td style="text-align: center">
+                      <span
+                        class="custom-chk"
+                        :class="{ checked: row.isWlDoubled }"
+                        @click="row.isWlDoubled = !row.isWlDoubled"
+                      ></span>
+                    </td>
+                    <td style="text-align: right">
+                      {{ (row.catalogPrice || 0).toFixed(2) }}
+                    </td>
+                    <td style="text-align: right">
+                      {{ (row.discount ?? 1.0).toFixed(1) }}
+                    </td>
+                    <td style="text-align: right">
+                      {{ (row.quoteDiscount ?? 1.0).toFixed(1) }}
+                    </td>
+                    <td style="text-align: right">
+                      {{ (row.quotePrice || 0).toFixed(2) }}
+                    </td>
+                    <td style="text-align: right; font-weight: 600">
+                      {{ ((row.isWlDoubled ? row.quantity * loopMultiplier :
+                      row.quantity) * (row.quotePrice || 0)).toFixed(2) }}
+                    </td>
+                    <td style="text-align: left" :title="row.remark">
+                      {{ row.remark }}
+                    </td>
+                    <td style="text-align: left" :title="row.materialCode">
+                      {{ row.materialCode }}
+                    </td>
+                    <td style="text-align: left" :title="row.origin">
+                      {{ row.origin }}
+                    </td>
+                    <td style="text-align: center" :title="row.category">
+                      {{ row.category }}
+                    </td>
+                    <td style="text-align: center">
                       <div class="row-op-group">
-                        <span class="op-sym" :class="{ disabled: index === 0 }" @click="moveRowUp(index)" title="上移">↑</span>
-                        <span class="op-sym" :class="{ disabled: index === (currentDetail?.bomItems?.length || 0) - 1 }" @click="moveRowDown(index)" title="下移">↓</span>
-                        <span class="op-sym del" @click="deleteBomRow(index)" title="删除">✕</span>
+                        <span
+                          class="op-sym"
+                          :class="{ disabled: index === 0 }"
+                          @click="moveRowUp(index)"
+                          title="上移"
+                          >↑</span
+                        >
+                        <span
+                          class="op-sym"
+                          :class="{ disabled: index === (currentDetail?.bomItems?.length || 0) - 1 }"
+                          @click="moveRowDown(index)"
+                          title="下移"
+                          >↓</span
+                        >
+                        <span
+                          class="op-sym del"
+                          @click="deleteBomRow(index)"
+                          title="删除"
+                          >✕</span
+                        >
                       </div>
                     </td>
                   </tr>
@@ -1246,13 +2372,22 @@
             </div>
             <div class="bom-footnote">
               <span>选择: 选择所需BOM,插入/导出...</span>
-              <span class="wl-tip" style="background: none; color: #475569; padding: 0;">WL: 表示加入箱柜时，数量按回路数翻倍。</span>
+              <span
+                class="wl-tip"
+                style="background: none; color: #475569; padding: 0"
+                >WL: 表示加入箱柜时，数量按回路数翻倍。</span
+              >
             </div>
           </div>
 
           <!-- ③【描述说明】子面板 -->
-          <div class="description-view-panel" v-if="detailActiveTab === 'description'">
-            <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px;">技术规格与使用说明</div>
+          <div
+            class="description-view-panel"
+            v-if="detailActiveTab === 'description'"
+          >
+            <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px">
+              技术规格与使用说明
+            </div>
             <p>{{ currentDetail?.description || '暂无详细描述信息。' }}</p>
           </div>
         </div>
@@ -1261,14 +2396,20 @@
         <div class="detail-action-footer">
           <div>
             <el-button link @click="toggleDetailFullscreen" title="全屏切换">
-              <i class="fa-solid fa-expand" style="font-size: 16px;"></i>
+              <i class="fa-solid fa-expand" style="font-size: 16px"></i>
             </el-button>
           </div>
 
-          <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 12px">
             <div class="multiplier-box">
-              <el-input-number v-model="loopMultiplier" :min="1" :max="100" size="small" style="width: 100px;"></el-input-number>
-              <span style="font-size: 13px; color: #475569;">个回路</span>
+              <el-input-number
+                v-model="loopMultiplier"
+                :min="1"
+                :max="100"
+                size="small"
+                style="width: 100px"
+              ></el-input-number>
+              <span style="font-size: 13px; color: #475569">个回路</span>
             </div>
 
             <button class="btn-img-orange" @click="onInsertCurrentDetail">
@@ -1277,16 +2418,445 @@
             <button class="btn-img-orange" @click="onExportBomExcel">
               下载BOM
             </button>
-            <button class="btn-img-orange" @click="onShareScheme">
-              分享
-            </button>
+            <button class="btn-img-orange" @click="onShareScheme">分享</button>
             <button class="btn-img-outline" @click="onToggleFavoriteCurrent">
-              <i class="fa-solid fa-star" :style="{ color: currentDetail?.isFavorite ? '#ef4444' : '#f59e0b' }"></i>
+              <i
+                class="fa-solid fa-star"
+                :style="{ color: currentDetail?.isFavorite ? '#ef4444' : '#f59e0b' }"
+              ></i>
               {{ currentDetail?.isFavorite ? '已收藏' : '加入收藏' }}
             </button>
           </div>
         </div>
       </div>
+
+      <!-- ① 二次回路 DWG 图纸目录设置弹窗 -->
+      <el-dialog
+        v-model="dirSettingDialogVisible"
+        title="设置二次回路图纸目录"
+        width="620px"
+        :close-on-click-modal="false"
+        append-to-body
+      >
+        <div
+          style="
+            font-size: 13px;
+            color: #475569;
+            margin-bottom: 14px;
+            line-height: 1.6;
+          "
+        >
+          请选择或输入二次回路 DWG
+          图纸所在的主文件夹路径。系统会自动扫描其下的子文件夹并展示在左侧分类导航树中：
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-bottom: 12px">
+          <el-input
+            v-model="inputSecondaryDir"
+            placeholder="例如: D:\CAD_Drawings\SecondaryCircuits"
+            clearable
+          ></el-input>
+          <el-button type="primary" @click="onBrowseSecondaryDir">
+            <i class="fa-regular fa-folder-open" style="margin-right: 4px"></i>
+            浏览目录
+          </el-button>
+        </div>
+
+        <div
+          style="
+            font-size: 12px;
+            color: #64748b;
+            background: #f0fdf9;
+            border: 1px dashed #99f6e4;
+            border-radius: 4px;
+            padding: 10px 12px;
+          "
+        >
+          <i
+            class="fa-solid fa-circle-info"
+            style="color: #009688; margin-right: 4px"
+          ></i>
+          <strong>配置存储：</strong
+          >目录将持久化保存至配置文件（SecondaryCircuit.CircuitDwgDirectory），下次启动自动生效。
+        </div>
+
+        <template #footer>
+          <span class="dialog-footer">
+            <el-button @click="dirSettingDialogVisible = false">取消</el-button>
+            <el-button type="primary" @click="onApplyManualDir"
+              >保存并扫描</el-button
+            >
+          </span>
+        </template>
+      </el-dialog>
+
+      <!-- ② 编辑二次回路方案与 BOM 弹窗 (参考附件高保真还原) -->
+      <el-dialog
+        v-model="secEditDialogOpen"
+        title="编辑二次回路方案与 BOM"
+        width="1000px"
+        :close-on-click-modal="false"
+        append-to-body
+        top="3vh"
+        custom-class="sec-edit-dialog"
+      >
+        <div class="sec-meta-section">
+          <!-- Row 1: 方案目录、当前DWG名称(去后缀)、品牌 -->
+          <div class="sec-form-row-3">
+            <div>
+              <div class="sec-field-label">方案目录名称:</div>
+              <el-input
+                v-model="editingSecScheme.folderName"
+                readonly
+                disabled
+              ></el-input>
+            </div>
+            <div>
+              <div class="sec-field-label">当前DWG文件名称:</div>
+              <el-input
+                v-model="editingSecScheme.dwgName"
+                readonly
+                disabled
+              ></el-input>
+            </div>
+            <div>
+              <div class="sec-field-label">元器件品牌 (Brand):</div>
+              <el-input
+                v-model="editingSecScheme.brand"
+                placeholder="例如: 正泰 / 施耐德 / 德力西"
+              ></el-input>
+            </div>
+          </div>
+
+          <!-- Row 2: CAD图纸名称、适用图名集合(以逗号分隔)、二次布置图 -->
+          <div class="sec-form-row-3">
+            <div>
+              <div class="sec-field-label">CAD图纸名称 (cad_drawing_name):</div>
+              <el-input
+                v-model="editingSecScheme.cadDrawingName"
+                placeholder="例如: WATSG.dwg"
+              ></el-input>
+            </div>
+            <div>
+              <div class="sec-field-label">适用图名集合 (以逗号“,”间隔):</div>
+              <el-input
+                v-model="editingSecScheme.applicableCodes"
+                placeholder="例如: WATSG,WATSG-1"
+              ></el-input>
+            </div>
+            <div>
+              <div class="sec-field-label">二次排布图名称:</div>
+              <el-input
+                v-model="editingSecScheme.layoutDwgName"
+                placeholder="例如: WATSG_Layout.dwg"
+              ></el-input>
+            </div>
+          </div>
+
+          <!-- Row 3: 数值参数 (跨门线根数、开孔要求、装配人工工费) -->
+          <div class="sec-form-row-3">
+            <div>
+              <div class="sec-field-label">二次线跨门根数:</div>
+              <el-input-number
+                v-model="editingSecScheme.crossDoorCount"
+                :min="0"
+                style="width: 100%"
+              ></el-input-number>
+            </div>
+            <div>
+              <div class="sec-field-label">开孔要求:</div>
+              <el-input
+                v-model="editingSecScheme.holeSpec"
+                placeholder="例如: 圆6 / 方孔"
+              ></el-input>
+            </div>
+            <div>
+              <div class="sec-field-label">装配人工工费 (元):</div>
+              <el-input-number
+                v-model="editingSecScheme.laborCost"
+                :min="0"
+                :precision="2"
+                :step="10"
+                style="width: 100%"
+              ></el-input-number>
+            </div>
+          </div>
+
+          <!-- Row 4: 方案描述 -->
+          <div class="sec-form-row-1">
+            <div class="sec-field-label">方案描述 (Description):</div>
+            <el-input
+              v-model="editingSecScheme.description"
+              placeholder="工艺要求、接线说明或控制功能简述"
+            ></el-input>
+          </div>
+
+          <!-- Row 5: 方案备注 -->
+          <div class="sec-form-row-1">
+            <div class="sec-field-label">方案备注:</div>
+            <el-input
+              v-model="editingSecScheme.remark"
+              placeholder="工艺要求或图纸附注"
+            ></el-input>
+          </div>
+        </div>
+
+        <!-- BOM 清单管理面板 -->
+        <div class="sec-bom-container">
+          <!-- 工具栏 -->
+          <div class="sec-bom-header-bar">
+            <div class="sec-bom-title">
+              <span style="font-size: 16px">🍀</span>
+              <span>二次 BOM 子物料清单:</span>
+            </div>
+            <div style="display: flex; gap: 8px">
+              <el-button
+                type="primary"
+                size="small"
+                @click="openMaterialSelector"
+              >
+                <i
+                  class="fa-solid fa-magnifying-glass"
+                  style="margin-right: 4px"
+                ></i>
+                从本地物料库选型添加
+              </el-button>
+              <el-button size="small" @click="addCustomBomRow">
+                + 自定义临时项
+              </el-button>
+            </div>
+          </div>
+
+          <!-- BOM 数据表格 -->
+          <div class="sec-bom-table-wrapper">
+            <table class="sec-bom-data-table">
+              <thead>
+                <tr>
+                  <th style="width: 46px; text-align: center">序</th>
+                  <th style="min-width: 130px">元件名称</th>
+                  <th style="min-width: 200px">型号规格</th>
+                  <th style="width: 70px; text-align: center">数量</th>
+                  <th style="width: 60px; text-align: center">单位</th>
+                  <th style="width: 100px; text-align: right">物料库单价</th>
+                  <th style="width: 100px; text-align: right">材料费合价</th>
+                  <th style="width: 55px; text-align: center">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(item, idx) in secBomList" :key="item.id || idx">
+                  <td style="text-align: center; color: #64748b">
+                    {{ idx + 1 }}
+                  </td>
+                  <td>
+                    <el-input
+                      v-model="item.componentName"
+                      size="small"
+                      placeholder="元件名称"
+                    ></el-input>
+                  </td>
+                  <td>
+                    <el-input
+                      v-model="item.modelSpec"
+                      size="small"
+                      placeholder="型号规格"
+                    ></el-input>
+                  </td>
+                  <td>
+                    <el-input-number
+                      v-model="item.quantity"
+                      :min="1"
+                      size="small"
+                      :controls="false"
+                      style="width: 100%; text-align: center"
+                    ></el-input-number>
+                  </td>
+                  <td>
+                    <el-input
+                      v-model="item.unit"
+                      size="small"
+                      placeholder="单位"
+                      style="text-align: center"
+                    ></el-input>
+                  </td>
+                  <td>
+                    <el-input-number
+                      v-model="item.quotePrice"
+                      :min="0"
+                      :precision="2"
+                      size="small"
+                      :controls="false"
+                      style="width: 100%; text-align: right"
+                    ></el-input-number>
+                  </td>
+                  <td
+                    style="
+                      text-align: right;
+                      font-family: monospace;
+                      font-weight: 600;
+                      color: #d97706;
+                    "
+                  >
+                    ¥{{ ((Number(item.quantity) || 0) * (Number(item.quotePrice)
+                    || 0)).toFixed(2) }}
+                  </td>
+                  <td style="text-align: center">
+                    <button
+                      class="sec-btn-del"
+                      type="button"
+                      @click="deleteSecBomRow(idx)"
+                    >
+                      删除
+                    </button>
+                  </td>
+                </tr>
+                <tr v-if="secBomList.length === 0">
+                  <td
+                    colspan="8"
+                    style="text-align: center; padding: 24px; color: #94a3b8"
+                  >
+                    暂无 BOM
+                    元件明细，请点击上方按钮从本地物料库选型或添加自定义项
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- BOM 费用汇总栏 -->
+          <div class="sec-bom-summary-bar">
+            <div class="sec-summary-item">
+              <span style="color: #64748b">二次材料费小计:</span>
+              <span class="sec-summary-val" style="color: #008477"
+                >¥ {{ secBomMaterialSubtotal.toFixed(2) }}</span
+              >
+            </div>
+            <div class="sec-summary-item">
+              <span style="color: #64748b">人工费:</span>
+              <span class="sec-summary-val" style="color: #1e293b"
+                >¥ {{ (Number(editingSecScheme.laborCost) || 0).toFixed(2)
+                }}</span
+              >
+            </div>
+            <div class="sec-summary-item">
+              <span style="color: #64748b">综合总成本:</span>
+              <span
+                class="sec-summary-val"
+                style="color: #e11d48; font-size: 14px"
+                >¥ {{ secComprehensiveTotalCost.toFixed(2) }}</span
+              >
+            </div>
+          </div>
+        </div>
+
+        <template #footer>
+          <span class="dialog-footer">
+            <el-button @click="secEditDialogOpen = false">取消</el-button>
+            <el-button type="primary" @click="saveSecondarySchemeForm"
+              >保存方案</el-button
+            >
+          </span>
+        </template>
+      </el-dialog>
+
+      <!-- ③ 从本地物料库选型添加弹窗 -->
+      <el-dialog
+        v-model="materialSelectorVisible"
+        title="从本地物料库选型添加"
+        width="750px"
+        :close-on-click-modal="false"
+        append-to-body
+      >
+        <div style="display: flex; gap: 8px; margin-bottom: 14px">
+          <el-input
+            v-model="materialSearchKw"
+            placeholder="输入元件名称、型号规格或品牌关键字回车检索..."
+            clearable
+            @keyup.enter="onSearchMaterials"
+            @clear="onSearchMaterials"
+          >
+            <template #prefix>
+              <i class="fa-solid fa-magnifying-glass"></i>
+            </template>
+          </el-input>
+          <el-button type="primary" @click="onSearchMaterials">
+            检索
+          </el-button>
+        </div>
+
+        <div
+          v-loading="materialLoading"
+          style="
+            min-height: 220px;
+            max-height: 380px;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+          "
+        >
+          <table class="sec-bom-data-table">
+            <thead>
+              <tr>
+                <th style="min-width: 140px">元件名称</th>
+                <th style="min-width: 180px">型号规格</th>
+                <th style="width: 90px">品牌</th>
+                <th style="width: 60px; text-align: center">单位</th>
+                <th style="width: 80px; text-align: right">参考单价</th>
+                <th style="width: 70px; text-align: center">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in materialSearchResults" :key="item.id">
+                <td style="font-weight: 500; color: #1e293b">
+                  {{ item.name }}
+                </td>
+                <td style="color: #475569; font-family: monospace">
+                  {{ item.modelSpec }}
+                </td>
+                <td>
+                  <el-tag size="small" effect="plain"
+                    >{{ item.brand || '通用' }}</el-tag
+                  >
+                </td>
+                <td style="text-align: center; color: #64748b">
+                  {{ item.unit || '只' }}
+                </td>
+                <td
+                  style="
+                    text-align: right;
+                    font-family: monospace;
+                    color: #008477;
+                  "
+                >
+                  ¥{{ (Number(item.price) || 0).toFixed(2) }}
+                </td>
+                <td style="text-align: center">
+                  <el-button
+                    type="primary"
+                    link
+                    size="small"
+                    @click="selectMaterialToBom(item)"
+                    >选用</el-button
+                  >
+                </td>
+              </tr>
+              <tr v-if="!materialLoading && materialSearchResults.length === 0">
+                <td
+                  colspan="6"
+                  style="text-align: center; padding: 30px; color: #94a3b8"
+                >
+                  未匹配到物料，可调整搜索关键字或在二次方案中直接添加自定义临时项
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <template #footer>
+          <span class="dialog-footer">
+            <el-button @click="materialSelectorVisible = false">关闭</el-button>
+          </span>
+        </template>
+      </el-dialog>
     </div>
 
     <!-- 核心逻辑脚本 -->
@@ -1309,15 +2879,74 @@
           const loading = ref(false);
 
           // 默认占位图
-          const defaultCover = "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=500&q=80";
+          const defaultCover =
+            "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=500&q=80";
 
           // 企业方案自定义分类树
           const enterpriseCategories = ref([
             { id: "cat_ent_1", name: "低压进线方案" },
             { id: "cat_ent_2", name: "电容补偿柜方案" },
             { id: "cat_ent_3", name: "双电源切换方案" },
-            { id: "cat_ent_4", name: "风机水泵控制箱" }
+            { id: "cat_ent_4", name: "风机水泵控制箱" },
           ]);
+
+          // ===== 二次方案专属状态定义 =====
+          const secondaryDwgRootDir = ref(""); // 二次回路图纸根目录
+          const secondaryFolders = ref([]); // 根目录下的子文件夹列表
+          const selectedSecondaryFolder = ref(null); // 当前选中的子文件夹
+          const secondaryDwgCards = ref([]); // 当前子文件夹下的 DWG 卡片列表
+          const secondarySearchKw = ref(""); // 二次方案关键字过滤
+          const dirSettingDialogVisible = ref(false); // 目录配置弹窗可见性
+          const inputSecondaryDir = ref(""); // 弹窗中输入的目录路径
+          const secEditDialogOpen = ref(false); // 二次方案与 BOM 编辑弹窗
+          const editingSecScheme = ref({
+            id: "",
+            folderName: "",
+            dwgName: "",
+            cadDrawingName: "",
+            applicableCodes: "",
+            brand: "",
+            description: "",
+            crossDoorCount: 10,
+            holeSpec: "圆6",
+            laborCost: 180.0,
+            layoutDwgName: "",
+            remark: "",
+          });
+          const secBomList = ref([]); // 当前编辑方案的 BOM 列表
+          const materialSelectorVisible = ref(false); // 物料库选型弹窗
+          const materialSearchKw = ref(""); // 物料库搜索词
+          const materialSearchResults = ref([]); // 物料库搜索结果
+          const materialLoading = ref(false); // 物料库加载状态
+
+          // 二次方案全部 DWG 图纸数量汇总
+          const totalSecondaryDwgCount = computed(() => {
+            return secondaryFolders.value.reduce(
+              (sum, f) => sum + (f.dwgCount || 0),
+              0,
+            );
+          });
+
+          // 二次方案当前编辑中的 BOM 材料费小计
+          const secBomMaterialSubtotal = computed(() => {
+            return secBomList.value.reduce((sum, item) => {
+              const q = Number(item.quantity) || 0;
+              const p = Number(item.quotePrice) || 0;
+              return sum + q * p;
+            }, 0);
+          });
+
+          // 二次方案综合总成本 (材料费小计 + 人工工费)
+          const secComprehensiveTotalCost = computed(() => {
+            const labor = Number(editingSecScheme.value.laborCost) || 0;
+            return secBomMaterialSubtotal.value + labor;
+          });
+
+          // 金额格式化通用工具函数
+          const formatMoney = (val) => {
+            const n = Number(val);
+            return isNaN(n) ? "0.00" : n.toFixed(2);
+          };
 
           // 方案详情模态状态
           const detailVisible = ref(false);
@@ -1329,44 +2958,70 @@
           const loopMultiplier = ref(1);
           // 计算 BOM 是否处于半选状态
           const isBomIndeterminate = computed(() => {
-            if (!currentDetail.value || !currentDetail.value.bomItems || currentDetail.value.bomItems.length === 0) return false;
-            const checkedCount = currentDetail.value.bomItems.filter(item => item.selected).length;
-            return checkedCount > 0 && checkedCount < currentDetail.value.bomItems.length;
+            if (
+              !currentDetail.value ||
+              !currentDetail.value.bomItems ||
+              currentDetail.value.bomItems.length === 0
+            )
+              return false;
+            const checkedCount = currentDetail.value.bomItems.filter(
+              (item) => item.selected,
+            ).length;
+            return (
+              checkedCount > 0 &&
+              checkedCount < currentDetail.value.bomItems.length
+            );
           });
           // 全选/全不选 BOM 响应式计算属性
           const allBomChecked = computed({
             get() {
-              if (!currentDetail.value || !currentDetail.value.bomItems || currentDetail.value.bomItems.length === 0) return false;
-              return currentDetail.value.bomItems.every(item => item.selected);
+              if (
+                !currentDetail.value ||
+                !currentDetail.value.bomItems ||
+                currentDetail.value.bomItems.length === 0
+              )
+                return false;
+              return currentDetail.value.bomItems.every(
+                (item) => item.selected,
+              );
             },
             set(val) {
               if (!currentDetail.value || !currentDetail.value.bomItems) return;
-              currentDetail.value.bomItems.forEach(item => {
+              currentDetail.value.bomItems.forEach((item) => {
                 item.selected = val;
               });
-            }
+            },
           });
 
           // 计算当前选中的卡片数量
           const selectedCount = computed(() => {
-            return schemeList.value.filter(s => s.checked).length;
+            return schemeList.value.filter((s) => s.checked).length;
           });
 
           // 计算当前主视口图纸地址
           const activeDrawingUrl = computed(() => {
-            if (!currentDetail.value || !currentDetail.value.drawingUrls || currentDetail.value.drawingUrls.length === 0) {
+            if (
+              !currentDetail.value ||
+              !currentDetail.value.drawingUrls ||
+              currentDetail.value.drawingUrls.length === 0
+            ) {
               return currentDetail.value?.thumbnailUrl || defaultCover;
             }
-            return currentDetail.value.drawingUrls[activeDrawingIndex.value] || currentDetail.value.drawingUrls[0];
+            return (
+              currentDetail.value.drawingUrls[activeDrawingIndex.value] ||
+              currentDetail.value.drawingUrls[0]
+            );
           });
 
           // 动态重算当前详情勾选的 BOM 总金额
           const calculatedTotalAmount = computed(() => {
             if (!currentDetail.value || !currentDetail.value.bomItems) return 0;
             return currentDetail.value.bomItems
-              .filter(item => item.selected)
+              .filter((item) => item.selected)
               .reduce((sum, item) => {
-                const qty = item.isWlDoubled ? (item.quantity * loopMultiplier.value) : item.quantity;
+                const qty = item.isWlDoubled
+                  ? item.quantity * loopMultiplier.value
+                  : item.quantity;
                 return sum + qty * (item.quotePrice || 0);
               }, 0);
           });
@@ -1391,7 +3046,263 @@
           const switchSchemeType = (type) => {
             currentSchemeType.value = type;
             pageIndex.value = 1;
-            fetchSchemes();
+            if (type === "secondary") {
+              // 切换到二次回路方案时自动初始化
+              if (!secondaryDwgRootDir.value) {
+                loadSecondaryCircuitConfig();
+              } else {
+                loadFolderDwgCards();
+              }
+            } else {
+              fetchSchemes();
+            }
+          };
+
+          // ===== 二次方案相关交互方法 =====
+          // 拉取当前已保存的二次方案根目录
+          const loadSecondaryCircuitConfig = () => {
+            postToHost("getSecondaryCircuitConfig");
+          };
+
+          // 打开目录设置对话框
+          const openDirSettingDialog = () => {
+            inputSecondaryDir.value = secondaryDwgRootDir.value;
+            dirSettingDialogVisible.value = true;
+          };
+
+          // 点击浏览目录按钮
+          const onBrowseSecondaryDir = () => {
+            postToHost("selectSecondaryCircuitDir");
+          };
+
+          // 应用手动输入的目录
+          const onApplyManualDir = () => {
+            if (!inputSecondaryDir.value || !inputSecondaryDir.value.trim()) {
+              ElementPlus.ElMessage.warning("请输入有效的文件夹路径！");
+              return;
+            }
+            postToHost("setSecondaryCircuitDirManual", {
+              path: inputSecondaryDir.value.trim(),
+            });
+            dirSettingDialogVisible.value = false;
+          };
+
+          // 扫描子文件夹
+          const scanSecondaryFolders = () => {
+            postToHost("scanSecondaryFolders", {
+              rootDir: secondaryDwgRootDir.value,
+            });
+          };
+
+          // 切换选中的子文件夹
+          const onSelectSecondaryFolder = (folder) => {
+            selectedSecondaryFolder.value = folder;
+            secondarySearchKw.value = "";
+            loadFolderDwgCards();
+          };
+
+          // 加载选定子文件夹下的 DWG 卡片
+          const loadFolderDwgCards = () => {
+            loading.value = true;
+            const folderPath = selectedSecondaryFolder.value
+              ? selectedSecondaryFolder.value.fullPath
+              : "";
+            const folderName = selectedSecondaryFolder.value
+              ? selectedSecondaryFolder.value.name
+              : "";
+            postToHost("getFolderDwgCards", {
+              folderPath: folderPath,
+              folderName: folderName,
+              keyword: secondarySearchKw.value,
+            });
+          };
+
+          // 二次方案条件检索
+          const onSecondarySearch = () => {
+            loadFolderDwgCards();
+          };
+
+          // 刷新二次卡片
+          const refreshSecondaryCards = () => {
+            loadFolderDwgCards();
+          };
+
+          // 调起 CAD 打开图纸
+          const openCadDrawing = (card) => {
+            if (!card || !card.fullPath) return;
+            postToHost("openDwgInCad", { fullPath: card.fullPath });
+          };
+
+          // 打开编辑二次回路方案与 BOM 弹窗
+          const openSecondaryEditModal = (card) => {
+            if (!card) return;
+            editingSecScheme.value = {
+              id: card.schemeId || "",
+              folderName:
+                card.folderName ||
+                (selectedSecondaryFolder.value
+                  ? selectedSecondaryFolder.value.name
+                  : "通用"),
+              dwgName: card.dwgName || "",
+              cadDrawingName:
+                card.cadDrawingName ||
+                (card.dwgName ? card.dwgName + ".dwg" : ""),
+              applicableCodes: card.applicableCodes || card.dwgName || "",
+              brand: card.brand || "",
+              description: card.description || "",
+              crossDoorCount:
+                typeof card.crossDoorCount === "number"
+                  ? card.crossDoorCount
+                  : 10,
+              holeSpec: card.holeSpec || "圆6",
+              laborCost:
+                typeof card.laborCost === "number" ? card.laborCost : 180.0,
+              layoutDwgName: card.layoutDwgName || "",
+              remark: card.remark || "",
+            };
+
+            // 解析 BOM 清单
+            let parsedBom = [];
+            if (card.bomJson) {
+              try {
+                parsedBom = JSON.parse(card.bomJson);
+              } catch (e) {
+                parsedBom = [];
+              }
+            }
+            if (!Array.isArray(parsedBom) || parsedBom.length === 0) {
+              // 若数据库尚无 BOM，给出一组标准默认项，参考用户附件
+              parsedBom = [
+                {
+                  id: 1,
+                  componentName: "熔断器",
+                  modelSpec: "RT18-32 4A",
+                  quantity: 1,
+                  unit: "只",
+                  quotePrice: 0.0,
+                },
+                {
+                  id: 2,
+                  componentName: "指示灯",
+                  modelSpec: "AD11 AC220V 白",
+                  quantity: 1,
+                  unit: "只",
+                  quotePrice: 0.0,
+                },
+                {
+                  id: 3,
+                  componentName: "指示灯",
+                  modelSpec: "AD11 AC220V 红",
+                  quantity: 1,
+                  unit: "只",
+                  quotePrice: 0.0,
+                },
+                {
+                  id: 4,
+                  componentName: "指示灯",
+                  modelSpec: "AD11 AC220V 绿",
+                  quantity: 1,
+                  unit: "只",
+                  quotePrice: 0.0,
+                },
+                {
+                  id: 5,
+                  componentName: "时间继电器",
+                  modelSpec: "JSZ3Y 30s AC220V",
+                  quantity: 1,
+                  unit: "只",
+                  quotePrice: 0.0,
+                },
+                {
+                  id: 6,
+                  componentName: "中间继电器",
+                  modelSpec: "HH52P DC24V",
+                  quantity: 1,
+                  unit: "只",
+                  quotePrice: 0.0,
+                },
+                {
+                  id: 7,
+                  componentName: "旋钮",
+                  modelSpec: "3位 黑 4NO 定位",
+                  quantity: 1,
+                  unit: "只",
+                  quotePrice: 0.0,
+                },
+              ];
+            }
+            secBomList.value = parsedBom;
+            secEditDialogOpen.value = true;
+          };
+
+          // BOM 自定义添加临时行
+          const addCustomBomRow = () => {
+            secBomList.value.push({
+              id: Date.now(),
+              componentName: "新元件",
+              modelSpec: "",
+              quantity: 1,
+              unit: "只",
+              quotePrice: 0.0,
+            });
+          };
+
+          // BOM 删除行
+          const deleteSecBomRow = (index) => {
+            secBomList.value.splice(index, 1);
+          };
+
+          // 保存二次方案表单
+          const saveSecondarySchemeForm = () => {
+            const payload = {
+              id: editingSecScheme.value.id || "",
+              cadDrawingName:
+                editingSecScheme.value.cadDrawingName ||
+                editingSecScheme.value.dwgName + ".dwg",
+              applicableCodes:
+                editingSecScheme.value.applicableCodes ||
+                editingSecScheme.value.dwgName,
+              brand: editingSecScheme.value.brand || "",
+              description: editingSecScheme.value.description || "",
+              crossDoorCount:
+                Number(editingSecScheme.value.crossDoorCount) || 0,
+              holeSpec: editingSecScheme.value.holeSpec || "",
+              laborCost: Number(editingSecScheme.value.laborCost) || 0,
+              layoutDwgName: editingSecScheme.value.layoutDwgName || "",
+              remark: editingSecScheme.value.remark || "",
+              bomJson: JSON.stringify(secBomList.value),
+            };
+            postToHost("saveSecondaryScheme", { data: payload });
+          };
+
+          // 打开物料库选型对话框
+          const openMaterialSelector = () => {
+            materialSearchKw.value = "";
+            materialSearchResults.value = [];
+            materialSelectorVisible.value = true;
+            onSearchMaterials();
+          };
+
+          // 检索物料库
+          const onSearchMaterials = () => {
+            materialLoading.value = true;
+            postToHost("searchMaterialComponents", {
+              keyword: materialSearchKw.value,
+            });
+          };
+
+          // 选用物料添加到 BOM
+          const selectMaterialToBom = (item) => {
+            secBomList.value.push({
+              id: Date.now(),
+              componentName: item.name || "元件",
+              modelSpec: item.modelSpec || "",
+              quantity: 1,
+              unit: item.unit || "只",
+              quotePrice: Number(item.price) || 0.0,
+            });
+            ElementPlus.ElMessage.success(`已添加【${item.name}】至 BOM 清单`);
+            materialSelectorVisible.value = false;
           };
 
           // 切换分类
@@ -1423,7 +3334,7 @@
               keyword: searchKeyword.value,
               sortBy: sortBy.value,
               pageIndex: pageIndex.value,
-              pageSize: pageSize.value
+              pageSize: pageSize.value,
             };
             postToHost("querySchemes", query);
           };
@@ -1437,7 +3348,7 @@
           // 全选/反选 BOM
           const onToggleAllBom = (val) => {
             if (!currentDetail.value || !currentDetail.value.bomItems) return;
-            currentDetail.value.bomItems.forEach(item => {
+            currentDetail.value.bomItems.forEach((item) => {
               item.selected = val;
             });
           };
@@ -1446,14 +3357,19 @@
           const onToggleAllBomClick = () => {
             if (!currentDetail.value || !currentDetail.value.bomItems) return;
             const target = !allBomChecked.value;
-            currentDetail.value.bomItems.forEach(item => {
+            currentDetail.value.bomItems.forEach((item) => {
               item.selected = target;
             });
           };
 
           // BOM 行上移
           const moveRowUp = (index) => {
-            if (!currentDetail.value || !currentDetail.value.bomItems || index <= 0) return;
+            if (
+              !currentDetail.value ||
+              !currentDetail.value.bomItems ||
+              index <= 0
+            )
+              return;
             const items = currentDetail.value.bomItems;
             const temp = items[index];
             items[index] = items[index - 1];
@@ -1465,7 +3381,12 @@
 
           // BOM 行下移
           const moveRowDown = (index) => {
-            if (!currentDetail.value || !currentDetail.value.bomItems || index >= currentDetail.value.bomItems.length - 1) return;
+            if (
+              !currentDetail.value ||
+              !currentDetail.value.bomItems ||
+              index >= currentDetail.value.bomItems.length - 1
+            )
+              return;
             const items = currentDetail.value.bomItems;
             const temp = items[index];
             items[index] = items[index + 1];
@@ -1498,7 +3419,9 @@
           // 插入当前方案 BOM 到 Excel
           const onInsertCurrentDetail = () => {
             if (!currentDetail.value) return;
-            const selectedItems = (currentDetail.value.bomItems || []).filter(item => item.selected);
+            const selectedItems = (currentDetail.value.bomItems || []).filter(
+              (item) => item.selected,
+            );
             if (selectedItems.length === 0) {
               ElementPlus.ElMessage.warning("请至少勾选一项 BOM 元器件！");
               return;
@@ -1507,25 +3430,31 @@
               schemeId: currentDetail.value.id,
               loopMultiplier: loopMultiplier.value,
               insertMode: "newCabinet",
-              selectedBomItems: selectedItems
+              selectedBomItems: selectedItems,
             };
             postToHost("insertSchemeToExcel", dto);
           };
 
           // 批量插入选中的卡片方案
           const onBatchInsert = () => {
-            const checkedSchemes = schemeList.value.filter(s => s.checked);
+            const checkedSchemes = schemeList.value.filter((s) => s.checked);
             if (checkedSchemes.length === 0) return;
             ElementPlus.ElMessageBox.confirm(
               `确定要将选中的 ${checkedSchemes.length} 个方案批量插入到当前工作表中吗？`,
               "确认批量插入",
-              { confirmButtonText: "确定插入", cancelButtonText: "取消", type: "info" }
-            ).then(() => {
-              // 逐一插入
-              checkedSchemes.forEach(s => {
-                postToHost("getSchemeDetail", { id: s.id, autoInsert: true });
-              });
-            }).catch(() => {});
+              {
+                confirmButtonText: "确定插入",
+                cancelButtonText: "取消",
+                type: "info",
+              },
+            )
+              .then(() => {
+                // 逐一插入
+                checkedSchemes.forEach((s) => {
+                  postToHost("getSchemeDetail", { id: s.id, autoInsert: true });
+                });
+              })
+              .catch(() => {});
           };
 
           // 下载导出 BOM
@@ -1543,41 +3472,72 @@
             ElementPlus.ElMessageBox.prompt(
               "请输入新方案名称：",
               "将 Excel 当前柜存入企业方案库",
-              { confirmButtonText: "立即保存", cancelButtonText: "取消", inputValue: "新企业箱柜方案" }
-            ).then(({ value }) => {
-              if (value && value.trim()) {
-                const newScheme = {
-                  schemeName: value.trim(),
-                  cabinetModel: "企业标准柜",
-                  dimensions: "800*800*2200",
-                  description: "从当前 Excel 工作表一键提炼沉淀的企业方案",
-                  scope: "enterprise",
-                  schemeType: currentSchemeType.value === "secondary" ? "secondary" : "primary",
-                  drawingUrls: [defaultCover],
-                  bomItems: [
-                    { sortOrder: 1, componentName: "塑壳断路器", modelSpec: "NM1-250S/3300", brand: "正泰", unit: "台", quantity: 1, isWlDoubled: false, quotePrice: 380 },
-                    { sortOrder: 2, componentName: "微型断路器", modelSpec: "DZ47-63 1P 16A", brand: "正泰", unit: "台", quantity: 6, isWlDoubled: true, quotePrice: 15 }
-                  ]
-                };
-                postToHost("saveEnterpriseScheme", newScheme);
-              }
-            }).catch(() => {});
+              {
+                confirmButtonText: "立即保存",
+                cancelButtonText: "取消",
+                inputValue: "新企业箱柜方案",
+              },
+            )
+              .then(({ value }) => {
+                if (value && value.trim()) {
+                  const newScheme = {
+                    schemeName: value.trim(),
+                    cabinetModel: "企业标准柜",
+                    dimensions: "800*800*2200",
+                    description: "从当前 Excel 工作表一键提炼沉淀的企业方案",
+                    scope: "enterprise",
+                    schemeType:
+                      currentSchemeType.value === "secondary"
+                        ? "secondary"
+                        : "primary",
+                    drawingUrls: [defaultCover],
+                    bomItems: [
+                      {
+                        sortOrder: 1,
+                        componentName: "塑壳断路器",
+                        modelSpec: "NM1-250S/3300",
+                        brand: "正泰",
+                        unit: "台",
+                        quantity: 1,
+                        isWlDoubled: false,
+                        quotePrice: 380,
+                      },
+                      {
+                        sortOrder: 2,
+                        componentName: "微型断路器",
+                        modelSpec: "DZ47-63 1P 16A",
+                        brand: "正泰",
+                        unit: "台",
+                        quantity: 6,
+                        isWlDoubled: true,
+                        quotePrice: 15,
+                      },
+                    ],
+                  };
+                  postToHost("saveEnterpriseScheme", newScheme);
+                }
+              })
+              .catch(() => {});
           };
 
           // 新增分类
           const onAddCategoryPrompt = () => {
             ElementPlus.ElMessageBox.prompt("请输入新分类名称:", "新建分类", {
               confirmButtonText: "添加",
-              cancelButtonText: "取消"
-            }).then(({ value }) => {
-              if (value && value.trim()) {
-                enterpriseCategories.value.push({
-                  id: "cat_ent_" + Date.now(),
-                  name: value.trim()
-                });
-                ElementPlus.ElMessage.success(`成功创建分类【${value.trim()}】`);
-              }
-            }).catch(() => {});
+              cancelButtonText: "取消",
+            })
+              .then(({ value }) => {
+                if (value && value.trim()) {
+                  enterpriseCategories.value.push({
+                    id: "cat_ent_" + Date.now(),
+                    name: value.trim(),
+                  });
+                  ElementPlus.ElMessage.success(
+                    `成功创建分类【${value.trim()}】`,
+                  );
+                }
+              })
+              .catch(() => {});
           };
 
           // 图片加载失败降级
@@ -1610,7 +3570,10 @@
                 if (action === "querySchemesResult") {
                   loading.value = false;
                   if (data) {
-                    schemeList.value = (data.items || []).map(item => ({ ...item, checked: false }));
+                    schemeList.value = (data.items || []).map((item) => ({
+                      ...item,
+                      checked: false,
+                    }));
                     totalCount.value = data.totalCount || 0;
                   }
                 }
@@ -1621,8 +3584,8 @@
                     currentDetail.value = data;
                     // 初始化 BOM 选中状态
                     if (currentDetail.value.bomItems) {
-                      currentDetail.value.bomItems.forEach(b => {
-                        if (typeof b.selected === 'undefined') {
+                      currentDetail.value.bomItems.forEach((b) => {
+                        if (typeof b.selected === "undefined") {
                           b.selected = true;
                         }
                       });
@@ -1636,16 +3599,23 @@
                 }
                 // 3. 切换收藏响应
                 else if (action === "toggleFavoriteResult") {
-                  if (currentDetail.value && currentDetail.value.id === data.id) {
+                  if (
+                    currentDetail.value &&
+                    currentDetail.value.id === data.id
+                  ) {
                     currentDetail.value.isFavorite = data.isFavorite;
                   }
                   // 同步刷新卡片状态
-                  const targetCard = schemeList.value.find(s => s.id === data.id);
+                  const targetCard = schemeList.value.find(
+                    (s) => s.id === data.id,
+                  );
                   if (targetCard) {
                     targetCard.isFavorite = data.isFavorite;
-                    targetCard.favCount += (data.isFavorite ? 1 : -1);
+                    targetCard.favCount += data.isFavorite ? 1 : -1;
                   }
-                  ElementPlus.ElMessage.success(data.isFavorite ? "已加入我的收藏！" : "已取消收藏！");
+                  ElementPlus.ElMessage.success(
+                    data.isFavorite ? "已加入我的收藏！" : "已取消收藏！",
+                  );
                 }
                 // 4. 保存企业方案响应
                 else if (action === "saveEnterpriseSchemeResult") {
@@ -1664,10 +3634,71 @@
                     ElementPlus.ElMessage.error(data.message || "插入失败！");
                   }
                 }
+                // 6. 二次方案图纸根目录配置回传
+                else if (action === "getSecondaryCircuitConfigResult") {
+                  if (data && data.rootDir) {
+                    secondaryDwgRootDir.value = data.rootDir;
+                    inputSecondaryDir.value = data.rootDir;
+                    scanSecondaryFolders();
+                  }
+                }
+                // 7. 弹窗或手动设置目录结果
+                else if (action === "selectSecondaryCircuitDirResult") {
+                  if (data.success && data.path) {
+                    secondaryDwgRootDir.value = data.path;
+                    inputSecondaryDir.value = data.path;
+                    ElementPlus.ElMessage.success("已设置二次回路图纸目录！");
+                    scanSecondaryFolders();
+                  } else if (!data.success && data.message) {
+                    ElementPlus.ElMessage.warning(data.message);
+                  }
+                }
+                // 8. 扫描子文件夹列表回传
+                else if (action === "scanSecondaryFoldersResult") {
+                  secondaryFolders.value = data || [];
+                  loadFolderDwgCards();
+                }
+                // 9. 获取子文件夹 DWG 卡片列表回传
+                else if (action === "getFolderDwgCardsResult") {
+                  loading.value = false;
+                  secondaryDwgCards.value = data || [];
+                }
+                // 10. CAD 打开结果
+                else if (action === "openDwgInCadResult") {
+                  if (data.success) {
+                    ElementPlus.ElMessage.success(
+                      data.message || "CAD 图纸已启动！",
+                    );
+                  } else {
+                    ElementPlus.ElMessage.error(
+                      data.message || "打开图纸失败！",
+                    );
+                  }
+                }
+                // 11. 二次方案保存结果
+                else if (action === "saveSecondarySchemeResult") {
+                  if (data.success) {
+                    ElementPlus.ElMessage.success(
+                      "二次回路方案与 BOM 保存成功！",
+                    );
+                    secEditDialogOpen.value = false;
+                    loadFolderDwgCards();
+                  } else {
+                    ElementPlus.ElMessage.error(
+                      data.message || "保存方案失败！",
+                    );
+                  }
+                }
+                // 12. 物料库搜索结果回传
+                else if (action === "searchMaterialComponentsResult") {
+                  materialLoading.value = false;
+                  materialSearchResults.value = data || [];
+                }
               });
             }
-            // 首次启动拉取数据
+            // 首次启动拉取方案列表并预读二次方案目录配置
             fetchSchemes();
+            loadSecondaryCircuitConfig();
           });
 
           return {
@@ -1720,9 +3751,45 @@
             onDragWindow,
             minimizeWindow,
             toggleMaximizeWindow,
-            closeWindow
+            closeWindow,
+            // 二次回路方案新增暴露项
+            secondaryDwgRootDir,
+            secondaryFolders,
+            selectedSecondaryFolder,
+            secondaryDwgCards,
+            secondarySearchKw,
+            dirSettingDialogVisible,
+            inputSecondaryDir,
+            secEditDialogOpen,
+            editingSecScheme,
+            secBomList,
+            materialSelectorVisible,
+            materialSearchKw,
+            materialSearchResults,
+            materialLoading,
+            totalSecondaryDwgCount,
+            secBomMaterialSubtotal,
+            secComprehensiveTotalCost,
+            formatMoney,
+            loadSecondaryCircuitConfig,
+            openDirSettingDialog,
+            onBrowseSecondaryDir,
+            onApplyManualDir,
+            scanSecondaryFolders,
+            onSelectSecondaryFolder,
+            loadFolderDwgCards,
+            onSecondarySearch,
+            refreshSecondaryCards,
+            openCadDrawing,
+            openSecondaryEditModal,
+            addCustomBomRow,
+            deleteSecBomRow,
+            saveSecondarySchemeForm,
+            openMaterialSelector,
+            onSearchMaterials,
+            selectMaterialToBom,
           };
-        }
+        },
       });
 
       app.use(ElementPlus);

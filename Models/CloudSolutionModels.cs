@@ -264,4 +264,84 @@ namespace ExcelAddInDemo.Models
         // 用户勾选确认的 BOM 明细列表
         public List<CloudSchemeBomItem> SelectedBomItems { get; set; } = new List<CloudSchemeBomItem>();
     }
+
+    /// <summary>
+    /// 二次方案 DWG 根目录下的直接子文件夹项 DTO
+    /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+    /// </summary>
+    public class SecondaryFolderItemDto
+    {
+        // 子文件夹显示名称 (如: "双电源", "时控开关")
+        public string Name { get; set; } = string.Empty;
+
+        // 子文件夹物理绝对路径
+        public string FullPath { get; set; } = string.Empty;
+
+        // 该子文件夹下包含的 DWG 图纸数量
+        public int DwgCount { get; set; } = 0;
+    }
+
+    /// <summary>
+    /// 云方案二次回路 DWG 图纸与数据库参数一体化卡片展示 DTO
+    /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+    /// </summary>
+    public class SecondaryFolderDwgCardDto
+    {
+        // 完整文件名称 (带后缀，如: "WATSG.dwg")
+        public string FileName { get; set; } = string.Empty;
+
+        // 去扩展名的图名代号 (如: "WATSG")
+        public string DwgName { get; set; } = string.Empty;
+
+        // 方案大标题显示名称 (如: "双电源自动切换控制原理图")
+        public string SchemeName { get; set; } = string.Empty;
+
+        // 所属方案目录名称 (左侧选中的子文件夹名，如: "双电源")
+        public string FolderName { get; set; } = string.Empty;
+
+        // 所属子文件夹物理全路径
+        public string FolderPath { get; set; } = string.Empty;
+
+        // DWG 文件物理绝对全路径
+        public string FullPath { get; set; } = string.Empty;
+
+        // 方案品牌 (如: "施耐德")
+        public string Brand { get; set; } = string.Empty;
+
+        // 方案工艺与技术描述
+        public string Description { get; set; } = string.Empty;
+
+        // 二次线跨门根数
+        public double CrossDoorCount { get; set; } = 0.0;
+
+        // 开孔要求 (如: "圆孔 2个")
+        public string HoleSpec { get; set; } = string.Empty;
+
+        // 装配人工费用 (单位: 元)
+        public double LaborCost { get; set; } = 0.0;
+
+        // 二次材料费用小计 (实时从子 BOM 汇总，单位: 元)
+        public double MaterialCost { get; set; } = 0.0;
+
+        // 综合总成本 (人工 + 材料)
+        public double TotalCost { get; set; } = 0.0;
+
+        // 二次排布图 DWG (对应 cad_drawing_name，如: "FA")
+        public string LayoutDwgName { get; set; } = string.Empty;
+
+        // DWG 缩略图 Base64 图像流
+        public string PreviewBase64 { get; set; } = string.Empty;
+
+        // 是否在 personal_components.db 中精准匹配命中
+        public bool IsMatched { get; set; } = false;
+
+        // 命中的数据库主键 ID (未命中为 0)
+        public int SchemeId { get; set; } = 0;
+
+        // 方案最近更新时间文本
+        public string UpdateTime { get; set; } = string.Empty;
+
+        // 关联的完整二次方案实体 (供编辑弹窗直接反显)
+        public SecondarySchemeEntity? SchemeData { get; set; }
+    }
 }

@@ -222,6 +222,21 @@ namespace ExcelAddInDemo.Forms
 
                 string action = actionProp.GetString() ?? "";
 
+                // 兼容提取负载对象 (优先取 data 内部对象，若无则取 root 根节点本身)
+                JsonElement dataEl = root.TryGetProperty("data", out var tmpData) && tmpData.ValueKind == JsonValueKind.Object
+                    ? tmpData
+                    : root;
+
+                // 辅助安全读取字符串参数函数 (双重保障，杜绝因 payload 嵌套层级导致提取失败)
+                string GetStringProp(string propName)
+                {
+                    if (dataEl.TryGetProperty(propName, out var p1) && p1.ValueKind == JsonValueKind.String)
+                        return p1.GetString() ?? string.Empty;
+                    if (root.TryGetProperty(propName, out var p2) && p2.ValueKind == JsonValueKind.String)
+                        return p2.GetString() ?? string.Empty;
+                    return string.Empty;
+                }
+
                 switch (action)
                 {
                     // 1. 无边框拖拽移动窗体 (带物理鼠标状态检测，杜绝幽灵捕获死锁)
@@ -297,6 +312,112 @@ namespace ExcelAddInDemo.Forms
                         string insertPayload = root.TryGetProperty("data", out var iProp) ? iProp.GetRawText() : "{}";
                         var (insertOk, insertMsg) = _controller.InsertSchemeToExcel(insertPayload);
                         PostMessageSafe("insertSchemeToExcelResult", new { success = insertOk, message = insertMsg });
+                        break;
+
+                    // 11. 获取当前已保存的二次方案图纸根目录
+                    case "getSecondaryCircuitConfig":
+                        string currentSecDir = _controller.GetSecondaryCircuitDwgDir();
+                        PostMessageSafe("getSecondaryCircuitConfigResult", new { rootDir = currentSecDir });
+                        break;
+
+                    // 12. 弹窗选择二次方案图纸根目录 (独立后台 STA 线程解耦，杜绝 Chromium IPC 模态死锁)
+                    case "selectSecondaryCircuitDir":
+                        string lastSecDir = _controller.GetSecondaryCircuitDwgDir();
+                        var dialogThread = new System.Threading.Thread(() =>
+                        {
+                            try
+                            {
+                                // 创建目录浏览对话框 (注意: .NET Framework 4.8 中无 AutoUpgradeEnabled)
+                                using var dialog = new FolderBrowserDialog
+                                {
+                                    Description = "请选择二次回路 DWG 图纸所在根目录",
+                                    ShowNewFolderButton = true
+                                };
+
+                                // 恢复上一次记录的路径
+                                if (!string.IsNullOrWhiteSpace(lastSecDir) && Directory.Exists(lastSecDir))
+                                {
+                                    dialog.SelectedPath = lastSecDir;
+                                }
+
+                                // 在独立 STA 模态消息循环中弹出
+                                if (dialog.ShowDialog() == DialogResult.OK && !string.IsNullOrWhiteSpace(dialog.SelectedPath))
+                                {
+                                    string chosenDir = dialog.SelectedPath;
+                                    // 保存并持久化配置
+                                    _controller.SetSecondaryCircuitDwgDir(chosenDir);
+                                    // 线程安全通知前端更新
+                                    PostMessageSafe("selectSecondaryCircuitDirResult", new { success = true, path = chosenDir });
+                                }
+                            }
+                            catch (Exception exDialog)
+                            {
+                                // 记录弹窗选择异常
+                                LogHelper.WriteLog($"[CloudSolutionForm] selectSecondaryCircuitDir 线程异常: {exDialog.Message}");
+                            }
+                        });
+                        dialogThread.SetApartmentState(System.Threading.ApartmentState.STA);
+                        dialogThread.IsBackground = true;
+                        dialogThread.Start();
+                        break;
+
+                    // 13. 手动粘贴或输入二次方案图纸根目录
+                    case "setSecondaryCircuitDirManual":
+                        string manualPath = GetStringProp("path");
+                        if (!string.IsNullOrWhiteSpace(manualPath) && Directory.Exists(manualPath))
+                        {
+                            _controller.SetSecondaryCircuitDwgDir(manualPath);
+                            PostMessageSafe("selectSecondaryCircuitDirResult", new { success = true, path = manualPath });
+                        }
+                        else
+                        {
+                            PostMessageSafe("selectSecondaryCircuitDirResult", new { success = false, message = "指定的文件夹路径在本地不存在，请检查后重试！" });
+                        }
+                        break;
+
+                    // 14. 扫描二次方案根目录下的子文件夹列表
+                    case "scanSecondaryFolders":
+                        string scanRootDir = GetStringProp("rootDir");
+                        var folders = _controller.ScanSecondaryFolders(string.IsNullOrEmpty(scanRootDir) ? null : scanRootDir);
+                        PostMessageSafe("scanSecondaryFoldersResult", folders);
+                        break;
+
+                    // 15. 获取指定子文件夹下的 DWG 卡片列表 (含数据库参数与缩略图)
+                    case "getFolderDwgCards":
+                        string fPath = GetStringProp("folderPath");
+                        string fName = GetStringProp("folderName");
+                        string kw = GetStringProp("keyword");
+                        var cards = _controller.GetFolderDwgCards(fPath, fName, string.IsNullOrEmpty(kw) ? null : kw);
+                        PostMessageSafe("getFolderDwgCardsResult", cards);
+                        break;
+
+                    // 16. 调用默认关联的 AutoCAD 打开该 DWG 文件
+                    case "openDwgInCad":
+                        string dwgPath = GetStringProp("fullPath");
+                        var (cadOk, cadMsg) = _controller.OpenDwgInCad(dwgPath);
+                        PostMessageSafe("openDwgInCadResult", new { success = cadOk, message = cadMsg });
+                        break;
+
+                    // 17. 保存/更新二次回路方案
+                    case "saveSecondaryScheme":
+                        string secSchemePayload = "{}";
+                        if (dataEl.TryGetProperty("data", out var innerPayload))
+                        {
+                            secSchemePayload = innerPayload.GetRawText();
+                        }
+                        else if (root.TryGetProperty("data", out var rootPayload))
+                        {
+                            secSchemePayload = rootPayload.GetRawText();
+                        }
+                        var (secOk, secId, secMsg) = _controller.SaveSecondaryScheme(secSchemePayload);
+                        PostMessageSafe("saveSecondarySchemeResult", new { success = secOk, schemeId = secId, message = secMsg });
+                        break;
+
+                    // 18. 搜索物料库 (供编辑弹窗中的物料选择器使用)
+                    case "searchMaterialComponents":
+                        string mKw = GetStringProp("keyword");
+                        var compList = _controller.SearchMaterialComponents(mKw);
+                        PostMessageSafe("searchMaterialComponentsResult", compList);
                         break;
                 }
             }

@@ -1,5 +1,67 @@
 # Session State
 
+- **云方案中心 DWG 智能自动 Zoom 最大化居中算法与白边消除 (`Services/DwgPreviewService.cs`, `Resources/cloud_solution.html`)**：
+  1. **用户核心需求**：“能否将dwg自动zoom最大化居中显示”；
+  2. **深度技术剖析**：
+     - AutoCAD 生成或 Windows Shell 缓存的 DWG 缩略图受保存时视口影响，图元实体（如 `86面板.dwg` 尺寸为 392×392）往往偏居于上半部或正中央，周围伴有大量空隙底色，且若图纸曾在布局空间带纸张底衬，下半部（y=400..768）会留有纯白纸张底色（R=255, G=255, B=255）；
+     - 直接在前端使用 CSS 样式无论是 `contain` 还是 `cover`，都无法在保全尺寸文字标注的同时自适应消除所有方向的留白与杂色；
+  3. **AutoCAD ZOOM Extents (ZOOM E) 智能算法闭环落地**：
+     - **极速像素探测定位实体外框**：在 `DwgPreviewService.cs` 中实现 `AutoZoomContent` 方法，采样左上角像素底色 `cTopLeft`，以双像素步长毫秒级扫描全图，精确滤除深色基准衬底与纯白纸张，自动探测有效图形实体的最小包围矩形 `[minX, minY, maxX, maxY]`（实测 `86面板.dwg` 5637 像素命中，精准锁定 `194..586, 2..394`）；
+     - **自适应 16:9 画布居中与 92% 充满**：根据图形包围盒与 8% 呼吸边距，按照黄金视口比例 16:9 动态拓宽/拓高画布，整图使用基准 CAD 背景色平涂，将图元实体按 92% 比例最大化居中绘制至中心，彻底将外围无用空隙与底部纯白纸张剥离；
+     - **双通道无缝挂接**：在 Windows Shell 高清通道（提升至 640×480）与 DWG 头部内嵌 BMP 提取通道中统一接入 `AutoZoomContent`；
+     - **前端零损耗保真配合**：前端 `.sec-preview-img` 采用 `object-fit: contain; object-position: center;`，位图比例与视口完全吻合，100% 满宽满高居中呈现，文字标注毫发无损；
+  4. **全量构建与多图抽样实测验证**：
+     - 随机抽样 5 种不同类型 DWG 图纸（`86面板.dwg`, `2VA.dwg`, `无端子通讯.dwg`, `风机定时开启.dwg`, `液位箱壳体.dwg`, `2MXOF.dwg`），全部精确输出为 16:9 比例位图（如 807×454, 480×270, 686×386），宽高比严格稳定在 1.778；
+     - `dotnet build /t:Build` 编译成功（0 错误），并已全量热同步至 `bin/Debug/net48` 与 `publish`。
+
+- **云方案中心方案卡片网格全面升级为每行 3 列工业标准排版 (`Resources/cloud_solution.html`)**：
+  1. **用户核心指令**：“现在是每行2列，调整为3列”；
+  2. **落地实施**：
+     - 将 `.card-grid-container` 的列配置由原 `repeat(auto-fill, minmax(320px, 1fr))` 升级为 `grid-template-columns: repeat(3, minmax(0, 1fr))`，严格锁定每行 3 列均分排布；
+     - 移除 `.secondary-card` 历史残留的 `min-width: 310px` 限制，设为 `min-width: 0; width: 100%; min-height: 350px;`，让卡片在 3 列宽度下自由舒展；
+     - 适配 3 列紧凑空间黄金比例：将缩略图视口微调为 `height: 145px`，参数网格间距微调为 `gap: 8px`，按钮栏紧凑排版，确保标签、标题、描述、蓝图视口、双列参数与底栏按钮毫无拥挤与遮挡；
+     - 修改已热同步复制至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`，`dotnet build /t:Compile` 编译通过（0 错误）。
+
+- **云方案中心二次方案卡片多图纸时被垂直压缩缺陷彻底根除 (`Resources/cloud_solution.html`)**：
+  1. **问题根因定位**：
+     - 当子文件夹内 DWG 数量较多时（例如 14 张、32 张），`.card-grid-container` 和父级 `.content-area` 缺少 `min-height: 0`，导致外层 Flex 容器未能建立正确的垂直滚动上下文；
+     - `.secondary-card` 缺少固定高度（`min-height` / `height`），网格项在 CSS Grid 默认机制下为了在有限的视口内塞入全部行，将每一行强行压缩到了约 60px；
+     - 卡片内部拥有 `overflow: hidden`，导致高度被压缩后，下半部分的 DWG 略缩图视口、双列参数网格和底栏操作按钮全部被切掉，在视觉上表现为卡片被压成扁平长条。
+  2. **彻底闭环修复措施**：
+     - **解除容器限制并激活滚动条**：在 `.main-body` 与 `.content-area` 中补充 `min-height: 0`，并在 `.card-grid-container` 中设置 `min-height: 0; overflow-y: auto !important; grid-auto-rows: max-content;`；
+     - **显式锁定卡片高度防挤压**：为 `.secondary-card` 显式设置 `min-height: 425px; height: 425px; flex-shrink: 0;`，并为其子元素（header、dwg-viewport、params-body、footer）全量配置 `flex-shrink: 0`，杜绝任何纵向弹性形变；
+     - **全局滚动条现代美化**：引入 7px 宽度的 WebKit 自定义扁平滚动条，提供丝滑流畅的纵向浏览体验；
+     - **热同步与编译验证**：更新已全量同步覆盖至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`，`dotnet build /t:Compile` 编译无任何错误。
+
+- **本地二次回路方案与 DWG 图纸库全面整合至“云方案中心”企业方案二次方案 Tab (`Models/`, `Services/`, `Controllers/`, `Forms/`, `Resources/`)**：
+  1. **用户核心指令与决策落地**：
+     - 二次图纸根目录保存在配置文件中（`ConfigManager.Instance.Current.SecondaryCircuit.CircuitDwgDirectory`），点击齿轮图标 ⚙️ 可通过独立 STA 线程调出文件夹选择器或手动输入；
+     - 根目录下的所有子文件夹在左侧展示为分类导航树（展示 DWG 文件数量徽标）；
+     - 点击子文件夹后，右侧卡片网格展示该子目录下的所有 DWG 图纸；
+     - 依据 DWG 图纸名称（去扩展名）在 `personal_components.db` 的 `secondary_circuit_schemes` 表中按 `applicable_codes`（逗号“,”分隔）精准匹配参数（跨门线、开孔要求、人工工费、二次材料费、二次排布图、品牌、描述）；
+     - 卡片去除方案大标题，略缩图上方仅保留【方案目录名称】、【当前DWG文件名称（去后缀）】、【品牌】、【描述】；
+     - 卡片提供【打开图纸】（调起系统关联的 AutoCAD 打开 DWG）与【编辑】按钮；
+     - 点击【编辑】直接呼出“编辑二次回路方案与 BOM”弹窗（高保真复刻用户附件设计），支持对品牌、描述、跨门线、开孔、工费、备注进行修改，并支持对子 BOM 清单进行增删、合价联动重算与从本地物料库一键选型添加；
+     - 【一次方案】保持原本配电柜分类与逻辑，【批量插入已选方案】按指示暂不实施。
+  2. **端到端一揽子闭环实施**：
+     - **实体与数据访问自愈升级**：在 `SecondarySchemeEntity` 中扩展 `Brand` 与 `Description`；在 `PersonalComponentDbService` 中实现自动平滑自愈迁移脚本，无损扩充 SQLite 列；
+     - **精确逗号分词检索引擎**：在 `PersonalComponentDbService.SecondaryCircuit.cs` 中实现 `FindSchemeByDwgName`，优先精准命中 `applicable_codes` 逗号集合，未命中时平滑降级；
+     - **控制器与通信信使构建**：在 `CloudSolutionController.cs` 中提供目录扫描、DWG 卡片组装、CAD 外部调起、方案与 BOM 序列化保存及本地物料库检索接口；
+     - **通信路由与防死锁设计**：在 `CloudSolutionForm.cs` 中挂载 8 个二级分支，采用独立后台 STA 线程弹出 `FolderBrowserDialog`，彻底消灭 Chromium IPC 模态卡死隐患；
+     - **前端高质感 UI 交互实现**：在 `Resources/cloud_solution.html` 中引入绿蓝 `#009688` 风格的卡片组件、目录树、目录设置弹窗、高保真二次方案与 BOM 编辑弹窗及本地物料库选型对话框，Vue `<script setup>` 完整挂接响应式数据流；
+     - **IPC 消息参数解析修复与全分类聚合升级**：
+       a. 根因剖析：前端 `postToHost` 将载荷封装在 `data` 对象中，而 `CloudSolutionForm.cs` 曾直接从 `root` 顶层提取 `folderPath` 与 `folderName`，导致传入后台的路径为空，命中保护提前返回空数组；
+       b. 彻底修复：在 `CloudSolutionForm.cs` 增加双层安全提取机制 `GetStringProp`，兼容 `data` 对象与 `root` 顶层属性；
+       c. 智能全分类聚合：在 `CloudSolutionController.GetFolderDwgCards` 中升级逻辑，若处于“全部方案分类”（路径为空），自动扫描根目录下全部子文件夹聚合展示全部 216 个 DWG，点击具体子目录时精准呈现对应数量卡片；
+       d. 界面清理：依据指令彻底移除二次底栏中灰色的【批量插入已选方案 (0)】按钮；
+     - **二次方案卡片 100% 像素级对齐图 1 高品质视觉规范**：
+       a. 宽度自适应根治挤压变形：将 `.card-grid-container` 列宽从固死 4 列升级为 `repeat(auto-fill, minmax(320px, 1fr))`，锁定卡片最小宽度 310px，杜绝文字竖排；
+       b. 缩略图视口锁死 180px 与图 1 电路图 SVG 矢量降级：添加 `min-height: 180px; flex-shrink: 0` 杜绝折叠；内嵌与图 1 相同的暗夜电路蓝图 SVG 示意图（KM1/KM2 框、机械电气互锁虚线、中点负载连线及“负载 LOAD”），无真实图片时依然呈现图 1 原型效果；
+       c. 方案大标题与描述完整呈现：增加 `card.schemeName` 字段，展示加粗 15px 方案大标题与两行自适应工艺描述；
+       d. 右上角绿色圆角对勾徽章：增加 `.sec-card-badge-check` 浮动对勾徽标；
+       e. 参数网格与底栏按钮对齐：按图 1 严格双列排布跨门线、人工费用、二次材料、开孔需求与二次排布图，底栏展示绿色圆角【编辑】按钮与浅灰【打开图纸】。
+     - **输出目录热同步与编译验证**：同步更新至 `bin/Debug/net48` 与 `publish` 目录，`dotnet build` 编译验证 **0 警告，0 错误**。
+
 ## [In-Progress]
 
 - **箱柜调序功能顶部汇总与底部分类明细表全量物理同步重排与公式超链接自愈联动落地 (`Services/ExcelServices.CabinetManage.cs`)**：

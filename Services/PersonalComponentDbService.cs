@@ -128,6 +128,8 @@ namespace ExcelAddInDemo.Services
                             hole_spec           TEXT DEFAULT '',
                             labor_cost          REAL DEFAULT 0.0,
                             bom_json            TEXT NOT NULL DEFAULT '[]',
+                            brand               TEXT DEFAULT '',
+                            description         TEXT DEFAULT '',
                             remark              TEXT DEFAULT '',
                             created_at          TEXT,
                             updated_at          TEXT
@@ -141,12 +143,62 @@ namespace ExcelAddInDemo.Services
                     using var cmd = new SQLiteCommand(ddl, conn);
                     // 执行非查询 SQL
                     cmd.ExecuteNonQuery();
+
+                    // 自动平滑升级已有历史数据库结构 (检查并追加 brand 与 description 列)
+                    MigrateSecondarySchemeColumns(conn);
                 }
                 catch (Exception ex)
                 {
                     // 记录建表异常日志
                     LogHelper.WriteLog($"[PersonalDb] 初始化数据库表异常: {ex.Message}");
                 }
+            }
+        }
+
+        /// <summary>
+        /// 自动检测并平滑升级 secondary_circuit_schemes 表结构，保障旧数据零丢失
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+        /// </summary>
+        private static void MigrateSecondarySchemeColumns(SQLiteConnection conn)
+        {
+            try
+            {
+                // 维护已有列名集合
+                var existingCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                // 查询表元数据信息
+                using (var infoCmd = new SQLiteCommand("PRAGMA table_info(secondary_circuit_schemes);", conn)) // --硬编码: PRAGMA 嗅探--
+                using (var reader = infoCmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        // 提取当前列名称
+                        string colName = reader.GetString(1);
+                        existingCols.Add(colName);
+                    }
+                }
+
+                // 若缺少 brand 列，执行热迁移追加
+                if (!existingCols.Contains("brand"))
+                {
+                    // 执行追加品牌列指令
+                    using var alterCmd = new SQLiteCommand("ALTER TABLE secondary_circuit_schemes ADD COLUMN brand TEXT DEFAULT '';", conn); // --硬编码: 迁移DDL--
+                    alterCmd.ExecuteNonQuery();
+                    LogHelper.WriteLog("[PersonalDb] 成功为 secondary_circuit_schemes 表追加 brand 列");
+                }
+
+                // 若缺少 description 列，执行热迁移追加
+                if (!existingCols.Contains("description"))
+                {
+                    // 执行追加描述列指令
+                    using var alterCmd = new SQLiteCommand("ALTER TABLE secondary_circuit_schemes ADD COLUMN description TEXT DEFAULT '';", conn); // --硬编码: 迁移DDL--
+                    alterCmd.ExecuteNonQuery();
+                    LogHelper.WriteLog("[PersonalDb] 成功为 secondary_circuit_schemes 表追加 description 列");
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录迁移异常日志
+                LogHelper.WriteLog($"[PersonalDb] MigrateSecondarySchemeColumns 异常: {ex.Message}");
             }
         }
 

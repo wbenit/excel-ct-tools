@@ -63,6 +63,14 @@ namespace ExcelAddInDemo.Models
             get => Math.Round(TotalMaterialCost + LaborCost, 2);
         }
 
+        // 方案级品牌/生产厂家 (如: "施耐德", "正泰", "德力西")
+        [JsonPropertyName("brand")]
+        public string Brand { get; set; } = string.Empty;
+
+        // 方案详细技术描述与使用工况说明
+        [JsonPropertyName("description")]
+        public string Description { get; set; } = string.Empty;
+
         // 备注说明与工艺要点提示
         [JsonPropertyName("remark")]
         public string Remark { get; set; } = string.Empty;
