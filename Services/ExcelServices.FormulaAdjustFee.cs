@@ -37,22 +37,29 @@ namespace ExcelAddInDemo
         /// </summary>
         /// <param name="targetScope">调费作用域 (currentCabinet/currentCategory/allCabinets/selectedCabinet)</param>
         /// <param name="groupName">选中的公式组名称</param>
+        /// <param name="targetScope">目标调费作用域 (currentCabinet / currentCategory / allCabinets)</param>
+        /// <param name="groupName">公式组名称</param>
         /// <param name="items">前端编辑传递的公式明细项</param>
-        /// <returns>返回包含是否成功、更新工作表数、更新箱柜数和提示文本的执行结果元组</returns>
-        public static (bool Success, int UpdatedSheets, int UpdatedCabinets, string Message) ApplyFormulaAdjustFeeToExcel(
+        /// <returns>返回包含是否成功、更新工作表数、更新箱柜数、是否有警告和提示文本的执行结果元组</returns>
+        public static (bool Success, int UpdatedSheets, int UpdatedCabinets, bool HasWarning, string Message) ApplyFormulaAdjustFeeToExcel(
             string targetScope,
             string groupName,
             System.Collections.Generic.List<Controllers.FormulaItemModel>? items = null)
         {
             try
             {
+                // 清空上一次的箱柜警告缓存
+                Tool.ClearCabinetWarnings();
+                // 收集本次调费过程中跳过或未识别的箱柜
+                var skippedCabinets = new List<string>();
+
                 // 获取当前运行的 Excel Application COM 接口实例 (安全调用)
                 dynamic? app = ExcelDnaSafeAccessor.GetApplication();
-                if (app == null) return (false, 0, 0, "无法连接到 Excel 应用程序。");
+                if (app == null) return (false, 0, 0, false, "无法连接到 Excel 应用程序。");
 
                 // 获取当前激活的工作簿
                 dynamic activeWb = app.ActiveWorkbook;
-                if (activeWb == null) return (false, 0, 0, "当前没有打开的 Excel 工作簿。");
+                if (activeWb == null) return (false, 0, 0, false, "当前没有打开的 Excel 工作簿。");
 
                 // 若前端未显式传递 items，则从控制器读取预置公式明细
                 if (items == null || items.Count == 0)
@@ -66,7 +73,7 @@ namespace ExcelAddInDemo
                 // 校验公式项集合有效性
                 if (items == null || items.Count == 0)
                 {
-                    return (false, 0, 0, $"未获取到公式组【{groupName}】的明细项，请检查配置。");
+                    return (false, 0, 0, false, $"未获取到公式组【{groupName}】的明细项，请检查配置。");
                 }
 
                 // 读取 4 种定义名称前缀配置项 (零堆分配元组解构)
@@ -122,7 +129,7 @@ namespace ExcelAddInDemo
                                     try { ws.Activate(); } catch { }
 
                                     // 执行该表箱柜计费区倒序原子替换
-                                    int updatedCount = UpdateCabinetsForSheet(ws, app, activeWb, sheetCabinets, items, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                                    int updatedCount = UpdateCabinetsForSheet(ws, app, activeWb, sheetCabinets, items, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix, skippedCabinets);
                                     if (updatedCount > 0)
                                     {
                                         // 累计分类表数
@@ -142,14 +149,28 @@ namespace ExcelAddInDemo
                         // 安全切回原本激活的工作表
                         try { origActiveSheet?.Activate(); } catch { }
 
+                        // 汇集跳过的箱柜与底层未匹配方案的全部警告
+                        var allWarnings = new List<string>();
+                        if (skippedCabinets.Count > 0) allWarnings.AddRange(skippedCabinets);
+                        var toolWarnings = Tool.GetCabinetWarnings();
+                        if (toolWarnings.Count > 0) allWarnings.AddRange(toolWarnings);
+                        allWarnings = allWarnings.Distinct().ToList();
+                        bool hasWarning = allWarnings.Count > 0;
+
                         // 统计结果并返回
                         if (totalCabinets > 0)
                         {
-                            return (true, totalSheets, totalCabinets, $"成功更新 {totalSheets} 个分类表，共 {totalCabinets} 个箱柜！");
+                            string msg = hasWarning
+                                ? $"成功更新 {totalSheets} 个分类表，共 {totalCabinets} 个箱柜。\n⚠️ 提示（部分箱柜已跳过）：\n" + string.Join("\n", allWarnings)
+                                : $"成功更新 {totalSheets} 个分类表，共 {totalCabinets} 个箱柜！";
+                            return (true, totalSheets, totalCabinets, hasWarning, msg);
                         }
                         else
                         {
-                            return (false, 0, 0, "未在当前工作簿中识别到包含有效箱柜的分类表。");
+                            string msg = hasWarning
+                                ? $"未在当前工作簿中成功更新任何箱柜计费区。\n⚠️ 原因：\n" + string.Join("\n", allWarnings)
+                                : "未在当前工作簿中识别到包含有效箱柜的分类表。";
+                            return (false, 0, 0, hasWarning, msg);
                         }
                     }
                     // 2. 否则为“当前箱柜” (currentCabinet) 或“当前分类” (currentCategory): 仅在当前活动表执行
@@ -157,7 +178,7 @@ namespace ExcelAddInDemo
                     {
                         // 获取当前活动工作表
                         dynamic activeSheet = activeWb.ActiveSheet;
-                        if (activeSheet == null) return (false, 0, 0, "当前没有打开或激活的 Excel 工作表。");
+                        if (activeSheet == null) return (false, 0, 0, false, "当前没有打开或激活的 Excel 工作表。");
 
                         // 构建当前工作表有效箱柜映射
                         List<KeyValuePair<int, Models.CabinetAnchorModel>> validCabinets = Tool.GetSheetValidCabinets((object)activeSheet, activeWb);
@@ -172,7 +193,7 @@ namespace ExcelAddInDemo
                         // 校验是否识别到有效箱柜
                         if (validCabinets.Count == 0)
                         {
-                            return (false, 0, 0, "当前工作表未识别到有效箱柜，请确认是否为标准分类表。");
+                            return (false, 0, 0, false, "当前工作表未识别到有效箱柜，请确认是否为标准分类表。");
                         }
 
                         // 初始化目标箱柜集合
@@ -189,26 +210,41 @@ namespace ExcelAddInDemo
                             }
                             else
                             {
-                                return (false, 0, 0, "未识别到当前光标所在的箱柜。");
+                                return (false, 0, 0, false, "未识别到当前光标所在的箱柜。");
                             }
                         }
                         else
                         {
-                            // 包含当前分类表中的所有箱柜
-                            targetCabinets.AddRange(validCabinets);
+                            // 包含当前分类表中具备底表明细的所有箱柜 (安全过滤排除纯汇总箱柜)
+                            targetCabinets.AddRange(validCabinets.Where(c => c.Value?.Det != null));
                         }
 
                         // 执行当前工作表目标箱柜调费更新
-                        int updated = UpdateCabinetsForSheet(activeSheet, app, activeWb, targetCabinets, items, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                        int updated = UpdateCabinetsForSheet(activeSheet, app, activeWb, targetCabinets, items, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix, skippedCabinets);
+
+                        // 汇集跳过的箱柜与底层未匹配方案的全部警告
+                        var allWarnings = new List<string>();
+                        if (skippedCabinets.Count > 0) allWarnings.AddRange(skippedCabinets);
+                        var toolWarnings = Tool.GetCabinetWarnings();
+                        if (toolWarnings.Count > 0) allWarnings.AddRange(toolWarnings);
+                        allWarnings = allWarnings.Distinct().ToList();
+                        bool hasWarning = allWarnings.Count > 0;
+
                         if (updated > 0)
                         {
                             // 组织反馈描述文本
                             string desc = targetScope == "currentCabinet" ? $"箱柜(序号 {targetCabinets[0].Key})" : $"当前分类共 {updated} 个箱柜";
-                            return (true, 1, updated, $"成功更新{desc}的公式计费区间！");
+                            string msg = hasWarning
+                                ? $"成功更新{desc}的公式计费区间！\n⚠️ 提示：\n" + string.Join("\n", allWarnings)
+                                : $"成功更新{desc}的公式计费区间！";
+                            return (true, 1, updated, hasWarning, msg);
                         }
                         else
                         {
-                            return (false, 0, 0, "未能成功更新任何箱柜的计费区间。");
+                            string msg = hasWarning
+                                ? $"未能成功更新箱柜计费区间。\n⚠️ 原因：\n" + string.Join("\n", allWarnings)
+                                : "未能成功更新任何箱柜的计费区间。";
+                            return (false, 0, 0, hasWarning, msg);
                         }
                     }
                 }
@@ -221,9 +257,9 @@ namespace ExcelAddInDemo
             }
             catch (Exception ex)
             {
-                // 异常日志记录
-                LogHelper.WriteLog($"执行公式法调费异常: {ex.Message}");
-                return (false, 0, 0, $"执行公式法调费失败: {ex.Message}");
+                // 异常日志记录 (包含详细调用堆栈，便于快速排查)
+                LogHelper.WriteLog($"执行公式法调费异常: {ex.Message}\n堆栈跟踪: {ex.StackTrace}");
+                return (false, 0, 0, false, $"执行公式法调费失败: {ex.Message}");
             }
         }
 
@@ -241,7 +277,8 @@ namespace ExcelAddInDemo
             string sumPrefix,
             string detPrefix,
             string subsumPrefix,
-            string tolsumPrefix)
+            string tolsumPrefix,
+            List<string>? skippedWarnings = null)
         {
             // 校验工作表与目标箱柜列表有效性
             if (sheet == null || targetCabinets == null || targetCabinets.Count == 0) return 0;
@@ -259,15 +296,17 @@ namespace ExcelAddInDemo
 
             // 规则：多箱柜批量调费必须自底向上 (按箱柜物理行号降序) 遍历
             // 确保下方箱柜的增删行完全不会破坏上方箱柜在 Excel 中的物理行号
+            // 安全防护：过滤排除无底表明细行 Det 的纯汇总箱柜，杜绝 dynamic 为 null 时抛出运行时绑定异常
             List<KeyValuePair<int, Models.CabinetAnchorModel>> sortedCabinets = latestCabinets
-                .Where(c => targetDict.Contains(c.Key))
+                .Where(c => targetDict.Contains(c.Key) && c.Value?.Det != null)
                 .OrderByDescending(c => Convert.ToInt32(c.Value.Det.Row))
                 .ToList();
 
-            // 若自愈刷新后未匹配到有效列表，回退原传入列表
+            // 若自愈刷新后未匹配到有效列表，回退原传入列表 (同样安全过滤 Det != null)
             if (sortedCabinets.Count == 0)
             {
                 sortedCabinets = targetCabinets
+                    .Where(c => c.Value?.Det != null)
                     .OrderByDescending(c => Convert.ToInt32(c.Value.Det.Row))
                     .ToList();
             }
@@ -277,6 +316,8 @@ namespace ExcelAddInDemo
             {
                 // 提取箱柜数字序号
                 int k = cab.Key;
+                // 防御性校验：若箱柜无底表明细信息行 Det，跳过计费区更新
+                if (cab.Value?.Det == null) continue;
                 // 提取箱柜信息行物理行号
                 int cabDetRow = Convert.ToInt32(cab.Value.Det.Row);
                 // 安全提取小计行物理行号 (基于 SUM+INDEX 双关键词判定)
@@ -303,13 +344,33 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 校验校准后行号有效性，无效则跳过防止破坏表格
-                if (oldSubsumRow <= 0 || oldTolsumRow <= oldSubsumRow) continue;
+                // 校验校准后行号有效性，无效则记录警告并跳过防止破坏表格
+                if (oldSubsumRow <= 0 || oldTolsumRow <= oldSubsumRow)
+                {
+                    // 提取当前工作表名称
+                    string curWsName = Convert.ToString(sheet.Name) ?? "";
+                    // 收集跳过箱柜的警告提示
+                    skippedWarnings?.Add($"【{curWsName}】箱柜 [{k}]：未能定位有效小计行或总计行，已跳过");
+                    continue;
+                }
 
                 // 计算元器件起始行 (依据规则 6: Cab_Det + 2)
                 int compStartRow = cabDetRow + 2;
                 // 计算原旧计费区间的总行数
                 int oldM = oldTolsumRow - oldSubsumRow + 1;
+
+                // 安全防线 1：校验旧计费行数合理性 (正常计费项 4~12 项，若 > 15 或侵入元器件区则拦截)
+                if (oldM > 15 || oldSubsumRow < compStartRow)
+                {
+                    // 提取当前工作表纯文本名称
+                    string curWsName = Convert.ToString(sheet.Name) ?? "";
+                    // 收集跳过箱柜的警告提示
+                    skippedWarnings?.Add($"【{curWsName}】箱柜 [{k}]：旧计费区域行数异常({oldM}行)，疑似侵入元器件区，已安全跳过更新以防止误删明细");
+                    // 记录安全拦截日志
+                    LogHelper.WriteLog($"[调费安全拦截] 工作表 [{curWsName}] 箱柜 [{k}] oldM={oldM}, oldSubsumRow={oldSubsumRow}, compStartRow={compStartRow}，超出安全阈值，终止更新！");
+                    continue;
+                }
+
                 // 计算新旧计费行数差额 (delta > 0 需插行，delta < 0 需删行)
                 int delta = N - oldM;
 
@@ -325,6 +386,20 @@ namespace ExcelAddInDemo
                     int deleteCount = -delta;
                     int delStart = oldTolsumRow - deleteCount;
                     int delEnd = oldTolsumRow - 1;
+
+                    // 安全防线 2：绝对安全红线拦截，严禁删行侵入元器件区域 (delStart 必须大于等于 oldSubsumRow)
+                    if (delStart < oldSubsumRow)
+                    {
+                        // 提取当前工作表名称
+                        string curWsName = Convert.ToString(sheet.Name) ?? "";
+                        // 收集删行越界警告提示
+                        skippedWarnings?.Add($"【{curWsName}】箱柜 [{k}]：删行边界异常(起始行{delStart}小于计费首行{oldSubsumRow})，已安全拦截跳过");
+                        // 记录越界拦截日志
+                        LogHelper.WriteLog($"[调费安全拦截] 工作表 [{curWsName}] 箱柜 [{k}] delStart={delStart} < oldSubsumRow={oldSubsumRow}，已阻止删行！");
+                        continue;
+                    }
+
+                    // 安全执行计费区域内部多余行物理删除
                     sheet.Rows[$"{delStart}:{delEnd}"].Delete(-4121);
                 }
 

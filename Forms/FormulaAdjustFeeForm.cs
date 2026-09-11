@@ -289,12 +289,17 @@ namespace ExcelAddInDemo
                         // 组装回发前端的消息数据包，坚决不调用 MessageBox.Show 避免 Chromium IPC 模态死锁
                         var applyResData = new
                         {
+                            // 消息动作名称
                             action = "applyFormulaResult",
+                            // 调费是否执行成功
                             success = result.Success,
+                            // 是否包含未匹配或跳过箱柜的警告
+                            hasWarning = result.HasWarning,
+                            // 详细反馈与警告文本
                             message = result.Message
                         };
 
-                        // 异步安全向 Vue 前端回发执行结果，交由 Element Plus ElMessage 友好无阻塞提示
+                        // 异步安全向 Vue 前端回发执行结果，交由 Element Plus 友好无阻塞提示
                         PostWebMessageSafe(JsonSerializer.Serialize(applyResData, JsonOptions));
                         break;
 

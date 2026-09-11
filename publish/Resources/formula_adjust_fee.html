@@ -1331,17 +1331,33 @@
                     detailList.value = data.details;
                   }
                 }
-                // 挂载调费应用回发结果响应监听，使用非模态 ElMessage 代替原生模态弹窗
+                // 挂载调费应用回发结果响应监听，使用非模态 ElMessage / ElNotification 代替原生模态弹窗
                 else if (data && data.action === "applyFormulaResult") {
                   // 判断调费执行结果状态并弹出 Element Plus 友好提示
                   if (data.success) {
-                    ElementPlus.ElMessage.success(
-                      data.message || "公式调费应用成功！",
-                    );
+                    if (data.hasWarning) {
+                      // 存在未匹配或跳过箱柜的警告时，使用多行排版的 ElNotification 醒目提示用户
+                      ElementPlus.ElNotification({
+                        title: "调费完成提示",
+                        message: data.message || "公式调费应用成功，部分箱柜存在警告",
+                        type: "warning",
+                        duration: 8000,
+                        position: "top-right",
+                      });
+                    } else {
+                      ElementPlus.ElMessage.success(
+                        data.message || "公式调费应用成功！",
+                      );
+                    }
                   } else {
-                    ElementPlus.ElMessage.warning(
-                      data.message || "公式调费应用未完成",
-                    );
+                    // 未能更新时使用 ElNotification 展示详细原因
+                    ElementPlus.ElNotification({
+                      title: "调费未完成提示",
+                      message: data.message || "公式调费应用未完成",
+                      type: "error",
+                      duration: 8000,
+                      position: "top-right",
+                    });
                   }
                 }
               });

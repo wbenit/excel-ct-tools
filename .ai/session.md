@@ -1,5 +1,50 @@
 # Session State
 
+- **纯汇总无明细箱柜 `Det == null` 引发“无法对 null 引用执行运行时绑定”彻底修复 (`ExcelServices.FormulaAdjustFee.cs`)**：
+  1. **用户核心现象与截图质询**：
+     - 用户截图报错：“调费未完成提示：执行公式法调费失败：无法对 null 引用执行运行时绑定”；
+  2. **根因定位与修复方案**：
+     - **根因**：工作表中存在纯汇总无明细箱柜（或未绑定明细行的箱柜），其 `CabinetAnchorModel.Det` 属性为 `null`；在多箱柜排序及单表调费准备时，代码执行了 `latestCabinets.OrderByDescending(c => Convert.ToInt32(c.Value.Det.Row))` 及 `targetCabinets.AddRange(validCabinets)`，对 `dynamic` 的 `Det`（为 null）直接访问 `.Row`，引发 C# DLR 的 `RuntimeBinderException: 无法对 null 引用执行运行时绑定`；
+     - **修复**：
+       - 在 `sortedCabinets` 构建时增加安全过滤条件 `c.Value?.Det != null`；
+       - 在回退列表与单表 `targetCabinets` 收集时增加 `c.Value?.Det != null`；
+       - 在 `foreach (var cab in sortedCabinets)` 循环首部增加防御 `if (cab.Value?.Det == null) continue;`，纯汇总箱柜无需且不更新底表计费区；
+       - 在全局异常捕获中补齐调用堆栈（`StackTrace`）追踪日志。
+  3. **构建验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+
+- **公式法调费总计行指纹匹配修复与删行边界安全红线交付 (`Tool.cs`, `ExcelServices.FormulaAdjustFee.cs`)**：
+  1. **用户核心指令与定位要求**：
+     - 用户指令：“更新后底部明细被删除了，什么原因？这是更新前的格式，定位错误的原因。替换计费区域，你不要管内容，辅材箱体的确在第一个方案中，也就是说属于计费项。修改。”
+  2. **根因精准定位与闭环修复**：
+     - **根因 1：总计行指纹匹配逻辑致命 Bug (`Tool.cs`)**：
+       在方案库 100% 逐项完全吻合校验中，最后一行总计行在方案库中 `Name` 为空字符串 `""`（“总计”在 `No` 即 A 列），原代码仅通过 `!string.IsNullOrEmpty(expName)` 判断，导致最后一行总计行永远无法匹配，7 项方案永远只能达到 6 项，整体匹配永远判定失败，`curFeeStartRow` 永远为 0，无法将 `Cab_Subsum` 校准到真正的计费起点（行 428）；
+       **修复**：在比对方案项时，引入总计行识别规则（若方案项/序号含“总计”或为末尾项，比对实际单元格 A 列或 B 列是否含“总计”；或比对 No 相同），使包含辅材、箱体、小计、人工费、综合成套费、单台合计、总计的 7 项方案 100% 吻合命中，将计费起点精准定在第 428 行，更新 `Cab_Subsum_k = 428`。
+     - **根因 2：旧计费行数异常导致删行侵入元器件区 (`ExcelServices.FormulaAdjustFee.cs`)**：
+       由于上述未匹配问题，旧 `Cab_Subsum` 漂移停留在行 416，导致识别出 `oldM = 19` 行，新公式 $N=6$ 行时差额 $delta=-13$，代码物理删除了行 421~433，将元器件空白行与底部明细误删；
+       **修复**：设立双重安全红线：
+       - 安全红线 1：校验旧计费行数合理性，若 `oldM > 15 || oldSubsumRow < compStartRow`，判定为严重漂移，立即拦截跳过，绝不删改；
+       - 安全红线 2：在删行分支增加绝对边界红线，严格限制 `delStart >= oldSubsumRow`，若删行起点小于计费起点，立即阻止删行并报警跳过。
+  3. **构建验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+
+- **公式法调费全链路非阻塞异常透传与 Element Plus 多行通知（方案 A 全面交付） (`Tool.cs`, `ExcelServices.FormulaAdjustFee.cs`, `FormulaAdjustFeeForm.cs`, `formula_adjust_fee.html`)**：
+  1. **用户核心指令与需求确认**：
+     - 用户质询：“这样没提示，用户怎么知道信息呢”；
+     - 用户明确选定：“方式 A（重点推荐）”；
+  2. **端到端一揽子闭环实施**：
+     - **底层异常收集机制 (`Tool.cs`)**：
+       在 `Tool` 中引入线程安全集合 `_cabinetWarnings` 与 `AddCabinetWarning` / `GetCabinetWarnings` / `ClearCabinetWarnings`，当箱柜未匹配到预设方案时仅静默收集警告（如 `【低压柜】箱柜 [1]：未能匹配到系统预设费用公式方案`），绝不主动弹出阻塞框；
+     - **服务层调费异常聚合与透传 (`Services/ExcelServices.FormulaAdjustFee.cs`)**：
+       `ApplyFormulaAdjustFeeToExcel` 扩展返回 `HasWarning` 标识；在单表调费 `UpdateCabinetsForSheet` 中捕获跳过的箱柜并整合底层警告；若存在跳过或未匹配箱柜，将箱柜号与原因拼装进反馈描述中；
+     - **通信信使扩展 (`Forms/FormulaAdjustFeeForm.cs`)**：
+       在 `applyFormulaResult` 回发载荷中安全携带 `hasWarning: result.HasWarning`；
+     - **Vue3 前端无阻塞现代通知呈现 (`Resources/formula_adjust_fee.html`, `publish/`, `bin/Debug/`)**：
+       当 `hasWarning` 为 true 时，调用 Element Plus 原生 `ElNotification`（Warning 级别，停留 8 秒，支持手动关闭与多行排版），醒目列出未匹配/跳过的箱柜清单；纯成功时保持精简 `ElMessage.success`；失败时使用 `ElNotification` 呈现具体错误；
+  3. **环境同步与编译验证**：
+     - 资源文件已热同步覆盖 `Resources/`、`publish/`、`bin/Debug/net48/`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+
 - **费用方案100%严格匹配与穿插纯汇总无明细箱柜精准配对全面交付 (`Tool.cs`)**：
   1. **用户核心技术质询与根因剖析**：
      - **质询 1**：`Tool.cs:L1305` 为什么是 70% 而不是 100%？

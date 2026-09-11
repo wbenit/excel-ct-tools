@@ -1093,6 +1093,42 @@ namespace ExcelAddInDemo
             return totalFixedCabinets;
         }
 
+        // 线程安全警告收集集合：记录最近一次箱柜校准/识别中未匹配预设方案等警告
+        private static readonly System.Collections.Concurrent.ConcurrentBag<string> _cabinetWarnings = new();
+
+        /// <summary>
+        /// 清空最近一次收集的箱柜校准与费用匹配警告信息
+        /// </summary>
+        public static void ClearCabinetWarnings()
+        {
+            // 清空线程安全集合中所有历史警告
+            while (_cabinetWarnings.TryTake(out _)) { }
+        }
+
+        /// <summary>
+        /// 获取当前收集到的所有去重箱柜校准与费用匹配警告信息列表
+        /// </summary>
+        /// <returns>去重后的警告提示文本列表</returns>
+        public static List<string> GetCabinetWarnings()
+        {
+            // 返回去重后的警告集合列表
+            return _cabinetWarnings.Distinct().ToList();
+        }
+
+        /// <summary>
+        /// 记录单条箱柜警告信息
+        /// </summary>
+        /// <param name="warning">警告信息内容</param>
+        public static void AddCabinetWarning(string warning)
+        {
+            // 校验入参有效性
+            if (!string.IsNullOrWhiteSpace(warning))
+            {
+                // 添加到线程安全集合中
+                _cabinetWarnings.Add(warning.Trim());
+            }
+        }
+
         /// <summary>
         /// 针对单张工作表，根据顶部汇总与明细区域特征校准补齐 4 个定义名称
         /// 规则 6: Cab_Sum_k (汇总行), Cab_Det_k (信息行), Cab_Subsum_k (小计行), Cab_Tolsum_k (总计行)
@@ -1397,8 +1433,10 @@ namespace ExcelAddInDemo
                                 var groups = feeCtrl.GetFormulaGroups();
                                 if (groups != null && groups.Count > 0)
                                 {
-                                    // 遍历所有方案进行指纹名称匹配
-                                    foreach (var g in groups)
+                                    // 优先按明细项数量倒序比对，确保优先匹配更具体更长且完全吻合的方案
+                                    var sortedGroups = groups.OrderByDescending(g => g.Details?.Count ?? 0).ToList();
+                                    // 遍历所有方案进行指纹名称与结构匹配
+                                    foreach (var g in sortedGroups)
                                     {
                                         if (g.Details != null && g.Details.Count >= 3)
                                         {
@@ -1408,15 +1446,37 @@ namespace ExcelAddInDemo
                                             if (candidateStart >= curDetRow + 2)
                                             {
                                                 int matchCount = 0;
-                                                // 逐行比对 B 列费用名称与方案项的匹配度 (不区分大小写，去除首尾空白)
+                                                // 逐行比对 B 列费用名称与序号特征
                                                 for (int idx = 0; idx < N; idx++)
                                                 {
-                                                    // 方案预设费用名称
+                                                    // 方案预设费用名称与序号
                                                     string expName = g.Details[idx].Name?.Trim() ?? "";
-                                                    // 单元格实际费用名称
+                                                    string expNo = g.Details[idx].No?.Trim() ?? "";
+                                                    // 单元格实际费用名称与序号 (覆盖 B 列与 A 列)
                                                     string actName = GetText(candidateStart + idx, 2);
-                                                    // 严格逐行完全比对完全一致
+                                                    string actNo = GetText(candidateStart + idx, 1);
+
+                                                    // 判定单项是否 100% 吻合
+                                                    bool isMatch = false;
+                                                    // 规则 1: 若方案定义了费用名称且与实际单元格 B 列一致
                                                     if (!string.IsNullOrEmpty(expName) && string.Equals(actName, expName, StringComparison.OrdinalIgnoreCase))
+                                                    {
+                                                        isMatch = true;
+                                                    }
+                                                    // 规则 2: 总计行匹配 (方案项或序号含总计，或为末尾总计行，且实际 A/B 列含总计)
+                                                    else if ((expNo.Contains("总计") || expName.Contains("总计") || idx == N - 1) &&
+                                                             (actNo.Contains("总计") || actName.Contains("总计")))
+                                                    {
+                                                        isMatch = true;
+                                                    }
+                                                    // 规则 3: 序号或项目代号严格完全一致
+                                                    else if (!string.IsNullOrEmpty(expNo) && string.Equals(actNo, expNo, StringComparison.OrdinalIgnoreCase))
+                                                    {
+                                                        isMatch = true;
+                                                    }
+
+                                                    // 匹配计数累加
+                                                    if (isMatch)
                                                     {
                                                         matchCount++;
                                                     }
@@ -1435,16 +1495,15 @@ namespace ExcelAddInDemo
                             }
                             catch { }
 
-                            // 用户明确指示：若第一重保险未匹配到任何预设方案，不使用第二重盲猜，直接报错提醒！
+                            // 若第一重保险未匹配到任何预设方案，不使用第二重盲猜盲改
                             if (curFeeStartRow == 0)
                             {
-                                string warnMsg = $"箱柜 [{k}] (总计位于第 {curTolsumRow} 行) 未能匹配到任何系统预设的费用公式方案！\n请检查该箱柜计费区域是否规范，或在【公式法调费】中重新为其应用费用公式。";
-                                LogHelper.WriteLog($"[费用方案匹配失败] {warnMsg}");
-                                try
-                                {
-                                    System.Windows.Forms.MessageBox.Show(warnMsg, "费用方案匹配失败提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
-                                }
-                                catch { }
+                                // 组装未匹配方案的静默警告日志信息
+                                string warnMsg = $"箱柜 [{k}] (总计位于第 {curTolsumRow} 行) 未能匹配到任何系统预设的费用公式方案。";
+                                // 仅记录警告日志，严禁在此调用模态 MessageBox.Show 避免 WebView2 IPC 消息泵死锁或后台弹窗遮挡导致假死
+                                LogHelper.WriteLog($"[费用方案匹配警告] {warnMsg}");
+                                // 将警告信息加入收集器，供上层 UI 统一优雅提示
+                                AddCabinetWarning($"【{sheetName}】箱柜 [{k}]：未能匹配到系统预设费用公式方案");
                             }
                         }
 
