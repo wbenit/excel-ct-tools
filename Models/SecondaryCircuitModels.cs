@@ -71,10 +71,6 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("description")]
         public string Description { get; set; } = string.Empty;
 
-        // 备注说明与工艺要点提示
-        [JsonPropertyName("remark")]
-        public string Remark { get; set; } = string.Empty;
-
         // 方案创建时间戳
         [JsonPropertyName("createdAt")]
         public string CreatedAt { get; set; } = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
@@ -125,9 +121,5 @@ namespace ExcelAddInDemo.Models
             // 实时公式驱动计算并四舍五入保留 2 位小数
             get => Math.Round(Quantity * UnitPrice, 2);
         }
-
-        // 单件二次元件特殊备注说明
-        [JsonPropertyName("remark")]
-        public string Remark { get; set; } = string.Empty;
     }
 }

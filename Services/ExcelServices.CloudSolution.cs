@@ -463,8 +463,10 @@ namespace ExcelAddInDemo
                 double finalQty = item.IsWlDoubled ? (item.Quantity * loopMultiplier) : item.Quantity;
 
                 dataMatrix[i, 0] = i + 1;                  // B 列: 序号
-                dataMatrix[i, 1] = item.ComponentName ?? ""; // C 列: 名称
-                dataMatrix[i, 2] = item.ModelSpec ?? "";     // D 列: 型号
+                // C 列: 元件名称 (标准 Name 字段)
+                dataMatrix[i, 1] = item.Name ?? "";
+                // D 列: 规格型号 (标准 Model 字段)
+                dataMatrix[i, 2] = item.Model ?? "";
                 dataMatrix[i, 3] = item.Brand ?? "";         // E 列: 品牌
                 dataMatrix[i, 4] = item.Unit ?? "台";        // F 列: 单位
                 dataMatrix[i, 5] = (double)item.QuotePrice;  // G 列: 单价
@@ -536,8 +538,10 @@ namespace ExcelAddInDemo
                 double finalQty = item.IsWlDoubled ? (item.Quantity * loopMultiplier) : item.Quantity;
 
                 dataMatrix[i, 0] = i + 1;
-                dataMatrix[i, 1] = item.ComponentName ?? "";
-                dataMatrix[i, 2] = item.ModelSpec ?? "";
+                // C 列: 元件名称 (标准 Name 字段)
+                dataMatrix[i, 1] = item.Name ?? "";
+                // D 列: 规格型号 (标准 Model 字段)
+                dataMatrix[i, 2] = item.Model ?? "";
                 dataMatrix[i, 3] = item.Brand ?? "";
                 dataMatrix[i, 4] = item.Unit ?? "台";
                 dataMatrix[i, 5] = (double)item.QuotePrice;
@@ -587,31 +591,31 @@ namespace ExcelAddInDemo
                 BomItems = new List<CloudSchemeBomItem>
                 {
                     // 1. PT手车 (未选中，对齐图2)
-                    new CloudSchemeBomItem { SortOrder = 1, Selected = false, ComponentName = "PT手车", ModelSpec = "630A", Brand = "", Unit = "台", Quantity = 1.0, IsWlDoubled = true, CatalogPrice = 3500m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 3500m, TotalPrice = 3500m, Category = "高压手车", MaterialCode = "", Origin = "", Remark = "" },
+                    new CloudSchemeBomItem { SortOrder = 1, Selected = false, Name = "PT手车", Model = "630A", Brand = "", Unit = "台", Quantity = 1.0, IsWlDoubled = true, CatalogPrice = 3500m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 3500m, TotalPrice = 3500m, Category = "高压手车", MaterialCode = "", Origin = "", Remark = "" },
                     // 2. 电压互感器 (未选中，对齐图2)
-                    new CloudSchemeBomItem { SortOrder = 2, Selected = false, ComponentName = "电压互感器", ModelSpec = "JDZX10-10 10/0.1kV", Brand = "大连第一互感器", Unit = "台", Quantity = 3.0, IsWlDoubled = true, CatalogPrice = 2200m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 2200m, TotalPrice = 6600m, Category = "互感器", MaterialCode = "", Origin = "", Remark = "" },
+                    new CloudSchemeBomItem { SortOrder = 2, Selected = false, Name = "电压互感器", Model = "JDZX10-10 10/0.1kV", Brand = "大连第一互感器", Unit = "台", Quantity = 3.0, IsWlDoubled = true, CatalogPrice = 2200m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 2200m, TotalPrice = 6600m, Category = "互感器", MaterialCode = "", Origin = "", Remark = "" },
                     // 3. 高压熔断器 (选中，对齐图2)
-                    new CloudSchemeBomItem { SortOrder = 3, Selected = true, ComponentName = "高压熔断器", ModelSpec = "XRNP-10/0.5A", Brand = "上海一开", Unit = "台", Quantity = 3.0, IsWlDoubled = true, CatalogPrice = 44.94m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 44.94m, TotalPrice = 134.82m, Category = "熔断器", MaterialCode = "", Origin = "", Remark = "" },
+                    new CloudSchemeBomItem { SortOrder = 3, Selected = true, Name = "高压熔断器", Model = "XRNP-10/0.5A", Brand = "上海一开", Unit = "台", Quantity = 3.0, IsWlDoubled = true, CatalogPrice = 44.94m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 44.94m, TotalPrice = 134.82m, Category = "熔断器", MaterialCode = "", Origin = "", Remark = "" },
                     // 4. 避雷器 (选中，对齐图2)
-                    new CloudSchemeBomItem { SortOrder = 4, Selected = true, ComponentName = "避雷器", ModelSpec = "HY5WZ2-17/45", Brand = "大连伏安", Unit = "台", Quantity = 3.0, IsWlDoubled = true, CatalogPrice = 360m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 360m, TotalPrice = 1080m, Category = "避雷器", MaterialCode = "", Origin = "", Remark = "" },
+                    new CloudSchemeBomItem { SortOrder = 4, Selected = true, Name = "避雷器", Model = "HY5WZ2-17/45", Brand = "大连伏安", Unit = "台", Quantity = 3.0, IsWlDoubled = true, CatalogPrice = 360m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 360m, TotalPrice = 1080m, Category = "避雷器", MaterialCode = "", Origin = "", Remark = "" },
                     // 5. 带电显示器+传感器 (选中，对齐图2)
-                    new CloudSchemeBomItem { SortOrder = 5, Selected = true, ComponentName = "带电显示器+...", ModelSpec = "DXN11/Q1", Brand = "大连丰和", Unit = "套", Quantity = 1.0, IsWlDoubled = true, CatalogPrice = 258m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 258m, TotalPrice = 258m, Category = "显示装置", MaterialCode = "", Origin = "", Remark = "" },
+                    new CloudSchemeBomItem { SortOrder = 5, Selected = true, Name = "带电显示器+...", Model = "DXN11/Q1", Brand = "大连丰和", Unit = "套", Quantity = 1.0, IsWlDoubled = true, CatalogPrice = 258m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 258m, TotalPrice = 258m, Category = "显示装置", MaterialCode = "", Origin = "", Remark = "" },
                     // 6. 消谐器 (选中，对齐图2)
-                    new CloudSchemeBomItem { SortOrder = 6, Selected = true, ComponentName = "消谐器", ModelSpec = "HDXX-10", Brand = "安徽徽电科技", Unit = "只", Quantity = 1.0, IsWlDoubled = true, CatalogPrice = 1800m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 1800m, TotalPrice = 1800m, Category = "消谐装置", MaterialCode = "", Origin = "", Remark = "" },
+                    new CloudSchemeBomItem { SortOrder = 6, Selected = true, Name = "消谐器", Model = "HDXX-10", Brand = "安徽徽电科技", Unit = "只", Quantity = 1.0, IsWlDoubled = true, CatalogPrice = 1800m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 1800m, TotalPrice = 1800m, Category = "消谐装置", MaterialCode = "", Origin = "", Remark = "" },
                     // 7. 触头盒 (选中，对齐图2)
-                    new CloudSchemeBomItem { SortOrder = 7, Selected = true, ComponentName = "触头盒", ModelSpec = "630A", Brand = "", Unit = "只", Quantity = 3.0, IsWlDoubled = true, CatalogPrice = 120m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 120m, TotalPrice = 360m, Category = "绝缘件", MaterialCode = "", Origin = "", Remark = "" },
+                    new CloudSchemeBomItem { SortOrder = 7, Selected = true, Name = "触头盒", Model = "630A", Brand = "", Unit = "只", Quantity = 3.0, IsWlDoubled = true, CatalogPrice = 120m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 120m, TotalPrice = 360m, Category = "绝缘件", MaterialCode = "", Origin = "", Remark = "" },
                     // 8. 穿墙套管 (选中，对齐图2)
-                    new CloudSchemeBomItem { SortOrder = 8, Selected = true, ComponentName = "穿墙套管", ModelSpec = "", Brand = "", Unit = "只", Quantity = 3.0, IsWlDoubled = true, CatalogPrice = 220m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 220m, TotalPrice = 660m, Category = "绝缘件", MaterialCode = "", Origin = "", Remark = "" },
+                    new CloudSchemeBomItem { SortOrder = 8, Selected = true, Name = "穿墙套管", Model = "", Brand = "", Unit = "只", Quantity = 3.0, IsWlDoubled = true, CatalogPrice = 220m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 220m, TotalPrice = 660m, Category = "绝缘件", MaterialCode = "", Origin = "", Remark = "" },
                     // 9. 绝缘子 (选中，对齐图2)
-                    new CloudSchemeBomItem { SortOrder = 9, Selected = true, ComponentName = "绝缘子", ModelSpec = "", Brand = "", Unit = "只", Quantity = 3.0, IsWlDoubled = true, CatalogPrice = 60m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 60m, TotalPrice = 180m, Category = "绝缘件", MaterialCode = "", Origin = "", Remark = "" },
+                    new CloudSchemeBomItem { SortOrder = 9, Selected = true, Name = "绝缘子", Model = "", Brand = "", Unit = "只", Quantity = 3.0, IsWlDoubled = true, CatalogPrice = 60m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 60m, TotalPrice = 180m, Category = "绝缘件", MaterialCode = "", Origin = "", Remark = "" },
                     // 10. 不锈钢安装板 (选中，对齐图2)
-                    new CloudSchemeBomItem { SortOrder = 10, Selected = true, ComponentName = "不锈钢安装板", ModelSpec = "", Brand = "", Unit = "套", Quantity = 1.0, IsWlDoubled = true, CatalogPrice = 800m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 800m, TotalPrice = 800m, Category = "结构件", MaterialCode = "", Origin = "", Remark = "" },
+                    new CloudSchemeBomItem { SortOrder = 10, Selected = true, Name = "不锈钢安装板", Model = "", Brand = "", Unit = "套", Quantity = 1.0, IsWlDoubled = true, CatalogPrice = 800m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 800m, TotalPrice = 800m, Category = "结构件", MaterialCode = "", Origin = "", Remark = "" },
                     // 11. 铜排 (选中，对齐图2)
-                    new CloudSchemeBomItem { SortOrder = 11, Selected = true, ComponentName = "铜排", ModelSpec = "TMY 3*40*6", Brand = "", Unit = "公斤", Quantity = 1.71, IsWlDoubled = true, CatalogPrice = 48m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 48m, TotalPrice = 82.08m, Category = "母排", MaterialCode = "", Origin = "", Remark = "" },
+                    new CloudSchemeBomItem { SortOrder = 11, Selected = true, Name = "铜排", Model = "TMY 3*40*6", Brand = "", Unit = "公斤", Quantity = 1.71, IsWlDoubled = true, CatalogPrice = 48m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 48m, TotalPrice = 82.08m, Category = "母排", MaterialCode = "", Origin = "", Remark = "" },
                     // 12. 微机保护测控装置 (使整单总计精准吻合图2图3中显示的 28222.42)
-                    new CloudSchemeBomItem { SortOrder = 12, Selected = true, ComponentName = "微机保护测控装置", ModelSpec = "WDZ-5200", Brand = "国电南自", Unit = "台", Quantity = 1.0, IsWlDoubled = false, CatalogPrice = 8500m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 8500m, TotalPrice = 8500m, Category = "微机保护", MaterialCode = "", Origin = "南京", Remark = "" },
+                    new CloudSchemeBomItem { SortOrder = 12, Selected = true, Name = "微机保护测控装置", Model = "WDZ-5200", Brand = "国电南自", Unit = "台", Quantity = 1.0, IsWlDoubled = false, CatalogPrice = 8500m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 8500m, TotalPrice = 8500m, Category = "微机保护", MaterialCode = "", Origin = "南京", Remark = "" },
                     // 13. 二次控制母线辅材 (使整单总计精准吻合 28222.42)
-                    new CloudSchemeBomItem { SortOrder = 13, Selected = true, ComponentName = "二次母线及辅材套件", ModelSpec = "KYN28-12配套", Brand = "标准配套", Unit = "套", Quantity = 1.0, IsWlDoubled = false, CatalogPrice = 4247.52m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 4247.52m, TotalPrice = 4247.52m, Category = "二次辅材", MaterialCode = "", Origin = "无锡", Remark = "" }
+                    new CloudSchemeBomItem { SortOrder = 13, Selected = true, Name = "二次母线及辅材套件", Model = "KYN28-12配套", Brand = "标准配套", Unit = "套", Quantity = 1.0, IsWlDoubled = false, CatalogPrice = 4247.52m, Discount = 1.0m, QuoteDiscount = 1.0m, QuotePrice = 4247.52m, TotalPrice = 4247.52m, Category = "二次辅材", MaterialCode = "", Origin = "无锡", Remark = "" }
                 }
             });
 
@@ -640,10 +644,10 @@ namespace ExcelAddInDemo
                 Tag = "热",
                 BomItems = new List<CloudSchemeBomItem>
                 {
-                    new CloudSchemeBomItem { SortOrder = 1, ComponentName = "框架断路器", ModelSpec = "CW1-2000M/3P 2000A 抽屉式", Brand = "常熟开关", Unit = "台", Quantity = 1.0, IsWlDoubled = false, CatalogPrice = 18500m, QuotePrice = 16800m },
-                    new CloudSchemeBomItem { SortOrder = 2, ComponentName = "电流互感器", ModelSpec = "BH-0.66 2000/5A 0.5级", Brand = "江苏安科瑞", Unit = "台", Quantity = 3.0, IsWlDoubled = true, CatalogPrice = 180m, QuotePrice = 150m },
-                    new CloudSchemeBomItem { SortOrder = 3, ComponentName = "多功能网络电力仪表", ModelSpec = "APM800 三相电能监测", Brand = "安科瑞", Unit = "台", Quantity = 1.0, IsWlDoubled = false, CatalogPrice = 1650m, QuotePrice = 1450m },
-                    new CloudSchemeBomItem { SortOrder = 4, ComponentName = "浪涌保护器", ModelSpec = "AM40-385/4P (Iimp 12.5kA)", Brand = "上海雷盾", Unit = "套", Quantity = 1.0, IsWlDoubled = false, CatalogPrice = 580m, QuotePrice = 480m }
+                    new CloudSchemeBomItem { SortOrder = 1, Name = "框架断路器", Model = "CW1-2000M/3P 2000A 抽屉式", Brand = "常熟开关", Unit = "台", Quantity = 1.0, IsWlDoubled = false, CatalogPrice = 18500m, QuotePrice = 16800m },
+                    new CloudSchemeBomItem { SortOrder = 2, Name = "电流互感器", Model = "BH-0.66 2000/5A 0.5级", Brand = "江苏安科瑞", Unit = "台", Quantity = 3.0, IsWlDoubled = true, CatalogPrice = 180m, QuotePrice = 150m },
+                    new CloudSchemeBomItem { SortOrder = 3, Name = "多功能网络电力仪表", Model = "APM800 三相电能监测", Brand = "安科瑞", Unit = "台", Quantity = 1.0, IsWlDoubled = false, CatalogPrice = 1650m, QuotePrice = 1450m },
+                    new CloudSchemeBomItem { SortOrder = 4, Name = "浪涌保护器", Model = "AM40-385/4P (Iimp 12.5kA)", Brand = "上海雷盾", Unit = "套", Quantity = 1.0, IsWlDoubled = false, CatalogPrice = 580m, QuotePrice = 480m }
                 }
             });
 
@@ -672,10 +676,10 @@ namespace ExcelAddInDemo
                 Tag = "精",
                 BomItems = new List<CloudSchemeBomItem>
                 {
-                    new CloudSchemeBomItem { SortOrder = 1, ComponentName = "双电源自动转换控制器", ModelSpec = "HAT520N 智能双电源", Brand = "众智科技", Unit = "台", Quantity = 1.0, IsWlDoubled = false, CatalogPrice = 1200m, QuotePrice = 980m },
-                    new CloudSchemeBomItem { SortOrder = 2, ComponentName = "中间继电器", ModelSpec = "MY4N-J DC24V (含底座)", Brand = "欧姆龙", Unit = "只", Quantity = 4.0, IsWlDoubled = true, CatalogPrice = 35m, QuotePrice = 28m },
-                    new CloudSchemeBomItem { SortOrder = 3, ComponentName = "LED信号指示灯", ModelSpec = "AD16-22D/S (红绿黄)", Brand = "天正电气", Unit = "只", Quantity = 6.0, IsWlDoubled = true, CatalogPrice = 8.5m, QuotePrice = 6.5m },
-                    new CloudSchemeBomItem { SortOrder = 4, ComponentName = "万能转换开关", ModelSpec = "LW26-20 手动/自动", Brand = "正泰", Unit = "只", Quantity = 1.0, IsWlDoubled = false, CatalogPrice = 45m, QuotePrice = 36m }
+                    new CloudSchemeBomItem { SortOrder = 1, Name = "双电源自动转换控制器", Model = "HAT520N 智能双电源", Brand = "众智科技", Unit = "台", Quantity = 1.0, IsWlDoubled = false, CatalogPrice = 1200m, QuotePrice = 980m },
+                    new CloudSchemeBomItem { SortOrder = 2, Name = "中间继电器", Model = "MY4N-J DC24V (含底座)", Brand = "欧姆龙", Unit = "只", Quantity = 4.0, IsWlDoubled = true, CatalogPrice = 35m, QuotePrice = 28m },
+                    new CloudSchemeBomItem { SortOrder = 3, Name = "LED信号指示灯", Model = "AD16-22D/S (红绿黄)", Brand = "天正电气", Unit = "只", Quantity = 6.0, IsWlDoubled = true, CatalogPrice = 8.5m, QuotePrice = 6.5m },
+                    new CloudSchemeBomItem { SortOrder = 4, Name = "万能转换开关", Model = "LW26-20 手动/自动", Brand = "正泰", Unit = "只", Quantity = 1.0, IsWlDoubled = false, CatalogPrice = 45m, QuotePrice = 36m }
                 }
             });
 
@@ -704,9 +708,9 @@ namespace ExcelAddInDemo
                 Tag = "企业",
                 BomItems = new List<CloudSchemeBomItem>
                 {
-                    new CloudSchemeBomItem { SortOrder = 1, ComponentName = "微型断路器总开", ModelSpec = "iC65N 3P 63A C特性", Brand = "施耐德", Unit = "台", Quantity = 1.0, IsWlDoubled = false, CatalogPrice = 280m, QuotePrice = 230m },
-                    new CloudSchemeBomItem { SortOrder = 2, ComponentName = "分路微断", ModelSpec = "iC65N 1P 16A C特性", Brand = "施耐德", Unit = "台", Quantity = 8.0, IsWlDoubled = true, CatalogPrice = 45m, QuotePrice = 38m },
-                    new CloudSchemeBomItem { SortOrder = 3, ComponentName = "分路漏电断路器", ModelSpec = "iC65N 2P 25A 30mA", Brand = "施耐德", Unit = "台", Quantity = 4.0, IsWlDoubled = true, CatalogPrice = 160m, QuotePrice = 135m }
+                    new CloudSchemeBomItem { SortOrder = 1, Name = "微型断路器总开", Model = "iC65N 3P 63A C特性", Brand = "施耐德", Unit = "台", Quantity = 1.0, IsWlDoubled = false, CatalogPrice = 280m, QuotePrice = 230m },
+                    new CloudSchemeBomItem { SortOrder = 2, Name = "分路微断", Model = "iC65N 1P 16A C特性", Brand = "施耐德", Unit = "台", Quantity = 8.0, IsWlDoubled = true, CatalogPrice = 45m, QuotePrice = 38m },
+                    new CloudSchemeBomItem { SortOrder = 3, Name = "分路漏电断路器", Model = "iC65N 2P 25A 30mA", Brand = "施耐德", Unit = "台", Quantity = 4.0, IsWlDoubled = true, CatalogPrice = 160m, QuotePrice = 135m }
                 }
             });
 

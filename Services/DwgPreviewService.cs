@@ -408,12 +408,180 @@ namespace ExcelAddInDemo.Services
             }
         }
 
+        // ----------------- DWG 缩略图本地持久化磁盘缓存机制 -----------------
+        // 缩略图本地缓存专属子文件夹名称
+        private const string ThumbCacheFolderName = "dwg_thumbs"; // --硬编码: 缩略图缓存子目录名--
+
         /// <summary>
-        /// 获取指定 DWG 文件的缩略图与详情预览 (双通道提取机制)
+        /// 获取或初始化 DWG 缩略图本地持久化存储目录 (data/dwg_thumbs)
+        /// </summary>
+        public static string GetThumbCacheDirectory()
+        {
+            // 使用公共工具类定位插件标准数据存储目录 (data)
+            string baseDataDir = Tool.GetAppDataDirectory();
+            // 拼接专用的 dwg_thumbs 缓存子目录
+            string cacheDir = Path.Combine(baseDataDir, ThumbCacheFolderName);
+            // 保证物理文件夹存在
+            if (!Directory.Exists(cacheDir))
+            {
+                Directory.CreateDirectory(cacheDir);
+            }
+            return cacheDir;
+        }
+
+        /// <summary>
+        /// 计算指定文件绝对物理路径的唯一定位散列值 (16位十六进制MD5)
+        /// </summary>
+        private static string GetPathHash(string filePath)
+        {
+            try
+            {
+                // 将绝对路径规范化并统一转换为小写，排除盘符大小写差异
+                string normalizedPath = Path.GetFullPath(filePath).ToLowerInvariant();
+                // 使用 MD5 散列算法生成路径摘要
+                using (var md5 = System.Security.Cryptography.MD5.Create())
+                {
+                    byte[] inputBytes = System.Text.Encoding.UTF8.GetBytes(normalizedPath);
+                    byte[] hashBytes = md5.ComputeHash(inputBytes);
+                    // 取前 8 字节 (16 个十六进制字符) 作为短哈希标识
+                    return BitConverter.ToString(hashBytes, 0, 8).Replace("-", "").ToLowerInvariant();
+                }
+            }
+            catch
+            {
+                // 异常兜底，采用安全的哈希代码转换
+                return Math.Abs(filePath.GetHashCode()).ToString("X8").ToLowerInvariant();
+            }
+        }
+
+        /// <summary>
+        /// 构造当前文件理论上唯一的有效缓存文件绝对路径
+        /// </summary>
+        private static string GetValidCacheFilePath(string filePath, FileInfo fi)
+        {
+            string cacheDir = GetThumbCacheDirectory();
+            string pathHash = GetPathHash(filePath);
+            // 结合路径哈希、最后修改时间Ticks与文件字节大小作为指纹
+            string fileName = $"{pathHash}_{fi.LastWriteTimeUtc.Ticks}_{fi.Length}.thumb";
+            return Path.Combine(cacheDir, fileName);
+        }
+
+        /// <summary>
+        /// 尝试从本地磁盘读取与当前 DWG 完全匹配且未过期的有效缩略图缓存
+        /// </summary>
+        private static bool TryGetValidDiskCache(string filePath, FileInfo fi, out string base64Data)
+        {
+            base64Data = string.Empty;
+            try
+            {
+                string targetCacheFile = GetValidCacheFilePath(filePath, fi);
+                // 检查对应版本的缓存文件是否存在
+                if (File.Exists(targetCacheFile))
+                {
+                    // 极速读取 Base64 文本并校验完整性
+                    string content = File.ReadAllText(targetCacheFile);
+                    if (!string.IsNullOrWhiteSpace(content) && content.StartsWith("data:image/"))
+                    {
+                        base64Data = content;
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 忽略缓存读取异常，平滑降级走实时计算
+                LogHelper.WriteLog($"[DwgPreviewService] 读取缩略图缓存异常: {ex.Message}");
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 原图被修改或缓存过期时：主动搜索并物理彻底删除该 DWG 文件的所有历史旧缓存
+        /// </summary>
+        public static void InvalidateAndCleanOldCache(string filePath)
+        {
+            try
+            {
+                string cacheDir = GetThumbCacheDirectory();
+                string pathHash = GetPathHash(filePath);
+                // 匹配该路径哈希的所有历史缓存文件
+                string searchPattern = $"{pathHash}_*.thumb";
+                var oldCacheFiles = Directory.GetFiles(cacheDir, searchPattern);
+                // 遍历并物理删除所有陈旧缓存文件
+                foreach (var oldFile in oldCacheFiles)
+                {
+                    try
+                    {
+                        File.Delete(oldFile);
+                    }
+                    catch
+                    {
+                        // 忽略正在被读取等单文件删除异常
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[DwgPreviewService] 清理旧缓存异常 {filePath}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 将最新生成的缩略图 Base64 安全写入本地持久化缓存文件
+        /// </summary>
+        private static void SaveDiskCache(string filePath, FileInfo fi, string base64Image)
+        {
+            // 数据有效性校验
+            if (string.IsNullOrWhiteSpace(base64Image) || !base64Image.StartsWith("data:image/"))
+            {
+                return;
+            }
+
+            try
+            {
+                string targetCacheFile = GetValidCacheFilePath(filePath, fi);
+                // 安全写入文本
+                File.WriteAllText(targetCacheFile, base64Image);
+            }
+            catch (Exception ex)
+            {
+                // 记录写入异常但不阻断主业务流程
+                LogHelper.WriteLog($"[DwgPreviewService] 写入缩略图缓存异常 {filePath}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 一键清空全量 DWG 缩略图本地磁盘缓存
+        /// </summary>
+        public static bool ClearAllThumbCache()
+        {
+            try
+            {
+                string cacheDir = GetThumbCacheDirectory();
+                if (Directory.Exists(cacheDir))
+                {
+                    var files = Directory.GetFiles(cacheDir, "*.thumb");
+                    foreach (var file in files)
+                    {
+                        try { File.Delete(file); } catch { }
+                    }
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[DwgPreviewService] 清空全量缩略图缓存异常: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 获取指定 DWG 文件的缩略图与详情预览 (带本地持久化磁盘缓存与自动失效重构机制)
         /// </summary>
         /// <param name="filePath">DWG 物理文件绝对路径</param>
+        /// <param name="forceRefresh">是否强制绕过缓存重新生成</param>
         /// <returns>预览结果实体</returns>
-        public static DwgPreviewResult GetDwgPreview(string filePath)
+        public static DwgPreviewResult GetDwgPreview(string filePath, bool forceRefresh = false)
         {
             var result = new DwgPreviewResult
             {
@@ -434,6 +602,18 @@ namespace ExcelAddInDemo.Services
                 result.FileSizeFormatted = FormatFileSize(fi.Length);
                 result.LastModifiedFormatted = fi.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss");
 
+                // 【核心优化】：非强制刷新时，优先检测本地磁盘持久化缓存
+                if (!forceRefresh && TryGetValidDiskCache(filePath, fi, out string cachedBase64))
+                {
+                    result.Base64Image = cachedBase64;
+                    result.Success = true;
+                    result.IsPlaceholder = false;
+                    return result;
+                }
+
+                // 【修改感知机制】：若未命中有效缓存 (原图被 AutoCAD 保存修改)，首先彻底删除所有旧缓存文件
+                InvalidateAndCleanOldCache(filePath);
+
                 // 通道 1：尝试通过 Windows 原生 Shell 提取系统缓存的高清 CAD 缩略图
                 Bitmap? shellBitmap = TryExtractShellThumbnail(filePath, 640, 480);
                 if (shellBitmap != null)
@@ -449,6 +629,8 @@ namespace ExcelAddInDemo.Services
                         result.Success = true;
                         // 标明不是缺省占位图
                         result.IsPlaceholder = false;
+                        // 将生成的高清位图写入本地磁盘缓存
+                        SaveDiskCache(filePath, fi, result.Base64Image);
                         return result;
                     }
                 }
@@ -468,6 +650,8 @@ namespace ExcelAddInDemo.Services
                         result.Success = true;
                         // 标明真实图纸位图
                         result.IsPlaceholder = false;
+                        // 将提取并重绘的高清位图写入本地磁盘缓存
+                        SaveDiskCache(filePath, fi, result.Base64Image);
                         return result;
                     }
                 }
@@ -479,6 +663,8 @@ namespace ExcelAddInDemo.Services
                     result.Success = true;
                     result.IsPlaceholder = true;
                     result.ErrorMessage = "该 DWG 文件未内嵌缩略图，可直接点击【在 CAD 中打开】查看详细图纸。";
+                    // 占位图同样写入缓存，避免重复触发无缩略图的错误探测
+                    SaveDiskCache(filePath, fi, result.Base64Image);
                 }
             }
             catch (Exception ex)

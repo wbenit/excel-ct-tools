@@ -87,7 +87,7 @@ namespace ExcelAddInDemo.Services
                     // 构建参数化查询 SQL 语句
                     var sb = new StringBuilder(@"
                         SELECT id, group_name, scheme_name, applicable_codes, cad_drawing_name, 
-                               cross_door_count, hole_spec, labor_cost, bom_json, brand, description, remark, created_at, updated_at
+                               cross_door_count, hole_spec, labor_cost, bom_json, brand, description, created_at, updated_at
                         FROM secondary_circuit_schemes
                         WHERE 1=1 
                     ");
@@ -104,7 +104,7 @@ namespace ExcelAddInDemo.Services
                         cmd.Parameters.AddWithValue("@group", groupName.Trim());
                     }
 
-                    // 2. 若指定了关键字，则在方案名、适用回路、CAD图名、品牌、描述、备注中模糊检索
+                    // 2. 若指定了关键字，则在方案名、适用回路、CAD图名、品牌、描述中模糊检索
                     if (!string.IsNullOrWhiteSpace(keyword))
                     {
                         // 拼接多字段模糊查询条件
@@ -112,8 +112,7 @@ namespace ExcelAddInDemo.Services
                                       OR applicable_codes LIKE @kw 
                                       OR cad_drawing_name LIKE @kw 
                                       OR brand LIKE @kw 
-                                      OR description LIKE @kw 
-                                      OR remark LIKE @kw) ");
+                                      OR description LIKE @kw) ");
                         // 绑定模糊参数
                         cmd.Parameters.AddWithValue("@kw", $"%{keyword.Trim()}%");
                     }
@@ -174,7 +173,7 @@ namespace ExcelAddInDemo.Services
                     // 查询单条方案 SQL
                     string sql = @"
                         SELECT id, group_name, scheme_name, applicable_codes, cad_drawing_name, 
-                               cross_door_count, hole_spec, labor_cost, bom_json, brand, description, remark, created_at, updated_at
+                               cross_door_count, hole_spec, labor_cost, bom_json, brand, description, created_at, updated_at
                         FROM secondary_circuit_schemes
                         WHERE id = @id LIMIT 1;
                     ";
@@ -352,9 +351,9 @@ namespace ExcelAddInDemo.Services
                         // 插入新方案 SQL
                         string insertSql = @"
                             INSERT INTO secondary_circuit_schemes 
-                            (group_name, scheme_name, applicable_codes, cad_drawing_name, cross_door_count, hole_spec, labor_cost, bom_json, brand, description, remark, created_at, updated_at)
+                            (group_name, scheme_name, applicable_codes, cad_drawing_name, cross_door_count, hole_spec, labor_cost, bom_json, brand, description, created_at, updated_at)
                             VALUES 
-                            (@group, @name, @codes, @cad, @cross, @hole, @labor, @bom, @brand, @desc, @remark, @created, @updated);
+                            (@group, @name, @codes, @cad, @cross, @hole, @labor, @bom, @brand, @desc, @created, @updated);
                             SELECT last_insert_rowid();
                         ";
 
@@ -371,7 +370,6 @@ namespace ExcelAddInDemo.Services
                         cmd.Parameters.AddWithValue("@bom", bomJson);
                         cmd.Parameters.AddWithValue("@brand", scheme.Brand?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@desc", scheme.Description?.Trim() ?? string.Empty);
-                        cmd.Parameters.AddWithValue("@remark", scheme.Remark?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@created", nowTime);
                         cmd.Parameters.AddWithValue("@updated", nowTime);
 
@@ -396,7 +394,6 @@ namespace ExcelAddInDemo.Services
                                 bom_json = @bom,
                                 brand = @brand,
                                 description = @desc,
-                                remark = @remark,
                                 updated_at = @updated
                             WHERE id = @id;
                         ";
@@ -415,7 +412,6 @@ namespace ExcelAddInDemo.Services
                         cmd.Parameters.AddWithValue("@bom", bomJson);
                         cmd.Parameters.AddWithValue("@brand", scheme.Brand?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@desc", scheme.Description?.Trim() ?? string.Empty);
-                        cmd.Parameters.AddWithValue("@remark", scheme.Remark?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@updated", nowTime);
 
                         // 执行更新
@@ -510,9 +506,9 @@ namespace ExcelAddInDemo.Services
                     // 预编译插入 SQL 语句
                     string sql = @"
                         INSERT INTO secondary_circuit_schemes 
-                        (group_name, scheme_name, applicable_codes, cad_drawing_name, cross_door_count, hole_spec, labor_cost, bom_json, brand, description, remark, created_at, updated_at)
+                        (group_name, scheme_name, applicable_codes, cad_drawing_name, cross_door_count, hole_spec, labor_cost, bom_json, brand, description, created_at, updated_at)
                         VALUES 
-                        (@group, @name, @codes, @cad, @cross, @hole, @labor, @bom, @brand, @desc, @remark, @created, @updated);
+                        (@group, @name, @codes, @cad, @cross, @hole, @labor, @bom, @brand, @desc, @created, @updated);
                     ";
 
                     // 循环保存每一个方案
@@ -536,7 +532,6 @@ namespace ExcelAddInDemo.Services
                         cmd.Parameters.AddWithValue("@bom", bomJson);
                         cmd.Parameters.AddWithValue("@brand", scheme.Brand?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@desc", scheme.Description?.Trim() ?? string.Empty);
-                        cmd.Parameters.AddWithValue("@remark", scheme.Remark?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@created", nowTime);
                         cmd.Parameters.AddWithValue("@updated", nowTime);
 
@@ -634,8 +629,6 @@ namespace ExcelAddInDemo.Services
                 Brand = SafeGetColumnString(reader, "brand"),
                 // 读取方案描述
                 Description = SafeGetColumnString(reader, "description"),
-                // 读取备注
-                Remark = reader.IsDBNull(reader.GetOrdinal("remark")) ? string.Empty : reader.GetString(reader.GetOrdinal("remark")),
                 // 读取创建时间
                 CreatedAt = reader.IsDBNull(reader.GetOrdinal("created_at")) ? string.Empty : reader.GetString(reader.GetOrdinal("created_at")),
                 // 读取更新时间

@@ -23,7 +23,28 @@
     <!-- 引入主题通用样式 -->
     <link rel="stylesheet" href="theme.css" />
 
+    <!-- 引入纯前端 CAD 矢量渲染器核心资源 (用于 DWG 真实矢量渲染) -->
+    <link rel="stylesheet" href="cad-viewer/style.css" />
+    <script src="cad-viewer/cad-viewer.bundle.js"></script>
+
     <style>
+      /* 纯净 CAD 视口样式：隐藏 cad-viewer 内部原生工具栏与图层树，融入云方案自身舞台 */
+      .pure-cad-container .cad-toolbar,
+      .pure-cad-container .cad-layers,
+      .pure-cad-container .cad-inspector,
+      .pure-cad-container .dwfv-toolbar,
+      .pure-cad-container .dwfv-tree,
+      .pure-cad-container .cad-meta {
+        display: none !important;
+      }
+      .pure-cad-container .cad-body {
+        grid-template-columns: 1fr !important;
+      }
+      .pure-cad-container .cad-shell,
+      .pure-cad-container .cad-canvas-wrap {
+        background: transparent !important;
+      }
+
       /* 全局重置与工业扁平设计 */
       * {
         box-sizing: border-box;
@@ -57,127 +78,216 @@
         --primary-gradient: linear-gradient(135deg, #009688 0%, #00796b 100%);
       }
 
-      /* 顶部自定义标题拖拽栏 */
+      /* 顶部自定义标题拖拽栏 (紧凑干练38px高度与深青蓝质感) */
       .window-header {
-        height: 48px;
-        background: var(--primary-gradient);
+        height: 38px;
+        /* 采用更加深邃细腻的青蓝工业微渐变背景 */
+        background: linear-gradient(90deg, #00796b 0%, #00695c 50%, #004d40 100%);
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0 16px;
+        padding: 0 14px;
         color: #ffffff;
         cursor: move;
         flex-shrink: 0;
+        /* 底部增加极细微半透明分割线增强立体感 */
+        border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
       }
+      /* 标题区：图标底托与紧凑精致文字 */
       .window-title {
         display: flex;
         align-items: center;
-        gap: 10px;
-        font-size: 16px;
+        gap: 8px;
+        font-size: 13px;
         font-weight: 600;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.4px;
+      }
+      /* 标题左侧图标半透明圆角底托徽章 */
+      .window-title-icon {
+        width: 22px;
+        height: 22px;
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.16);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        color: #e0f2f1;
       }
       .window-controls {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 6px;
         cursor: default;
       }
+      /* 窗口控制按钮 (紧凑26px与精致悬停) */
       .ctrl-btn {
-        width: 30px;
-        height: 30px;
+        width: 26px;
+        height: 26px;
         display: flex;
         align-items: center;
         justify-content: center;
         border-radius: 4px;
         color: #e0f2f1;
         cursor: pointer;
-        transition: all 0.2s;
+        font-size: 11px;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       }
       .ctrl-btn:hover {
-        background: rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.18);
         color: #ffffff;
       }
       .ctrl-btn.close:hover {
         background: #ef4444;
       }
 
-      /* 一级顶级 Tab 栏 (行业方案 vs 企业方案) */
+      /* 一级顶级 Tab 栏 (行业方案 vs 企业方案 - 40px紧凑白底) */
       .top-tabs-bar {
         background: #ffffff;
-        border-bottom: 2px solid #e2e8f0;
+        border-bottom: 1px solid #e2e8f0;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0 24px;
-        height: 52px;
+        padding: 0 20px;
+        height: 40px;
         flex-shrink: 0;
       }
       .top-tabs-left {
         display: flex;
-        gap: 32px;
+        gap: 28px;
         height: 100%;
       }
+      /* 一级 Tab 项 (由16px瘦身至13.5px，去除笨重感) */
       .top-tab-item {
         display: flex;
         align-items: center;
-        gap: 8px;
-        font-size: 16px;
-        font-weight: 600;
+        gap: 7px;
+        font-size: 13.5px;
+        font-weight: 500;
         color: #64748b;
         cursor: pointer;
         position: relative;
-        transition: color 0.2s;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         height: 100%;
+        padding: 0 4px;
+      }
+      .top-tab-item i {
+        font-size: 13.5px;
+        transition: color 0.2s;
       }
       .top-tab-item:hover {
         color: var(--primary-color);
       }
       .top-tab-item.active {
-        color: var(--primary-color);
+        color: #00796b;
+        font-weight: 600;
       }
+      /* 激活态底部指示线：居中圆角小滑块，彻底取代3px硬直粗线 */
       .top-tab-item.active::after {
         content: "";
         position: absolute;
-        bottom: -2px;
-        left: 0;
-        right: 0;
-        height: 3px;
+        bottom: -1px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 28px;
+        height: 2.5px;
         background: var(--primary-color);
-        border-radius: 3px 3px 0 0;
+        border-radius: 2px;
+        box-shadow: 0 1px 2px rgba(0, 150, 136, 0.35);
       }
 
-      /* 二级业务 Tab 栏 (一次方案 / 二次方案 / 我的收藏) */
-      .sub-tabs-bar {
-        background: var(--primary-color);
+      /* 一级右侧状态微徽章 (Micro Pill Badge) */
+      .top-tabs-right {
         display: flex;
         align-items: center;
-        padding: 0 24px;
-        height: 44px;
-        gap: 16px;
+      }
+      .micro-status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+        padding: 0 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 1;
+        transition: all 0.2s;
+      }
+      /* 行业方案：标准只读浅青胶囊 */
+      .micro-status-badge.badge-industry {
+        background: #f0fdfa;
+        color: #0d9488;
+        border: 1px solid #ccfbf1;
+      }
+      /* 企业方案：私有资产浅绿胶囊 */
+      .micro-status-badge.badge-enterprise {
+        background: #ecfdf5;
+        color: #047857;
+        border: 1px solid #a7f3d0;
+      }
+
+      /* 二级业务 Tab 栏 (一次方案 / 二次方案 / 我的收藏 - 高级浅灰底色38px) */
+      .sub-tabs-bar {
+        /* 彻底消除原本粗暴的大深绿满铺色块，升级为高级浅灰白过渡底色 */
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        padding: 0 18px;
+        height: 38px;
         flex-shrink: 0;
       }
+      /* 现代微浮动卡片药丸容器 */
+      .sub-tabs-pills {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      /* 二级选项卡微药丸 */
       .sub-tab-item {
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: 6px 18px;
-        border-radius: 4px;
-        font-size: 14px;
+        padding: 4px 12px;
+        border-radius: 6px;
+        font-size: 12.5px;
         font-weight: 500;
-        color: #e0f2f1;
+        color: #64748b;
         cursor: pointer;
-        transition: all 0.2s;
+        border: 1px solid transparent;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        background: transparent;
+      }
+      .sub-tab-item i {
+        font-size: 12px;
+        color: #94a3b8;
+        transition: color 0.2s;
       }
       .sub-tab-item:hover {
-        background: rgba(255, 255, 255, 0.15);
-        color: #ffffff;
+        background: #f1f5f9;
+        color: #1e293b;
       }
+      .sub-tab-item:hover i {
+        color: #64748b;
+      }
+      /* 激活态：白底微浮雕微投影卡片药丸 */
       .sub-tab-item.active {
         background: #ffffff;
-        color: var(--primary-dark);
+        color: #00796b;
         font-weight: 600;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        border-color: #cbd5e1;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.03);
+      }
+      /* 激活态下各个分类图标的精致点睛色 */
+      .sub-tab-item.active i.icon-primary {
+        color: #009688;
+      }
+      .sub-tab-item.active i.icon-secondary {
+        color: #009688;
+      }
+      .sub-tab-item.active i.icon-favorite {
+        color: #f59e0b;
       }
 
       /* 全局滚动条高品质美化规范 */
@@ -448,7 +558,7 @@
          ======================================================== */
       .detail-view-container {
         position: absolute;
-        top: 100px; /* 顶部保留 window-header(48px) + top-tabs-bar(52px) */
+        top: 78px; /* 顶部保留 window-header(38px) + top-tabs-bar(40px) */
         left: 0;
         right: 0;
         bottom: 0;
@@ -469,15 +579,83 @@
         }
       }
       .detail-header-bar {
-        height: 48px;
+        /* 紧凑单行标头高度 42px，彻底节省纵向视口高度 --硬编码-- */
+        height: 42px;
         border-bottom: 1px solid #e2e8f0;
+        /* 左右分散排布返回信息与操作工具 */
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0 20px;
+        padding: 0 16px;
         background: #ffffff;
         position: relative;
         flex-shrink: 0;
+      }
+      /* 左侧返回与方案基础信息组合容器 */
+      .detail-header-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex: 1;
+        overflow: hidden;
+      }
+      /* 右侧快捷工具容器 */
+      .detail-header-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-shrink: 0;
+      }
+      /* 分类胶囊标签 (绿白配色清新现代) */
+      .detail-cat-pill {
+        display: inline-flex;
+        align-items: center;
+        height: 22px;
+        padding: 0 8px;
+        background: #ecfdf5;
+        border: 1px solid #a7f3d0;
+        border-radius: 12px;
+        font-size: 12px;
+        color: #047857;
+        font-weight: 600;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      /* 方案主标题 */
+      .detail-scheme-heading {
+        font-size: 15px;
+        font-weight: 700;
+        color: #0f172a;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 360px;
+      }
+      /* 品牌微徽标 */
+      .detail-brand-badge {
+        font-size: 11.5px;
+        padding: 1px 7px;
+        border-radius: 4px;
+        background: #f1f5f9;
+        color: #475569;
+        border: 1px solid #cbd5e1;
+        white-space: nowrap;
+      }
+      /* 顶部关闭按钮 */
+      .detail-close-icon {
+        width: 26px;
+        height: 26px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        color: #64748b;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .detail-close-icon:hover {
+        background: #fee2e2;
+        color: #ef4444;
       }
       /* 返回按钮样式：带金橙色边框与圆角，与截图1红箭头100%一致 --硬编码-- */
       .btn-return {
@@ -525,27 +703,6 @@
         padding: 2px 8px;
         border-radius: 3px;
         font-size: 11px;
-      }
-      .detail-scheme-meta {
-        padding: 14px 24px;
-        border-bottom: 1px solid #e2e8f0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 6px;
-        background: #ffffff;
-        flex-shrink: 0;
-      }
-      .scheme-main-title {
-        font-size: 18px;
-        font-weight: 700;
-        color: #0f172a;
-      }
-      .scheme-meta-row {
-        display: flex;
-        gap: 24px;
-        font-size: 12px;
-        color: #64748b;
       }
 
       /* 详情三大子 Tab (图纸 / BOM / 描述) */
@@ -647,38 +804,125 @@
         text-overflow: ellipsis;
       }
       .drawing-main-canvas {
+        /* 图纸预览主舞台填满右侧大视口 */
         flex: 1;
         position: relative;
+        /* 居中定位 */
         display: flex;
         align-items: center;
         justify-content: center;
+        /* 超出画布范围隐藏 */
         overflow: hidden;
+        /* 暗黑 CAD 工程背景底色 --硬编码-- */
+        background: #090d16;
+        user-select: none;
       }
+      /* 高清图纸图片 (动态 translate 与 scale，无过渡以保证拖拽漫游极致平滑) */
       .preview-image {
         max-width: 90%;
         max-height: 90%;
         object-fit: contain;
-        transition: transform 0.2s ease-out;
+        /* 避免拖拽图片触发原生图片拖动行为 */
         user-select: none;
+        pointer-events: none;
+        /* 缩放以中心为基准 */
+        transform-origin: center center;
       }
+      /* 矢量 SVG 降级展示视口 (无真实DWG图纸时使用) */
+      .drawing-svg-fallback {
+        width: 85%;
+        height: 85%;
+        max-width: 800px;
+        max-height: 520px;
+        /* 居中呈现矢量蓝图 */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transform-origin: center center;
+        pointer-events: none;
+      }
+      /* 右上角在外部 AutoCAD 中打开图纸悬浮胶囊 */
+      .drawing-cad-floating-btn {
+        position: absolute;
+        top: 14px;
+        right: 18px;
+        /* 内联居中排布图标与文案 */
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        padding: 0 13px;
+        /* 深蓝半透明毛玻璃背景 */
+        background: rgba(15, 23, 42, 0.9);
+        border: 1px solid #009688;
+        border-radius: 15px;
+        color: #2dd4bf;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        /* 浮雕投影与毛玻璃 */
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(4px);
+        transition: all 0.2s ease;
+        z-index: 10;
+      }
+      .drawing-cad-floating-btn:hover {
+        background: #009688;
+        color: #ffffff;
+        box-shadow: 0 4px 16px rgba(0, 150, 136, 0.5);
+        transform: translateY(-1px);
+      }
+      /* 画布底部居中悬浮工具条 */
       .drawing-toolbar {
         position: absolute;
-        bottom: 20px;
-        background: rgba(15, 23, 42, 0.85);
+        bottom: 18px;
+        left: 50%;
+        transform: translateX(-50%);
+        /* 深黑半透明背景 */
+        background: rgba(15, 23, 42, 0.92);
         border: 1px solid #334155;
         border-radius: 20px;
-        padding: 6px 16px;
+        padding: 6px 18px;
+        /* 水平居中并排 */
         display: flex;
-        gap: 12px;
+        align-items: center;
+        gap: 14px;
         color: #ffffff;
+        /* 悬浮深度阴影 */
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(6px);
+        z-index: 10;
       }
+      /* 工具条按键 */
       .tool-btn {
         cursor: pointer;
-        font-size: 14px;
-        transition: color 0.2s;
+        font-size: 13.5px;
+        color: #e2e8f0;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
       .tool-btn:hover {
-        color: var(--primary-color);
+        color: #2dd4bf;
+        transform: scale(1.15);
+      }
+      /* 缩放比率实时显示徽标 (点击可快速复位为100%) */
+      .tool-scale-text {
+        font-size: 12px;
+        font-family: monospace;
+        font-weight: 700;
+        color: #38bdf8;
+        padding: 2px 8px;
+        border-radius: 4px;
+        background: rgba(56, 189, 248, 0.15);
+        cursor: pointer;
+        min-width: 46px;
+        text-align: center;
+        transition: background 0.2s;
+      }
+      .tool-scale-text:hover {
+        background: rgba(56, 189, 248, 0.3);
       }
 
       /* BOM 表格与滚动条 (完全对齐图 2 与图 3) */
@@ -867,14 +1111,63 @@
         background-color: #fffbeb;
       }
 
-      /* 按钮自定义覆盖 */
+      /* 按钮自定义覆盖：契合 #009688 绿蓝工业主题并隔离实心与 plain 朴素按钮样式 */
       .el-button--primary {
-        background-color: var(--primary-color) !important;
-        border-color: var(--primary-color) !important;
+        /* 设置 Element Plus 按钮基础变量 */
+        --el-button-bg-color: var(--primary-color);
+        --el-button-border-color: var(--primary-color);
+        /* 悬停与激活态颜色变量 */
+        --el-button-hover-bg-color: var(--primary-hover);
+        --el-button-hover-border-color: var(--primary-hover);
+        /* 深色激活态变量 */
+        --el-button-active-bg-color: var(--primary-dark);
+        --el-button-active-border-color: var(--primary-dark);
       }
-      .el-button--primary:hover {
+      /* 普通实心 Primary 按钮 */
+      .el-button--primary:not(.is-plain):not(.is-link):not(.is-text) {
+        /* 强制实心按钮背景色为主题色 */
+        background-color: var(--primary-color) !important;
+        /* 强制实心按钮边框色为主题色 */
+        border-color: var(--primary-color) !important;
+        /* 实心按钮文字颜色保持白色 --硬编码-- */
+        color: #ffffff !important;
+      }
+      .el-button--primary:not(.is-plain):not(.is-link):not(.is-text):hover {
+        /* 悬停时使用更深的主题悬停色 */
         background-color: var(--primary-hover) !important;
+        /* 悬停时边框色同步加深 */
         border-color: var(--primary-hover) !important;
+        /* 保持白色文字 --硬编码-- */
+        color: #ffffff !important;
+      }
+
+      /* 朴素 plain Primary 按钮：淡青绿背景 + 主色文字与边框 */
+      .el-button--primary.is-plain {
+        /* 采用主题极浅绿色背景，避免文字与背景颜色冲突 */
+        background-color: var(--primary-light) !important;
+        /* 边框采用主色 */
+        border-color: var(--primary-color) !important;
+        /* 文字采用深青绿主色，清晰可见 */
+        color: var(--primary-color) !important;
+      }
+      .el-button--primary.is-plain:hover,
+      .el-button--primary.is-plain:focus {
+        /* 鼠标悬停激活时平滑翻转为实心主色背景 */
+        background-color: var(--primary-color) !important;
+        /* 边框保持主色 */
+        border-color: var(--primary-color) !important;
+        /* 悬停时文字翻转为纯白以获得清晰对比度 --硬编码-- */
+        color: #ffffff !important;
+      }
+      /* 禁用态朴素 Primary 按钮 */
+      .el-button--primary.is-plain.is-disabled,
+      .el-button--primary.is-plain.is-disabled:hover {
+        /* 禁用时使用浅灰背景 --硬编码-- */
+        background-color: #f1f5f9 !important;
+        /* 禁用时边框为浅灰 --硬编码-- */
+        border-color: #e2e8f0 !important;
+        /* 禁用时文字颜色置灰 --硬编码-- */
+        color: #94a3b8 !important;
       }
 
       /* ========================================================
@@ -911,11 +1204,12 @@
         font-weight: 600;
       }
 
-      /* 二次方案 DWG 专属卡片 (100% 对齐图 1 高品质视觉规范) */
+      /* 二次方案 DWG 专属卡片 (对齐图 2 紧凑精致规范) */
       .secondary-card {
         background: #ffffff;
         border: 1.5px solid #009688;
         border-radius: 10px;
+        /* 卡片圆角统一裁剪防止子元素溢出 */
         overflow: hidden;
         display: flex;
         flex-direction: column;
@@ -925,10 +1219,12 @@
         /* 解除 310px 宽度限制，支持 3 列网格百分之百自适应 */
         min-width: 0;
         width: 100%;
-        /* 核心防挤压：锁定卡片基准最小高度为 350px，在 3 列排版下整齐舒适 */
-        min-height: 350px;
+        /* 核心防挤压：锁定卡片基准最小高度为 340px */
+        min-height: 340px;
         /* 禁止被 flex 布局算法纵向压缩 */
         flex-shrink: 0;
+        /* 卡片整体支持点击打开详情大视口 */
+        cursor: pointer;
       }
       .secondary-card:hover {
         transform: translateY(-3px);
@@ -936,90 +1232,72 @@
           0 10px 20px -5px rgba(0, 150, 136, 0.2),
           0 4px 6px -2px rgba(0, 0, 0, 0.05);
       }
-      /* 右上角深绿对勾徽标 (对齐图 1) */
-      .sec-card-badge-check {
-        position: absolute;
-        top: -1px;
-        right: -1px;
-        width: 26px;
-        height: 26px;
-        background: #00796b;
-        color: #ffffff;
-        border-bottom-left-radius: 13px;
+
+      /* 略缩图上方：标题 + 标签行 + 描述 (对齐图 2 紧凑单行首部) */
+      .sec-card-header {
+        padding: 10px 12px 6px;
+        background: #ffffff;
+        border-top-left-radius: 9px;
         border-top-right-radius: 9px;
         display: flex;
-        align-items: center;
-        justify-content: space-between;
-        justify-content: center;
-        font-size: 12px;
-        z-index: 5;
-        box-shadow: -1px 1px 3px rgba(0, 0, 0, 0.1);
-      }
-
-      /* 略缩图上方：徽标行 + 方案标题 + 描述 */
-      .sec-card-header {
-        padding: 10px 14px 8px;
-        background: #ffffff;
-        display: flex;
         flex-direction: column;
-        gap: 5px;
+        gap: 4px;
         /* 防止标题头部被收缩 */
         flex-shrink: 0;
       }
-      .sec-tag-group {
+      /* 顶行水平排布：左侧标题+分类，右侧品牌 */
+      .sec-header-main-row {
         display: flex;
         align-items: center;
-        gap: 6px;
-        flex-wrap: wrap;
-        padding-right: 24px;
+        justify-content: space-between;
+        gap: 8px;
+        padding-right: 12px;
       }
-      /* 方案目录名称标签 (如: 双电源) */
-      .sec-tag-folder {
-        font-size: 11px;
-        font-weight: 700;
-        color: #00796b;
-        background: #e0f2f1;
-        border: 1px solid #b2dfdb;
-        padding: 1px 7px;
-        border-radius: 4px;
-        font-family: monospace;
+      /* 左侧标题与分类徽标容器 */
+      .sec-title-and-folder {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        flex: 1;
       }
-      /* DWG 文件名标签 (去扩展名，如: WATSG) */
-      .sec-tag-dwg {
-        font-size: 11px;
-        font-weight: 700;
-        color: #334155;
-        background: #f1f5f9;
-        border: 1px solid #e2e8f0;
-        padding: 1px 7px;
-        border-radius: 4px;
-        font-family: monospace;
-      }
-      /* 品牌标签 (如: 施耐德) */
-      .sec-tag-brand {
-        font-size: 10.5px;
-        font-weight: 600;
-        color: #047857;
-        background: #d1fae5;
-        border: 1px solid #a7f3d0;
-        padding: 1px 6px;
-        border-radius: 4px;
-      }
-      /* 方案大标题 (粗黑体，字号 15px，对齐图 1) */
+      /* 方案主标题 (对齐图 2 黑体加粗，如: WATSG) */
       .sec-scheme-title {
         font-size: 15px;
         font-weight: 700;
         color: #0f172a;
-        margin-top: 2px;
-        line-height: 1.35;
+        line-height: 1.25;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        flex-shrink: 1;
       }
-      /* 描述文本 (字号 12px，两行省略) */
+      /* 方案目录/分类标签 (对齐图 2 浅绿药丸标签，如: 双电源) */
+      .sec-tag-folder {
+        font-size: 11.5px;
+        font-weight: 600;
+        color: #00796b;
+        background: #d1fae5;
+        border: 1px solid #a7f3d0;
+        padding: 1px 7px;
+        border-radius: 5px;
+        flex-shrink: 0;
+      }
+      /* 品牌标签 (对齐图 2 右侧浅绿胶囊标签，如: 施耐德) */
+      .sec-tag-brand {
+        font-size: 11.5px;
+        font-weight: 600;
+        color: #047857;
+        background: #d1fae5;
+        border: 1px solid #a7f3d0;
+        padding: 1px 8px;
+        border-radius: 5px;
+        flex-shrink: 0;
+      }
+      /* 工艺描述文本 (对齐图 2 两行紧凑折行) */
       .sec-desc-text {
         font-size: 12px;
-        color: #64748b;
+        color: #475569;
         line-height: 1.45;
         display: -webkit-box;
         -webkit-line-clamp: 2;
@@ -1027,6 +1305,7 @@
         overflow: hidden;
         text-overflow: ellipsis;
         min-height: 34px;
+        margin-top: 2px;
       }
 
       /* 中间略缩图视口 (3 列排版下黄金比例 145px 蓝图视口) */
@@ -1132,6 +1411,9 @@
         justify-content: space-between;
         margin-top: auto;
         background: #ffffff;
+        /* 卡片底部圆角，保持容器几何圆润 */
+        border-bottom-left-radius: 9px;
+        border-bottom-right-radius: 9px;
         /* 确保底部按钮栏固定在底部绝不收缩 */
         flex-shrink: 0;
       }
@@ -1176,23 +1458,85 @@
       }
 
       /* ===== 二次回路编辑弹窗与 BOM 专属样式 (绿蓝主色调 #009688) ===== */
+      /* 弹窗整体设置 700px 高度并开启纵向 Flex 弹性伸缩 */
+      .sec-edit-dialog {
+        /* 设置固定高度为 700px */
+        height: 700px;
+        /* 采用纵向弹性盒模型排布各区域 */
+        display: flex;
+        /* 子元素沿垂直方向自上而下排列 */
+        flex-direction: column;
+      }
       .sec-edit-dialog .el-dialog__header {
         padding: 14px 20px;
         border-bottom: 1px solid #e2e8f0;
         margin-right: 0;
+        /* 弹窗标题栏保持自然高度，禁止弹性收缩 */
+        flex-shrink: 0;
+      }
+      /* 自定义弹窗标题栏样式 (红箭头位置) */
+      .sec-edit-dialog-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        padding-right: 32px;
+      }
+      .sec-edit-dialog-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #1e293b;
+      }
+      /* 复制方案选择弹窗样式 */
+      .copy-scheme-dialog .el-dialog__header {
+        padding: 14px 20px;
+        border-bottom: 1px solid #e2e8f0;
+        margin-right: 0;
+      }
+      .copy-scheme-dialog .el-dialog__body {
+        padding: 14px 20px;
+      }
+      .copy-scheme-dialog .el-dialog__footer {
+        padding: 10px 20px 14px;
+        border-top: 1px solid #f1f5f9;
       }
       .sec-edit-dialog .el-dialog__body {
         padding: 18px 22px;
-        max-height: 72vh;
+        /* 内容主体区域自适应占满剩余高度 */
+        flex: 1;
+        /* 关键：重置最小高度，确保内部超出时可顺畅滚动 */
+        min-height: 0;
+        /* 内容超出 700px 范围时展示纵向滚动条 */
         overflow-y: auto;
       }
       .sec-edit-dialog .el-dialog__footer {
         padding: 12px 20px;
         border-top: 1px solid #e2e8f0;
         background: #f8fafc;
+        /* 弹窗底部操作按钮栏保持自然高度，禁止弹性收缩 */
+        flex-shrink: 0;
       }
       .sec-meta-section {
         background: #ffffff;
+      }
+      /* 紧凑参数首行：8 项常规参数在一行排布，输入宽度紧凑自适应 */
+      .sec-form-row-compact {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr 1.35fr 1.05fr 1fr 1fr 1.15fr;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .sec-form-row-compact .sec-field-label {
+        font-size: 11.5px;
+        color: #475569;
+        margin-bottom: 3px;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .sec-form-row-compact .el-input-number {
+        width: 100% !important;
       }
       .sec-form-row-3 {
         display: grid;
@@ -1302,12 +1646,16 @@
   </head>
   <body>
     <div id="app">
-      <!-- 1. 顶部自定义拖拽栏 -->
+      <!-- 1. 顶部自定义拖拽栏 (38px紧凑深青蓝质感) -->
       <div class="window-header" @mousedown="onDragWindow">
+        <!-- 标题区域：带半透明小徽标底托 -->
         <div class="window-title">
-          <i class="fa-solid fa-cloud-bolt"></i>
+          <div class="window-title-icon">
+            <i class="fa-solid fa-cloud-bolt"></i>
+          </div>
           <span>鑫壬成套电气 · 云方案中心</span>
         </div>
+        <!-- 窗口操作按键：最小化、最大化、关闭 -->
         <div class="window-controls" @mousedown.stop>
           <div class="ctrl-btn" title="最小化" @click="minimizeWindow">
             <i class="fa-solid fa-minus"></i>
@@ -1325,8 +1673,9 @@
         </div>
       </div>
 
-      <!-- 2. 一级顶级 Tab 栏 (行业方案 vs 企业方案) -->
+      <!-- 2. 一级顶级 Tab 栏 (行业方案 vs 企业方案 - 40px白底秀气适中) -->
       <div class="top-tabs-bar">
+        <!-- 左侧范围切换项 (字号13.5px配合居中圆角滑块) -->
         <div class="top-tabs-left">
           <div
             class="top-tab-item"
@@ -1345,46 +1694,49 @@
             <span>企业方案</span>
           </div>
         </div>
-        <div>
-          <el-tag
-            size="small"
-            type="success"
-            effect="plain"
+        <!-- 右侧资产库属性微胶囊状态条 (Micro Pill Badge) -->
+        <div class="top-tabs-right">
+          <div
+            class="micro-status-badge badge-industry"
             v-if="currentScope === 'industry'"
           >
-            <i class="fa-solid fa-lock"></i> 官方标准母版库 (只读)
-          </el-tag>
-          <el-tag size="small" type="primary" effect="plain" v-else>
-            <i class="fa-solid fa-users"></i> 企业私有资产库 (支持自建与修改)
-          </el-tag>
+            <i class="fa-solid fa-lock"></i>
+            <span>官方标准母版库 (只读)</span>
+          </div>
+          <div class="micro-status-badge badge-enterprise" v-else>
+            <i class="fa-solid fa-users"></i>
+            <span>企业私有资产库 (支持自建与修改)</span>
+          </div>
         </div>
       </div>
 
-      <!-- 3. 二级业务 Tab 栏 (一次方案 / 二次方案 / 我的收藏) -->
+      <!-- 3. 二级业务 Tab 栏 (一次方案 / 二次方案 / 我的收藏 - 高级浅灰微浮雕药丸) -->
       <div class="sub-tabs-bar">
-        <div
-          class="sub-tab-item"
-          :class="{ active: currentSchemeType === 'primary' }"
-          @click="switchSchemeType('primary')"
-        >
-          <i class="fa-solid fa-bolt"></i>
-          <span>一次方案</span>
-        </div>
-        <div
-          class="sub-tab-item"
-          :class="{ active: currentSchemeType === 'secondary' }"
-          @click="switchSchemeType('secondary')"
-        >
-          <i class="fa-solid fa-diagram-project"></i>
-          <span>二次方案</span>
-        </div>
-        <div
-          class="sub-tab-item"
-          :class="{ active: currentSchemeType === 'favorite' }"
-          @click="switchSchemeType('favorite')"
-        >
-          <i class="fa-solid fa-star"></i>
-          <span>我的收藏</span>
+        <div class="sub-tabs-pills">
+          <div
+            class="sub-tab-item"
+            :class="{ active: currentSchemeType === 'primary' }"
+            @click="switchSchemeType('primary')"
+          >
+            <i class="fa-solid fa-bolt icon-primary"></i>
+            <span>一次方案</span>
+          </div>
+          <div
+            class="sub-tab-item"
+            :class="{ active: currentSchemeType === 'secondary' }"
+            @click="switchSchemeType('secondary')"
+          >
+            <i class="fa-solid fa-diagram-project icon-secondary"></i>
+            <span>二次方案</span>
+          </div>
+          <div
+            class="sub-tab-item"
+            :class="{ active: currentSchemeType === 'favorite' }"
+            @click="switchSchemeType('favorite')"
+          >
+            <i class="fa-solid fa-star icon-favorite"></i>
+            <span>我的收藏</span>
+          </div>
         </div>
       </div>
 
@@ -1651,41 +2003,36 @@
                 v-for="card in secondaryDwgCards"
                 :key="card.fullPath"
                 class="secondary-card"
+                @click="openSecondaryDetail(card)"
               >
-                <!-- 右上角绿色圆角对勾徽标 (100% 对齐图 1) -->
-                <div
-                  class="sec-card-badge-check"
-                  title="已成功关联标准二次控制原理图"
-                >
-                  <i class="fa-solid fa-check"></i>
-                </div>
-
-                <!-- 略缩图上方：徽标行 + 方案大标题 + 工艺描述 (对齐图 1) -->
+                <!-- 略缩图上方：标题 + 分类 + 品牌 + 工艺描述 (对齐图 2 紧凑布局) -->
                 <div class="sec-card-header">
-                  <!-- 标签徽标组: 方案目录 + DWG图名(去后缀) + 品牌 -->
-                  <div class="sec-tag-group">
-                    <span
-                      class="sec-tag-folder"
-                      :title="'方案目录: ' + card.folderName"
-                      >{{ card.folderName || '双电源' }}</span
-                    >
-                    <span
-                      class="sec-tag-dwg"
-                      :title="'DWG图名: ' + card.dwgName"
-                      >{{ card.dwgName }}</span
-                    >
+                  <!-- 首行容器：左侧放置方案标题与分类药丸，右侧放置品牌标签 -->
+                  <div class="sec-header-main-row">
+                    <!-- 左侧区域：粗体标题紧挨着分类药丸徽章 -->
+                    <div class="sec-title-and-folder">
+                      <!-- 方案主标题 (优先显示方案名，无方案名显示图纸名，如: WATSG) -->
+                      <span
+                        class="sec-scheme-title"
+                        :title="card.schemeName || card.dwgName"
+                      >
+                        {{ card.schemeName || card.dwgName }}
+                      </span>
+                      <!-- 分类药丸标签 (如: 双电源) -->
+                      <span
+                        class="sec-tag-folder"
+                        :title="'方案分类: ' + (card.folderName)"
+                      >
+                        {{ card.folderName || '双电源' }}
+                      </span>
+                    </div>
+                    <!-- 右侧品牌标签 (如: 施耐德) -->
                     <span
                       class="sec-tag-brand"
-                      :title="'品牌: ' + (card.brand || '施耐德')"
-                      >{{ card.brand || '施耐德' }}</span
+                      :title="'品牌: ' + (card.brand || '通用')"
                     >
-                  </div>
-                  <!-- 方案大标题 (如: 双电源自动切换控制原理图) -->
-                  <div
-                    class="sec-scheme-title"
-                    :title="card.schemeName || card.dwgName"
-                  >
-                    {{ card.schemeName || card.dwgName }}
+                      {{ card.brand || '通用' }}
+                    </span>
                   </div>
                   <!-- 工艺描述说明 (两行紧凑自适应带提示) -->
                   <div
@@ -1900,7 +2247,7 @@
                       <span class="sec-p-label">跨门线:</span>
                       <span class="sec-p-val"
                         ><b style="font-size: 13px"
-                          >{{ card.crossDoorCount > 0 ? card.crossDoorCount : 3
+                          >{{ card.crossDoorCount > 0 ? card.crossDoorCount : 0
                           }}</b
                         >
                         根</span
@@ -1910,7 +2257,7 @@
                       <span class="sec-p-label">人工费用:</span>
                       <span class="sec-p-val price"
                         >¥{{ formatMoney(card.laborCost > 0 ? card.laborCost :
-                        103) }}</span
+                        0) }}</span
                       >
                     </div>
                   </div>
@@ -1919,13 +2266,13 @@
                       <span class="sec-p-label">二次材料:</span>
                       <span class="sec-p-val"
                         >¥{{ formatMoney(card.materialCost > 0 ?
-                        card.materialCost : 120) }}</span
+                        card.materialCost : 0) }}</span
                       >
                     </div>
                     <div class="sec-param-item">
                       <span class="sec-p-label">开孔需求:</span>
                       <span class="sec-p-val"
-                        >{{ card.holeSpec || '圆孔 2个' }}</span
+                        >{{ card.holeSpec}}</span
                       >
                     </div>
                   </div>
@@ -1944,7 +2291,7 @@
                     >
                       <span class="sec-p-label">二次排布图:</span>
                       <span class="sec-layout-badge"
-                        >{{ card.layoutDwgName || 'FA' }}</span
+                        >{{ card.layoutDwgName }}</span
                       >
                     </div>
                   </div>
@@ -1961,7 +2308,7 @@
                       class="sec-btn-cad"
                       type="button"
                       title="使用外部 CAD 软件打开当前 DWG 图纸"
-                      @click="openCadDrawing(card)"
+                      @click.stop="openCadDrawing(card)"
                     >
                       打开图纸
                     </button>
@@ -1969,7 +2316,7 @@
                       class="sec-btn-edit"
                       type="button"
                       title="编辑二次回路方案与 BOM"
-                      @click="openSecondaryEditModal(card)"
+                      @click.stop="openSecondaryEditModal(card)"
                     >
                       编辑
                     </button>
@@ -2127,34 +2474,53 @@
       <!-- ========================================================
            5. 方案详情主视图 (完整复刻参考图 2 & 图 3 样式与三大 Tab)
            ======================================================== -->
-      <div class="detail-view-container" v-if="detailVisible">
-        <!-- 顶部返回与方案详情标题 (完全复刻图 2 标头布局与带边框返回按钮) -->
+      <div class="detail-view-container" v-show="detailVisible">
+        <!-- 顶部返回与方案标题极简单行标头 (取消原跨门线、工费等整行参数，释放大视口给 DWG 与 BOM) -->
         <div class="detail-header-bar">
-          <button class="btn-return" @click="detailVisible = false">
-            <i class="fa-solid fa-chevron-left"></i> 返回
-          </button>
-          <div class="detail-header-title">方案详情</div>
-          <div style="width: 80px"></div>
-        </div>
-        <!-- 方案头部核心参数 (型号、尺寸、作者、时间完全居中) -->
-        <div class="detail-scheme-meta" v-if="currentDetail">
-          <div class="scheme-main-title">
-            {{ currentDetail.schemeName || 'KYN28-12 PT柜(630A)' }}
+          <!-- 左侧返回按钮与方案基本信息 -->
+          <div class="detail-header-left">
+            <!-- 胶囊状返回列表按键 -->
+            <button class="btn-return" @click="closeDetail" title="返回方案列表">
+              <i class="fa-solid fa-chevron-left"></i> 返回
+            </button>
+            <!-- 分类胶囊标签 (如: 双电源) -->
+            <span class="detail-cat-pill" v-if="currentDetail?.cabinetModel">
+              {{ currentDetail.cabinetModel }}
+            </span>
+            <!-- 方案主标题 -->
+            <span class="detail-scheme-heading" :title="currentDetail?.schemeName">
+              {{ currentDetail?.schemeName || '方案详情' }}
+            </span>
+            <!-- 品牌微徽标 -->
+            <span class="detail-brand-badge" v-if="currentDetail?.brand">
+              品牌: {{ currentDetail.brand }}
+            </span>
           </div>
-          <div class="scheme-meta-row">
-            <span>箱柜型号: {{ currentDetail.cabinetModel || '' }}</span>
-            <span>箱柜尺寸: {{ currentDetail.dimensions || '' }}</span>
-            <span>修改人: {{ currentDetail.creatorName || '电气天下' }}</span>
-            <span
-              >修改时间: {{ currentDetail.updateTime || '2017-12-08 09:44:28'
-              }}</span
+
+          <!-- 右侧操作工具 (编辑、关闭) -->
+          <div class="detail-header-right">
+            <!-- 二次方案下可直接呼出编辑弹窗 -->
+            <el-button
+              v-if="isSecondaryDetail"
+              type="primary"
+              size="small"
+              plain
+              @click="openSecondaryEditModal(currentSecondaryCard)"
             >
+              <i class="fa-regular fa-pen-to-square" style="margin-right: 4px"></i> 编辑方案与BOM
+            </el-button>
+            <!-- 顶部快捷关闭叉号 -->
+            <div class="detail-close-icon" @click="closeDetail" title="关闭详情大视口">
+              <i class="fa-solid fa-xmark"></i>
+            </div>
           </div>
         </div>
 
-        <!-- 详情三大子 Tab (图纸 / BOM / 描述，纯文字无图标无张数，总计28222.42红字居右) -->
+        <!-- 详情三大子 Tab (图纸 / BOM / 描述) -->
         <div class="detail-nav-tabs">
+          <!-- Tab 按钮集合 -->
           <div class="detail-tabs-group">
+            <!-- ① 图纸 Tab -->
             <div
               class="detail-tab-btn"
               :class="{ active: detailActiveTab === 'drawing' }"
@@ -2162,35 +2528,38 @@
             >
               <span>图纸</span>
             </div>
+            <!-- ② BOM 物料清单 Tab -->
             <div
               class="detail-tab-btn"
               :class="{ active: detailActiveTab === 'bom' }"
               @click="detailActiveTab = 'bom'"
             >
-              <span>BOM</span>
+              <span>BOM 物料清单 ({{ currentDetail?.bomItems?.length || 0 }})</span>
             </div>
+            <!-- ③ 工程技术描述 Tab -->
             <div
               class="detail-tab-btn"
               :class="{ active: detailActiveTab === 'description' }"
               @click="detailActiveTab = 'description'"
             >
-              <span>描述</span>
+              <span>工程技术描述</span>
             </div>
           </div>
 
+          <!-- BOM Tab 右侧总计金额高亮显示 -->
           <div class="total-amount-badge" v-if="detailActiveTab === 'bom'">
-            总计: {{ calculatedTotalAmount.toFixed(2) }}
+            总计: ¥{{ calculatedTotalAmount.toFixed(2) }}
           </div>
         </div>
 
         <!-- 详情主体内容区 -->
         <div class="detail-tab-content">
-          <!-- ①【图纸】子面板 (DrawingUrls 画廊模式) -->
-          <div class="drawing-gallery" v-if="detailActiveTab === 'drawing'">
-            <!-- 左侧多图胶卷微缩栏 -->
+          <!-- ①【图纸】子面板 (全视口 DWG 交互画布，支持鼠标拖拽平移漫游与滚轮平滑缩放，使用 v-show 常驻保持 WebGL 视口生命周期) -->
+          <div class="drawing-gallery" v-show="detailActiveTab === 'drawing'">
+            <!-- 左侧多图胶卷微缩栏 (多图时展示) -->
             <div
               class="drawing-filmstrip"
-              v-if="currentDetail?.drawingUrls && currentDetail.drawingUrls.length > 0"
+              v-if="currentDetail?.drawingUrls && currentDetail.drawingUrls.length > 1"
             >
               <div
                 v-for="(url, idx) in currentDetail.drawingUrls"
@@ -2199,53 +2568,96 @@
                 :class="{ active: activeDrawingIndex === idx }"
                 @click="activeDrawingIndex = idx"
               >
+                <!-- 微缩预览图 -->
                 <img :src="url" class="filmstrip-thumb" />
                 <div class="filmstrip-title">图纸 {{ idx + 1 }}</div>
               </div>
             </div>
 
-            <!-- 中央高精度图片缩放预览舞台 -->
-            <div class="drawing-main-canvas">
+            <!-- 中央高精度图片缩放预览舞台 (保持原有设计与悬浮工具条) -->
+            <div
+              class="drawing-main-canvas"
+              ref="drawingCanvasRef"
+              @dblclick="resetCanvasView"
+            >
+              <!-- 1. DWG 真实矢量渲染视口 (使用 cad-view WebGL 矢量渲染引擎) -->
+              <div
+                v-show="isDwgMode"
+                ref="cadViewportDomRef"
+                class="pure-cad-container"
+                style="width: 100%; height: 100%; position: absolute; inset: 0;"
+                v-loading="vectorCadLoading"
+                element-loading-text="正在进行 CAD 真实矢量渲染..."
+                element-loading-background="rgba(9, 13, 22, 0.85)"
+              ></div>
+
+              <!-- 2. 普通图片或未加载 DWG 时的兼容预览 (原有逻辑完全保留) -->
               <img
+                v-if="!isDwgMode && activeDrawingUrl"
                 :src="activeDrawingUrl"
                 class="preview-image"
-                :style="{ transform: `scale(${imgScale}) rotate(${imgRotation}deg)` }"
-              />
-              <div class="drawing-toolbar">
-                <div
-                  class="tool-btn"
-                  title="放大"
-                  @click="imgScale = Math.min(3, imgScale + 0.2)"
+                :style="{
+                  transform: `translate(${imgTranslateX}px, ${imgTranslateY}px) scale(${imgScale}) rotate(${imgRotation}deg)`,
+                  cursor: isPanning ? 'grabbing' : 'grab'
+                }"
+                draggable="false"
+                alt="DWG 图纸高清视口"
+                @mousedown="onCanvasMouseDown"
+                @mousemove="onCanvasMouseMove"
+                @mouseup="onCanvasMouseUp"
+                @mouseleave="onCanvasMouseUp"
+                @wheel.prevent="onCanvasWheel"
+              ></img>
+
+              <!-- 3. 降级矢量 CAD 电路图占位 (原有逻辑完全保留) -->
+              <div
+                v-else-if="!isDwgMode"
+                class="drawing-svg-fallback"
+                :style="{
+                  transform: `translate(${imgTranslateX}px, ${imgTranslateY}px) scale(${imgScale}) rotate(${imgRotation}deg)`,
+                  cursor: isPanning ? 'grabbing' : 'grab'
+                }"
+              >
+                <!-- 精美矢量 SVG 图纸视口 -->
+                <svg
+                  width="100%"
+                  height="100%"
+                  viewBox="0 0 320 180"
+                  xmlns="http://www.w3.org/2000/svg"
+                  style="background: #090d16"
                 >
-                  <i class="fa-solid fa-magnifying-glass-plus"></i>
-                </div>
-                <div
-                  class="tool-btn"
-                  title="缩小"
-                  @click="imgScale = Math.max(0.5, imgScale - 0.2)"
-                >
-                  <i class="fa-solid fa-magnifying-glass-minus"></i>
-                </div>
-                <div
-                  class="tool-btn"
-                  title="顺时针旋转90°"
-                  @click="imgRotation = (imgRotation + 90) % 360"
-                >
-                  <i class="fa-solid fa-rotate-right"></i>
-                </div>
-                <div
-                  class="tool-btn"
-                  title="重置视角"
-                  @click="imgScale = 1; imgRotation = 0;"
-                >
-                  <i class="fa-solid fa-arrows-rotate"></i>
-                </div>
+                  <defs>
+                    <pattern id="cadGridDetail" width="20" height="20" patternUnits="userSpaceOnUse">
+                      <circle cx="1" cy="1" r="0.8" fill="#1e293b" />
+                    </pattern>
+                  </defs>
+                  <rect width="100%" height="100%" fill="url(#cadGridDetail)" />
+                  <text x="160" y="52" fill="#10b981" font-size="12" font-weight="600" text-anchor="middle">
+                    {{ currentDetail?.schemeName || '二次回路图纸' }}
+                  </text>
+                  <line x1="40" y1="90" x2="280" y2="90" stroke="#009688" stroke-width="2" />
+                  <circle cx="160" cy="90" r="5" fill="#eab308" />
+                  <text x="160" y="130" fill="#94a3b8" font-size="11" text-anchor="middle">
+                    未提取到预览图，可点击右上角在 AutoCAD 中打开原图
+                  </text>
+                </svg>
               </div>
+
+              <!-- 右上角悬浮操作胶囊：在外部 AutoCAD 中打开原 DWG -->
+              <div
+                class="drawing-cad-floating-btn"
+                v-if="currentSecondaryCard?.fullPath || currentDetail?.fullPath || (currentDetail?.drawingUrls && currentDetail.drawingUrls[activeDrawingIndex]?.endsWith('.dwg')) || currentDetail?.cadDrawingName"
+                @click="openCadDrawing(currentSecondaryCard || currentDetail)"
+                title="呼出本机 AutoCAD 软件直接打开并编辑该 DWG 文件"
+              >
+                <i class="fa-solid fa-arrow-up-right-from-square"></i> 在 AutoCAD 中打开原图
+              </div>
+
             </div>
           </div>
 
           <!-- ②【BOM 明细】子面板 (原生高精度网格表格，完整还原图2与图3的18列与横向滚动) -->
-          <div class="bom-view-panel" v-if="detailActiveTab === 'bom'">
+          <div class="bom-view-panel" v-show="detailActiveTab === 'bom'">
             <div class="bom-table-scroll-wrapper">
               <table class="bom-grid-table">
                 <thead>
@@ -2293,11 +2705,11 @@
                     <td style="text-align: center">
                       {{ row.sortOrder || index + 1 }}
                     </td>
-                    <td style="text-align: left" :title="row.componentName">
-                      {{ row.componentName }}
+                    <td style="text-align: left" :title="row.name">
+                      {{ row.name }}
                     </td>
-                    <td style="text-align: left" :title="row.modelSpec">
-                      {{ row.modelSpec }}
+                    <td style="text-align: left" :title="row.model">
+                      {{ row.model }}
                     </td>
                     <td style="text-align: left" :title="row.brand">
                       {{ row.brand }}
@@ -2380,27 +2792,65 @@
             </div>
           </div>
 
-          <!-- ③【描述说明】子面板 -->
+          <!-- ③【工程技术描述】子面板 -->
           <div
             class="description-view-panel"
-            v-if="detailActiveTab === 'description'"
+            v-show="detailActiveTab === 'description'"
+            style="padding: 24px 32px; overflow-y: auto; flex: 1"
           >
-            <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px">
-              技术规格与使用说明
+            <!-- 方案工艺逻辑卡片 -->
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 20px">
+              <div style="display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 12px">
+                <i class="fa-solid fa-screwdriver-wrench" style="color: #009688"></i>
+                <span>方案工艺控制与设计说明</span>
+              </div>
+              <p style="font-size: 13.5px; color: #334155; line-height: 1.8; margin: 0">
+                {{ currentDetail?.description || '适用于重要负荷二次回路控制系统，具备完善的二次测控与闭锁联动保护机制。' }}
+              </p>
             </div>
-            <p>{{ currentDetail?.description || '暂无详细描述信息。' }}</p>
+
+            <!-- 技术参数与备注信息 -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px">
+              <!-- 左侧面板：分类与回路参数 -->
+              <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; background: #ffffff">
+                <div style="font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 8px">适用柜型与回路参数</div>
+                <div style="font-size: 12.5px; color: #64748b; line-height: 1.8">
+                  <div>• 所属分类: <b style="color: #0f172a">{{ currentDetail?.cabinetModel || '通用' }}</b></div>
+                  <div>• 元器件品牌: <b style="color: #0f172a">{{ currentDetail?.brand || '通用' }}</b></div>
+                  <div v-if="currentSecondaryCard?.crossDoorCount">• 跨门接线: <b style="color: #0f172a">{{ currentSecondaryCard.crossDoorCount }} 根</b></div>
+                  <div v-if="currentSecondaryCard?.holeSpec">• 仪表开孔: <b style="color: #0f172a">{{ currentSecondaryCard.holeSpec }}</b></div>
+                </div>
+              </div>
+
+              <!-- 右侧面板：图纸关联与工费信息 -->
+              <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; background: #ffffff">
+                <div style="font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 8px">图纸关联与工费信息</div>
+                <div style="font-size: 12.5px; color: #64748b; line-height: 1.8">
+                  <div>• DWG 原图: <b style="color: #009688; font-family: monospace">{{ currentSecondaryCard?.dwgName || currentDetail?.schemeName || 'DWG' }}.dwg</b></div>
+                  <div v-if="currentSecondaryCard?.layoutDwgName">• 二次排布图: <b style="color: #0f172a">{{ currentSecondaryCard.layoutDwgName }}</b></div>
+                  <div v-if="currentSecondaryCard?.laborCost">• 参考人工工费: <b style="color: #059669">¥{{ formatMoney(currentSecondaryCard.laborCost) }}</b></div>
+                  <div v-if="currentSecondaryCard?.materialCost">• 二次辅料成本: <b style="color: #059669">¥{{ formatMoney(currentSecondaryCard.materialCost) }}</b></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
         <!-- 详情底部控制台 (全屏、回路倍数、插入、下载、分享、收藏) -->
         <div class="detail-action-footer">
-          <div>
+          <!-- 左侧快捷全屏与图纸复位视口按键 -->
+          <div style="display: flex; align-items: center; gap: 8px">
             <el-button link @click="toggleDetailFullscreen" title="全屏切换">
-              <i class="fa-solid fa-expand" style="font-size: 16px"></i>
+              <i class="fa-solid fa-expand" style="font-size: 15px"></i>
+            </el-button>
+            <el-button link @click="resetCanvasView" title="图纸视角复位居中">
+              <i class="fa-solid fa-arrows-rotate" style="font-size: 15px"></i>
             </el-button>
           </div>
 
+          <!-- 右侧回路倍增器与一键插入箱柜操作按键 -->
           <div style="display: flex; align-items: center; gap: 12px">
+            <!-- 回路数倍增器输入框 -->
             <div class="multiplier-box">
               <el-input-number
                 v-model="loopMultiplier"
@@ -2412,19 +2862,9 @@
               <span style="font-size: 13px; color: #475569">个回路</span>
             </div>
 
-            <button class="btn-img-orange" @click="onInsertCurrentDetail">
-              插入
-            </button>
-            <button class="btn-img-orange" @click="onExportBomExcel">
-              下载BOM
-            </button>
-            <button class="btn-img-orange" @click="onShareScheme">分享</button>
-            <button class="btn-img-outline" @click="onToggleFavoriteCurrent">
-              <i
-                class="fa-solid fa-star"
-                :style="{ color: currentDetail?.isFavorite ? '#ef4444' : '#f59e0b' }"
-              ></i>
-              {{ currentDetail?.isFavorite ? '已收藏' : '加入收藏' }}
+            <!-- 核心一键插入箱柜按钮 (带醒目图标) -->
+            <button class="btn-img-orange" @click="onInsertCurrentDetail" title="将当前方案勾选的 BOM 元器件插入当前活动 Excel 分类表">
+              <i class="fa-solid fa-arrow-down-to-bracket" style="margin-right: 4px"></i> 插入箱柜
             </button>
           </div>
         </div>
@@ -2493,110 +2933,122 @@
       <!-- ② 编辑二次回路方案与 BOM 弹窗 (参考附件高保真还原) -->
       <el-dialog
         v-model="secEditDialogOpen"
-        title="编辑二次回路方案与 BOM"
         width="1000px"
         :close-on-click-modal="false"
         append-to-body
         top="3vh"
+        class="sec-edit-dialog"
         custom-class="sec-edit-dialog"
       >
+        <!-- 自定义标题栏：支持在红箭头位置放置“复制其他方案”操作按钮 -->
+        <template #header>
+          <div class="sec-edit-dialog-header">
+            <span class="sec-edit-dialog-title">编辑二次回路方案与 BOM</span>
+            <!-- 复制其他方案按钮 (精准位于红箭头指示的标题右侧区域) -->
+            <el-button
+              type="success"
+              size="small"
+              plain
+              @click="openCopySchemeModal"
+              style="margin-right: 28px; font-weight: 500"
+            >
+              <i class="fa-solid fa-copy" style="margin-right: 4px"></i>
+              复制其他方案
+            </el-button>
+          </div>
+        </template>
         <div class="sec-meta-section">
-          <!-- Row 1: 方案目录、当前DWG名称(去后缀)、品牌 -->
-          <div class="sec-form-row-3">
+          <!-- 紧凑参数首行：除方案描述外，其他 8 项参数宽度改小并在同一行整齐展示 -->
+          <div class="sec-form-row-compact">
+            <!-- 1. 方案目录名称 (只读，灰底) -->
             <div>
-              <div class="sec-field-label">方案目录名称:</div>
+              <div class="sec-field-label" title="方案目录名称">方案目录:</div>
               <el-input
                 v-model="editingSecScheme.folderName"
                 readonly
                 disabled
+                size="default"
               ></el-input>
             </div>
+            <!-- 2. 当前DWG文件名称 (只读，灰底) -->
             <div>
-              <div class="sec-field-label">当前DWG文件名称:</div>
+              <div class="sec-field-label" title="当前DWG文件名称">当前DWG:</div>
               <el-input
                 v-model="editingSecScheme.dwgName"
                 readonly
                 disabled
+                size="default"
               ></el-input>
             </div>
+            <!-- 3. 元器件品牌 (Brand) -->
             <div>
-              <div class="sec-field-label">元器件品牌 (Brand):</div>
+              <div class="sec-field-label" title="元器件品牌 (Brand)">品牌:</div>
               <el-input
                 v-model="editingSecScheme.brand"
-                placeholder="例如: 正泰 / 施耐德 / 德力西"
+                placeholder="例如: 施耐德"
+                size="default"
               ></el-input>
             </div>
-          </div>
-
-          <!-- Row 2: CAD图纸名称、适用图名集合(以逗号分隔)、二次布置图 -->
-          <div class="sec-form-row-3">
+            <!-- 4. 适用图名集合 (以逗号“,”间隔) -->
             <div>
-              <div class="sec-field-label">CAD图纸名称 (cad_drawing_name):</div>
-              <el-input
-                v-model="editingSecScheme.cadDrawingName"
-                placeholder="例如: WATSG.dwg"
-              ></el-input>
-            </div>
-            <div>
-              <div class="sec-field-label">适用图名集合 (以逗号“,”间隔):</div>
+              <div class="sec-field-label" title="适用图名集合 (以逗号“,”间隔)">适用图名集合:</div>
               <el-input
                 v-model="editingSecScheme.applicableCodes"
-                placeholder="例如: WATSG,WATSG-1"
+                placeholder="以逗号间隔"
+                size="default"
               ></el-input>
             </div>
+            <!-- 5. 二次排布图名称 -->
             <div>
-              <div class="sec-field-label">二次排布图名称:</div>
+              <div class="sec-field-label" title="二次排布图名称">二次排布图:</div>
               <el-input
                 v-model="editingSecScheme.layoutDwgName"
-                placeholder="例如: WATSG_Layout.dwg"
+                placeholder="例如: FA"
+                size="default"
               ></el-input>
             </div>
-          </div>
-
-          <!-- Row 3: 数值参数 (跨门线根数、开孔要求、装配人工工费) -->
-          <div class="sec-form-row-3">
+            <!-- 6. 二次线跨门根数 (数字计数器，右置按钮紧凑显示) -->
             <div>
-              <div class="sec-field-label">二次线跨门根数:</div>
+              <div class="sec-field-label" title="二次线跨门根数">跨门线根数:</div>
               <el-input-number
                 v-model="editingSecScheme.crossDoorCount"
                 :min="0"
+                controls-position="right"
+                size="default"
                 style="width: 100%"
               ></el-input-number>
             </div>
+            <!-- 7. 开孔要求 -->
             <div>
-              <div class="sec-field-label">开孔要求:</div>
+              <div class="sec-field-label" title="开孔要求规格">开孔要求:</div>
               <el-input
                 v-model="editingSecScheme.holeSpec"
-                placeholder="例如: 圆6 / 方孔"
+                placeholder="例如: 圆2"
+                size="default"
               ></el-input>
             </div>
+            <!-- 8. 装配人工工费 (元) (数字计数器，右置按钮紧凑显示) -->
             <div>
-              <div class="sec-field-label">装配人工工费 (元):</div>
+              <div class="sec-field-label" title="装配人工工费 (元)">装配工费(元):</div>
               <el-input-number
                 v-model="editingSecScheme.laborCost"
                 :min="0"
                 :precision="2"
                 :step="10"
+                controls-position="right"
+                size="default"
                 style="width: 100%"
               ></el-input-number>
             </div>
           </div>
 
-          <!-- Row 4: 方案描述 -->
-          <div class="sec-form-row-1">
+          <!-- 方案描述 (独占第二行整行展示) -->
+          <div class="sec-form-row-1" style="margin-bottom: 8px">
             <div class="sec-field-label">方案描述 (Description):</div>
             <el-input
               v-model="editingSecScheme.description"
               placeholder="工艺要求、接线说明或控制功能简述"
-            ></el-input>
-          </div>
-
-          <!-- Row 5: 方案备注 -->
-          <div class="sec-form-row-1">
-            <div class="sec-field-label">方案备注:</div>
-            <el-input
-              v-model="editingSecScheme.remark"
-              placeholder="工艺要求或图纸附注"
+              size="default"
             ></el-input>
           </div>
         </div>
@@ -2648,15 +3100,17 @@
                     {{ idx + 1 }}
                   </td>
                   <td>
+                    <!-- 元件名称：统一使用 name 字段 -->
                     <el-input
-                      v-model="item.componentName"
+                      v-model="item.name"
                       size="small"
                       placeholder="元件名称"
                     ></el-input>
                   </td>
                   <td>
+                    <!-- 型号规格：统一使用 model 字段 -->
                     <el-input
-                      v-model="item.modelSpec"
+                      v-model="item.model"
                       size="small"
                       placeholder="型号规格"
                     ></el-input>
@@ -2758,7 +3212,186 @@
         </template>
       </el-dialog>
 
-      <!-- ③ 从本地物料库选型添加弹窗 -->
+      <!-- ③ 从已有二次方案复制参数与 BOM 弹窗 -->
+      <el-dialog
+        v-model="copySchemeModalVisible"
+        title="选择要复制的二次方案"
+        width="880px"
+        :close-on-click-modal="false"
+        append-to-body
+        top="6vh"
+        custom-class="copy-scheme-dialog"
+      >
+        <div style="padding: 0 4px">
+          <!-- 顶部搜索工具栏与功能提示说明 -->
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              margin-bottom: 12px;
+              gap: 12px;
+            "
+          >
+            <!-- 左侧提示说明 -->
+            <div style="font-size: 13px; color: #64748b">
+              💡
+              选择成熟方案，一键继承其品牌、工费、跨门线、开孔、工艺描述及<b>完整
+              BOM 清单</b>：
+            </div>
+            <!-- 右侧关键字搜索框与刷新按钮 -->
+            <div style="display: flex; align-items: center; gap: 8px">
+              <el-input
+                v-model="copySchemeSearchKw"
+                placeholder="搜索图名/分类/品牌/描述..."
+                size="small"
+                clearable
+                style="width: 240px"
+              >
+                <template #prefix>
+                  <i class="fa-solid fa-magnifying-glass"></i>
+                </template>
+              </el-input>
+              <!-- 刷新方案列表按钮 -->
+              <el-button
+                type="primary"
+                size="small"
+                plain
+                @click="refreshCopySchemes"
+              >
+                <i class="fa-solid fa-arrows-rotate"></i> 刷新
+              </el-button>
+            </div>
+          </div>
+
+          <!-- 方案选择数据表格 -->
+          <el-table
+            :data="filteredCopySchemes"
+            v-loading="copySchemeLoading"
+            border
+            stripe
+            height="380px"
+            size="small"
+            highlight-current-row
+            @row-dblclick="applyCopiedScheme"
+            style="width: 100%; border-radius: 6px"
+          >
+            <!-- 序号列 -->
+            <el-table-column
+              type="index"
+              label="序"
+              width="48"
+              align="center"
+            ></el-table-column>
+            <!-- 所属分类列 -->
+            <el-table-column
+              prop="groupName"
+              label="所属分类"
+              width="100"
+              show-overflow-tooltip
+            >
+              <template #default="scope">
+                <span class="sec-tag-folder" style="font-size: 11px">{{
+                  scope.row.groupName || '通用'
+                }}</span>
+              </template>
+            </el-table-column>
+            <!-- 方案名称与图纸代号列 -->
+            <el-table-column
+              prop="schemeName"
+              label="方案图名/代号"
+              width="140"
+              show-overflow-tooltip
+            >
+              <template #default="scope">
+                <b style="color: #0f172a">{{ scope.row.schemeName }}</b>
+              </template>
+            </el-table-column>
+            <!-- 品牌列 -->
+            <el-table-column
+              prop="brand"
+              label="品牌"
+              width="90"
+              align="center"
+              show-overflow-tooltip
+            >
+              <template #default="scope">
+                <span class="sec-tag-brand" style="font-size: 11px">{{
+                  scope.row.brand || '通用'
+                }}</span>
+              </template>
+            </el-table-column>
+            <!-- 跨门线与开孔参数列 -->
+            <el-table-column label="跨门/开孔" width="110" align="center">
+              <template #default="scope">
+                <span
+                  >{{ scope.row.crossDoorCount || 0 }}根 / {{ scope.row.holeSpec
+                  || '无' }}</span
+                >
+              </template>
+            </el-table-column>
+            <!-- 装配人工工费列 -->
+            <el-table-column label="工费" width="85" align="right">
+              <template #default="scope">
+                <span style="color: #059669; font-weight: 600"
+                  >¥{{ formatMoney(scope.row.laborCost || 0) }}</span
+                >
+              </template>
+            </el-table-column>
+            <!-- BOM 物料项数量指示列 -->
+            <el-table-column label="BOM物料项" width="100" align="center">
+              <template #default="scope">
+                <el-tag size="small" type="success" effect="plain">
+                  {{ getBomItemCount(scope.row) }} 项元件
+                </el-tag>
+              </template>
+            </el-table-column>
+            <!-- 工艺描述列 -->
+            <el-table-column
+              prop="description"
+              label="工艺描述"
+              min-width="160"
+              show-overflow-tooltip
+            ></el-table-column>
+            <!-- 操作列：支持点击按钮或双击行载入 -->
+            <el-table-column
+              label="操作"
+              width="90"
+              align="center"
+              fixed="right"
+            >
+              <template #default="scope">
+                <el-button
+                  type="success"
+                  size="small"
+                  @click="applyCopiedScheme(scope.row)"
+                >
+                  载入复制
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+        <!-- 弹窗底部操作与统计 -->
+        <template #footer>
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            "
+          >
+            <!-- 统计与快捷键提示 -->
+            <span style="font-size: 12px; color: #94a3b8">
+              共查找到 {{ filteredCopySchemes.length }} 个方案，双击行或点击【载入复制】即可继承
+            </span>
+            <!-- 关闭按钮 -->
+            <el-button @click="copySchemeModalVisible = false">关闭</el-button>
+          </div>
+        </template>
+      </el-dialog>
+
+      <!-- ④ 从本地物料库选型添加弹窗 -->
       <el-dialog
         v-model="materialSelectorVisible"
         title="从本地物料库选型添加"
@@ -2809,8 +3442,9 @@
                 <td style="font-weight: 500; color: #1e293b">
                   {{ item.name }}
                 </td>
+                <!-- 型号规格：统一使用 model 字段展示 -->
                 <td style="color: #475569; font-family: monospace">
-                  {{ item.modelSpec }}
+                  {{ item.model || '-' }}
                 </td>
                 <td>
                   <el-tag size="small" effect="plain"
@@ -2861,7 +3495,8 @@
 
     <!-- 核心逻辑脚本 -->
     <script setup>
-      const { createApp, ref, computed, onMounted } = Vue;
+      // 解构 Vue 3 核心组合式 API
+      const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
 
       const app = createApp({
         setup() {
@@ -2911,13 +3546,65 @@
             holeSpec: "圆6",
             laborCost: 180.0,
             layoutDwgName: "",
-            remark: "",
           });
           const secBomList = ref([]); // 当前编辑方案的 BOM 列表
           const materialSelectorVisible = ref(false); // 物料库选型弹窗
           const materialSearchKw = ref(""); // 物料库搜索词
           const materialSearchResults = ref([]); // 物料库搜索结果
           const materialLoading = ref(false); // 物料库加载状态
+
+          // ===== 复制其他方案专属响应式状态与计算逻辑 =====
+          const copySchemeModalVisible = ref(false); // 复制方案选择弹窗可见性
+          const copySchemeLoading = ref(false); // 复制方案加载中状态
+          const copySchemeSearchKw = ref(""); // 复制方案过滤关键字
+          const allCopySchemes = ref([]); // 所有可供复制的二次方案列表
+
+          // 复制方案模糊检索过滤计算属性
+          const filteredCopySchemes = computed(() => {
+            // 若关键字为空直接返回全量方案
+            if (!copySchemeSearchKw.value || !copySchemeSearchKw.value.trim()) {
+              return allCopySchemes.value;
+            }
+            const kw = copySchemeSearchKw.value.trim().toLowerCase();
+            // 多维匹配方案名称、分类、品牌、描述及适用图号
+            return allCopySchemes.value.filter((s) => {
+              const name = (s.schemeName || "").toLowerCase();
+              const group = (s.groupName || "").toLowerCase();
+              const brand = (s.brand || "").toLowerCase();
+              const desc = (s.description || "").toLowerCase();
+              const codes = Array.isArray(s.applicableCodes)
+                ? s.applicableCodes.join(",").toLowerCase()
+                : (s.applicableCodes || "").toLowerCase();
+              return (
+                name.includes(kw) ||
+                group.includes(kw) ||
+                brand.includes(kw) ||
+                desc.includes(kw) ||
+                codes.includes(kw)
+              );
+            });
+          });
+
+          // 计算某方案的 BOM 元器件项数 (兼容数组与序列化 JSON 文本)
+          const getBomItemCount = (scheme) => {
+            // 校验方案有效性
+            if (!scheme) return 0;
+            // 1. 优先读取后端直接返回的 bomItems 数组
+            if (Array.isArray(scheme.bomItems)) return scheme.bomItems.length;
+            // 2. 兼容读取 bom 数组
+            if (Array.isArray(scheme.bom)) return scheme.bom.length;
+            // 3. 兼容反序列化读取 bomJson 字符串
+            if (typeof scheme.bomJson === "string" && scheme.bomJson.trim()) {
+              try {
+                // 解析 BOM 数组并统计项数
+                const list = JSON.parse(scheme.bomJson);
+                return Array.isArray(list) ? list.length : 0;
+              } catch (e) {
+                return 0;
+              }
+            }
+            return 0;
+          };
 
           // 二次方案全部 DWG 图纸数量汇总
           const totalSecondaryDwgCount = computed(() => {
@@ -2931,7 +3618,8 @@
           const secBomMaterialSubtotal = computed(() => {
             return secBomList.value.reduce((sum, item) => {
               const q = Number(item.quantity) || 0;
-              const p = Number(item.quotePrice) || 0;
+              // 提取单价：兼容 price, unitPrice 与 quotePrice
+              const p = Number(item.price ?? item.unitPrice ?? item.quotePrice ?? 0);
               return sum + q * p;
             }, 0);
           });
@@ -2951,10 +3639,48 @@
           // 方案详情模态状态
           const detailVisible = ref(false);
           const currentDetail = ref(null);
-          const detailActiveTab = ref("bom"); // 'drawing' | 'bom' | 'description'
+          // 当前选中的二次回路卡片实体数据
+          const currentSecondaryCard = ref(null);
+          // 标识当前打开的详情大视口是否为二次回路方案
+          const isSecondaryDetail = ref(false);
+          // 详情子 Tab 聚焦索引 (默认聚焦至图纸浏览视口)
+          const detailActiveTab = ref("drawing"); // 'drawing' | 'bom' | 'description'
+          // 判断当前是否处于 DWG 图纸真实矢量浏览模式 (全面兼容二次方案与关联 DWG 图纸的通用企业方案)
+          const isDwgMode = computed(() => {
+            // 若为二次回路方案卡片，直接进入 DWG 矢量模式
+            if (isSecondaryDetail.value && !!currentSecondaryCard.value) return true;
+            // 若为普通方案，检查当前激活的图纸或关联 CAD 图纸是否为 DWG 文件
+            if (currentDetail.value) {
+              // 提取当前图纸路径
+              const curUrl = (currentDetail.value.drawingUrls && currentDetail.value.drawingUrls[activeDrawingIndex.value]) || "";
+              if (typeof curUrl === "string" && curUrl.toLowerCase().endsWith(".dwg")) return true;
+              // 检查方案关联的 CAD 图纸名称与物理路径
+              if (currentDetail.value.cadDrawingName && currentDetail.value.cadDrawingName.toLowerCase().endsWith(".dwg")) return true;
+              if (currentDetail.value.dwgFilePath && currentDetail.value.dwgFilePath.toLowerCase().endsWith(".dwg")) return true;
+            }
+            return false;
+          });
+          // cad-view 真实矢量视口挂载 DOM 引用
+          const cadViewportDomRef = ref(null);
+          // cad-view 视口实例全局持有变量
+          let cadViewerInstance = null;
+          // DWG 矢量图纸 WebGL 渲染 loading 状态
+          const vectorCadLoading = ref(false);
           const activeDrawingIndex = ref(0);
+          // 图纸动态缩放比例 (0.2x ~ 5.0x)
           const imgScale = ref(1);
+          // 图纸顺时针/逆时针旋转角度
           const imgRotation = ref(0);
+          // 图纸画布 X 轴拖拽漫游平移像素
+          const imgTranslateX = ref(0);
+          // 图纸画布 Y 轴拖拽漫游平移像素
+          const imgTranslateY = ref(0);
+          // 是否处于图纸鼠标按住平移状态中
+          const isPanning = ref(false);
+          // 拖拽起始鼠标 X 绝对坐标
+          const panStartX = ref(0);
+          // 拖拽起始鼠标 Y 绝对坐标
+          const panStartY = ref(0);
           const loopMultiplier = ref(1);
           // 计算 BOM 是否处于半选状态
           const isBomIndeterminate = computed(() => {
@@ -3101,8 +3827,8 @@
             loadFolderDwgCards();
           };
 
-          // 加载选定子文件夹下的 DWG 卡片
-          const loadFolderDwgCards = () => {
+          // 加载选定子文件夹下的 DWG 卡片 (优先读取本地磁盘持久化缓存)
+          const loadFolderDwgCards = (forceRefresh = false) => {
             loading.value = true;
             const folderPath = selectedSecondaryFolder.value
               ? selectedSecondaryFolder.value.fullPath
@@ -3114,164 +3840,195 @@
               folderPath: folderPath,
               folderName: folderName,
               keyword: secondarySearchKw.value,
+              forceRefresh: forceRefresh,
             });
           };
 
-          // 二次方案条件检索
+          // 二次方案条件检索 (优先读缓存)
           const onSecondarySearch = () => {
-            loadFolderDwgCards();
+            loadFolderDwgCards(false);
           };
 
-          // 刷新二次卡片
+          // 刷新二次卡片 (点击右上角【刷新图纸】按钮：强制清空当前缓存并重绘)
           const refreshSecondaryCards = () => {
-            loadFolderDwgCards();
+            loadFolderDwgCards(true);
           };
 
-          // 调起 CAD 打开图纸
+          // 调起 CAD 打开图纸 (优先取传入卡片，回退取详情视口当前卡片或方案详情)
           const openCadDrawing = (card) => {
-            if (!card || !card.fullPath) return;
-            postToHost("openDwgInCad", { fullPath: card.fullPath });
+            // 综合提取当前图纸对象
+            const target = card || currentSecondaryCard.value || currentDetail.value;
+            // 提取目标路径 (支持 fullPath、dwgFilePath、或当前选中的 DWG 路径)
+            let fullPath = target?.fullPath || target?.dwgFilePath || "";
+            if (!fullPath && currentDetail.value) {
+              const curUrl = (currentDetail.value.drawingUrls && currentDetail.value.drawingUrls[activeDrawingIndex.value]) || "";
+              if (curUrl && typeof curUrl === "string" && curUrl.toLowerCase().endsWith(".dwg")) {
+                fullPath = curUrl;
+              } else if (currentDetail.value.cadDrawingName) {
+                fullPath = currentDetail.value.cadDrawingName;
+              }
+            }
+            // 路径无效拦截
+            if (!fullPath) {
+              ElementPlus.ElMessage.warning("未找到关联的 DWG 图纸物理文件！");
+              return;
+            }
+            // 呼叫宿主调起外部 AutoCAD
+            postToHost("openDwgInCad", { fullPath: fullPath });
           };
 
-          // 打开编辑二次回路方案与 BOM 弹窗
+          // 打开编辑二次回路方案与 BOM 弹窗 (支持从卡片或详情大视口顶栏触发)
           const openSecondaryEditModal = (card) => {
-            if (!card) return;
+            const target = card || currentSecondaryCard.value;
+            // 校验卡片有效性
+            if (!target) return;
+            // 提取方案数字 ID (未入库时统一赋 0)
+            const schemeIdNum = Number(target.schemeId) || (target.schemeData ? Number(target.schemeData.id) : 0) || 0;
+            // 提取所属分组目录名
+            const groupNameStr = target.folderName || (selectedSecondaryFolder.value ? selectedSecondaryFolder.value.name : "通用");
+            // 提取当前图纸名称
+            const dwgNameStr = target.dwgName || "";
+            // 提取适用回路代号集合 (兼容数组与逗号拼接字符串)
+            let appCodesStr = target.applicableCodes || dwgNameStr;
+            if (target.schemeData && Array.isArray(target.schemeData.applicableCodes)) {
+              appCodesStr = target.schemeData.applicableCodes.join(",");
+            }
+
+            // 初始化编辑表单响应式状态 (统一移除 remark)
             editingSecScheme.value = {
-              id: card.schemeId || "",
-              folderName:
-                card.folderName ||
-                (selectedSecondaryFolder.value
-                  ? selectedSecondaryFolder.value.name
-                  : "通用"),
-              dwgName: card.dwgName || "",
+              id: schemeIdNum,
+              folderName: groupNameStr,
+              dwgName: dwgNameStr,
+              schemeName: card.schemeName || dwgNameStr || "二次回路方案",
               cadDrawingName:
                 card.cadDrawingName ||
-                (card.dwgName ? card.dwgName + ".dwg" : ""),
-              applicableCodes: card.applicableCodes || card.dwgName || "",
-              brand: card.brand || "",
-              description: card.description || "",
+                (card.schemeData ? card.schemeData.cadDrawingName : "") ||
+                (dwgNameStr ? dwgNameStr + ".dwg" : ""),
+              applicableCodes: appCodesStr,
+              brand: card.brand || (card.schemeData ? card.schemeData.brand : "") || "",
+              description: card.description || (card.schemeData ? card.schemeData.description : "") || "",
               crossDoorCount:
                 typeof card.crossDoorCount === "number"
                   ? card.crossDoorCount
-                  : 10,
-              holeSpec: card.holeSpec || "圆6",
+                  : (card.schemeData ? Number(card.schemeData.crossDoorCount) || 0 : 0),
+              holeSpec: card.holeSpec || (card.schemeData ? card.schemeData.holeSpec : "") || "",
               laborCost:
-                typeof card.laborCost === "number" ? card.laborCost : 180.0,
-              layoutDwgName: card.layoutDwgName || "",
-              remark: card.remark || "",
+                typeof card.laborCost === "number"
+                  ? card.laborCost
+                  : (card.schemeData ? Number(card.schemeData.laborCost) || 0 : 0),
+              layoutDwgName: card.layoutDwgName || (card.schemeData ? card.schemeData.cadDrawingName : "") || "",
             };
 
-            // 解析 BOM 清单
+            // 解析 BOM 清单 (优先从 schemeData.bomItems 提取，次之从 bomJson 反序列化)
             let parsedBom = [];
-            if (card.bomJson) {
+            // 标准化 BOM 记录对象，严格统一使用 name 与 model
+            const normalizeBomItem = (b, idx) => {
+              // 提取元件名称 (严格统一使用 name 字段)
+              const name = b.name || "元件";
+              // 提取规格型号 (严格统一使用 model 字段)
+              const model = b.model || "";
+              // 提取参考单价
+              const price = Number(b.price ?? b.unitPrice ?? b.quotePrice ?? 0);
+              return {
+                id: b.id || (Date.now() + idx),
+                name: name,
+                model: model,
+                brand: b.brand || card.brand || "",
+                quantity: Number(b.quantity) || 1,
+                unit: b.unit || "只",
+                price: price,
+                unitPrice: price,
+                quotePrice: price,
+              };
+            };
+
+            if (card.schemeData && Array.isArray(card.schemeData.bomItems) && card.schemeData.bomItems.length > 0) {
+              // 映射 schemeData 中的 bomItems
+              parsedBom = card.schemeData.bomItems.map(normalizeBomItem);
+            } else if (card.bomJson) {
               try {
-                parsedBom = JSON.parse(card.bomJson);
+                // 反序列化 BOM 文本并归一化为统一的 name 与 model
+                const rawList = typeof card.bomJson === "string" ? JSON.parse(card.bomJson) : card.bomJson;
+                // 批量执行规范化解析映射
+                parsedBom = (Array.isArray(rawList) ? rawList : []).map(normalizeBomItem);
               } catch (e) {
                 parsedBom = [];
               }
+            } else if (Array.isArray(card.bomItems)) {
+              // 兼容卡片直接挂载的 bomItems 数组
+              parsedBom = card.bomItems.map(normalizeBomItem);
             }
-            if (!Array.isArray(parsedBom) || parsedBom.length === 0) {
-              // 若数据库尚无 BOM，给出一组标准默认项，参考用户附件
-              parsedBom = [
-                {
-                  id: 1,
-                  componentName: "熔断器",
-                  modelSpec: "RT18-32 4A",
-                  quantity: 1,
-                  unit: "只",
-                  quotePrice: 0.0,
-                },
-                {
-                  id: 2,
-                  componentName: "指示灯",
-                  modelSpec: "AD11 AC220V 白",
-                  quantity: 1,
-                  unit: "只",
-                  quotePrice: 0.0,
-                },
-                {
-                  id: 3,
-                  componentName: "指示灯",
-                  modelSpec: "AD11 AC220V 红",
-                  quantity: 1,
-                  unit: "只",
-                  quotePrice: 0.0,
-                },
-                {
-                  id: 4,
-                  componentName: "指示灯",
-                  modelSpec: "AD11 AC220V 绿",
-                  quantity: 1,
-                  unit: "只",
-                  quotePrice: 0.0,
-                },
-                {
-                  id: 5,
-                  componentName: "时间继电器",
-                  modelSpec: "JSZ3Y 30s AC220V",
-                  quantity: 1,
-                  unit: "只",
-                  quotePrice: 0.0,
-                },
-                {
-                  id: 6,
-                  componentName: "中间继电器",
-                  modelSpec: "HH52P DC24V",
-                  quantity: 1,
-                  unit: "只",
-                  quotePrice: 0.0,
-                },
-                {
-                  id: 7,
-                  componentName: "旋钮",
-                  modelSpec: "3位 黑 4NO 定位",
-                  quantity: 1,
-                  unit: "只",
-                  quotePrice: 0.0,
-                },
-              ];
-            }
+
+            // 赋值当前编辑方案的 BOM 列表
             secBomList.value = parsedBom;
+            // 打开编辑弹窗
             secEditDialogOpen.value = true;
           };
 
           // BOM 自定义添加临时行
           const addCustomBomRow = () => {
+            // 追加新行实体 (统一使用 name 与 model 字段，去除 remark)
             secBomList.value.push({
               id: Date.now(),
-              componentName: "新元件",
-              modelSpec: "",
+              name: "新元件",
+              model: "",
               quantity: 1,
               unit: "只",
+              price: 0.0,
+              unitPrice: 0.0,
               quotePrice: 0.0,
             });
           };
 
           // BOM 删除行
           const deleteSecBomRow = (index) => {
+            // 移除指定索引项
             secBomList.value.splice(index, 1);
           };
 
           // 保存二次方案表单
           const saveSecondarySchemeForm = () => {
+            // 提取并清洗适用回路代号为字符串数组 (后端实体要求为 List<string>)
+            const rawCodes = editingSecScheme.value.applicableCodes || editingSecScheme.value.dwgName || "";
+            const codesArray = typeof rawCodes === "string"
+              ? rawCodes.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
+              : (Array.isArray(rawCodes) ? rawCodes : [editingSecScheme.value.dwgName || "默认"]);
+
+            // 转换 BOM 清单为后端 SecondaryBomItem 格式数组 (统一使用 name 与 model，去除 remark)
+            const bomArray = (secBomList.value || []).map((item) => ({
+              name: item.name || "元件",
+              model: item.model || "",
+              brand: item.brand || editingSecScheme.value.brand || "",
+              quantity: Number(item.quantity) || 1,
+              unit: item.unit || "只",
+              unitPrice: Number(item.price ?? item.unitPrice ?? item.quotePrice ?? 0),
+            }));
+
+            // 组织标准二次回路方案传输实体 (id 严格保证为数值型数字，去除已废弃的 remark)
             const payload = {
-              id: editingSecScheme.value.id || "",
+              id: Number(editingSecScheme.value.id) || 0,
+              groupName:
+                editingSecScheme.value.folderName ||
+                (selectedSecondaryFolder.value ? selectedSecondaryFolder.value.name : "通用"),
+              schemeName:
+                editingSecScheme.value.dwgName ||
+                editingSecScheme.value.cadDrawingName ||
+                "二次方案",
               cadDrawingName:
                 editingSecScheme.value.cadDrawingName ||
-                editingSecScheme.value.dwgName + ".dwg",
-              applicableCodes:
-                editingSecScheme.value.applicableCodes ||
-                editingSecScheme.value.dwgName,
+                (editingSecScheme.value.dwgName ? editingSecScheme.value.dwgName + ".dwg" : ""),
+              applicableCodes: codesArray.length > 0 ? codesArray : [editingSecScheme.value.dwgName || "默认"],
               brand: editingSecScheme.value.brand || "",
               description: editingSecScheme.value.description || "",
-              crossDoorCount:
-                Number(editingSecScheme.value.crossDoorCount) || 0,
+              crossDoorCount: Number(editingSecScheme.value.crossDoorCount) || 0,
               holeSpec: editingSecScheme.value.holeSpec || "",
               laborCost: Number(editingSecScheme.value.laborCost) || 0,
               layoutDwgName: editingSecScheme.value.layoutDwgName || "",
-              remark: editingSecScheme.value.remark || "",
-              bomJson: JSON.stringify(secBomList.value),
+              bomItems: bomArray,
+              bomJson: JSON.stringify(bomArray),
             };
+
+            // 发送 IPC 消息给宿主执行保存入库
             postToHost("saveSecondaryScheme", { data: payload });
           };
 
@@ -3291,18 +4048,162 @@
             });
           };
 
-          // 选用物料添加到 BOM
+          // 选用物料添加到 BOM (严格使用 name 与 model)
           const selectMaterialToBom = (item) => {
+            // 提取型号规格 (严格统一使用 model 字段)
+            const m = item.model || "";
+            // 提取元件名称 (严格统一使用 name 字段)
+            const n = item.name || "元件";
+            // 提取参考价格
+            const p = Number(item.price ?? item.unitPrice ?? 0) || 0.0;
+            // 将选中的物料推入当前编辑 BOM 列表中
             secBomList.value.push({
               id: Date.now(),
-              componentName: item.name || "元件",
-              modelSpec: item.modelSpec || "",
+              name: n,
+              model: m,
+              brand: item.brand || "",
               quantity: 1,
               unit: item.unit || "只",
-              quotePrice: Number(item.price) || 0.0,
+              price: p,
+              unitPrice: p,
+              quotePrice: p,
             });
-            ElementPlus.ElMessage.success(`已添加【${item.name}】至 BOM 清单`);
+            ElementPlus.ElMessage.success(`已添加【${n}】至 BOM 清单`);
             materialSelectorVisible.value = false;
+          };
+
+          // 打开复制已有方案选择弹窗
+          const openCopySchemeModal = () => {
+            // 清空已有检索关键字
+            copySchemeSearchKw.value = "";
+            // 打开弹窗视口
+            copySchemeModalVisible.value = true;
+            // 立即向后台拉取最新的二次方案库列表
+            refreshCopySchemes();
+          };
+
+          // 刷新/查询所有可供复制的二次方案
+          const refreshCopySchemes = () => {
+            // 激活加载中状态
+            copySchemeLoading.value = true;
+            // 发送 IPC 消息获取方案集合
+            postToHost("getSecondarySchemesForCopy", {
+              keyword: copySchemeSearchKw.value || "",
+            });
+          };
+
+          // 确认复制并载入选中的方案参数与 BOM 清单
+          const applyCopiedScheme = (sourceScheme) => {
+            // 校验源方案对象有效性
+            if (!sourceScheme) return;
+            try {
+              // 1. 复制元器件品牌 (兼容 brand / Brand)
+              const brandVal = sourceScheme.brand || sourceScheme.Brand;
+              if (brandVal) {
+                editingSecScheme.value.brand = brandVal;
+              }
+
+              // 2. 复制二次排布图名称 (优先取 layoutDwgName，其次兼容数据库中的 cadDrawingName)
+              const layoutVal = sourceScheme.layoutDwgName || sourceScheme.cadDrawingName || sourceScheme.CadDrawingName;
+              if (layoutVal) {
+                editingSecScheme.value.layoutDwgName = layoutVal;
+              }
+
+              // 3. 复制适用图名集合 (支持数组转换与字符串直接继承)
+              const rawCodes = sourceScheme.applicableCodes || sourceScheme.ApplicableCodes;
+              if (Array.isArray(rawCodes) && rawCodes.length > 0) {
+                editingSecScheme.value.applicableCodes = rawCodes.join(",");
+              } else if (typeof rawCodes === "string" && rawCodes.trim()) {
+                editingSecScheme.value.applicableCodes = rawCodes.trim();
+              }
+
+              // 4. 复制二次线跨门根数 (兼容数字与帕斯卡字段)
+              const crossCount = sourceScheme.crossDoorCount ?? sourceScheme.CrossDoorCount;
+              if (crossCount !== undefined && crossCount !== null) {
+                editingSecScheme.value.crossDoorCount = Number(crossCount) || 0;
+              }
+
+              // 5. 复制开孔要求规格 (兼容 holeSpec / HoleSpec)
+              const holeVal = sourceScheme.holeSpec || sourceScheme.HoleSpec;
+              if (holeVal) {
+                editingSecScheme.value.holeSpec = holeVal;
+              }
+
+              // 6. 复制装配人工工费 (兼容 laborCost / LaborCost)
+              const laborVal = sourceScheme.laborCost ?? sourceScheme.LaborCost;
+              if (laborVal !== undefined && laborVal !== null) {
+                editingSecScheme.value.laborCost = Number(laborVal) || 0;
+              }
+
+              // 7. 复制方案工艺描述 (兼容 description / Description)
+              const descVal = sourceScheme.description || sourceScheme.Description;
+              if (descVal) {
+                editingSecScheme.value.description = descVal;
+              }
+
+              // 8. 提取并兼容解析完整 BOM 明细
+              let sourceBom = [];
+              // 优先匹配后端实体的 bomItems 数组
+              if (Array.isArray(sourceScheme.bomItems)) {
+                sourceBom = sourceScheme.bomItems;
+              } else if (Array.isArray(sourceScheme.bom)) {
+                // 兼容 bom 数组
+                sourceBom = sourceScheme.bom;
+              } else if (typeof sourceScheme.bomJson === "string" && sourceScheme.bomJson.trim()) {
+                try {
+                  // 反序列化 JSON 文本
+                  const parsed = JSON.parse(sourceScheme.bomJson);
+                  if (Array.isArray(parsed)) sourceBom = parsed;
+                } catch (e) {
+                  console.error("[applyCopiedScheme] BOM JSON 解析失败:", e);
+                }
+              }
+
+              // 9. 将 BOM 明细映射为前端编辑清单所需的格式 (严格统一使用 name 与 model)
+              if (Array.isArray(sourceBom) && sourceBom.length > 0) {
+                secBomList.value = sourceBom.map((item, idx) => {
+                  // 提取元件名称 (严格统一使用 name 字段)
+                  const compName = item.name || item.Name || "元件";
+                  // 提取规格型号 (严格统一使用 model 字段)
+                  const model = item.model || item.Model || "";
+                  // 提取品牌
+                  const brand = item.brand || item.Brand || sourceScheme.brand || sourceScheme.Brand || "";
+                  // 提取单位
+                  const unit = item.unit || item.Unit || "只";
+                  // 提取数量
+                  const qty = Number(item.quantity ?? item.Quantity ?? 1) || 1;
+                  // 提取单价 (兼容 quotePrice / unitPrice / price)
+                  const price = Number(item.quotePrice ?? item.unitPrice ?? item.price ?? item.QuotePrice ?? item.UnitPrice ?? 0) || 0.0;
+
+                  return {
+                    id: Date.now() + idx,
+                    name: compName,
+                    model: model,
+                    brand: brand,
+                    unit: unit,
+                    quantity: qty,
+                    price: price,
+                    unitPrice: price,
+                    quotePrice: price,
+                  };
+                });
+              } else {
+                // 若源方案无 BOM 项则置空
+                secBomList.value = [];
+              }
+
+              // 11. 关闭方案复制选择弹窗
+              copySchemeModalVisible.value = false;
+
+              // 12. 弹出成功反馈通知
+              ElementPlus.ElMessage.success(
+                `已成功载入方案【${sourceScheme.schemeName || '目标方案'}】的参数与 ${secBomList.value.length} 项 BOM 清单！`
+              );
+            } catch (err) {
+              // 捕获并提示异常
+              console.error("[applyCopiedScheme] 载入异常:", err);
+              ElementPlus.ElMessage.error("复制方案内容失败，请查看控制台日志！");
+            }
           };
 
           // 切换分类
@@ -3339,10 +4240,300 @@
             postToHost("querySchemes", query);
           };
 
-          // 打开方案详情
+          // 打开一次方案详情
           const openSchemeDetail = (scheme) => {
+            // 标记为一次方案
+            isSecondaryDetail.value = false;
+            currentSecondaryCard.value = null;
             loading.value = true;
             postToHost("getSchemeDetail", { id: scheme.id });
+          };
+
+          // 打开二次回路方案详情大视口 (支持 CAD 图纸全功能漫游与 BOM 清单联动)
+          const openSecondaryDetail = (card) => {
+            if (!card) return;
+            // 记录当前选中的二次方案卡片实体
+            currentSecondaryCard.value = card;
+            // 标记当前详情为二次方案模式
+            isSecondaryDetail.value = true;
+            // 默认聚焦图纸浏览 Tab
+            detailActiveTab.value = "drawing";
+
+            // 解析卡片的 BOM 明细列表 (优先读取 schemeData，次之读取 bomJson 与 bomItems)
+            let parsedBom = [];
+            if (card.schemeData && Array.isArray(card.schemeData.bomItems) && card.schemeData.bomItems.length > 0) {
+              parsedBom = card.schemeData.bomItems.map((b, idx) => ({
+                id: Date.now() + idx,
+                selected: true,
+                sortOrder: idx + 1,
+                name: b.name || "二次元件",
+                model: b.model || "",
+                brand: b.brand || card.brand || "通用",
+                unit: b.unit || "只",
+                quantity: Number(b.quantity) || 1,
+                isWlDoubled: false,
+                catalogPrice: Number(b.catalogPrice ?? b.unitPrice ?? 0),
+                discount: 1.0,
+                quoteDiscount: 1.0,
+                quotePrice: Number(b.unitPrice ?? b.quotePrice ?? 0),
+                materialCode: b.materialCode || "",
+                origin: b.origin || "",
+                category: b.category || "二次元件",
+              }));
+            } else if (card.bomJson) {
+              try {
+                const list = JSON.parse(card.bomJson);
+                if (Array.isArray(list)) {
+                  parsedBom = list.map((b, idx) => ({
+                    id: Date.now() + idx,
+                    selected: true,
+                    sortOrder: idx + 1,
+                    name: b.name || "二次元件",
+                    model: b.model || "",
+                    brand: b.brand || card.brand || "通用",
+                    unit: b.unit || "只",
+                    quantity: Number(b.quantity) || 1,
+                    isWlDoubled: false,
+                    catalogPrice: Number(b.catalogPrice ?? b.unitPrice ?? 0),
+                    discount: 1.0,
+                    quoteDiscount: 1.0,
+                    quotePrice: Number(b.unitPrice ?? b.quotePrice ?? 0),
+                    materialCode: b.materialCode || "",
+                    origin: b.origin || "",
+                    category: b.category || "二次元件",
+                  }));
+                }
+              } catch (e) {
+                parsedBom = [];
+              }
+            } else if (Array.isArray(card.bomItems)) {
+              parsedBom = card.bomItems.map((b, idx) => ({
+                id: Date.now() + idx,
+                selected: true,
+                sortOrder: idx + 1,
+                name: b.name || "二次元件",
+                model: b.model || "",
+                brand: b.brand || card.brand || "通用",
+                unit: b.unit || "只",
+                quantity: Number(b.quantity) || 1,
+                isWlDoubled: false,
+                catalogPrice: Number(b.catalogPrice ?? b.unitPrice ?? 0),
+                discount: 1.0,
+                quoteDiscount: 1.0,
+                quotePrice: Number(b.unitPrice ?? b.quotePrice ?? 0),
+                materialCode: b.materialCode || "",
+                origin: b.origin || "",
+                category: b.category || "二次元件",
+              }));
+            }
+
+            // 构造 currentDetail 对象供详情三大 Tab 渲染
+            currentDetail.value = {
+              id: String(card.schemeId || (card.schemeData ? card.schemeData.id : 0) || Date.now()),
+              schemeName: card.schemeName || card.dwgName || "二次回路方案",
+              cabinetModel: card.folderName || "二次方案",
+              dimensions: "标准二次屏",
+              creatorName: "电气天下",
+              updateTime: card.updateTime ? card.updateTime.substring(0, 10) : "2025-01-14",
+              brand: card.brand || (card.schemeData ? card.schemeData.brand : "") || "通用",
+              description: card.description || (card.schemeData ? card.schemeData.description : "") || "适用于二次回路控制与保护系统。",
+              drawingUrls: card.previewBase64 ? [card.previewBase64] : [],
+              thumbnailUrl: card.previewBase64 || "",
+              bomItems: parsedBom,
+              isFavorite: false,
+            };
+
+            // 重置视口交互状态：居中且 100% 缩放
+            activeDrawingIndex.value = 0;
+            imgScale.value = 1;
+            imgRotation.value = 0;
+            imgTranslateX.value = 0;
+            imgTranslateY.value = 0;
+            loopMultiplier.value = 1;
+            // 打开详情大视口
+            detailVisible.value = true;
+            // 异步调度纯前端 cad-view 引擎加载该方案关联的 DWG 真实矢量图纸
+            const targetDwgPath = card.fullPath || card.dwgName || "";
+            if (targetDwgPath) {
+              loadVectorDwg(targetDwgPath);
+            }
+          };
+
+          // 关闭方案详情大视口并重置 loading 状态
+          const closeDetail = () => {
+            detailVisible.value = false;
+            vectorCadLoading.value = false;
+          };
+
+          // 初始化 cad-view 真实矢量视口实例 (基于 WebGL + WebAssembly 矢量引擎)
+          const initCadViewerInstance = () => {
+            if (!cadViewportDomRef.value) return;
+
+            // 若已持有实例及其 canvas，检测其是否仍附着于当前活动容器
+            if (cadViewerInstance && cadViewerInstance.canvas) {
+              // 容错自愈保障：若当前活动 DOM 容器不含该 canvas，重新追加挂载至当前视口容器
+              if (!cadViewportDomRef.value.contains(cadViewerInstance.canvas)) {
+                cadViewportDomRef.value.innerHTML = "";
+                cadViewportDomRef.value.appendChild(cadViewerInstance.canvas);
+                if (cadViewerInstance.nativeHost) {
+                  cadViewportDomRef.value.appendChild(cadViewerInstance.nativeHost);
+                }
+              }
+              // 触发重绘更新视口宽高尺寸
+              if (typeof cadViewerInstance.resize === "function") {
+                cadViewerInstance.resize();
+              }
+              return;
+            }
+
+            // 校验 cad-view 全局库是否存在
+            if (
+              typeof window.CadViewerLib === "undefined" ||
+              !window.CadViewerLib.CadViewer
+            ) {
+              // 打印库未加载提示
+              console.warn("[cad-view] CadViewerLib 库尚未加载就绪");
+              return;
+            }
+            try {
+              // 清空容器残留
+              cadViewportDomRef.value.innerHTML = "";
+              // 实例化 cad-view 矢量视口 (融入云方案中心舞台背景)
+              cadViewerInstance = new window.CadViewerLib.CadViewer({
+                container: cadViewportDomRef.value,
+                theme: "dark",
+                wasmPath: "cad-viewer/wasm/",
+                workerUrl: "cad-viewer/wasm/dwg-worker.js",
+                canvasOptions: {
+                  background: "#090d16",
+                  foreground: "#ffffff",
+                  contrastMode: "adaptive",
+                  minColorContrast: 2.4,
+                },
+              });
+            } catch (err) {
+              // 捕获并打印初始化异常
+              console.error("[cad-view] 视口初始化异常:", err);
+            }
+          };
+
+          // 调度纯前端 cad-view 引擎加载目标 DWG 图纸文件
+          const loadVectorDwg = (filePath) => {
+            if (!filePath) return;
+            // 开启 CAD 矢量渲染加载中遮罩
+            vectorCadLoading.value = true;
+            // 确保 DOM 挂载完成并初始化矢量视口
+            nextTick(() => {
+              try {
+                // 初始化矢量视口实例
+                initCadViewerInstance();
+                // 向宿主发起获取 DWG 原始二进制流请求
+                postToHost("getDwgBinary", { filePath: filePath });
+              } catch (e) {
+                // 捕获请求异常
+                console.error("[cad-view] 请求 DWG 二进制失败:", e);
+                ElementPlus.ElMessage.error("请求 DWG 二进制失败: " + (e?.message || e));
+                vectorCadLoading.value = false;
+              }
+            });
+          };
+
+          // 监听 Tab 切换：当切入图纸 Tab 时触发 cad-view 自适应居中拟合
+          watch(detailActiveTab, (newTab) => {
+            // 判断是否切入图纸 Tab 且处于 DWG 模式
+            if (newTab === "drawing" && isDwgMode.value) {
+              nextTick(() => {
+                // 视口未实例化时补初始化
+                if (!cadViewerInstance) {
+                  initCadViewerInstance();
+                } else if (typeof cadViewerInstance.resize === "function") {
+                  // 更新视口像素尺寸
+                  cadViewerInstance.resize();
+                }
+                // 自适应全图居中拟合
+                if (cadViewerInstance && typeof cadViewerInstance.fit === "function") {
+                  cadViewerInstance.fit("auto");
+                }
+              });
+            }
+          });
+
+          // 监听图纸相册缩略图切换
+          watch(activeDrawingIndex, (newIdx) => {
+            // 检查切换到的目标图纸是否为 DWG 文件
+            if (currentDetail.value && Array.isArray(currentDetail.value.drawingUrls)) {
+              const targetUrl = currentDetail.value.drawingUrls[newIdx];
+              // 若为 DWG 路径则动态触发矢量重载
+              if (targetUrl && typeof targetUrl === "string" && targetUrl.toLowerCase().endsWith(".dwg")) {
+                loadVectorDwg(targetUrl);
+              }
+            }
+          });
+
+          // 图纸鼠标按下开始拖拽平移漫游
+          const onCanvasMouseDown = (e) => {
+            // 仅响应鼠标左键拖拽
+            if (e.button !== 0) return;
+            isPanning.value = true;
+            panStartX.value = e.clientX - imgTranslateX.value;
+            panStartY.value = e.clientY - imgTranslateY.value;
+          };
+
+          // 图纸鼠标移动执行平移漫游
+          const onCanvasMouseMove = (e) => {
+            if (!isPanning.value) return;
+            imgTranslateX.value = e.clientX - panStartX.value;
+            imgTranslateY.value = e.clientY - panStartY.value;
+          };
+
+          // 图纸鼠标松开或移出画布结束拖拽
+          const onCanvasMouseUp = () => {
+            isPanning.value = false;
+          };
+
+          // 图纸鼠标滚轮缩放 (CAD 级平滑缩放，范围 0.2x ~ 5x)
+          const onCanvasWheel = (e) => {
+            const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+            const newScale = imgScale.value * zoomFactor;
+            // 锁定缩放范围在 0.2 到 5 倍之间
+            if (newScale >= 0.2 && newScale <= 5.0) {
+              imgScale.value = Math.round(newScale * 100) / 100;
+            }
+          };
+
+          // 复位图纸视角 (居中 100% / CAD 真实矢量自适应拟合)
+          const resetCanvasView = () => {
+            if (isDwgMode.value && cadViewerInstance && typeof cadViewerInstance.fit === "function") {
+              cadViewerInstance.fit("auto");
+            }
+            imgScale.value = 1;
+            imgRotation.value = 0;
+            imgTranslateX.value = 0;
+            imgTranslateY.value = 0;
+          };
+
+          // 放大图纸
+          const zoomIn = () => {
+            if (imgScale.value < 5.0) {
+              imgScale.value = Math.min(5.0, Math.round((imgScale.value + 0.2) * 10) / 10);
+            }
+          };
+
+          // 缩小图纸
+          const zoomOut = () => {
+            if (imgScale.value > 0.2) {
+              imgScale.value = Math.max(0.2, Math.round((imgScale.value - 0.2) * 10) / 10);
+            }
+          };
+
+          // 逆时针旋转 90 度
+          const rotateLeft = () => {
+            imgRotation.value = (imgRotation.value - 90 + 360) % 360;
+          };
+
+          // 顺时针旋转 90 度
+          const rotateRight = () => {
+            imgRotation.value = (imgRotation.value + 90) % 360;
           };
 
           // 全选/反选 BOM
@@ -3494,8 +4685,8 @@
                     bomItems: [
                       {
                         sortOrder: 1,
-                        componentName: "塑壳断路器",
-                        modelSpec: "NM1-250S/3300",
+                        name: "塑壳断路器",
+                        model: "NM1-250S/3300",
                         brand: "正泰",
                         unit: "台",
                         quantity: 1,
@@ -3504,8 +4695,8 @@
                       },
                       {
                         sortOrder: 2,
-                        componentName: "微型断路器",
-                        modelSpec: "DZ47-63 1P 16A",
+                        name: "微型断路器",
+                        model: "DZ47-63 1P 16A",
                         brand: "正泰",
                         unit: "台",
                         quantity: 6,
@@ -3593,8 +4784,18 @@
                     activeDrawingIndex.value = 0;
                     imgScale.value = 1;
                     imgRotation.value = 0;
-                    loopMultiplier.value = 1;
                     detailVisible.value = true;
+                    // 若当前方案附带有 DWG 图纸文件，自动调度 cad-view 执行真实矢量开图
+                    const drawingUrls = currentDetail.value.drawingUrls || [];
+                    const firstDrawing = drawingUrls[0] || "";
+                    const cadName = currentDetail.value.cadDrawingName || currentDetail.value.dwgFilePath || "";
+                    if (firstDrawing && typeof firstDrawing === "string" && firstDrawing.toLowerCase().endsWith(".dwg")) {
+                      // 加载第一张 DWG 图纸
+                      loadVectorDwg(firstDrawing);
+                    } else if (cadName && typeof cadName === "string" && cadName.toLowerCase().endsWith(".dwg")) {
+                      // 加载关联的 CAD 图纸
+                      loadVectorDwg(cadName);
+                    }
                   }
                 }
                 // 3. 切换收藏响应
@@ -3682,6 +4883,36 @@
                       "二次回路方案与 BOM 保存成功！",
                     );
                     secEditDialogOpen.value = false;
+                    // 若当前处于详情大视口模式，即刻同步更新当前详情的 BOM 与工艺参数
+                    if (detailVisible.value && isSecondaryDetail.value && currentSecondaryCard.value) {
+                      currentDetail.value.schemeName = editingSecScheme.value.schemeName || editingSecScheme.value.dwgName || currentDetail.value.schemeName;
+                      currentDetail.value.brand = editingSecScheme.value.brand || currentDetail.value.brand;
+                      currentDetail.value.description = editingSecScheme.value.description || currentDetail.value.description;
+                      currentSecondaryCard.value.crossDoorCount = Number(editingSecScheme.value.crossDoorCount) || 0;
+                      currentSecondaryCard.value.laborCost = Number(editingSecScheme.value.laborCost) || 0;
+                      currentSecondaryCard.value.materialCost = secBomMaterialSubtotal.value;
+                      currentSecondaryCard.value.holeSpec = editingSecScheme.value.holeSpec || "";
+                      currentSecondaryCard.value.layoutDwgName = editingSecScheme.value.layoutDwgName || "";
+                      // 映射最新的 BOM 清单至详情大视口 (统一使用 name 与 model)
+                      currentDetail.value.bomItems = (secBomList.value || []).map((item, idx) => ({
+                        id: item.id || Date.now() + idx,
+                        selected: true,
+                        sortOrder: idx + 1,
+                        name: item.name || "二次元件",
+                        model: item.model || "",
+                        brand: item.brand || editingSecScheme.value.brand || "通用",
+                        unit: item.unit || "只",
+                        quantity: Number(item.quantity) || 1,
+                        isWlDoubled: false,
+                        catalogPrice: Number(item.quotePrice ?? item.unitPrice ?? 0),
+                        discount: 1.0,
+                        quoteDiscount: 1.0,
+                        quotePrice: Number(item.quotePrice ?? item.unitPrice ?? 0),
+                        materialCode: "",
+                        origin: "",
+                        category: "二次元件",
+                      }));
+                    }
                     loadFolderDwgCards();
                   } else {
                     ElementPlus.ElMessage.error(
@@ -3693,6 +4924,66 @@
                 else if (action === "searchMaterialComponentsResult") {
                   materialLoading.value = false;
                   materialSearchResults.value = data || [];
+                }
+                // 13. 获取可供复制的二次方案列表回传
+                else if (action === "getSecondarySchemesForCopyResult") {
+                  copySchemeLoading.value = false;
+                  allCopySchemes.value = data || [];
+                }
+                // 14. 接收 DWG 原始二进制 Base64 数据并交给纯前端 cad-view 矢量视口渲染
+                else if (action === "dwgBinaryLoaded") {
+                  if (data && data.success && data.base64Data) {
+                    try {
+                      // 将 Base64 文本解码转换为二进制 Uint8Array 字节数组
+                      const binaryStr = atob(data.base64Data);
+                      const len = binaryStr.length;
+                      const bytes = new Uint8Array(len);
+                      for (let i = 0; i < len; i++) {
+                        bytes[i] = binaryStr.charCodeAt(i);
+                      }
+                      // 组装文件名
+                      const fileName = data.fileName || (currentSecondaryCard.value?.dwgName ? currentSecondaryCard.value.dwgName + ".dwg" : (currentDetail.value?.schemeName ? currentDetail.value.schemeName + ".dwg" : "scheme.dwg"));
+                      // 组装原生 File 实体对象
+                      const fileObj = new File([bytes], fileName, {
+                        type: "application/octet-stream",
+                      });
+                      // 确保视口容器实例已正确初始化且尺寸更新与自愈挂载
+                      initCadViewerInstance();
+                      if (cadViewerInstance && typeof cadViewerInstance.resize === "function") {
+                        cadViewerInstance.resize();
+                      }
+                      // 调度 WebGL 矢量视口执行 CAD 真实矢量图元渲染
+                      if (cadViewerInstance) {
+                        cadViewerInstance
+                          .load({ file: fileObj, fileName: fileName })
+                          .then(() => {
+                            // 渲染完成解除加载中遮罩
+                            vectorCadLoading.value = false;
+                            // 渲染成功后自适应居中全图
+                            if (typeof cadViewerInstance.fit === "function") {
+                              cadViewerInstance.fit("auto");
+                            }
+                          })
+                          .catch((loadErr) => {
+                            // 打印并向用户呈现开图解析异常
+                            console.error("[cad-view] 矢量渲染异常:", loadErr);
+                            ElementPlus.ElMessage.error("CAD 矢量图纸解析异常: " + (loadErr?.message || loadErr));
+                            vectorCadLoading.value = false;
+                          });
+                      } else {
+                        vectorCadLoading.value = false;
+                      }
+                    } catch (err) {
+                      // 捕获 Base64 解码异常
+                      console.error("[cad-view] 解析 Base64 图纸流失败:", err);
+                      ElementPlus.ElMessage.error("解析 Base64 图纸流失败: " + (err?.message || err));
+                      vectorCadLoading.value = false;
+                    }
+                  } else {
+                    // 后端未读取到数据时的友好提示
+                    ElementPlus.ElMessage.warning(data?.errorMessage || "未能读取到该 DWG 图纸的原始二进制数据！");
+                    vectorCadLoading.value = false;
+                  }
                 }
               });
             }
@@ -3788,6 +5079,39 @@
             openMaterialSelector,
             onSearchMaterials,
             selectMaterialToBom,
+            // 复制其他方案相关导出项
+            copySchemeModalVisible,
+            copySchemeLoading,
+            copySchemeSearchKw,
+            allCopySchemes,
+            filteredCopySchemes,
+            getBomItemCount,
+            openCopySchemeModal,
+            refreshCopySchemes,
+            applyCopiedScheme,
+            // 二次回路方案大视口与 CAD 图纸漫游交互导出
+            currentSecondaryCard,
+            isSecondaryDetail,
+            imgTranslateX,
+            imgTranslateY,
+            isPanning,
+            openSecondaryDetail,
+            onCanvasMouseDown,
+            onCanvasMouseMove,
+            onCanvasMouseUp,
+            onCanvasWheel,
+            resetCanvasView,
+            zoomIn,
+            zoomOut,
+            rotateLeft,
+            rotateRight,
+            // cad-view 真实矢量视口相关导出
+            isDwgMode,
+            cadViewportDomRef,
+            vectorCadLoading,
+            loadVectorDwg,
+            initCadViewerInstance,
+            closeDetail,
           };
         },
       });

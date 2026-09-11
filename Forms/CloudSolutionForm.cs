@@ -177,11 +177,19 @@ namespace ExcelAddInDemo.Forms
                     }
                 }
 
-                // 若找到有效 HTML 物理文件则执行导航
-                if (!string.IsNullOrEmpty(targetHtml))
+                // 若找到有效 HTML 物理文件则执行虚拟主机映射并导航
+                if (!string.IsNullOrEmpty(targetHtml) && File.Exists(targetHtml))
                 {
-                    // 导航加载本地 HTML 文件
-                    _webView.CoreWebView2.Navigate(new Uri(targetHtml).AbsoluteUri);
+                    // 提取资源根目录物理路径
+                    string resDir = Path.GetDirectoryName(targetHtml)!;
+                    // 将本地资源目录安全映射为 https://appassets.local (确保 WebWorker 与 WebAssembly 零跨域阻断)
+                    _webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                        "appassets.local",
+                        resDir,
+                        Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
+
+                    // 导航至虚拟主机安全页面，彻底解决 file:// 协议下 Web Worker 与 WASM 的 CORS / fetch 跨域拦截
+                    _webView.Source = new Uri("https://appassets.local/cloud_solution.html");
                 }
                 else
                 {
@@ -382,12 +390,19 @@ namespace ExcelAddInDemo.Forms
                         PostMessageSafe("scanSecondaryFoldersResult", folders);
                         break;
 
-                    // 15. 获取指定子文件夹下的 DWG 卡片列表 (含数据库参数与缩略图)
+                    // 15. 获取指定子文件夹下的 DWG 卡片列表 (含数据库参数、缩略图与强制刷新控制)
                     case "getFolderDwgCards":
                         string fPath = GetStringProp("folderPath");
                         string fName = GetStringProp("folderName");
                         string kw = GetStringProp("keyword");
-                        var cards = _controller.GetFolderDwgCards(fPath, fName, string.IsNullOrEmpty(kw) ? null : kw);
+                        bool forceRefresh = false;
+                        // 尝试从顶层或 data 对象中提取 forceRefresh 布尔标志
+                        if (dataEl.TryGetProperty("forceRefresh", out var frEl) ||
+                            (dataEl.TryGetProperty("data", out var dInner) && dInner.TryGetProperty("forceRefresh", out frEl)))
+                        {
+                            try { forceRefresh = frEl.GetBoolean(); } catch { }
+                        }
+                        var cards = _controller.GetFolderDwgCards(fPath, fName, string.IsNullOrEmpty(kw) ? null : kw, forceRefresh);
                         PostMessageSafe("getFolderDwgCardsResult", cards);
                         break;
 
@@ -418,6 +433,25 @@ namespace ExcelAddInDemo.Forms
                         string mKw = GetStringProp("keyword");
                         var compList = _controller.SearchMaterialComponents(mKw);
                         PostMessageSafe("searchMaterialComponentsResult", compList);
+                        break;
+
+                    // 19. 获取所有二次回路方案列表 (供“复制其他方案”选择使用)
+                    case "getSecondarySchemesForCopy":
+                        string copyKw = GetStringProp("keyword");
+                        var schemesForCopy = _controller.GetSecondarySchemesForCopy(copyKw);
+                        PostMessageSafe("getSecondarySchemesForCopyResult", schemesForCopy);
+                        break;
+
+                    // 20. 提取 DWG 原始二进制 Base64 数据供前端 cad-view 矢量视口渲染
+                    case "getDwgBinary":
+                        string binPath = GetStringProp("filePath");
+                        if (!string.IsNullOrWhiteSpace(binPath))
+                        {
+                            // 调度控制器读取二进制流
+                            var binData = _controller.GetDwgBinary(binPath);
+                            // 将数据回传前端 WebView2
+                            PostMessageSafe("dwgBinaryLoaded", binData);
+                        }
                         break;
                 }
             }

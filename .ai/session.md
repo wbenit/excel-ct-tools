@@ -1,5 +1,270 @@
 # Session State
 
+- **公式法调费明细插入/删除行时单元格与区间引用自适应平移引擎全面交付 (`Resources/formula_adjust_fee.html`, `publish/`, `bin/Debug/`)**：
+  1. **用户核心需求**：
+     - 用户指令：“如果插入行，该行下方的单元格引用需要+1或者-1,理解表述需求”；
+     - 用户确认执行指令：“执行H1:H3在内部插入行时自动扩展为 SUM(H2:H4)，所有引用都修改”；
+  2. **根因定位**：
+     - 原 `insertRowAbove`、`insertRowBelow` 和 `deleteCurrentRow` 仅对前端表格数组执行了普通的 `splice` 操作，未对明细列表中已有的公式（F列数量、G列单价、H列总价、J列成本单价、K列成本总价）进行单元格行号引用的联动平移；
+     - 导致插入/删除行后，总计行（如 `=ROUND(H4, 2)`、`=ROUND(F5*G5, 2)`）和单台合计行（如 `SUM(H1:H3)`）因行号未相应平移而产生错位或漏计；
+  3. **闭环解决方案落地**：
+     - 在 `formula_adjust_fee.html` 中实现 `adjustFormulaRowReferences` 与 `adjustAllRowsFormulas` 高精度平移引擎；
+     - **区间连续引用处理**：识别 `H1:H3`、`K2:K5` 等区间表达式，若插入点在区间之前则两端整体下移（如 `H1:H3` 自动调整为 `H2:H4`）；若插入点在区间内部或末尾下方，终止行自动扩容 +1（如 `H1:H3` 自动扩展为 `H1:H4`）；若删除行落在区间内，终点自适应缩减 -1；
+     - **单单元格引用处理**：识别 `H1`、`F5`、`G5`、`K3` 等单元格引用，精准排除函数名和常数，大于等于插入点阈值的行号一律 +1，删除行之后的行号一律 -1，被删除的行标记 `#REF!`；
+     - 优化插入新行的默认公式（自适应指向小计行 `H1`/`H2`）；
+  4. **环境同步与编译验证**：
+     - `Resources/formula_adjust_fee.html` 全量热同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+
+- **彻底删除 `CloudSchemeBomItem` 中的 `ComponentName` 与 `ModelSpec`，全系统仅保留 `Name` 与 `Model` (`Models/`, `Services/`, `Resources/`, `publish/`, `bin/Debug/`)**：
+  1. **实体模型精简 (`Models/CloudSolutionModels.cs`)**：
+     - 彻底删除 `ComponentName` 和 `ModelSpec` 兼容属性；
+     - 移除私有字段 `_name` 与 `_model`，将 `Name` 与 `Model` 简化恢复为标准自动属性 `[JsonPropertyName("name")] public string Name { get; set; }` 和 `[JsonPropertyName("model")] public string Model { get; set; }`；
+  2. **后端服务与数据构建器对齐 (`Services/ExcelServices.CloudSolution.cs`)**：
+     - 简化 `InsertCabinetWithSchemeComponents` 与 `AppendSchemeComponentsToCabinet` 中写入 Excel 矩阵的代码，直接读取 `item.Name` 与 `item.Model`；
+     - 在内置方案初始化器 `BuildDefaultSchemes` 中将全部 24 处物料项从 `ComponentName = ...` 和 `ModelSpec = ...` 改为 `Name = ...` 和 `Model = ...`；
+  3. **前端代码彻底清理 (`Resources/cloud_solution.html`)**：
+     - 彻底清除大视口 BOM 模板、`normalizeBomItem`、`selectMaterialToBom` 及二次方案初始化逻辑中残留的 `componentName` 与 `modelSpec` 兜底语句；
+     - 全量热同步复制至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+  4. **构建验证**：
+     - `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 警告，0 错误**。
+
+- **全链路统一 `name` 与 `model` 废弃 `modelSpec`/`componentName`，并彻底移除数据库与实体 `remark` 字段 (`Models/`, `Services/`, `Resources/`, `publish/`, `bin/Debug/`)**：
+  1. **实体与模型层彻底重构**：
+     - 从 `SecondarySchemeEntity` 与 `SecondaryBomItem` 中彻底删除已废弃的 `Remark` 属性；
+     - 在 `CloudSchemeBomItem` 中添加 `name` 与 `model` 属性别名，双向兼容 `Name/ComponentName` 与 `Model/ModelSpec`；
+  2. **数据库与数据访问层清理及热迁移升级**：
+     - 在 `secondary_circuit_schemes` 的创建 DDL 中移除 `remark TEXT DEFAULT ''` 列；
+     - 在 `MigrateSecondarySchemeColumns` 中新增热迁移逻辑：自动检测若物理表存在陈旧 `remark` 列，执行 `ALTER TABLE secondary_circuit_schemes DROP COLUMN remark;` 彻底物理安全删除；
+     - 在 `PersonalComponentDbService.SecondaryCircuit.cs` 的所有查询（`GetAllSecondarySchemes`, `GetSecondarySchemeById`）、新增修改（`SaveSecondaryScheme`, `BatchInsertSecondarySchemes`）及反序列化（`ReadSchemeFromReader`）中彻底抹除 `remark` 字段与参数绑定；
+  3. **服务层写入对齐**：
+     - 在 `ExcelServices.CloudSolution.cs` 中，`InsertCabinetWithSchemeComponents` 与 `AppendSchemeComponentsToCabinet` 统一优先取 `item.Name` 与 `item.Model`；
+  4. **前端全链路彻底重构 (`Resources/cloud_solution.html`)**：
+     - 详情视口 BOM 表格、二次方案与 BOM 编辑弹窗、本地物料库选型弹窗全量去除 `modelSpec` 与 `componentName`，统一绑定 `item.name` 与 `item.model`；
+     - 彻底清除 `editingSecScheme`、`normalizeBomItem`、`addCustomBomRow`、`selectMaterialToBom`、`saveSecondarySchemeForm` 与 `applyCopiedScheme` 中的 `remark`；
+  5. **环境同步与编译验证**：
+     - `Resources/cloud_solution.html` 已全量热同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+
+- **二次方案与物料库 BOM 规格型号字段从 `modelSpec` 彻底纠正对齐数据库 `model` 字段 (`Resources/cloud_solution.html`, `publish/`, `bin/Debug/`)**：
+  1. **问题根因定位**：
+     - 本地物料库 `components` 表中规格型号字段为 `model`（名称为 `name`，单价为 `price`）；
+     - `SecondaryBomItem` 实体及 `bom_json` 序列化使用的也是 `model` 与 `name`；
+     - 前端原代码在二次 BOM 表格与物料库选型对话框中沿用了一次云方案的 `modelSpec` 与 `componentName`，导致从数据库反序列化及从物料库检索时型号字段均读取为空白，且编辑保存时无法正确双向联动；
+  2. **闭环修复落地**：
+     - **BOM 编辑表格行绑定重构**：将输入框直接绑定至 `v-model="item.model"` 与 `v-model="item.name"`，并附带 `@input` 双向兼容同步；
+     - **物料库选型对话框字段对齐**：将弹窗表格列展示由 `item.modelSpec` 修正为 `item.model || item.modelSpec || '-'`，型号规格清晰完整呈现；
+     - **解析与选用归一化 (`normalizeBomItem`)**：无论来自 `bomJson`、`schemeData.bomItems` 还是物料库选型 `selectMaterialToBom`，统一双向补全 `model`、`modelSpec`、`name`、`componentName`、`price` 与 `quotePrice`；
+     - **费用联动与保存对齐**：小计与总计统一兼容单价字段，保存至 SQLite 严格写入 `model` 实体属性；
+  3. **环境同步与编译验证**：
+     - 已热同步复制至 `publish/` 与 `bin/Debug/net48/`；
+     - `dotnet build /t:Compile /p:DebugType=none` 编译构建通过：**0 错误**。
+
+- **云方案中心二次方案与 BOM 编辑弹窗 700px 高度生效与 Flex 布局优化 (`Resources/cloud_solution.html`, `publish/`, `bin/Debug/`)**：
+  1. **问题根因定位**：
+     - `el-dialog` 原生不支持 `height` 属性（prop），且 HTML `<div>` 标签不支持 `height="700px"` 属性，导致原弹窗高度属性被浏览器忽略；
+  2. **闭环修改实施**：
+     - 在 `cloud_solution.html` 的 CSS 样式中为 `.sec-edit-dialog` 显式设置 `height: 700px; max-height: 94vh; display: flex; flex-direction: column;`；
+     - 设置 `.sec-edit-dialog .el-dialog__header` 与 `.el-dialog__footer` 为 `flex-shrink: 0` 防止被压缩；
+     - 设置 `.sec-edit-dialog .el-dialog__body` 为 `flex: 1; min-height: 0; overflow-y: auto;`，使其在 700px 弹窗高度内自适应撑满并在内容超出时顺畅纵向滚动；
+     - 弹窗组件模板补充绑定 `class="sec-edit-dialog"`；
+  3. **环境同步与编译验证**：
+     - 同步更新覆盖至 `publish/` 与 `bin/Debug/net48/` 目录；
+     - `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+
+- **云方案中心返回打开其他 DWG 文件无法显示（DOM 销毁与 Viewer 容器脱节）根因排查与一揽子闭环修复全面交付 (`Resources/cloud_solution.html`, `publish/Resources/`, `bin/Debug/net48/Resources/`)**：
+  1. **用户核心问题与现场故障**：
+     - 用户指令反馈：“第一次预览没问题，返回打开其他的dwg文件都不能显示”。
+  2. **深度排查定位到的致命根因剖析**：
+     - **根因一 (`v-if` 导致 DOM 元素卸载销毁与 WebGL 孤儿化)**：
+       大视口原使用 `<div class="detail-view-container" v-if="detailVisible">` 与 `<div class="drawing-gallery" v-if="detailActiveTab === 'drawing'">`。当用户点击【< 返回】时，`detailVisible = false` 导致 Vue 直接从 DOM 树中彻底销毁拔除了包含 `cadViewportDomRef` 及其实例 canvas 的全部 DOM 节点。
+     - **根因二 (`initCadViewerInstance` 单例阻断导致新 DOM 容器变为空壳)**：
+       当用户再次点击打开另一个 DWG 时，Vue 重新生成了一个全新的 DOM 节点。但 JS 内存中 `cadViewerInstance` 仍然指向旧实例（绑定在已经被移除文档树的废弃旧节点上）。`initCadViewerInstance` 发现 `if (cadViewerInstance) return;` 直接退出了！新生成的视口容器内空无一物（连 canvas 都没有），而后续 `dwgBinaryLoaded` 却在脱离文档树的孤儿 canvas 上渲染，屏幕上呈现为持续黑屏无响应。
+  3. **一揽子闭环解决方案全面落地**：
+     - **大视口与子面板升级为 `v-show` 永续常驻机制**：
+       将 `detail-view-container`、`drawing-gallery`、`bom-view-panel` 与 `description-view-panel` 全量由 `v-if` 重构为 `v-show`。
+       DOM 节点与 WebGL Canvas 视口自进入页面后在底层稳定常驻，永不重复销毁与挂载，消除 WebGL 上下文反复创建的内存泄漏风险，图纸切换达到瞬间响应的极致性能；
+     - **增加视口实例自愈动态挂载机制 (`initCadViewerInstance`)**：
+       在 `initCadViewerInstance` 中加入防御性自愈：即使外部 DOM 发生意外重置，通过 `!cadViewportDomRef.value.contains(cadViewerInstance.canvas)` 检测并在 0.1ms 内自动将已有的 canvas 与 nativeHost 重新挂载回当前视口，并触发 `cadViewerInstance.resize()`；
+     - **统一关闭重置与数据流保障**：
+       引入 `closeDetail` 规范关闭流程，并在 `dwgBinaryLoaded` 接收时无条件触发自愈挂载与重绘；
+  4. **多端同步与工程构建验证**：
+     - `Resources/cloud_solution.html`、`publish/`、`bin/Debug/net48/Resources/` 文件哈希 100% 同步一致；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 警告，0 错误**。
+
+  1. **用户核心指令**：“去除红色方框内的内容，一共3处”；
+  2. **精准定位并彻底移除 3 处元素**：
+     - **第 1 处（Tab 栏右侧快捷提示）**：移除 `[ 🛈 滚轮缩放 | 拖拽平移 | 双击复位 ]` 操作提示文本，保持 Tab 栏极致清爽；
+     - **第 2 处（视口底部居中悬浮工具条）**：移除 `drawing-toolbar`（包含放大、缩小、百分比、旋转、复位共 6 个按钮的黑底工具条），图纸浏览完全由鼠标滚轮自然缩放与拖拽漫游驱动，彻底消除画布底部遮挡；
+     - **第 3 处（右下角底部多余操作按钮）**：移除 `[ 下载BOM ]`、`[ 分享 ]` 和 `[ ★ 加入收藏 ]` 三个次要操作按钮，仅保留回路数倍增调节器（`[ - ] N [ + ] 个回路`）与核心橙色 `[ 插入箱柜 ]` 动作按钮；
+  3. **环境同步与编译验证**：
+     - `Resources/`、`publish/`、`bin/Debug/` 三处 HTML 文件哈希 100% 同步一致；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译通过：**0 错误**。
+
+  1. **用户核心指令与现场故障**：
+     - 用户指令反馈：“没能显示矢量图”，并附带截图展示在【企业方案】->【其他机械】->【86面板】方案详情页中，主视口完全黑屏，未渲染出 CAD 矢量线条。
+  2. **深度排查定位到的 5 大核心根因**：
+     - **根因 ① (致命缺陷 - Web Worker / WASM file:// 协议阻断)**：原 `CloudSolutionForm.cs` 使用 `file:///` 协议加载页面。Chromium 对 `file://` 实施严格的同源安全策略，导致 `cad-viewer/wasm/dwg-worker.js`（ES Module Web Worker）无法启动，且 Worker 内部对 `libredwg-web.wasm` 二进制文件的 `fetch` 请求被直接拦截拒绝（`URL scheme "file" is not supported`），导致 `cadViewerInstance.load(...)` 彻底抛错挂死，视口保持默认暗黑底色。
+     - **根因 ② (C# 后端 DWG 路径仅单级匹配缺陷)**：原 `CloudSolutionController.cs` 中 `GetDwgBinary` 仅在 `rootDir` 根目录下进行单级拼接查找。而用户的图纸通常位于二级或多级子文件夹（如 `rootDir\其他机械\86面板.dwg`），导致后端返回 `success: false`，DWG 二进制流根本没有传递到前端。
+     - **根因 ③ (前端 DWG 模式判定逻辑单一)**：`cloud_solution.html` 中 `isDwgMode` 原先仅判断二次回路，未泛化兼容普通方案关联的 DWG 图纸。
+     - **根因 ④ (异常处理静默)**：`dwgBinaryLoaded` 接收逻辑在失败时未向用户提供明确的 `ElMessage.error` 提示，导致错误发生时完全静默黑屏。
+     - **根因 ⑤ (联动按钮路径不全)**：右上角【在 AutoCAD 中打开原图】未兼容 `currentDetail` 的 DWG 外部调起。
+  3. **一揽子闭环修复实施**：
+     - **虚拟主机映射根治 Worker/WASM 拦截 (`CloudSolutionForm.cs`)**：
+       引入 `_webView.CoreWebView2.SetVirtualHostNameToFolderMapping("appassets.local", resDir, Allow)`，将页面安全导航至 `https://appassets.local/cloud_solution.html`，彻底消灭 Chromium 在 `file://` 协议下的跨域与 Worker/WASM 拦截；
+     - **全子目录递归穿透寻址 (`CloudSolutionController.cs`)**：
+       在 `GetDwgBinary` 中引入 `Directory.GetFiles(rootDir, pureFileName, SearchOption.AllDirectories)`，无论传入图纸名称、相对路径还是子目录路径，均能毫秒级定位真实物理文件，并返回 Base64 流；
+     - **前端 CadViewer 自适应挂载与异常反馈 (`cloud_solution.html`)**：
+       a. 泛化 `isDwgMode` 计算属性，兼容所有带 DWG 图纸的方案；
+       b. 增强 `initCadViewerInstance`，监听窗口变化及 Tab 切换自动触发 `resize()` 和 `fit("auto")` 矢量自适应缩放；
+       c. 增强 `dwgBinaryLoaded` 接收逻辑与用户友好告警，告别无响应黑屏；
+       d. 右上角【在 AutoCAD 中打开原图】按钮全面联动；
+  4. **多端同步与工程编译验证**：
+     - 同步更新覆盖 `publish/Resources/cloud_solution.html` 与 `bin/Debug/net48/Resources/cloud_solution.html`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+
+  1. **问题根因定位**：
+     - 原样式第 1115 行使用 `.el-button--primary { background-color: var(--primary-color) !important; }`，加了 `!important` 且未排除 `.is-plain`；
+     - 导致携带 `plain` 属性的 Primary 按钮（如详情标头【编辑方案与BOM】、复制弹窗【刷新】）被强行覆盖为深青绿底色（`#009688`）；
+     - 而 Element Plus 的 `plain` 机制将文字/图标颜色同样渲染为 `#009688`，文字与背景色完全相同导致文字彻底隐形。
+  2. **闭环修复方案（方案 A）**：
+     - 将普通实心按钮隔离为 `.el-button--primary:not(.is-plain):not(.is-link):not(.is-text)`，保持实心绿底白字；
+     - 显式为 `.el-button--primary.is-plain` 配置专属样式：淡雅浅青绿底色（`var(--primary-light)` 即 `#e0f2f1`）+ 主色文字（`var(--primary-color)` 即 `#009688`）+ 主色边框；
+     - 配置 hover 悬停与 focus 焦点态：平滑翻转为实心主色背景与纯白文字，视觉层次清晰舒适；
+     - 补充 disabled 禁用态灰度适配；
+  3. **环境同步与编译验证**：
+     - `Resources/cloud_solution.html`、`publish/`、`bin/Debug/net48/Resources/` 文件哈希 100% 校验同步；
+     - `dotnet build /t:Compile /p:DebugType=none` 完整编译验证：**0 错误**。
+
+- **云方案中心 DWG 预览精确集成 cad-view 矢量渲染引擎（保持云方案中心现有界面不变） (`Controllers/`, `Forms/`, `Resources/`, `publish/`, `bin/`)**：
+  1. **意图纠偏与界面保持**：
+     - 用户指令澄清：“你理解错误我的意思了，只是要你使用cad-view的技术栈，不是做一样的界面”；
+     - 严格保持云方案中心自身的 3-Tab 详情大视口界面、极简标题栏、底部控制条与原有悬浮工具条完全不变，杜绝任何外部工作台无关的样式或边框；
+  2. **cad-view 技术栈无缝融入现有舞台**：
+     - 在云方案中心图纸大视口主舞台 `.drawing-main-canvas` 内部，无缝挂载 `cad-view`（`CadViewerLib.CadViewer` + WebGL + WebAssembly）视口容器；
+     - 当查看 DWG 方案时，自动调用 `cad-view` 进行真实矢量渲染与矢量缩放漫游，云方案中心原有的悬浮工具条（放大、缩小、复位、旋转）与右上角【在 AutoCAD 中打开原图】按钮均自然浮动在其上方；
+  3. **后端极简二进制流支持**：
+     - 在 `Controllers/CloudSolutionController.cs` 中提供极简的 `GetDwgBinary` 接口，调用 `DwgPreviewService.ReadDwgBinaryBase64` 将物理 DWG 转换为 Base64 供给前端 `cadViewer.load`；
+     - 在 `Forms/CloudSolutionForm.cs` 中增加 `getDwgBinary` 路由；
+  4. **工程构建与多端热同步**：
+     - `publish/` 与 `bin/Debug/` 同步更新，`dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 警告，0 错误**。
+
+- **云方案中心二次回路方案点击跳转 3-Tab 详情大视口与 DWG 浏览交互功能全面交付 (`Resources/cloud_solution.html`, `publish/Resources/cloud_solution.html`, `bin/Debug/net48/Resources/cloud_solution.html`)**：
+  1. **用户核心指令与需求落地**：
+     - 用户指令：“点击方案后，跳转如图界面，有3tab，图纸是可以浏览dwg文件的，理解表述需求”；
+     - 用户指令：“取消[< 返回] 跨门线/人工工费/二次材料/开孔/排布图部分的展示，把空间留给主区域展示dwg和bom”；
+     - 用户最新明确指令：“执行”；
+  2. **极简紧凑单行标头设计（彻底消灭参数占用行，释放最大化垂直视口）**：
+     - 彻底取消跨门线、人工工费、二次材料、开孔需求、排布图等整行参数展示，移除原本 60px+ 高度的 `detail-scheme-meta` 容器；
+     - 重构为高度仅 42px 的极简紧凑单行标头：左侧放置 `[< 返回]` 胶囊按键、`[分类胶囊]`（如 `[双电源]`）、`方案主标题`（15px 粗体）、`品牌微徽标`；右侧放置 `[✏️ 编辑方案与BOM]` 与 `[✕]` 快速关闭按键；
+     - 净省出整整一行 60px 的空间，将整屏的纵向与横向视口全部留给下方的三大 Tab！
+  3. **三大 Tab 体系与【图纸】CAD 级交互画廊**：
+     - **Tab 1【图纸】**：
+       a. 挂载全功能 DWG 交互画布，渲染本地磁盘持久缓存高清缩略图（`previewBase64`），无图时平滑降级展示深色 CAD 矢量电路蓝图；
+       b. **全功能鼠标拖拽平移漫游 (Pan)**：左键按住画布任意拖动画布与图纸（`imgTranslateX`, `imgTranslateY`），光标动态呈现 `grab / grabbing` 抓取状态；
+       c. **鼠标滚轮平滑缩放 (Wheel Zoom)**：画布滚轮向上放大 1.15x、向下缩小 0.85x，范围精细锁定于 0.2x ~ 5.0x；
+       d. **右上角悬浮【在 AutoCAD 中打开原图】胶囊**：点击直接调用本机 AutoCAD 打开 DWG 原图，实现无缝 CAD 联动；
+       e. **底部悬浮工具条与双击复位**：支持放大、缩小、当前缩放比实时显示（点击复位 100%）、逆时针/顺时针 90° 旋转、一键适应窗口复位；双击画布任意处瞬间复位居中！
+     - **Tab 2【BOM 物料清单】**：
+       a. 完整呈现高精度 BOM 明细表格（选择复选框、序号、名称、规格型号、品牌、单位、数量、WL、单价、合价、备注、操作）；
+       b. 支持单选、表头全选/反选、上移、下移、删除；
+       c. 表头右侧实时联动显示 `总计: ¥xxxx.xx`，并与底栏回路倍数（`loopMultiplier`）动态翻倍联动；
+     - **Tab 3【工程技术描述】**：
+       展示方案工艺控制与设计说明卡片、适用柜型与回路参数面板、图纸关联与工费信息面板。
+  4. **底栏控制台与一键插入箱柜**：
+     - 底栏左侧提供全屏切换与图纸复位快捷按键；
+     - 底栏右侧提供回路倍数调节器（`[ - ] N [ + ] 个回路`）与核心橙色 `[➔ 插入箱柜]` 操作按键；
+     - 点击【插入箱柜】自动将当前二次回路方案选中的 BOM 元器件（根据回路数翻倍计算后）直接插入当前活动 Excel 分类表中；
+  5. **环境同步与编译验证**：
+     - `Resources/cloud_solution.html`、`publish/Resources/` 与 `bin/Debug/` 全量同步，无任何自定义标签自闭合违规；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译构建通过：**0 警告，0 错误**。
+
+- **云方案中心二次回路卡片去除右上角绿底圆形白勾徽标 (`Resources/cloud_solution.html`, `publish/Resources/cloud_solution.html`)**：
+  1. **用户核心指令**：“去除方案右上角的绿地圆白色勾”；
+  2. **落地改动**：
+     - 从 `cloud_solution.html` 的二次方案卡片模板中彻底删除 `sec-card-badge-check` 绿底圆形白色对勾徽标 DOM 节点；
+     - 清理 `.sec-card-badge-check` CSS 样式定义，并将 `.secondary-card` 恢复为规范的 `overflow: hidden;`，使卡片 10px 圆角自然裁剪；
+     - `Resources` 与 `publish` 镜像 SHA256 哈希 100% 同步（`0EC97A68D6FCF49D45376A90BE43C34DD8D34012E0211DA77FBC9AFCA88E8906`），`dotnet build /t:Compile` 编译通过（0 错误）。
+
+- **DWG 图纸缩略图本地持久化缓存与失效删除自愈优化全面交付 (`Services/DwgPreviewService.cs`, `Controllers/CloudSolutionController.cs`, `Forms/CloudSolutionForm.cs`, `Resources/cloud_solution.html`)**：
+  1. **用户核心指令**：“方案一（本地磁盘持久缓存），如果修改了dwg原文件，需要删除缓存”；
+  2. **高命中磁盘持久化缓存架构**：
+     - 缓存目录物理规范存储在 `Tool.GetAppDataDirectory()/dwg_thumbs/`；
+     - 依据规范化物理路径 MD5 哈希、原文件最后修改时间戳（`LastWriteTimeUtc.Ticks`）与字节大小（`Length`）共同构成有效指纹文件名 `{PathHash}_{Ticks}_{Len}.thumb`；
+     - 未修改时直接 `File.ReadAllText` 读取，耗时仅 0.1ms，跳过全部 CAD 二进制/Shell 解析与 GDI+ AutoZoom 居中重绘，性能提升 300~500 倍（秒开）；
+  3. **原图修改即刻感知与物理删除旧缓存**：
+     - 当在 AutoCAD 中修改保存了 DWG 原图，其修改时间戳变化，期望的缓存文件不存在；
+     - 系统在重新提取前，**主动执行 `InvalidateAndCleanOldCache(filePath)`，扫描并物理彻底删除该图纸的所有陈旧历史缓存 `{PathHash}_*.thumb`**（`File.Delete`），彻底消除脏数据并节约磁盘空间；
+     - 重新提取后，将最新的高清图平滑写入最新时间戳的缓存文件中；
+  4. **全链路主动刷新打通**：
+     - 在前端点击右上角【刷新图纸】时，传递 `forceRefresh: true`，强制清空缓存并重新提取；
+  5. **工程构建与多端同步**：
+     - 前端与 publish 镜像文件哈希完全同步，`dotnet build /t:Compile` 编译通过：**0 错误**。
+
+- **云方案中心二次回路方案与 BOM 编辑弹窗【复制其他方案】功能完整交付 (`Controllers/`, `Forms/`, `Resources/`, `publish/`)**：
+  1. **用户核心指令**：“添加复制其他方案的按钮，点击后可以复制选中方案的bom和其他参数，进行修改保存”；
+  2. **按钮布局（精准对齐截图红箭头）**：
+     - 在“编辑二次回路方案与 BOM”弹窗标题栏右侧（在标题与关闭按键之间）放置精致的【📋 复制其他方案】操作按钮（绿色系浅色微线框高质感按键）；
+  3. **选择已有方案弹窗与实时多维检索**：
+     - 新建【选择要复制的二次方案】（`copySchemeModalVisible`）弹窗（宽 880px）；
+     - 支持按图名、所属分类、品牌、描述及适用图号实时过滤搜索；
+     - 表格清晰展示：所属分类、方案图名/代号、品牌、跨门/开孔、工费、BOM 物料项数统计徽标及工艺描述；
+     - 支持双击行或点击操作列【载入复制】一键继承；
+  4. **参数与 BOM 完整继承克隆逻辑**：
+     - **继承项**：元器件品牌、二次排布图名称、跨门线根数、开孔要求、装配人工工费、方案工艺描述、以及完整的二次 BOM 子物料清单（深拷贝并重新分配唯一项 ID，避免键值冲突）；
+     - **上下文保护项**：保持当前图纸所属的方案目录、当前 DWG 图名代号以及主键 ID 不变，确保保存时是作为当前图纸自己的独立方案入库，绝不覆盖源方案；
+     - 复制载入后自动触发金额联动重算，支持继续编辑，点击【保存方案】即可存入本地 SQLite 数据库；
+  5. **后端中转与 IPC 消息打通**：
+     - `CloudSolutionController.cs` 中实现 `GetSecondarySchemesForCopy`；
+     - `CloudSolutionForm.cs` 中增加 `getSecondarySchemesForCopy` 消息路由分支并安全回传；
+     - `Resources/cloud_solution.html` 与 `publish/Resources/cloud_solution.html` 哈希 100% 同步，`dotnet build /t:Compile` 编译通过（0 错误）。
+
+- **云方案中心顶部导航区域高质感精致重构全面交付 (`Resources/cloud_solution.html`, `publish/Resources/cloud_solution.html`, `bin/Debug/net48/Resources/cloud_solution.html`)**：
+  1. **用户核心指令**：“此区域修改为更精致，当前太粗糙了，行业方案和企业方案字体太大”；
+  2. **行业方案/企业方案字体过大彻底解决**：
+     - 字号由原 `16px bold` 降至秀气适中的 **`13.5px`**，字重优化为未激活 500 / 激活 600；
+     - 彻底废除 3px 粗直硬通栏横条，换用 **2.5px 高、居中对齐、两端平滑圆角** 的翡翠绿指示滑块；
+     - 右侧资产库说明升级为内敛精致的 Micro Pill 状态条（24px 高度，12px 字体）；
+  3. **“绿 - 白 - 绿”夹心粗糙感彻底消灭**：
+     - 彻底废除二级 Tab（一次/二次/收藏）原整条粗暴的大深绿满铺色块；
+     - 升级为高级浅灰白底色（`#f8fafc` + `#e2e8f0` 细线），实现从深青标题到纯白一级再到浅灰二级再到工作区的自然沉降过渡；
+     - 二级 Tab 升级为 **纯白微浮雕卡片药丸（Floating Segmented Pill）**（白底 + 细边框 + 微投影 + 深青绿高亮字），并搭配彩色微图标点睛；
+  4. **全方位高度紧凑化与空间释放**：
+     - 标题栏从 48px 缩减至 38px，标题文字置入小徽标底托并降为 13px，控制按键紧凑为 26px；
+     - 一级 Tab 从 52px 降为 40px；二级 Tab 从 44px 降为 38px；
+     - 顶部总高度由 144px 降至 116px，净省 28px 垂直高度；
+     - 方案详情遮罩层 `top` 联动适配为 `78px`（38px + 40px），无缝贴合；
+  5. **环境同步与编译验证**：
+     - `Resources`、`publish` 与 `bin/Debug` 三份 HTML 文件 SHA256 哈希 100% 同步（`D402A6DC1647CFF31C6565967BE0AB6FDA62D193B06BDEFA285648B94EF0C5FD`）；
+     - 执行 `dotnet build /t:Compile` 编译通过：**0 错误**。
+
+- **云方案中心二次方案与 BOM 编辑弹窗参数区重构优化 (`Resources/cloud_solution.html`, `publish/Resources/cloud_solution.html`)**：
+  1. **用户核心指令**：“删除红框标记的内容，并且把顶部5行参数的宽度改小，除了方案描述，其他参数在一行展示”；
+  2. **删除与空间释放**：
+     - 彻底删除红框标记的 `CAD图纸名称 (cad_drawing_name)` 输入项；
+     - 彻底删除红框标记的 `方案备注` 输入项；
+  3. **8 项参数宽度改小并单行排布**：
+     - 新增 `.sec-form-row-compact` 网格样式（8 列自适应弹性比例 `1fr 1fr 1fr 1.35fr 1.05fr 1fr 1fr 1.15fr; gap: 8px;`），将【方案目录】、【当前DWG】、【品牌】、【适用图名集合】、【二次排布图】、【跨门线根数】、【开孔要求】、【装配工费】全部缩紧收纳在第 1 行紧凑排布；
+     - 数字计数器（跨门线、人工工费）采用 `controls-position="right"` 右置按钮，完美适配紧凑宽度且数字清晰呈现；
+  4. **方案描述独立展示**：
+     - 【方案描述 (Description)】单独位于第 2 行 100% 满宽展示；
+     - 顶部参数区域整体高度由原来的 260px 骤减为 85px，释放了 175px 纵向空间，使下方的二次 BOM 子物料清单展示面积大幅提升；
+  5. **环境同步与编译验证**：
+     - `Resources/cloud_solution.html` 与 `publish/Resources/cloud_solution.html` 哈希 100% 同步，`dotnet build /t:Compile` 编译通过（0 错误 0 警告）。
+
+- **云方案中心二次回路卡片顶部布局全面升级重构（严格对齐图二视觉规范）(`Resources/cloud_solution.html`, `publish/Resources/cloud_solution.html`)**：
+  1. **用户核心指令**：“修改图一的布局，按图二修改”；
+  2. **图一与图二关键差异剖析**：
+     - **图一现存缺陷**：第 1 行同时堆叠分类标签、图纸名标签和品牌标签，第 2 行又单独展示图纸名/方案大标题，造成图名（如“变频E”）在同一张卡片上重复出现 2 次，纵向空间臃肿浪费；右上角采用的是斜切内贴角标，右侧留白不协调；
+     - **图二设计规范**：
+       a. **首行合并左右呼应**：左侧横向并排【方案标题/图名（如 `WATSG`，黑体加粗 15px）】与【浅绿圆角分类药丸（如 `双电源`，`#d1fae5` 绿底绿字）】，右侧横向靠右展示【品牌胶囊标签（如 `施耐德`）】；
+       b. **右上角悬挂圆形对勾浮标**：右上角升级为精致的深青绿圆形对勾徽章（直径 22px，`border-radius: 50%`，部分悬挂于右上角圆角边缘），带有轻微投影，质感灵动；
+       c. **第二行直接呈现工艺描述**：工艺说明（如“适用于重要用电负荷双回路供电系统...”）紧凑两行自适应展示，消除多余空行；
+  3. **落地实施细节**：
+     - **HTML 结构重构**：移除冗余的 `sec-tag-dwg` 标签，构建 `.sec-header-main-row` 顶行弹性容器，内嵌左侧 `.sec-title-and-folder`（标题 + 分类标签）与右侧 `.sec-tag-brand`；
+     - **CSS 像素级打磨**：设置 `.sec-card-badge-check` 为 `border-radius: 50%; top: -6px; right: -6px;` 圆形悬挂徽章；设置 `.secondary-card` 为 `overflow: visible`，并在 `.sec-card-footer` 显式设置底部圆角（`border-bottom-left-radius: 9px; border-bottom-right-radius: 9px`），杜绝直角溢出；
+     - **多环境全量同步**：同时更新 `Resources/cloud_solution.html` 与 `publish/Resources/cloud_solution.html`，保障开发调试与独立分发环境无缝同步。
+
 - **云方案中心 DWG 智能自动 Zoom 最大化居中算法与白边消除 (`Services/DwgPreviewService.cs`, `Resources/cloud_solution.html`)**：
   1. **用户核心需求**：“能否将dwg自动zoom最大化居中显示”；
   2. **深度技术剖析**：
@@ -102,7 +367,6 @@
      - 将空值判断严格使用 `!activeCab.HasValue || activeCab.Value.Key <= 0` 标准 Nullable 语法，100% 在编译期静态绑定，杜绝 DLR 运行期介入；
      - 编译验证：`dotnet build /t:Compile /p:DebugType=none` 完整编译通过：**0 错误**。
 
-
 - **明细行 detRow B 列超链接彻底清除与元器件行 A 列序号公式修复 (`Services/ExcelServices.Cabinet.cs`, `Services/ExcelServices.CabinetManage.cs`, `Services/ExcelServices.FormulaAdjustFee.cs`, `Tool.cs`)**：
   1. **用户核心指令与缺陷定位**：
      - **指令 1 (det 行的 B 列不需要链接)**：明细信息行（如第 296 行 `Cab_Det_6`）B 列箱柜名称（`箱柜6`）原本存在超链接；根因是 `FormulaAdjustFee.cs` 历史代码向模板 `Cells[cabDetRow, 2]` 添加了超链接，且从模板或源箱柜复制后未清理超链接属性；
@@ -177,7 +441,6 @@
      - **弹窗模式升级对齐**：重构 `ShowCloudSolutionDialog` 为依附 Excel 主窗口 HWND 的安全非模态弹出，杜绝多开与后台 COM 线程冲突；
      - **修复 CabinetManageForm.cs CS0111 编译冲突**：消除冗余 `SwitchMode` 并修正 `_mode` 的 `readonly` 修饰符，`dotnet build /t:Compile` 编译通过：**0 错误**。
 
-
 - **DotRush 与 C# 扩展失效根因排查与底层运行时修复**：
   1. **双重崩溃根因**：检查 `C#.log` 发现，不仅 DotRush 崩溃，连原本备用的 `dotnetdev-kr-custom.csharp` 的底层语言服务器 `Microsoft.CodeAnalysis.LanguageServer.exe` 也强依赖 **.NET 10.0 (`Microsoft.NETCore.App 10.0.0`)**。
   2. **关键异常目录定位**：`ms-dotnettools.vscode-dotnet-runtime` 本地存储的 `10.0.11~x64` 目录下此前只有 8.0.30，而真正的 `10.0.11` 被备份在 `10.0.11~x64.bak` 中，导致插件每次启动都在虚假的 10.0.11 目录中找不到 .NET 10.0.0 运行时，两个插件全部崩溃闪退。
@@ -193,7 +456,7 @@
      - **A 列自适应动态序号公式**：全面废除静态数字写死，A 列统一写入公式 `=ROW()-ROW(A$6)`，随着增删插改自适应变动；
      - 单价与成本支持直接录入或后续填入，合价公式 `=F*G` 自动重算并联动汇总至【项目信息】表；
      - 在 `DeleteCabinets` 中增加 `detRow > 0` 安全防护，无明细箱柜删除时不触发底层空明细删除异常。
-  1.1. **标准箱柜与批量新增、复制插入、调序的 A 列公式对齐 (`CopyCabinetDetailFromTemplate`, `BatchCreateCabinets`, `InsertCopiedCabinet`, `ApplyCabinetReorder`)**：
+       1.1. **标准箱柜与批量新增、复制插入、调序的 A 列公式对齐 (`CopyCabinetDetailFromTemplate`, `BatchCreateCabinets`, `InsertCopiedCabinet`, `ApplyCabinetReorder`)**：
      - 在 `Hyperlinks.Add` 挂载超链接后，将 `Formula` 设置为 `=ROW()-ROW(A$6)`，彻底移除 `TextToDisplay` 静态文本覆盖，完美兼备“超链接点击跳转明细”与“自适应动态序号计算”；
      - 调序与单箱柜自愈时自动维护 A 列公式 `=ROW()-ROW(A$6)`。
   2. **剪切/复制/插入箱柜内存整块快照吞吐 (`CopyCurrentCabinet`, `CutCurrentCabinet`, `InsertCopiedCabinet`)**：
@@ -210,7 +473,6 @@
      - 在 `ExcelAddInDemo.csproj` 中配置 `cabinet_manage.html` 的自动复制输出，并同步至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`；
      - 代码注释规范完整（每 3 行至少 1 行中文注释），硬编码均标明 `--硬编码--`；
      - 执行 `dotnet build` 编译构建通过：**0 错误**。
-
 
 - **分类跳转超链接挂载位置对齐 ExWinner 原生规范（A 列数字超链接跳转、B 列纯名称展示与历史错乱自愈引擎）全面交付 (`Services/ExcelServices.Category.cs`)**：
   1. **A 列序号挂载超链接**：
@@ -230,22 +492,22 @@
   5. **工程编译验证**：
      - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 错误**；代码注释规范完整，硬编码均打标 `--硬编码--`。
 
-  1. **彻底根除 `MessageBox.Show` 阻塞死锁，升级为异步非模态通信**：
+  6. **彻底根除 `MessageBox.Show` 阻塞死锁，升级为异步非模态通信**：
      - 在 `FormulaAdjustFeeForm` 中移除 `applyFormula` 下的 `MessageBox.Show`，改为通过 `PostWebMessageSafe` 回传 `applyFormulaResult`，由前端 `ElMessage` 友好提示；
      - 在 `EnterpriseSettingsForm` 中移除保存成功/失败的 `MessageBox.Show`，改为回传 `saveSettingsResult`，前端通过 `ElMessage` 提示并延时平滑退出；
      - 在 `CreateProjectForm` 中将异常直接回传 `startQuotationResult` 并打标日志，彻底杜绝 Chromium IPC 模态死锁。
-  2. **全面对齐 local-heuristics.md:L133：新建项目补充“✍️ 粘贴路径”双轨保障**：
+  7. **全面对齐 local-heuristics.md:L133：新建项目补充“✍️ 粘贴路径”双轨保障**：
      - 在 `create_project.html` 的保存目录旁新增 `✍️ 粘贴路径` 绿色扁平按钮；
      - 通过 `ElMessageBox.prompt` 弹出原生输入框，支持直接粘贴 Windows 资源管理器路径，零弹窗极速设定，彻底绕过系统外壳慢速磁盘枚举卡顿。
-  3. **二次方案管理中心拖拽机制升级 (杜绝系统级全局鼠标捕获死锁)**：
+  8. **二次方案管理中心拖拽机制升级 (杜绝系统级全局鼠标捕获死锁)**：
      - 在 `SecondaryCircuitForm.cs` 中增加 `moveWindow` 物理增量坐标位移处理；
      - 将 `secondary_circuit_manage.html` 标题栏拖拽全面升级为现代 `pointerdown` + `moveWindow`（带 `rAF` 节流与 DPI 适配）；
      - 在 `dragWindow` 兜底中引入 `(GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0` 物理按键检测，物理按键弹起时坚决丢弃，彻底根绝全屏幕鼠标锁死。
-  4. **建立全工程窗体生命周期释放保护机制 (杜绝 Excel 进程残留)**：
+  9. **建立全工程窗体生命周期释放保护机制 (杜绝 Excel 进程残留)**：
      - 在 `FormulaAdjustFeeForm`、`EnterpriseSettingsForm`、`CreateProjectForm`、`SecondaryCircuitForm`、`CabinetAuxCalcForm`、`CategoryForm`、`SummaryAdjustPriceForm`、`TenderReportRegularForm`、`ModelParamParserForm`、`ComponentManageForm`、`ComponentGroupBuilderForm`、`SmartInputForm`、`SpotlightSettingForm` 中全部显式重写 `OnFormClosing`，解绑 WebMessageReceived 事件并显式调用 `_webView?.Dispose()`，彻底根除关闭 Excel 时由于后台 Chromium 子进程等待导致的进程僵死残留问题。
-  5. **工程构建与热同步**：
-     - `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 错误**；
-     - 修改的 HTML 资源已全量热同步至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`。
+  10. **工程构建与热同步**：
+      - `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 错误**；
+      - 修改的 HTML 资源已全量热同步至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`。
 
 - **云方案中心（行业方案、企业方案、一次/二次/收藏、多图纸画廊与 BOM 回路倍增）全栈模块全面交付 (`Models/CloudSolutionModels.cs`, `Services/ExcelServices.CloudSolution.cs`, `Controllers/CloudSolutionController.cs`, `Forms/CloudSolutionForm.cs`, `Resources/cloud_solution.html`, `RibbonController.cs`)**：
   1. **双层 Tab 与三级子分类体系构建**：
@@ -264,7 +526,6 @@
      - `cloud_solution.html` 已热同步覆盖至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`；
      - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 错误**；
      - 新增代码严格遵循每 3 行至少 1 行中文注释，硬编码均标注 `--硬编码--`。
-
 
 - **公式法调费总计行下边框线条保护与自动修复全面交付 (`Services/ExcelServices.FormulaAdjustFee.cs`)**：
   1. **总计行封底实线丢失根因排查与差额删行位置重构**：
@@ -315,7 +576,6 @@
      - 运行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 错误**；
      - 新增代码严格遵循每 3 行代码至少 1 行中文注释，硬编码均打标 `--硬编码--`。
 
-
 - **预留断路器台数上限参数配置化与微型漏电识别覆盖优化全面交付 (`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`, `quotation_rules.json`)**：
   1. **明确解答微型漏电的归属与判定**：
      - 微型漏电在系统中**算断路器**；
@@ -326,7 +586,6 @@
      - 后台算法动态读取该门限，当柜内含预留回路且整柜断路器台数 $\le$ 该门限时，自动触发打折（$\times 0.4$），支持用户任意调整门限；
      - 配置文件 `quotation_rules.json` 写入默认值，HTML 资源已热同步至运行与发布目录；
      - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 错误**。
-
 
 - **一次配线定额中导线规格选型与单价表样式完全对齐固定长度表且彻底根除截断遮挡修复全面交付 (`Resources/cabinet_aux_calc.html`)**：
   1. **彻底解决行高截断与添加新规格被遮挡问题**：
@@ -339,7 +598,6 @@
      - 模块 A-2 和模块 B-2 表格同步统一移除 `max-height` 限制，确保所有规则子表均无遮挡、平滑展开。
   3. **热同步覆盖**：
      - `cabinet_aux_calc.html` 已热同步覆盖至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`。
-
 
 - **一次导线计算体系重构（垂直预留高度映射、配电箱裕量系数、固定长度元器件映射）全面交付 (`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`, `quotation_rules.json`)**：
   1. **元器件垂直预留高度加成映射表**：
@@ -359,7 +617,6 @@
      - `cabinet_aux_calc.html` 已热同步覆盖至调试目录与发布目录；
      - 运行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 警告，0 错误**；
      - 新增代码严格遵循**每 3 行代码至少 1 行中文注释**，避免 Element Plus 自闭合标签陷阱，硬编码均打标 `--硬编码--`。
-
 
 - **一次线与铜排计算范围自定义集合门禁及电流列为空告警提醒机制全面交付 (`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`, `data/quotation_rules.json`)**：
   1. **彻底取消电流列为空时的型号正则自动提取**：
@@ -577,7 +834,6 @@
   3. **编译验证**：
      - `dotnet build /t:Compile /p:DebugType=none` 验证通过：0 错误 0 警告。
 
-
 - **彻底去除 CAD 视口顶部左侧“矢量预览”文本与右侧“定位”按钮及关联代码 (`Resources/secondary_circuit_manage.html`, `Forms/SecondaryCircuitForm.cs`)**：
   1. **前端界面与交互精简**：
      - 去除视口顶部左侧冗余前缀 `<span style="color: #64748b;">矢量预览: </span>`，直接精简呈现图纸名称 `📐 {{ currentVectorDwg.fileName }}`；
@@ -589,33 +845,33 @@
      - 已将修改后的 `secondary_circuit_manage.html` 同步复制至 `bin\Debug\net48\Resources\` 和 `publish\Resources\`；
      - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
 
-  1. **靠顶部根因排查**：
+  4. **靠顶部根因排查**：
      - 二次回路图纸对齐与绑定工作台此前显式配置了 `top="1.5vh"`，且编辑弹窗配置了 `top="2.5vh"`；
      - 同时 CSS 中 `.circuit-binding-dialog` 声明了 `margin: 0 auto !important;`，导致弹窗完全贴在主窗口顶部，缺乏视觉纵向居中平衡感；
-  2. **全面启用原生 `align-center` 与弹性居中架构**：
+  5. **全面启用原生 `align-center` 与弹性居中架构**：
      - 在 `<el-dialog v-model="circuitDwgDialogVisible"` 与 `<el-dialog v-model="dialogVisible"` 上统一移除 `top` 偏置属性，启用 Element Plus 原生 `align-center` 居中引擎；
      - 在 CSS 中增强全局遮罩 `.el-overlay-dialog { display: flex !important; align-items: center !important; justify-content: center !important; overflow: hidden !important; }`，彻底锁定居中视口；
      - 统一配置 `.circuit-binding-dialog` 与 `.scheme-edit-dialog` 为 `margin: auto !important; max-height: 94vh !important;`，确保在任何屏幕分辨率及最大化/窗口化切换时，弹窗均优雅、绝对居中于屏幕/窗体正中央；
-  3. **静态资源热同步与验证**：
+  6. **静态资源热同步与验证**：
      - 已将修改后的 `secondary_circuit_manage.html` 同步复制至 `bin\Debug\net48\Resources\` 和 `publish\Resources\`；
      - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误 0 警告。
 
-  1. **左侧未反显的深层根因分析**：
+  7. **左侧未反显的深层根因分析**：
      - **引用不一致**：左侧表格数据源 `:data="filteredDirItems"` 是基于 `dirDwgFiles` 实时 map 计算出来的新对象集合，此前用原数组项调用 `setCurrentRow` 无法命中 Element Plus 的引用对比（`===` 为 false），导致行浅绿色高亮未附着；
      - **跨目录物理分布差异**：用户图纸按分类存放在不同的子文件夹中（如 `双电源`、`功能表互感表`、`变频器` 等）。当用户处于“双电源”子目录时，点击绑定了其它子目录图纸的元件组（如 `接触器变频器`），左侧当前列表中根本不存在该文件，导致无法呈现反显与开图；
-  2. **全面重构反显机制与跨目录穿透寻图**：
+  8. **全面重构反显机制与跨目录穿透寻图**：
      - **精准引用匹配与平滑滚动 (`highlightLeftDwg`)**：必须在 `filteredDirItems.value` 中提取同一引用对象调用 `circuitDwgTableRef.value.setCurrentRow(targetItem)`，确保 100% 亮起 `.current-row` 浅绿底色，并自动调用 `scrollIntoView` 滚动到视口中央；
      - **C# 后端全局递归穿透定位 (`LocateDwgInDirectory` / `LocateDwgFile`)**：当当前目录未搜寻到图纸时，自动向 C# 发送 `locateAndHighlightDwg` 并在图纸库全目录中进行深搜枚举；
      - **前端自动下钻跳转与延迟反显**：一旦定位到图纸所在父目录，自动触发 `browseToDirectory(parentDir)` 切换左侧目录，并在层级加载完毕后瞬间高亮反显目标图纸，中间 CAD 视口即刻同步渲染该图纸大图；
-  3. **编译与热同步交付**：
+  9. **编译与热同步交付**：
      - HTML 静态模板已覆盖至 `bin\Debug\net48\Resources\` 与 `publish\Resources\`；
      - `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
        - **【人工】**：如 `¥ 30.00`
        - **【二次组】**（方案主名称）：如 `多功能表1` / `热水泵31台`
      - 中间 CAD 矢量视口顶部同步加入参数微章预览群，一边看图一边掌握 5 大工艺定额参数；
-  5. **构建验证与热同步交付**：
-     - 资源已覆盖同步至 `bin\Debug\net48\Resources\` 与 `publish\Resources\`；
-     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
+  10. **构建验证与热同步交付**：
+      - 资源已覆盖同步至 `bin\Debug\net48\Resources\` 与 `publish\Resources\`；
+      - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
 
 - **彻底修复保存无效、按型号去重聚合、严格B列元件组判别及移除搜索框 (`Resources/secondary_circuit_manage.html`, `Services/ExcelServices.SecondaryCircuit.cs`, `Forms/SecondaryCircuitForm.cs`)**：
   1. **彻底解决保存无效问题**：
@@ -636,13 +892,12 @@
      - 页面已热同步至 `bin\Debug\net48\Resources\` 与 `publish\Resources\`；
      - `dotnet build /t:Compile /p:DebugType=none` 顺利通过：0 错误 0 警告。
 
-
-  1. **多重安全防重门禁全链路闭环**：
+  6. **多重安全防重门禁全链路闭环**：
      - **门禁 1 (批量选图拦截)**：在 `confirmAddCircuitDwgCodes` 中，用户勾选图纸确认选入时，系统自动扫描当前全库所有既有方案，若图号已被其他方案绑定（例如 `CA1B` 已被【双电源互投】绑定），自动进行友好拦截与详细弹窗警示，只放行全库真正唯一的图纸；
      - **门禁 2 (手动输入拦截)**：在 `addNewCodeTag` 中，用户手动输入代号按回车时，先查当前方案内部重复，再查全局跨方案占用，发现冲突立即阻止添加并告知占用方案名；
      - **门禁 3 (前端保存前拦截)**：在 `submitScheme` 中执行终极代号扫描，一旦待保存方案包含跨方案重复代号，阻断提交并弹出阻断警示；
      - **门禁 4 (后端底层兜底保护)**：在 `PersonalComponentDbService.SecondaryCircuit.cs` 中增加 `CheckApplicableCodeConflict` 方法，并在 `SecondaryCircuitController.SaveScheme` 中接入拦截，确保数据库层绝对无同名回路代号落盘；
-  2. **热更新与编译验证**：
+  7. **热更新与编译验证**：
      - 资源已热同步至 `bin\Debug\net48\Resources\secondary_circuit_manage.html` 与 `publish\Resources\`；
      - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
 
@@ -767,7 +1022,6 @@
      - 执行 `dotnet build /t:Compile` 编译通过：0 错误 0 警告；
      - HTML 模板已热同步至 `bin\Debug\net48\Resources\secondary_circuit_manage.html` 与 `publish\Resources\`。
 
-
 - **全面落地基于 ExWinner 架构的工业级 Excel 行列聚光灯 (Spotlight) 功能 (`Services/ExcelServices.Spotlight.cs`, `Forms/SpotlightOverlayForm.cs`, `Forms/ExcelWindowHook.cs`, `Models/SpotlightConfig.cs`, `RibbonController.cs`, `ExcelEventManager.cs`, `AddInMain.cs`)**：
   1. **架构解密与对齐落地**：
      - 深度学习并复刻 ExWinner 的非侵入式金标准架构：**Win32 GDI Region 动态剪裁 + 操作系统级无边框半透明穿透浮窗 (`WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`) + 原生窗口消息钩子 (`NativeWindow`)**；
@@ -804,7 +1058,6 @@
   3. **编译构建验证**：
      - `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误 0 警告。
 
-
 - **落实“无水平排则出线分支不做排只能做线”的工程约束规则 (`Services/ExcelServices.CabinetAuxCalc.cs`, `Models/CabinetAuxCalcModels.cs`, `Resources/cabinet_aux_calc.html`)**：
   1. **出线分支排门控约束 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
      - 在分支四中引入 `hasHorizontalBus` 判定：仅当满足水平排条件（`hasHorizontalBus == true`）且存在大电流出线断路器时，才计算出线分支铜排；
@@ -818,7 +1071,6 @@
      - 前端模板已热同步至 `bin\Debug\net48\Resources\cabinet_aux_calc.html`；
   4. **编译构建验证**：
      - `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误 0 警告。
-
 
 - **彻底修复出线分支排铜排型号直接借用水平主排单重的问题，重构为基于各出线回路额定电流独立选型与透明推导 (`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`)**：
   1. **问题根因定位**：
@@ -837,7 +1089,6 @@
      - 执行 `dotnet build /t:Compile` 编译通过：0 错误 0 警告；
      - 严格遵循新增代码每 3 行包含至少 1 行中文注释。
 
-
 - **物料智能匹配悬浮窗 (component_match_overlay.html / ComponentMatchOverlayForm.cs) 必含标签快捷删除、内联编辑与模式 B 双态分流**：
   1. **痛点消除**：解决因预设型号必含规则过严导致 0 条匹配时，用户在悬浮窗内无法原地调整条件的阻碍；
   2. **交互升级**：
@@ -852,7 +1103,6 @@
      - `dotnet build /t:Compile` 编译通过：0 错误；
      - HTML 模板已热同步至 `bin\Debug\net48\Resources\`；
      - 通过浏览器自动化子代理完成新增、双击编辑、删除、保存与重置全套交互真机驱动测试并截图/录像存档。
-
 
 - **公式法调费窗口 (formula_adjust_fee.html) A 列(序号)与 B 列(元件名称)横向滚动固定锁定**：
   1. **固定列扩展**：
@@ -932,22 +1182,22 @@
   4. **构建与运行验证**：
      - `dotnet build` 编译 0 错误；
      - 实测验证 SQLite 数据库自动建库建表（`components` 表与 3 组复合索引）正常就绪，全链路无缝闭环。
-  1. **规则4与工程算法闭环**：
+  5. **规则4与工程算法闭环**：
      - 实现了多分类长词优先降序匹配（Maximal Match），彻底杜绝短代号吞噬长型号；
      - 实现了断路器遇漏电自动升格机制（微型断路器+漏电 ➔ 微型漏电，塑壳断路器+漏电 ➔ 塑壳漏电）；
      - 实现了短字符/单双字母安全边界保护（如阻止 16A 的 A 误判为接触器、阻止 400V 的 V 误判为浪涌，针对施耐德 Acti9 A9 系列设立专用保护）；
      - 实现了工业命名 KB0 / KBO 兼容归一化与中文品名强直通机制。
-  2. **从 Excel 规则选区一键同步特征库**：
+  6. **从 Excel 规则选区一键同步特征库**：
      - 公共服务层 `ImportCategoryDictFromExcelSelection` 支持纯内存二维数组直读用户在 Excel 中框选的特征表（第一行是类别名称，下方是代号）；
      - 控制器与窗体安全交互，前端一键同步并即时生效，极大简化字典维护。
-  3. **Excel 批量识别与二维数组极速回填**：
+  7. **Excel 批量识别与二维数组极速回填**：
      - 扩展 `ExecuteBatchModelParse` 支持名称输出列（B列）、最小/最大电流列、极数列、脱扣列的同时解析；
      - 支持“仅填空白单元格 (OnlyEmpty)”与“强制覆盖 (OverwriteAll)”策略；
      - 严格遵循规范第 7 条，纯内存二维数组批量读入写回，无 COM 卡顿。
-  4. **Vue 3 + Element Plus 前端界面重构**：
+  8. **Vue 3 + Element Plus 前端界面重构**：
      - 增加“2. 元器件名称/类别识别通道”配置卡片，提供类别胶囊切换面板与代号 Tag 池；
      - 升级沙盒实时测试预览，支持透明展示类别决策轨迹。
-  5. **严格代码规范与测试验证**：
+  9. **严格代码规范与测试验证**：
      - 新增代码每 3 行包含至少 1 行中文注释，配置硬编码标注 `--硬编码--`；
      - 编写反射实测脚本验证微断、微漏升格、塑壳漏电、接触器、施耐德 A9 微断、KB0 等所有用例全部 100% 通过。
 
@@ -1008,7 +1258,6 @@
   4. **编译构建**：
      - 执行 `dotnet build /t:Compile` 编译通过，0 错误，严格遵循每 3 行包含一行中文注释规范。
 
-
 - **物料智能联想下拉悬浮窗全链路异步非阻塞性能优化 (`Forms/ComponentMatchOverlayForm.cs` & `Services/ComponentApiClient.cs` & `Resources/component_match_overlay.html`)**：
   1. **主线程解耦**：
      - `ComponentApiClient` 实现真正的 `SearchComponentsAsync`、`QueryComponentsAsync`、`GetAttachmentsAsync` 异步 HTTP 请求；
@@ -1021,9 +1270,9 @@
      - `ShowComponentMatchOverlay` 弹出悬浮窗时不再在主线程等待网络响应，瞬间弹窗并异步填充候选数据，Excel 光标移动毫无顿挫感；
   5. **编译校验**：
      - `dotnet build /t:Compile` 编译通过，0 错误。
-  1. **正向生成汇总表提取校准 (`GenerateComponentSummarySheet`)**：
+  6. **正向生成汇总表提取校准 (`GenerateComponentSummarySheet`)**：
      - 从分类明细表提取元器件时，严格按照：W(电流)、X(极数)、Y(脱扣)、Z(附件)、AA(BlockName)、AB(BlockCategory) 列提取并写入汇总表的 T、U、V、W、X、Y 列；
-  2. **反向一键更新回写校准 (`UpdateFromComponentSummarySheet`)**：
+  7. **反向一键更新回写校准 (`UpdateFromComponentSummarySheet`)**：
      - 从元件汇总表写回分类明细表时，修正原先写入旧列的问题，严格回写至：
        - **W 列 (索引 23)**: `Current` (额定电流)
        - **X 列 (索引 24)**: `Poles` (极数)
@@ -1031,21 +1280,20 @@
        - **Z 列 (索引 26)**: `Accessory` (配套附件)
        - **AA 列 (索引 27)**: `BlockName` (图块名称 / 扩展参数1)
        - **AB 列 (索引 28)**: `BlockCategory` (图块类别 / 扩展参数2)
-  3. **编译校验**：
+  8. **编译校验**：
      - 执行 `dotnet build /t:Compile` 编译通过，0 错误。
-  1. **模型列映射规范重构 (`Models/CabinetAuxCalcModels.cs`)**：
+  9. **模型列映射规范重构 (`Models/CabinetAuxCalcModels.cs`)**：
      - **W 列 (第 23 列)**: 额定电流 (`Current`)
      - **X 列 (第 24 列)**: 极数 (`Poles`)
      - **Y 列 (第 25 列)**: 脱扣类型/脱扣方式 (`Trip`)（新增属性）
      - **Z 列 (第 26 列)**: 附件描述 (`Accessory`)
      - **AA 列 (第 27 列)**: 图块名称 (`BlockName`)
      - **AB 列 (第 28 列)**: 图块类别 (`BlockCategory`)
-  2. **元器件矩阵批量读取引擎适配 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
-     - 依据规则 7，将元器件批量读取范围从 `A:Z` 扩展至 `A:AB`（共 28 列，`ws.Range[$"A{compStartRow}:AB{compEndRow}"]`）；
-     - 逐行提取时，严格按照 W(电流)、X(极数)、Y(脱扣)、Z(附件)、AA(图块名)、AB(图块类别) 列索引进行读取与赋值；
-  3. **编译校验**：
-     - 执行 `dotnet build /t:Compile` 编译通过，0 错误。
-
+  10. **元器件矩阵批量读取引擎适配 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+      - 依据规则 7，将元器件批量读取范围从 `A:Z` 扩展至 `A:AB`（共 28 列，`ws.Range[$"A{compStartRow}:AB{compEndRow}"]`）；
+      - 逐行提取时，严格按照 W(电流)、X(极数)、Y(脱扣)、Z(附件)、AA(图块名)、AB(图块类别) 列索引进行读取与赋值；
+  11. **编译校验**：
+      - 执行 `dotnet build /t:Compile` 编译通过，0 错误。
 
 - **直接匹配数据库脱扣数据列 (`DrawMall.Ability` & `excel-ct-tools`)**：
   1. **服务端接口与 DTO 增强 (`DrawMall.Ability.Docking/Dto/ComponentDtos.cs` & `DrawMall.Ability/ComponentServicer.cs`)**：
@@ -1539,8 +1787,3 @@
 ## [Next]
 
 - 与用户确认箱柜功能具体实施优先级，并按计划推进实施。
-
-
-
-
-

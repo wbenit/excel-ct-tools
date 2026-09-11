@@ -117,11 +117,13 @@ namespace ExcelAddInDemo.Models
         // 行排列展示序号
         public int SortOrder { get; set; } = 1;
 
-        // 元器件名称 (如: "PT手车", "电压互感器", "避雷器")
-        public string ComponentName { get; set; } = string.Empty;
+        // 元器件名称 (统一标准属性 name)
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = string.Empty;
 
-        // 元器件规格型号 (如: "JDZX10-10", "XRNP-10/0.5A")
-        public string ModelSpec { get; set; } = string.Empty;
+        // 元器件规格型号 (统一标准属性 model)
+        [JsonPropertyName("model")]
+        public string Model { get; set; } = string.Empty;
 
         // 品牌厂家 (如: "大连第一互感器", "上海一开")
         public string Brand { get; set; } = string.Empty;

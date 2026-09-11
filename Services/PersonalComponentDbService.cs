@@ -130,7 +130,6 @@ namespace ExcelAddInDemo.Services
                             bom_json            TEXT NOT NULL DEFAULT '[]',
                             brand               TEXT DEFAULT '',
                             description         TEXT DEFAULT '',
-                            remark              TEXT DEFAULT '',
                             created_at          TEXT,
                             updated_at          TEXT
                         );
@@ -144,13 +143,13 @@ namespace ExcelAddInDemo.Services
                     // 执行非查询 SQL
                     cmd.ExecuteNonQuery();
 
-                    // 自动平滑升级已有历史数据库结构 (检查并追加 brand 与 description 列)
+                    // 执行二次回路方案表的增量列热迁移升级与冗余列清理
                     MigrateSecondarySchemeColumns(conn);
                 }
                 catch (Exception ex)
                 {
-                    // 记录建表异常日志
-                    LogHelper.WriteLog($"[PersonalDb] 初始化数据库表异常: {ex.Message}");
+                    // 记录数据库初始化异常日志
+                    LogHelper.WriteLog($"[PersonalDb] EnsureDatabaseCreated 异常: {ex.Message}");
                 }
             }
         }

@@ -26,7 +26,7 @@ namespace ExcelAddInDemo.Controllers
             try
             {
                 // 反序列化前端传来的查询参数
-                var query = JsonSerializer.Deserialize<CloudSchemeQueryDto>(queryJson, JsonOptions) 
+                var query = JsonSerializer.Deserialize<CloudSchemeQueryDto>(queryJson, JsonOptions)
                             ?? new CloudSchemeQueryDto();
                 // 调度业务层服务执行多维检索
                 return ExcelServices.QuerySchemes(query);
@@ -222,9 +222,9 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
-        /// 扫描指定子文件夹内的所有 DWG 文件并到 personal_components 数据库匹配参数组装卡片列表
+        /// 扫描指定子文件夹内的所有 DWG 文件并到 personal_components 数据库匹配参数组装卡片列表 (支持磁盘缓存与强制重绘)
         /// </summary>
-        public List<SecondaryFolderDwgCardDto> GetFolderDwgCards(string folderPath, string folderName, string? keyword = null)
+        public List<SecondaryFolderDwgCardDto> GetFolderDwgCards(string folderPath, string folderName, string? keyword = null, bool forceRefresh = false)
         {
             // 初始化卡片集合
             var cards = new List<SecondaryFolderDwgCardDto>();
@@ -236,7 +236,7 @@ namespace ExcelAddInDemo.Controllers
                 if (!string.IsNullOrWhiteSpace(folderPath) && System.IO.Directory.Exists(folderPath))
                 {
                     // 扫描单目录并装配卡片
-                    ScanAndAppendCards(folderPath, folderName, cleanKw, cards);
+                    ScanAndAppendCards(folderPath, folderName, cleanKw, cards, forceRefresh);
                 }
                 // 2. 若未指定子文件夹 (即前端处于"全部方案分类")，遍历根目录下所有子目录聚合展示
                 else
@@ -257,7 +257,7 @@ namespace ExcelAddInDemo.Controllers
                                 // 过滤隐藏文件夹
                                 if ((di.Attributes & System.IO.FileAttributes.Hidden) != 0) continue;
                                 // 依次扫描每个子目录并追加至卡片列表
-                                ScanAndAppendCards(subDir, di.Name, cleanKw, cards);
+                                ScanAndAppendCards(subDir, di.Name, cleanKw, cards, forceRefresh);
                             }
                             catch (Exception exSub)
                             {
@@ -278,9 +278,9 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
-        /// 扫描单个目录下的所有 DWG 文件，并匹配数据库方案填充至卡片列表
+        /// 扫描单个目录下的所有 DWG 文件，并匹配数据库方案填充至卡片列表 (带缓存与强制刷新控制)
         /// </summary>
-        private void ScanAndAppendCards(string targetDir, string curFolderName, string cleanKw, List<SecondaryFolderDwgCardDto> cardList)
+        private void ScanAndAppendCards(string targetDir, string curFolderName, string cleanKw, List<SecondaryFolderDwgCardDto> cardList, bool forceRefresh = false)
         {
             // 扫描当前目录下的所有 DWG 图纸文件
             var dwgFiles = Services.DwgPreviewService.ScanDwgFiles(targetDir);
@@ -311,8 +311,8 @@ namespace ExcelAddInDemo.Controllers
                     if (!hitKw) continue;
                 }
 
-                // 提取 DWG 轻量高清缩略图 (三级降级梯队安全解析)
-                var preview = Services.DwgPreviewService.GetDwgPreview(file.FullPath);
+                // 提取 DWG 轻量高清缩略图 (带本地磁盘持久化缓存与失效删除自愈机制)
+                var preview = Services.DwgPreviewService.GetDwgPreview(file.FullPath, forceRefresh);
 
                 // 组装前端卡片展示模型
                 var card = new SecondaryFolderDwgCardDto
@@ -455,6 +455,95 @@ namespace ExcelAddInDemo.Controllers
                 LogHelper.WriteLog($"[CloudSolutionController] SearchMaterialComponents 异常: {ex.Message}");
                 return new List<ComponentApiDto>();
             }
+        }
+
+        /// <summary>
+        /// 获取所有已存在的二次回路方案列表，供编辑弹窗中的“复制其他方案”功能选择使用
+        /// </summary>
+        public List<SecondarySchemeEntity> GetSecondarySchemesForCopy(string? keyword = null)
+        {
+            try
+            {
+                // 从本地 SQLite 数据库读取所有历史二次方案
+                var list = Services.PersonalComponentDbService.GetAllSecondarySchemes(keyword, null);
+                // 确保非空返回
+                return list ?? new List<SecondarySchemeEntity>();
+            }
+            catch (Exception ex)
+            {
+                // 记录查询异常日志
+                LogHelper.WriteLog($"[CloudSolutionController] GetSecondarySchemesForCopy 异常: {ex.Message}");
+                return new List<SecondarySchemeEntity>();
+            }
+        }
+
+        /// <summary>
+        /// 读取指定 DWG 图纸的原始二进制 Base64 数据供前端 cad-view 矢量引擎解析
+        /// </summary>
+        /// <param name="filePath">DWG 文件的完整物理路径或相对图纸名称</param>
+        public object GetDwgBinary(string filePath)
+        {
+            // 规范化文件物理路径
+            string targetPath = filePath ?? string.Empty;
+            // 若初始路径不存在，尝试从配置的二次回路图纸根目录智能检索补全
+            if (!System.IO.File.Exists(targetPath))
+            {
+                // 获取当前二次回路根目录
+                string rootDir = GetSecondaryCircuitDwgDir();
+                if (!string.IsNullOrWhiteSpace(rootDir) && System.IO.Directory.Exists(rootDir))
+                {
+                    // 规范化带 .dwg 扩展名的文件名
+                    string searchName = targetPath.EndsWith(".dwg", StringComparison.OrdinalIgnoreCase)
+                        ? targetPath
+                        : targetPath + ".dwg";
+                    // 提取纯文件名用于递归匹配
+                    string pureFileName = System.IO.Path.GetFileName(searchName);
+                    // 首先尝试直接子级拼接
+                    string candidate = System.IO.Path.Combine(rootDir, searchName);
+                    if (System.IO.File.Exists(candidate))
+                    {
+                        // 命中直接子级
+                        targetPath = candidate;
+                    }
+                    else
+                    {
+                        // 递归深入遍历根目录下所有子文件夹寻找匹配图纸
+                        try
+                        {
+                            // 搜索所有子目录中的对应图纸
+                            var matchedFiles = System.IO.Directory.GetFiles(rootDir, pureFileName, System.IO.SearchOption.AllDirectories);
+                            if (matchedFiles.Length > 0 && System.IO.File.Exists(matchedFiles[0]))
+                            {
+                                // 命中子目录图纸文件
+                                targetPath = matchedFiles[0];
+                            }
+                        }
+                        catch (Exception exFind)
+                        {
+                            // 记录目录扫描异常
+                            LogHelper.WriteLog($"[CloudSolutionController] 递归检索图纸异常: {exFind.Message}");
+                        }
+                    }
+                }
+            }
+
+            // 若仍不存在，尝试从本地数据目录或工作区备份检索
+            if (!System.IO.File.Exists(targetPath))
+            {
+                // 记录图纸不存在警告日志
+                LogHelper.WriteLog($"[CloudSolutionController] 未找到指定 DWG 文件: {filePath}, 解析路径: {targetPath}");
+            }
+
+            // 调用底层的通用二进制 Base64 转换服务
+            var (success, base64, err) = ExcelAddInDemo.Services.DwgPreviewService.ReadDwgBinaryBase64(targetPath);
+            return new
+            {
+                success = success,
+                fileName = System.IO.Path.GetFileName(targetPath),
+                fullPath = targetPath,
+                base64Data = base64,
+                errorMessage = err
+            };
         }
     }
 }
