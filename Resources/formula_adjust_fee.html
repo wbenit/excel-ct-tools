@@ -384,7 +384,10 @@
         z-index: 2 !important;
       }
       /* 固定列在行悬停时的背景色同步，避免被纯白覆盖遮蔽 hover 效果 */
-      .detail-section .el-table__body tr:hover > td.el-table-fixed-column--left {
+      .detail-section
+        .el-table__body
+        tr:hover
+        > td.el-table-fixed-column--left {
         /* 悬停时采用淡灰底色保持视觉一致 */
         background-color: #f8fafc !important;
       }
@@ -426,7 +429,14 @@
               <!-- 列1：公式组名称 (支持就地编辑，带默认标记) -->
               <el-table-column prop="name" label="公式组名称" min-width="180">
                 <template #default="scope">
-                  <div style="display: flex; align-items: center; gap: 6px; width: 100%;">
+                  <div
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 6px;
+                      width: 100%;
+                    "
+                  >
                     <el-input
                       v-model="scope.row.name"
                       class="group-name-input"
@@ -434,7 +444,19 @@
                       @change="saveAllToHost"
                       placeholder="公式组名称"
                     ></el-input>
-                    <el-tag v-if="scope.row.isDefault" size="small" type="success" effect="plain" style="flex-shrink: 0; padding: 0 4px; height: 20px; line-height: 18px;">默认</el-tag>
+                    <el-tag
+                      v-if="scope.row.isDefault"
+                      size="small"
+                      type="success"
+                      effect="plain"
+                      style="
+                        flex-shrink: 0;
+                        padding: 0 4px;
+                        height: 20px;
+                        line-height: 18px;
+                      "
+                      >默认</el-tag
+                    >
                   </div>
                 </template>
               </el-table-column>
@@ -446,7 +468,14 @@
                 align="center"
               >
                 <template #default="scope">
-                  <div style="display: flex; align-items: center; justify-content: center; width: 100%;">
+                  <div
+                    style="
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      width: 100%;
+                    "
+                  >
                     <!-- 当前选择行显示功能按钮组件 -->
                     <div
                       v-if="selectedGroup && selectedGroup.id === scope.row.id"
@@ -755,12 +784,9 @@
         <div class="bottom-warning">
           <div>
             *1.
-            公式中C、D列单元格：为空，调价后不修改项目内容；有值，调价后同步修改项目。
+            B列必须包含“小计”项目，在A~C列必须有一列包含“总计”，且在计费区的最后一行。
           </div>
-          <div>
-            *2.
-            添加、删除公式行，请选中后鼠标右键进行。···了解更多内容，请参见《快速入门》第6.2章节。
-          </div>
+          <div>*2. 添加、删除公式行，请选中后鼠标右键进行。</div>
         </div>
       </div>
 
@@ -816,7 +842,9 @@
           const saveAllToHost = () => {
             // 将当前明细同步写回选中公式组中
             if (selectedGroup.value) {
-              selectedGroup.value.details = JSON.parse(JSON.stringify(detailList.value));
+              selectedGroup.value.details = JSON.parse(
+                JSON.stringify(detailList.value),
+              );
             }
             // 向后端发送全量持久化指令
             sendMessageToHost({
@@ -830,12 +858,16 @@
             if (row) {
               // 切换前先保存当前明细
               if (selectedGroup.value && selectedGroup.value.id !== row.id) {
-                selectedGroup.value.details = JSON.parse(JSON.stringify(detailList.value));
+                selectedGroup.value.details = JSON.parse(
+                  JSON.stringify(detailList.value),
+                );
               }
 
               selectedGroup.value = row;
               // 赋予新选公式组绑定的明细项
-              detailList.value = row.details ? JSON.parse(JSON.stringify(row.details)) : [];
+              detailList.value = row.details
+                ? JSON.parse(JSON.stringify(row.details))
+                : [];
             }
           };
 
@@ -854,7 +886,9 @@
               groupName: row.name,
               details: row.details || detailList.value || [],
             });
-            ElementPlus.ElMessage.success(`已将【${row.name}】设为默认公式组并同步更新模板计费行`);
+            ElementPlus.ElMessage.success(
+              `已将【${row.name}】设为默认公式组并同步更新模板计费行`,
+            );
           };
 
           // 复制公式组
@@ -864,7 +898,9 @@
               name: `${row.name}_副本`,
               isSystemDefault: false,
               isDefault: false,
-              details: JSON.parse(JSON.stringify(row.details || detailList.value || [])),
+              details: JSON.parse(
+                JSON.stringify(row.details || detailList.value || []),
+              ),
             };
             groupList.value.push(newG);
             // 选中新复制的公式组
@@ -911,7 +947,11 @@
             // 仅响应鼠标主键 (button === 0)
             if (e.button !== 0) return;
             // 排除点击右上角控制按钮
-            if (e.target.closest('.window-controls') || e.target.closest('.control-btn')) return;
+            if (
+              e.target.closest(".window-controls") ||
+              e.target.closest(".control-btn")
+            )
+              return;
 
             // 获取物理像素与 CSS 像素缩放比率 (保障高分屏精准 1:1 跟随)
             const dpi = window.devicePixelRatio || 1;
@@ -936,7 +976,11 @@
                   const dx = Math.round(pendingDeltaX);
                   const dy = Math.round(pendingDeltaY);
                   if (dx !== 0 || dy !== 0) {
-                    sendMessageToHost({ action: "moveWindow", deltaX: dx, deltaY: dy });
+                    sendMessageToHost({
+                      action: "moveWindow",
+                      deltaX: dx,
+                      deltaY: dy,
+                    });
                     pendingDeltaX = 0;
                     pendingDeltaY = 0;
                   }
@@ -956,18 +1000,22 @@
               const dx = Math.round(pendingDeltaX);
               const dy = Math.round(pendingDeltaY);
               if (dx !== 0 || dy !== 0) {
-                sendMessageToHost({ action: "moveWindow", deltaX: dx, deltaY: dy });
+                sendMessageToHost({
+                  action: "moveWindow",
+                  deltaX: dx,
+                  deltaY: dy,
+                });
                 pendingDeltaX = 0;
                 pendingDeltaY = 0;
               }
-              window.removeEventListener('pointermove', onPointerMove);
-              window.removeEventListener('pointerup', onPointerUp);
-              window.removeEventListener('pointercancel', onPointerUp);
+              window.removeEventListener("pointermove", onPointerMove);
+              window.removeEventListener("pointerup", onPointerUp);
+              window.removeEventListener("pointercancel", onPointerUp);
             };
 
-            window.addEventListener('pointermove', onPointerMove);
-            window.addEventListener('pointerup', onPointerUp);
-            window.addEventListener('pointercancel', onPointerUp);
+            window.addEventListener("pointermove", onPointerMove);
+            window.addEventListener("pointerup", onPointerUp);
+            window.addEventListener("pointercancel", onPointerUp);
           };
 
           // 兼容旧版调用
@@ -1008,89 +1056,103 @@
           };
 
           // 自适应调整单个公式字符串中的单元格引用行号 (支持单单元格引用与连续区间引用)
-          const adjustFormulaRowReferences = (formula, actionType, pivotRow) => {
+          const adjustFormulaRowReferences = (
+            formula,
+            actionType,
+            pivotRow,
+          ) => {
             // 若不是有效字符串或不以等号开头，直接原样返回
-            if (!formula || typeof formula !== 'string' || !formula.startsWith('=')) {
+            if (
+              !formula ||
+              typeof formula !== "string" ||
+              !formula.startsWith("=")
+            ) {
               return formula;
             }
 
             // 1. 优先匹配并替换区间连续引用 (形如 H1:H3, K2:K5 等)
             // 采用精准正则捕获两端的列标与行号数字
-            let result = formula.replace(/(?<![A-Za-z0-9_])([A-Za-z]+)(\d+):([A-Za-z]+)(\d+)(?![A-Za-z0-9_])/g, (match, col1, r1Str, col2, r2Str) => {
-              // 解析起始与终止端点行号
-              let r1 = parseInt(r1Str, 10);
-              let r2 = parseInt(r2Str, 10);
-              // 若解析失败保留原匹配文本
-              if (isNaN(r1) || isNaN(r2)) return match;
+            let result = formula.replace(
+              /(?<![A-Za-z0-9_])([A-Za-z]+)(\d+):([A-Za-z]+)(\d+)(?![A-Za-z0-9_])/g,
+              (match, col1, r1Str, col2, r2Str) => {
+                // 解析起始与终止端点行号
+                let r1 = parseInt(r1Str, 10);
+                let r2 = parseInt(r2Str, 10);
+                // 若解析失败保留原匹配文本
+                if (isNaN(r1) || isNaN(r2)) return match;
 
-              // 规范化起始行与终止行
-              let startRow = Math.min(r1, r2);
-              let endRow = Math.max(r1, r2);
-              let isReversed = r1 > r2;
+                // 规范化起始行与终止行
+                let startRow = Math.min(r1, r2);
+                let endRow = Math.max(r1, r2);
+                let isReversed = r1 > r2;
 
-              // 插入行场景逻辑处理
-              if (actionType === 'insert') {
-                // 插入点在区间起点之前或起点处，整个区间整体下移 +1
-                if (pivotRow <= startRow) {
-                  startRow += 1;
-                  endRow += 1;
-                } else if (pivotRow > startRow && pivotRow <= endRow) {
-                  // 插入点落在区间内部，起点不变，终点 +1 (区间自动向后扩展容纳新行)
-                  endRow += 1;
-                } else if (pivotRow === endRow + 1) {
-                  // 插入点紧邻区间末尾下方 (例如在求和区域末尾追加新费用项)，求和区间自动扩大包含新行
-                  endRow += 1;
-                }
-              } else if (actionType === 'delete') {
-                // 删除行场景逻辑处理
-                if (pivotRow < startRow) {
-                  // 删除点在区间之前，整个区间整体上移 -1
-                  startRow = Math.max(1, startRow - 1);
-                  endRow = Math.max(1, endRow - 1);
-                } else if (pivotRow >= startRow && pivotRow <= endRow) {
-                  // 删除点落在区间内部或端点处
-                  if (startRow === endRow) {
-                    // 区间仅剩单行且被物理删除，标记公式引用失效
-                    return '#REF!';
+                // 插入行场景逻辑处理
+                if (actionType === "insert") {
+                  // 插入点在区间起点之前或起点处，整个区间整体下移 +1
+                  if (pivotRow <= startRow) {
+                    startRow += 1;
+                    endRow += 1;
+                  } else if (pivotRow > startRow && pivotRow <= endRow) {
+                    // 插入点落在区间内部，起点不变，终点 +1 (区间自动向后扩展容纳新行)
+                    endRow += 1;
+                  } else if (pivotRow === endRow + 1) {
+                    // 插入点紧邻区间末尾下方 (例如在求和区域末尾追加新费用项)，求和区间自动扩大包含新行
+                    endRow += 1;
                   }
-                  // 区间缩减 1 行，终点上移
-                  endRow = Math.max(startRow, endRow - 1);
+                } else if (actionType === "delete") {
+                  // 删除行场景逻辑处理
+                  if (pivotRow < startRow) {
+                    // 删除点在区间之前，整个区间整体上移 -1
+                    startRow = Math.max(1, startRow - 1);
+                    endRow = Math.max(1, endRow - 1);
+                  } else if (pivotRow >= startRow && pivotRow <= endRow) {
+                    // 删除点落在区间内部或端点处
+                    if (startRow === endRow) {
+                      // 区间仅剩单行且被物理删除，标记公式引用失效
+                      return "#REF!";
+                    }
+                    // 区间缩减 1 行，终点上移
+                    endRow = Math.max(startRow, endRow - 1);
+                  }
                 }
-              }
 
-              // 还原原区间端点排列顺序
-              let newR1 = isReversed ? endRow : startRow;
-              let newR2 = isReversed ? startRow : endRow;
-              // 拼装平移后的区间表达式
-              return `${col1}${newR1}:${col2}${newR2}`;
-            });
+                // 还原原区间端点排列顺序
+                let newR1 = isReversed ? endRow : startRow;
+                let newR2 = isReversed ? startRow : endRow;
+                // 拼装平移后的区间表达式
+                return `${col1}${newR1}:${col2}${newR2}`;
+              },
+            );
 
             // 2. 匹配并替换剩余的单单元格引用 (形如 H1, F5, G5, K3 等，前后排除冒号以防误伤区间)
-            result = result.replace(/(?<![A-Za-z0-9_:])([A-Za-z]+)(\d+)(?![:A-Za-z0-9_])/g, (match, col, rStr) => {
-              // 解析单元格行号数字
-              let r = parseInt(rStr, 10);
-              // 若行号解析失败则原样返回
-              if (isNaN(r)) return match;
+            result = result.replace(
+              /(?<![A-Za-z0-9_:])([A-Za-z]+)(\d+)(?![:A-Za-z0-9_])/g,
+              (match, col, rStr) => {
+                // 解析单元格行号数字
+                let r = parseInt(rStr, 10);
+                // 若行号解析失败则原样返回
+                if (isNaN(r)) return match;
 
-              // 插入行场景
-              if (actionType === 'insert') {
-                // 若被引用的行号大于等于插入点阈值，则该行下移 +1
-                if (r >= pivotRow) {
-                  return `${col}${r + 1}`;
+                // 插入行场景
+                if (actionType === "insert") {
+                  // 若被引用的行号大于等于插入点阈值，则该行下移 +1
+                  if (r >= pivotRow) {
+                    return `${col}${r + 1}`;
+                  }
+                } else if (actionType === "delete") {
+                  // 删除行场景
+                  if (r > pivotRow) {
+                    // 行号大于删除位置，该行上移 -1
+                    return `${col}${r - 1}`;
+                  } else if (r === pivotRow) {
+                    // 正好引用了被删除的这一行，标记引用失效
+                    return "#REF!";
+                  }
                 }
-              } else if (actionType === 'delete') {
-                // 删除行场景
-                if (r > pivotRow) {
-                  // 行号大于删除位置，该行上移 -1
-                  return `${col}${r - 1}`;
-                } else if (r === pivotRow) {
-                  // 正好引用了被删除的这一行，标记引用失效
-                  return '#REF!';
-                }
-              }
-              // 其余行号保持不变
-              return match;
-            });
+                // 其余行号保持不变
+                return match;
+              },
+            );
 
             // 返回平移更新后的公式字符串
             return result;
@@ -1099,7 +1161,13 @@
           // 遍历明细列表中所有行的所有公式属性执行自适应调整
           const adjustAllRowsFormulas = (list, actionType, pivotRow) => {
             // 定义可能包含公式的单元格属性集合
-            const formulaFields = ['quantity', 'price', 'totalPriceFormula', 'costPrice', 'costTotalPriceFormula'];
+            const formulaFields = [
+              "quantity",
+              "price",
+              "totalPriceFormula",
+              "costPrice",
+              "costTotalPriceFormula",
+            ];
 
             // 循环遍历表格中每一行数据对象
             list.forEach((row) => {
@@ -1107,8 +1175,12 @@
               formulaFields.forEach((field) => {
                 const val = row[field];
                 // 仅针对非空且以等号开头的公式执行平移
-                if (val && typeof val === 'string' && val.startsWith('=')) {
-                  row[field] = adjustFormulaRowReferences(val, actionType, pivotRow);
+                if (val && typeof val === "string" && val.startsWith("=")) {
+                  row[field] = adjustFormulaRowReferences(
+                    val,
+                    actionType,
+                    pivotRow,
+                  );
                 }
               });
             });
@@ -1128,7 +1200,7 @@
             const pivotRow = idx + 1;
 
             // 先对列表中所有现有行的所有公式进行 +1 调整 (行号 >= pivotRow 的引用全部下移)
-            adjustAllRowsFormulas(detailList.value, 'insert', pivotRow);
+            adjustAllRowsFormulas(detailList.value, "insert", pivotRow);
 
             // 构造新插入的空白费用行对象
             const newRow = {
@@ -1140,7 +1212,8 @@
               quantity: "",
               price: "",
               // 默认公式自适应指向小计行 (若在第1行向上插入则小计下移为第2行，否则为第1行)
-              totalPriceFormula: pivotRow === 1 ? "=ROUND(H2*0.05, 2)" : "=ROUND(H1*0.05, 2)",
+              totalPriceFormula:
+                pivotRow === 1 ? "=ROUND(H2*0.05, 2)" : "=ROUND(H1*0.05, 2)",
               costPrice: "",
               costTotalPriceFormula: "",
               category: "费用",
@@ -1151,7 +1224,9 @@
             // 同步持久化写入配置文件
             saveAllToHost();
             // 弹出操作成功提示消息
-            ElementPlus.ElMessage.success("已向上插入新公式行，相关单元格引用已自动调整");
+            ElementPlus.ElMessage.success(
+              "已向上插入新公式行，相关单元格引用已自动调整",
+            );
           };
 
           // 向下插入公式行
@@ -1168,7 +1243,7 @@
             const pivotRow = idx + 2;
 
             // 先对列表中所有现有行的所有公式进行 +1 调整 (行号 >= pivotRow 的引用全部下移)
-            adjustAllRowsFormulas(detailList.value, 'insert', pivotRow);
+            adjustAllRowsFormulas(detailList.value, "insert", pivotRow);
 
             // 构造新插入的空白费用行对象
             const newRow = {
@@ -1191,7 +1266,9 @@
             // 同步持久化写入配置文件
             saveAllToHost();
             // 弹出操作成功提示消息
-            ElementPlus.ElMessage.success("已向下插入新公式行，相关单元格引用已自动调整");
+            ElementPlus.ElMessage.success(
+              "已向下插入新公式行，相关单元格引用已自动调整",
+            );
           };
 
           // 删除选中的公式行
@@ -1211,12 +1288,14 @@
             detailList.value.splice(idx, 1);
 
             // 对剩余列表中所有现有行的公式进行 -1 调整 (行号 > deletedRow 的引用全部前移)
-            adjustAllRowsFormulas(detailList.value, 'delete', deletedRow);
+            adjustAllRowsFormulas(detailList.value, "delete", deletedRow);
 
             // 同步持久化写入配置文件
             saveAllToHost();
             // 弹出删除成功提示消息
-            ElementPlus.ElMessage.success("已删除选中的公式行，相关单元格引用已自动调整");
+            ElementPlus.ElMessage.success(
+              "已删除选中的公式行，相关单元格引用已自动调整",
+            );
           };
 
           // 挂载加载回调处理
@@ -1235,14 +1314,18 @@
                   if (data.groups && data.groups.length > 0) {
                     groupList.value = data.groups;
                     // 确定激活的公式组
-                    const target = groupList.value.find((g) => g.id === data.defaultGroupId) ||
-                                   groupList.value.find((g) => g.isDefault) ||
-                                   groupList.value[0];
+                    const target =
+                      groupList.value.find(
+                        (g) => g.id === data.defaultGroupId,
+                      ) ||
+                      groupList.value.find((g) => g.isDefault) ||
+                      groupList.value[0];
                     if (target) {
                       selectedGroup.value = target;
-                      detailList.value = target.details && target.details.length > 0
-                        ? JSON.parse(JSON.stringify(target.details))
-                        : (data.details || []);
+                      detailList.value =
+                        target.details && target.details.length > 0
+                          ? JSON.parse(JSON.stringify(target.details))
+                          : data.details || [];
                     }
                   } else if (data.details) {
                     detailList.value = data.details;
@@ -1252,9 +1335,13 @@
                 else if (data && data.action === "applyFormulaResult") {
                   // 判断调费执行结果状态并弹出 Element Plus 友好提示
                   if (data.success) {
-                    ElementPlus.ElMessage.success(data.message || "公式调费应用成功！");
+                    ElementPlus.ElMessage.success(
+                      data.message || "公式调费应用成功！",
+                    );
                   } else {
-                    ElementPlus.ElMessage.warning(data.message || "公式调费应用未完成");
+                    ElementPlus.ElMessage.warning(
+                      data.message || "公式调费应用未完成",
+                    );
                   }
                 }
               });

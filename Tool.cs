@@ -499,7 +499,7 @@ namespace ExcelAddInDemo
                 if (totalCols >= 20)
                 {
                     // 覆盖写入 A 列至 Q 列完整元器件二维数组
-                    matrix[r, 20]=spec;
+                    matrix[r, 20] = spec;
                 }
             }
 
@@ -1172,8 +1172,8 @@ namespace ExcelAddInDemo
                     string nextAText = GetText(r + 1, 1);
 
                     // 匹配明细大标题与表头特征
-                    if ((aText.Contains("柜号") || aText.Contains("箱柜") || aText.Contains("设备")) &&
-                        (nextAText.Contains("序号") || nextAText.Contains("编号")))
+                    if (aText.Contains("柜号") && nextAText.Contains("序号"))
+
                     {
                         // 记录识别到的箱柜信息行行号
                         detRows.Add(r);
@@ -1206,7 +1206,113 @@ namespace ExcelAddInDemo
                 // 箱柜总数取明细块与汇总行两者的较大值，全面兼容纯汇总无明细箱柜
                 int cabCount = Math.Max(detRows.Count, sumRows.Count);
 
-                // 3. 【逐个箱柜定位 Subsum (小计) 与 Tolsum (总计) 并覆盖绑定定义名称】
+                // 3. 【精准配对顶部汇总行与底表明细块，全面支持穿插纯汇总无明细箱柜】
+                // 建立每台箱柜分配到的明细行映射 (数组索引 i 对应第 k = i + 1 台箱柜，值为 0 代表纯汇总无明细)
+                int[] matchedDetRows = new int[cabCount];
+
+                // 若同时存在汇总行与明细行，进行智能特征与柜号双向对齐
+                if (sumRows.Count > 0 && detRows.Count > 0)
+                {
+                    // 记录底表明细行是否已被配对使用
+                    bool[] detUsed = new bool[detRows.Count];
+
+                    // 第一轮：通过柜号/箱柜名称进行 100% 完全精确对齐 (优先原则)
+                    for (int i = 0; i < sumRows.Count; i++)
+                    {
+                        // 提取汇总行柜号文本 (B 列)
+                        string sumCabNo = GetText(sumRows[i], 2);
+                        // 若汇总行未填写柜号则跳过本轮匹配
+                        if (string.IsNullOrEmpty(sumCabNo)) continue;
+
+                        // 遍历底表所有未使用的明细块寻找对应箱柜
+                        for (int j = 0; j < detRows.Count; j++)
+                        {
+                            // 跳过已被配对的明细行
+                            if (detUsed[j]) continue;
+                            // 提取底表明细信息行 B 列柜号与 A 列文本
+                            string detCabNo = GetText(detRows[j], 2);
+                            string detTextA = GetText(detRows[j], 1);
+
+                            // 只要柜号完全一致，或明细信息行 A 列明确包含汇总柜号，立即建立 1 对 1 精准绑定
+                            if ((!string.IsNullOrEmpty(detCabNo) && string.Equals(sumCabNo, detCabNo, StringComparison.OrdinalIgnoreCase)) ||
+                                (!string.IsNullOrEmpty(detTextA) && detTextA.Contains(sumCabNo)))
+                            {
+                                // 记录当前汇总行精准绑定的明细行行号
+                                matchedDetRows[i] = detRows[j];
+                                // 标记该明细行已被占用
+                                detUsed[j] = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // 第二轮：通过汇总行 G 列单价公式引用进行底层关联匹配 (容错柜号名称不完全一致的情况)
+                    for (int i = 0; i < sumRows.Count; i++)
+                    {
+                        // 已通过柜号配对成功的箱柜直接跳过
+                        if (matchedDetRows[i] > 0) continue;
+                        // 提取汇总行 G 列单价公式
+                        string gFormula = GetFormula(sumRows[i], 7);
+                        // 校验公式是否为标准引用表达式
+                        if (!string.IsNullOrEmpty(gFormula) && gFormula.StartsWith("="))
+                        {
+                            // 检查公式引用的行号是否落在某个未使用的明细块范围内
+                            for (int j = 0; j < detRows.Count; j++)
+                            {
+                                if (detUsed[j]) continue;
+                                // 获取当前明细块起始与结束区间
+                                int detStart = detRows[j];
+                                int detNext = (j + 1 < detRows.Count) ? detRows[j + 1] : (usedEndRow + 1);
+                                // 探测公式中是否显式包含了当前明细块内部的行号引用
+                                bool matchRef = System.Text.RegularExpressions.Regex.Matches(gFormula, @"\d+")
+                                    .Cast<System.Text.RegularExpressions.Match>()
+                                    .Any(m => int.TryParse(m.Value, out int r) && r >= detStart && r < detNext);
+
+                                if (matchRef)
+                                {
+                                    // 容错匹配成功，锁定明细行
+                                    matchedDetRows[i] = detRows[j];
+                                    detUsed[j] = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // 第三轮：剩余未匹配箱柜按拓扑顺序保底对齐 (精准排除纯数字单价的无明细柜)
+                    int nextDetIdx = 0;
+                    for (int i = 0; i < sumRows.Count; i++)
+                    {
+                        // 已经配对的箱柜跳过
+                        if (matchedDetRows[i] > 0) continue;
+                        // 寻找下一个尚未使用的底表明细行
+                        while (nextDetIdx < detRows.Count && detUsed[nextDetIdx]) nextDetIdx++;
+                        // 若所有底表明细行均已分配完毕则终止
+                        if (nextDetIdx >= detRows.Count) break;
+
+                        // 提取汇总行 G 列单价数值与公式特征
+                        string gVal = GetText(sumRows[i], 7);
+                        string gFormula = GetFormula(sumRows[i], 7);
+                        // 判断是否为纯数字直接录入 (纯汇总无明细箱柜的核心业务特征)
+                        bool isPureNumber = double.TryParse(gVal, out _) && string.IsNullOrEmpty(gFormula);
+
+                        // 只有非纯数字单价的柜子才分配明细行；若是纯数字单价且无对应底表，则视为纯汇总无明细柜保持为 0
+                        if (!isPureNumber || detRows.Count == sumRows.Count)
+                        {
+                            // 按顺序分配明细行
+                            matchedDetRows[i] = detRows[nextDetIdx];
+                            detUsed[nextDetIdx] = true;
+                            nextDetIdx++;
+                        }
+                    }
+                }
+                else if (sumRows.Count == 0 && detRows.Count > 0)
+                {
+                    // 若无顶部汇总行，直接按明细行顺序对齐
+                    for (int i = 0; i < detRows.Count; i++) matchedDetRows[i] = detRows[i];
+                }
+
+                // 4. 【逐个箱柜定位 Subsum (小计) 与 Tolsum (总计) 并覆盖绑定定义名称】
                 for (int i = 0; i < cabCount; i++)
                 {
                     // 箱柜序号从 1 开始递增
@@ -1217,121 +1323,169 @@ namespace ExcelAddInDemo
                     // 只要存在有效汇总行，无论是否有明细，均全量校准绑定 Cab_Sum_k
                     SafeSetSheetName(sheet, sheetName, $"{sumPrefix}{k}", curSumRow);
 
-                    // 只有当存在对应的底表明细块时，才定位并绑定明细块的 3 个定义名称
-                    if (i < detRows.Count)
+                    // 获取当前箱柜精准匹配到的明细行行号 (为 0 说明当前箱柜为纯汇总无明细箱柜)
+                    int curDetRow = (i < matchedDetRows.Length) ? matchedDetRows[i] : 0;
+
+                    // 只有当精准匹配到底表明细块时，才定位并绑定明细块的 3 个定义名称
+                    if (curDetRow > 0)
                     {
-                        // 提取当前箱柜信息行物理行号
-                        int curDetRow = detRows[i];
-                        // 确定当前明细块搜索边界
-                        int nextBoundaryRow = (i + 1 < detRows.Count) ? detRows[i + 1] : (usedEndRow + 1);
-
-                        // 寻找小计行 Cab_Subsum (规则: 含有公式且公式同时包含 SUM 与 INDEX，不依赖 B 列名称)
-                        int curSubsumRow = 0;
-                        // 寻找总计行 Cab_Tolsum (规则: 位于小计行下方，且 G 列公式一定引用了其他行)
-                        int curTolsumRow = 0;
-
-                        // 在明细块区间内部寻找小计行与总计行
-                        for (int r = curDetRow + 2; r < nextBoundaryRow; r++)
+                        // 动态计算当前明细块搜索下边界 (下一个大于当前行号的明细行，或者已用区域末尾)
+                        int nextBoundaryRow = usedEndRow + 1;
+                        foreach (int dr in detRows)
                         {
-                            // 1. 优先定位小计行 (若未找到小计行且本行任意单元格公式同时包含 SUM 和 INDEX)
-                            if (curSubsumRow == 0)
+                            // 寻找大于当前明细行且距离最近的下一个明细行
+                            if (dr > curDetRow && dr < nextBoundaryRow)
                             {
-                                // 扫描前 12 列 (覆盖 H/K 列等主要金额汇总列) 的公式内容
-                                for (int c = 1; c <= Math.Min(arrCols, 12); c++)
-                                {
-                                    // 安全读取单元格公式字符串
-                                    string f = GetFormula(r, c);
-                                    // 判定公式中是否同时含有 SUM 与 INDEX 关键字 (不依赖 B 列名称)
-                                    if (!string.IsNullOrEmpty(f) &&
-                                        f.IndexOf("SUM", StringComparison.OrdinalIgnoreCase) >= 0 &&
-                                        f.IndexOf("INDEX", StringComparison.OrdinalIgnoreCase) >= 0)
-                                    {
-                                        // 锁定当前行号为小计行物理行号
-                                        curSubsumRow = r;
-                                        break;
-                                    }
-                                }
+                                nextBoundaryRow = dr;
                             }
-                            // 2. 小计行已定位后，继续向下搜寻总计行
-                            else if (curTolsumRow == 0)
+                        }
+
+                        // 1. 在当前箱柜区间 [curDetRow + 2, nextBoundaryRow - 1] 内部由底向上寻找总计行 Cab_Tolsum
+                        int curTolsumRow = 0;
+                        int scanLimitRow = Math.Min(nextBoundaryRow - 1, usedEndRow);
+
+                        // 优先按文本特征倒序扫描总计行 (支持 A/B/C 列合并单元格或文字位于 B 列的情况)
+                        for (int r = scanLimitRow; r >= curDetRow + 2; r--)
+                        {
+                            // 提取前 3 列文本 (覆盖 A、B、C 列)
+                            string aText = GetText(r, 1);
+                            string bText = GetText(r, 2);
+                            string cText = GetText(r, 3);
+
+                            // 排除制表人、审核人、日期等落款说明行
+                            bool isSignOff = aText.Contains("人") || bText.Contains("人") || aText.Contains("期") || bText.Contains("期") || aText.Contains("注") || bText.Contains("注");
+
+                            // 只要 A/B/C 列明确包含“总计”且非落款说明行，立即锁定为总计行
+                            if ((aText.Contains("总计") || bText.Contains("总计") || cText.Contains("总计")) && !isSignOff)
                             {
-                                // 获取总计行 G 列 (第 7 列，销售单价) 公式
-                                string gFormula = GetFormula(r, 7);
-                                // 校验 G 列是否包含有效公式
-                                if (!string.IsNullOrEmpty(gFormula) && gFormula.StartsWith("="))
-                                {
-                                    // 正则匹配公式中引用的单元格行号 (如 H75, $H$75, H5 等)
-                                    var matches = System.Text.RegularExpressions.Regex.Matches(gFormula, @"[A-Za-z]+\$?(\d+)");
-                                    // 标记该公式是否引用了其他有效行
-                                    bool referencesOtherRow = false;
-                                    // 遍历所有提取到的引用行号
-                                    foreach (System.Text.RegularExpressions.Match m in matches)
-                                    {
-                                        // 尝试解析被引用的行号数字
-                                        if (int.TryParse(m.Groups[1].Value, out int refRow))
-                                        {
-                                            // 核心特征：总计行的 G 列公式一定引用了其他行 (通常为单台合计行)
-                                            if (refRow > 0 && refRow != r)
-                                            {
-                                                // 确认为引用了其他行
-                                                referencesOtherRow = true;
-                                                break;
-                                            }
-                                        }
-                                    }
-
-                                    // 若命中了引用其他行的特征，锁定为总计行
-                                    if (referencesOtherRow)
-                                    {
-                                        curTolsumRow = r;
-                                    }
-                                }
-
-                                // 辅助容错：若 A 列文本显式包含“总计”，亦可安全确认
-                                if (curTolsumRow == 0 && GetText(r, 1).Contains("总计"))
-                                {
-                                    // 锁定总计行
-                                    curTolsumRow = r;
-                                }
-                            }
-
-                            // 若小计与总计行均已确定，提前结束当前箱柜区间的扫描
-                            if (curSubsumRow > 0 && curTolsumRow > 0)
-                            {
+                                // 成功锁定总计行物理行号
+                                curTolsumRow = r;
                                 break;
                             }
                         }
 
-                        // 安全兜底策略：杜绝破坏已精准识别的锚点 --硬编码--
-                        if (curSubsumRow > 0 && curTolsumRow == 0)
+                        // 辅助容错：若未标注“总计”文字，依据销售总价或单价公式的汇总乘算特征探测总计行
+                        if (curTolsumRow == 0)
                         {
-                            // 小计已准确找到但总计未命中，总计行默认在小计下方 5 行 (对应标准计费 6 行)
-                            curTolsumRow = curSubsumRow + 5;
-                        }
-                        else if (curSubsumRow == 0 && curTolsumRow > 0)
-                        {
-                            // 总计已命中但小计未识别，小计行在总计行上方 5 行
-                            curSubsumRow = Math.Max(curDetRow + 2, curTolsumRow - 5);
-                        }
-                        else if (curSubsumRow == 0 && curTolsumRow == 0)
-                        {
-                            // 两者均未识别，按标准模板间距估算 --硬编码--
-                            curTolsumRow = curDetRow + 27;
-                            curSubsumRow = curTolsumRow - 5;
+                            // 倒序扫描寻找包含公式引用的汇总行
+                            for (int r = scanLimitRow; r >= curDetRow + 2; r--)
+                            {
+                                // 获取 H 列销售总价公式与 G 列单价公式
+                                string hFormula = GetFormula(r, 8);
+                                string gFormula = GetFormula(r, 7);
+
+                                // 判定是否具备总计行的公式特征 (单台合计乘台数或引用前置合计行)
+                                if ((!string.IsNullOrEmpty(hFormula) && hFormula.StartsWith("=") && hFormula.Contains("*")) ||
+                                    (!string.IsNullOrEmpty(gFormula) && gFormula.StartsWith("=") && (gFormula.Contains("H") || gFormula.Contains("h"))))
+                                {
+                                    // 容错锁定总计行物理行号
+                                    curTolsumRow = r;
+                                    break;
+                                }
+                            }
                         }
 
-                        // 绑定底表明细块的 3 个定义名称 (信息行、小计行、总计行)
+                        // 2. 方案库指纹反查锁定计费首行 (第一重保险：100% 逐项完全吻合)
+                        int curFeeStartRow = 0;
+
+                        if (curTolsumRow > 0)
+                        {
+                            try
+                            {
+                                // 实例化公式控制器提取系统已登记的所有公式组方案
+                                var feeCtrl = new Controllers.FormulaAdjustFeeController();
+                                var groups = feeCtrl.GetFormulaGroups();
+                                if (groups != null && groups.Count > 0)
+                                {
+                                    // 遍历所有方案进行指纹名称匹配
+                                    foreach (var g in groups)
+                                    {
+                                        if (g.Details != null && g.Details.Count >= 3)
+                                        {
+                                            int N = g.Details.Count;
+                                            int candidateStart = curTolsumRow - N + 1;
+                                            // 校验起始行合法性 (不能越过箱柜信息行)
+                                            if (candidateStart >= curDetRow + 2)
+                                            {
+                                                int matchCount = 0;
+                                                // 逐行比对 B 列费用名称与方案项的匹配度 (不区分大小写，去除首尾空白)
+                                                for (int idx = 0; idx < N; idx++)
+                                                {
+                                                    // 方案预设费用名称
+                                                    string expName = g.Details[idx].Name?.Trim() ?? "";
+                                                    // 单元格实际费用名称
+                                                    string actName = GetText(candidateStart + idx, 2);
+                                                    // 严格逐行完全比对完全一致
+                                                    if (!string.IsNullOrEmpty(expName) && string.Equals(actName, expName, StringComparison.OrdinalIgnoreCase))
+                                                    {
+                                                        matchCount++;
+                                                    }
+                                                }
+                                                // 用户指示：严禁模糊猜测，必须 100% 逐项完全吻合 (matchCount == N) 才确认命中该方案
+                                                if (matchCount == N)
+                                                {
+                                                    // 精准锁定计费区域起始物理行号
+                                                    curFeeStartRow = candidateStart;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
+
+                            // 用户明确指示：若第一重保险未匹配到任何预设方案，不使用第二重盲猜，直接报错提醒！
+                            if (curFeeStartRow == 0)
+                            {
+                                string warnMsg = $"箱柜 [{k}] (总计位于第 {curTolsumRow} 行) 未能匹配到任何系统预设的费用公式方案！\n请检查该箱柜计费区域是否规范，或在【公式法调费】中重新为其应用费用公式。";
+                                LogHelper.WriteLog($"[费用方案匹配失败] {warnMsg}");
+                                try
+                                {
+                                    System.Windows.Forms.MessageBox.Show(warnMsg, "费用方案匹配失败提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                                }
+                                catch { }
+                            }
+                        }
+
+                        // 3. 规范绑定定义名称与刷新公式
                         SafeSetSheetName(sheet, sheetName, $"{detPrefix}{k}", curDetRow);
-                        SafeSetSheetName(sheet, sheetName, $"{subsumPrefix}{k}", curSubsumRow);
-                        SafeSetSheetName(sheet, sheetName, $"{tolsumPrefix}{k}", curTolsumRow);
+                        if (curTolsumRow > 0)
+                        {
+                            SafeSetSheetName(sheet, sheetName, $"{tolsumPrefix}{k}", curTolsumRow);
+                        }
 
-                        // 显式清除明细表头 B 列超链接 (det 行 B 列不需要链接)
-                        try { sheet.Cells[curDetRow, 2].Hyperlinks.Delete(); } catch { }
+                        int curSubsumRow = curFeeStartRow;
+                        // 只有当精准匹配到方案起始行时，才安全校准 Cab_Subsum 并刷新计费公式
+                        if (curFeeStartRow > 0 && curTolsumRow > 0)
+                        {
+                            SafeSetSheetName(sheet, sheetName, $"{subsumPrefix}{k}", curSubsumRow);
 
-                        // 规则 6 & 规则 7: 刷新元器件区域 A 列自适应序号与计费区域公式
-                        int compStartRow = curDetRow + 2;
-                        ExcelServices.RefreshCabinetFeeAreaFormulas(sheet, curDetRow, compStartRow, curSubsumRow, curTolsumRow);
+                            // 显式清除明细表头 B 列超链接 (det 行 B 列不需要链接)
+                            try { sheet.Cells[curDetRow, 2].Hyperlinks.Delete(); } catch { }
+
+                            // 规则 6 & 规则 7: 刷新元器件区域 A 列自适应序号与计费区域公式
+                            int compStartRow = curDetRow + 2;
+                            ExcelServices.RefreshCabinetFeeAreaFormulas(sheet, curDetRow, compStartRow, curSubsumRow, curTolsumRow);
+                        }
                     }
+                    else
+                    {
+                        // 针对纯汇总无明细箱柜：安全清理可能残留的明细定义名称，保证定义名称纯净
+                        SafeDeleteSheetName(sheet, $"{detPrefix}{k}");
+                        SafeDeleteSheetName(sheet, $"{subsumPrefix}{k}");
+                        SafeDeleteSheetName(sheet, $"{tolsumPrefix}{k}");
+                    }
+                }
+
+                // 5. 【清理大于 cabCount 的多余旧箱柜定义名称，防止幽灵定义名称残留】
+                for (int oldK = cabCount + 1; oldK <= cabCount + 30; oldK++)
+                {
+                    // 安全删除残留的汇总行与明细行定义名称
+                    SafeDeleteSheetName(sheet, $"{sumPrefix}{oldK}");
+                    SafeDeleteSheetName(sheet, $"{detPrefix}{oldK}");
+                    SafeDeleteSheetName(sheet, $"{subsumPrefix}{oldK}");
+                    SafeDeleteSheetName(sheet, $"{tolsumPrefix}{oldK}");
                 }
 
                 // 返回当前工作表校准绑定的箱柜总数量
@@ -1343,6 +1497,25 @@ namespace ExcelAddInDemo
                 LogHelper.WriteLog($"工作表校准定义名称异常: {ex.Message}");
                 return 0;
             }
+        }
+
+        /// <summary>
+        /// 安全删除工作表级别的指定定义名称
+        /// </summary>
+        /// <param name="sheet">目标工作表 COM 对象</param>
+        /// <param name="tagName">定义名称字符串 (如 Cab_Det_1)</param>
+        public static void SafeDeleteSheetName(dynamic sheet, string tagName)
+        {
+            // 校验入参工作表与标签有效性
+            if (sheet == null || string.IsNullOrWhiteSpace(tagName)) return;
+            try
+            {
+                // 尝试从工作表定义名称集合提取
+                dynamic? existing = SafeGetSheetName(sheet, tagName);
+                // 若存在则安全执行物理删除
+                if (existing != null) existing.Delete();
+            }
+            catch { }
         }
 
         /// <summary>

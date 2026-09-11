@@ -251,11 +251,26 @@ namespace ExcelAddInDemo
             // 统计成功更新的箱柜数
             int updatedCount = 0;
 
+            // 路线 1 增强：调费前先执行一次定义名称与计费起止行自愈校准，彻底纠偏历史可能存在的行号漂移
+            Tool.FixAndFillCabinetNamesForSheet(sheet);
+            // 显式强类型接收，彻底切断 dynamic 传染以支持 LINQ 静态编译
+            List<KeyValuePair<int, Models.CabinetAnchorModel>> latestCabinets = Tool.GetSheetValidCabinets((object)sheet, (object?)activeWb);
+            var targetDict = new HashSet<int>(targetCabinets.Select(c => c.Key));
+
             // 规则：多箱柜批量调费必须自底向上 (按箱柜物理行号降序) 遍历
             // 确保下方箱柜的增删行完全不会破坏上方箱柜在 Excel 中的物理行号
-            var sortedCabinets = targetCabinets
+            List<KeyValuePair<int, Models.CabinetAnchorModel>> sortedCabinets = latestCabinets
+                .Where(c => targetDict.Contains(c.Key))
                 .OrderByDescending(c => Convert.ToInt32(c.Value.Det.Row))
                 .ToList();
+
+            // 若自愈刷新后未匹配到有效列表，回退原传入列表
+            if (sortedCabinets.Count == 0)
+            {
+                sortedCabinets = targetCabinets
+                    .OrderByDescending(c => Convert.ToInt32(c.Value.Det.Row))
+                    .ToList();
+            }
 
             // 遍历当前工作表中的所有目标箱柜
             foreach (var cab in sortedCabinets)

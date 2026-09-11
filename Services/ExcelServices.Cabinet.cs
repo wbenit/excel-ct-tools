@@ -1702,10 +1702,24 @@ namespace ExcelAddInDemo
                     sheet.Range[$"A{compStartRow}:A{compEndRow}"].Formula = compSeqMatrix;
                 }
 
-                // 2. 刷新小计行求和公式 (H 列销售总价与 K 列成本总价)
-                sheet.Cells[subsumRow, 8].Formula = $"=ROUND(SUM(H{compStartRow}:INDEX(H:H,ROW()-1)),2)";
+                // 2. 刷新小计行求和公式 (精准定位真正包含“小计”文本的行，严格保护前置辅材/箱体行公式)
+                int actualSubsumRow = subsumRow;
+                // 遍历计费区域寻找小计行
+                for (int r = subsumRow; r < tolsumRow; r++)
+                {
+                    // 读取 B 列名称
+                    string bVal = Convert.ToString(sheet.Cells[r, 2].Value2)?.Trim() ?? "";
+                    // 只要 B 列包含“小计”关键字即精准锁定真正的求和小计行
+                    if (bVal.Contains("小计"))
+                    {
+                        actualSubsumRow = r;
+                        break;
+                    }
+                }
+                // 仅对锁定的小计行刷新求和公式，确保元器件与前置辅材费用完整汇总入小计
+                sheet.Cells[actualSubsumRow, 8].Formula = $"=ROUND(SUM(H{compStartRow}:INDEX(H:H,ROW()-1)),2)";
                 // K 列成本总价自适应求和公式
-                sheet.Cells[subsumRow, 11].Formula = $"=ROUND(SUM(K{compStartRow}:INDEX(K:K,ROW()-1)),2)";
+                sheet.Cells[actualSubsumRow, 11].Formula = $"=ROUND(SUM(K{compStartRow}:INDEX(K:K,ROW()-1)),2)";
 
                 // 3. 修复计费区域 (从小计行 subsumRow 到单台合计行 tolsumRow - 1) 的 A 列序号
                 int feeRowCount = tolsumRow - subsumRow;

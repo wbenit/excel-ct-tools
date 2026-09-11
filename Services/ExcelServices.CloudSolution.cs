@@ -554,6 +554,9 @@ namespace ExcelAddInDemo
             dynamic writeRange = ws.Range[$"B{writeStartRow}:I{writeStartRow + reqCount - 1}"];
             writeRange.Value2 = dataMatrix;
 
+            // 规则 6: 新增元器件行后，全表定义名称与计费区域联动自适应刷新
+            Tool.FixAndFillCabinetNamesForSheet(ws);
+
             return (true, $"已成功在当前箱柜中追加 {reqCount} 项元器件明细！");
         }
 
