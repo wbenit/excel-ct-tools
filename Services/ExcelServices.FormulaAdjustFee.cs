@@ -111,16 +111,10 @@ namespace ExcelAddInDemo
                                     continue;
                                 }
 
-                                // 探测当前工作表的有效箱柜集合 (显式传入所属工作簿)
+                                // 路线 1 增强：调费前先执行一次定义名称自愈校准，纠偏新增或插入箱柜后的最新状态
+                                Tool.FixAndFillCabinetNamesForSheet(ws);
+                                // 探测当前工作表的最新有效箱柜集合 (显式传入所属工作簿)
                                 List<KeyValuePair<int, Models.CabinetAnchorModel>> sheetCabinets = Tool.GetSheetValidCabinets((object)ws, activeWb);
-
-                                // 若未探测到箱柜，尝试自动触发一次定义名称识别补齐
-                                if (sheetCabinets.Count == 0)
-                                {
-                                    // 触发定义名称补齐
-                                    Tool.FixAndFillCabinetNamesForSheet(ws);
-                                    sheetCabinets = Tool.GetSheetValidCabinets((object)ws, activeWb);
-                                }
 
                                 // 若确认该表为分类表且包含有效箱柜，执行整表箱柜自底向上倒序调费更新
                                 if (sheetCabinets.Count > 0)
@@ -128,8 +122,8 @@ namespace ExcelAddInDemo
                                     // 临时激活目标工作表，规避非活动表跨表执行行操作或公式写入时的 COM 异常
                                     try { ws.Activate(); } catch { }
 
-                                    // 执行该表箱柜计费区倒序原子替换
-                                    int updatedCount = UpdateCabinetsForSheet(ws, app, activeWb, sheetCabinets, items, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix, skippedCabinets);
+                                    // 执行该表箱柜计费区倒序原子替换 (透传 targetScope)
+                                    int updatedCount = UpdateCabinetsForSheet(ws, app, activeWb, sheetCabinets, items, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix, skippedCabinets, targetScope);
                                     if (updatedCount > 0)
                                     {
                                         // 累计分类表数
@@ -180,15 +174,11 @@ namespace ExcelAddInDemo
                         dynamic activeSheet = activeWb.ActiveSheet;
                         if (activeSheet == null) return (false, 0, 0, false, "当前没有打开或激活的 Excel 工作表。");
 
-                        // 构建当前工作表有效箱柜映射
+                        // 调费前优先触发单表定义名称自愈校准，确保插入/删除箱柜后定义名称处于最新状态
+                        Tool.FixAndFillCabinetNamesForSheet(activeSheet);
+
+                        // 构建当前工作表最新有效箱柜映射
                         List<KeyValuePair<int, Models.CabinetAnchorModel>> validCabinets = Tool.GetSheetValidCabinets((object)activeSheet, activeWb);
-                        // 若有效箱柜为空自动触发单表识别补齐
-                        if (validCabinets.Count == 0)
-                        {
-                            // 补齐定义名称
-                            Tool.FixAndFillCabinetNamesForSheet(activeSheet);
-                            validCabinets = Tool.GetSheetValidCabinets((object)activeSheet, activeWb);
-                        }
 
                         // 校验是否识别到有效箱柜
                         if (validCabinets.Count == 0)
@@ -219,8 +209,8 @@ namespace ExcelAddInDemo
                             targetCabinets.AddRange(validCabinets.Where(c => c.Value?.Det != null));
                         }
 
-                        // 执行当前工作表目标箱柜调费更新
-                        int updated = UpdateCabinetsForSheet(activeSheet, app, activeWb, targetCabinets, items, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix, skippedCabinets);
+                        // 执行当前工作表目标箱柜调费更新 (透传 targetScope)
+                        int updated = UpdateCabinetsForSheet(activeSheet, app, activeWb, targetCabinets, items, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix, skippedCabinets, targetScope);
 
                         // 汇集跳过的箱柜与底层未匹配方案的全部警告
                         var allWarnings = new List<string>();
@@ -278,7 +268,8 @@ namespace ExcelAddInDemo
             string detPrefix,
             string subsumPrefix,
             string tolsumPrefix,
-            List<string>? skippedWarnings = null)
+            List<string>? skippedWarnings = null,
+            string targetScope = "currentCategory")
         {
             // 校验工作表与目标箱柜列表有效性
             if (sheet == null || targetCabinets == null || targetCabinets.Count == 0) return 0;
@@ -292,15 +283,38 @@ namespace ExcelAddInDemo
             Tool.FixAndFillCabinetNamesForSheet(sheet);
             // 显式强类型接收，彻底切断 dynamic 传染以支持 LINQ 静态编译
             List<KeyValuePair<int, Models.CabinetAnchorModel>> latestCabinets = Tool.GetSheetValidCabinets((object)sheet, (object?)activeWb);
-            var targetDict = new HashSet<int>(targetCabinets.Select(c => c.Key));
 
-            // 规则：多箱柜批量调费必须自底向上 (按箱柜物理行号降序) 遍历
-            // 确保下方箱柜的增删行完全不会破坏上方箱柜在 Excel 中的物理行号
-            // 安全防护：过滤排除无底表明细行 Det 的纯汇总箱柜，杜绝 dynamic 为 null 时抛出运行时绑定异常
-            List<KeyValuePair<int, Models.CabinetAnchorModel>> sortedCabinets = latestCabinets
-                .Where(c => targetDict.Contains(c.Key) && c.Value?.Det != null)
-                .OrderByDescending(c => Convert.ToInt32(c.Value.Det.Row))
-                .ToList();
+            // 区分整表全量调费与单柜指定调费：
+            // 当作用域为 allCabinets 或 currentCategory 时，业务目标是更新整表所有具备底表明细的箱柜；
+            // 严禁用旧 Key 字典进行强过滤，彻底解决顶部插入无明细箱柜后序号平移导致的末尾箱柜被漏更 Bug！
+            List<KeyValuePair<int, Models.CabinetAnchorModel>> sortedCabinets;
+            if (targetScope == "allCabinets" || targetScope == "currentCategory")
+            {
+                // 整表调费：直接更新所有具备底表明细的最新箱柜 (自底向上倒序)
+                sortedCabinets = latestCabinets
+                    .Where(c => c.Value?.Det != null)
+                    .OrderByDescending(c => Convert.ToInt32(c.Value.Det.Row))
+                    .ToList();
+            }
+            else
+            {
+                // 单柜或特定子集调费：同时通过物理行号与 Key 双重校验，避免序号偏移导致过滤失败
+                var targetDetRows = new HashSet<int>();
+                foreach (var c in targetCabinets)
+                {
+                    // 安全提取明细行行号
+                    if (c.Value?.Det != null)
+                    {
+                        targetDetRows.Add(Convert.ToInt32(c.Value.Det.Row));
+                    }
+                }
+                var targetDict = new HashSet<int>(targetCabinets.Select(c => c.Key));
+
+                sortedCabinets = latestCabinets
+                    .Where(c => c.Value?.Det != null && (targetDict.Contains(c.Key) || targetDetRows.Contains(Convert.ToInt32(c.Value.Det.Row))))
+                    .OrderByDescending(c => Convert.ToInt32(c.Value.Det.Row))
+                    .ToList();
+            }
 
             // 若自愈刷新后未匹配到有效列表，回退原传入列表 (同样安全过滤 Det != null)
             if (sortedCabinets.Count == 0)
@@ -449,6 +463,18 @@ namespace ExcelAddInDemo
 
                 // 成功计数累加
                 updatedCount++;
+            }
+
+            // 调费完成后，重新触发一次全表定义名称与超链接自愈校准，彻底纠偏插行/删行造成的定义名称与双向超链接漂移
+            try
+            {
+                // 执行工作表定义名称与双向超链接全量自愈重建
+                Tool.FixAndFillCabinetNamesForSheet(sheet);
+            }
+            catch (Exception exFix)
+            {
+                // 记录自愈校准异常
+                LogHelper.WriteLog($"调费后校准工作表定义名称与超链接异常: {exFix.Message}");
             }
 
             // 返回成功更新的箱柜总数

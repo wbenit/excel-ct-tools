@@ -80,6 +80,9 @@ namespace ExcelAddInDemo
                 dynamic app = context.App;
                 string sheetName = sheet.Name?.ToString() ?? "未知工作表";
 
+                // 规则 8: 在操作/读取 Excel 表格前，先调用 FixAndFillCabinetNamesForSheet 确保规则 6 正确性
+                Tool.FixAndFillCabinetNamesForSheet(sheet);
+
                 // 获取当前工作表中所有有效箱柜
                 var validCabinets = Tool.GetSheetValidCabinets(sheet, wb);
                 LogHelper.WriteLog($"[抓取元件] 当前工作表 [{sheetName}] 扫描到的有效箱柜数量: {validCabinets?.Count ?? 0}");
@@ -260,6 +263,9 @@ namespace ExcelAddInDemo
                 app.ScreenUpdating = false;
                 app.Calculation = -4135; // xlCalculationManual
 
+                // 规则 8: 在操作/插行修改 Excel 表格前，先调用 FixAndFillCabinetNamesForSheet 确保规则 6 正确性
+                Tool.FixAndFillCabinetNamesForSheet(sheet);
+
                 // 获取工作表中所有有效箱柜
                 var validCabinets = Tool.GetSheetValidCabinets(sheet, wb);
                 if (validCabinets == null || validCabinets.Count == 0)
@@ -323,6 +329,8 @@ namespace ExcelAddInDemo
                     // 1. 内存中提取该箱柜的一次元件列表
                     var components = new List<EleComponentDto>();
                     var existingGroupNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    // 记录最后一个非空有效元器件行的相对索引 (1-based，对应 1 到 totalRows)
+                    int lastUsedIndex = 0;
 
                     for (int r = 1; r <= totalRows; r++)
                     {
@@ -346,7 +354,11 @@ namespace ExcelAddInDemo
                             existingGroupNames.Add(eleNorms);
                         }
 
+                        // 跳过空白行
                         if (string.IsNullOrEmpty(eleName) && string.IsNullOrEmpty(eleNorms)) continue;
+
+                        // 记录最后一个有效非空元器件行的相对位置
+                        lastUsedIndex = r;
 
                         int.TryParse(rawQty, out int eleNums);
                         if (eleNums <= 0) eleNums = 1;
@@ -387,39 +399,61 @@ namespace ExcelAddInDemo
                         continue;
                     }
 
-                    // 3. 在小计行前 (subsumRow 处) 批量插入行并写入二次元件组
-                    // 提取句柄 (AD/AE 列 = 30/31)
+                    // 3. 用户指令: 元件组需要放在元器件的最下面，有空行就不要插入 (遵循规则 6)
+                    // 计算最后一个非空元器件所在绝对物理行号
+                    int lastUsedRow = lastUsedIndex > 0 ? (compStartRow + lastUsedIndex - 1) : (compStartRow - 1);
+                    // 计算元器件区域内部剩余可直接复用的空行总数
+                    int availableEmptyRows = Math.Max(0, compEndRow - lastUsedRow);
+                    // 待写入的二次元件组总数
+                    int reqCount = matchedList.Count;
+
+                    // 规则 6: 如果元器件数量多余区域行数，先要插入行；若空行足够，则绝不插入新行
+                    if (reqCount > availableEmptyRows)
+                    {
+                        // 仅当空行不足时，按差额计算需要插入的行数
+                        int rowsToInsert = reqCount - availableEmptyRows;
+                        // 在小计行上方插入差额空行
+                        dynamic insertRange = sheet.Range[$"A{subsumRow}:A{subsumRow + rowsToInsert - 1}"];
+                        insertRange.EntireRow.Insert(-4121); // xlShiftDown
+                        // 插入后小计行行号相应下移
+                        subsumRow += rowsToInsert;
+                        // 同步更新元器件终止行号
+                        compEndRow = subsumRow - 1;
+                    }
+
+                    // 4. 紧接在最后一个有效元器件行下方紧凑写入二次元件组
+                    // 确定二次元件组起始写入物理行号
+                    int currentWriteRow = lastUsedRow + 1;
+                    // 提取箱柜表头 CAD 图元句柄 (AD/AE 列 = 30/31)
                     string handleA = sheet.Cells[detRow, 30].Value?.ToString() ?? "";
                     string handleB = sheet.Cells[detRow, 31].Value?.ToString() ?? "";
 
-                    int insertPoint = subsumRow;
-
                     foreach (var match in matchedList)
                     {
-                        // 物理向下插入一行
-                        sheet.Rows[insertPoint].Insert(-4121); // xlShiftDown
+                        // A 列写入自适应动态序号公式 =ROW()-ROW(A${detRow+1}) (detRow+1 为表头行，如 69)
+                        sheet.Cells[currentWriteRow, 1].Formula = $"=ROW()-ROW(A${detRow + 1})"; // --硬编码: 动态序号公式表达式--
 
-                        // B 列写入 "元件组" (类别)
-                        sheet.Cells[insertPoint, map.CategoryCol].Value = config.DefaultCategoryText;
+                        // B 列写入类别 (默认 "元件组")
+                        sheet.Cells[currentWriteRow, map.CategoryCol].Value = config.DefaultCategoryText;
 
-                        // C 列写入二次元件组名称 (如 *ATS+MXOF)
-                        sheet.Cells[insertPoint, map.NormsCol].Value = match.TargetGroup;
+                        // C 列写入二次元件组名称 (如 *多功能表)
+                        sheet.Cells[currentWriteRow, map.NormsCol].Value = match.TargetGroup;
 
                         // E 列写入计量单位 "套"
-                        sheet.Cells[insertPoint, map.UnitCol].Value = config.DefaultUnitText;
+                        sheet.Cells[currentWriteRow, map.UnitCol].Value = config.DefaultUnitText;
 
                         // F 列写入计算得到的套数 (按用户指示: F 列写入计算套数)
-                        sheet.Cells[insertPoint, map.QuantityCol].Value = match.Quantity;
+                        sheet.Cells[currentWriteRow, map.QuantityCol].Value = match.Quantity;
 
                         // 继承 CAD 图元句柄 (AD / AE 列)
-                        if (!string.IsNullOrEmpty(handleA)) sheet.Cells[insertPoint, 30].Value = handleA;
-                        if (!string.IsNullOrEmpty(handleB)) sheet.Cells[insertPoint, 31].Value = handleB;
+                        if (!string.IsNullOrEmpty(handleA)) sheet.Cells[currentWriteRow, 30].Value = handleA;
+                        if (!string.IsNullOrEmpty(handleB)) sheet.Cells[currentWriteRow, 31].Value = handleB;
 
                         result.InsertedGroupsCount++;
-                        result.Details.Add($"箱柜 [{k}] 成功在行 {insertPoint} 插入二次元件组: [{match.TargetGroup}]，套数: {match.Quantity} 套");
+                        result.Details.Add($"箱柜 [{k}] 成功在行 {currentWriteRow} 写入二次元件组: [{match.TargetGroup}]，套数: {match.Quantity} 套");
 
-                        // 插入点向下递增
-                        insertPoint++;
+                        // 写入行号递增
+                        currentWriteRow++;
                     }
 
                     result.ProcessedCabinets++;

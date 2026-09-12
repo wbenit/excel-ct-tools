@@ -215,46 +215,6 @@ namespace ExcelAddInDemo.Controllers
             }
         }
 
-        /// <summary>
-        /// 执行批量或单台箱柜推导并回写至 Excel 工作表
-        /// </summary>
-        /// <param name="sheetName">工作表名称</param>
-        /// <param name="detNames">待处理的箱柜 Det 定义名称列表</param>
-        /// <param name="rules">计算规则</param>
-        /// <returns>处理成功的箱柜数量</returns>
-        public int ApplyCalculation(string sheetName, List<string> detNames, QuotationRules rules)
-        {
-            if (detNames == null || detNames.Count == 0) return 0;
-            int successCount = 0;
-            try
-            {
-                var app = ExcelDnaSafeAccessor.GetApplication();
-                if (app == null) return 0;
-                Workbook wb = app.ActiveWorkbook;
-                if (wb == null) return 0;
-
-                Worksheet ws = wb.Worksheets[sheetName] as Worksheet;
-                if (ws == null) return 0;
-
-                // 遍历每个选中的箱柜执行扫描、计算与回写
-                foreach (string detName in detNames)
-                {
-                    var scanData = ExcelServices.ScanCabinetData(ws, detName);
-                    if (scanData == null) continue;
-
-                    var result = ExcelServices.CalculateCabinetAuxAndShell(scanData, rules);
-                    if (result == null) continue;
-
-                    bool ok = ExcelServices.WriteCabinetCalcResultToSheet(ws, scanData, result, rules);
-                    if (ok) successCount++;
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"批量回写箱柜计算发生异常: {ex.Message}");
-            }
-            return successCount;
-        }
 
         /// <summary>
         /// 写入单个选中的箱柜数据与公式至工作表

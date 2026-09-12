@@ -15,6 +15,10 @@
   <script src="https://unpkg.com/vue@3.3.11/dist/vue.global.prod.js"></script>
   <script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.min.js"></script>
 
+  <!-- 引入专业纯前端 CAD 矢量渲染器核心资源 (支持 DWG WebGL 真实矢量解析) -->
+  <link rel="stylesheet" href="cad-viewer/style.css">
+  <script src="cad-viewer/cad-viewer.bundle.js"></script>
+
   <style>
     /* 全局重置与基础主题 (纯净扁平无阴影设计) */
     * {
@@ -23,6 +27,97 @@
       padding: 0;
       user-select: none;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    /* 纯净 CAD 视口样式：强力关闭所有原生工具栏、图层树与检查器，只保留纯净绘图视口 */
+    .pure-cad-container .cad-toolbar,
+    .pure-cad-container .cad-layers,
+    .pure-cad-container .cad-inspector,
+    .pure-cad-container .dwfv-toolbar,
+    .pure-cad-container .dwfv-tree,
+    .pure-cad-container .cad-meta {
+      display: none !important;
+    }
+    .pure-cad-container .cad-body {
+      grid-template-columns: 1fr !important;
+    }
+    .pure-cad-container .cad-shell {
+      background: #05070d !important;
+    }
+    .pure-cad-container .cad-canvas-wrap {
+      background: #05070d !important;
+    }
+
+    /* 紧凑型 DWG 图纸选择表格专用样式：收缩单元格边距，防大小列遮挡与水平溢出 */
+    .dwg-file-table .el-table__cell {
+      padding: 4px 0 !important;
+    }
+    .dwg-file-table .cell {
+      padding-left: 4px !important;
+      padding-right: 4px !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+    }
+    .dwg-file-table .el-scrollbar__bar.is-vertical {
+      width: 5px !important;
+    }
+
+    /* 紧凑型 Excel 元件组映射表格专用样式：收缩边距与单行截断 */
+    .excel-bind-table .el-table__cell {
+      padding: 4px 0 !important;
+    }
+    .excel-bind-table .cell {
+      padding-left: 6px !important;
+      padding-right: 6px !important;
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+    }
+    .excel-bind-table .el-table__row.current-row > td.el-table__cell {
+      background-color: #ccfbf1 !important;
+    }
+
+    /* 核心加固：强制锁定 Element Plus 遮罩层与弹窗居中 */
+    .el-overlay {
+      overflow: hidden !important;
+    }
+    .el-overlay-dialog {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      overflow: hidden !important;
+    }
+    .el-dialog {
+      margin: auto !important;
+    }
+
+    /* 二次图纸对齐绑定工作台专属弹窗：纯净弹性伸缩盒子结构并实现绝对垂直居中 */
+    .circuit-binding-dialog {
+      margin: auto !important;
+      display: flex !important;
+      flex-direction: column !important;
+      max-height: 94vh !important;
+      overflow: hidden !important;
+    }
+    .circuit-binding-dialog .el-dialog__header {
+      padding: 10px 16px !important;
+      margin-right: 0 !important;
+      border-bottom: 1px solid #e2e8f0;
+      flex-shrink: 0;
+    }
+    .circuit-binding-dialog .el-dialog__body {
+      padding: 8px 14px !important;
+      flex: 1 !important;
+      overflow: hidden !important;
+      display: flex !important;
+      flex-direction: column !important;
+      box-sizing: border-box !important;
+    }
+    .circuit-binding-dialog .el-dialog__footer {
+      padding: 8px 16px !important;
+      border-top: 1px solid #e2e8f0;
+      flex-shrink: 0;
     }
 
     body {
@@ -388,8 +483,18 @@
     <div class="main-body" v-show="currentTab === 'calc'">
       <!-- 控制面板卡片 -->
       <div class="cfg-card">
-        <div class="cfg-card-header">
+        <div class="cfg-card-header" style="display: flex; justify-content: space-between; align-items: center;">
           <span>🎯 箱柜范围选择与实时参数</span>
+          <el-button
+            size="small"
+            type="primary"
+            plain
+            @click="openBindingWorkbench"
+            style="border-color: #009688; color: #009688; font-weight: 500; padding: 4px 10px; font-size: 12px; height: 26px;"
+            title="打开二次图纸对齐与二次元件组回路绑定工作台"
+          >
+            📂 二次图纸对齐与绑定
+          </el-button>
         </div>
         <div class="param-grid three-col">
           <div class="param-row-item">
@@ -1191,13 +1296,753 @@
         </el-button>
       </div>
     </div>
+
+    <!-- 6. 二次回路图纸对齐与元件组绑定工作台 (三栏/折叠一体化工作台，屏幕正中央垂直水平居中) -->
+    <el-dialog
+      v-model="circuitDwgDialogVisible"
+      title="📂 二次回路图纸对齐与绑定工作台 (双击DWG快速绑定，支持CAD矢量预览折叠)"
+      width="96%"
+      :close-on-click-modal="false"
+      align-center
+      class="circuit-binding-dialog"
+    >
+      <div
+        style="display: flex; flex-direction: column; gap: 8px; height: 100%"
+      >
+        <!-- 顶部信息与快捷路径导航条 -->
+        <div
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 6px 12px;
+            flex-shrink: 0;
+          "
+        >
+          <!-- 面包屑与路径回溯 -->
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 6px;
+              font-size: 12px;
+              color: #475569;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+              max-width: 560px;
+            "
+          >
+            <span style="font-weight: 600; color: #00796b">📁 图纸路径:</span>
+            <!-- 返回上一级文件夹按钮 -->
+            <el-button
+              size="small"
+              :disabled="!currentParentDir"
+              @click="navigateBackParent"
+              title="返回上一级文件夹"
+              style="padding: 3px 8px"
+            >
+              ⬆️ 返回上级
+            </el-button>
+            <!-- 动态当前物理路径展示 -->
+            <b
+              style="color: #0f766e; font-size: 11.5px"
+              :title="currentBrowseDir"
+              >{{ currentBrowseDir || '尚未设置目录' }}</b
+            >
+          </div>
+          <!-- 右侧操作工具组 (折叠预览、刷新Excel、更换目录) -->
+          <div style="display: flex; gap: 6px; align-items: center">
+            <!-- 一键折叠/展开中间矢量预览视口 -->
+            <el-button
+              size="small"
+              :type="previewCollapsed ? 'primary' : 'default'"
+              @click="previewCollapsed = !previewCollapsed"
+              :title="previewCollapsed ? '展开中间 CAD 矢量预览视口' : '折叠中间预览视口，最大化两侧列表工作区'"
+            >
+              {{ previewCollapsed ? '🖥️ 展开CAD预览' : '◀ 折叠CAD预览' }}
+            </el-button>
+            <!-- 重新扫描当前工作表二次元件组 -->
+            <el-button
+              size="small"
+              type="success"
+              plain
+              @click="loadExcelComponentGroups"
+              title="从当前活动 Excel 表格重新抓取二次元件组行"
+            >
+              🔄 刷新Excel元件组
+            </el-button>
+            <el-button
+              size="small"
+              type="primary"
+              plain
+              @click="selectCircuitDir"
+              >更换根目录</el-button
+            >
+            <el-button size="small" @click="refreshCurrentBrowseDir"
+              >刷新图纸</el-button
+            >
+          </div>
+        </div>
+
+        <!-- 核心主体区：三栏/折叠弹性布局 (弹性自适应高度，消除垂直与水平滚动条) -->
+        <div
+          style="
+            display: flex;
+            gap: 10px;
+            height: calc(85vh - 130px);
+            min-height: 400px;
+            max-height: 640px;
+            flex: 1;
+            overflow: hidden;
+          "
+        >
+          <!-- 1. 左侧：文件夹与图纸混合展示表格 (收窄至 230px 为中间 DWG 视口腾出空间) -->
+          <div
+            :style="{ width: previewCollapsed ? '300px' : '230px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid #e2e8f0', borderRadius: '4px', padding: '6px', background: '#ffffff', transition: 'width 0.2s' }"
+          >
+            <!-- 过滤搜索框与批量全选清空操作 (紧凑排布) -->
+            <div style="display: flex; gap: 4px; align-items: center">
+              <!-- 模糊检索输入框 -->
+              <el-input
+                v-model="circuitDwgSearchKw"
+                placeholder="过滤图纸/文件夹..."
+                size="small"
+                clearable
+                style="flex: 1"
+              >
+                <template #prefix>
+                  <span style="font-size: 12px; color: #94a3b8">🔍</span>
+                </template>
+              </el-input>
+              <el-button
+                size="small"
+                style="padding: 4px 6px"
+                @click="selectAllCircuitDwg"
+                >全选</el-button
+              >
+              <el-button
+                size="small"
+                style="padding: 4px 6px"
+                @click="circuitDwgSelectedFiles = []"
+                >清空</el-button
+              >
+            </div>
+
+            <!-- 列表展示：支持双击文件夹下钻，双击图纸文件即刻完成绑定；自适应容器高 -->
+            <el-table
+              class="dwg-file-table"
+              :data="filteredDirItems"
+              size="small"
+              border
+              style="width: 100%; flex: 1"
+              @selection-change="handleCircuitDwgSelectionChange"
+              @row-dblclick="handleDwgRowDblClick"
+              @row-click="handleRowClick"
+              ref="circuitDwgTableRef"
+              highlight-current-row
+            >
+              <!-- 多选复选框列 (仅 DWG 文件显示复选框，文件夹不显示) -->
+              <el-table-column
+                type="selection"
+                width="32"
+                align="center"
+                :selectable="checkItemSelectable"
+              ></el-table-column>
+
+              <!-- 名称列：双击文件夹进目录，双击图纸即刻绑定 -->
+              <el-table-column
+                prop="name"
+                label="名称 (双击绑定/下钻)"
+                min-width="95"
+              >
+                <template #default="{ row }">
+                  <!-- 文件夹项渲染 -->
+                  <div
+                    v-if="row.isDir"
+                    style="
+                      cursor: pointer;
+                      display: flex;
+                      align-items: center;
+                      gap: 3px;
+                      font-weight: 600;
+                      color: #0284c7;
+                    "
+                  >
+                    <span>📁</span>
+                    <span
+                      style="
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        white-space: nowrap;
+                      "
+                      >{{ row.name }}</span
+                    >
+                  </div>
+                  <!-- DWG 图纸项渲染 (双击即刻触发绑定) -->
+                  <div
+                    v-else
+                    style="
+                      cursor: pointer;
+                      display: flex;
+                      align-items: center;
+                      gap: 3px;
+                    "
+                    :title="`双击即可将【${row.nameWithoutExt}】绑定给右侧选中的元件组`"
+                  >
+                    <span>📐</span>
+                    <span
+                      style="
+                        font-weight: 500;
+                        color: #00796b;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        white-space: nowrap;
+                      "
+                      >{{ row.nameWithoutExt }}</span
+                    >
+                    <span
+                      v-if="currentVectorDwg && currentVectorDwg.fullPath === row.fullPath"
+                      style="
+                        font-size: 9px;
+                        background: #ccfbf1;
+                        color: #0f766e;
+                        padding: 1px 3px;
+                        border-radius: 2px;
+                        margin-left: auto;
+                        flex-shrink: 0;
+                      "
+                      >视口中</span
+                    >
+                  </div>
+                </template>
+              </el-table-column>
+
+              <!-- 文件大小列 -->
+              <el-table-column
+                prop="fileSizeFormatted"
+                label="大小"
+                width="62"
+                align="right"
+              >
+                <template #default="{ row }">
+                  <span
+                    v-if="!row.isDir"
+                    style="color: #64748b; font-size: 11px"
+                    >{{ row.fileSizeFormatted }}</span
+                  >
+                  <!-- 文件夹标记为目录 -->
+                  <span v-else style="color: #94a3b8; font-size: 11px"
+                    >目录</span
+                  >
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <!-- 底部左侧信息提示 (精简布局) -->
+            <div
+              style="
+                font-size: 11px;
+                color: #64748b;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-top: auto;
+              "
+            >
+              <!-- 统计子文件夹与图纸数量 -->
+              <span
+                >{{ dirSubFolders.length }} 目录, {{ dirDwgFiles.length }}
+                图纸</span
+              >
+              <!-- 已勾选项计数 -->
+              <span
+                >已选
+                <b style="color: #009688"
+                  >{{ circuitDwgSelectedFiles.length }}</b
+                >
+                项</span
+              >
+            </div>
+          </div>
+
+          <!-- 2. 中间：真实 WebGL 矢量 CAD 视口 (纯净窗口，支持点击按钮一键折叠) -->
+          <div
+            v-show="!previewCollapsed"
+            style="
+              flex: 1;
+              min-width: 0;
+              display: flex;
+              flex-direction: column;
+              border: 1px solid #1e293b;
+              border-radius: 4px;
+              background: #05070d;
+              overflow: hidden;
+            "
+          >
+            <!-- 视口顶部极简信息与操作条 (带图2核心参数快速胶囊预览) -->
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 4px 8px;
+                background: #0b1120;
+                border-bottom: 1px solid #1e293b;
+                color: #e2e8f0;
+                font-size: 12px;
+                gap: 6px;
+              "
+            >
+              <!-- 正在预览的文件名提示：限制最大宽度并允许弹性缩进，杜绝挤占右侧胶囊 -->
+              <div
+                style="
+                  overflow: hidden;
+                  text-overflow: ellipsis;
+                  white-space: nowrap;
+                  max-width: 150px;
+                  min-width: 60px;
+                  flex-shrink: 1;
+                "
+                :title="currentVectorDwg ? currentVectorDwg.fileName : ''"
+              >
+                <!-- 图纸文件名 -->
+                <b v-if="currentVectorDwg" style="color: #38bdf8"
+                  >📐 {{ currentVectorDwg.fileName }}</b
+                >
+                <!-- 暂未载入图纸占位提示 -->
+                <span v-else style="color: #94a3b8">暂未载入图纸</span>
+              </div>
+
+              <!-- 顶部居中：若当前预览图纸已关联二次方案，即时呈现图2五大定额参数胶囊与BOM项数 (禁止收缩，带 Tooltip 保证长内容悬浮可见) -->
+              <div
+                v-if="currentVectorScheme"
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 6px;
+                  font-size: 11px;
+                  background: rgba(15, 118, 110, 0.35);
+                  border: 1px solid #0d9488;
+                  border-radius: 3px;
+                  padding: 2px 6px;
+                  flex-shrink: 0;
+                  white-space: nowrap;
+                "
+              >
+                <!-- 1. 二次组方案名 -->
+                <span :title="currentVectorScheme.schemeName"
+                  >二次组:
+                  <b style="color: #5eead4"
+                    >{{ currentVectorScheme.schemeName }}</b
+                  ></span
+                >
+                <!-- 2. 二次线跨门 -->
+                <span
+                  :title="'跨门线: ' + Math.round(currentVectorScheme.crossDoorCount || 0) + ' 根'"
+                  >跨门:
+                  <b style="color: #6ee7b7"
+                    >{{ Math.round(currentVectorScheme.crossDoorCount || 0)
+                    }}根</b
+                  ></span
+                >
+                <!-- 3. 二次材料费 -->
+                <span
+                  :title="'二次材料: ¥' + (currentVectorScheme.totalMaterialCost || 0).toFixed(2)"
+                  >二次:
+                  <b style="color: #fbbf24"
+                    >¥{{ (currentVectorScheme.totalMaterialCost ||
+                    0).toFixed(2) }}</b
+                  ></span
+                >
+                <!-- 4. 开孔 -->
+                <span
+                  :title="'开孔规格: ' + (currentVectorScheme.holeSpec || '-')"
+                  >开孔:
+                  <b style="color: #38bdf8"
+                    >{{ currentVectorScheme.holeSpec || '-' }}</b
+                  ></span
+                >
+                <!-- 5. 人工 -->
+                <span
+                  :title="'人工费: ¥' + (currentVectorScheme.laborCost || 0).toFixed(2)"
+                  >人工:
+                  <b style="color: #f1f5f9"
+                    >¥{{ (currentVectorScheme.laborCost || 0).toFixed(2) }}</b
+                  ></span
+                >
+                <!-- 6. BOM 项数统计 (平移至此，确保数据零丢失且视觉集中) -->
+                <span
+                  :title="'方案包含子物料项数: ' + (currentVectorScheme.bomItems || []).length + ' 项'"
+                  >📦 BOM:
+                  <b style="color: #a7f3d0"
+                    >{{ (currentVectorScheme.bomItems || []).length }}项</b
+                  ></span
+                >
+              </div>
+
+              <!-- 右侧快捷操作：保留调起外部 AutoCAD，去除定位按钮 -->
+              <div
+                style="display: flex; gap: 6px; flex-shrink: 0"
+                v-if="currentVectorDwg"
+              >
+                <!-- 调起外部 AutoCAD 打开 -->
+                <el-button
+                  size="small"
+                  type="primary"
+                  link
+                  @click="openInCadFromViewer"
+                  >🚀 CAD打开</el-button
+                >
+              </div>
+            </div>
+
+            <!-- 核心 CAD 视口挂载 DOM (使用 pure-cad-container 样式类关闭所有自带 toolbar) -->
+            <div
+              ref="cadViewportDomRef"
+              class="pure-cad-container"
+              style="
+                flex: 1;
+                width: 100%;
+                height: 100%;
+                position: relative;
+                overflow: hidden;
+              "
+              v-loading="vectorCadLoading"
+              element-loading-text="正在进行 WebAssembly 真实矢量渲染..."
+              element-loading-background="rgba(5, 7, 13, 0.8)"
+            >
+              <!-- 当没有选纸张时居中提示 -->
+              <div
+                v-if="!currentVectorDwg && !vectorCadLoading"
+                style="
+                  position: absolute;
+                  inset: 0;
+                  display: flex;
+                  flex-direction: column;
+                  align-items: center;
+                  justify-content: center;
+                  color: #475569;
+                  gap: 8px;
+                "
+              >
+                <span style="font-size: 38px; opacity: 0.5">📐</span>
+                <span style="font-size: 13px"
+                  >请在左侧点击或右侧选择绑定的元件组查看图纸</span
+                >
+              </div>
+            </div>
+
+            <!-- 视口底部纯净手势操作提示 -->
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 4px 10px;
+                background: #090e1a;
+                border-top: 1px solid #1e293b;
+                color: #64748b;
+                font-size: 11px;
+              "
+            >
+              <span>💡 滚轮缩放 | 左键拖拽平移 | 双击居中拟合</span>
+              <span style="color: #009688">WebGL 硬件矢量加速</span>
+            </div>
+          </div>
+
+          <!-- 3. 右侧：当前 Excel 工作表二次元件组与回路图号映射看板 (收窄至 360px 为中间 DWG 释放多达 150px 宽度) -->
+          <div
+            :style="{ width: previewCollapsed ? 'calc(100% - 310px)' : '360px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', background: '#ffffff', transition: 'width 0.2s', minHeight: '0', overflow: 'hidden', boxSizing: 'border-box' }"
+          >
+            <!-- 顶部统计与快捷操作栏 (紧凑清爽) -->
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                background: #f8fafc;
+                padding: 4px 8px;
+                border-radius: 4px;
+                border: 1px solid #e2e8f0;
+                flex-shrink: 0;
+              "
+            >
+              <!-- 数量统计状态 -->
+              <div
+                style="
+                  font-size: 12px;
+                  color: #334155;
+                  font-weight: 600;
+                  display: flex;
+                  align-items: center;
+                  gap: 4px;
+                "
+              >
+                <span>📊 元件组清单</span>
+                <!-- 统计唯一型号总数与已绑定数量 -->
+                <span
+                  style="
+                    font-size: 10.5px;
+                    color: #64748b;
+                    font-weight: normal;
+                  "
+                  >(共 <b>{{ excelComponentGroups.length }}</b> 种, 已绑定
+                  <b style="color: #009688">{{ boundGroupsCount }}</b>)</span
+                >
+              </div>
+              <!-- 右侧清空与重置操作按钮 -->
+              <div style="display: flex; gap: 6px; align-items: center">
+                <!-- 清空当前选中行绑定 -->
+                <el-button
+                  size="small"
+                  type="danger"
+                  link
+                  @click="clearCurrentSelectedBinding"
+                  :disabled="!selectedExcelGroupRow"
+                  style="font-size: 11px; padding: 0"
+                >
+                  清空此项
+                </el-button>
+                <span style="color: #cbd5e1; font-size: 10px">|</span>
+                <!-- 一键清空所有元件组绑定 -->
+                <el-button
+                  size="small"
+                  type="warning"
+                  link
+                  @click="clearAllGroupBindings"
+                  style="font-size: 11px; padding: 0"
+                >
+                  全部清空
+                </el-button>
+              </div>
+            </div>
+
+            <!-- 核心映射表格包裹层：填满右侧全部可用高度，内部受控虚拟滚动，视野开阔 -->
+            <div
+              style="
+                flex: 1;
+                min-height: 0;
+                overflow: hidden;
+                position: relative;
+              "
+            >
+              <!-- 核心映射表格：启用 height="100%" 虚拟受控滚动，表头固定吸顶 -->
+              <el-table
+                class="excel-bind-table"
+                :data="excelComponentGroups"
+                size="small"
+                border
+                height="100%"
+                style="width: 100%; height: 100%"
+                ref="excelGroupTableRef"
+                highlight-current-row
+                @row-click="handleExcelGroupRowSelect"
+              >
+                <!-- 空状态提示 -->
+                <template #empty>
+                  <!-- 未检测到元件组时的友好引导 -->
+                  <div
+                    style="
+                      padding: 20px 0;
+                      color: #94a3b8;
+                      font-size: 11.5px;
+                      text-align: center;
+                    "
+                  >
+                    <span>当前工作表中未检测到 B列='元件组' 行</span>
+                    <div style="margin-top: 4px">
+                      <!-- 引导用户刷新 -->
+                      <el-button
+                        size="small"
+                        type="primary"
+                        link
+                        @click="loadExcelComponentGroups"
+                        >点击重新抓取</el-button
+                      >
+                    </div>
+                  </div>
+                </template>
+
+                <!-- 第 1 列：Excel 元件组型号规格 (去重后型号) -->
+                <el-table-column
+                  prop="groupModel"
+                  label="Excel 元件组型号规格"
+                  min-width="145"
+                >
+                  <template #default="{ row }">
+                    <!-- 型号与全表出现处数徽章容器 -->
+                    <div
+                      style="
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        gap: 4px;
+                        overflow: hidden;
+                      "
+                      :title="`元件组型号: ${row.groupModel}\n涵盖箱柜: ${(row.cabinets || []).join(', ')}\n覆盖行号: ${(row.rowIndexes || []).join(', ')} (全表共 ${row.occurrenceCount} 处)`"
+                    >
+                      <!-- 元件组型号粗体字 (如 *KM变频器) -->
+                      <span
+                        style="
+                          font-weight: 600;
+                          color: #0f766e;
+                          font-size: 12px;
+                          overflow: hidden;
+                          text-overflow: ellipsis;
+                          white-space: nowrap;
+                        "
+                        >{{ row.groupModel }}</span
+                      >
+                      <!-- 统计全表出现处数徽章 -->
+                      <el-tag
+                        size="small"
+                        type="info"
+                        effect="plain"
+                        style="
+                          font-size: 10px;
+                          flex-shrink: 0;
+                          padding: 0 3px;
+                          height: 18px;
+                          line-height: 16px;
+                        "
+                      >
+                        共 {{ row.occurrenceCount }} 处
+                      </el-tag>
+                    </div>
+                  </template>
+                </el-table-column>
+
+                <!-- 第 2 列：绑定的回路图号 (用户双击左侧DWG实时绑定显示在此) -->
+                <el-table-column
+                  prop="boundDwgCode"
+                  label="绑定的回路图号"
+                  min-width="125"
+                >
+                  <template #default="{ row }">
+                    <!-- 已经绑定了图号时渲染 Tag 并支持一键点击 ✖ 解绑 -->
+                    <div
+                      v-if="row.boundDwgCode"
+                      style="
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        gap: 2px;
+                      "
+                    >
+                      <!-- 图号标签 -->
+                      <span
+                        style="
+                          font-weight: 600;
+                          color: #059669;
+                          background: #ecfdf5;
+                          border: 1px solid #a7f3d0;
+                          padding: 1px 5px;
+                          border-radius: 3px;
+                          font-size: 11px;
+                          overflow: hidden;
+                          text-overflow: ellipsis;
+                          white-space: nowrap;
+                        "
+                        :title="`已绑定图号: ${row.boundDwgCode} (点击联动看图并展示参数)`"
+                      >
+                        📐 {{ row.boundDwgCode }}
+                      </span>
+                      <!-- 单项解绑按钮 -->
+                      <el-button
+                        size="small"
+                        type="danger"
+                        link
+                        @click.stop="clearSingleGroupBinding(row)"
+                        title="解除此型号绑定的图号"
+                        style="padding: 0 2px; height: 16px; font-size: 10px"
+                      >
+                        ✖
+                      </el-button>
+                    </div>
+                    <!-- 未绑定状态提示 -->
+                    <div v-else style="display: flex; align-items: center">
+                      <!-- 引导双击左侧DWG绑定 -->
+                      <span
+                        style="
+                          color: #94a3b8;
+                          font-size: 10.5px;
+                          border: 1px dashed #cbd5e1;
+                          border-radius: 3px;
+                          padding: 1px 5px;
+                          background: #f8fafc;
+                        "
+                      >
+                        👈 双击绑定
+                      </span>
+                    </div>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 弹窗底部操作区 -->
+      <template #footer>
+        <div
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          "
+        >
+          <!-- 左下角状态提示 -->
+          <div style="font-size: 12px; color: #475569">
+            <span
+              >当前共
+              <b>{{ excelComponentGroups.length }}</b> 种元件组型号，已绑定:
+              <b style="color: #009688">{{ boundGroupsCount }}</b> 种
+              (保存时将同步写入各型号对应全部行的第 32 列 AF)</span
+            >
+          </div>
+          <!-- 右下角按钮组 -->
+          <div style="display: flex; gap: 8px">
+            <!-- 核心：保存绑定回写 Excel 第 32 列 -->
+            <el-button
+              size="small"
+              type="primary"
+              @click="saveExcelBindingsToColumn32"
+              :loading="savingExcelBindings"
+            >
+              💾 保存绑定到 Excel (第32列)
+            </el-button>
+            <el-button size="small" @click="circuitDwgDialogVisible = false"
+              >关闭</el-button
+            >
+          </div>
+        </div>
+      </template>
+      <!-- 结束回路图纸选择弹窗 -->
+    </el-dialog>
   </div>
 
   <script>
-    const { createApp, ref, reactive, nextTick, onMounted } = Vue;
+    const { createApp, ref, reactive, computed, nextTick, onMounted } = Vue;
 
     const app = createApp({
       setup() {
+        // 核心 IPC 通信助手：向 C# 端发送异步 JSON 消息
+        const postToCSharp = (payload) => {
+          // 校验 WebView2 通信通道
+          if (window.chrome && window.chrome.webview) {
+            // 发送 JSON 字符串给 C#
+            window.chrome.webview.postMessage(JSON.stringify(payload));
+          } else {
+            // 控制台告警
+            console.warn('[WebView2] chrome.webview 未就绪, 无法发送:', payload);
+          }
+        };
+
         // 当前主选项卡 ('calc' | 'rules')
         const currentTab = ref('calc');
         // 当前定额规则二级 Tab ('primaryWire' | 'secondaryWire' | 'shell' | 'copper' | 'laborAndSubsidy')
@@ -1215,6 +2060,131 @@
         const selectedSheet = ref('');
         const cabinets = ref([]);
         const selectedCabinetDet = ref('');
+
+        // ==================== 💡 DWG 本地图纸目录与即刻预览驱动状态 ====================
+        // 二次排布图 DWG 本地图纸目录路径
+        const layoutDwgDir = ref('');
+        // 回路代号原理图 DWG 本地图纸目录路径
+        const circuitDwgDir = ref('');
+        // 排布图目录下扫描出的所有 DWG 文件列表
+        const layoutDwgFiles = ref([]);
+        // 回路图纸目录下扫描出的所有 DWG 文件列表
+        const circuitDwgFiles = ref([]);
+        // 回路代号 DWG 工作台弹窗显隐状态
+        const circuitDwgDialogVisible = ref(false);
+        // 当前弹窗中正在层级浏览的物理路径 (支持下钻进入子目录)
+        const currentBrowseDir = ref('');
+        // 当前浏览路径的父级目录 (用于返回上级)
+        const currentParentDir = ref(null);
+        // 当前浏览目录下的直接子文件夹列表
+        const dirSubFolders = ref([]);
+        // 当前浏览目录下的 DWG 图纸文件列表
+        const dirDwgFiles = ref([]);
+        // 回路图纸检索关键字
+        const circuitDwgSearchKw = ref('');
+        // 已勾选的回路 DWG 文件列表
+        const circuitDwgSelectedFiles = ref([]);
+        // 回路图纸表格组件引用
+        const circuitDwgTableRef = ref(null);
+        // 真实 WebGL 矢量视口挂载 DOM 容器
+        const cadViewportDomRef = ref(null);
+        // CadViewer 实例全局持有变量
+        let cadViewerInstance = null;
+        // 当前右侧视口正在渲染的 DWG 文件实体
+        const currentVectorDwg = ref(null);
+        // 矢量图纸 WebGL 渲染 loading 遮罩
+        const vectorCadLoading = ref(false);
+
+        // ==================== 🔗 二次元件组与回路图号工作台映射状态 ====================
+        // 是否折叠中间 CAD 矢量预览视口 (折叠后最大化左右两侧列表)
+        const previewCollapsed = ref(false);
+        // 当前活动工作表扫描出的去重后二次元件组型号集合
+        const excelComponentGroups = ref([]);
+        // 当前右侧选中的二次元件组型号实体
+        const selectedExcelGroupRow = ref(null);
+        // 正在持久化保存至 Excel 第 32 列 loading 状态
+        const savingExcelBindings = ref(false);
+        // 是否为独立对齐绑定工作台模式 (true: 对齐工作台; false: 方案编辑选回路图纸)
+        const isIndependentBindingMode = ref(true);
+        // 右侧元件组表格组件引用
+        const excelGroupTableRef = ref(null);
+        // 正在等待目录切换后高亮反显的目标图纸代号
+        const pendingHighlightCode = ref('');
+        // 全局二次方案实体列表 (用于在中间 CAD 视口顶部胶囊动态呈现二次组、跨门、二次材料等)
+        const schemeList = ref([]);
+
+        // 统计已成功绑定回路图号的元件组型号数量
+        const boundGroupsCount = computed(() => {
+          return (excelComponentGroups.value || []).filter(
+            (g) => !!(g.boundDwgCode && g.boundDwgCode.trim())
+          ).length;
+        });
+
+        // 实时过滤当前浏览目录下的项目 (文件夹 + DWG 图纸合并输出)
+        const filteredDirItems = computed(() => {
+          const kw = circuitDwgSearchKw.value ? circuitDwgSearchKw.value.trim().toLowerCase() : '';
+          // 整理文件夹项 (标记 isDir: true)
+          const folderItems = (dirSubFolders.value || [])
+            .map((f) => ({
+              isDir: true,
+              name: f.name,
+              fullPath: f.fullPath,
+              hasChildren: f.hasChildren
+            }))
+            .filter((f) => !kw || f.name.toLowerCase().includes(kw));
+
+          // 整理 DWG 图纸项 (标记 isDir: false)
+          const dwgItems = (dirDwgFiles.value || [])
+            .map((f) => ({
+              isDir: false,
+              ...f,
+              name: f.nameWithoutExt
+            }))
+            .filter(
+              (f) =>
+                !kw ||
+                f.nameWithoutExt.toLowerCase().includes(kw) ||
+                f.fileName.toLowerCase().includes(kw)
+            );
+
+          // 文件夹排在前，图纸排在后
+          return [...folderItems, ...dwgItems];
+        });
+
+        // 根据回路代号或图纸名称从 schemeList 方案库中精确匹配二次方案实体
+        const findSchemeByCode = (code) => {
+          if (!code || typeof code !== 'string') return null;
+          const clean = code.trim().toLowerCase();
+          if (!clean) return null;
+
+          // 1. 优先从方案适用的回路代号列表 (applicableCodes) 中匹配
+          let match = (schemeList.value || []).find(
+            (s) =>
+              Array.isArray(s.applicableCodes) &&
+              s.applicableCodes.some((c) => c && c.trim().toLowerCase() === clean)
+          );
+          // 2. 其次通过方案主名称 (schemeName) 精确匹配
+          if (!match) {
+            match = (schemeList.value || []).find(
+              (s) => s.schemeName && s.schemeName.trim().toLowerCase() === clean
+            );
+          }
+          // 3. 再次通过绑定的 CAD 图纸名 (cadDrawingName) 匹配
+          if (!match) {
+            match = (schemeList.value || []).find((s) => {
+              const cad = (s.cadDrawingName || '').trim().toLowerCase();
+              return cad === clean || cad === clean + '.dwg';
+            });
+          }
+          return match || null;
+        };
+
+        // 当前中间 CAD 矢量视口图纸所关联匹配到的二次方案实体 (供给视口顶部胶囊)
+        const currentVectorScheme = computed(() => {
+          if (!currentVectorDwg.value) return null;
+          const code = currentVectorDwg.value.nameWithoutExt || currentVectorDwg.value.fileName;
+          return findSchemeByCode(code);
+        });
 
         // 规则配置对象响应式实体
         const rules = reactive({
@@ -1568,6 +2538,168 @@
                 ElementPlus.ElMessage.error('保存配置失败');
               }
             }
+            // ==================== 二次回路图纸对齐与绑定相关报文处理 ====================
+            else if (msg.action === 'dwgDirsLoaded') {
+              // 接收已持久化的 DWG 目录配置与文件清单
+              if (msg.data) {
+                layoutDwgDir.value = msg.data.layoutDirectory || '';
+                circuitDwgDir.value = msg.data.circuitDirectory || '';
+                layoutDwgFiles.value = msg.data.layoutFiles || [];
+                circuitDwgFiles.value = msg.data.circuitFiles || [];
+              }
+            } else if (msg.action === 'dwgDirSelected') {
+              // 文件夹选择器选定新目录后的回调
+              if (msg.result && msg.result.success) {
+                circuitDwgDir.value = msg.result.directory || '';
+                circuitDwgFiles.value = msg.result.files || [];
+                ElementPlus.ElMessage.success(`回路图纸目录已绑定: ${circuitDwgDir.value} (发现 ${circuitDwgFiles.value.length} 张 DWG)`);
+                // 刷新浏览目录
+                browseToDirectory(circuitDwgDir.value);
+              }
+            } else if (msg.action === 'dwgFilesScanned') {
+              // 目录扫描完成
+              if (msg.dirPath === circuitDwgDir.value) {
+                circuitDwgFiles.value = msg.files || [];
+              }
+            } else if (msg.action === 'directoryHierarchyScanned') {
+              // 接收当前浏览层级扫描数据 (子文件夹与 DWG 图纸)
+              if (msg.data) {
+                currentBrowseDir.value = msg.data.currentPath || '';
+                currentParentDir.value = msg.data.parentPath || null;
+                dirSubFolders.value = msg.data.subDirectories || [];
+                dirDwgFiles.value = msg.data.dwgFiles || [];
+
+                // 若有待反显定位的图纸，在当前目录加载完毕后即刻反显
+                if (pendingHighlightCode.value) {
+                  nextTick(() => {
+                    highlightLeftDwg(pendingHighlightCode.value);
+                    pendingHighlightCode.value = '';
+                  });
+                } else if (dirDwgFiles.value.length > 0 && !currentVectorDwg.value) {
+                  // 默认选中第一张图纸呈现预览
+                  renderDwgVector(dirDwgFiles.value[0]);
+                }
+              }
+            } else if (msg.action === 'dwgLocated') {
+              // 跨目录全局递归穿透定位结果
+              const targetCode = msg.targetCode;
+              if (msg.result && msg.result.success && msg.result.parentDir) {
+                const parentDir = msg.result.parentDir;
+                // 图纸实体就绪后视口渲染
+                if (msg.result.dwgItem) {
+                  renderDwgVector(msg.result.dwgItem);
+                }
+                // 父目录非当前目录则下钻进入
+                if (currentBrowseDir.value !== parentDir) {
+                  browseToDirectory(parentDir);
+                } else {
+                  nextTick(() => {
+                    highlightLeftDwg(targetCode);
+                    pendingHighlightCode.value = '';
+                  });
+                }
+              } else {
+                ElementPlus.ElMessage.warning(`未在回路图纸库中检索到图纸【${targetCode}.dwg】，请核对图纸名称或设置目录！`);
+              }
+            } else if (msg.action === 'dwgBinaryLoaded') {
+              // 接收 DWG 原始二进制 Base64 数据并交由 WebGL 矢量视口渲染
+              if (msg.data && msg.data.success && msg.data.base64Data) {
+                try {
+                  // Base64 解码转为 Uint8Array
+                  const binaryStr = atob(msg.data.base64Data);
+                  const len = binaryStr.length;
+                  const bytes = new Uint8Array(len);
+                  for (let i = 0; i < len; i++) {
+                    bytes[i] = binaryStr.charCodeAt(i);
+                  }
+                  // 组装 File 原生对象
+                  const fileName = msg.data.fileName || 'circuit.dwg';
+                  const fileObj = new File([bytes], fileName, { type: 'application/octet-stream' });
+                  // 若视口实例尚未建立，立即尝试初始化
+                  if (!cadViewerInstance) {
+                    initCadViewerInstance();
+                  }
+                  // 调用 CadViewer 实例加载并自动缩放拟合
+                  if (cadViewerInstance) {
+                    cadViewerInstance
+                      .load({ file: fileObj, fileName: fileName })
+                      .then(() => {
+                        vectorCadLoading.value = false;
+                        if (typeof cadViewerInstance.fit === 'function') {
+                          cadViewerInstance.fit('auto');
+                        }
+                      })
+                      .catch((loadErr) => {
+                        console.error('CadViewer 渲染异常:', loadErr);
+                        vectorCadLoading.value = false;
+                        ElementPlus.ElMessage.warning('图纸格式略有不兼容，已启用兜底呈现');
+                      });
+                  } else {
+                    // 视口容器仍在挂载中时延迟一帧再试
+                    nextTick(() => {
+                      initCadViewerInstance();
+                      if (cadViewerInstance) {
+                        cadViewerInstance
+                          .load({ file: fileObj, fileName: fileName })
+                          .then(() => {
+                            vectorCadLoading.value = false;
+                            if (typeof cadViewerInstance.fit === 'function') {
+                              cadViewerInstance.fit('auto');
+                            }
+                          })
+                          .catch((err) => {
+                            vectorCadLoading.value = false;
+                          });
+                      } else {
+                        console.error('[CadViewer] 无法获取视口容器，取消渲染');
+                        vectorCadLoading.value = false;
+                      }
+                    });
+                  }
+                } catch (err) {
+                  console.error('解析 Base64 图纸流失败:', err);
+                  vectorCadLoading.value = false;
+                }
+              } else {
+                vectorCadLoading.value = false;
+                ElementPlus.ElMessage.error(msg.data?.errorMessage || '未能成功读取 DWG 图纸文件');
+              }
+            } else if (msg.action === 'openInCadResult') {
+              // 调起外部 CAD 软件回调
+              if (msg.result) {
+                if (msg.result.success) {
+                  ElementPlus.ElMessage.success(msg.result.message || '已成功调起本地关联 CAD 软件！');
+                } else {
+                  ElementPlus.ElMessage.error(msg.result.message || '调起 CAD 失败！');
+                }
+              }
+            } else if (msg.action === 'excelComponentGroupsScanned') {
+              // 接收活动工作表抓取的二次元件组
+              excelComponentGroups.value = msg.groups || [];
+              if (excelComponentGroups.value.length > 0) {
+                const firstRow = excelComponentGroups.value[0];
+                selectedExcelGroupRow.value = firstRow;
+                nextTick(() => {
+                  if (excelGroupTableRef.value) {
+                    excelGroupTableRef.value.setCurrentRow(firstRow);
+                  }
+                  // 触发联动看图
+                  handleExcelGroupRowSelect(firstRow);
+                });
+              }
+              ElementPlus.ElMessage.success(`成功从当前 Excel 表格读取到 ${excelComponentGroups.value.length} 项二次元件组！`);
+            } else if (msg.action === 'excelComponentGroupBindingsSaved') {
+              // 持久化保存第 32 列结果
+              savingExcelBindings.value = false;
+              if (msg.result && msg.result.success) {
+                ElementPlus.ElMessage.success(msg.result.message || '绑定结果已成功持久化保存至 Excel 第 32 列！');
+              } else {
+                ElementPlus.ElMessage.error(msg.result?.message || '保存至 Excel 发生错误！');
+              }
+            } else if (msg.action === 'schemesLoaded') {
+              // 接收全量二次方案数据
+              schemeList.value = msg.data || [];
+            }
           });
         }
 
@@ -1827,8 +2959,336 @@
           }
         };
 
+        // ==================== 二次回路图纸对齐与绑定工作台交互方法 ====================
+        // 判断列表项是否支持复选框勾选 (仅 DWG 文件支持勾选，文件夹禁止勾选)
+        const checkItemSelectable = (row) => {
+          // 仅非文件夹项可选
+          return !row.isDir;
+        };
+
+        // 调起原生文件夹选择器就近设置回路代号图纸存放目录
+        const selectCircuitDir = () => {
+          // 发送指令调起选择器
+          postToCSharp({ action: 'selectDwgDir', target: 'circuit' });
+        };
+
+        // 初始化 CadViewer 真实矢量视口实例
+        const initCadViewerInstance = () => {
+          // 实例已存在或 DOM 未挂载时直接返回
+          if (cadViewerInstance) return;
+          if (!cadViewportDomRef.value) return;
+          // 校验全局库加载情况
+          if (typeof window.CadViewerLib === 'undefined' || !window.CadViewerLib.CadViewer) {
+            console.warn('[CadViewer] CadViewerLib 全局库尚未加载就绪');
+            return;
+          }
+          try {
+            // 实例化纯前端 WebGL 矢量视口 (指定深色背景与自适应对比度)
+            cadViewerInstance = new window.CadViewerLib.CadViewer({
+              container: cadViewportDomRef.value,
+              theme: 'dark',
+              wasmPath: 'cad-viewer/wasm/',
+              workerUrl: 'cad-viewer/wasm/dwg-worker.js',
+              canvasOptions: {
+                background: '#05070d',
+                foreground: '#ffffff',
+                contrastMode: 'adaptive',
+                minColorContrast: 2.4
+              }
+            });
+          } catch (err) {
+            // 捕获视口初始化异常
+            console.error('[CadViewer] 初始化实例失败:', err);
+          }
+        };
+
+        // 调度中间纯净 WebGL 矢量视口渲染目标 DWG 图纸
+        const renderDwgVector = (item) => {
+          // 文件夹项跳过
+          if (!item || item.isDir) return;
+          currentVectorDwg.value = item;
+          vectorCadLoading.value = true;
+          // 确保 CAD 视口实例已成功初始化
+          initCadViewerInstance();
+          // 向 C# 发起获取 DWG 原始二进制 Base64 请求
+          postToCSharp({
+            action: 'getDwgBinary',
+            filePath: item.fullPath || item.fileName,
+            preferredType: 'circuit'
+          });
+        };
+
+        // 在当前视口中将图纸调起外部 AutoCAD
+        const openInCadFromViewer = () => {
+          // 校验视口图纸路径
+          if (currentVectorDwg.value && currentVectorDwg.value.fullPath) {
+            // 发起调起外部 CAD 动作
+            postToCSharp({
+              action: 'openInCad',
+              filePath: currentVectorDwg.value.fullPath
+            });
+          }
+        };
+
+        // 浏览下钻至指定目录并拉取层级信息
+        const browseToDirectory = (targetDir) => {
+          // 校验有效目录路径
+          if (!targetDir) return;
+          currentBrowseDir.value = targetDir;
+          // 向 C# 发送综合层级扫描指令 (扫描子文件夹与 DWG 图纸)
+          postToCSharp({
+            action: 'scanDirectoryHierarchy',
+            dirPath: targetDir
+          });
+        };
+
+        // 返回上级文件夹
+        const navigateBackParent = () => {
+          // 父级路径有效则跳转
+          if (currentParentDir.value) {
+            browseToDirectory(currentParentDir.value);
+          }
+        };
+
+        // 刷新当前浏览路径
+        const refreshCurrentBrowseDir = () => {
+          // 当前路径有效则重新读取
+          if (currentBrowseDir.value) {
+            browseToDirectory(currentBrowseDir.value);
+          }
+        };
+
+        // 打开独立的三栏二次图纸对齐与元件组绑定工作台
+        const openBindingWorkbench = () => {
+          try {
+            // 1. 打开工作台主弹窗
+            circuitDwgDialogVisible.value = true;
+            // 2. 标记为独立对齐绑定工作台模式
+            isIndependentBindingMode.value = true;
+            // 3. 清空临时搜索与已勾选图纸状态
+            circuitDwgSearchKw.value = '';
+            circuitDwgSelectedFiles.value = [];
+            // 4. 立即向 C# 请求扫描当前活动 Excel 表格中的全部二次元件组
+            loadExcelComponentGroups();
+            // 5. 若回路图纸根目录已设置，立即加载当前目录层级
+            if (circuitDwgDir.value) {
+              browseToDirectory(circuitDwgDir.value);
+            } else {
+              // 6. 未设置时向 C# 重新获取已持久化目录
+              postToCSharp({ action: 'getDwgDirs' });
+            }
+            // 拉取方案全量列表供胶囊匹配
+            postToCSharp({ action: 'getSchemes' });
+            // 7. 在 DOM 挂载完成后安全初始化 CAD 矢量视口
+            nextTick(() => {
+              try {
+                initCadViewerInstance();
+              } catch (viewerErr) {
+                console.warn('CAD 视口初始化告警:', viewerErr);
+              }
+            });
+          } catch (err) {
+            // 捕获异常提示
+            console.error('打开二次图纸对齐工作台异常:', err);
+            ElementPlus.ElMessage.error('打开对齐工作台异常: ' + (err?.message || err));
+          }
+        };
+
+        // 向 C# 发起扫描当前活动 Excel 表格二次元件组指令
+        const loadExcelComponentGroups = () => {
+          // 发送 scanExcelComponentGroups 动作
+          postToCSharp({ action: 'scanExcelComponentGroups' });
+        };
+
+        // 在左侧文件列表表格中精确反显定位并高亮某张图纸
+        const highlightLeftDwg = (code) => {
+          // 参数有效性校验
+          if (!code || typeof code !== 'string') return false;
+          const clean = code.trim().toLowerCase();
+
+          // 在 filteredDirItems.value 中匹配
+          const targetItem = (filteredDirItems.value || []).find(
+            (f) =>
+              !f.isDir &&
+              ((f.nameWithoutExt && f.nameWithoutExt.toLowerCase() === clean) ||
+                (f.fileName && f.fileName.toLowerCase() === clean) ||
+                (f.fileName && f.fileName.toLowerCase() === clean + '.dwg'))
+          );
+
+          if (targetItem) {
+            // 设置 Element Plus 当前高亮行
+            if (circuitDwgTableRef.value) {
+              circuitDwgTableRef.value.setCurrentRow(targetItem);
+              nextTick(() => {
+                const tableEl = circuitDwgTableRef.value?.$el;
+                if (tableEl) {
+                  const activeRowEl = tableEl.querySelector('.el-table__row.current-row');
+                  if (activeRowEl && typeof activeRowEl.scrollIntoView === 'function') {
+                    activeRowEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                  }
+                }
+              });
+            }
+            // 调度矢量视口渲染
+            renderDwgVector(targetItem);
+            return true;
+          }
+          return false;
+        };
+
+        // 右侧元件组表格行点击高亮选择事件 (联动左侧反显与看图)
+        const handleExcelGroupRowSelect = (row) => {
+          // 非空防御
+          if (!row) return;
+          selectedExcelGroupRow.value = row;
+          // 若已绑定图号则联动反显与看图
+          if (row.boundDwgCode && row.boundDwgCode.trim()) {
+            const code = row.boundDwgCode.trim();
+            const ok = highlightLeftDwg(code);
+            if (!ok) {
+              // 跨目录全局穿透定位
+              pendingHighlightCode.value = code;
+              postToCSharp({
+                action: 'locateAndHighlightDwg',
+                code: code,
+                rootDir: circuitDwgDir.value
+              });
+            }
+          }
+        };
+
+        // 清空当前选中行的回路图号绑定
+        const clearCurrentSelectedBinding = () => {
+          if (selectedExcelGroupRow.value) {
+            // 清空选中行图号
+            selectedExcelGroupRow.value.boundDwgCode = '';
+            ElementPlus.ElMessage.info('已清除选中项的图号绑定');
+          }
+        };
+
+        // 清除指定行的图号绑定
+        const clearSingleGroupBinding = (row) => {
+          if (row) {
+            // 重置该行绑定的图号
+            row.boundDwgCode = '';
+          }
+        };
+
+        // 左侧列表双击事件 (文件夹双击下钻，DWG图纸双击完成绑定并跳转下一行)
+        const handleDwgRowDblClick = (row) => {
+          if (!row) return;
+          // 文件夹项下钻
+          if (row.isDir) {
+            browseToDirectory(row.fullPath);
+            return;
+          }
+
+          // 提取图纸代号
+          const codeName = row.nameWithoutExt || row.fileName;
+          if (!codeName) return;
+
+          // 视口中渲染该图纸
+          renderDwgVector(row);
+
+          // 校验右侧元件组列表
+          if (!excelComponentGroups.value || excelComponentGroups.value.length === 0) {
+            ElementPlus.ElMessage.warning('当前 Excel 未加载到二次元件组，请点击顶部【🔄 刷新Excel元件组】！');
+            return;
+          }
+
+          // 若尚未选定目标行，默认首个未绑定行
+          if (!selectedExcelGroupRow.value) {
+            const firstUnbound = excelComponentGroups.value.find((g) => !g.boundDwgCode) || excelComponentGroups.value[0];
+            selectedExcelGroupRow.value = firstUnbound;
+          }
+
+          // 赋值绑定
+          const targetRow = selectedExcelGroupRow.value;
+          targetRow.boundDwgCode = codeName;
+
+          // 弹出成功提示
+          ElementPlus.ElMessage.success({
+            message: `已将【${codeName}】绑定到【${targetRow.groupModel}】(全表共 ${targetRow.occurrenceCount || 1} 处)`,
+            duration: 1500
+          });
+
+          // 自动切换至下一行实现连续绑定
+          const currentIndex = excelComponentGroups.value.findIndex((g) => g.groupModel === targetRow.groupModel);
+          if (currentIndex >= 0 && currentIndex < excelComponentGroups.value.length - 1) {
+            const nextRow = excelComponentGroups.value[currentIndex + 1];
+            selectedExcelGroupRow.value = nextRow;
+            nextTick(() => {
+              if (excelGroupTableRef.value) {
+                excelGroupTableRef.value.setCurrentRow(nextRow);
+              }
+            });
+          }
+        };
+
+        // 单击列表行 (图纸单击即时在右侧矢量视口渲染)
+        const handleRowClick = (row) => {
+          if (!row.isDir) {
+            // 视口即刻预览
+            renderDwgVector(row);
+          }
+        };
+
+        // 表格多选变化监听
+        const handleCircuitDwgSelectionChange = (selection) => {
+          // 仅收录 DWG 图纸项
+          circuitDwgSelectedFiles.value = (selection || []).filter((item) => !item.isDir);
+        };
+
+        // 全选当前过滤出的图纸 (自动忽略文件夹)
+        const selectAllCircuitDwg = () => {
+          if (circuitDwgTableRef.value && filteredDirItems.value.length > 0) {
+            // 勾选非文件夹项
+            filteredDirItems.value.forEach((row) => {
+              if (!row.isDir) {
+                circuitDwgTableRef.value.toggleRowSelection(row, true);
+              }
+            });
+          }
+        };
+
+        // 一键清空所有元件组的图号绑定
+        const clearAllGroupBindings = () => {
+          // 遍历重置图号
+          (excelComponentGroups.value || []).forEach((g) => {
+            g.boundDwgCode = '';
+          });
+          ElementPlus.ElMessage.info('已重置所有元件组的图号绑定');
+        };
+
+        // 批量将二次元件组绑定映射持久化写回当前 Excel 工作表对应行的第 32 列 (AF 列)
+        const saveExcelBindingsToColumn32 = () => {
+          if (!excelComponentGroups.value || excelComponentGroups.value.length === 0) {
+            ElementPlus.ElMessage.warning('当前没有可保存的二次元件组！');
+            return;
+          }
+
+          // 整理回写数据包
+          const bindings = excelComponentGroups.value.map((g) => ({
+            groupModel: g.groupModel,
+            boundDwgCode: (g.boundDwgCode || '').trim(),
+            rowIndexes: g.rowIndexes || []
+          }));
+
+          savingExcelBindings.value = true;
+          // 发起批量保存
+          postToCSharp({
+            action: 'saveExcelComponentGroupBindings',
+            bindings: bindings
+          });
+        };
+
         onMounted(() => {
+          // 刷新页面上下文
           onRefreshContext();
+          // 初始获取已持久化的二次回路图纸目录
+          postToCSharp({ action: 'getDwgDirs' });
+          // 初始获取全量二次方案数据 (用于视口顶部呈现二次方案胶囊)
+          postToCSharp({ action: 'getSchemes' });
         });
 
         return {
@@ -1878,7 +3338,49 @@
           addExtraHeightRule,
           removeExtraHeightRule,
           addFixedLengthRule,
-          removeFixedLengthRule
+          removeFixedLengthRule,
+          // ==================== 二次回路图纸对齐与绑定工作台导出 ====================
+          layoutDwgDir,
+          circuitDwgDir,
+          layoutDwgFiles,
+          circuitDwgFiles,
+          circuitDwgDialogVisible,
+          currentBrowseDir,
+          currentParentDir,
+          dirSubFolders,
+          dirDwgFiles,
+          circuitDwgSearchKw,
+          circuitDwgSelectedFiles,
+          circuitDwgTableRef,
+          filteredDirItems,
+          checkItemSelectable,
+          cadViewportDomRef,
+          currentVectorDwg,
+          vectorCadLoading,
+          previewCollapsed,
+          excelComponentGroups,
+          selectedExcelGroupRow,
+          savingExcelBindings,
+          isIndependentBindingMode,
+          excelGroupTableRef,
+          boundGroupsCount,
+          currentVectorScheme,
+          selectCircuitDir,
+          refreshCurrentBrowseDir,
+          openBindingWorkbench,
+          loadExcelComponentGroups,
+          handleExcelGroupRowSelect,
+          highlightLeftDwg,
+          clearCurrentSelectedBinding,
+          clearSingleGroupBinding,
+          clearAllGroupBindings,
+          handleDwgRowDblClick,
+          saveExcelBindingsToColumn32,
+          handleCircuitDwgSelectionChange,
+          selectAllCircuitDwg,
+          openInCadFromViewer,
+          handleRowClick,
+          navigateBackParent
         };
       }
     });

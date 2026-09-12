@@ -1199,7 +1199,7 @@ namespace ExcelAddInDemo
                 }
 
                 // 1. 【扫描明细区域中的所有箱柜信息行 Cab_Det】
-                // 特征条件：A 列包含“柜号”（或“箱柜”），且下一行 A 列包含“序号”
+                // 特征条件：A 列包含“柜号”或“箱柜”，且下一行 A 列包含“序号”或“项次”等表头标记
                 var detRows = new List<int>();
                 for (int r = cabSumStartRow + 1; r < usedEndRow; r++)
                 {
@@ -1207,9 +1207,9 @@ namespace ExcelAddInDemo
                     string aText = GetText(r, 1);
                     string nextAText = GetText(r + 1, 1);
 
-                    // 匹配明细大标题与表头特征
-                    if (aText.Contains("柜号") && nextAText.Contains("序号"))
-
+                    // 匹配明细大标题与表头特征 (容错序号、项次、NO等)
+                    if ((aText.Contains("柜号") || aText.Contains("箱柜")) &&
+                        (nextAText.Contains("序号") || nextAText.Contains("项次") || nextAText.Contains("NO") || nextAText.Contains("No")))
                     {
                         // 记录识别到的箱柜信息行行号
                         detRows.Add(r);
@@ -1255,8 +1255,9 @@ namespace ExcelAddInDemo
                     // 第一轮：通过柜号/箱柜名称进行 100% 完全精确对齐 (优先原则)
                     for (int i = 0; i < sumRows.Count; i++)
                     {
-                        // 提取汇总行柜号文本 (B 列)
+                        // 提取汇总行柜号文本 (优先 B 列，若 B 列为空则取 A 列)
                         string sumCabNo = GetText(sumRows[i], 2);
+                        if (string.IsNullOrEmpty(sumCabNo)) sumCabNo = GetText(sumRows[i], 1);
                         // 若汇总行未填写柜号则跳过本轮匹配
                         if (string.IsNullOrEmpty(sumCabNo)) continue;
 
@@ -1265,8 +1266,9 @@ namespace ExcelAddInDemo
                         {
                             // 跳过已被配对的明细行
                             if (detUsed[j]) continue;
-                            // 提取底表明细信息行 B 列柜号与 A 列文本
+                            // 提取底表明细信息行柜号 (优先 B 列，若 B 列为空则容错提取 A 列合并单元格文本)
                             string detCabNo = GetText(detRows[j], 2);
+                            if (string.IsNullOrEmpty(detCabNo)) detCabNo = GetText(detRows[j], 1);
                             string detTextA = GetText(detRows[j], 1);
 
                             // 只要柜号完全一致，或明细信息行 A 列明确包含汇总柜号，立即建立 1 对 1 精准绑定
@@ -1315,7 +1317,7 @@ namespace ExcelAddInDemo
                         }
                     }
 
-                    // 第三轮：剩余未匹配箱柜按拓扑顺序保底对齐 (精准排除纯数字单价的无明细柜)
+                    // 第三轮：剩余未匹配箱柜按拓扑顺序保底对齐 (精准排除纯数字单价或空白无公式的纯汇总柜)
                     int nextDetIdx = 0;
                     for (int i = 0; i < sumRows.Count; i++)
                     {
@@ -1329,11 +1331,11 @@ namespace ExcelAddInDemo
                         // 提取汇总行 G 列单价数值与公式特征
                         string gVal = GetText(sumRows[i], 7);
                         string gFormula = GetFormula(sumRows[i], 7);
-                        // 判断是否为纯数字直接录入 (纯汇总无明细箱柜的核心业务特征)
-                        bool isPureNumber = double.TryParse(gVal, out _) && string.IsNullOrEmpty(gFormula);
+                        // 判断是否为纯数字直接录入或空白无公式 (纯汇总无明细箱柜的核心业务特征)
+                        bool isPureNumberOrBlank = (double.TryParse(gVal, out _) || string.IsNullOrEmpty(gVal)) && string.IsNullOrEmpty(gFormula);
 
-                        // 只有非纯数字单价的柜子才分配明细行；若是纯数字单价且无对应底表，则视为纯汇总无明细柜保持为 0
-                        if (!isPureNumber || detRows.Count == sumRows.Count)
+                        // 只有非纯数字且非空白单价的柜子才分配明细行；若存在多余的纯数字/空白单价且无对应底表，则视为纯汇总无明细柜保持为 0
+                        if (!isPureNumberOrBlank || detRows.Count == sumRows.Count)
                         {
                             // 按顺序分配明细行
                             matchedDetRows[i] = detRows[nextDetIdx];
@@ -1347,6 +1349,77 @@ namespace ExcelAddInDemo
                     // 若无顶部汇总行，直接按明细行顺序对齐
                     for (int i = 0; i < detRows.Count; i++) matchedDetRows[i] = detRows[i];
                 }
+
+                // 规则 7: 循环外预加载系统公式方案库并倒序排列，避免每台箱柜重复反序列化磁盘 JSON
+                List<Controllers.FormulaGroupModel>? sortedFeeGroups = null;
+                try
+                {
+                    // 实例化公式控制器提取系统已登记的所有公式组方案
+                    var feeCtrl = new Controllers.FormulaAdjustFeeController();
+                    var allGroups = feeCtrl.GetFormulaGroups();
+                    // 优先按明细项数量倒序比对，确保优先匹配更具体更长且完全吻合的方案
+                    sortedFeeGroups = allGroups?.Where(g => g.Details != null && g.Details.Count >= 3)
+                                               .OrderByDescending(g => g.Details!.Count)
+                                               .ToList();
+                }
+                catch { }
+
+                // 本地辅助函数：验证指定方案在当前总计行下是否 100% 逐项完全吻合 (严禁模糊猜测)
+                bool TryMatchFormulaGroup(Controllers.FormulaGroupModel g, int tolsumRow, int detRow, out int feeStartRow)
+                {
+                    feeStartRow = 0;
+                    // 校验方案明细项有效性
+                    if (g.Details == null || g.Details.Count < 3) return false;
+                    int N = g.Details.Count;
+                    int candidateStart = tolsumRow - N + 1;
+                    // 校验起始行合法性 (不能越过箱柜信息行和元器件起始行)
+                    if (candidateStart < detRow + 2) return false;
+
+                    int matchCount = 0;
+                    // 逐行比对 B 列费用名称与序号特征
+                    for (int idx = 0; idx < N; idx++)
+                    {
+                        // 方案预设费用名称与序号
+                        string expName = g.Details[idx].Name?.Trim() ?? "";
+                        string expNo = g.Details[idx].No?.Trim() ?? "";
+                        // 单元格实际费用名称与序号 (覆盖 B 列与 A 列)
+                        string actName = GetText(candidateStart + idx, 2);
+                        string actNo = GetText(candidateStart + idx, 1);
+
+                        // 判定单项是否 100% 吻合
+                        bool isMatch = false;
+                        // 规则 1: 若方案定义了费用名称且与实际单元格 B 列一致
+                        if (!string.IsNullOrEmpty(expName) && string.Equals(actName, expName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            isMatch = true;
+                        }
+                        // 规则 2: 总计行匹配 (方案项或序号含总计，或为末尾总计行，且实际 A/B 列含总计)
+                        else if ((expNo.Contains("总计") || expName.Contains("总计") || idx == N - 1) &&
+                                 (actNo.Contains("总计") || actName.Contains("总计")))
+                        {
+                            isMatch = true;
+                        }
+                        // 规则 3: 序号或项目代号严格完全一致
+                        else if (!string.IsNullOrEmpty(expNo) && string.Equals(actNo, expNo, StringComparison.OrdinalIgnoreCase))
+                        {
+                            isMatch = true;
+                        }
+
+                        // 匹配计数累加
+                        if (isMatch) matchCount++;
+                    }
+
+                    // 用户指示：严禁模糊猜测，必须 100% 逐项完全吻合 (matchCount == N) 才确认命中该方案
+                    if (matchCount == N)
+                    {
+                        feeStartRow = candidateStart;
+                        return true;
+                    }
+                    return false;
+                }
+
+                // 维护最近命中方案缓存 (高速验证通道)，在多台箱柜连续匹配时实现微秒级瞬时命中
+                Controllers.FormulaGroupModel? lastMatchedGroup = null;
 
                 // 4. 【逐个箱柜定位 Subsum (小计) 与 Tolsum (总计) 并覆盖绑定定义名称】
                 for (int i = 0; i < cabCount; i++)
@@ -1421,89 +1494,73 @@ namespace ExcelAddInDemo
                             }
                         }
 
-                        // 2. 方案库指纹反查锁定计费首行 (第一重保险：100% 逐项完全吻合)
+                        // 2. 方案库指纹反查锁定计费首行 (第一重保险：100% 逐项完全吻合，支持高速缓存通道)
                         int curFeeStartRow = 0;
 
-                        if (curTolsumRow > 0)
+                        if (curTolsumRow > 0 && sortedFeeGroups != null && sortedFeeGroups.Count > 0)
                         {
                             try
                             {
-                                // 实例化公式控制器提取系统已登记的所有公式组方案
-                                var feeCtrl = new Controllers.FormulaAdjustFeeController();
-                                var groups = feeCtrl.GetFormulaGroups();
-                                if (groups != null && groups.Count > 0)
+                                // 高速通道：优先验证上一个箱柜命中的方案 (同一张图纸大多数箱柜方案完全一致)
+                                if (lastMatchedGroup != null && TryMatchFormulaGroup(lastMatchedGroup, curTolsumRow, curDetRow, out int fastFeeStart))
                                 {
-                                    // 优先按明细项数量倒序比对，确保优先匹配更具体更长且完全吻合的方案
-                                    var sortedGroups = groups.OrderByDescending(g => g.Details?.Count ?? 0).ToList();
-                                    // 遍历所有方案进行指纹名称与结构匹配
-                                    foreach (var g in sortedGroups)
+                                    // 命中最近方案，直接采用
+                                    curFeeStartRow = fastFeeStart;
+                                }
+                                else
+                                {
+                                    // 高速通道未命中或首次匹配，遍历按项数倒序排列的方案库
+                                    foreach (var g in sortedFeeGroups)
                                     {
-                                        if (g.Details != null && g.Details.Count >= 3)
+                                        // 跳过已验证过的最近方案
+                                        if (g == lastMatchedGroup) continue;
+                                        // 逐项严格 100% 完全比对方案
+                                        if (TryMatchFormulaGroup(g, curTolsumRow, curDetRow, out int matchedFeeStart))
                                         {
-                                            int N = g.Details.Count;
-                                            int candidateStart = curTolsumRow - N + 1;
-                                            // 校验起始行合法性 (不能越过箱柜信息行)
-                                            if (candidateStart >= curDetRow + 2)
-                                            {
-                                                int matchCount = 0;
-                                                // 逐行比对 B 列费用名称与序号特征
-                                                for (int idx = 0; idx < N; idx++)
-                                                {
-                                                    // 方案预设费用名称与序号
-                                                    string expName = g.Details[idx].Name?.Trim() ?? "";
-                                                    string expNo = g.Details[idx].No?.Trim() ?? "";
-                                                    // 单元格实际费用名称与序号 (覆盖 B 列与 A 列)
-                                                    string actName = GetText(candidateStart + idx, 2);
-                                                    string actNo = GetText(candidateStart + idx, 1);
-
-                                                    // 判定单项是否 100% 吻合
-                                                    bool isMatch = false;
-                                                    // 规则 1: 若方案定义了费用名称且与实际单元格 B 列一致
-                                                    if (!string.IsNullOrEmpty(expName) && string.Equals(actName, expName, StringComparison.OrdinalIgnoreCase))
-                                                    {
-                                                        isMatch = true;
-                                                    }
-                                                    // 规则 2: 总计行匹配 (方案项或序号含总计，或为末尾总计行，且实际 A/B 列含总计)
-                                                    else if ((expNo.Contains("总计") || expName.Contains("总计") || idx == N - 1) &&
-                                                             (actNo.Contains("总计") || actName.Contains("总计")))
-                                                    {
-                                                        isMatch = true;
-                                                    }
-                                                    // 规则 3: 序号或项目代号严格完全一致
-                                                    else if (!string.IsNullOrEmpty(expNo) && string.Equals(actNo, expNo, StringComparison.OrdinalIgnoreCase))
-                                                    {
-                                                        isMatch = true;
-                                                    }
-
-                                                    // 匹配计数累加
-                                                    if (isMatch)
-                                                    {
-                                                        matchCount++;
-                                                    }
-                                                }
-                                                // 用户指示：严禁模糊猜测，必须 100% 逐项完全吻合 (matchCount == N) 才确认命中该方案
-                                                if (matchCount == N)
-                                                {
-                                                    // 精准锁定计费区域起始物理行号
-                                                    curFeeStartRow = candidateStart;
-                                                    break;
-                                                }
-                                            }
+                                            curFeeStartRow = matchedFeeStart;
+                                            // 成功命中，更新最近方案缓存
+                                            lastMatchedGroup = g;
+                                            break;
                                         }
                                     }
                                 }
                             }
                             catch { }
 
-                            // 若第一重保险未匹配到任何预设方案，不使用第二重盲猜盲改
+                            // 用户指示：若未能匹配到预设公式方案，则在 ABC 列包含“小计”的行作为计费区的第一行
                             if (curFeeStartRow == 0)
                             {
-                                // 组装未匹配方案的静默警告日志信息
-                                string warnMsg = $"箱柜 [{k}] (总计位于第 {curTolsumRow} 行) 未能匹配到任何系统预设的费用公式方案。";
-                                // 仅记录警告日志，严禁在此调用模态 MessageBox.Show 避免 WebView2 IPC 消息泵死锁或后台弹窗遮挡导致假死
-                                LogHelper.WriteLog($"[费用方案匹配警告] {warnMsg}");
-                                // 将警告信息加入收集器，供上层 UI 统一优雅提示
-                                AddCabinetWarning($"【{sheetName}】箱柜 [{k}]：未能匹配到系统预设费用公式方案");
+                                // 在当前箱柜区间 [curTolsumRow - 1 到 curDetRow + 2] 内部由底向上寻找小计行
+                                for (int r = curTolsumRow - 1; r >= curDetRow + 2; r--)
+                                {
+                                    // 提取当前行 A、B、C 列文本
+                                    string aText = GetText(r, 1);
+                                    string bText = GetText(r, 2);
+                                    string cText = GetText(r, 3);
+
+                                    // 只要 A、B、C 列中任意一列包含“小计”，立即锁定为计费区第一行
+                                    if (aText.Contains("小计") || bText.Contains("小计") || cText.Contains("小计"))
+                                    {
+                                        // 记录识别到的小计起始行
+                                        curFeeStartRow = r;
+                                        break;
+                                    }
+                                }
+
+                                // 针对通过“小计”关键字兜底锁定的场景记录调试日志
+                                if (curFeeStartRow > 0)
+                                {
+                                    LogHelper.WriteLog($"[小计特征锁定] 箱柜 [{k}] 未能匹配到预设方案，通过 ABC 列“小计”特征成功锁定计费首行为第 {curFeeStartRow} 行。");
+                                }
+                                else
+                                {
+                                    // 组装未匹配方案且未找到小计行的静默警告日志信息
+                                    string warnMsg = $"箱柜 [{k}] (总计位于第 {curTolsumRow} 行) 未能匹配到任何预设方案且未找到“小计”行。";
+                                    // 仅记录警告日志，严禁在此调用模态 MessageBox.Show 避免死锁
+                                    LogHelper.WriteLog($"[费用方案匹配警告] {warnMsg}");
+                                    // 将警告信息加入收集器，供上层 UI 统一优雅提示
+                                    AddCabinetWarning($"【{sheetName}】箱柜 [{k}]：未能匹配到系统预设费用公式方案且未找到小计行");
+                                }
                             }
                         }
 
@@ -1515,18 +1572,75 @@ namespace ExcelAddInDemo
                         }
 
                         int curSubsumRow = curFeeStartRow;
-                        // 只有当精准匹配到方案起始行时，才安全校准 Cab_Subsum 并刷新计费公式
+                        // 只有当精准匹配到方案起始行时，才安全校准 Cab_Subsum 定义名称
                         if (curFeeStartRow > 0 && curTolsumRow > 0)
                         {
                             SafeSetSheetName(sheet, sheetName, $"{subsumPrefix}{k}", curSubsumRow);
-
-                            // 显式清除明细表头 B 列超链接 (det 行 B 列不需要链接)
-                            try { sheet.Cells[curDetRow, 2].Hyperlinks.Delete(); } catch { }
-
-                            // 规则 6 & 规则 7: 刷新元器件区域 A 列自适应序号与计费区域公式
-                            int compStartRow = curDetRow + 2;
-                            ExcelServices.RefreshCabinetFeeAreaFormulas(sheet, curDetRow, compStartRow, curSubsumRow, curTolsumRow);
                         }
+
+                        // 4. 建立/自愈汇总行与明细行双向超链接并保护居中与虚线框样式 (规则 6 架构规范)
+                        try
+                        {
+                            // 汇总行 A 列单元格句柄
+                            dynamic sumAnchor = sheet.Cells[curSumRow, 1];
+                            string detTarget = $"'{sheetName}'!{detPrefix}{k}";
+
+                            // 若已有超链接，就地更新目标地址，杜绝调用 Delete/Add 导致单元格边框与居中格式被 Excel 抹除
+                            if (sumAnchor.Hyperlinks.Count > 0)
+                            {
+                                // 直接就地更新超链接跳转子地址与屏幕提示
+                                dynamic hl = sumAnchor.Hyperlinks[1];
+                                hl.SubAddress = detTarget;
+                                hl.ScreenTip = "点击进入本箱柜明细表"; // --硬编码: 屏幕提示文本--
+                            }
+                            else
+                            {
+                                // 仅当单元格无超链接时才挂载新超链接
+                                sheet.Hyperlinks.Add(
+                                    Anchor: sumAnchor,
+                                    Address: "",
+                                    SubAddress: detTarget,
+                                    ScreenTip: "点击进入本箱柜明细表" // --硬编码: 屏幕提示文本--
+                                );
+                            }
+
+                            // 恢复汇总行 A 列自适应动态序号公式
+                            sumAnchor.Formula = "=ROW()-ROW(A$6)"; // --硬编码: 公式表达式--
+
+                            // 明细行 A 列单元格句柄
+                            dynamic detAnchor = sheet.Cells[curDetRow, 1];
+                            string sumTarget = $"'{sheetName}'!{sumPrefix}{k}";
+
+                            // 就地更新明细行超链接目标
+                            if (detAnchor.Hyperlinks.Count > 0)
+                            {
+                                dynamic hl = detAnchor.Hyperlinks[1];
+                                hl.SubAddress = sumTarget;
+                                hl.ScreenTip = "返回汇总行"; // --硬编码: 屏幕提示文本--
+                            }
+                            else
+                            {
+                                // 挂载明细行返回顶部超链接
+                                sheet.Hyperlinks.Add(
+                                    Anchor: detAnchor,
+                                    Address: "",
+                                    SubAddress: sumTarget,
+                                    ScreenTip: "返回汇总行" // --硬编码: 屏幕提示文本--
+                                );
+                            }
+
+                            // 明细行 A 列格式保护：去除下划线与恢复自动黑色
+                            try
+                            {
+                                detAnchor.Font.Underline = -4142;  // --硬编码: xlUnderlineStyleNone 去除下划线--
+                            }
+                            catch { }
+                        }
+                        catch { }
+
+                        // 确保汇总行 B 列与明细行 B 列无任何超链接 (严格遵守规则 6 规范，仅当存在时安全删除)
+                        try { if (sheet.Cells[curSumRow, 2].Hyperlinks.Count > 0) sheet.Cells[curSumRow, 2].Hyperlinks.Delete(); } catch { }
+                        try { if (sheet.Cells[curDetRow, 2].Hyperlinks.Count > 0) sheet.Cells[curDetRow, 2].Hyperlinks.Delete(); } catch { }
                     }
                     else
                     {
@@ -1534,6 +1648,42 @@ namespace ExcelAddInDemo
                         SafeDeleteSheetName(sheet, $"{detPrefix}{k}");
                         SafeDeleteSheetName(sheet, $"{subsumPrefix}{k}");
                         SafeDeleteSheetName(sheet, $"{tolsumPrefix}{k}");
+
+                        // 纯汇总无明细箱柜：清除超链接后同步自愈还原居中与虚线边框
+                        try
+                        {
+                            dynamic sumAnchor = sheet.Cells[curSumRow, 1];
+                            if (sumAnchor.Hyperlinks.Count > 0)
+                            {
+                                sumAnchor.Hyperlinks.Delete();
+                            }
+                            // 确保自适应序号动态公式正常
+                            sumAnchor.Formula = "=ROW()-ROW(A$6)"; // --硬编码: 公式表达式--
+
+                            // 格式自愈与保护：还原居中、去除下划线、恢复自动黑色字体
+                            sumAnchor.Font.Underline = -4142;      // --硬编码: xlUnderlineStyleNone 去除下划线--
+
+                            // 同步同行 B 列的虚线边框
+                            try
+                            {
+                                dynamic bBorders = sheet.Cells[curSumRow, 2].Borders;
+                                int bLineStyle = Convert.ToInt32(bBorders.LineStyle);
+                                if (bLineStyle != 0 && bLineStyle != -4142)
+                                {
+                                    sumAnchor.Borders.LineStyle = bLineStyle;
+                                    try { sumAnchor.Borders.Weight = bBorders.Weight; } catch { }
+                                }
+                                else
+                                {
+                                    sumAnchor.Borders.LineStyle = -4115; // --硬编码: xlDot 点线虚线--
+                                    sumAnchor.Borders.Weight = 1;        // --硬编码: xlHairline 极细线--
+                                }
+                            }
+                            catch { }
+                        }
+                        catch { }
+                        // 安全清理 B 列超链接
+                        try { if (sheet.Cells[curSumRow, 2].Hyperlinks.Count > 0) sheet.Cells[curSumRow, 2].Hyperlinks.Delete(); } catch { }
                     }
                 }
 

@@ -1,5 +1,138 @@
 # Session State
 
+- **清理 `CabinetAuxCalcForm.cs` 与 `CabinetAuxCalcController.cs` 冗余死代码 (`CabinetAuxCalcForm.cs`, `CabinetAuxCalcController.cs`)**：
+  1. **用户核心指令**：“去除冗余代码”；
+  2. **冗余代码识别与精准清理**：
+     - **Win32 P/Invoke 遗留声明清理**：彻底移除 `ReleaseCapture()`、`SendMessage()` 声明及 `WM_NCLBUTTONDOWN = 0xA1`、`HTCAPTION = 0x2` 常量定义；彻底移除旧版模态拖拽分支 `else if (action == "dragWindow" || action == "dragMove")`，完全由前端微秒级物理位移增量 `moveWindow` 驱动，杜绝 Win32 模态循环卡死 Excel 宿主；
+     - **未被前端引用的废弃分支清理**：
+       - 移除未被调用的 `applyCalculation` 早期批量回写分支（前端已全面采用单柜 `writeCurrentCabinet`、分类 `updateCurrentCategory` 及全表 `updateAllCategories` 现代化通道）；
+       - 移除 `CabinetAuxCalcController.cs` 中仅被其调用的无用废弃方法 `ApplyCalculation`；
+       - 移除二次工作台未被调用的 `scanDwgDir` 分支（前端已全面采用支持子目录递归下钻的 `scanDirectoryHierarchy` 综合通道），并重新理顺 1~9 号动作注释序号；
+     - **消息推送双轨实现归一化**：
+       - 将原有的 7 处散落且无防御的 `SafeInvoke(() => _webView.CoreWebView2.PostWebMessageAsString(resJson))` 统一切换为封装完善、带句柄有效性校验与异常捕获的 `PostWebMessageSafe(resJson)`；
+  3. **规范符合与构建验证**：
+     - 所有保留与调整的代码严格遵循“至少每 3 行代码包含一行中文注释”；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+
+- **DWG 文件不能预览根因彻底排查与闭环修复 (`CabinetAuxCalcForm.cs`, `cabinet_aux_calc.html`)**：
+  1. **用户核心反馈**：“不能预览dwg文件，你看之前成功预览的代码”；
+  2. **对比图一（`SecondaryCircuitForm.cs`）根因精准剖析**：
+     - **安全上下文与协议限制**：图一之所能成功预览 DWG，是因为其使用了 `_webView.CoreWebView2.SetVirtualHostNameToFolderMapping("appassets.local", resDir, CoreWebView2HostResourceAccessKind.Allow)`，将本地文件夹安全映射为 `https://appassets.local`，运行在标准安全 HTTPS 域名下；
+     - **`file:///` 协议致命拦截**：而图二（`CabinetAuxCalcForm.cs`）此前直接使用 `_webView.Source = new Uri(htmlPath)`（即 `file:///` 协议）；在 Chromium / Blink 引擎下，`file:` 协议的 Origin 为 `null`，浏览器强制禁止创建 WebWorker（`new Worker("cad-viewer/wasm/dwg-worker.js")` 抛出 `DOMException: SecurityError: cannot be accessed from origin 'null'`）且阻断 WebAssembly 二进制 fetch，导致 DWG 矢量视口引擎根本无法启动；
+  3. **修复措施全面落地**：
+     - **后端宿主虚拟域名映射**：在 `CabinetAuxCalcForm.cs` 的 `OnFormLoadAsync` 中同步引入 `SetVirtualHostNameToFolderMapping("appassets.local", resDir, ...)`，将页面导航切换至 `https://appassets.local/cabinet_aux_calc.html`，彻底解除 Worker/WASM 跨域与文件协议限制；
+     - **前端接收流自愈加载保障**：在 `cabinet_aux_calc.html` 的 `dwgBinaryLoaded` 中加入视口实例自愈检测，若此时 `cadViewerInstance` 尚未挂载则自动触发初始化与延迟重试，杜绝静默失败；
+     - 镜像同步覆盖至 `publish/Resources/cabinet_aux_calc.html`；
+  4. **构建验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none`，结果：**0 错误**，构建成功。
+
+- **智能辅材与壳体计算中心 (图二 `cabinet_aux_calc.html`) 成功集成二次图纸对齐与绑定工作台 (`CabinetAuxCalcForm.cs`, `cabinet_aux_calc.html`)**：
+  1. **用户核心需求**：“把图一的二次绑定功能 @[secondary_circuit_manage.html:L1326-L2062] ，图二也添加这个跳转按钮”；
+  2. **交互形态与位置落地**：
+     - **按钮入口**：在图二“🎯 箱柜范围选择与实时参数”卡片头部标题栏右侧（`cfg-card-header`）配置「📂 二次图纸对齐与绑定」按钮（Element Plus primary plain 风格，品牌绿蓝色）；
+     - **工作台弹窗内嵌**：将图一的三栏一体化工作台弹窗 `<el-dialog v-model="circuitDwgDialogVisible" ...>` 完整内嵌至图二，实现点击按钮即刻在图二页面内优雅弹出，无需切换窗口或离开上下文；
+  3. **核心功能链路 100% 打通**：
+     - **左侧 DWG 目录浏览与下钻**：支持多级子文件夹双击下钻与面包屑返回上级，支持过滤搜索、全选与清空；
+     - **中间 WebGL 矢量 CAD 视口**：加载 `cad-viewer/cad-viewer.bundle.js` 与 `cad-viewer/style.css`，纯前端 WebAssembly/WebGL 矢量平滑渲染，支持滚轮缩放、左键平移与外部 CAD 调起；
+     - **视口顶部方案定额胶囊**：动态关联匹配二次方案实体，即时呈现二次组方案名、跨门线根数、二次材料费、开孔规格、人工费与 BOM 子项数；
+     - **右侧 Excel 元件组映射看板**：自动扫描当前活动 Excel 工作表去重二次元件组（B列='元件组'），双击左侧 DWG 即刻快速流水线绑定并自动跳向下一行；
+     - **第 32 列 (AF列) 批量回写保存**：点击底部「💾 保存绑定到 Excel (第32列)」一键安全持久化写入全表对应行的第 32 列；
+  4. **后端 C# IPC 架构设计**：
+     - 在 `CabinetAuxCalcForm.cs` 中复用 `SecondaryCircuitController` 与 `ExcelServices.SecondaryCircuit.cs`；
+     - 增加 `getDwgDirs`、`selectDwgDir`、`scanDwgDir`、`scanDirectoryHierarchy`、`locateAndHighlightDwg`、`getDwgBinary`、`openInCad`、`scanExcelComponentGroups`、`saveExcelComponentGroupBindings`、`getSchemes` 等完整动作路由转发；
+     - 实现了 `PostWebMessageSafe` 线程安全调度，并保持代码严格符合“每 3 行至少 1 行中文注释”规范；
+     - 镜像同步至 `publish/Resources/cabinet_aux_calc.html`。
+  5. **构建验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none`：**0 警告，0 错误**。
+
+- **二次元件组落实规则 8 前置自愈与紧跟元器件空行优先复用落地交付 (`ExcelServices.ComponentGroup.cs`)**：
+  1. **用户核心指令**：“另外元件组需要放在元器件的最下面，有空行就不要插入”；
+  2. **规则 8 闭环落实**：
+     - 在 `GetActiveCabinetComponentsFromExcel`（抓取元件前）与 `ExecuteBatchComponentGroup`（倒序插行前）均前置调用 `Tool.FixAndFillCabinetNamesForSheet(sheet)`，确保规则 6（4 个定义名称、小计行与元器件区间）绝对精准；
+  3. **“元件组放在元器件的最下面，有空行不要插入”算法实现**：
+     - 在遍历元器件二维数组时，动态追踪记录最后一个有效非空元器件相对索引 `lastUsedIndex`；
+     - 计算最后一个有效元器件的物理行号 `lastUsedRow` 与箱柜内部可用空行总数 `availableEmptyRows = compEndRow - lastUsedRow`；
+     - **空行充足时（`reqCount <= availableEmptyRows`）**：完全不执行 `Insert` 插行，小计行行号保持不变；
+     - **空行不足时（`reqCount > availableEmptyRows`）**：仅按差额在小计行上方插入 `reqCount - availableEmptyRows` 行；
+     - 从 `lastUsedRow + 1` 开始依次紧凑回填二次元件组（A 列序号公式 `$"=ROW()-ROW(A${detRow + 1})"`、B 列“元件组”、C 列代号、E 列“套”、F 列数量、AD/AE 句柄），杜绝元件与元件组之间产生大面积空白断层且保证 A 列序号动态自适应连续；
+  4. **构建验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+
+- **汇总行 A 列超链接就地更新与居中/虚线框全量样式自愈修复交付 (`Tool.cs`)**：
+  1. **用户核心现象**：“不是居中对齐，且没有虚线框了” -> “修改”；
+  2. **根因精准剖析**：
+     - 原逻辑对单元格执行了 `Hyperlinks.Delete()`，触发了 Excel COM 的“恢复出厂设置”行为，将单元格格式重置为空白 Normal 格式，抹除了原有的居中对齐与灰色虚线边框；
+     - 随后的 `sheet.Hyperlinks.Add` 强制套用了内置 Hyperlink 样式（蓝色、下划线、General常规对齐），且在计算出数值序号后数字自动靠右对齐；
+  3. **闭环修复方案全面落地**：
+     - **就地属性更新，废除盲目 Delete/Add**：若单元格已存在超链接，直接修改 `hl.SubAddress` 与 `hl.ScreenTip`，绝不触发 Excel 格式重置，完全保留原始上下文；
+     - **强制居中与黑体保护**：显式设定 `HorizontalAlignment = -4108`（水平居中）、`VerticalAlignment = -4108`（垂直居中）、`Font.Underline = -4142`（去除下划线）、`Font.ColorIndex = -4105`（自动黑色）；
+     - **同行 B 列虚线边框智能继承自愈**：动态读取同行的 B 列原生边框样式（`bBorders.LineStyle` 与 `Weight`），直接同步赋予 A 列，让已被破坏的灰色点线虚线框 100% 还原；
+     - **纯汇总箱柜与明细行同步保护**：纯汇总箱柜与明细行表头 A 列同样进行居中保护、黑体保护及边框继承；B 列仅在存在超链接时才安全清理；
+  4. **构建验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+
+- **移除 FixAndFillCabinetNamesForSheet 中越权调用的 RefreshCabinetFeeAreaFormulas (`Tool.cs`)**：
+  1. **背景与诉求**：用户质询 `Tool.cs:L1582` `ExcelServices.RefreshCabinetFeeAreaFormulas(sheet, curDetRow, compStartRow, curSubsumRow, curTolsumRow)` 是否必须并确认移除；
+  2. **根因与收益**：
+     - `FixAndFillCabinetNamesForSheet` 的职责应聚焦于工作表箱柜扫描、绑定 4 个定义名称以及自愈双向超链接；
+     - 原在此处调用 `RefreshCabinetFeeAreaFormulas` 存在越权强改用户元器件 A 列序号和小计行公式的隐患，且在多柜循环中产生大量 COM 跨进程写开销；真正需要刷新公式的场景（如新增箱柜、公式法调费、克隆箱柜）均有各自的业务入口负责；
+     - 移除后彻底消除了潜在公式被意外覆盖的风险，大幅提升了定义名称校准与箱柜识别的执行流畅度；
+  3. **构建验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+
+- **插入无明细箱柜及调费后双向超链接错位/串号彻底修复交付 (`Tool.cs`, `ExcelServices.FormulaAdjustFee.cs`)**：
+  1. **用户核心现象**：“公式更新没问题，但是更新后超链接都乱了” -> “实施此修复”；
+  2. **根因精准剖析**：
+     - **根因 1（定义名称重排未同步重绑超链接）**：`Tool.FixAndFillCabinetNamesForSheet` 在插入纯汇总箱柜或顺序变动后，重新编排了箱柜序号 $k$（1 到 `cabCount`）并重命名了定义名称，但单元格原有的超链接并未重新绑定，导致原有单元格超链接与新序号“串号”错位；
+     - **根因 2（纯汇总无明细箱柜残留旧超链接）**：插入纯汇总箱柜后，其汇总行 A 列依然残留着旧的跳转明细超链接，用户点击会错误跳转到底表明细；
+     - **根因 3（调费后未触发自愈校准）**：`UpdateCabinetsForSheet` 调费替换计费区引发删行/插行后，未重新执行 `FixAndFillCabinetNamesForSheet` 进行整表超链接和定义名称的闭环自愈；
+  3. **闭环修复方案全面落地**：
+     - **汇总行与明细行双向超链接自愈重建 (`Tool.cs`)**：
+       - 对有明细箱柜（`curDetRow > 0`）：先彻底清除汇总行 A 列旧超链接，通过 `Hyperlinks.Add` 精准指向明细行定义名称 `$"'{sheetName}'!{detPrefix}{k}"`，屏幕提示 `"点击进入本箱柜明细表"`，并维护自适应序号公式 `=ROW()-ROW(A$6)`；
+       - 对明细行 A 列：先彻底清除旧超链接，通过 `Hyperlinks.Add` 精准指向汇总行定义名称 `$"'{sheetName}'!{sumPrefix}{k}"`，屏幕提示 `"返回汇总行"`；
+       - 严格确保汇总行 B 列与明细行 B 列无任何超链接（严格遵守规则 6 规范）；
+     - **纯汇总箱柜旧超链接彻底清除 (`Tool.cs`)**：
+       - 对纯汇总箱柜（`curDetRow == 0`）：显式删除汇总行 A 列与 B 列残留的旧超链接，并恢复 A 列自适应公式 `=ROW()-ROW(A$6)`；
+     - **调费后全量触发自愈校准 (`ExcelServices.FormulaAdjustFee.cs`)**：
+       - 在 `UpdateCabinetsForSheet` 循环完成后，显式调用 `Tool.FixAndFillCabinetNamesForSheet(sheet)`，确保增删行后定义名称与双向超链接 100% 自动自愈校准；
+  4. **构建验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+  1. **用户核心现象**：“如果我在顶部明细插入了一行无明细箱柜，那么更新底部计费区域会少更新一种”；
+  2. **根因定位**：
+     - 在调费前传入的 `targetCabinets` 为旧序号（如 1, 2, 3）；校准后箱柜序号重排为 1, 2, 3, 4（其中 2 为新插入的无明细箱柜）；
+     - 原 `UpdateCabinetsForSheet` 使用基于旧序号的 `targetDict.Contains(c.Key)` 进行强行过滤，导致平移后的高位箱柜 4 被判定为非法箱柜而直接丢弃；
+     - 辅助隐患：新插入无明细箱柜若 G 列单价为空，第三轮拓扑兜底曾将其误判为非纯数字而错误抢占底表明细配额；
+  3. **闭环修复方案全面落地**：
+     - **解除整表调费与旧 Key 强绑定**：在 `currentCategory` 与 `allCabinets` 模式下，直接以最新校准后的 `latestCabinets` 中所有具备底表明细（`Det != null`）的箱柜为准倒序更新，杜绝任何箱柜被旧 Key 过滤遗漏；
+     - **调费前置自愈校准**：在任何箱柜探测与用户作用域提取前，优先触发 `Tool.FixAndFillCabinetNamesForSheet`，确保起始数据始终最新；
+     - **单柜与子集双重保险**：单柜调费时结合 Key 与明细物理行号（`targetDetRows`）双重校验，杜绝平移导致过滤失败；
+     - **无明细箱柜精准排空**：在 `Tool.cs` 第三轮拓扑保底中将空白无公式一并纳入 `isPureNumberOrBlank` 判定，杜绝空单价无明细箱柜抢占底表明细配额；
+     - **柜号双向包含匹配增强**：在第一轮匹配中支持 `detCabNo` 与 `sumCabNo` 互为包含判定，大幅提升工程复杂命名下的精确配对率；
+  4. **构建验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+
+- **未匹配到公式方案时 ABC 列小计兜底锁定计费首行交付 (`Tool.cs`)**：
+  1. **用户核心指令**：“如果不能匹配到公式方案，那么abc列包含小计则为计费区的第一行”；
+  2. **实现与安全机制**：
+     - 在当前箱柜区间 `[curTolsumRow - 1, curDetRow + 2]` 内由底向上倒序寻找包含“小计”关键字的行；
+     - 检查 A、B、C 列中任意一列包含“小计”，成功命中时直接将该行作为计费区首行（`curFeeStartRow = r`）；
+     - 锁定后绑定 `Cab_Subsum_k`，并安全刷新元器件自适应序号与小计求和公式；未找到时才静默收集警告；
+  3. **构建验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+
+- **分类表箱柜识别、总计行定位与公式方案高速匹配优化全面交付 (`Tool.cs`)**：
+  1. **用户诉求与逻辑优化推演**：
+     - 用户建议优化从上到下扫描流程，并在匹配时缓存公式方案以避免重复检索；
+     - 深度推演指出单纯自上而下单向流存在的“跨箱柜穿透”、“元器件局部小计提前截断”、“字典时序悖论”及“单行校验假阳性碰撞”等 4 大风险；
+  2. **闭环解决方案全面落地**：
+     - **两阶段清晰解耦扫描**：自上而下分别扫描汇总行清单与底表明细行，建立箱柜独立明细区间；
+     - **合并单元格与表头容错**：明细行柜号优先取 B 列，若 B 列为空则容错提取 A 列大合并单元格文本；表头判定同时支持“序号”、“项次”、“NO”、“No”；
+     - **区间受限逆向定位总计行**：严格限定在 `[curDetRow + 2, nextBoundaryRow - 1]` 之间倒序寻找总计行，杜绝截断与穿透；
+     - **方案库外层预加载**：循环外一次性反序列化方案库并按项数倒序排列，避免每台箱柜重复磁盘 I/O；
+     - **最近命中方案极速验证通道**：优先校验 `lastMatchedGroup` 是否 100% 逐项吻合，实现微秒级瞬时命中（命中率超 90%）；未命中再退回全量方案检索，守住 100% 吻合红线；
+  3. **构建验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+
 - **纯汇总无明细箱柜 `Det == null` 引发“无法对 null 引用执行运行时绑定”彻底修复 (`ExcelServices.FormulaAdjustFee.cs`)**：
   1. **用户核心现象与截图质询**：
      - 用户截图报错：“调费未完成提示：执行公式法调费失败：无法对 null 引用执行运行时绑定”；
