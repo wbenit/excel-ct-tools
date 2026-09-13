@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>分布调价</title>
+  <!-- 引入 Element Plus 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <!-- 引入 Vue 3 核心库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入 Element Plus 组件库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <!-- 引入 Element Plus 图标库 -->
+  <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+  <!-- 引入公共绿蓝相间主题样式 (主色调 #009688) -->
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    /* 全局基础重置与无滚动条设定 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+      user-select: none;
+      background-color: #ffffff;
+      color: #333333;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      border: 1px solid #00796b;
+      background-color: #ffffff;
+    }
+
+    /* 顶部无边框窗体拖拽标题栏 (绿蓝相间渐变风格 #009688 -> #00796b) */
+    .window-header {
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px 0 12px;
+      background: linear-gradient(135deg, #009688, #00796b);
+      color: #ffffff;
+      cursor: move;
+      touch-action: none;
+    }
+
+    .window-title-box {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #ffffff;
+      letter-spacing: 0.5px;
+    }
+
+    .window-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .action-btn {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 3px;
+      color: #ffffff;
+      opacity: 0.85;
+      font-size: 13px;
+      transition: all 0.2s ease;
+    }
+
+    .action-btn:hover {
+      opacity: 1;
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .action-btn.close-btn:hover {
+      background-color: #ef4444;
+      color: #ffffff;
+    }
+
+    /* 顶部引导与操作 Banner 区 */
+    .top-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px 10px 18px;
+      background-color: #f7faf9;
+      border-bottom: 1px solid #e0f2f1;
+    }
+
+    .banner-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .banner-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: 2px solid #009688;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #009688;
+      font-size: 20px;
+      background-color: #e0f2f1;
+    }
+
+    .banner-text-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #004d40;
+      margin-bottom: 3px;
+    }
+
+    .banner-text-sub {
+      font-size: 12px;
+      color: #606266;
+    }
+
+    .banner-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* 主操作按钮 */
+    .primary-action-btn {
+      background: linear-gradient(135deg, #009688 0%, #00796b 100%) !important;
+      border-color: #00796b !important;
+      color: #ffffff !important;
+      font-size: 14px !important;
+      font-weight: bold !important;
+      padding: 9px 24px !important;
+      height: 38px !important;
+      border-radius: 6px !important;
+      letter-spacing: 0.5px !important;
+      box-shadow: 0 2px 6px rgba(0, 150, 136, 0.3) !important;
+      transition: all 0.2s ease !important;
+    }
+
+    .primary-action-btn:hover {
+      opacity: 0.95 !important;
+      transform: translateY(-1px) !important;
+      box-shadow: 0 4px 10px rgba(0, 150, 136, 0.4) !important;
+    }
+
+    .re-summary-link {
+      color: #00796b;
+      cursor: pointer;
+      font-size: 13px;
+      text-decoration: underline;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .re-summary-link:hover {
+      color: #004d40;
+    }
+
+    /* 主体内容滚动区 */
+    .main-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background-color: #ffffff;
+    }
+
+    /* 自定义美化滚动条 */
+    .main-body::-webkit-scrollbar {
+      width: 5px;
+    }
+    .main-body::-webkit-scrollbar-thumb {
+      background: #b2dfdb;
+      border-radius: 3px;
+    }
+    .main-body::-webkit-scrollbar-thumb:hover {
+      background: #80cbc4;
+    }
+
+    /* 卡片容器通用样式 */
+    .section-card {
+      border: 1px solid #b2dfdb;
+      border-radius: 6px;
+      background-color: #ffffff;
+      box-shadow: 0 1px 3px rgba(0, 121, 107, 0.05);
+      overflow: hidden;
+    }
+
+    .section-header {
+      height: 34px;
+      background-color: #e0f2f1;
+      border-bottom: 1px solid #b2dfdb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #004d40;
+    }
+
+    /* 分类表格展示区 */
+    .category-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .category-table th {
+      background-color: #f2f9f8;
+      font-size: 12px;
+      font-weight: 600;
+      color: #004d40;
+      padding: 6px 12px;
+      text-align: left;
+      border-bottom: 1px solid #e0f2f1;
+    }
+
+    .category-table td {
+      padding: 7px 12px;
+      font-size: 13px;
+      color: #333333;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+    }
+
+    .category-table tr:hover td {
+      background-color: #e0f2f1;
+    }
+
+    .category-table tr.selected td {
+      background-color: #f0fdfa;
+    }
+
+    .cab-count-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: bold;
+      background-color: #e0f2f1;
+      color: #00796b;
+      border: 1px solid #80cbc4;
+    }
+
+    /* 分类底部操作统计栏 */
+    .category-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background-color: #fbfbfb;
+      border-top: 1px solid #e0f2f1;
+      font-size: 12px;
+      color: #606266;
+    }
+
+    /* 自定义汇总折叠配置面板 */
+    .custom-cfg-panel {
+      padding: 12px 14px;
+      background-color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      font-size: 13px;
+    }
+
+    .cfg-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .cfg-label {
+      width: 76px;
+      font-weight: 600;
+      color: #004d40;
+      line-height: 24px;
+      flex-shrink: 0;
+    }
+
+    .cfg-options {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 14px;
+    }
+
+    /* 更新阶段面板样式 */
+    .update-options-card {
+      border: 1px solid #80cbc4;
+      border-radius: 6px;
+      padding: 14px 16px;
+      background-color: #f7faf9;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .update-options-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #004d40;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .guide-box {
+      border: 1px dashed #009688;
+      border-radius: 6px;
+      background-color: #e0f2f1;
+      padding: 12px 14px;
+      font-size: 12px;
+      color: #004d40;
+      line-height: 20px;
+    }
+
+    .guide-box strong {
+      color: #00796b;
+    }
+
+    /* 底部通用状态栏 */
+    .window-footer {
+      height: 30px;
+      background-color: #f0fdfa;
+      border-top: 1px solid #b2dfdb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      font-size: 11px;
+      color: #00796b;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app">
+    <!-- 1. 顶部无边框标题栏 (支持原生级拖拽移动) -->
+    <div class="window-header" @mousedown="handleHeaderMouseDown">
+      <div class="window-title-box">
+        <span style="font-size: 15px;">📊</span>
+        <span>分布调价 (二维矩阵交叉表)</span>
+      </div>
+      <div class="window-actions" @mousedown.stop>
+        <div class="action-btn" title="最小化" @click="minimizeWindow">─</div>
+        <div class="action-btn close-btn" title="关闭" @click="closeWindow">✕</div>
+      </div>
+    </div>
+
+    <!-- 2. 顶部引导与操作主 Banner -->
+    <div class="top-banner">
+      <div class="banner-left">
+        <div class="banner-icon">
+          <span v-if="currentStage === 'config'">📑</span>
+          <span v-else>✏️</span>
+        </div>
+        <div>
+          <!-- 阶段一标题提示 -->
+          <div v-if="currentStage === 'config'">
+            <div class="banner-text-title">选择分类生成元件汇总分布表</div>
+            <div class="banner-text-sub">请勾选需要参与矩阵分布汇总与调价的分类工作表：</div>
+          </div>
+          <!-- 阶段二标题提示 -->
+          <div v-else>
+            <div class="banner-text-title">编辑元件 [【元件汇总分布表】中]</div>
+            <div class="banner-text-sub" style="color: #00796b; font-weight: 500;">↓在 Excel 中修改单价、型号、厂家或横向各箱柜数量，一键更新同步至各箱柜</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="banner-right">
+        <!-- 阶段二返回重新汇总链接 -->
+        <div v-if="currentStage === 'edit'" class="re-summary-link" @click="switchToConfigStage">
+          <span>🔄</span> 重新汇总
+        </div>
+
+        <!-- 阶段一操作主按钮: 立即生成 -->
+        <el-button
+          v-if="currentStage === 'config'"
+          type="primary"
+          class="primary-action-btn"
+          :loading="generating"
+          @click="generateDistributionSheet"
+        >
+          立即生成分布表
+        </el-button>
+
+        <!-- 阶段二操作主按钮: 一键更新 -->
+        <el-button
+          v-else
+          type="primary"
+          class="primary-action-btn"
+          :loading="updating"
+          @click="updateFromDistributionSheet"
+        >
+          一键更新到明细
+        </el-button>
+      </div>
+    </div>
+
+    <!-- 3. 主体内容展示与配置交互区 -->
+    <div class="main-body" v-loading="loading" element-loading-text="正在处理数据...">
+      
+      <!-- ================= 阶段一：分类选择与高级汇总配置视图 ================= -->
+      <div v-if="currentStage === 'config'" style="display: flex; flex-direction: column; gap: 14px;">
+        <!-- 分类列表卡片 -->
+        <div class="section-card">
+          <div class="section-header">
+            <span>🎯 待选分类工作表清单</span>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span @click.stop="fetchCategories" title="刷新分类工作表列表" style="cursor: pointer; font-size: 12px; color: #00796b; display: flex; align-items: center; gap: 3px;">
+                🔄 刷新列表
+              </span>
+              <span style="font-size: 11px; font-weight: normal; color: #00796b;">勾选以将其纳入分布矩阵</span>
+            </div>
+          </div>
+
+          <div style="max-height: 220px; overflow-y: auto;">
+            <table class="category-table">
+              <thead>
+                <tr>
+                  <th style="width: 44px; text-align: center;">选择</th>
+                  <th>分类工作表名称</th>
+                  <th style="width: 110px; text-align: right;">箱柜数量</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(cat, idx) in categories"
+                  :key="idx"
+                  :class="{ selected: cat.isSelected }"
+                  @click="cat.isSelected = !cat.isSelected"
+                >
+                  <td style="text-align: center;" @click.stop>
+                    <el-checkbox v-model="cat.isSelected"></el-checkbox>
+                  </td>
+                  <td style="font-weight: 500;">
+                    📁 {{ cat.sheetName }}
+                  </td>
+                  <td style="text-align: right;">
+                    <span class="cab-count-tag">{{ cat.cabinetCount }} 台</span>
+                  </td>
+                </tr>
+                <tr v-if="categories.length === 0">
+                  <td colspan="3" style="text-align: center; color: #909399; padding: 22px;">
+                    <div>未检测到有效的分类工作表</div>
+                    <div style="margin-top: 8px;">
+                      <el-button type="primary" link size="small" @click="fetchCategories">🔄 重新扫描分类</el-button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 分类底栏统计与全选 -->
+          <div class="category-footer">
+            <el-checkbox v-model="allSelected" @change="toggleSelectAll">全选所有分类</el-checkbox>
+            <span>已选择 <strong>{{ selectedCount }}</strong> / {{ categories.length }} 个分类，共 <strong>{{ selectedCabinetTotal }}</strong> 台箱柜</span>
+          </div>
+        </div>
+
+        <!-- 自定义汇总与排序高级配置卡片 (可折叠) -->
+        <div class="section-card">
+          <div class="section-header" style="cursor: pointer;" @click="customExpanded = !customExpanded">
+            <span>⚙️ 自定义汇总与排序规则 (可选)</span>
+            <span style="font-size: 12px; color: #00796b;">
+              {{ customExpanded ? '▲ 收起' : '▼ 展开设置' }}
+            </span>
+          </div>
+
+          <div v-show="customExpanded" class="custom-cfg-panel">
+            <!-- 1. 合并条件 -->
+            <div class="cfg-row">
+              <div class="cfg-label">合并条件:</div>
+              <div class="cfg-options">
+                <el-checkbox v-model="mergeCond.byName" disabled>名称</el-checkbox>
+                <span style="color: #909399;">+</span>
+                <el-checkbox v-model="mergeCond.byModel" disabled>型号</el-checkbox>
+                <span style="color: #909399;">+</span>
+                <el-checkbox v-model="mergeCond.byManufacturer">厂家</el-checkbox>
+                <el-checkbox v-model="mergeCond.includeNoManufacturer">包含无厂家</el-checkbox>
+                <span style="color: #909399;">+</span>
+                <el-checkbox v-model="mergeCond.byPrice">价格相同合并</el-checkbox>
+                <el-checkbox v-model="mergeCond.byRemark">备注相同合并</el-checkbox>
+                <el-checkbox v-model="mergeCond.byTemplateName">方案名称相同合并 (AC列)</el-checkbox>
+              </div>
+            </div>
+
+            <!-- 2. 排序设置 -->
+            <div class="cfg-row">
+              <div class="cfg-label">排序设置:</div>
+              <div class="cfg-options">
+                <el-radio-group v-model="sortSettings.sortType" size="small">
+                  <el-radio label="type_location_name">按 (类别 + 位置 + 名称、厂家、型号) 排序</el-radio>
+                  <el-radio label="mfg_name_model">按 (厂家 + 名称 + 型号) 排序</el-radio>
+                </el-radio-group>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 阶段二：表格编辑提示与反向一键更新视图 ================= -->
+      <div v-else style="display: flex; flex-direction: column; gap: 14px;">
+        <!-- 更新选项卡片 -->
+        <div class="update-options-card">
+          <div class="update-options-title">
+            <span>⚙️ 一键更新高级选项：</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px; padding-left: 10px;">
+            <el-checkbox v-model="updateOptions.updateBomOrder">
+              <strong>调整元件排序</strong>：更新时按当前【元件汇总分布表】中的顺序重排各箱柜内元器件
+            </el-checkbox>
+            <el-checkbox v-model="updateOptions.notMergeSameBom">
+              <strong>不合并相同元件</strong>：更新时保持箱柜内原有的相同元件独立，不强行合并
+            </el-checkbox>
+            <el-checkbox v-model="updateOptions.saveCurrentOrder">
+              <strong>记住当前顺序</strong>：记录本次汇总排序偏好，方便后续再次复用
+            </el-checkbox>
+          </div>
+        </div>
+
+        <!-- 调价操作指南 -->
+        <div class="guide-box">
+          <div style="font-weight: bold; margin-bottom: 6px; font-size: 13px;">💡 分布调价矩阵使用指引：</div>
+          <p>1. <strong>查看矩阵</strong>：Excel 当前已自动定位到<strong>【元件汇总分布表】</strong>；A~K 列为汇总器件清单，<strong>L 列向右横向平铺了各个箱柜</strong>，交叉点展示单台用量；</p>
+          <p>2. <strong>编辑调价与数量</strong>：可直接在 Excel 中修改 <strong>G 列报出单价</strong>、<strong>C 列型号规格</strong>、<strong>D 列生产厂家</strong>，以及<strong>右侧箱柜列中的单台数量</strong>；修改数量时 K 列元件总数通过 SUMPRODUCT 自动实时联动！</p>
+          <p>3. <strong>一键同步回写</strong>：点击右上角<strong>【一键更新到明细】</strong>，最新价格与修改后的数量将自动精准回写至各箱柜（*数量为空删除，为0保留；原本没有但填了数量的器件将自动插入新行），并联动刷新小计与总计！</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 4. 底部微型状态栏 -->
+    <div class="window-footer">
+      <span>已连接 ExcelCTtools 工业内核</span>
+      <span v-if="currentStage === 'config'">状态: 等待配置生成</span>
+      <span v-else style="color: #00796b; font-weight: bold;">状态: 元件汇总分布表已就绪，等待编辑后更新</span>
+    </div>
+  </div>
+
+  <!-- Vue 3 核心逻辑脚本 (Composition API <script setup> 风格) -->
+  <script>
+    const { createApp, ref, reactive, computed, onMounted } = Vue;
+
+    const app = createApp({
+      setup() {
+        // ----------------- 响应式状态定义 -----------------
+        // 当前视图阶段: 'config' (配置选择生成) | 'edit' (编辑与更新)
+        const currentStage = ref('config');
+
+        // 加载状态
+        const loading = ref(false);
+        const generating = ref(false);
+        const updating = ref(false);
+
+        // 分类工作表列表
+        const categories = ref([]);
+
+        // 自定义汇总折叠展开状态
+        const customExpanded = ref(false);
+
+        // 合并条件模型
+        const mergeCond = reactive({
+          byName: true,
+          byModel: true,
+          byManufacturer: true,
+          includeNoManufacturer: false,
+          byPrice: true,
+          byRemark: false,
+          byTemplateName: false
+        });
+
+        // 排序设置模型
+        const sortSettings = reactive({
+          sortType: 'type_location_name'
+        });
+
+        // 更新选项模型
+        const updateOptions = reactive({
+          updateBomOrder: true,
+          notMergeSameBom: false,
+          saveCurrentOrder: false
+        });
+
+        // ----------------- 计算属性 -----------------
+        // 已选分类数量
+        const selectedCount = computed(() => {
+          return categories.value.filter(c => c.isSelected).length;
+        });
+
+        // 已选分类下的箱柜总台数
+        const selectedCabinetTotal = computed(() => {
+          return categories.value
+            .filter(c => c.isSelected)
+            .reduce((sum, c) => sum + (c.cabinetCount || 0), 0);
+        });
+
+        // 全选复选框绑定
+        const allSelected = computed({
+          get: () => categories.value.length > 0 && categories.value.every(c => c.isSelected),
+          set: (val) => {
+            categories.value.forEach(c => c.isSelected = val);
+          }
+        });
+
+        const toggleSelectAll = (val) => {
+          categories.value.forEach(c => c.isSelected = val);
+        };
+
+        // ----------------- 窗体平滑拖拽实现 -----------------
+        let isDragging = false;
+        let startX = 0;
+        let startY = 0;
+
+        const handleHeaderMouseDown = (e) => {
+          if (e.button !== 0) return;
+          isDragging = true;
+          startX = e.screenX;
+          startY = e.screenY;
+          window.addEventListener('mousemove', handleHeaderMouseMove);
+          window.addEventListener('mouseup', handleHeaderMouseUp);
+        };
+
+        const handleHeaderMouseMove = (e) => {
+          if (!isDragging) return;
+          const deltaX = e.screenX - startX;
+          const deltaY = e.screenY - startY;
+          startX = e.screenX;
+          startY = e.screenY;
+          postMessageToCSharp({
+            action: 'moveWindow',
+            deltaX: deltaX,
+            deltaY: deltaY
+          });
+        };
+
+        const handleHeaderMouseUp = () => {
+          isDragging = false;
+          window.removeEventListener('mousemove', handleHeaderMouseMove);
+          window.removeEventListener('mouseup', handleHeaderMouseUp);
+        };
+
+        // 窗体控制指令
+        const minimizeWindow = () => {
+          postMessageToCSharp({ action: 'minimizeWindow' });
+        };
+
+        const closeWindow = () => {
+          postMessageToCSharp({ action: 'closeWindow' });
+        };
+
+        // ----------------- 双向通信消息机制 -----------------
+        const postMessageToCSharp = (msgObj) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify(msgObj));
+          } else {
+            console.log('[Dev IPC]', msgObj);
+          }
+        };
+
+        // 1. 获取工作簿分类列表
+        const fetchCategories = () => {
+          loading.value = true;
+          postMessageToCSharp({ action: 'getCategorySheets' });
+        };
+
+        // 2. 生成【元件汇总分布表】
+        const generateDistributionSheet = () => {
+          const selectedSheets = categories.value
+            .filter(c => c.isSelected)
+            .map(c => c.sheetName);
+
+          if (selectedSheets.length === 0) {
+            ElementPlus.ElMessage.warning('请至少勾选一个分类工作表');
+            return;
+          }
+
+          generating.value = true;
+          postMessageToCSharp({
+            action: 'generateDistributionSheet',
+            payload: {
+              selectedSheets: selectedSheets,
+              mergeConditions: mergeCond,
+              sortSettings: sortSettings
+            }
+          });
+        };
+
+        // 3. 一键反向更新到明细
+        const updateFromDistributionSheet = () => {
+          updating.value = true;
+          postMessageToCSharp({
+            action: 'updateFromDistributionSheet',
+            payload: updateOptions
+          });
+        };
+
+        // 4. 返回配置阶段
+        const switchToConfigStage = () => {
+          currentStage.value = 'config';
+        };
+
+        // 5. 检查当前是否已有分布表
+        const checkExistingDistributionSheet = () => {
+          postMessageToCSharp({ action: 'checkDistributionSheetExists' });
+        };
+
+        // ----------------- 挂载监听 C# 响应 -----------------
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (event) => {
+              try {
+                const data = JSON.parse(event.data);
+                const type = data.type;
+                const response = data.response;
+
+                // 响应: 获取分类列表
+                if (type === 'getCategorySheetsResult') {
+                  loading.value = false;
+                  if (response && response.success && Array.isArray(response.data)) {
+                    categories.value = response.data.map(item => ({
+                      sheetName: item.sheetName,
+                      cabinetCount: item.cabinetCount || 0,
+                      isSelected: item.isSelected !== false
+                    }));
+                  } else {
+                    ElementPlus.ElMessage.error(response.message || '获取分类列表失败');
+                  }
+                }
+
+                // 响应: 生成元件汇总分布表
+                else if (type === 'generateDistributionSheetResult') {
+                  generating.value = false;
+                  if (response && response.success) {
+                    ElementPlus.ElNotification({
+                      title: '成功生成',
+                      message: '【元件汇总分布表】已就绪，请在 Excel 中直接调整单价或属性',
+                      type: 'success',
+                      duration: 4000
+                    });
+                    // 平滑切换至编辑与更新阶段
+                    currentStage.value = 'edit';
+                  } else {
+                    ElementPlus.ElMessage.error(response.message || '生成元件汇总分布表失败');
+                  }
+                }
+
+                // 响应: 一键反向更新
+                else if (type === 'updateFromDistributionSheetResult') {
+                  updating.value = false;
+                  if (response && response.success) {
+                    ElementPlus.ElNotification({
+                      title: '同步成功',
+                      message: response.message || '各分类表箱柜明细已全部更新',
+                      type: 'success',
+                      duration: 4500
+                    });
+                  } else {
+                    ElementPlus.ElMessage.error(response.message || '更新失败');
+                  }
+                }
+
+                // 响应: 检查元件汇总分布表存在状态
+                else if (type === 'checkDistributionSheetExistsResult') {
+                  if (response && response.data && response.data.exists) {
+                    // 若已存在，自动进入编辑阶段，但允许切换回配置
+                    currentStage.value = 'edit';
+                  }
+                }
+              } catch (err) {
+                console.error('[WebMessage Parse Error]', err);
+              }
+            });
+          }
+
+          // 初始化请求分类列表与检查分布表状态
+          fetchCategories();
+          checkExistingDistributionSheet();
+        });
+
+        // 暴露至模板上下文
+        return {
+          currentStage,
+          loading,
+          generating,
+          updating,
+          categories,
+          customExpanded,
+          mergeCond,
+          sortSettings,
+          updateOptions,
+          selectedCount,
+          selectedCabinetTotal,
+          allSelected,
+          toggleSelectAll,
+          handleHeaderMouseDown,
+          minimizeWindow,
+          closeWindow,
+          generateDistributionSheet,
+          updateFromDistributionSheet,
+          switchToConfigStage,
+          fetchCategories
+        };
+      }
+    });
+
+    app.use(ElementPlus);
+    app.mount('#app');
+  </script>
+</body>
+
+</html>

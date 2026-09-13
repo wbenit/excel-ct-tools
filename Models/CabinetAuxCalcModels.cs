@@ -28,6 +28,10 @@ namespace ExcelAddInDemo.Models
         // 人工工价定额配置分节
         [JsonPropertyName("laborRules")]
         public LaborConfig LaborRules { get; set; } = new LaborConfig();
+
+        // 壳体价格计算与批量定价定额分节 (单列Tab)
+        [JsonPropertyName("shellPriceRules")]
+        public ShellPriceConfig ShellPriceRules { get; set; } = new ShellPriceConfig();
     }
 
     /// <summary>
@@ -104,6 +108,244 @@ namespace ExcelAddInDemo.Models
         // 互感器对总开关预留高度加成 (单位: mm)
         [JsonPropertyName("transformerSpacing")]
         public TransformerSpacingConfig TransformerSpacing { get; set; } = new TransformerSpacingConfig();
+
+        // 纯高度驱动的箱柜深度推荐梯度表 (高度 <= maxHeight 则取 depth，与电流解耦) --硬编码--
+        [JsonPropertyName("heightDepthGradients")]
+        public List<HeightDepthGradientItem> HeightDepthGradients { get; set; } = new List<HeightDepthGradientItem>
+        {
+            // H <= 400 推荐深度 160mm
+            new HeightDepthGradientItem { MaxHeight = 400, Depth = 160, CandidateDepths = new List<int>{ 120, 140, 160 }, Remark = "微型终端箱/照明箱" },
+            // 400 < H <= 600 推荐深度 180mm
+            new HeightDepthGradientItem { MaxHeight = 600, Depth = 180, CandidateDepths = new List<int>{ 160, 180, 200 }, Remark = "动力照明箱/基业箱" },
+            // 600 < H <= 800 推荐深度 200mm
+            new HeightDepthGradientItem { MaxHeight = 800, Depth = 200, CandidateDepths = new List<int>{ 180, 200, 220, 250 }, Remark = "中型动力箱/控制箱" },
+            // 800 < H <= 1000 推荐深度 250mm
+            new HeightDepthGradientItem { MaxHeight = 1000, Depth = 250, CandidateDepths = new List<int>{ 200, 250, 300 }, Remark = "大型壁挂配电箱" },
+            // 1000 < H <= 1400 推荐深度 300mm
+            new HeightDepthGradientItem { MaxHeight = 1400, Depth = 300, CandidateDepths = new List<int>{ 250, 300, 350 }, Remark = "超高挂墙箱/落地小箱" },
+            // 1400 < H <= 1800 推荐深度 400mm
+            new HeightDepthGradientItem { MaxHeight = 1800, Depth = 400, CandidateDepths = new List<int>{ 350, 400, 500 }, Remark = "动力配电柜(如XL-21)" },
+            // 1800 < H <= 2000 推荐深度 800mm
+            new HeightDepthGradientItem { MaxHeight = 2000, Depth = 800, CandidateDepths = new List<int>{ 600, 800, 1000 }, Remark = "标准低压柜(如GGD)" },
+            // H > 2000 推荐深度 1000mm
+            new HeightDepthGradientItem { MaxHeight = 9999, Depth = 1000, CandidateDepths = new List<int>{ 800, 1000, 1200 }, Remark = "大型低压成套开关柜" }
+        };
+
+        // 板材材质及各厚度每平米单价库 --硬编码--
+        [JsonPropertyName("materialPrices")]
+        public List<MaterialPriceItem> MaterialPrices { get; set; } = new List<MaterialPriceItem>
+        {
+            // 冷轧板单价阶梯
+            new MaterialPriceItem
+            {
+                MaterialName = "冷轧板",
+                Density = 7.85,
+                ThicknessPrices = new List<MaterialThicknessPriceItem>
+                {
+                    // 1.0mm 单价 45.0 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 1.0, PricePerSqMeter = 45.0 },
+                    // 1.2mm 单价 54.0 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 1.2, PricePerSqMeter = 54.0 },
+                    // 1.5mm 单价 67.5 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 1.5, PricePerSqMeter = 67.5 },
+                    // 2.0mm 单价 90.0 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 2.0, PricePerSqMeter = 90.0 },
+                    // 2.5mm 单价 112.5 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 2.5, PricePerSqMeter = 112.5 },
+                    // 3.0mm 单价 135.0 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 3.0, PricePerSqMeter = 135.0 }
+                }
+            },
+            // 不锈钢201单价阶梯
+            new MaterialPriceItem
+            {
+                MaterialName = "不锈钢201",
+                Density = 7.93,
+                ThicknessPrices = new List<MaterialThicknessPriceItem>
+                {
+                    // 1.0mm 单价 71.37 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 1.0, PricePerSqMeter = 71.37 },
+                    // 1.2mm 单价 85.6 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 1.2, PricePerSqMeter = 85.6 },
+                    // 1.5mm 单价 107.0 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 1.5, PricePerSqMeter = 107.0 },
+                    // 2.0mm 单价 142.8 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 2.0, PricePerSqMeter = 142.8 },
+                    // 2.5mm 单价 178.5 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 2.5, PricePerSqMeter = 178.5 },
+                    // 3.0mm 单价 214.0 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 3.0, PricePerSqMeter = 214.0 }
+                }
+            },
+            // 不锈钢304单价阶梯
+            new MaterialPriceItem
+            {
+                MaterialName = "不锈钢304",
+                Density = 7.93,
+                ThicknessPrices = new List<MaterialThicknessPriceItem>
+                {
+                    // 1.0mm 单价 95.0 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 1.0, PricePerSqMeter = 95.0 },
+                    // 1.2mm 单价 114.0 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 1.2, PricePerSqMeter = 114.0 },
+                    // 1.5mm 单价 142.5 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 1.5, PricePerSqMeter = 142.5 },
+                    // 2.0mm 单价 190.0 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 2.0, PricePerSqMeter = 190.0 },
+                    // 2.5mm 单价 237.5 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 2.5, PricePerSqMeter = 237.5 },
+                    // 3.0mm 单价 285.0 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 3.0, PricePerSqMeter = 285.0 }
+                }
+            },
+            // 镀锌板单价阶梯
+            new MaterialPriceItem
+            {
+                MaterialName = "镀锌板",
+                Density = 7.85,
+                ThicknessPrices = new List<MaterialThicknessPriceItem>
+                {
+                    // 1.0mm 单价 48.0 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 1.0, PricePerSqMeter = 48.0 },
+                    // 1.2mm 单价 58.0 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 1.2, PricePerSqMeter = 58.0 },
+                    // 1.5mm 单价 72.0 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 1.5, PricePerSqMeter = 72.0 },
+                    // 2.0mm 单价 96.0 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 2.0, PricePerSqMeter = 96.0 },
+                    // 2.5mm 单价 120.0 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 2.5, PricePerSqMeter = 120.0 },
+                    // 3.0mm 单价 144.0 元/m²
+                    new MaterialThicknessPriceItem { Thickness = 3.0, PricePerSqMeter = 144.0 }
+                }
+            }
+        };
+
+        // 箱体加工与折弯放量预留配置
+        [JsonPropertyName("allowance")]
+        public CabinetAllowanceConfig Allowance { get; set; } = new CabinetAllowanceConfig();
+    }
+
+    /// <summary>
+    /// 壳体价格计算与批量定价定额配置模型 (与壳体尺寸生成彻底解耦)
+    /// </summary>
+    public class ShellPriceConfig
+    {
+        // 批量计算默认基准材质 (兜底，默认 "镀锌板") --硬编码--
+        [JsonPropertyName("defaultMaterial")]
+        public string DefaultMaterial { get; set; } = "镀锌板";
+
+        // 顶底板展开面数 (W*D，默认 2.0) --硬编码--
+        [JsonPropertyName("faceCountWD")]
+        public double FaceCountWD { get; set; } = 2.0;
+
+        // 门背板展开面数 (H*W，默认 2.0) --硬编码--
+        [JsonPropertyName("faceCountHW")]
+        public double FaceCountHW { get; set; } = 2.0;
+
+        // 左右侧板展开面数 (H*D，默认 2.0) --硬编码--
+        [JsonPropertyName("faceCountHD")]
+        public double FaceCountHD { get; set; } = 2.0;
+
+        // 二层板增加的宽高面数 (含"二层板"时自动叠加，默认 1.0) --硬编码--
+        [JsonPropertyName("secondPlateExtraHW")]
+        public double SecondPlateExtraHW { get; set; } = 1.0;
+
+        // 批量计算板厚高度阶梯决策列表 (高度阶梯决策法) --硬编码--
+        [JsonPropertyName("thicknessGradients")]
+        public List<HeightThicknessGradientItem> ThicknessGradients { get; set; } = new List<HeightThicknessGradientItem>
+        {
+            // H <= 800mm (小型照明箱/终端箱) 对应 1.2mm
+            new HeightThicknessGradientItem { MaxHeight = 800, Thickness = 1.2, Remark = "小型配电箱/照明箱" },
+            // 800 < H <= 1600mm (中型动力箱/挂墙箱) 对应 1.5mm
+            new HeightThicknessGradientItem { MaxHeight = 1600, Thickness = 1.5, Remark = "中型动力箱/挂墙箱" },
+            // H > 1600mm (大型成套开关柜) 对应 2.0mm
+            new HeightThicknessGradientItem { MaxHeight = 9999, Thickness = 2.0, Remark = "大型成套落地开关柜" }
+        };
+
+        // 板材材质及各厚度每平米单价库 --硬编码--
+        [JsonPropertyName("materialPrices")]
+        public List<MaterialPriceItem> MaterialPrices { get; set; } = new List<MaterialPriceItem>
+        {
+            // 镀锌板单价阶梯 (默认基准材质)
+            new MaterialPriceItem
+            {
+                MaterialName = "镀锌板",
+                Density = 7.85,
+                ThicknessPrices = new List<MaterialThicknessPriceItem>
+                {
+                    new MaterialThicknessPriceItem { Thickness = 1.0, PricePerSqMeter = 48.0 },
+                    new MaterialThicknessPriceItem { Thickness = 1.2, PricePerSqMeter = 58.0 },
+                    new MaterialThicknessPriceItem { Thickness = 1.5, PricePerSqMeter = 72.0 },
+                    new MaterialThicknessPriceItem { Thickness = 2.0, PricePerSqMeter = 96.0 },
+                    new MaterialThicknessPriceItem { Thickness = 2.5, PricePerSqMeter = 120.0 },
+                    new MaterialThicknessPriceItem { Thickness = 3.0, PricePerSqMeter = 144.0 }
+                }
+            },
+            // 冷轧板单价阶梯
+            new MaterialPriceItem
+            {
+                MaterialName = "冷轧板",
+                Density = 7.85,
+                ThicknessPrices = new List<MaterialThicknessPriceItem>
+                {
+                    new MaterialThicknessPriceItem { Thickness = 1.0, PricePerSqMeter = 45.0 },
+                    new MaterialThicknessPriceItem { Thickness = 1.2, PricePerSqMeter = 54.0 },
+                    new MaterialThicknessPriceItem { Thickness = 1.5, PricePerSqMeter = 67.5 },
+                    new MaterialThicknessPriceItem { Thickness = 2.0, PricePerSqMeter = 90.0 },
+                    new MaterialThicknessPriceItem { Thickness = 2.5, PricePerSqMeter = 112.5 },
+                    new MaterialThicknessPriceItem { Thickness = 3.0, PricePerSqMeter = 135.0 }
+                }
+            },
+            // 不锈钢201单价阶梯
+            new MaterialPriceItem
+            {
+                MaterialName = "不锈钢201",
+                Density = 7.93,
+                ThicknessPrices = new List<MaterialThicknessPriceItem>
+                {
+                    new MaterialThicknessPriceItem { Thickness = 1.0, PricePerSqMeter = 71.37 },
+                    new MaterialThicknessPriceItem { Thickness = 1.2, PricePerSqMeter = 85.6 },
+                    new MaterialThicknessPriceItem { Thickness = 1.5, PricePerSqMeter = 107.0 },
+                    new MaterialThicknessPriceItem { Thickness = 2.0, PricePerSqMeter = 142.8 },
+                    new MaterialThicknessPriceItem { Thickness = 2.5, PricePerSqMeter = 178.5 },
+                    new MaterialThicknessPriceItem { Thickness = 3.0, PricePerSqMeter = 214.0 }
+                }
+            },
+            // 不锈钢304单价阶梯
+            new MaterialPriceItem
+            {
+                MaterialName = "不锈钢304",
+                Density = 7.93,
+                ThicknessPrices = new List<MaterialThicknessPriceItem>
+                {
+                    new MaterialThicknessPriceItem { Thickness = 1.0, PricePerSqMeter = 95.0 },
+                    new MaterialThicknessPriceItem { Thickness = 1.2, PricePerSqMeter = 114.0 },
+                    new MaterialThicknessPriceItem { Thickness = 1.5, PricePerSqMeter = 142.5 },
+                    new MaterialThicknessPriceItem { Thickness = 2.0, PricePerSqMeter = 190.0 },
+                    new MaterialThicknessPriceItem { Thickness = 2.5, PricePerSqMeter = 237.5 },
+                    new MaterialThicknessPriceItem { Thickness = 3.0, PricePerSqMeter = 285.0 }
+                }
+            }
+        };
+    }
+
+    /// <summary>
+    /// 高度对应板厚阶梯条目模型 (高度阶梯决策法)
+    /// </summary>
+    public class HeightThicknessGradientItem
+    {
+        // 高度区间上限 (单位: mm)
+        [JsonPropertyName("maxHeight")]
+        public int MaxHeight { get; set; }
+
+        // 对应推荐板厚 (单位: mm)
+        [JsonPropertyName("thickness")]
+        public double Thickness { get; set; }
+
+        // 适用箱柜类型与说明
+        [JsonPropertyName("remark")]
+        public string Remark { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -801,8 +1043,184 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("description")]
         public string Description { get; set; } = string.Empty;
 
+        // 纯高度推导的推荐箱柜深度 (单位: mm，与电流解耦)
+        [JsonPropertyName("recommendedShellDepth")]
+        public int RecommendedShellDepth { get; set; } = 200;
+
+        // 包含深度的完整推荐壳体尺寸 (如 800*2200*1000)
+        [JsonPropertyName("recommendedShellSizeFull")]
+        public string RecommendedShellSizeFull { get; set; } = string.Empty;
+
+        // 推荐匹配的壳体标准拼装型号 (如 "XM-800*2200*1000-2.0mm 镀锌板")
+        [JsonPropertyName("recommendedShellModel")]
+        public string RecommendedShellModel { get; set; } = string.Empty;
+
+        // 自动计算出的壳体单价 (单位: 元)
+        [JsonPropertyName("recommendedShellUnitPrice")]
+        public double RecommendedShellUnitPrice { get; set; }
+
+        // 自动计算出的壳体展开总面积 (单位: m²)
+        [JsonPropertyName("recommendedShellExpandedArea")]
+        public double RecommendedShellExpandedArea { get; set; }
+
+        // 自动匹配的壳体材质
+        [JsonPropertyName("recommendedShellMaterial")]
+        public string RecommendedShellMaterial { get; set; } = string.Empty;
+
+        // 自动匹配的壳体板厚 (单位: mm)
+        [JsonPropertyName("recommendedShellThickness")]
+        public double RecommendedShellThickness { get; set; }
+
         // 未填写电流等计算警告与提醒列表 (如提示某些断路器W列为空未计入计算)
         [JsonPropertyName("warnings")]
         public List<string> Warnings { get; set; } = new List<string>();
+    }
+
+    /// <summary>
+    /// 高度对应深度推导梯度条目模型 (纯高度驱动，无电流关联)
+    /// </summary>
+    public class HeightDepthGradientItem
+    {
+        // 高度上限门限 (单位: mm，当 Height <= MaxHeight 时命中)
+        [JsonPropertyName("maxHeight")]
+        public int MaxHeight { get; set; }
+
+        // 对应推荐的深度数值 (单位: mm)
+        [JsonPropertyName("depth")]
+        public int Depth { get; set; }
+
+        // 常用备选深度列表 (如 160, 180, 200)
+        [JsonPropertyName("candidateDepths")]
+        public List<int> CandidateDepths { get; set; } = new List<int>();
+
+        // 描述或应用场景说明
+        [JsonPropertyName("remark")]
+        public string Remark { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// 板材材质各厚度单价条目模型
+    /// </summary>
+    public class MaterialThicknessPriceItem
+    {
+        // 板材厚度 (单位: mm，如 1.0, 1.2, 1.5, 2.0)
+        [JsonPropertyName("thickness")]
+        public double Thickness { get; set; }
+
+        // 对应平方单价 (单位: 元/m²)
+        [JsonPropertyName("pricePerSqMeter")]
+        public double PricePerSqMeter { get; set; }
+    }
+
+    /// <summary>
+    /// 板材材质分类与厚度单价配置模型
+    /// </summary>
+    public class MaterialPriceItem
+    {
+        // 材质名称 (如 "冷轧板", "不锈钢201", "不锈钢304", "镀锌板")
+        [JsonPropertyName("materialName")]
+        public string MaterialName { get; set; } = string.Empty;
+
+        // 材料密度 (g/cm³，默认 7.85)
+        [JsonPropertyName("density")]
+        public double Density { get; set; } = 7.85;
+
+        // 各厚度规格单价列表
+        [JsonPropertyName("thicknessPrices")]
+        public List<MaterialThicknessPriceItem> ThicknessPrices { get; set; } = new List<MaterialThicknessPriceItem>();
+    }
+
+    /// <summary>
+    /// 箱体钣金加工与折弯放量预留配置
+    /// </summary>
+    public class CabinetAllowanceConfig
+    {
+        // 宽度加工预留放量 (单位: mm，默认 50) --硬编码--
+        [JsonPropertyName("widthAllowance")]
+        public int WidthAllowance { get; set; } = 50;
+
+        // 高度加工预留放量 (单位: mm，默认 50) --硬编码--
+        [JsonPropertyName("heightAllowance")]
+        public int HeightAllowance { get; set; } = 50;
+
+        // 深度加工预留放量 (单位: mm，默认 20) --硬编码--
+        [JsonPropertyName("depthAllowance")]
+        public int DepthAllowance { get; set; } = 20;
+    }
+
+    /// <summary>
+    /// 箱体单面结构计算模型 (如面门板、后背板、左右侧板、顶底板、二层板)
+    /// </summary>
+    public class CabinetStructureItem
+    {
+        // 结构部位名称 (如 "面门板", "后背板", "左右侧板", "顶板底板", "二层板")
+        [JsonPropertyName("partName")]
+        public string PartName { get; set; } = string.Empty;
+
+        // 材质 (如 "冷轧板", "不锈钢201")
+        [JsonPropertyName("material")]
+        public string Material { get; set; } = "冷轧板";
+
+        // 板厚 (单位: mm，如 1.5)
+        [JsonPropertyName("thickness")]
+        public double Thickness { get; set; } = 1.5;
+
+        // 单价 (单位: 元/m²)
+        [JsonPropertyName("unitPrice")]
+        public double UnitPrice { get; set; } = 67.5;
+
+        // 面积公式代码 ("HW", "HD", "WD")
+        [JsonPropertyName("formulaCode")]
+        public string FormulaCode { get; set; } = "HW";
+
+        // 公式展示文本 (如 "*(H*W)", "*(H*D)", "*(W*D)")
+        [JsonPropertyName("formulaText")]
+        public string FormulaText { get; set; } = "*(H*W)";
+
+        // 数量面数系数 (如 1, 2, 0)
+        [JsonPropertyName("coef")]
+        public int Coef { get; set; } = 1;
+    }
+
+    /// <summary>
+    /// 回写算料壳体至 Excel 计费区域的请求载荷模型
+    /// </summary>
+    public class CabinetShellWritePayload
+    {
+        // 目标箱柜的 Det 定义名称 (如 "Cab_Det_1")
+        [JsonPropertyName("cabDetName")]
+        public string CabDetName { get; set; } = string.Empty;
+
+        // 箱体物料名称 (默认 "柜体" 或 "箱体")
+        [JsonPropertyName("itemName")]
+        public string ItemName { get; set; } = "柜体";
+
+        // 拼装好的完整规格型号 (如 "XM-800*2200*1000-1.5mm 冷轧板 户内明装")
+        [JsonPropertyName("model")]
+        public string Model { get; set; } = string.Empty;
+
+        // 品牌
+        [JsonPropertyName("brand")]
+        public string Brand { get; set; } = string.Empty;
+
+        // 单位 (默认 "台")
+        [JsonPropertyName("unit")]
+        public string Unit { get; set; } = "台";
+
+        // 数量 (默认 1)
+        [JsonPropertyName("quantity")]
+        public double Quantity { get; set; } = 1.0;
+
+        // 单价 (算出的总价格)
+        [JsonPropertyName("unitPrice")]
+        public double UnitPrice { get; set; }
+
+        // 展开面积 (单位: m²)
+        [JsonPropertyName("expandedArea")]
+        public double ExpandedArea { get; set; }
+
+        // 回写动作模式 ("replace" 替换现有壳体行，"insert" 插入新行，"auto" 优先替换未找到则插入)
+        [JsonPropertyName("writeMode")]
+        public string WriteMode { get; set; } = "auto";
     }
 }

@@ -530,6 +530,12 @@ namespace ExcelAddInDemo
                 // 弹出基于 WebView2 + Vue 3 的“汇总调价”窗口
                 ExcelServices.ShowSummaryAdjustPriceDialog();
             }
+            // 响应“分布调价”按钮指令
+            else if (controlId == "btnDistributedAdjustPrice")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“分布调价”窗口 (二维矩阵交叉表)
+                ExcelServices.ShowDistributedAdjustPriceDialog();
+            }
             // 响应“智能输入”按钮指令
             else if (controlId == "btnSmartInput")
             {

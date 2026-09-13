@@ -223,5 +223,26 @@ namespace ExcelAddInDemo
             // 持久化保存至磁盘配置文件
             SaveConfig(cfg);
         }
+
+        /// <summary>
+        /// 更新并持久化元器件图纸参数匹配窗口 (200x800) 的图纸库根物理目录配置
+        /// </summary>
+        /// <param name="baseDir">图纸库根物理目录绝对路径</param>
+        public void UpdateComponentParamMatchBaseDirectory(string baseDir)
+        {
+            // 读取当前全局配置
+            var cfg = Current ?? new AppConfig();
+            // 确保配置节已被安全初始化
+            if (cfg.ComponentParamMatch == null)
+            {
+                cfg.ComponentParamMatch = new ComponentParamMatchSettings();
+            }
+
+            // 更新图纸库根物理目录
+            cfg.ComponentParamMatch.BaseDirectory = baseDir ?? string.Empty;
+
+            // 持久化保存至磁盘配置文件
+            SaveConfig(cfg);
+        }
     }
 }

@@ -17,6 +17,14 @@ namespace ExcelAddInDemo
         // 二次图回路方案与 DWG 图纸本地目录配置选项分节
         [JsonPropertyName("SecondaryCircuitSettings")]
         public SecondaryCircuitSettings SecondaryCircuit { get; set; } = new SecondaryCircuitSettings();
+
+        // 投标报表导出高级偏好配置选项分节 (自动持久化至 appsettings.json)
+        [JsonPropertyName("TenderReportSettings")]
+        public TenderReportSettings TenderReport { get; set; } = new TenderReportSettings();
+
+        // 元器件图纸参数匹配侧边窗口 (200x800) 配置选项分节
+        [JsonPropertyName("ComponentParamMatchSettings")]
+        public ComponentParamMatchSettings ComponentParamMatch { get; set; } = new ComponentParamMatchSettings();
     }
 
     // 后端 API 接口连接配置数据模型
@@ -127,6 +135,28 @@ namespace ExcelAddInDemo
 
         // 回路代号原理图 DWG 本地图纸目录绝对路径
         public string CircuitDwgDirectory { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// 元器件图纸参数匹配窗口 (200x800) 配置实体
+    /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+    /// </summary>
+    public class ComponentParamMatchSettings
+    {
+        // 默认图纸库根物理目录路径 (默认: E:\BaiduNetdiskWorkspace\BaseData\新库) --硬编码--
+        public string BaseDirectory { get; set; } = @"E:\BaiduNetdiskWorkspace\BaseData\新库";
+
+        // 目录名称写入的目标 Excel 列号名称 (默认: Y，即第 25 列) --硬编码--
+        public string TargetDirColumn { get; set; } = "Y";
+
+        // 图纸名称写入的目标 Excel 列号名称 (默认: X，即第 24 列) --硬编码--
+        public string TargetDwgColumn { get; set; } = "X";
+
+        // 双击写入后是否自动跳转并选中下一行单元格 (默认: true)
+        public bool AutoNextRow { get; set; } = true;
+
+        // 双击写入图纸名时是否去除 .dwg 扩展名 (默认: true)
+        public bool RemoveExtension { get; set; } = true;
     }
 }
 

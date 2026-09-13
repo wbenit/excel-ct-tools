@@ -1,5 +1,442 @@
 # Session State
 
+- **元器件图纸参数匹配浮窗调换 X/Y 列回写内容 (`AppConfig.cs`, `appsettings.json`, `publish/appsettings.json`, `ExcelServices.ComponentParamMatch.cs`, `component_param_match.html`)**：
+  - **用户核心需求**：在“图纸参数匹配”侧边浮窗中，将写入当前行的 X、Y 列内容调换（原先：X 列写目录、Y 列写图纸；调换后：X 列写图纸名称、Y 列写目录名称）；
+  - **落地改动**：
+    1. **配置层解耦与默认值更新**：
+       - `AppConfig.cs`：将 `TargetDwgColumn` 设为 `"X"`（--硬编码--），`TargetDirColumn` 设为 `"Y"`（--硬编码--）；
+       - `appsettings.json` 与 `publish/appsettings.json`：同步更新默认映射为 `"TargetDirColumn": "Y"`, `"TargetDwgColumn": "X"`；
+    2. **服务层写入与参数明确化 (`ExcelServices.ComponentParamMatch.cs`)**：
+       - `BindDwgParamToActiveRow` 方法参数签名更新为 `(dirName, dwgName, autoNextRow, colDir = "Y", colDwg = "X", removeExt = true)`；
+       - X 列（`targetColDwg`）写入图纸纯名称 `cleanDwgName`；
+       - Y 列（`targetColDir`）写入目录名称 `cleanDirName`；
+       - 自动换行跳转与日志反馈对齐为 `[{targetColDwg}]={cleanDwgName}, [{targetColDir}]={cleanDirName}`；
+    3. **前端 UI 提示与响应动态化 (`component_param_match.html`)**：
+       - 规则提示行更新为动态模板：`{{ configInfo.targetDwgColumn || 'X' }}=图纸 | {{ configInfo.targetDirColumn || 'Y' }}=目录`（显示为 `X=图纸 | Y=目录`）；
+       - 图纸项 hover 提示对齐为 `(X=图纸, Y=目录)`；
+       - 前端 `configInfo` 默认值与 IPC 初始化数据接收对齐；
+    4. **镜像同步与编译验证**：
+       - 静态资源同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`（哈希一致）；
+       - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整构建：**0 错误**。
+
+- **彻底清除主界面底部泄漏的多余抽屉 DOM (`Resources/cabinet_aux_calc.html`)**：
+  - **用户核心需求**：用户截图框选指出主界面底部（操作按钮下方）残留平铺的「默认加工折弯预留补偿 (mm)」及「板材各厚度单价表 (元/m²)」，要求删除；
+  - **根本原因与处理**：
+    1. 该内容源于历史遗留的右侧抽屉 `<el-drawer>` 模板，在未展开状态下因样式脱离或环境限制直接被平铺在主页面文档流底部；
+    2. 且里面的“折弯放量预留补偿”违背了用户此前“取消放量”的要求，板材单价库也已收敛至【💰 壳体价格计算】Tab；
+    3. 彻底删除了该 `el-drawer` DOM 结构，消除底部泄漏；
+    4. 将弹窗中的「⚙️ 板材单价设置」按钮点击动作平滑联动至主界面【规则与定额配置】->【💰 壳体价格计算】Tab，架构体验高度一致；
+  - **构建验证**：全工程构建 **0 警告，0 错误**，静态资源已同步生效。
+
+- **壳体规格型号全面去除箱柜型号前缀 (`Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`)**：
+  - **用户核心需求**：根据用户截图指示，去除弹窗中的「箱柜型号」选项，且在回填到 Excel 计费区及弹窗生成的型号中彻底去除箱柜型号前缀（如 `JXF-`、`XM-`、`XL21-`）；
+  - **具体改动**：
+    1. **前端弹窗精简**：从钣金算料弹窗的“规格型号拼装多选配置行”中移除「箱柜型号」复选框与下拉选择框；
+    2. **实时型号生成解耦**：调整 `computedFullModel`，不再拼接箱柜型号前缀，直接以 `${w}*${h}*${d}` 尺寸开头（默认包含板厚与材质，如 `600*700*180-1.2mm 镀锌板`）；
+    3. **后台批量计算与回写**：在 `CalculateShellPrice` 中移除 `XL21-` / `XM-` 前缀拼接，输出干净的标准格式 `${width}*{height}*{depth}-{thickness:F1}mm {material}{secondPlateSuffix}`；
+    4. **构建验证**：已同步至 `publish/` 与 `bin/Debug/net48/`，全工程构建 **0 警告，0 错误**。
+
+- **壳体尺寸计算界面精简与材质解耦 (`Resources/cabinet_aux_calc.html`)**：
+  - **用户确认点**：壳体尺寸计算 Tab 中原本遗留的「批量计算默认材质」下拉框成功删除；
+  - **解耦设计收敛**：
+    - 【📦 壳体尺寸计算】Tab：保持纯粹的几何尺寸推导定位（仅保留纯高度深度阶梯库、壳体匹配名称、配电箱/落地柜安全系数、落地柜高度门限、标准常用尺寸库）；
+    - 【💰 壳体价格计算】Tab：全面接管材质确定策略（304/201/冷轧/镀锌识别规则及右上角的基准材质兜底下拉项）、高度阶梯板厚、封闭箱体面数与单价库；
+  - **静态资源同步**：已同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`，编译构建 0 错误。
+
+- **壳体尺寸计算与壳体价格计算 Tab 分离及批量算料定价三层策略落地交付 (`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`)**：
+  1. **用户核心需求与解耦原则**：
+     - **职责分离**：恢复之前的纯「📦 壳体尺寸计算」Tab，单列独立的「💰 壳体价格计算」Tab，彻底将“尺寸推导”与“钣金算料定价”解耦；
+     - **策略 1（板材材质确定策略）**：
+       - 优先级 1（箱柜特征关键词自动识别）：含 `304` $\to$ **不锈钢304**；含 `不锈钢` 或 `201` $\to$ **不锈钢201**；含 `冷轧` $\to$ **冷轧板**；含 `镀锌` $\to$ **镀锌板**；
+       - 优先级 2（全局基准材质兜底）：在【📦 壳体尺寸计算】与【💰 壳体价格计算】中提供「批量计算默认材质」下拉项（默认：**镀锌板**）；未命中特殊材质关键词的所有箱柜一律采用此材质兜底；
+     - **策略 2（板材厚度高度阶梯决策法）**：
+       - $H \le 800\text{mm} \to 1.2\text{mm}$（小型照明箱/终端箱）；
+       - $800 < H \le 1600\text{mm} \to 1.5\text{mm}$（中型动力箱/挂墙箱）；
+       - $H > 1600\text{mm} \to 2.0\text{mm}$（大型成套落地开关柜）；
+       - 支持在表格中步进微调、添加和删除板厚阶梯；
+     - **策略 3（封闭箱体面数确定策略，取消放量）**：
+       - **取消放量**：外形尺寸直接算面积，不预留折弯放量补偿（$\Delta W=0, \Delta H=0, \Delta D=0$）；
+       - **面数标准**：自动采用封闭箱体标准（宽深 2.0、宽高 2.0、高深 2.0；若箱柜名称包含“二层板”则自动叠加 1.0 面宽高二层板）；
+       - 展开总面积计算式：$S = 2.0 \times \frac{WD}{10^6} + (2.0 + (\text{含二层板}?1:0)) \times \frac{HW}{10^6} + 2.0 \times \frac{HD}{10^6}$；
+       - 单价计算式：$\text{单价} = \text{ROUND}(S \times P_{\text{sq}}, 2)$；
+     - **解决一次性回填价格历史缺陷**：
+       - 修复历史 `WriteCabinetCalcResultToSheet` 仅写型号尺寸而单价/总价为空的问题；
+       - 批量回写时（单个、当前分类、全部分类），计费区壳体行 C 列回填拼装标准型号（如 `XM-800*600*200-1.2mm 镀锌板`）、E 列填“台”、F 列默认补 1、G 列填核算出的单价、H 列填 `=ROUND(F*G, 2)`，实现**规格尺寸与价格一次性全自动回填**。
+  2. **服务层与模型层落地**：
+     - `Models/CabinetAuxCalcModels.cs`：在 `QuotationRules` 中加入 `ShellPriceRules` 节点；新增 `ShellPriceConfig` 与 `HeightThicknessGradientItem` 实体；在 `CabinetCalcResult` 中补充 `RecommendedShellModel`, `RecommendedShellUnitPrice`, `RecommendedShellExpandedArea`, `RecommendedShellMaterial`, `RecommendedShellThickness`；
+     - `Services/ExcelServices.CabinetAuxCalc.cs`：
+       - 实现 `DetermineMaterial`、`DetermineThickness`、`CalculateShellPrice` 三大核心静态方法，严格遵循每 3 行新增代码加 1 行中文注释，并标明 `--硬编码--`；
+       - 在 `CalculateCabinetAuxiliary` 中完成单柜核算与结果填充；
+       - 在 `WriteCabinetCalcResultToSheet` 中实现规格、单位、数量、单价与公式全自动一次性回填计费区及 Cab_Det 兜底行。
+  3. **前端界面全套重构与同步**：
+     - `Resources/cabinet_aux_calc.html`：恢复纯尺寸计算 Tab 并嵌入默认材质下拉；单列【💰 壳体价格计算】Tab（包含材质确定策略图解、高度阶梯板厚配置表、面数策略与取消放量说明、板材材质及厚度单价库）；钣金计算器弹窗默认取消放量并自动同步推导出的材质与板厚；在 setup return 中完整导出新状态与方法；
+     - 镜像同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none`：**0 警告，0 错误**。
+  1. **用户核心需求**：“分布汇总，表格行列内容按如图设计”（根据真实软件截图完全对齐行列布局与交互）；
+  2. **1:1 像素级行列与表头架构重构**：
+     - **工作表命名**：由“材料分布表”统一重命名为【`元件汇总分布表`】；
+     - **左侧 11 列固定字段（A~K列）**：
+       - A: 排序ID（数字/小数，用于箱柜内部件重排）
+       - B: 元件名称、C: 型号规格、D: 生产厂家
+       - E: 表价、F: 折扣、G: 报出、H: 备注
+       - I: 单位、J: 类别（填入“元件”）
+       - K: 元件总数（第 9 行起使用动态加权公式 `=SUMPRODUCT($L$7:${endCol}$7, L{r}:${endCol}{r})` 联动计算）
+     - **1~8 行复合表头与说明文字**：
+       - 行 1: 柜序号（K1: 柜序号，L1起: 1, 2, 3... 居中）
+       - 行 2: 所属分类（K2: 所属分类，L2起: 低压配电室... 居中）
+       - 行 3: 箱柜名称（K3: 箱柜名称，L3起: 进线柜、联络柜... 居中）
+       - 行 4: 箱柜型号（K4: 箱柜型号，L4起: GCK... 居中；并在行 4 插入红色警示文字 `*排序ID：指在箱柜中的排列位置，可输入任意数字(支持小数)。`）
+       - 行 5: 柜号（K5: 柜号，L5起: 带下划线蓝色超链接 `1AA, 11AA`，点击直接平滑跳转至对应分类表的箱柜明细行 `Cab_Det_X`）
+       - 行 6: 箱柜类别（K6: 箱柜类别，L6起: 智能推导为低压抽屉柜/照明配电箱/高压开关柜等；并在行 6 插入红色警示文字 `*更新到项目时，数量为空删除，为0保留。`）
+       - 行 7: 箱柜数量（K7: 箱柜数量，L7起: 2, 1, 2...；并在 A7 单元格加粗展示 `项目名称: (xx)xx工程项目`）
+       - 行 8: 列标题行（A8~K8 写入列字段标题，L8起各箱柜列标题均为“数量”，整行启用 Excel 原生 `AutoFilter` 自动筛选）
+       - 行 9 起: 元器件数据与箱柜单台用量矩阵，有配额填数量，无配额留空；
+  3. **反向更新（一键更新到明细）严格按截图规范升级**：
+     - 严格践行红字规范：“**数量为空删除，为0保留**”——若箱柜单元格为空白，反向写回时清除箱柜明细对应行；若为 0，保留该行并将数量设为 0、合价设为 0；
+     - **方式 A（智能插入新器件）**：若分布表中某箱柜填写了数量，但该箱柜原本没有该器件，自动在其元器件区域末尾（小计行前）插入新行，并填入型号、厂家、数量和单价，维护边框与公式；
+     - **支持按排序ID重排**：勾选“调整元件排序”时，根据 A 列 `排序ID` 自动对箱柜内的元器件进行物理重排；
+     - 严格遵守规则 6、7、8（前置 `FixAndFillCabinetNamesForSheet` 自愈，二维数组批量读写内存）；
+  4. **控制器与前端多端同步**：
+     - 前端界面与控制器所有文案与通信逻辑统一对齐为【元件汇总分布表】；
+     - 镜像同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - `dotnet build /t:Compile /p:DebugType=none` 完整构建：**0 错误**。
+
+- **【规则与定额配置】->【📦 壳体选型规则】Tab 页面全面重构集成纯高度深度阶梯库与板材单价库 (`Resources/cabinet_aux_calc.html`)**：
+  1. **用户核心需求**：“界面没集成到箭头所指的tab页吗”（指向【规则与定额配置】下的【📦 壳体选型规则】二级 Tab 页）；
+  2. **全面集成与工业级落地**：
+     - **彻底消除旧的电流门限**：删除了原本卡片中容易产生歧义的“柜体电流门限 250A”，替换为“落地柜高度门限 1500mm”，贯彻“深度只由高度来确定，取消和电流关联确定”；
+     - **模块 1（纯高度推导箱柜深度阶梯库）**：内置并支持自由编辑纯高度深度对应表（$H \le 400 \to 160$、$H \le 600 \to 180$、$H \le 800 \to 200$、$H \le 1000 \to 250$、$H \le 1400 \to 300$、$H \le 1800 \to 400$、$H \le 2000 \to 800$、$H > 2000 \to 1000$ mm），支持实时添加/删除阶梯门限；
+     - **模块 2（钣金加工折弯预留补偿与展开参数）**：直接配置宽预留 W (50mm)、高预留 H (50mm)、深预留 D (20mm)、综合表面积展开系数 (1.20倍)、壳体匹配名称、配电箱与落地柜安全系数；
+     - **模块 3（板材材质与各厚度单价库）**：以 Tab 形式集成冷轧板、不锈钢201、不锈钢304、镀锌板等各个材质的各厚度每平米单价，支持行内步进调整、支持“+ 添加厚度规格”与删除；
+     - **模块 4（标准壳体常用尺寸库）**：保留现有的宽*高尺寸胶囊库，支持新增与移除；
+     - **双向数据打通与持久化**：在【📦 壳体选型规则】Tab 中修改后，点击页面右下角【💾 保存当前规则配置】即可永久保存至后台配置；同时与推导卡片和钣金算料弹窗双向同步；
+  3. **验证与同步**：
+     - 镜像同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - `dotnet build /t:Compile /p:DebugType=none` 完整构建：**0 错误**。
+
+- **智能辅材与壳体计算中心集成 ExWinner 钣金算料与深度纯高度驱动全套落地交付 (`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Forms/CabinetAuxCalcForm.cs`, `Resources/cabinet_aux_calc.html`)**：
+  1. **用户核心需求与原则确认**：
+     - **集成形式**：内嵌在现有的「智能辅材与壳体计算中心」（`cabinet_aux_calc.html`）中，从“① 壳体推荐尺寸”卡片联动呼出；
+     - **深度推导原则**：**深度（D）只由高度（H）确定，彻底取消与电流的一切关联**；
+     - **板材单价设置**：提供独立右侧抽屉（`el-drawer`），支持各材质（冷轧板、不锈钢201、不锈钢304、镀锌板等）各厚度平方单价及加工折弯放量微调与持久化保存；
+     - **Excel 回写规范**：严格遵循规则 6（计费区无空行）、规则 7（二维数组一次性读写内存）、规则 8（`Tool.FixAndFillCabinetNamesForSheet` 自愈确保 4 个定义名称精准有效）。
+  2. **深度纯高度驱动模型与服务层落地**：
+     - **数据模型 (`Models/CabinetAuxCalcModels.cs`)**：
+       - `ShellConfig` 增加 `HeightDepthGradients` 纯高度深度阶梯（H<=400:160, <=600:180, <=800:200, <=1000:250, <=1400:300, <=1800:400, <=2000:800, >2000:1000）、板材单价库 `MaterialPrices`、加工折弯放量 `Allowance`；
+       - `CabinetCalcResult` 增加 `RecommendedShellDepth` 与 `RecommendedShellSizeFull`；
+       - 新增 `MaterialPriceItem`、`CabinetAllowanceConfig`、`CabinetStructureItem`、`CabinetShellWritePayload` 实体；
+     - **服务层 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+       - 静态方法 `DeriveDepthFromHeight(int height, ShellConfig? shellConfig = null)`：只依据箱柜高度推导深度，彻底解耦电流；在单柜分析 `CalculateCabinetAuxiliary` 中计算 `bestHeight` 后即刻调用并带入；
+       - `UpdateMaterialPrices`：持久化板材单价表与加工预留放量；
+       - `WriteCalculatedShellToFeeArea`：前置调用规则 8 自愈；二维数组一次性读取计费区（`subsumRow` 到 `tolsumRow - 1`）；优先就地替换现有壳体行规格、单价及联动公式，未命中则在 `tolsumRow` 前插入新行并自愈；
+     - **IPC 控制器与窗体 (`Forms/CabinetAuxCalcForm.cs`)**：
+       - 响应 `saveMaterialPrices` 与 `applyShellToExcel` 报文，通过 `ExcelAsyncUtil.QueueAsMacro` 调度安全执行并回传处理结果。
+  3. **前端工业级交互与闭环 (`Resources/cabinet_aux_calc.html`)**：
+     - **3D 轴测透视图与尺寸放量联动**：CSS 3D 透视立方体渲染（粉/黄/蓝三色面），实时标注各面厚度；支持户内/户外、明装/暗装快捷切换；提供 W、H、D 数值与折弯预留放量双步进微调器；支持纯高度推荐深度快捷胶囊一键切换；
+     - **型号规格智能装配器**：动态生成符合工业规范的标准型号字符串（前缀+尺寸+板厚+材质+安装方式+二层板+自定义后缀）；
+     - **高密度结构展开明细表**：支持按面数（顶底板、面门板、后背板、左右侧板、二层板）与按综合表面积系数双模式核算；支持统一板厚/独立板厚切换；实时核算展开面积与综合单价，支持人工微调总价；
+     - **板材单价设置抽屉**：各材质 Tab 切换，输入各厚度单价与默认放量，一键持久化保存；
+     - **回写计费区**：支持“自动覆盖/原位更新”与“➕ 插入新壳体行”两种模式直连 Excel 计费区；
+     - **闭环与标签自愈**：严格闭合所有弹窗与抽屉标签，在 `setup()` 中完整导出所有状态与方法，并在 `initContext` 与消息监听中实现双向联动。
+  4. **构建与多端静态资源同步**：
+     - 镜像同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - `dotnet build /t:Compile /p:DebugType=none` 完整构建：**0 警告，0 错误**。
+
+
+- **彻底修复分布调价与汇总调价分类表箱柜台数虚增Bug（根除汇总区穿透落款与历史幽灵定义名称，`Tool.cs`, `ExcelServices.DistributedAdjustPrice.cs`, `ExcelServices.SummaryAdjustPrice.cs`）**：
+  1. **用户核心问题**：“数量还是不正确”（如“人防”分类表实际只有 13 行有效箱柜、合计 13 台，但之前界面依然显示 45 台或 30 台）；
+  2. **根因完全闭环与修复点**：
+     - **根因 A (`Tool.cs`)**：`FixAndFillCabinetNamesForSheet` 扫描汇总行 `sumRows` 时从 `cabSumStartRow` 一路扫到 `firstDetRow`，遇到“合计”、“总计”、“小计”、“金额大写”、“报价说明”、“编制/审核/批准”等签字说明栏时没有截断判定，把落款说明行全部误当成箱柜打上了 `Cab_Sum_X` 定义名称；
+     - **根因 B (`Tool.cs`)**：清理多余旧定义名称时只循环到 `cabCount + 30`，导致若历史曾生成过 45 个名称，大于 43 的幽灵名称无法被删除；
+     - **根因 C (`DistributedAdjustPrice.cs` & `SummaryAdjustPrice.cs`)**：未严格遵守规则 8（读取分类前漏调 `Tool.FixAndFillCabinetNamesForSheet(sheet)`），且循环累加时遇到非箱柜行也误加了默认 1 台；
+     - **根因 D (数量解析)**：Excel COM 返回浮点格式（如 `1.0`）导致 `int.TryParse` 失败；且兜底扫描遇到“合计”行未中断；
+  3. **落地实施与对齐**：
+     - **`Tool.cs`**：扫描汇总行时增加关键截断：一旦 A/B/C 列包含“合计/总计/小计/大写/说明/审核/批准/制表/编制”，立即 `break;` 终止扫描；倒序遍历工作表 `Names` 集合将所有序号大于 `cabCount` 的残留定义名称物理删除，并安全兜底清理至 200 号；
+     - **`DistributedAdjustPrice.cs` & `SummaryAdjustPrice.cs`**：前置调用 `Tool.FixAndFillCabinetNamesForSheet(sheet)` 自愈；严格拦截非箱柜行；严格仅读取 F 列（第 6 列），采用 `double.TryParse` 容错解析，空行与非箱柜行坚决不计入；兜底扫描同步增加合计行 `break;` 截断；
+     - **`CreateComponentDistributionSheet`**：提取箱柜 F 列数量同步使用 `double.TryParse` 容错并拦截合计行；
+  4. **构建验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整构建：**0 警告，0 错误**。
+
+- **材料分布表排版重构：彻底删除左上角冗余箱柜表，全面 1:1 对齐 ExWinner 工业标准列宽与表头 (`ExcelServices.DistributedAdjustPrice.cs`)**：
+
+  1. **用户核心指令**：“那么删除，并且细读"D:\Program Files\ExWinner“的分布调价排版，包括列宽，修改为一样”；
+  2. **深入逆向与排版对齐 (`ComponentDist_High.xlsx` / `ComponentDist_Low.xlsx`)**：
+     - **彻底移除冗余**：彻底删除左上方 A1:G17 的箱柜垂直列表（原第 6 步），消除信息重复与大面积死白留白，彻底解决首屏数据被推挤下沉以及多柜时穿透覆盖的隐患；
+     - **首屏紧凑矩阵排布**：
+       - 行 1~5：横向箱柜复合表头（K 列写引导标签“所属分类/箱柜数量/箱柜柜号/箱柜名称/箱柜型号”，L 列向右横向平铺展开各箱柜属性，浅绿蓝护眼底色 `#E0F2F1`，居中对齐）；
+       - 行 6：元器件汇总表头（A6~K6：元件名称、规格型号、单位、汇总数量、单价、金额、厂家、表价、折扣系数、实际成本、差价，L6 向右为各箱柜柜号，主色调 `#009688`，白字粗体，行高 22）；
+       - 行 7 起：元器件与分布数据大矩阵，末尾紧随“合计”行；
+     - **1:1 像素级复刻 ExWinner 官方标准列宽**：
+       - A 列 (元件名称): `15`
+       - B 列 (规格型号): `29.5`
+       - C 列 (单位): `7`
+       - D 列 (汇总数量): `7`
+       - E 列 (单价): `11`
+       - F 列 (金额): `11.88`
+       - G 列 (厂家): `17`
+       - H 列 (表价): `10`
+       - I 列 (折扣系数): `10`
+       - J 列 (实际成本): `10`
+       - K 列 (差价): `10`
+       - L 列向右 (各箱柜单台数量列): 统一精准设为 `10`；
+     - **对齐与公式对齐**：
+       - A/B/G 列靠左（-4131），C/D 列居中（-4108），E/F/H/I/J/K 列靠右（-4152）且格式统一设为 `0.00`；
+       - D 列汇总数量加权求和公式：`=SUMPRODUCT($L$2:$Z$2, L7:Z7)`；
+       - F 列金额公式：`=ROUND(D7*E7, 2)`；
+       - J 列实际成本公式：`=IF(H7>0, ROUND(H7*I7, 2), "")`；
+       - K 列差价公式：`=IF(ISBLANK(J7),0,(J7-E7)*D7)`；
+     - **反向更新自适应升级**：
+       - 在 `UpdateFromComponentDistributionSheet` 中引入动态定位，自动寻找“元件名称”行，精准定位表头与数据行起始位置，完美兼容新旧表；
+  3. **构建验证**：
+     - `dotnet build /t:Compile /p:DebugType=none` 完整构建：**0 错误**。
+
+- **分布调价与汇总调价箱柜数量读取统一修正为仅取 F 列并防范空行锚点 (`ExcelServices.DistributedAdjustPrice.cs`, `ExcelServices.SummaryAdjustPrice.cs`)**：
+  1. **用户核心指令**：“数量一定在f列，不要尝试解析e列”；
+  2. **根因与漏洞清除**：
+     - 原代码使用 `??` 盲目串联第 5 列 (E列单位) 与第 6 列 (F列数量)，在 E 列有“台”等文本时触发操作符短路，导致无法读取 F 列真实数量且解析失败退化为 1，或在 E 列存在其他数值时导致列错位；
+     - 彻底清除对 E 列（第 5 列）的尝试解析，明确将数量提取严格锁定在第 6 列（F 列）；
+     - 增加汇总行柜号与箱柜名称有效性前置校验，若柜号与名称全为空则判定为无效/残余空行锚点，直接跳过，杜绝因历史定义名称残留导致虚增台数；
+     - 同步修正【材料分布表】生成逻辑（`GenerateComponentDistributionSheet`）中对汇总行的读取：由原先误将第 5 列作台数、第 6 列作单价、第 7 列作总价，纠正为一次性读取 A:H 完整 8 列，第 6 列为台数、第 7 列为单价、第 8 列为总价；
+     - 在 `ExcelServices.SummaryAdjustPrice.cs` 中同步对齐此项高品质规则；
+  3. **编译构建验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整构建：**0 错误**。
+
+- **分布调价（二维矩阵交叉调价表与一键反向更新）全套系统落地交付 (`ExcelServices.DistributedAdjustPrice.cs`, `DistributedAdjustPriceController.cs`, `DistributedAdjustPriceForm.cs`, `distributed_adjust_price.html`, `RibbonController.cs`, `ExcelAddInDemo.csproj`)**：
+  1. **功能定位与深度逆向对比**：
+     - 系统深度解构 `D:\Program Files\ExWinner\` 源码程序集 `leadsoft.superwinner.BLL.dll`（`AdjustBomByDistrClassic` / `AdjustBomByDistrVip`）、`frmAdjustBomByDistr.html` 与 `ComponentDist_High.xlsx/.myxml` 模板；
+     - 彻底厘清与“汇总调价”的差异：“汇总调价”为一维器件总览，而“分布调价”构建【材料分布表】二维矩阵交叉表，纵向（A~K列）汇总元器件，横向自 L 列起展开全项目箱柜，交叉点展示单台配额用量；
+     - 支持在 Excel 中修改白色调价核心列（E列单价、B列型号、G列厂家）后，点击【一键更新】批量精准反向写回各分类表对应箱柜明细行，自动自愈小计与总计联动公式。
+  2. **端到端工程闭环设计**：
+     - **服务层 (`ExcelServices.DistributedAdjustPrice.cs`)**：
+       - `ShowDistributedAdjustPriceDialog()` 唤起非模态置顶窗体；
+       - `GetCategorySheetsForDistribution()` 扫描分类表并精确识别箱柜台数；
+       - `GenerateComponentDistributionSheet(request)`：严格执行规则 8 前置调用 `Tool.FixAndFillCabinetNamesForSheet(sheet)` 自愈 4 个定义名称；二维数组内存批量读取箱柜与器件明细（规则 7，器件限制在 `detRow + 2` 至 `subsumRow - 1`，计费区严格保护）；创建【材料分布表】，写入顶部箱柜概况（行 1~12）、横向箱柜复合表头（行 14~17，箱柜数量/柜号/名称/型号）、元器件汇总表头与分布数据矩阵（行 18 起），注入动态求和与折扣公式，高亮可编辑列；
+       - `UpdateFromComponentDistributionSheet(options)`：二维数组批量提取调价器件清单，逐柜精确匹配写回新单价、新规格、新厂家，刷新小计求和公式与总计联动，调用自愈机制；
+     - **控制器与数据模型 (`DistributedAdjustPriceController.cs`)**：
+       - 涵盖分类模型、合并条件（名称/型号/厂家/无厂家/价格/备注/方案名）、排序规则、更新选项与执行统计实体；
+       - 提供 `GetCategorySheetsJson`, `GenerateDistributionSheetJson`, `UpdateFromDistributionSheetJson`, `CheckDistributionSheetExistsJson` 等 WebAPI 标准接口；
+     - **宿主窗体 (`DistributedAdjustPriceForm.cs`)**：
+       - 几何尺寸 720x640 像素无边框置顶设计，采用 `appassets.local` 虚拟主机映射与 `QueueAsMacro` 调度规避 COM 冲突；
+       - 支持原生级鼠标位移增量拖拽、最小化与关闭；
+     - **前端 UI (`distributed_adjust_price.html`)**：
+       - Vue 3 `<script setup>` + Element Plus，`#009688` 绿蓝相间主题；
+       - 双阶段视图：阶段一（分类勾选、箱柜台数统计、高级合并与排序面板、【立即生成分布表】）；阶段二（【重新汇总】快捷链接、高级更新选项、【一键更新到明细】、调价操作指引）；
+     - **Ribbon 挂载与多端镜像**：
+       - `RibbonController.cs` 中挂载 `btnDistributedAdjustPrice` 按钮点击响应；
+       - 同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`（SHA256 哈希 100% 一致）；
+       - 执行 `dotnet build /t:Compile /p:DebugType=none`：**0 错误**。
+
+
+- **元器件图纸参数匹配伴随侧边浮窗 (200x800) 全套系统落地交付 (`AppConfig.cs`, `appsettings.json`, `ConfigManager.cs`, `ExcelServices.ComponentParamMatch.cs`, `ComponentParamMatchForm.cs`, `component_param_match.html`, `custom_context_menu.html`, `CustomContextMenuForm.cs`)**：
+  1. **用户核心指令与需求确认**：
+     - **窗口规格**：严格限制为 `200 × 800` 像素紧凑型浮窗，设计为伴随式侧边栏（`TopMost = true`、无系统边框，贴靠屏幕右侧，支持顶部拖拽任意移动）；
+     - **目录设置与下钻**：顶栏提供目录设置图标（📁），默认路径为 `E:\BaiduNetdiskWorkspace\BaseData\新库`（配置化持久化到 `appsettings.json`，标明 `--硬编码--`）；点击 📁 调起原生文件夹选择器；支持点击子目录卡片下钻、点击“⬆️ 上级”按钮返回、支持关键字实时搜索过滤；
+     - **第 24 列 (X 列) 与第 25 列 (Y 列)**：双击 DWG 文件时，自动将当前目录名称写入当前活动行的 X 列（第 24 列），将图纸文件名写入 Y 列（第 25 列）；
+     - **去除扩展名**：写入 Y 列时自动剔除 `.dwg` 扩展名，仅写入纯图纸名称；
+     - **右键菜单集成**：在 Excel 原生样式右键菜单中增加“图纸参数匹配... [X/Y列]”项，点击即时呼出浮窗；
+     - **边框线完全对称自协调 (`component_param_match.html`)**：根除 `html, body` 嵌套双重边框与 200px 尺寸导致的右侧裁切 Bug，重构为 `width: 100%; height: 100%` + `#app { box-sizing: border-box; border: 1px solid #00796b }`，左右上下四侧 1px 深绿蓝边框完美呈现，完全协调对称；美化 4px 极细滚动条；
+     - **右击 DWG 返回上一级目录 (`component_param_match.html`)**：在 `.dwg-item` 绑定 `@contextmenu.stop.prevent="handleDwgRightClick"`，右击任意 DWG 即可一秒退回上一级，无需专门将光标移至顶部上级按钮；列表空白区亦支持右键返回；优化规则提示条为单行不折行；
+     - **严格规范**：C# (Excel-DNA) + WebView2 + Vue 3 (`<script setup>`) + Element Plus；主题色绿蓝相间（`#009688`）；所有 Excel 操作严格写在 `ExcelServices.cs` 分部类；新增代码每 3 行至少 1 行中文注释。
+  2. **端到端实现细节**：
+     - **配置层 (`AppConfig.cs`, `appsettings.json`, `ConfigManager.cs`)**：
+       - 增加 `ComponentParamMatchSettings` 实体类，包含 `BaseDirectory`, `TargetDirColumn`, `TargetDwgColumn`, `AutoNextRow`, `RemoveExtension`；
+       - `ConfigManager.Instance.UpdateComponentParamMatchBaseDirectory` 支持动态修改根目录并自动保存到 JSON；
+     - **服务层 (`ExcelServices.ComponentParamMatch.cs`)**：
+       - `ShowComponentParamMatchDialog()` 唤起浮窗单例；
+       - `BindDwgParamToActiveRow(dirName, dwgName, autoNextRow, colX, colY, removeExt)`：获取 `ActiveCell`，写入目标列并驱动 `Cells[nextRow, col].Select()`，处理返回值与异常日志；
+     - **宿主窗体 (`Forms/ComponentParamMatchForm.cs`)**：
+       - `200x800` 几何尺寸，无边框与顶部悬浮；
+       - 双向 IPC 机制：支持 `getInitialData`, `selectBaseDirectory`, `scanDirectory`, `bindDwg` (宏队列 `QueueAsMacro` 调度避免 COM 冲突), `moveWindow`, `minimizeWindow`, `closeWindow`；
+     - **前端 UI (`Resources/component_param_match.html`)**：
+       - 200px 高密度布局，Vue 3 `<script setup>` + Element Plus，`#009688` 主题配色；
+       - 自研拖拽条、面包屑导航与上级按钮、搜索框、子目录卡片、DWG 图纸卡片（双击高亮绿色动效反馈）、底部状态栏；
+     - **右键菜单集成 (`Resources/custom_context_menu.html`, `Forms/CustomContextMenuForm.cs`)**：
+       - 增加菜单项及 SVG 图标，窗体高度微调适配（`470px` 防止出现滚动条），无缝联动调起；
+     - **工程构建与多端同步**：
+       - 资源文件同步镜像覆盖至 `publish/` 与 `bin/Debug/net48/`；
+       - 执行 `dotnet build /t:Compile /p:DebugType=none`：**0 错误**。
+
+- **右键菜单视觉样式全面升级为 Office/Excel 原生风格并集成剪切/复制/粘贴/插入/删除/筛选功能 (`Forms/CustomContextMenuForm.cs`, `ExcelEventManager.cs`, `Resources/custom_context_menu.html`)**：
+  1. **用户核心需求**：“把鼠标右键改为excel原生的样式” -> 明确要求“采用选项2，但是保留excel的复制粘贴插入，删除，筛选选项”；
+  2. **视觉 1:1 像素级复刻 Office/Excel 原生风格**：
+     - **去网页化与去徽章**：彻底移除顶部绿色渐变标题微标（“业务快捷菜单 工作表 (单元格)”）与大圆角大卡片边框；
+     - **原生调色盘与边框**：纯白底色 `#ffffff`、1px 浅灰原生边框 `#d4d4d4`、微圆角 `4px`、Office 经典下拉微阴影；
+     - **原生排版与悬浮**：标准 Office 字体 `"Segoe UI", "Microsoft YaHei", "SimSun"`、字号 `12px`、文字颜色 `#262626`、紧凑行高 `25px`；悬停背景切换为原生经典浅灰 `#f0f0f0`，杜绝位移缩放等网页动画；
+  3. **功能集成与四段式结构**：
+     - **剪贴板组**：剪切（`Ctrl+X`）、复制（`Ctrl+C`）、粘贴（`Ctrl+V`）；
+     - **行列与筛选组**：插入...（调起 Excel 原生插入对话框）、删除...（调起 Excel 原生删除对话框）、按所选单元格的值筛选、清除筛选 / 自动筛选；
+     - **业务功能组**：新建箱柜、识别参数并匹配物料、物料匹配与品牌规则...、智能输入词库配置...、汇总调价...、元器件数据管理...、辅材壳体计算...；
+     - **模式切换组**：切换为 Excel 原生右键菜单；
+  4. **C# 宿主与 COM 执行保障**：
+     - 窗体尺寸自适应调整为 `250 × 445` 像素，15 项功能完整容纳且防截断无滚动条；
+     - 在 `QueueAsMacro` 纯净宏上下文中通过 `CommandBars.ExecuteMso` 调度原生指令（Cut/Copy/Paste/CellsInsertDialog/CellsDeleteDialog/FilterBySelectedValue/FilterClearAllFilters），并具备 API 容错回退；
+     - 在 `OnSheetBeforeRightClick` 中前置校验选区交集，自动激活右键选中的目标单元格，确保原生操作 100% 精确指向右击位置；
+     - 新增代码严格遵循“至少每 3 行包含一行中文注释”规范；
+  5. **工程构建与多端同步**：
+     - 镜像强制同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - `dotnet build /t:Compile /p:DebugType=none` 完整编译：**0 错误**。
+
+- **常规投标报表导出（标书报表）自由配置系统全套功能落地交付 (`TenderReportModels.cs`, `AppConfig.cs`, `TenderReportRegularController.cs`, `ExcelServices.TenderReport.cs`, `tender_report_regular.html`)**：
+  1. **用户核心指令与需求答复**：
+     - **取整到元**：项目总价、箱柜总价、箱柜单价、分项表单价与总价全部支持取整到元（`ROUND(..., 0)` 与 `Math.Round(..., 0)`）；
+     - **按“分类工作表”分别输出独立 Sheet**：勾选时，针对选中的各个分类工作表分别克隆独立 Sheet（以分类名称命名），仅填充所属分类箱柜；未勾选时合并输出在《屏柜分项表》中；
+     - **取消物料编码**：彻底剔除物料编码概念与选项；
+     - **合并功能先不做**：彻底剔除器件分组合并逻辑；
+     - **自动保存在本地 `appsettings.json`**：前端修改偏好后，导出时后端自动写回 `appsettings.json` 的 `TenderReportSettings` 节点，下次打开自动还原偏好；
+     - **严格规范**：新增代码每 3 行至少 1 行中文注释；主题色 `#009688`；微调遵循最小改动法则；
+  2. **端到端落地细节**：
+     - **配置模型与持久化**：
+       - `TenderReportSettings` 涵盖 `RoundProjectTotal`, `RoundCabinetTotal`, `RoundCabinetUnitPrice`, `RoundDetailUnitPriceTotal`, `TotalWithFormula`, `FeeItemWithoutFormula`, `EnableOneKeyLocate`, `OutputNotesInSummary`, `NotesMultilineDisplay`, `NotesAutoFitRowHeight`, `TextAutoWrap`, `SplitDetailBySheet`, `PrintSetting`；
+       - `AppConfig.cs` 集成 `TenderReportSettings TenderReport` 属性；
+       - `TenderReportRegularController.cs` 的 `GetInitialDataJson` 注入 settings，并在 `ExportReport` 中自动调用 `ConfigManager.Instance.Save()` 持久化；
+     - **核心报表服务层增强 (`ExcelServices.TenderReport.cs`)**：
+       - **取整与公式**：支持 `ROUND(..., 0)` 或 `ROUND(..., 2)`；若总价不带公式则全表输出纯数值；费用项始终以纯数值填入；总计行公式智能联动；
+       - **分 Sheet 独立输出**：`PopulateDetailWorksheets` 自动从模板克隆独立分类工作表，过滤工作表非法字符及重名自增序号，填充完成后安全删除原模板工作表；
+       - **一键定位**：汇总表序号列绑定工作簿级定义名称超链接 `CabDetRef_{globalIndex}`；分项表箱柜信息行首列绑定反向跳转超链接 `'屏柜汇总表'!A{sumRow}`，实现双向秒级跳转；
+       - **打印分页**：`Paginated` 模式在每个箱柜后插入水平分页符 `HPageBreaks.Add`；
+       - **报价说明与排版**：支持是否输出、自动行高与自动换行；
+     - **前端 UI 界面高品质升级 (`tender_report_regular.html`)**：
+       - 卡片 3 采用紧凑三组平铺布局（工作表结构与输出方式、取整与计算模式、报价说明与排版），完全贴合 Element Plus `#009688` 主题；
+       - 挂载时通过 `initialDataLoaded` 自动回显历史配置，提交时完整回传；
+     - **多端同步与工程构建**：
+       - 镜像同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+       - 执行 `dotnet build /t:Compile /p:DebugType=none`：**0 警告，0 错误**。
+  1. **用户核心提问**：“@[e:\Ace\ExcelAddInCTtools\Resources\cabinet_aux_calc.html:L5850] 是不是改为folderName更合理”；
+  2. **完全认同并落地重构**：
+     - 原 `groupNameStr` 纯粹用于从浏览路径中截取当前物理文件夹名称并传递给表单只读展示项 `folderName`；
+     - 原变量名使用 `groupName...` 极易与方案实体的核心属性 `groupName`（二次排布图）产生语义混淆；
+     - 将其统一重命名为 `folderName`，彻底解耦并自解释；
+  3. **环境同步与编译**：
+     - 同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`（哈希 100% 一致）；
+     - `dotnet build /t:Compile /p:DebugType=none` 构建验证：**0 错误**。
+
+
+- **二次回路排布图/布置图全面剔除 `layoutDwgName` 兼容，统一直接使用 `groupName` (`cabinet_aux_calc.html`)**：
+  1. **用户核心指令**：“去除兼容 (兼容 layoutDwgName)，直接使用groupName”；
+  2. **全面清理与纯净化**：
+     - **弹窗初始化（`openEditSchemeModal`）**：彻底移除 `layoutDwgName`，直接采用 `groupName: scheme.groupName || ""`，新建空白方案也直接初始化 `groupName: ""`；
+     - **持久化保存（`saveSecondarySchemeForm`）**：`payload` 中直接提取 `groupName: editingSecScheme.value.groupName || "通用"`，彻底剔除 `layoutDwgName` 冗余属性；
+     - **方案复制（`applyCopiedScheme`）**：直接提取 `sourceScheme.groupName || sourceScheme.GroupName` 并仅赋值给 `editingSecScheme.value.groupName`；
+     - **顶栏胶囊提示与注释**：清理遗留注释，明确方案排布图/布置图统一对应 `groupName`；
+  3. **环境同步与编译**：
+     - 镜像强制覆盖至 `publish/Resources/cabinet_aux_calc.html` 与 `bin/Debug/net48/Resources/cabinet_aux_calc.html`（三端哈希一致）；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整构建：**0 错误**。
+
+
+- **二次回路排布图/布置图字段模型归一化修复 (`cabinet_aux_calc.html`)**：
+  1. **用户核心提问**：“@[e:\Ace\ExcelAddInCTtools\Resources\cabinet_aux_calc.html:L3522] 为什么这里没显示，groupName 不正确吗”；
+  2. **根本原因剖析**：
+     - **字段本身完全正确**：在 C# 实体 `SecondarySchemeEntity` 与 SQLite 数据库表 `secondary_schemes` 及 Excel 导入规范中，**`groupName` 存储的正是“二次排布图/布置图”**（如 FA、BDY 等）；
+     - **前端赋值脱节**：此前弹窗初始化函数 `openEditSchemeModal` 误将 `scheme.groupName` 塞入了只读的 `folderName`，表单实体 `editingSecScheme` 内部压根没有定义与初始化 `groupName` 属性，导致输入框 `v-model="editingSecScheme.groupName"` 值为 `undefined` 从而无法显示；
+     - **保存与复制链条遗漏**：此前 `saveSecondarySchemeForm` 与 `applyCopiedScheme` 仍混杂了已废弃的 `layoutDwgName` 兼容逻辑；
+  3. **落地闭环修复**：
+     - 在 `openEditSchemeModal` 初始化时，精准将 `scheme.groupName || scheme.layoutDwgName` 灌入 `editingSecScheme.groupName`（同时赋给 `layoutDwgName` 保持双向安全兜底）；
+     - 在 `saveSecondarySchemeForm` 组织提交负载时，精准提取 `editingSecScheme.groupName` 持久化至数据库 `group_name`；
+     - 在 `applyCopiedScheme` 复制方案时，优先复制 `sourceScheme.groupName`；
+     - 镜像覆盖同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`，`dotnet build` 验证：**0 错误**。
+
+
+- **常规样式投标报表《屏柜分项表》计费部分（费用项）丢失修复全面交付 (`ExcelServices.TenderReport.cs`, `TenderReportModels.cs`)**：
+  1. **用户核心反馈**：“生成常规报表目前丢失了计费部分”；
+  2. **根因定位分析**：
+     - `CollectFullCategoryDetails` 在提取箱柜明细时仅读取了 `detRow + 2` 至 `subsumRow - 1`，未提取规则 6 明确定义的计费区间（`Cab_Subsum` 至 `Cab_Tolsum - 1`）；
+     - `PopulateDetailWorksheet` 在向《屏柜分项表》输出时，仅写入元器件后即直接输出橙色总计行，未在明细尾部输出费用项；总计行总价被硬编码为 `=SUM(元器件)*数量`，导致整表缺少壳体、辅材、人工等费用且金额与《屏柜汇总表》对不上；
+  3. **落地修复与工业规范闭环**：
+     - **模型层扩展**：在 `TenderReportCabinetItem` 中新增 `FeeItems` 列表存储计费项；
+     - **数据采集与规则 8 自愈**：在提取每个分类表前显式调用 `Tool.FixAndFillCabinetNamesForSheet(sheet)` 自愈定义名称；以二维数组一次性读取 `startFeeRow` 至 `endFeeRow` 提取名称、型号、厂家、单位、数量、单价、合价（`Value2` 纯数值）及备注；
+     - **分项表尾部输出与联动公式**：
+       - 计算 `totalDetailCount = compCount + feeCount`，批量克隆白底细网格母版数据行；
+       - 元器件总价保留计算公式（`={数量}*{单价}`）；
+       - 计费项总价遵循“**总价带公式（费用项不带）**”规范，直接写入纯数值（Value2），杜绝跨表复杂公式导致 `#REF!`；
+       - 橙色总计栏智能检测“单台合计”行 `singleTotalRow`，写入联动公式 `=ROUND({单台合计单元格}*{数量单元格}, 2)`，金额与汇总表 100% 严密吻合；
+  4. **工程构建与验证**：
+     - 严格遵守每 3 行新增代码至少 1 行中文注释；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+  1. **用户核心指令**：“@[e:\Ace\ExcelAddInCTtools\Resources\cabinet_aux_calc.html:L2966-L2972] 修改为二次布置图参数显示”；
+  2. **落地修改**：
+     - 将 CAD 矢量视口顶部定额胶囊栏首项由「二次组: {{ currentVectorScheme.schemeName }}」修改为「布置图: {{ currentVectorScheme.layoutDwgName || currentVectorScheme.cadDrawingName || '-' }}」；
+     - 悬浮 Tooltip 同步绑定完整提示：`:title="'二次布置图: ' + (currentVectorScheme.layoutDwgName || currentVectorScheme.cadDrawingName || '未设置')"`；
+     - 严格遵循精简与最小改动规范，色彩维持 `#5eead4` 高亮青绿色，与右侧「跨门:」、「二次:」、「开孔:」、「人工:」、「BOM:」胶囊保持和谐统一；
+  3. **环境同步与编译**：
+     - 镜像强制同步覆盖至 `publish/Resources/cabinet_aux_calc.html` 与 `bin/Debug/net48/Resources/cabinet_aux_calc.html`（三端 SHA256 哈希 100% 一致）；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译验证：**0 错误**。
+
+
+- **二次回路工作台顶栏微调与模板字符串加固 (`cabinet_aux_calc.html`)**：
+  1. **用户核心指令**：“@[e:\Ace\ExcelAddInCTtools\Resources\cabinet_aux_calc.html:L2718] 删除此部分”；
+  2. **落地修改**：
+     - 彻底移除二次工作台顶栏左侧冗余静态文字 `<span style="font-weight: 600; color: #00796b">📁 图纸路径:</span>`，仅保留「⬆️ 返回上级」按钮及当前路径动态标题，极大增加路径物理展示长度；
+     - 将铜排计算卡片插值表达式加固升级为 ES6 模板字符串反引号语法：`{{ calcResult.copperWeight > 0 ? `${calcResult.copperWeight} KG` : '0 (小箱补贴)' }}`，彻底免疫由于本地编辑器 Prettier / 自动格式化工具强行多行折断引发的未捕获 `SyntaxError` 页面白板故障；
+  3. **环境同步与编译**：
+     - 强制镜像同步覆盖至 `publish/Resources/cabinet_aux_calc.html` 与 `bin/Debug/net48/Resources/cabinet_aux_calc.html`（三端哈希一致）；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译：**0 错误**。
+
+- **壳体辅材计算页面白屏根因彻底排查与闭环修复 (`cabinet_aux_calc.html`)**：
+  1. **故障现象**：用户反馈“界面打不开了，点击ribbon上的壳体辅材计算后是白板”；
+  2. **根因定位分析**：
+     - 使用 Headless Browser 内核捕获控制台日志发现报错：`Uncaught SyntaxError: Invalid or unexpected token`；
+     - 准确定位到此前 `cabinet_aux_calc.html` 在铜排计算结果展示卡片中，插值表达式单引号出现了跨行字符串断裂（`+ '\n KG'`）；
+     - 普通单引号字面量跨行在 JavaScript / Blink 引擎中为非法语法，导致 Vue 模板编译器在编译阶段直接崩溃抛出 SyntaxError，`app.mount("#app")` 中断挂载，整页呈现白板；
+  3. **修复措施与多端同步**：
+     - 将插值表达式字符串紧凑合并到同一行：`{{ calcResult.copperWeight > 0 ? (calcResult.copperWeight + ' KG') : '0 (小箱补贴)' }}`；
+     - 运行自动化 Node 脚本对全文件 HTML 标签开闭平衡、指令属性（`:...`, `v-...`）及事件绑定（`@...`）全面复核验证：**全部 0 语法错误**；
+     - 通过浏览器无头子智能体实际加载测试：**页面成功完全渲染，UI 布局与组件均正常显示，无白屏无控制台报错**；
+     - 镜像强制同步至 `publish/Resources/cabinet_aux_calc.html` 与 `bin/Debug/net48/Resources/cabinet_aux_calc.html`（SHA256 哈希完全一致）；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译验证：**0 错误**。
+
+- **二次回路方案与 BOM 编辑弹窗集成及顶栏配置自愈 (按方案 1 落地交付) (`CabinetAuxCalcForm.cs`, `cabinet_aux_calc.html`)**：
+  1. **用户核心需求**：“按方案1，同时在@[e:\Ace\ExcelAddInCTtools\Resources\cabinet_aux_calc.html:L2831-L2837] 后面添加编辑按钮，点击弹出如图界面可以编辑二次图对应的参数和bom”；
+  2. **方案 1 落地 (图纸路径配置自愈与顶栏精简)**：
+     - 二次回路图纸对齐与绑定工作台顶栏移除「更换根目录」按钮，保留「◀ 折叠CAD预览」、「🔄 刷新Excel元件组」与「刷新图纸」；
+     - 图纸路径完全依赖 `appsettings.json` 中的 `SecondaryCircuitSettings.CircuitDwgDirectory` 配置；
+     - 前端在接收到 `dwgDirsLoaded` 报文时，若当前浏览路径为空且回路根目录已配置，自动触发 `browseToDirectory(circuitDwgDir)` 瞬时下钻进入根目录；
+  3. **编辑按钮与二次方案编辑全功能弹窗集成**：
+     - **入口触发**：在工作台中间视口顶部的「📦 BOM: N项」胶囊后方添加「✏️ 编辑」按钮（以及图纸未配置二次方案时的「➕ 配置方案与BOM」快捷入口）；
+     - **编辑弹窗高保真还原 (`secEditDialogOpen`)**：
+       - 包含 8 项紧凑参数单行整齐平铺展示（方案目录、当前DWG、品牌、适用图名集合、二次排布图、跨门线根数、开孔要求、装配工费）；
+       - 包含第二行独占的方案工艺描述（Description）；
+       - 弹窗标题右侧设有「📄 复制其他方案」操作按钮；
+       - 下方配备二次 BOM 子物料清单，支持「从本地物料库选型添加」与「自定义临时项」，支持行序号、名称、型号规格、数量、单位、单价、合价与删除，并在底部实时动态汇总「二次材料费小计」、「人工费」与「综合总成本」；
+       - 统一使用 `name` 与 `model` 字段，彻底杜绝废弃的 `remark` 字段；
+     - **复制方案选择弹窗 (`copySchemeModalVisible`)**：支持关键字即时检索成熟方案，可双击行或点击「载入复制」一键继承品牌、排布图、跨门线、开孔、工费、工艺描述及完整 BOM 清单；
+     - **物料库选型弹窗 (`materialSelectorVisible`)**：支持搜索本地 SQLite 物料库，一键选中推入 BOM 清单；
+  4. **C# 后端 IPC 动作支持与构建验证**：
+     - 在 `CabinetAuxCalcForm.cs` 中注入 `saveSecondaryScheme`（入库 SQLite 并回发 `saveSecondarySchemeResult`）、`searchMaterialComponents`（检索物料库并回发 `searchMaterialComponentsResult`）、`getSecondarySchemesForCopy`（获取方案复制集合并回发 `getSecondarySchemesForCopyResult`）；
+     - 严格遵守每 3 行代码至少 1 行中文注释规范；
+     - 镜像热同步覆盖至 `publish/Resources/cabinet_aux_calc.html` 与 `bin/Debug/net48/Resources/cabinet_aux_calc.html`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 构建检查：**0 错误**。
+
+- **智能辅材中心与二次绑定工作台升级 1200x800 宽屏视口架构 (方案 A 落地交付) (`CabinetAuxCalcForm.cs`, `cabinet_aux_calc.html`)**：
+  1. **用户核心诉求**：“需要增加宽度，有什么方案” -> “方案 A”；
+  2. **闭环实施落地**：
+     - **C# 宿主窗体基准尺寸升级 (`CabinetAuxCalcForm.cs`)**：
+       - 将无边框置顶宿主窗体客户区尺寸 `ClientSize` 从 `960 × 720` 一步到位扩展至 **`1200 × 800`**；
+       - 为内嵌工作台弹窗释放出高达 **`1152px`** 的物理宽度（较原本的 921px 净增 **`231px`**）；
+       - 结合此前左右两侧面板紧凑化让渡出的 182px，中间 CAD 矢量预览视口的可用宽度直接突破 **`700px`**，图纸纵览从容开阔；
+     - **前端主体高度适度放宽 (`cabinet_aux_calc.html`)**：
+       - 将工作台主体高度调整为 `calc(88vh - 120px)`，`max-height` 扩展为 `700px`，充分利用 800px 垂直高差；
+  3. **环境同步与编译验证**：
+     - 镜像热同步至 `publish/Resources/cabinet_aux_calc.html` 与 `bin/Debug/net48/Resources/cabinet_aux_calc.html`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+
+- **二次回路图纸对齐与绑定工作台左右布局紧凑化与冗余列清理 (`cabinet_aux_calc.html`)**：
+  1. **用户核心需求**：“左侧红框内容不需要了，右边红框宽度改为240px，理解表述需求” -> “复选框列有作用吗，如果没有也删除，prop="fileSizeFormatted"列宽度给dwg预览” -> “执行”；
+  2. **精准落地与空间重构**：
+     - **左侧图纸看板轻量化**：
+       - 彻底移除无实际业务消费的复选框多选列（`type="selection"`），以及配套的顶栏 `[全选]`、`[清空]` 按钮和底栏 `已选 X 项` 提示，搜索输入框 100% 占满顶栏；
+       - 彻底移除 `prop="fileSizeFormatted"`（文件大小）列；
+       - 将左侧容器宽度由 `230px` 紧凑收窄为 `168px`（净减少 62px，精准将大小列占用的 62px 空间全额让渡给中间 DWG 视口）；
+       - 表格保留单列纯净名称展示，自适应填满 168px 宽度，避免长图纸名称被截断；
+     - **右侧元件组看板收窄至 240px**：
+       - 将右侧容器宽度由 `360px` 调整为 `240px`（释放 120px 宽度给中间 DWG 视口）；
+       - 顶栏统计与操作重构为单行紧凑排版（`📊元件组(X种,已绑Y) 清空此项 | 全清`）；
+       - 表格两列标签精简为“型号规格”与“绑定图号”，`min-width` 调整为 95px，彻底消除 240px 容器下的横向滚动条；
+     - **中间 CAD 矢量预览视口大扩容**：
+       - 左右两翼合计让渡 `62px + 120px = 182px` 宽度给中间 CAD 视口，大幅提升图纸可视视野；
+  3. **环境同步与编译验证**：
+     - 镜像热同步至 `publish/Resources/cabinet_aux_calc.html` 与 `bin/Debug/net48/Resources/cabinet_aux_calc.html`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+
 - **清理 `CabinetAuxCalcForm.cs` 与 `CabinetAuxCalcController.cs` 冗余死代码 (`CabinetAuxCalcForm.cs`, `CabinetAuxCalcController.cs`)**：
   1. **用户核心指令**：“去除冗余代码”；
   2. **冗余代码识别与精准清理**：
@@ -97,18 +534,18 @@
        - 在 `UpdateCabinetsForSheet` 循环完成后，显式调用 `Tool.FixAndFillCabinetNamesForSheet(sheet)`，确保增删行后定义名称与双向超链接 100% 自动自愈校准；
   4. **构建验证**：
      - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
-  1. **用户核心现象**：“如果我在顶部明细插入了一行无明细箱柜，那么更新底部计费区域会少更新一种”；
-  2. **根因定位**：
+  5. **用户核心现象**：“如果我在顶部明细插入了一行无明细箱柜，那么更新底部计费区域会少更新一种”；
+  6. **根因定位**：
      - 在调费前传入的 `targetCabinets` 为旧序号（如 1, 2, 3）；校准后箱柜序号重排为 1, 2, 3, 4（其中 2 为新插入的无明细箱柜）；
      - 原 `UpdateCabinetsForSheet` 使用基于旧序号的 `targetDict.Contains(c.Key)` 进行强行过滤，导致平移后的高位箱柜 4 被判定为非法箱柜而直接丢弃；
      - 辅助隐患：新插入无明细箱柜若 G 列单价为空，第三轮拓扑兜底曾将其误判为非纯数字而错误抢占底表明细配额；
-  3. **闭环修复方案全面落地**：
+  7. **闭环修复方案全面落地**：
      - **解除整表调费与旧 Key 强绑定**：在 `currentCategory` 与 `allCabinets` 模式下，直接以最新校准后的 `latestCabinets` 中所有具备底表明细（`Det != null`）的箱柜为准倒序更新，杜绝任何箱柜被旧 Key 过滤遗漏；
      - **调费前置自愈校准**：在任何箱柜探测与用户作用域提取前，优先触发 `Tool.FixAndFillCabinetNamesForSheet`，确保起始数据始终最新；
      - **单柜与子集双重保险**：单柜调费时结合 Key 与明细物理行号（`targetDetRows`）双重校验，杜绝平移导致过滤失败；
      - **无明细箱柜精准排空**：在 `Tool.cs` 第三轮拓扑保底中将空白无公式一并纳入 `isPureNumberOrBlank` 判定，杜绝空单价无明细箱柜抢占底表明细配额；
      - **柜号双向包含匹配增强**：在第一轮匹配中支持 `detCabNo` 与 `sumCabNo` 互为包含判定，大幅提升工程复杂命名下的精确配对率；
-  4. **构建验证**：
+  8. **构建验证**：
      - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
 
 - **未匹配到公式方案时 ABC 列小计兜底锁定计费首行交付 (`Tool.cs`)**：
@@ -288,49 +725,49 @@
      - `Resources/cloud_solution.html`、`publish/`、`bin/Debug/net48/Resources/` 文件哈希 100% 同步一致；
      - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 警告，0 错误**。
 
-  1. **用户核心指令**：“去除红色方框内的内容，一共3处”；
-  2. **精准定位并彻底移除 3 处元素**：
+  5. **用户核心指令**：“去除红色方框内的内容，一共3处”；
+  6. **精准定位并彻底移除 3 处元素**：
      - **第 1 处（Tab 栏右侧快捷提示）**：移除 `[ 🛈 滚轮缩放 | 拖拽平移 | 双击复位 ]` 操作提示文本，保持 Tab 栏极致清爽；
      - **第 2 处（视口底部居中悬浮工具条）**：移除 `drawing-toolbar`（包含放大、缩小、百分比、旋转、复位共 6 个按钮的黑底工具条），图纸浏览完全由鼠标滚轮自然缩放与拖拽漫游驱动，彻底消除画布底部遮挡；
      - **第 3 处（右下角底部多余操作按钮）**：移除 `[ 下载BOM ]`、`[ 分享 ]` 和 `[ ★ 加入收藏 ]` 三个次要操作按钮，仅保留回路数倍增调节器（`[ - ] N [ + ] 个回路`）与核心橙色 `[ 插入箱柜 ]` 动作按钮；
-  3. **环境同步与编译验证**：
+  7. **环境同步与编译验证**：
      - `Resources/`、`publish/`、`bin/Debug/` 三处 HTML 文件哈希 100% 同步一致；
      - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译通过：**0 错误**。
 
-  1. **用户核心指令与现场故障**：
+  8. **用户核心指令与现场故障**：
      - 用户指令反馈：“没能显示矢量图”，并附带截图展示在【企业方案】->【其他机械】->【86面板】方案详情页中，主视口完全黑屏，未渲染出 CAD 矢量线条。
-  2. **深度排查定位到的 5 大核心根因**：
+  9. **深度排查定位到的 5 大核心根因**：
      - **根因 ① (致命缺陷 - Web Worker / WASM file:// 协议阻断)**：原 `CloudSolutionForm.cs` 使用 `file:///` 协议加载页面。Chromium 对 `file://` 实施严格的同源安全策略，导致 `cad-viewer/wasm/dwg-worker.js`（ES Module Web Worker）无法启动，且 Worker 内部对 `libredwg-web.wasm` 二进制文件的 `fetch` 请求被直接拦截拒绝（`URL scheme "file" is not supported`），导致 `cadViewerInstance.load(...)` 彻底抛错挂死，视口保持默认暗黑底色。
      - **根因 ② (C# 后端 DWG 路径仅单级匹配缺陷)**：原 `CloudSolutionController.cs` 中 `GetDwgBinary` 仅在 `rootDir` 根目录下进行单级拼接查找。而用户的图纸通常位于二级或多级子文件夹（如 `rootDir\其他机械\86面板.dwg`），导致后端返回 `success: false`，DWG 二进制流根本没有传递到前端。
      - **根因 ③ (前端 DWG 模式判定逻辑单一)**：`cloud_solution.html` 中 `isDwgMode` 原先仅判断二次回路，未泛化兼容普通方案关联的 DWG 图纸。
      - **根因 ④ (异常处理静默)**：`dwgBinaryLoaded` 接收逻辑在失败时未向用户提供明确的 `ElMessage.error` 提示，导致错误发生时完全静默黑屏。
      - **根因 ⑤ (联动按钮路径不全)**：右上角【在 AutoCAD 中打开原图】未兼容 `currentDetail` 的 DWG 外部调起。
-  3. **一揽子闭环修复实施**：
-     - **虚拟主机映射根治 Worker/WASM 拦截 (`CloudSolutionForm.cs`)**：
-       引入 `_webView.CoreWebView2.SetVirtualHostNameToFolderMapping("appassets.local", resDir, Allow)`，将页面安全导航至 `https://appassets.local/cloud_solution.html`，彻底消灭 Chromium 在 `file://` 协议下的跨域与 Worker/WASM 拦截；
-     - **全子目录递归穿透寻址 (`CloudSolutionController.cs`)**：
-       在 `GetDwgBinary` 中引入 `Directory.GetFiles(rootDir, pureFileName, SearchOption.AllDirectories)`，无论传入图纸名称、相对路径还是子目录路径，均能毫秒级定位真实物理文件，并返回 Base64 流；
-     - **前端 CadViewer 自适应挂载与异常反馈 (`cloud_solution.html`)**：
-       a. 泛化 `isDwgMode` 计算属性，兼容所有带 DWG 图纸的方案；
-       b. 增强 `initCadViewerInstance`，监听窗口变化及 Tab 切换自动触发 `resize()` 和 `fit("auto")` 矢量自适应缩放；
-       c. 增强 `dwgBinaryLoaded` 接收逻辑与用户友好告警，告别无响应黑屏；
-       d. 右上角【在 AutoCAD 中打开原图】按钮全面联动；
-  4. **多端同步与工程编译验证**：
-     - 同步更新覆盖 `publish/Resources/cloud_solution.html` 与 `bin/Debug/net48/Resources/cloud_solution.html`；
-     - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
+  10. **一揽子闭环修复实施**：
+      - **虚拟主机映射根治 Worker/WASM 拦截 (`CloudSolutionForm.cs`)**：
+        引入 `_webView.CoreWebView2.SetVirtualHostNameToFolderMapping("appassets.local", resDir, Allow)`，将页面安全导航至 `https://appassets.local/cloud_solution.html`，彻底消灭 Chromium 在 `file://` 协议下的跨域与 Worker/WASM 拦截；
+      - **全子目录递归穿透寻址 (`CloudSolutionController.cs`)**：
+        在 `GetDwgBinary` 中引入 `Directory.GetFiles(rootDir, pureFileName, SearchOption.AllDirectories)`，无论传入图纸名称、相对路径还是子目录路径，均能毫秒级定位真实物理文件，并返回 Base64 流；
+      - **前端 CadViewer 自适应挂载与异常反馈 (`cloud_solution.html`)**：
+        a. 泛化 `isDwgMode` 计算属性，兼容所有带 DWG 图纸的方案；
+        b. 增强 `initCadViewerInstance`，监听窗口变化及 Tab 切换自动触发 `resize()` 和 `fit("auto")` 矢量自适应缩放；
+        c. 增强 `dwgBinaryLoaded` 接收逻辑与用户友好告警，告别无响应黑屏；
+        d. 右上角【在 AutoCAD 中打开原图】按钮全面联动；
+  11. **多端同步与工程编译验证**：
+      - 同步更新覆盖 `publish/Resources/cloud_solution.html` 与 `bin/Debug/net48/Resources/cloud_solution.html`；
+      - 执行 `dotnet build /t:Compile /p:DebugType=none` 完整编译构建通过：**0 错误**。
 
-  1. **问题根因定位**：
-     - 原样式第 1115 行使用 `.el-button--primary { background-color: var(--primary-color) !important; }`，加了 `!important` 且未排除 `.is-plain`；
-     - 导致携带 `plain` 属性的 Primary 按钮（如详情标头【编辑方案与BOM】、复制弹窗【刷新】）被强行覆盖为深青绿底色（`#009688`）；
-     - 而 Element Plus 的 `plain` 机制将文字/图标颜色同样渲染为 `#009688`，文字与背景色完全相同导致文字彻底隐形。
-  2. **闭环修复方案（方案 A）**：
-     - 将普通实心按钮隔离为 `.el-button--primary:not(.is-plain):not(.is-link):not(.is-text)`，保持实心绿底白字；
-     - 显式为 `.el-button--primary.is-plain` 配置专属样式：淡雅浅青绿底色（`var(--primary-light)` 即 `#e0f2f1`）+ 主色文字（`var(--primary-color)` 即 `#009688`）+ 主色边框；
-     - 配置 hover 悬停与 focus 焦点态：平滑翻转为实心主色背景与纯白文字，视觉层次清晰舒适；
-     - 补充 disabled 禁用态灰度适配；
-  3. **环境同步与编译验证**：
-     - `Resources/cloud_solution.html`、`publish/`、`bin/Debug/net48/Resources/` 文件哈希 100% 校验同步；
-     - `dotnet build /t:Compile /p:DebugType=none` 完整编译验证：**0 错误**。
+  12. **问题根因定位**：
+      - 原样式第 1115 行使用 `.el-button--primary { background-color: var(--primary-color) !important; }`，加了 `!important` 且未排除 `.is-plain`；
+      - 导致携带 `plain` 属性的 Primary 按钮（如详情标头【编辑方案与BOM】、复制弹窗【刷新】）被强行覆盖为深青绿底色（`#009688`）；
+      - 而 Element Plus 的 `plain` 机制将文字/图标颜色同样渲染为 `#009688`，文字与背景色完全相同导致文字彻底隐形。
+  13. **闭环修复方案（方案 A）**：
+      - 将普通实心按钮隔离为 `.el-button--primary:not(.is-plain):not(.is-link):not(.is-text)`，保持实心绿底白字；
+      - 显式为 `.el-button--primary.is-plain` 配置专属样式：淡雅浅青绿底色（`var(--primary-light)` 即 `#e0f2f1`）+ 主色文字（`var(--primary-color)` 即 `#009688`）+ 主色边框；
+      - 配置 hover 悬停与 focus 焦点态：平滑翻转为实心主色背景与纯白文字，视觉层次清晰舒适；
+      - 补充 disabled 禁用态灰度适配；
+  14. **环境同步与编译验证**：
+      - `Resources/cloud_solution.html`、`publish/`、`bin/Debug/net48/Resources/` 文件哈希 100% 校验同步；
+      - `dotnet build /t:Compile /p:DebugType=none` 完整编译验证：**0 错误**。
 
 - **云方案中心 DWG 预览精确集成 cad-view 矢量渲染引擎（保持云方案中心现有界面不变） (`Controllers/`, `Forms/`, `Resources/`, `publish/`, `bin/`)**：
   1. **意图纠偏与界面保持**：
@@ -1976,10 +2413,54 @@
   4. **编译构建与验证**：
      - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
 
+- **彻底修复“分布调价”弹窗提示“未检测到有效的分类工作表，已选择 0/0 个分类，共 0 台箱柜”故障 (`Forms/DistributedAdjustPriceForm.cs`, `Services/ExcelServices.DistributedAdjustPrice.cs`, `Resources/distributed_adjust_price.html`)**：
+  1. **深度根因定位与排查**：
+     - 在 `DistributedAdjustPriceForm.cs` 的 `HandleGetCategorySheets()` 中，使用了 `ThreadPool.QueueUserWorkItem` 将获取分类表的操作放到了后台线程池线程（MTA 线程）；
+     - Excel-DNA 的 `ExcelDnaUtil.Application` 强制要求在 Excel STA 主线程中调用，在后台线程调用会导致安全拦截并返回 `null`；
+     - 服务层 `GetCategorySheetsForDistribution()` 检测到 `app == null`，以为没有 Excel 应用程序，直接返回了空列表，导致前端界面展示 0 个分类工作表；
+  2. **系统级重构与线程模型校准 (`Forms/DistributedAdjustPriceForm.cs`)**：
+     - 将 `HandleGetCategorySheets()` 调整为与 `SummaryAdjustPriceForm` 完全一致的当前 STA 线程同步调用机制，确保 COM 上下文 100% 畅通；
+     - 增加详尽的调试轨迹日志，捕获并记录分类扫描和回传前后的每一步状态；
+  3. **增强服务层扫描与容错机制 (`Services/ExcelServices.DistributedAdjustPrice.cs`)**：
+     - 在 `GetCategorySheetsForDistribution()` 中增加针对工作簿名称与各工作表扫描的详尽诊断日志，并采用原工作表名称避免空白字符截断；
+  4. **前端交互体验提升 (`Resources/distributed_adjust_price.html`)**：
+     - 在分类卡片头部增加“🔄 刷新列表”按钮，方便用户随时重测；
+     - 列表为空时提供“🔄 重新扫描分类”轻量按钮；
+     - 资源文件已完整同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+  5. **编译构建与代码规范**：
+     - 严格遵循每 3 行包含至少 1 行中文注释，遵循最小变动法则；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
+
+- **全面落地分布调价“横向箱柜单台数量修改反向回写与自动插入新器件行”功能 (`Services/ExcelServices.DistributedAdjustPrice.cs`, `Resources/distributed_adjust_price.html`)**：
+  1. **表头升级与所属分类映射 (`GenerateComponentDistributionSheet`)**：
+     - 在横向箱柜复合表头（行 13~17）中增加第 13 行【所属分类】，精准锚定各箱柜列归属的工作表 `SheetName`，彻底消除同名柜号跨表混淆；
+     - 将 D 列（汇总数量）重构为动态 `=SUMPRODUCT($L$14:$Z$14, L19:Z19)` 工业级加权乘积公式，当用户在横向箱柜列修改任何单台数量时，D 列汇总数量与 F 列总金额实时联动计算；
+     - 将横向箱柜数量列设为淡黄白色底色，提示支持自由编辑修改；
+  2. **反向回写引擎重构 (`UpdateFromComponentDistributionSheet`)**：
+     - 批量读取横向各箱柜列的最新单台数量（包括修改数量、改成 0 以及新增器件）；
+     - **方式 A 落实**：针对已有器件，按修改后的数量回写各箱柜 F 列，若改为 0 则设为 0，合价置零并保留行；
+     - **自动插入新行**：针对分布表中填入数量（> 0）但该箱柜原本没有的新增器件，优先复用元器件区域预留的空白行，若无空白行则严格按照规则 6 在小计行前执行整行 `Insert`，完整写入 A~H 列各项数据及合价公式；
+     - **公式刷新与自愈**：级联刷新小计行 `SUM` 公式与总计行公式，严格执行规则 8 调用 `Tool.FixAndFillCabinetNamesForSheet(sheet)` 自愈工作表 4 个定义名称；
+  3. **交互指引与编译校验**：
+     - 更新前端页面 Banner 副标题与操作指引，明确说明单台数量修改与自动插入新行机制；
+     - 资源已全量热同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 遵循每 3 行包含至少 1 行中文注释，执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
+
+## [Completed]
+
+- [已验证] `Forms/DistributedAdjustPriceForm.cs` 线程模型已修复为 STA 同步调用。
+- [已验证] `Services/ExcelServices.DistributedAdjustPrice.cs` 表头增加所属分类工作表（行 13），D 列重构为 SUMPRODUCT 动态加权求和公式。
+- [已验证] `Services/ExcelServices.DistributedAdjustPrice.cs` 支持修改横向箱柜单台数量并反向回写（改成 0 设为 0 保留行；原本没有的器件自动插入新行并填入型号、厂家、数量和单价）。
+- [已验证] 级联刷新各箱柜小计行、总计行求和公式，并触发规则 8 定义名称自愈。
+- [已验证] 前端 UI 资源与模板已同步更新。
+- [已验证] 代码编译通过，0 错误。
+
 ## [In-Progress]
 
-- 复制与插入箱柜功能测试与用户验收。
+- 提示用户重启 Excel 以使最新插件与功能生效。
 
 ## [Next]
 
-- 与用户确认箱柜功能具体实施优先级，并按计划推进实施。
+- 验证用户在【材料分布表】中调整单价、型号、厂家以及横向箱柜数量，点击【一键更新到明细】后各箱柜数据与新增行的回写情况。
+
+

@@ -448,6 +448,9 @@ namespace ExcelAddInDemo
             }
             if (shellHeight > 1000) isCabinet = true;
 
+            // 纯高度推导箱柜推荐深度 (与电流彻底解耦，依据纯高度阶梯规则)
+            int shellDepth = DeriveDepthFromHeight(shellHeight, rules.ShellRules);
+
             // -------------------------------------------------------------
             // 2. 铜排 (TMY) 基于 tmy.DrawIO 全新制作规则与定额计算
             // -------------------------------------------------------------
@@ -1058,6 +1061,12 @@ namespace ExcelAddInDemo
                 desc += $" | ⚠️ 未填电流提醒: 有 {calcWarnings.Count} 项一次元器件W列电流为空，未计入计算";
             }
 
+            // -------------------------------------------------------------
+            // 5. 批量壳体价格与规格智能核算 (基于面数与高度阶梯决策法，解耦纯尺寸推导)
+            // -------------------------------------------------------------
+            // 依据箱柜名称关键词/默认基准材质、高度阶梯板厚及封闭箱体面数核算钣金单价
+            var shellPriceRes = CalculateShellPrice(scanData.CabinetName, shellWidth, shellHeight, shellDepth, isCabinet, rules);
+
             // 构造并返回结果模型
             return new CabinetCalcResult
             {
@@ -1069,6 +1078,13 @@ namespace ExcelAddInDemo
                 MaxCurrent = maxCurrent,
                 IsCabinet = isCabinet,
                 RecommendedShellSize = recommendedSize,
+                RecommendedShellDepth = shellDepth,
+                RecommendedShellSizeFull = $"{shellWidth}*{shellHeight}*{shellDepth}",
+                RecommendedShellModel = shellPriceRes.Model,
+                RecommendedShellUnitPrice = shellPriceRes.UnitPrice,
+                RecommendedShellExpandedArea = shellPriceRes.Area,
+                RecommendedShellMaterial = shellPriceRes.Material,
+                RecommendedShellThickness = shellPriceRes.Thickness,
                 CopperWeight = copperWeight,
                 CopperQtyFormula = copperQtyFormula,
                 AuxiliaryCost = auxiliaryCost,
@@ -1178,11 +1194,30 @@ namespace ExcelAddInDemo
                             string bName = feeMatrix[r, 2]?.ToString()?.Trim() ?? string.Empty;
                             int currentPhysRow = feeStartRow + r - 1;
 
-                            // 1.1 壳体匹配: 在计费区 B 列匹配同名，命中则写入该行 C 列
+                            // 1.1 壳体匹配: 在计费区 B 列匹配同名，命中则写入该行 C 列规格、E 列单位、F 列数量、G 列单价、H 列总价公式
                             if (!matchedShellInFeeArea && string.Equals(bName, shellMatchName, StringComparison.OrdinalIgnoreCase))
                             {
-                                // 将推荐尺寸写入 C 列 (规格型号)
-                                feeMatrix[r, 3] = result.RecommendedShellSize;
+                                // 优先写入拼装好的标准工业型号，兜底使用三维尺寸
+                                string shellModel = !string.IsNullOrWhiteSpace(result.RecommendedShellModel)
+                                    ? result.RecommendedShellModel
+                                    : (!string.IsNullOrWhiteSpace(result.RecommendedShellSizeFull) ? result.RecommendedShellSizeFull : result.RecommendedShellSize);
+                                // C 列写入规格型号
+                                feeMatrix[r, 3] = shellModel;
+                                // E 列写入单位 (默认 "台") --硬编码--
+                                feeMatrix[r, 5] = "台";
+                                // F 列检查数量 (若原数量为空或为0，则默认补 1) --硬编码--
+                                if (feeMatrix[r, 6] == null || string.IsNullOrWhiteSpace(feeMatrix[r, 6].ToString()) || Convert.ToString(feeMatrix[r, 6]) == "0")
+                                {
+                                    feeMatrix[r, 6] = 1;
+                                }
+                                // G 列写入核算出的单价 (若计算单价大于 0，一次性回填价格)
+                                if (result.RecommendedShellUnitPrice > 0)
+                                {
+                                    // 写入单价
+                                    feeMatrix[r, 7] = Math.Round(result.RecommendedShellUnitPrice, 2);
+                                    // H 列写入销售总价联动公式 =ROUND(F*G, 2)
+                                    feeMatrix[r, 8] = $"=ROUND(F{currentPhysRow}*G{currentPhysRow}, 2)";
+                                }
                                 matchedShellInFeeArea = true;
                                 feeMatrixModified = true;
                                 result.ShellMatchedInFeeArea = true;
@@ -1244,18 +1279,24 @@ namespace ExcelAddInDemo
                 {
                     Range detRange = ws.Range[$"A{detRow}:E{detRow}"];
                     object[,] detMatrix = detRange.Formula as object[,];
+                    // 优先写入拼装型号，兜底尺寸
+                    string fallbackModel = !string.IsNullOrWhiteSpace(result.RecommendedShellModel)
+                        ? result.RecommendedShellModel
+                        : (!string.IsNullOrWhiteSpace(result.RecommendedShellSizeFull) ? result.RecommendedShellSizeFull : result.RecommendedShellSize);
                     if (detMatrix != null)
                     {
                         // B 列写入壳体匹配名称
                         detMatrix[1, 2] = shellMatchName;
-                        // C 列写入推荐壳体尺寸
-                        detMatrix[1, 3] = result.RecommendedShellSize;
+                        // C 列写入推荐壳体型号或三维尺寸
+                        detMatrix[1, 3] = fallbackModel;
                         detRange.Formula = detMatrix;
                     }
                     else
                     {
+                        // 单元格直接写入名称
                         ws.Range[$"B{detRow}"].Value2 = shellMatchName;
-                        ws.Range[$"C{detRow}"].Value2 = result.RecommendedShellSize;
+                        // 单元格直接写入型号
+                        ws.Range[$"C{detRow}"].Value2 = fallbackModel;
                     }
                     result.ShellMatchedInFeeArea = false;
                     result.ShellTargetLocation = $"箱柜信息行 Cab_Det (第 {detRow} 行)";
@@ -1917,6 +1958,427 @@ namespace ExcelAddInDemo
                 app.ScreenUpdating = true;
                 app.DisplayAlerts = true;
             }
+        }
+
+        /// <summary>
+        /// 纯高度驱动的箱柜深度推导方法 (完全解除与电流关联，严格依据高度阶梯推荐深度)
+        /// </summary>
+        /// <param name="height">箱柜高度 (mm)</param>
+        /// <param name="shellConfig">壳体选型规则配置 (可选)</param>
+        /// <returns>推荐深度 (mm)</returns>
+        public static int DeriveDepthFromHeight(int height, ShellConfig? shellConfig = null)
+        {
+            // 若未传入规则，则读取全局缓存规则
+            if (shellConfig == null)
+            {
+                // 加载全局计算定额规则
+                var rules = LoadQuotationRules();
+                // 提取壳体规则
+                shellConfig = rules.ShellRules;
+            }
+
+            // 提取高度深度梯度列表
+            var gradients = shellConfig?.HeightDepthGradients;
+            // 校验梯度列表有效性，若为空则提供标准备用梯度 --硬编码--
+            if (gradients == null || gradients.Count == 0)
+            {
+                // 默认标准高度对应深度梯度表 (H <= 400 对应 160mm)
+                if (height <= 400) return 160;
+                // 400 < H <= 600 对应 180mm
+                if (height <= 600) return 180;
+                // 600 < H <= 800 对应 200mm
+                if (height <= 800) return 200;
+                // 800 < H <= 1000 对应 250mm
+                if (height <= 1000) return 250;
+                // 1000 < H <= 1400 对应 300mm
+                if (height <= 1400) return 300;
+                // 1400 < H <= 1800 对应 400mm
+                if (height <= 1800) return 400;
+                // 1800 < H <= 2000 对应 800mm
+                if (height <= 2000) return 800;
+                // 大于 2000mm 对应 1000mm
+                return 1000;
+            }
+
+            // 按最大高度升序遍历梯度表查找命中区间
+            foreach (var item in gradients.OrderBy(g => g.MaxHeight))
+            {
+                // 当箱柜高度小于等于当前梯度上限门限时命中
+                if (height <= item.MaxHeight)
+                {
+                    // 返回匹配推荐的深度数值
+                    return item.Depth;
+                }
+            }
+
+            // 若超过所有门限，返回最后一项最大深度的推荐值
+            return gradients.Last().Depth;
+        }
+
+        /// <summary>
+        /// 更新并持久化板材材质单价库与加工预留配置
+        /// </summary>
+        /// <param name="prices">最新的板材材质价格列表</param>
+        /// <param name="allowance">加工预留配置 (可选)</param>
+        public static void UpdateMaterialPrices(List<MaterialPriceItem> prices, CabinetAllowanceConfig? allowance = null)
+        {
+            // 加载当前全局定额规则
+            var rules = LoadQuotationRules();
+            // 校验输入板材列表
+            if (prices != null && prices.Count > 0)
+            {
+                // 更新壳体规则中的板材单价集合
+                rules.ShellRules.MaterialPrices = prices;
+            }
+            // 校验预留放量配置
+            if (allowance != null)
+            {
+                // 同步更新壳体放量预留
+                rules.ShellRules.Allowance = allowance;
+            }
+            // 将最新配置持久化写回磁盘
+            SaveQuotationRules(rules);
+        }
+
+        /// <summary>
+        /// 将柜体钣金计算出的规格型号与单价回写至当前工作表现有箱柜计费区 (严格遵循规则 6、7、8)
+        /// </summary>
+        /// <param name="ws">目标工作表</param>
+        /// <param name="payload">算料回写载荷实体</param>
+        /// <returns>操作结果元组 (是否成功, 提示消息)</returns>
+        public static (bool Success, string Message) WriteCalculatedShellToFeeArea(Worksheet ws, CabinetShellWritePayload payload)
+        {
+            // 校验输入对象与参数有效性
+            if (ws == null || payload == null || string.IsNullOrWhiteSpace(payload.CabDetName))
+            {
+                // 返回参数无效提示
+                return (false, "无效的工作表或箱柜定位参数");
+            }
+
+            try
+            {
+                // 规则 8: 在操作 Excel 前必须调用自愈机制确保 4 个定义名称及结构有效
+                Tool.FixAndFillCabinetNamesForSheet(ws);
+
+                // 收集并获取当前工作表所有有效箱柜锚点字典
+                var validCabinets = Tool.GetSheetValidCabinets(ws);
+                CabinetAnchorModel? targetAnchor = null;
+
+                // 遍历定位匹配目标箱柜
+                foreach (var kvp in validCabinets)
+                {
+                    // 匹配 Det 命名 (如 Cab_Det_1)
+                    if (string.Equals($"Cab_Det_{kvp.Key}", payload.CabDetName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // 命中目标锚点模型
+                        targetAnchor = kvp.Value;
+                        break;
+                    }
+                }
+
+                // 校验关键锚点是否存在
+                if (targetAnchor == null || targetAnchor.Subsum == null || targetAnchor.Tolsum == null)
+                {
+                    // 未定位到合法箱柜边界
+                    return (false, $"未能在工作表【{ws.Name}】中找到匹配箱柜【{payload.CabDetName}】的计费区域锚点");
+                }
+
+                // 提取计费区域物理行号 (规则 6: Cab_Subsum 到 Cab_Tolsum - 1 为计费区域)
+                int subsumRow = Convert.ToInt32(targetAnchor.Subsum.Row);
+                int tolsumRow = Convert.ToInt32(targetAnchor.Tolsum.Row);
+                int feeStartRow = subsumRow;
+                int feeEndRow = tolsumRow - 1;
+
+                // 记录是否已在计费区命中现有壳体行
+                int matchedPhysRow = -1;
+
+                // -------------------------------------------------------------
+                // 1. 扫描现有计费区检查是否有现有“柜体/箱体/壳体”行
+                // -------------------------------------------------------------
+                if (feeEndRow >= feeStartRow && payload.WriteMode != "insert")
+                {
+                    // 规则 7: 采用 2D 数组一次性批量读取计费区域所有单元格至内存
+                    Range feeRange = ws.Range[$"A{feeStartRow}:H{feeEndRow}"];
+                    object[,] feeMatrix = feeRange.Formula as object[,];
+
+                    if (feeMatrix != null)
+                    {
+                        int rowCount = feeMatrix.GetLength(0);
+                        // 遍历计费区每一行
+                        for (int r = 1; r <= rowCount; r++)
+                        {
+                            // 提取 B 列物料名称
+                            string bName = feeMatrix[r, 2]?.ToString()?.Trim() ?? string.Empty;
+                            // 检查是否命中壳体关键字或自定义名称
+                            if (string.Equals(bName, payload.ItemName, StringComparison.OrdinalIgnoreCase) ||
+                                bName.IndexOf("柜体", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                bName.IndexOf("箱体", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                bName.IndexOf("壳体", StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                // 命中物理行
+                                matchedPhysRow = feeStartRow + r - 1;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // -------------------------------------------------------------
+                // 2. 模式 A: 命中现有行，执行原位覆盖更新 (替换模式)
+                // -------------------------------------------------------------
+                if (matchedPhysRow > 0)
+                {
+                    // 写入 B 列物料名称
+                    ws.Range[$"B{matchedPhysRow}"].Value2 = payload.ItemName;
+                    // 写入 C 列拼装后的规格型号 (如 XM-800*2200*1000-1.5mm)
+                    ws.Range[$"C{matchedPhysRow}"].Value2 = payload.Model;
+                    // 写入 E 列单位
+                    ws.Range[$"E{matchedPhysRow}"].Value2 = string.IsNullOrWhiteSpace(payload.Unit) ? "台" : payload.Unit;
+                    // 写入 F 列数量 (默认 1)
+                    ws.Range[$"F{matchedPhysRow}"].Value2 = payload.Quantity > 0 ? payload.Quantity : 1.0;
+                    // 写入 G 列单价 (算出的总价)
+                    ws.Range[$"G{matchedPhysRow}"].Value2 = Math.Round(payload.UnitPrice, 2);
+                    // 写入 H 列总价公式
+                    ws.Range[$"H{matchedPhysRow}"].Formula = $"=ROUND(F{matchedPhysRow}*G{matchedPhysRow}, 2)";
+
+                    // 刷新计费区域与总计联动
+                    ws.Calculate();
+                    // 返回成功消息
+                    return (true, $"已成功更新箱柜计费区第 {matchedPhysRow} 行壳体规格【{payload.Model}】与单价【¥{payload.UnitPrice:F2}】！");
+                }
+
+                // -------------------------------------------------------------
+                // 3. 模式 B: 未找到现有壳体行，或者明确要求插入新行
+                // -------------------------------------------------------------
+                // 定位插入点在总计行 tolsumRow 之前
+                Range insertPos = (Range)ws.Rows[tolsumRow];
+                // 插入新行
+                insertPos.Insert(XlInsertShiftDirection.xlShiftDown);
+
+                // 新行的物理行号即为原本的 tolsumRow
+                int newRowIdx = tolsumRow;
+                // 复制上一行的单元格边框与对齐格式
+                Range prevRow = (Range)ws.Rows[newRowIdx - 1];
+                prevRow.Copy();
+                ((Range)ws.Rows[newRowIdx]).PasteSpecial(XlPasteType.xlPasteFormats);
+
+                // 写入序号 (A 列)
+                ws.Range[$"A{newRowIdx}"].Value2 = feeEndRow - feeStartRow + 2;
+                // 写入物料名称 (B 列)
+                ws.Range[$"B{newRowIdx}"].Value2 = payload.ItemName;
+                // 写入拼装型号 (C 列)
+                ws.Range[$"C{newRowIdx}"].Value2 = payload.Model;
+                // 写入单位 (E 列)
+                ws.Range[$"E{newRowIdx}"].Value2 = string.IsNullOrWhiteSpace(payload.Unit) ? "台" : payload.Unit;
+                // 写入数量 (F 列)
+                ws.Range[$"F{newRowIdx}"].Value2 = payload.Quantity > 0 ? payload.Quantity : 1.0;
+                // 写入单价 (G 列)
+                ws.Range[$"G{newRowIdx}"].Value2 = Math.Round(payload.UnitPrice, 2);
+                // 写入总价公式 (H 列)
+                ws.Range[$"H{newRowIdx}"].Formula = $"=ROUND(F{newRowIdx}*G{newRowIdx}, 2)";
+
+                // 重新对工作表执行规则 8 自愈以刷新小计和总计公式
+                Tool.FixAndFillCabinetNamesForSheet(ws);
+                // 刷新全表公式
+                ws.Calculate();
+
+                // 返回插入成功提示
+                return (true, $"已在计费区第 {newRowIdx} 行成功插入壳体规格【{payload.Model}】，单价【¥{payload.UnitPrice:F2}】！");
+            }
+            catch (Exception ex)
+            {
+                // 捕获并返回异常信息
+                return (false, $"回写壳体至计费区失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 批量计算的“板材材质”确定策略
+        /// 优先级 1（箱柜特征关键词自动识别）：
+        /// 箱柜名称/图号中包含 304 -> 自动匹配 不锈钢304；
+        /// 箱柜名称/图号中包含 不锈钢 或 201 -> 自动匹配 不锈钢201；
+        /// 箱柜名称/图号中包含 冷轧 -> 自动匹配 冷轧板；
+        /// 优先级 2（全局基准材质兜底）：
+        /// 在【📦 壳体选型规则】中提供「批量计算默认材质」下拉项（默认：镀锌板）。未命中特殊材质关键字的所有箱柜均采用此材质。
+        /// </summary>
+        /// <param name="cabinetName">箱柜名称或图号</param>
+        /// <param name="config">壳体价格定额配置对象</param>
+        /// <returns>匹配出的材质名称</returns>
+        public static string DetermineMaterial(string cabinetName, ShellPriceConfig? config = null)
+        {
+            // 提取全局基准材质兜底值，若未设置则默认为 "镀锌板" --硬编码--
+            string defaultMaterial = !string.IsNullOrWhiteSpace(config?.DefaultMaterial) ? config.DefaultMaterial : "镀锌板";
+            // 校验箱柜名称有效性
+            if (string.IsNullOrWhiteSpace(cabinetName))
+            {
+                // 若箱柜名称为空直接采用基准材质兜底
+                return defaultMaterial;
+            }
+
+            // 转为大写字母以进行不区分大小写匹配
+            string nameUpper = cabinetName.ToUpperInvariant();
+
+            // 优先级 1.1: 包含 304 -> 自动匹配 不锈钢304 --硬编码--
+            if (nameUpper.Contains("304"))
+            {
+                // 返回不锈钢304材质
+                return "不锈钢304";
+            }
+
+            // 优先级 1.2: 包含 不锈钢 或 201 -> 自动匹配 不锈钢201 --硬编码--
+            if (cabinetName.Contains("不锈钢") || nameUpper.Contains("201"))
+            {
+                // 返回不锈钢201材质
+                return "不锈钢201";
+            }
+
+            // 优先级 1.3: 包含 冷轧 -> 自动匹配 冷轧板 --硬编码--
+            if (cabinetName.Contains("冷轧"))
+            {
+                // 返回冷轧板材质
+                return "冷轧板";
+            }
+
+            // 优先级 1.4: 包含 镀锌 -> 自动匹配 镀锌板 --硬编码--
+            if (cabinetName.Contains("镀锌"))
+            {
+                // 返回镀锌板材质
+                return "镀锌板";
+            }
+
+            // 优先级 2: 全局基准材质兜底 (未命中特殊材质关键字的所有箱柜均采用此材质)
+            return defaultMaterial;
+        }
+
+        /// <summary>
+        /// 批量计算的“板材厚度”确定策略（高度阶梯决策法）
+        /// H <= 800mm -> 1.2mm
+        /// 800 < H <= 1600mm -> 1.5mm
+        /// H > 1600mm -> 2.0mm
+        /// </summary>
+        /// <param name="height">箱柜高度 (mm)</param>
+        /// <param name="config">壳体价格定额配置对象</param>
+        /// <returns>推荐板厚 (mm)</returns>
+        public static double DetermineThickness(int height, ShellPriceConfig? config = null)
+        {
+            // 尝试获取配置中的高度阶梯列表
+            var gradients = config?.ThicknessGradients;
+            // 若配置为空或无条目，采用默认阶梯决策 --硬编码--
+            if (gradients == null || gradients.Count == 0)
+            {
+                // 高度 <= 800mm 对应 1.2mm 板厚 --硬编码--
+                if (height <= 800) return 1.2;
+                // 800 < H <= 1600mm 对应 1.5mm 板厚 --硬编码--
+                if (height <= 1600) return 1.5;
+                // H > 1600mm (成套落地开关柜) 对应 2.0mm 板厚 --硬编码--
+                return 2.0;
+            }
+
+            // 按高度上限升序遍历梯度配置表
+            foreach (var item in gradients.OrderBy(g => g.MaxHeight))
+            {
+                // 当箱柜高度小于等于当前阶梯门限时命中
+                if (height <= item.MaxHeight)
+                {
+                    // 返回命中阶梯的推荐厚度
+                    return item.Thickness > 0 ? item.Thickness : 1.5;
+                }
+            }
+
+            // 若超过所有门限，返回最大高度档位的推荐厚度
+            return gradients.Last().Thickness > 0 ? gradients.Last().Thickness : 2.0;
+        }
+
+        /// <summary>
+        /// 批量计算的“面数”确定策略与钣金价格自动核算 (取消放量)
+        /// 面数：自动采用封闭箱体标准（宽深 2.0、宽高 2.0、高深 2.0；若箱柜名称包含“二层板”则自动叠加 1.0 面二层板）
+        /// 取消放量：外形尺寸直接算面积，不预留加工折弯放量
+        /// </summary>
+        /// <param name="cabinetName">箱柜名称</param>
+        /// <param name="width">箱宽 (mm)</param>
+        /// <param name="height">箱高 (mm)</param>
+        /// <param name="depth">箱深 (mm)</param>
+        /// <param name="isCabinet">是否为落地柜</param>
+        /// <param name="rules">全局计算规则</param>
+        /// <returns>核算结果元组 (单价, 展开总面积, 材质, 板厚, 标准型号)</returns>
+        public static (double UnitPrice, double Area, string Material, double Thickness, string Model) CalculateShellPrice(
+            string cabinetName, int width, int height, int depth, bool isCabinet, QuotationRules? rules = null)
+        {
+            // 提取壳体价格配置
+            var priceConfig = rules?.ShellPriceRules ?? new ShellPriceConfig();
+
+            // 1. 策略 1: 确定板材材质 (优先级1关键字，优先级2默认材质兜底)
+            string material = DetermineMaterial(cabinetName, priceConfig);
+
+            // 2. 策略 2: 确定板材厚度 (高度阶梯决策法)
+            double thickness = DetermineThickness(height, priceConfig);
+
+            // 3. 策略 3: 确定面数与计算展开面积 (取消放量，直接按外形几何尺寸)
+            // 顶底板展开面数 (宽深 W*D，标准封闭箱体为 2.0) --硬编码--
+            double faceWD = priceConfig.FaceCountWD > 0 ? priceConfig.FaceCountWD : 2.0;
+            // 门背板展开面数 (宽高 H*W，标准封闭箱体为 2.0) --硬编码--
+            double faceHW = priceConfig.FaceCountHW > 0 ? priceConfig.FaceCountHW : 2.0;
+            // 左右侧板展开面数 (高深 H*D，标准封闭箱体为 2.0) --硬编码--
+            double faceHD = priceConfig.FaceCountHD > 0 ? priceConfig.FaceCountHD : 2.0;
+
+            // 检查箱柜名称是否包含“二层板”关键字
+            bool hasSecondPlate = !string.IsNullOrWhiteSpace(cabinetName) && cabinetName.Contains("二层板");
+            if (hasSecondPlate)
+            {
+                // 若包含二层板，自动叠加 1.0 面宽高面数 (二层板) --硬编码--
+                double extraHW = priceConfig.SecondPlateExtraHW > 0 ? priceConfig.SecondPlateExtraHW : 1.0;
+                faceHW += extraHW;
+            }
+
+            // 取消放量：宽深高展开面积计算，放量为 0 (单位由 mm² 换算为 m²: 除以 1,000,000)
+            double areaWD = faceWD * (width * depth) / 1000000.0;
+            // 计算门背板与二层板宽高展开总面积
+            double areaHW = faceHW * (height * width) / 1000000.0;
+            // 计算左右侧板高深展开总面积
+            double areaHD = faceHD * (height * depth) / 1000000.0;
+            // 汇总总展开面积 (保留 3 位小数)
+            double totalArea = Math.Round(areaWD + areaHW + areaHD, 3);
+
+            // 4. 从单价库匹配该材质该厚度的每平米单价
+            double pricePerSq = 0.0;
+            // 从配置的板材单价库中查找匹配材质
+            var matItem = priceConfig.MaterialPrices?.FirstOrDefault(m => string.Equals(m.MaterialName, material, StringComparison.OrdinalIgnoreCase));
+            // 若找到材质项且包含厚度单价明细
+            if (matItem != null && matItem.ThicknessPrices != null && matItem.ThicknessPrices.Count > 0)
+            {
+                // 优先查找厚度完全吻合的规格
+                var exact = matItem.ThicknessPrices.FirstOrDefault(t => Math.Abs(t.Thickness - thickness) < 0.05);
+                if (exact != null)
+                {
+                    // 命中精确厚度单价
+                    pricePerSq = exact.PricePerSqMeter;
+                }
+                else
+                {
+                    // 未命中则查找厚度差值最小的最接近规格
+                    var nearest = matItem.ThicknessPrices.OrderBy(t => Math.Abs(t.Thickness - thickness)).First();
+                    pricePerSq = nearest.PricePerSqMeter;
+                }
+            }
+
+            // 兜底单价防为0 (按标准镀锌板基础单价兜底) --硬编码--
+            if (pricePerSq <= 0)
+            {
+                // 1.2mm 兜底 58元/m²，1.5mm 兜底 72元/m²，2.0mm 兜底 96元/m² --硬编码--
+                pricePerSq = thickness <= 1.2 ? 58.0 : (thickness <= 1.5 ? 72.0 : 96.0);
+            }
+
+            // 单价 = 展开总面积 × 每平米单价 (保留两位小数)
+            double unitPrice = Math.Round(totalArea * pricePerSq, 2);
+
+            // 5. 拼装符合工业规范的标准壳体型号
+            // 检查是否需要追加二层板后缀
+            string secondPlateSuffix = hasSecondPlate ? "(含二层板)" : string.Empty;
+            // 拼装标准型号 (去除箱柜型号前缀，直接以尺寸开头: 如 "800*600*200-1.2mm 镀锌板")
+            string model = $"{width}*{height}*{depth}-{thickness:F1}mm {material}{secondPlateSuffix}";
+
+            // 返回核算元组
+            return (unitPrice, totalArea, material, thickness, model);
         }
     }
 }

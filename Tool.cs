@@ -1224,17 +1224,38 @@ namespace ExcelAddInDemo
                 // 遍历扫描顶部汇总行
                 for (int r = cabSumStartRow; r < firstDetRow; r++)
                 {
-                    // 检查 B 列或 A 列是否有箱柜编号/名称
-                    string bVal = GetText(r, 2);
+                    // 提取当前行 A、B、C 列文本 (分别对应序号、柜号、设备名称/型号)
                     string aVal = GetText(r, 1);
+                    string bVal = GetText(r, 2);
+                    string cVal = GetText(r, 3);
 
-                    // 若存在非空内容则判定为有效汇总行
-                    if (!string.IsNullOrWhiteSpace(bVal) || !string.IsNullOrWhiteSpace(aVal))
+                    // 关键截断：若遇到汇总表底部的“合计”、“总计”、“小计”或签字说明落款，说明箱柜列表已结束，立即中断扫描
+                    if (aVal.Contains("合计") || bVal.Contains("合计") || cVal.Contains("合计") ||
+                        aVal.Contains("总计") || bVal.Contains("总计") || cVal.Contains("总计") ||
+                        aVal.Contains("小计") || bVal.Contains("小计") || cVal.Contains("小计") ||
+                        aVal.Contains("大写") || bVal.Contains("大写") || aVal.Contains("说明") || bVal.Contains("说明") ||
+                        aVal.Contains("审核") || bVal.Contains("审核") || aVal.Contains("批准") || bVal.Contains("批准") ||
+                        aVal.Contains("制表") || bVal.Contains("制表") || aVal.Contains("编制") || bVal.Contains("编制"))
+                    {
+                        // 命中汇总底部截断关键字，立即终止扫描，绝不穿透至落款区
+                        break;
+                    }
+
+                    // 排除表头重复行 (包含“序号”、“柜号”、“设备名称”等)
+                    if (aVal.Contains("序号") || bVal.Contains("柜号") || cVal.Contains("设备") || cVal.Contains("名称"))
+                    {
+                        // 跳过表头行
+                        continue;
+                    }
+
+                    // 若 B 列(柜号)或 C 列(设备名)或 A 列(序号)存在非空箱柜有效特征内容
+                    if (!string.IsNullOrWhiteSpace(bVal) || !string.IsNullOrWhiteSpace(cVal) || !string.IsNullOrWhiteSpace(aVal))
                     {
                         // 记录识别到的有效汇总行物理行号
                         sumRows.Add(r);
                     }
                 }
+
 
                 // 若明细块与汇总行均未识别出任何箱柜，判定为非标准表，跳过
                 if (detRows.Count == 0 && sumRows.Count == 0) return 0;
@@ -1688,7 +1709,35 @@ namespace ExcelAddInDemo
                 }
 
                 // 5. 【清理大于 cabCount 的多余旧箱柜定义名称，防止幽灵定义名称残留】
-                for (int oldK = cabCount + 1; oldK <= cabCount + 30; oldK++)
+                // 首先遍历工作表中所有现存定义名称，精准找出并删除序号超过 cabCount 的定义名称
+                try
+                {
+                    // 遍历工作表自身的作用域名称集合
+                    dynamic sNames = sheet.Names;
+                    if (sNames != null)
+                    {
+                        // 倒序遍历删除避免索引偏移
+                        for (int nIdx = sNames.Count; nIdx >= 1; nIdx--)
+                        {
+                            // 提取定义名称对象
+                            dynamic singleName = sNames.Item(nIdx);
+                            string nStr = ExtractCleanNameStr(Convert.ToString(singleName.Name) ?? "");
+                            // 提取箱柜序号
+                            int nK = ExtractIndexFromName(nStr, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                            // 若属于箱柜定义名称且序号大于当前实际箱柜总数，坚决删除
+                            if (nK > cabCount)
+                            {
+                                // 安全删除多余旧定义名称
+                                singleName.Delete();
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                // 补充安全循环兜底清理：清理 cabCount + 1 至 Math.Max(cabCount + 100, 200) 范围
+                int maxCleanK = Math.Max(cabCount + 100, 200);
+                for (int oldK = cabCount + 1; oldK <= maxCleanK; oldK++)
                 {
                     // 安全删除残留的汇总行与明细行定义名称
                     SafeDeleteSheetName(sheet, $"{sumPrefix}{oldK}");
@@ -1696,6 +1745,7 @@ namespace ExcelAddInDemo
                     SafeDeleteSheetName(sheet, $"{subsumPrefix}{oldK}");
                     SafeDeleteSheetName(sheet, $"{tolsumPrefix}{oldK}");
                 }
+
 
                 // 返回当前工作表校准绑定的箱柜总数量
                 return cabCount;

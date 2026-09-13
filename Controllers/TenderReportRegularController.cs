@@ -48,6 +48,9 @@ namespace ExcelAddInDemo.Controllers
                 // 记录调试日志
                 LogHelper.WriteLog($"[TenderReport] 获取初始数据成功: 项目=[{projectInfo.ProjectName}], 分类数={categories.Count}");
 
+                // 获取持久化保存在 appsettings.json 中的报表高级偏好设置
+                var currentSettings = ConfigManager.Instance.Current.TenderReport ?? new TenderReportSettings();
+
                 // 包装为前端标准统一结构
                 var response = new
                 {
@@ -55,7 +58,8 @@ namespace ExcelAddInDemo.Controllers
                     data = new
                     {
                         projectInfo = projectInfo,
-                        categories = categories
+                        categories = categories,
+                        settings = currentSettings
                     }
                 };
 
@@ -102,6 +106,13 @@ namespace ExcelAddInDemo.Controllers
                         Success = false,
                         Message = "导出参数反序列化失败"
                     }, JsonOptions);
+                }
+
+                // 核心规则：自动将用户当前调整的报表偏好选项持久化写入本地 appsettings.json
+                if (config.Settings != null)
+                {
+                    ConfigManager.Instance.Current.TenderReport = config.Settings;
+                    ConfigManager.Instance.SaveConfig(ConfigManager.Instance.Current);
                 }
 
                 // 调用服务层生成引擎执行导出

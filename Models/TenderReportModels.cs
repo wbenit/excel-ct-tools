@@ -118,6 +118,9 @@ namespace ExcelAddInDemo.Models
 
         // 箱柜内部包含的所有元器件清单列表
         public List<TenderReportComponentItem> Components { get; set; } = new List<TenderReportComponentItem>();
+
+        // 箱柜明细尾部的所有计费区域/费用项清单列表 (对应 Cab_Subsum 到 Cab_Tolsum-1)
+        public List<TenderReportComponentItem> FeeItems { get; set; } = new List<TenderReportComponentItem>();
     }
 
     /// <summary>
@@ -166,6 +169,57 @@ namespace ExcelAddInDemo.Models
 
         // 用户指定的目标另存为文件路径 (若为空则自动保存至工程同级目录)
         public string TargetFilePath { get; set; } = string.Empty;
+
+        // 详细报表高级偏好与输出设置 (包含取整、公式、定位、说明、换行、分Sheet及打印设置)
+        public TenderReportSettings Settings { get; set; } = new TenderReportSettings();
+    }
+
+    /// <summary>
+    /// 投标报表自由配置选项模型 (自动持久化至 appsettings.json)
+    /// </summary>
+    public class TenderReportSettings
+    {
+        // 取整设置：项目总价取整到元
+        public bool RoundProjectTotal { get; set; } = true;
+
+        // 取整设置：箱柜总价取整到元
+        public bool RoundCabinetTotal { get; set; } = true;
+
+        // 取整设置：箱柜单价取整到元
+        public bool RoundCabinetUnitPrice { get; set; } = true;
+
+        // 取整设置：明细表单总价取整到元
+        public bool RoundDetailUnitPriceTotal { get; set; } = true;
+
+        // 公式设置：总价带公式 (false 则所有总价直接写入纯数值)
+        public bool TotalWithFormula { get; set; } = true;
+
+        // 公式设置：费用项不带公式 (直接写入计算好的纯数值，避免跨表公式破坏)
+        public bool FeeItemWithoutFormula { get; set; } = true;
+
+        // 甲方报表：输出箱变单价 (默认 false)
+        public bool OutputBoxSubstationUnitPrice { get; set; } = false;
+
+        // 定位导航：“一键定位”（总表关联明细表双向超链接）
+        public bool EnableOneKeyLocate { get; set; } = true;
+
+        // 报价说明输出：在总表输出 (默认 true)
+        public bool OutputNotesInSummary { get; set; } = true;
+
+        // 报价说明排版：分行显示 (默认 false)
+        public bool NotesMultilineDisplay { get; set; } = false;
+
+        // 报价说明排版：自动行高 (默认 false)
+        public bool NotesAutoFitRowHeight { get; set; } = false;
+
+        // 排版格式：文字自动换行 (默认 false)
+        public bool TextAutoWrap { get; set; } = false;
+
+        // 输出结构：明细表分 Sheet 输出 (按分类工作表分别输出独立 Sheet，默认 false)
+        public bool SplitDetailBySheet { get; set; } = false;
+
+        // 打印设置：连页 (Continuous) 或 分页 (Paginated) (默认: Continuous)
+        public string PrintSetting { get; set; } = "Continuous";
     }
 
     /// <summary>

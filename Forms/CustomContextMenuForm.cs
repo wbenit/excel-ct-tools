@@ -48,8 +48,8 @@ namespace ExcelAddInDemo.Forms
             this.ShowInTaskbar = false;
             // 窗体始终保持最前端置顶显示
             this.TopMost = true;
-            // 设定现代化极简菜单尺寸 (280x320 像素，留出充足边距防截断)
-            this.Size = new Size(280, 320);
+            // 设定符合 Office 原生菜单规格的尺寸 (宽 250px，高 470px，容纳原生项与业务项且防截断)
+            this.Size = new Size(250, 470);
             // 启用手动绝对坐标定位
             this.StartPosition = FormStartPosition.Manual;
             // 设置白色背景
@@ -169,6 +169,14 @@ namespace ExcelAddInDemo.Forms
                         SafeInvoke(this.Hide);
                         break;
 
+                    // 核心业务与原生菜单动作集合
+                    case "excelCut":
+                    case "excelCopy":
+                    case "excelPaste":
+                    case "excelInsert":
+                    case "excelDelete":
+                    case "excelFilterByValue":
+                    case "excelClearFilter":
                     case "createCabinet":
                     case "parseAndMatch":
                     case "openMatchSetting":
@@ -176,8 +184,9 @@ namespace ExcelAddInDemo.Forms
                     case "openSummaryAdjustPrice":
                     case "openComponentManage":
                     case "openCabinetAuxCalc":
+                    case "openComponentParamMatch":
                     case "switchToNativeMenu":
-                        // 收到业务菜单点击指令：先隐藏菜单并关闭浮窗，后通过 ExcelAsyncUtil.QueueAsMacro 异步执行
+                        // 收到菜单点击指令：先隐藏菜单并关闭浮窗，后通过 ExcelAsyncUtil.QueueAsMacro 异步执行
                         SafeInvoke(() =>
                         {
                             this.Hide();
@@ -233,6 +242,118 @@ namespace ExcelAddInDemo.Forms
 
                 switch (actionName)
                 {
+                    case "excelCut":
+                        // 调度执行 Excel 原生剪切指令
+                        try
+                        {
+                            // 获取 Excel 宿主动态句柄
+                            dynamic? dynApp = ExcelDnaUtil.Application;
+                            // 优先通过 CommandBars 执行标准 Cut MSO 动作
+                            dynApp?.CommandBars?.ExecuteMso("Cut");
+                        }
+                        catch
+                        {
+                            // 容错回退：直接对当前选区执行 Cut
+                            try { ((dynamic?)ExcelDnaUtil.Application)?.Selection?.Cut(); } catch { }
+                        }
+                        break;
+
+                    case "excelCopy":
+                        // 调度执行 Excel 原生复制指令
+                        try
+                        {
+                            // 获取 Excel 宿主动态句柄
+                            dynamic? dynApp = ExcelDnaUtil.Application;
+                            // 优先通过 CommandBars 执行标准 Copy MSO 动作
+                            dynApp?.CommandBars?.ExecuteMso("Copy");
+                        }
+                        catch
+                        {
+                            // 容错回退：直接对当前选区执行 Copy
+                            try { ((dynamic?)ExcelDnaUtil.Application)?.Selection?.Copy(); } catch { }
+                        }
+                        break;
+
+                    case "excelPaste":
+                        // 调度执行 Excel 原生粘贴指令
+                        try
+                        {
+                            // 获取 Excel 宿主动态句柄
+                            dynamic? dynApp = ExcelDnaUtil.Application;
+                            // 优先通过 CommandBars 执行标准 Paste MSO 动作
+                            dynApp?.CommandBars?.ExecuteMso("Paste");
+                        }
+                        catch
+                        {
+                            // 容错回退：对当前活动工作表执行 Paste
+                            try { ((dynamic?)ExcelDnaUtil.Application)?.ActiveSheet?.Paste(); } catch { }
+                        }
+                        break;
+
+                    case "excelInsert":
+                        // 调度执行 Excel 原生“插入...”对话框指令
+                        try
+                        {
+                            // 获取 Excel 宿主动态句柄
+                            dynamic? dynApp = ExcelDnaUtil.Application;
+                            // 优先通过 CommandBars 调起插入单元格对话框
+                            dynApp?.CommandBars?.ExecuteMso("CellsInsertDialog");
+                        }
+                        catch
+                        {
+                            // 容错回退：通过内置对话框枚举展示插入窗口
+                            try { ((dynamic?)ExcelDnaUtil.Application)?.Dialogs[Microsoft.Office.Interop.Excel.XlBuiltInDialog.xlDialogInsert].Show(); } catch { }
+                        }
+                        break;
+
+                    case "excelDelete":
+                        // 调度执行 Excel 原生“删除...”对话框指令
+                        try
+                        {
+                            // 获取 Excel 宿主动态句柄
+                            dynamic? dynApp = ExcelDnaUtil.Application;
+                            // 优先通过 CommandBars 调起删除单元格对话框
+                            dynApp?.CommandBars?.ExecuteMso("CellsDeleteDialog");
+                        }
+                        catch
+                        {
+                            // 容错回退：通过内置对话框枚举展示删除窗口
+                            try { ((dynamic?)ExcelDnaUtil.Application)?.Dialogs[Microsoft.Office.Interop.Excel.XlBuiltInDialog.xlDialogEditDelete].Show(); } catch { }
+                        }
+                        break;
+
+                    case "excelFilterByValue":
+                        // 调度执行 Excel 原生“按所选单元格的值筛选”指令
+                        try
+                        {
+                            // 获取 Excel 宿主动态句柄
+                            dynamic? dynApp = ExcelDnaUtil.Application;
+                            // 触发针对当前单元格数值的快速自动筛选
+                            dynApp?.CommandBars?.ExecuteMso("FilterBySelectedValue");
+                        }
+                        catch (Exception filterEx)
+                        {
+                            // 记录筛选异常日志
+                            LogHelper.WriteLog($"执行按值筛选异常: {filterEx.Message}");
+                        }
+                        break;
+
+                    case "excelClearFilter":
+                        // 调度执行 Excel 原生“清除筛选 / 自动筛选”指令
+                        try
+                        {
+                            // 获取 Excel 宿主动态句柄
+                            dynamic? dynApp = ExcelDnaUtil.Application;
+                            // 优先尝试清除所有筛选条件
+                            dynApp?.CommandBars?.ExecuteMso("FilterClearAllFilters");
+                        }
+                        catch
+                        {
+                            // 容错回退：若无活跃筛选条件则切换自动筛选开关
+                            try { ((dynamic?)ExcelDnaUtil.Application)?.CommandBars?.ExecuteMso("FilterToggleFilter"); } catch { }
+                        }
+                        break;
+
                     case "createCabinet":
                         // 调度业务层执行“新建箱柜”
                         ExcelServices.CreateNewCabinetFromSelection();
@@ -275,6 +396,11 @@ namespace ExcelAddInDemo.Forms
                     case "openCabinetAuxCalc":
                         // 打开“智能辅材与壳体计算”窗口
                         ExcelServices.ShowCabinetAuxCalcDialog();
+                        break;
+
+                    case "openComponentParamMatch":
+                        // 打开“元器件图纸参数匹配 (200x800)”侧边浮窗
+                        ExcelServices.ShowComponentParamMatchDialog();
                         break;
 
                     case "switchToNativeMenu":

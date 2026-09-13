@@ -803,6 +803,20 @@ namespace ExcelAddInDemo
                 }
 
                 // ------------------ 【以下为 WebView 2 业务专属菜单模式】 ------------------
+                // 确保右键点击的目标单元格处于活动选中状态，对齐 Excel 原生行为
+                try
+                {
+                    // 获取当前活动工作簿选区
+                    Microsoft.Office.Interop.Excel.Range? sel = _excelApp.Selection as Microsoft.Office.Interop.Excel.Range;
+                    // 若当前无有效选区，或右击的目标单元格不在现有选区交集范围内
+                    if (sel == null || _excelApp.Intersect(sel, target) == null)
+                    {
+                        // 显式激活选中目标单元格，保证后续剪切/复制/插入/删除等原生指令精确生效
+                        target.Select();
+                    }
+                }
+                catch { }
+
                 // 1. 完全拦截 Excel 原生右键菜单弹窗
                 cancel = true;
 

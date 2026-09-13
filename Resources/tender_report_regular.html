@@ -196,6 +196,29 @@
         color: #334155 !important;
         text-decoration: underline;
       }
+
+      /* 高级配置分组小标题 */
+      .setting-group-title {
+        font-size: 11px;
+        font-weight: 600;
+        color: #0f766e;
+        margin-bottom: 4px;
+        padding-left: 4px;
+        border-left: 2px solid #009688;
+        line-height: 1;
+      }
+      /* 配置复选框精炼紧凑排列 */
+      .setting-row {
+        margin-bottom: 4px !important;
+      }
+      .setting-row .el-checkbox {
+        margin-right: 0 !important;
+        height: 22px !important;
+      }
+      .setting-row .el-checkbox__label {
+        font-size: 12px !important;
+        padding-left: 6px !important;
+      }
     </style>
   </head>
   <body>
@@ -333,12 +356,16 @@
           </div>
         </div>
 
-        <!-- 卡片 3: 报表导出偏好选项 -->
+        <!-- 卡片 3: 自由配置选项 (自动保存在本地 appsettings.json) -->
         <div class="panel-card">
           <div class="panel-header">
-            <span>⚙️ 报表输出配置</span>
+            <span>⚙️ 报表自由配置选项</span>
+            <el-tag size="small" type="success" effect="plain">自动持久化至本地</el-tag>
           </div>
-          <el-row :gutter="16">
+
+          <!-- 分组 1: 输出结构与分 Sheet 模式 -->
+          <div class="setting-group-title">📑 工作表结构与输出方式</div>
+          <el-row :gutter="12" class="setting-row">
             <el-col :span="6">
               <el-checkbox v-model="exportConfig.includeCover">包含《封面》</el-checkbox>
             </el-col>
@@ -350,6 +377,63 @@
             </el-col>
             <el-col :span="6">
               <el-checkbox v-model="exportConfig.autoOpen">导出后自动打开展示</el-checkbox>
+            </el-col>
+          </el-row>
+          <el-row :gutter="12" class="setting-row">
+            <el-col :span="12">
+              <el-checkbox v-model="reportSettings.splitDetailBySheet" :disabled="!exportConfig.includeDetail">
+                <span style="font-weight: 600; color: #009688;">按“分类工作表”分别输出独立 Sheet</span>
+              </el-checkbox>
+            </el-col>
+            <el-col :span="12">
+              <el-checkbox v-model="reportSettings.enableOneKeyLocate">
+                <span style="font-weight: 600; color: #009688;">一键定位 (汇总行与分项明细双向超链接跳转)</span>
+              </el-checkbox>
+            </el-col>
+          </el-row>
+
+          <!-- 分组 2: 金额取整与计算模式 -->
+          <div class="setting-group-title" style="margin-top: 6px;">💰 取整与计算模式</div>
+          <el-row :gutter="12" class="setting-row">
+            <el-col :span="6">
+              <el-checkbox v-model="reportSettings.roundProjectTotal">项目总价取整到元</el-checkbox>
+            </el-col>
+            <el-col :span="6">
+              <el-checkbox v-model="reportSettings.roundCabinetTotal">箱柜总价取整到元</el-checkbox>
+            </el-col>
+            <el-col :span="6">
+              <el-checkbox v-model="reportSettings.roundCabinetUnitPrice">箱柜单价取整到元</el-checkbox>
+            </el-col>
+            <el-col :span="6">
+              <el-checkbox v-model="reportSettings.roundDetailUnitPriceTotal">明细表单/总价取整到元</el-checkbox>
+            </el-col>
+          </el-row>
+          <el-row :gutter="12" class="setting-row">
+            <el-col :span="6">
+              <el-checkbox v-model="reportSettings.totalWithFormula">总价带公式 (取消则纯数值)</el-checkbox>
+            </el-col>
+            <el-col :span="6">
+              <el-checkbox v-model="reportSettings.feeItemWithoutFormula">费用项不带公式 (纯数值)</el-checkbox>
+            </el-col>
+            <el-col :span="6">
+              <el-checkbox v-model="reportSettings.textAutoWrap">单元格文字自动换行</el-checkbox>
+            </el-col>
+            <el-col :span="6">
+              <el-checkbox v-model="isPaginatedPrint">每台箱柜分页打印 (插入分页符)</el-checkbox>
+            </el-col>
+          </el-row>
+
+          <!-- 分组 3: 报价说明与排版 -->
+          <div class="setting-group-title" style="margin-top: 6px;">📝 报价说明与排版</div>
+          <el-row :gutter="12" class="setting-row">
+            <el-col :span="8">
+              <el-checkbox v-model="reportSettings.outputNotesInSummary">在总表输出报价说明</el-checkbox>
+            </el-col>
+            <el-col :span="8">
+              <el-checkbox v-model="reportSettings.notesMultilineDisplay" :disabled="!reportSettings.outputNotesInSummary">报价说明逐条分行</el-checkbox>
+            </el-col>
+            <el-col :span="8">
+              <el-checkbox v-model="reportSettings.notesAutoFitRowHeight" :disabled="!reportSettings.outputNotesInSummary">报价说明自动行高</el-checkbox>
             </el-col>
           </el-row>
         </div>
@@ -402,6 +486,32 @@
             includeSummary: true,
             includeDetail: true,
             autoOpen: true
+          });
+
+          // 自由配置偏好设置 (自动持久化至 appsettings.json)
+          const reportSettings = ref({
+            roundProjectTotal: true,
+            roundCabinetTotal: true,
+            roundCabinetUnitPrice: true,
+            roundDetailUnitPriceTotal: true,
+            totalWithFormula: true,
+            feeItemWithoutFormula: true,
+            outputBoxSubstationUnitPrice: false,
+            enableOneKeyLocate: true,
+            outputNotesInSummary: true,
+            notesMultilineDisplay: false,
+            notesAutoFitRowHeight: false,
+            textAutoWrap: false,
+            splitDetailBySheet: true, // 默认按“分类工作表”分别输出独立 Sheet
+            printSetting: 'Continuous'
+          });
+
+          // 打印分页切换联动属性
+          const isPaginatedPrint = computed({
+            get: () => reportSettings.value.printSetting === 'Paginated',
+            set: (val) => {
+              reportSettings.value.printSetting = val ? 'Paginated' : 'Continuous';
+            }
           });
 
           // 统一向 C# 后端发送指令 (优先对象，兼顾字符串)
@@ -513,7 +623,8 @@
               includeCover: exportConfig.value.includeCover,
               includeSummary: exportConfig.value.includeSummary,
               includeDetail: exportConfig.value.includeDetail,
-              autoOpen: exportConfig.value.autoOpen
+              autoOpen: exportConfig.value.autoOpen,
+              settings: reportSettings.value
             };
 
             postToCSharp({
@@ -558,6 +669,11 @@
                           isSelected: true,
                           cabinets: c.cabinets || c.Cabinets || []
                         }));
+                      }
+                      // 回填本地持久化的自由配置设置
+                      const rawSettings = pData.settings || pData.Settings;
+                      if (rawSettings) {
+                        Object.assign(reportSettings.value, rawSettings);
                       }
                     }
                   } else if (data.action === 'exportReportResult') {
@@ -613,7 +729,9 @@
             formatMoney,
             onHeaderMouseDown,
             closeWindow,
-            startExport
+            startExport,
+            reportSettings,
+            isPaginatedPrint
           };
         }
       });

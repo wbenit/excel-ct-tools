@@ -59,28 +59,75 @@ namespace ExcelAddInDemo
                         continue;
                     }
 
-                    // 1. 调用公共方法获取当前工作表的有效箱柜锚点列表 (规则 6)
+                    // 规则 8: 在操作/读取 Excel 表格前，强制调用 FixAndFillCabinetNamesForSheet 自愈并校准定义名称
+                    Tool.FixAndFillCabinetNamesForSheet(sheet);
+
+                    // 1. 调用公共方法获取当前工作表校准后的有效箱柜锚点列表 (规则 6)
                     var validCabinets = Tool.GetSheetValidCabinets(sheet, activeWb);
 
+                    // 声明当前分类下的箱柜总台数
                     int totalCount = 0;
+
+                    // 若识别到了有效的箱柜定义名称
                     if (validCabinets.Count > 0)
                     {
+                        // 循环累加各有效箱柜台数
                         foreach (var cab in validCabinets)
                         {
-                            int cabQty = 1;
+                            // 单柜台数初始化为 0
+                            int cabQty = 0;
                             try
                             {
+                                // 优先从汇总行锚点提取台数
                                 if (cab.Value.Sum != null)
                                 {
+                                    // 获取汇总行物理行号
                                     int sumRow = Convert.ToInt32(cab.Value.Sum.Row);
-                                    object qVal = sheet.Cells[sumRow, 5].Value ?? sheet.Cells[sumRow, 6].Value ?? sheet.Cells[sumRow, 4].Value;
-                                    if (qVal != null && int.TryParse(Convert.ToString(qVal), out int parsedQty) && parsedQty > 0)
+                                    // 提取柜号、箱柜名称与第 1 列文本，防范残留非箱柜行
+                                    string cabNo = Convert.ToString(sheet.Cells[sumRow, 2].Value)?.Trim() ?? "";
+                                    string cabName = Convert.ToString(sheet.Cells[sumRow, 3].Value)?.Trim() ?? "";
+                                    string col1Text = Convert.ToString(sheet.Cells[sumRow, 1].Value)?.Trim() ?? "";
+
+                                    // 严格拦截非箱柜行 (如合计、总计、小计、大写、说明、签字落款等)
+                                    if (cabNo.Contains("合计") || cabName.Contains("合计") || col1Text.Contains("合计") ||
+                                        cabNo.Contains("总计") || cabName.Contains("总计") || col1Text.Contains("总计") ||
+                                        cabNo.Contains("小计") || cabName.Contains("小计") || col1Text.Contains("小计") ||
+                                        cabNo.Contains("大写") || cabName.Contains("大写") || cabNo.Contains("说明") ||
+                                        cabNo.Contains("审核") || cabNo.Contains("批准") || cabNo.Contains("制表") || cabNo.Contains("编制"))
                                     {
-                                        cabQty = parsedQty;
+                                        // 命中非箱柜行直接跳过
+                                        continue;
                                     }
+
+                                    // 若柜号和名称全为空则判定为无效空行锚点，安全跳过
+                                    if (string.IsNullOrWhiteSpace(cabNo) && string.IsNullOrWhiteSpace(cabName))
+                                    {
+                                        continue;
+                                    }
+
+                                    // 用户明确要求：数量一定在 F 列 (第 6 列)，直接读取 F 列单元格内容，绝不尝试解析 E 列
+                                    object qVal = sheet.Cells[sumRow, 6].Value2 ?? sheet.Cells[sumRow, 6].Value;
+                                    // 采用 double 容错解析 (防范 Excel 单元格数值格式导致 int 解析失败)
+                                    if (qVal != null && double.TryParse(Convert.ToString(qVal), out double dQty) && dQty > 0)
+                                    {
+                                        // 赋值提取到的有效台数
+                                        cabQty = (int)Math.Round(dQty);
+                                    }
+                                    else
+                                    {
+                                        // 若已判定为有效箱柜行但 F 列未填数量，默认计 1 台
+                                        cabQty = 1;
+                                    }
+                                }
+                                else if (cab.Value.Det != null)
+                                {
+                                    // 针对纯明细箱柜默认计 1 台
+                                    cabQty = 1;
                                 }
                             }
                             catch { }
+
+                            // 累加当前箱柜有效台数
                             totalCount += cabQty;
                         }
                     }
@@ -90,45 +137,70 @@ namespace ExcelAddInDemo
                     {
                         try
                         {
+                            // 抓取顶部 A1:H40 范围
                             dynamic topRange = sheet.Range["A1:H40"];
+                            // 批量读入内存二维数组 (规则 7)
                             object[,] topMatrix = (object[,])topRange.Value2;
 
+                            // 寻找表头行
                             int headerRow = 0;
+                            // 遍历前 15 行寻找表头
                             for (int r = 1; r <= 15; r++)
                             {
+                                // 提取前 3 列文本
                                 string c1 = Convert.ToString(topMatrix[r, 1]) ?? "";
                                 string c2 = Convert.ToString(topMatrix[r, 2]) ?? "";
                                 string c3 = Convert.ToString(topMatrix[r, 3]) ?? "";
+
+                                // 判断是否为汇总表头
                                 if (c1.Contains("序号") || c2.Contains("序号") || c2.Contains("柜号") || c2.Contains("设备") || c3.Contains("型号"))
                                 {
+                                    // 锁定表头行
                                     headerRow = r;
                                     break;
                                 }
                             }
 
+                            // 找到表头则向下遍历箱柜数据行
                             if (headerRow > 0)
                             {
+                                // 遍历数据行
                                 for (int r = headerRow + 1; r <= 38; r++)
                                 {
+                                    // 提取序号、柜号、设备名与型号
                                     string noStr = Convert.ToString(topMatrix[r, 1]) ?? "";
                                     string nameStr = Convert.ToString(topMatrix[r, 2]) ?? "";
                                     string modelStr = Convert.ToString(topMatrix[r, 3]) ?? "";
 
+                                    // 遇到合计、总计、小计、说明、落款、明细等关键字立即截断终止扫描
+                                    if (nameStr.Contains("合计") || noStr.Contains("合计") || modelStr.Contains("合计") ||
+                                        nameStr.Contains("总计") || noStr.Contains("总计") || modelStr.Contains("总计") ||
+                                        nameStr.Contains("小计") || noStr.Contains("小计") || modelStr.Contains("小计") ||
+                                        nameStr.Contains("大写") || nameStr.Contains("说明") || nameStr.Contains("审核") ||
+                                        nameStr.Contains("明细") || nameStr.Contains("元件"))
+                                    {
+                                        // 立即终止兜底扫描，绝不穿透至落款行
+                                        break;
+                                    }
+
+                                    // 全空行则跳过
                                     if (string.IsNullOrWhiteSpace(noStr) && string.IsNullOrWhiteSpace(nameStr) && string.IsNullOrWhiteSpace(modelStr))
                                     {
                                         continue;
                                     }
-                                    if (nameStr.Contains("明细") || nameStr.Contains("元件") || nameStr.Contains("小计"))
+
+                                    // 单行台数初始化
+                                    int rowQty = 1;
+                                    // 数量一定在 F 列 (第 6 列)，直接读取第 6 列，不解析 E 列
+                                    object q1 = topMatrix[r, 6];
+                                    // 采用 double 容错解析台数
+                                    if (q1 != null && double.TryParse(Convert.ToString(q1), out double dpQty) && dpQty > 0)
                                     {
-                                        break;
+                                        // 记录提取台数
+                                        rowQty = (int)Math.Round(dpQty);
                                     }
 
-                                    int rowQty = 1;
-                                    object q1 = topMatrix[r, 5] ?? topMatrix[r, 6] ?? topMatrix[r, 4];
-                                    if (q1 != null && int.TryParse(Convert.ToString(q1), out int pQty) && pQty > 0)
-                                    {
-                                        rowQty = pQty;
-                                    }
+                                    // 累加台数
                                     totalCount += rowQty;
                                 }
                             }

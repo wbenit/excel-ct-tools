@@ -3,22 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>业务专属右键上下文菜单</title>
+  <title>Excel 原生样式快捷菜单</title>
   
   <style>
-    /* 绿蓝相间现代化工程级调色盘 (主色调: #009688) */
+    /* Office/Excel 原生经典调色盘 */
     :root {
-      --primary-color: #009688;
-      --primary-hover: #00796b;
-      --primary-active: #004d40;
-      --primary-light: #e0f2f1;
-      --primary-gradient: linear-gradient(135deg, #009688 0%, #00b4d8 100%);
-      --bg-color: #ffffff;
-      --text-main: #1e293b;
-      --text-muted: #64748b;
-      --border-color: #e2e8f0;
-      --hover-bg: #e6fffa;
-      --shadow-elevation: 0 10px 25px -5px rgba(0, 0, 0, 0.18), 0 8px 10px -6px rgba(0, 0, 0, 0.12);
+      --menu-bg: #ffffff;
+      --menu-border: #d4d4d4;
+      --menu-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.1);
+      --item-hover: #f0f0f0;
+      --item-active: #e5e5e5;
+      --text-main: #262626;
+      --text-muted: #737373;
+      --text-disabled: #a6a6a6;
+      --divider-color: #e5e5e5;
     }
 
     * {
@@ -26,14 +24,14 @@
       margin: 0;
       padding: 0;
       user-select: none;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+      font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Microsoft YaHei", "SimSun", sans-serif;
     }
 
     html, body {
       background-color: transparent;
       color: var(--text-main);
       overflow: hidden;
-      font-size: 13px;
+      font-size: 12px;
       width: 100%;
       height: 100%;
       padding: 2px;
@@ -46,101 +44,74 @@
       flex-direction: column;
     }
 
-    /* 菜单主体容器 */
+    /* 菜单主体容器：1:1 像素级复刻 Office 原生右键菜单面板 */
     .context-menu-container {
-      background: var(--bg-color);
-      border-radius: 8px;
-      border: 1px solid rgba(0, 150, 136, 0.25);
-      box-shadow: var(--shadow-elevation);
-      padding: 5px 0;
+      background: var(--menu-bg);
+      border-radius: 4px;
+      border: 1px solid var(--menu-border);
+      box-shadow: var(--menu-shadow);
+      padding: 3px 0;
       display: flex;
       flex-direction: column;
       height: 100%;
       width: 100%;
-      backdrop-filter: blur(10px);
     }
 
-    /* 顶部标题微标签 */
-    .menu-header-badge {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 4px 12px 6px 12px;
-      font-size: 11px;
-      color: var(--text-muted);
-      border-bottom: 1px solid #f1f5f9;
-      margin-bottom: 3px;
-      flex-shrink: 0;
-    }
-
-    .badge-title {
-      font-weight: 600;
-      color: var(--primary-color);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .badge-sheet-name {
-      background: #f1f5f9;
-      padding: 1px 6px;
-      border-radius: 4px;
-      max-width: 130px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    /* 菜单项容器 */
+    /* 菜单项列表容器 */
     .menu-item-list {
       display: flex;
       flex-direction: column;
-      gap: 2px;
-      padding: 0 4px;
+      gap: 1px;
+      padding: 0 2px;
       flex: 1;
       overflow: hidden;
     }
 
-    /* 单个菜单项 */
+    /* 单个菜单项：标准 Office 菜单尺寸与排版 */
     .menu-item {
       display: flex;
       align-items: center;
-      padding: 7px 10px;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.12s ease-in-out;
+      height: 25px;
+      padding: 0 8px;
+      margin: 0 2px;
+      border-radius: 2px;
+      cursor: default;
       color: var(--text-main);
-      gap: 9px;
-      font-weight: 500;
+      font-weight: 400;
       white-space: nowrap;
       flex-shrink: 0;
+      transition: none;
     }
 
+    /* 原生 Office 悬浮与聚焦：浅灰底，无位移无缩放变形 */
     .menu-item:hover, .menu-item.active-focus {
-      background-color: var(--primary-light);
-      color: var(--primary-color);
-      transform: translateX(2px);
+      background-color: var(--item-hover);
+      color: var(--text-main);
     }
 
     .menu-item:active {
-      background-color: #b2dfdb;
-      transform: scale(0.98);
+      background-color: var(--item-active);
     }
 
     .menu-item.disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
+      color: var(--text-disabled);
+      cursor: default;
       pointer-events: none;
     }
 
-    /* 菜单项图标容器与 SVG 尺寸控制 */
+    .menu-item.disabled .item-icon-wrap {
+      opacity: 0.35;
+    }
+
+    /* 左侧图标容器 */
     .item-icon-wrap {
       width: 18px;
       height: 18px;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: var(--primary-color);
+      color: #4a4a4a;
+      margin-right: 8px;
       flex-shrink: 0;
     }
 
@@ -150,73 +121,112 @@
       fill: currentColor;
     }
 
-    .menu-item:hover .item-icon-wrap {
-      transform: scale(1.1);
-    }
-
+    /* 文本标签 */
     .item-label {
       flex: 1;
-      font-size: 12.5px;
+      font-size: 12px;
+      line-height: 1;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
+    /* 快捷键提示 */
     .item-shortcut {
       font-size: 11px;
       color: var(--text-muted);
+      margin-left: auto;
+      padding-left: 14px;
       flex-shrink: 0;
     }
 
-    /* 分割线 */
+    /* 原生细分割线 */
     .menu-divider {
       height: 1px;
-      background: #f1f5f9;
+      background: var(--divider-color);
       margin: 3px 6px;
       flex-shrink: 0;
-    }
-
-    /* 切换模式特色按钮 (置底显眼) */
-    .menu-item-switch {
-      background: #f8fafc;
-      border: 1px dashed #cbd5e1;
-      margin: 2px 4px 0 4px;
-      color: #475569;
-      flex-shrink: 0;
-    }
-
-    .menu-item-switch:hover, .menu-item-switch.active-focus {
-      background: #f1f5f9;
-      color: #0f172a;
-      border-color: #94a3b8;
-    }
-
-    .menu-item-switch .item-icon-wrap {
-      color: #0284c7;
     }
   </style>
 </head>
 <body>
   <div id="app">
     <div class="context-menu-container" id="menuContainer">
-      <!-- 顶部信息微标签 -->
-      <div class="menu-header-badge">
-        <span class="badge-title">
-          <span class="item-icon-wrap" style="width:14px;height:14px;">
-            <!-- 立方体图标 SVG -->
-            <svg viewBox="0 0 24 24"><path d="M21 16.5C21 16.88 20.79 17.21 20.47 17.38L12.57 21.82C12.41 21.91 12.21 21.96 12 21.96C11.79 21.96 11.59 21.91 11.43 21.82L3.53 17.38C3.21 17.21 3 16.88 3 16.5V7.5C3 7.12 3.21 6.79 3.53 6.62L11.43 2.18C11.59 2.09 11.79 2.04 12 2.04C12.21 2.04 12.41 2.09 12.57 2.18L20.47 6.62C20.79 6.79 21 7.12 21 7.5V16.5ZM12 4.15L5.04 8.05L12 11.96L18.96 8.05L12 4.15ZM4.5 9.58V15.71L11.25 19.5V13.37L4.5 9.58ZM12.75 19.5L19.5 15.71V9.58L12.75 13.37V19.5Z"/></svg>
-          </span>
-          业务快捷菜单
-        </span>
-        <span class="badge-sheet-name" id="badgeSheetInfo" title="工作表">
-          工作表
-        </span>
-      </div>
-
-      <!-- 核心业务菜单列表 -->
       <div class="menu-item-list">
-        <!-- 1. 新建箱柜 -->
-        <div class="menu-item" id="item-0" data-action="createCabinet">
+        <!-- 1. 剪切 (Excel 原生) -->
+        <div class="menu-item" data-action="excelCut">
+          <div class="item-icon-wrap">
+            <!-- 剪刀 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M9.64 7.64c.23-.5.36-1.05.36-1.64 0-2.21-1.79-4-4-4S2 3.79 2 6s1.79 4 4 4c.59 0 1.14-.13 1.64-.36L10 12l-2.36 2.36C7.14 14.13 6.59 14 6 14c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4c0-.59-.13-1.14-.36-1.64L12 14l7 7h3v-1L9.64 7.64zM6 8c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm0 12c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm6-7.5c-.28 0-.5-.22-.5-.5s.22-.5.5-.5.5.22.5.5-.22.5-.5.5zM19 3l-6 6 2 2 7-7V3h-3z"/></svg>
+          </div>
+          <span class="item-label">剪切</span>
+          <span class="item-shortcut">Ctrl+X</span>
+        </div>
+
+        <!-- 2. 复制 (Excel 原生) -->
+        <div class="menu-item" data-action="excelCopy">
+          <div class="item-icon-wrap">
+            <!-- 复制双页 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 4 6 4.9 6 6v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 15H8V6h11v14z"/></svg>
+          </div>
+          <span class="item-label">复制</span>
+          <span class="item-shortcut">Ctrl+C</span>
+        </div>
+
+        <!-- 3. 粘贴 (Excel 原生) -->
+        <div class="menu-item" data-action="excelPaste">
+          <div class="item-icon-wrap">
+            <!-- 粘贴板 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M19 2h-4.18C14.4 0.84 13.3 0 12 0c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm7 18H5V4h2v3h10V4h2v16z"/></svg>
+          </div>
+          <span class="item-label">粘贴</span>
+          <span class="item-shortcut">Ctrl+V</span>
+        </div>
+
+        <!-- 分割线 -->
+        <div class="menu-divider"></div>
+
+        <!-- 4. 插入... (Excel 原生) -->
+        <div class="menu-item" data-action="excelInsert">
+          <div class="item-icon-wrap">
+            <!-- 插入十字加号 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+          </div>
+          <span class="item-label">插入...</span>
+        </div>
+
+        <!-- 5. 删除... (Excel 原生) -->
+        <div class="menu-item" data-action="excelDelete">
+          <div class="item-icon-wrap">
+            <!-- 垃圾桶/删除 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          </div>
+          <span class="item-label">删除...</span>
+        </div>
+
+        <!-- 6. 按所选单元格的值筛选 (Excel 原生) -->
+        <div class="menu-item" data-action="excelFilterByValue">
+          <div class="item-icon-wrap">
+            <!-- 漏斗筛选 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/></svg>
+          </div>
+          <span class="item-label">按所选单元格的值筛选</span>
+        </div>
+
+        <!-- 7. 清除筛选 / 自动筛选 (Excel 原生) -->
+        <div class="menu-item" data-action="excelClearFilter">
+          <div class="item-icon-wrap">
+            <!-- 清除筛选漏斗 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M14.79 10.62L13 12.41V18h-2v-5.59L4.21 4.62C3.76 4.04 4.17 3.2 4.91 3.2h14.18c.74 0 1.15.84.7 1.42l-5 6zm5.92 5.09l-1.41-1.41-2.12 2.12-2.12-2.12-1.41 1.41 2.12 2.12-2.12 2.12 1.41 1.41 2.12-2.12 2.12 2.12 1.41-1.41-2.12-2.12 2.12-2.12z"/></svg>
+          </div>
+          <span class="item-label">清除筛选 / 自动筛选</span>
+        </div>
+
+        <!-- 分割线 -->
+        <div class="menu-divider"></div>
+
+        <!-- 8. 新建箱柜 -->
+        <div class="menu-item" data-action="createCabinet">
           <div class="item-icon-wrap">
             <!-- 文件夹加号 SVG -->
             <svg viewBox="0 0 24 24"><path d="M20 6H12L10 4H4C2.89 4 2 4.89 2 6V18C2 19.1 2.89 20 4 20H20C21.1 20 22 19.1 22 18V8C22 6.9 21.1 6 20 6M19 14H16V17H14V14H11V12H14V9H16V12H19V14Z"/></svg>
@@ -225,8 +235,8 @@
           <span class="item-shortcut">选区顶部</span>
         </div>
 
-        <!-- 2. 识别参数并匹配物料 -->
-        <div class="menu-item" id="item-1" data-action="parseAndMatch">
+        <!-- 9. 识别参数并匹配物料 -->
+        <div class="menu-item" data-action="parseAndMatch">
           <div class="item-icon-wrap">
             <!-- 魔法棒 SVG -->
             <svg viewBox="0 0 24 24"><path d="M7.5 5.6L5 7L6.4 4.5L5 2L7.5 3.4L10 2L8.6 4.5L10 7L7.5 5.6M19.5 15.4L22 14L20.6 16.5L22 19L19.5 17.6L17 19L18.4 16.5L17 14L19.5 15.4M22 2L20.6 4.5L22 7L19.5 5.6L17 7L18.4 4.5L17 2L19.5 3.4L22 2M13.34 12.78L15.78 10.34L13.66 8.22L11.22 10.66L13.34 12.78M14.37 7.29C14.77 6.9 15.4 6.9 15.79 7.29L16.71 8.21C17.1 8.6 17.1 9.23 16.71 9.63L14.41 11.93L12.07 9.59L14.37 7.29M2.5 19.5L10.5 11.5L12.5 13.5L4.5 21.5L2.5 19.5Z"/></svg>
@@ -235,8 +245,8 @@
           <span class="item-shortcut">S/T/U 列</span>
         </div>
 
-        <!-- 3. 物料匹配与品牌规则设置 -->
-        <div class="menu-item" id="item-2" data-action="openMatchSetting">
+        <!-- 10. 物料匹配与品牌规则设置 -->
+        <div class="menu-item" data-action="openMatchSetting">
           <div class="item-icon-wrap">
             <!-- 滑块设置 SVG -->
             <svg viewBox="0 0 24 24"><path d="M3 17V19H9V17H3M3 5V7H13V5H3M13 21V19H21V17H13V15H11V21H13M7 9V11H3V13H7V15H9V9H7M21 13V11H11V13H21M17 9V7H21V5H17V3H15V9H17Z"/></svg>
@@ -244,8 +254,8 @@
           <span class="item-label">物料匹配与品牌规则...</span>
         </div>
 
-        <!-- 4. 智能输入词库配置 -->
-        <div class="menu-item" id="item-3" data-action="openSmartInput">
+        <!-- 11. 智能输入词库配置 -->
+        <div class="menu-item" data-action="openSmartInput">
           <div class="item-icon-wrap">
             <!-- 灯泡 SVG -->
             <svg viewBox="0 0 24 24"><path d="M12 2A7 7 0 0 0 5 9C5 11.38 6.19 13.47 8 14.74V17A1 1 0 0 0 9 18H15A1 1 0 0 0 16 17V14.74C17.81 13.47 19 11.38 19 9A7 7 0 0 0 12 2M9 21A1 1 0 0 0 10 22H14A1 1 0 0 0 15 21V20H9V21Z"/></svg>
@@ -253,8 +263,8 @@
           <span class="item-label">智能输入词库配置...</span>
         </div>
 
-        <!-- 5. 汇总调价快捷入口 -->
-        <div class="menu-item" id="item-4" data-action="openSummaryAdjustPrice">
+        <!-- 12. 汇总调价快捷入口 -->
+        <div class="menu-item" data-action="openSummaryAdjustPrice">
           <div class="item-icon-wrap">
             <!-- 计算器 SVG -->
             <svg viewBox="0 0 24 24"><path d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3M19 19H5V5H19V19M6.25 7.75H17.75V9.25H6.25V7.75M7 11H9V13H7V11M11 11H13V13H11V11M15 11H17V13H15V11M7 15H9V17H7V15M11 15H13V17H11V15M15 15H17V17H15V15Z"/></svg>
@@ -262,8 +272,8 @@
           <span class="item-label">汇总调价...</span>
         </div>
 
-        <!-- 6. 元器件数据管理快捷入口 -->
-        <div class="menu-item" id="item-5" data-action="openComponentManage">
+        <!-- 13. 元器件数据管理快捷入口 -->
+        <div class="menu-item" data-action="openComponentManage">
           <div class="item-icon-wrap">
             <!-- 数据库 SVG -->
             <svg viewBox="0 0 24 24"><path d="M12 3C7.58 3 4 4.79 4 7V17C4 19.21 7.59 21 12 21S20 19.21 20 17V7C20 4.79 16.42 3 12 3M18 17C18 17.5 15.58 19 12 19S6 17.5 6 17V14.77C7.61 15.55 9.72 16 12 16S16.39 15.55 18 14.77V17M18 12.7C16.39 13.55 14.28 14 12 14S7.61 13.55 6 12.7V10.27C7.61 11.05 9.72 11.5 12 11.5S16.39 11.05 18 10.27V12.7M12 9C7.58 9 6 7.5 6 7S7.58 5 12 5 18 6.5 18 7 16.42 9 12 9Z"/></svg>
@@ -271,8 +281,8 @@
           <span class="item-label">元器件数据管理...</span>
         </div>
 
-        <!-- 7. 辅材壳体计算快捷入口 -->
-        <div class="menu-item" id="item-6" data-action="openCabinetAuxCalc">
+        <!-- 14. 辅材壳体计算快捷入口 -->
+        <div class="menu-item" data-action="openCabinetAuxCalc">
           <div class="item-icon-wrap">
             <!-- 仪表盘/计算 SVG -->
             <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12S6.48 22 12 22 22 17.52 22 12 17.52 2 12 2M12 20C7.59 20 4 16.41 4 12S7.59 4 12 4 20 7.59 20 12 16.41 20 12 20M13 7H11V13H17V11H13V7Z"/></svg>
@@ -280,19 +290,29 @@
           <span class="item-label">辅材壳体计算...</span>
           <span class="item-shortcut">智能算料</span>
         </div>
-      </div>
 
-      <!-- 分割线 -->
-      <div class="menu-divider"></div>
-
-      <!-- 8. 底部切换回 Excel 原生右键菜单按钮 -->
-      <div class="menu-item menu-item-switch" id="item-7" data-action="switchToNativeMenu">
-        <div class="item-icon-wrap">
-          <!-- 左右双向箭头 SVG -->
-          <svg viewBox="0 0 24 24"><path d="M8 7.5L3.5 12L8 16.5V13.5H15.5V16.5L20 12L15.5 7.5V10.5H8V7.5M16 11.5V9.9L18.1 12L16 14.1V12.5H7V14.1L4.9 12L7 9.9V11.5H16Z"/></svg>
+        <!-- 15. 图纸参数匹配 (200x800) -->
+        <div class="menu-item" data-action="openComponentParamMatch">
+          <div class="item-icon-wrap">
+            <!-- 图纸参数匹配 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+          </div>
+          <span class="item-label">图纸参数匹配...</span>
+          <span class="item-shortcut">X/Y列</span>
         </div>
-        <span class="item-label">切换为 Excel 原生右键菜单</span>
-        <span class="item-shortcut">模式切换</span>
+
+        <!-- 分割线 -->
+        <div class="menu-divider"></div>
+
+        <!-- 15. 底部切换回 Excel 原生右键菜单按钮 -->
+        <div class="menu-item" data-action="switchToNativeMenu">
+          <div class="item-icon-wrap">
+            <!-- 模式切换左右箭头 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M8 7.5L3.5 12L8 16.5V13.5H15.5V16.5L20 12L15.5 7.5V10.5H8V7.5M16 11.5V9.9L18.1 12L16 14.1V12.5H7V14.1L4.9 12L7 9.9V11.5H16Z"/></svg>
+          </div>
+          <span class="item-label">切换为 Excel 原生右键菜单</span>
+          <span class="item-shortcut">模式切换</span>
+        </div>
       </div>
     </div>
   </div>
@@ -301,8 +321,6 @@
     (function () {
       // 当前聚焦的菜单项索引
       let focusedIndex = 0;
-      // 菜单项总数 (0 到 7 共 8 项)
-      const totalItemsCount = 8;
       // 防重复点击锁
       let isActionProcessing = false;
 
@@ -315,12 +333,9 @@
         isAboveFirstDet: true
       };
 
-      // 菜单 DOM 节点列表
-      const menuItems = [];
-      for (let i = 0; i < totalItemsCount; i++) {
-        const el = document.getElementById('item-' + i);
-        if (el) menuItems.push(el);
-      }
+      // 动态检索所有有效菜单项 DOM 节点列表
+      const menuItems = Array.from(document.querySelectorAll('.menu-item'));
+      const totalItemsCount = menuItems.length;
 
       // 更新高亮聚焦状态
       function updateFocus(newIndex) {
@@ -356,7 +371,7 @@
         }, 400);
       }
 
-      // 绑定每个菜单项的原生点击与悬浮事件 (彻底摆脱对外部框架的加载依赖)
+      // 绑定每个菜单项的原生点击与悬浮事件
       menuItems.forEach((item, idx) => {
         item.addEventListener('click', function (e) {
           e.stopPropagation();
@@ -408,16 +423,8 @@
           contextInfo.column = msg.column || 0;
           contextInfo.isAboveFirstDet = msg.isAboveFirstDet !== undefined ? msg.isAboveFirstDet : true;
 
-          // 更新表头文本
-          const badgeEl = document.getElementById('badgeSheetInfo');
-          if (badgeEl) {
-            const title = `${contextInfo.sheetName || '工作表'} (${contextInfo.cellAddress || '单元格'})`;
-            badgeEl.textContent = title;
-            badgeEl.setAttribute('title', title);
-          }
-
           // 根据光标位置控制“新建箱柜”可用状态
-          const createCabItem = document.getElementById('item-0');
+          const createCabItem = document.querySelector('[data-action="createCabinet"]');
           if (createCabItem) {
             if (contextInfo.isAboveFirstDet) {
               createCabItem.classList.remove('disabled');

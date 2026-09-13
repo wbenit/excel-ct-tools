@@ -64,8 +64,9 @@ namespace ExcelAddInDemo.Forms
             // 设置窗体标题
             this.Text = "智能辅材与壳体计算";
 
-            // 依据设计布局设定尺寸为 960x720 像素，确保所有定额表格与参数配置从容舒展
-            this.ClientSize = new Size(960, 720);
+            // 依据方案 A 宽屏架构设定尺寸为 1200x800 像素
+            // 确保二次回路绑定工作台具有超 1150px 的展开宽度与 700px+ 的矢量看图视口
+            this.ClientSize = new Size(1200, 800);
 
             // 设置屏幕中央弹出
             this.StartPosition = FormStartPosition.CenterScreen;
@@ -612,6 +613,136 @@ namespace ExcelAddInDemo.Forms
                         action = "schemesLoaded",
                         data = schemes
                     }, JsonOptions));
+                }
+                // 10. 保存或更新二次回路方案与 BOM 至 personal_components.db
+                else if (action == "saveSecondaryScheme")
+                {
+                    // 提取前端传入的方案实体载荷数据
+                    string secSchemePayload = "{}";
+                    if (root.TryGetProperty("data", out var rootPayload))
+                    {
+                        secSchemePayload = rootPayload.GetRawText();
+                    }
+                    // 调度二次回路控制器保存方案入库
+                    var saveRes = _secController.SaveScheme(secSchemePayload);
+                    // 异步推送保存结果至前端
+                    PostWebMessageSafe(JsonSerializer.Serialize(new
+                    {
+                        action = "saveSecondarySchemeResult",
+                        result = saveRes
+                    }, JsonOptions));
+                }
+                // 11. 检索本地物料库元器件供编辑弹窗中的物料选择器使用
+                else if (action == "searchMaterialComponents")
+                {
+                    // 提取物料检索关键字
+                    string mKw = root.TryGetProperty("keyword", out var kwProp) ? (kwProp.GetString() ?? string.Empty) : string.Empty;
+                    // 从本地 SQLite 数据库物料表中检索候选元件
+                    var compList = Services.PersonalComponentDbService.SearchComponents(
+                        searchKeyword: mKw,
+                        name: null, current: null, pole: null, tripMode: null, brand: null, mustContainRules: null, maxResults: 60);
+                    // 异步回发物料检索结果列表
+                    PostWebMessageSafe(JsonSerializer.Serialize(new
+                    {
+                        action = "searchMaterialComponentsResult",
+                        data = compList
+                    }, JsonOptions));
+                }
+                // 12. 获取全部二次回路方案列表 (供“复制其他方案”选择使用)
+                else if (action == "getSecondarySchemesForCopy")
+                {
+                    // 提取复制方案检索关键字
+                    string copyKw = root.TryGetProperty("keyword", out var ckwProp) ? (ckwProp.GetString() ?? string.Empty) : string.Empty;
+                    // 读取所有二次回路方案
+                    var schemesForCopy = Services.PersonalComponentDbService.GetAllSecondarySchemes(copyKw);
+                    // 异步推送方案选择列表
+                    PostWebMessageSafe(JsonSerializer.Serialize(new
+                    {
+                        action = "getSecondarySchemesForCopyResult",
+                        data = schemesForCopy
+                    }, JsonOptions));
+                }
+                // 13. 保存板材材质价格列表与加工预留配置
+                else if (action == "saveMaterialPrices")
+                {
+                    // 检查是否存在板材价格列表
+                    if (root.TryGetProperty("prices", out var pricesProp))
+                    {
+                        // 反序列化板材材质价格集合
+                        var pricesList = JsonSerializer.Deserialize<List<MaterialPriceItem>>(pricesProp.GetRawText(), JsonOptions);
+                        CabinetAllowanceConfig? allowance = null;
+                        // 检查是否存在加工预留放量配置
+                        if (root.TryGetProperty("allowance", out var allowProp))
+                        {
+                            // 反序列化加工放量配置
+                            allowance = JsonSerializer.Deserialize<CabinetAllowanceConfig>(allowProp.GetRawText(), JsonOptions);
+                        }
+                        // 调用服务持久化存储
+                        ExcelServices.UpdateMaterialPrices(pricesList ?? new List<MaterialPriceItem>(), allowance);
+                        // 异步推送保存成功反馈
+                        PostWebMessageSafe(JsonSerializer.Serialize(new
+                        {
+                            action = "saveMaterialPricesResult",
+                            success = true,
+                            message = "板材材质单价配置已成功保存！"
+                        }, JsonOptions));
+                    }
+                }
+                // 14. 将柜体钣金计算出的规格型号与单价回写至当前箱柜计费区
+                else if (action == "applyShellToExcel")
+                {
+                    // 提取目标工作表名称
+                    string targetSheet = root.TryGetProperty("sheetName", out var snProp) ? (snProp.GetString() ?? string.Empty) : string.Empty;
+                    // 提取回写载荷实体
+                    if (root.TryGetProperty("payload", out var plProp))
+                    {
+                        // 反序列化壳体回写载荷
+                        var writePayload = JsonSerializer.Deserialize<CabinetShellWritePayload>(plProp.GetRawText(), JsonOptions);
+                        // 通过宏队列 QueueAsMacro 调度纯净 Excel COM 线程执行
+                        ExcelAsyncUtil.QueueAsMacro(() =>
+                        {
+                            try
+                            {
+                                // 获取 Excel Application
+                                var app = ExcelDnaSafeAccessor.GetApplication();
+                                var wb = app?.ActiveWorkbook;
+                                // 定位目标分类工作表
+                                var ws = wb?.Worksheets[targetSheet] as Microsoft.Office.Interop.Excel.Worksheet;
+                                if (ws != null && writePayload != null)
+                                {
+                                    // 调度服务层执行计费区回写
+                                    var writeRes = ExcelServices.WriteCalculatedShellToFeeArea(ws, writePayload);
+                                    // 异步通知前端回写结果
+                                    PostWebMessageSafe(JsonSerializer.Serialize(new
+                                    {
+                                        action = "applyShellToExcelResult",
+                                        success = writeRes.Success,
+                                        message = writeRes.Message
+                                    }, JsonOptions));
+                                }
+                                else
+                                {
+                                    // 未找到目标工作表提示
+                                    PostWebMessageSafe(JsonSerializer.Serialize(new
+                                    {
+                                        action = "applyShellToExcelResult",
+                                        success = false,
+                                        message = $"未找到工作表【{targetSheet}】"
+                                    }, JsonOptions));
+                                }
+                            }
+                            catch (Exception exWrite)
+                            {
+                                // 异常处理并返回提示
+                                PostWebMessageSafe(JsonSerializer.Serialize(new
+                                {
+                                    action = "applyShellToExcelResult",
+                                    success = false,
+                                    message = $"回写执行异常: {exWrite.Message}"
+                                }, JsonOptions));
+                            }
+                        });
+                    }
                 }
             }
             catch (Exception ex)

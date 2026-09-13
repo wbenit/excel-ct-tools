@@ -1,0 +1,817 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>元器件图纸参数匹配</title>
+
+    <!-- 引入 Element Plus CSS 样式库 -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/element-plus/dist/index.css"
+    />
+    <!-- 引入 Vue 3 核心构建库 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- 引入 Element Plus 组件库 -->
+    <script src="https://unpkg.com/element-plus"></script>
+    <!-- 引入公共主题样式 CSS (主色调 #009688) -->
+    <link rel="stylesheet" href="theme.css" />
+
+    <style>
+      /* 全局重置与基础视口控制 (严格限制 200px 紧凑视口) */
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        user-select: none;
+      }
+
+      /* 视口与根容器重置：确保不产生内外层嵌套边框与滚动条溢出 */
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        /* 继承统一规范字体族 */
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+        background-color: #f8fafc;
+        color: #1e293b;
+        font-size: 12px;
+      }
+
+      /* 主应用外层容器：统一施加 1px 主题色边框，box-sizing 保障四面边框完全对称不被裁切 */
+      #app {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        /* 使用 border-box 确保左右上下 1px 边框完全落在可视区内部 */
+        box-sizing: border-box;
+        /* 统一边框色：与主色调相符的深绿蓝 */
+        border: 1px solid #00796b;
+        background-color: #f8fafc;
+      }
+
+      /* 顶部拖拽标题栏 */
+      .top-drag-header {
+        height: 30px;
+        background: var(
+          --theme-gradient,
+          linear-gradient(135deg, #009688 0%, #00796b 100%)
+        );
+        color: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 6px 0 8px;
+        cursor: move;
+        flex-shrink: 0;
+      }
+
+      .top-title {
+        font-size: 12px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        letter-spacing: 0.5px;
+      }
+
+      .header-icons {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+      }
+
+      .header-btn {
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 3px;
+        cursor: pointer;
+        color: #ffffff;
+        font-size: 11px;
+        transition: background-color 0.15s;
+      }
+
+      .header-btn:hover {
+        background-color: rgba(255, 255, 255, 0.25);
+      }
+
+      .header-btn.close-btn:hover {
+        background-color: #ef4444;
+      }
+
+      /* 路径与返回栏 */
+      .nav-bar {
+        padding: 4px 6px;
+        background: #ffffff;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+
+      .up-btn {
+        padding: 2px 5px;
+        font-size: 11px;
+        height: 22px;
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        flex-shrink: 0;
+      }
+
+      .cur-dir-tag {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 11px;
+        font-weight: 600;
+        color: #00796b;
+        background: #e0f2f1;
+        padding: 2px 5px;
+        border-radius: 3px;
+      }
+
+      /* 检索框容器 */
+      .search-bar {
+        padding: 4px 6px;
+        background: #f1f5f9;
+        border-bottom: 1px solid #e2e8f0;
+        flex-shrink: 0;
+      }
+
+      .search-bar .el-input__wrapper {
+        padding: 1px 7px;
+        height: 24px;
+        font-size: 11px;
+      }
+
+      /* 写入列规则微型提示条：保障单行不换行，双侧对称对齐 */
+      .column-rule-bar {
+        padding: 3px 6px;
+        font-size: 10px;
+        color: #64748b;
+        background: #fafafa;
+        border-bottom: 1px solid #edf2f7;
+        /* 开启水平两端对齐并垂直居中 */
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        /* 禁止任何文字换行破坏版面 */
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+
+      /* 列标强调徽章样式 */
+      .column-rule-tag {
+        color: #009688;
+        font-weight: 600;
+      }
+
+      /* 快捷操作动作提示字样 */
+      .action-hint {
+        color: #00796b;
+        font-size: 9.5px;
+        font-weight: 500;
+      }
+
+      /* 列表滚动内容区：限制仅纵向滚动，杜绝横向撑大 */
+      .content-scroll {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 4px 4px 6px 4px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+
+      /* 自定义极简极细滚动条：防止占用过多水平空间 */
+      .content-scroll::-webkit-scrollbar {
+        width: 4px;
+      }
+      /* 滚动条轨道背景设为透明 */
+      .content-scroll::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      /* 滚动条滑块经典浅灰 */
+      .content-scroll::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 2px;
+      }
+      /* 悬停滑块变为主色调深绿蓝 */
+      .content-scroll::-webkit-scrollbar-thumb:hover {
+        background: #009688;
+      }
+
+      /* 分组标题徽章 */
+      .group-header {
+        font-size: 10.5px;
+        font-weight: 700;
+        color: #475569;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 2px 4px;
+        background: #e2e8f0;
+        border-radius: 3px;
+        margin-top: 2px;
+      }
+
+      .group-count {
+        font-size: 10px;
+        color: #64748b;
+        font-weight: normal;
+      }
+
+      /* 目录项卡片 */
+      .dir-item {
+        display: flex;
+        align-items: center;
+        padding: 5px 6px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.12s ease;
+        gap: 6px;
+      }
+
+      .dir-item:hover {
+        background: #e0f2f1;
+        border-color: #80cbc4;
+        color: #00796b;
+        transform: translateX(1px);
+      }
+
+      .dir-item:active {
+        background: #b2dfdb;
+      }
+
+      .dir-icon {
+        color: #eab308;
+        font-size: 14px;
+        flex-shrink: 0;
+      }
+
+      .dir-name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 11.5px;
+      }
+
+      .dir-arrow {
+        color: #94a3b8;
+        font-size: 10px;
+        flex-shrink: 0;
+      }
+
+      /* DWG 图纸项卡片 */
+      .dwg-item {
+        display: flex;
+        align-items: center;
+        padding: 5px 6px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.12s ease;
+        gap: 6px;
+        position: relative;
+      }
+
+      .dwg-item:hover {
+        background: #e0f2f1;
+        border-color: #009688;
+        color: #004d40;
+      }
+
+      .dwg-item:active {
+        background: #80cbc4;
+      }
+
+      .dwg-item.just-bound {
+        background: #a7f3d0 !important;
+        border-color: #10b981 !important;
+        animation: pulseGreen 0.6s ease;
+      }
+
+      @keyframes pulseGreen {
+        0% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.03);
+        }
+        100% {
+          transform: scale(1);
+        }
+      }
+
+      .dwg-icon {
+        color: #0284c7;
+        font-size: 13px;
+        flex-shrink: 0;
+      }
+
+      .dwg-name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 11.5px;
+        font-weight: 500;
+      }
+
+      .dwg-action-tip {
+        font-size: 9.5px;
+        color: #0d9488;
+        background: #f0fdfa;
+        padding: 1px 3px;
+        border-radius: 2px;
+        flex-shrink: 0;
+      }
+
+      /* 空态占位 */
+      .empty-box {
+        padding: 20px 10px;
+        text-align: center;
+        color: #94a3b8;
+        font-size: 11px;
+      }
+
+      /* 底部状态栏 */
+      .bottom-status-bar {
+        height: 24px;
+        background: #ffffff;
+        border-top: 1px solid #e2e8f0;
+        padding: 0 6px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 10px;
+        color: #64748b;
+        flex-shrink: 0;
+      }
+
+      .status-highlight {
+        color: #009688;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 130px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <!-- 顶部拖拽标题栏 -->
+      <div class="top-drag-header" @mousedown="onHeaderMouseDown">
+        <div class="top-title">
+          <span>📐</span>
+          <span>图纸参数匹配</span>
+        </div>
+        <div class="header-icons">
+          <div
+            class="header-btn"
+            title="设置图纸库根物理目录"
+            @click.stop="selectBaseDirectory"
+          >
+            📁
+          </div>
+          <div class="header-btn" title="最小化" @click.stop="minimizeWindow">
+            —
+          </div>
+          <div
+            class="header-btn close-btn"
+            title="关闭"
+            @click.stop="closeWindow"
+          >
+            ✕
+          </div>
+        </div>
+      </div>
+
+      <!-- 导航栏：返回上一级与当前目录名 -->
+      <div class="nav-bar">
+        <el-button
+          class="up-btn"
+          size="small"
+          type="primary"
+          plain
+          :disabled="!canGoBack"
+          @click="goToParent"
+          title="返回上级目录"
+        >
+          ⬆️ 上级
+        </el-button>
+        <div class="cur-dir-tag" :title="currentFullPath">
+          {{ currentFolderName || '根目录' }}
+        </div>
+      </div>
+
+      <!-- 实时检索框 -->
+      <div class="search-bar">
+        <el-input
+          v-model="searchKeyword"
+          placeholder="快速过滤目录 / DWG..."
+          size="small"
+          clearable
+        />
+      </div>
+
+      <!-- 规则提示行：单行不折行展示回写列与操作快捷键 -->
+      <div class="column-rule-bar">
+        <span>{{ configInfo.targetDwgColumn || 'X' }}=图纸 <span class="column-rule-tag">|</span> {{ configInfo.targetDirColumn || 'Y' }}=目录</span>
+        <span class="action-hint">双击写入 · 右击返回</span>
+      </div>
+
+      <!-- 列表滚动展示区：支持空白处右键返回上一级 -->
+      <div class="content-scroll" @contextmenu.self.prevent="handleScrollAreaRightClick">
+        <!-- 1. 子目录列表 -->
+        <div v-if="filteredSubDirs.length > 0">
+          <div class="group-header">
+            <span>📁 子目录</span>
+            <span class="group-count">{{ filteredSubDirs.length }}</span>
+          </div>
+          <div
+            style="
+              display: flex;
+              flex-direction: column;
+              gap: 3px;
+              margin-top: 3px;
+            "
+          >
+            <div
+              v-for="dir in filteredSubDirs"
+              :key="dir.fullPath"
+              class="dir-item"
+              @click="enterDirectory(dir.fullPath)"
+              :title="'点击进入: ' + dir.name"
+            >
+              <span class="dir-icon">📁</span>
+              <span class="dir-name">{{ dir.name }}</span>
+              <span class="dir-arrow">›</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. DWG 图纸文件列表 -->
+        <div v-if="filteredDwgFiles.length > 0" style="margin-top: 4px">
+          <div class="group-header">
+            <span>📐 DWG 图纸 (双击匹配)</span>
+            <span class="group-count">{{ filteredDwgFiles.length }}</span>
+          </div>
+          <div
+            style="
+              display: flex;
+              flex-direction: column;
+              gap: 3px;
+              margin-top: 3px;
+            "
+          >
+            <div
+              v-for="file in filteredDwgFiles"
+              :key="file.filePath"
+              class="dwg-item"
+              :class="{ 'just-bound': lastBoundDwg === file.fileName }"
+              @dblclick="bindDwg(file)"
+              @contextmenu.stop.prevent="handleDwgRightClick(file)"
+              :title="'双击: 填入当前行 (' + (configInfo.targetDwgColumn || 'X') + '=图纸, ' + (configInfo.targetDirColumn || 'Y') + '=目录)\n右击: 返回上一级目录'"
+            >
+              <span class="dwg-icon">📄</span>
+              <span class="dwg-name">{{ getCleanDwgName(file.fileName) }}</span>
+              <span class="dwg-action-tip">双击</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 空状态 -->
+        <div
+          v-if="filteredSubDirs.length === 0 && filteredDwgFiles.length === 0"
+          class="empty-box"
+        >
+          <span v-if="searchKeyword">无匹配项</span>
+          <span v-else>当前目录下无子目录或DWG</span>
+        </div>
+      </div>
+
+      <!-- 底部状态栏 -->
+      <div class="bottom-status-bar">
+        <span class="status-highlight" :title="statusText"
+          >{{ statusText }}</span
+        >
+        <span>自动换行</span>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        const { createApp, ref, computed, onMounted } = Vue;
+
+        const app = createApp({
+          setup() {
+            // 当前根目录绝对物理路径
+            const baseDirectory = ref("");
+            // 当前浏览的目标目录绝对物理路径
+            const currentFullPath = ref("");
+            // 当前所在目录的名称
+            const currentFolderName = ref("");
+            // 父级目录路径
+            const parentPath = ref("");
+            // 子目录集合
+            const subDirectories = ref([]);
+            // DWG 图纸文件集合
+            const dwgFiles = ref([]);
+            // 搜索关键字
+            const searchKeyword = ref("");
+            // 状态提示文本
+            const statusText = ref("就绪: 双击DWG写入Excel");
+            // 记录最近一次写入的 DWG 名称用于高亮反馈
+            const lastBoundDwg = ref("");
+            // 配置项
+            const configInfo = ref({
+              targetDirColumn: "Y",
+              targetDwgColumn: "X",
+              autoNextRow: true,
+              removeExtension: true,
+            });
+
+            // 计算属性：是否可返回上级
+            const canGoBack = computed(() => {
+              return (
+                !!parentPath.value &&
+                parentPath.value.length > 0 &&
+                currentFullPath.value !== baseDirectory.value
+              );
+            });
+
+            // 提取无 .dwg 扩展名的干净名称
+            function getCleanDwgName(fileName) {
+              if (!fileName) return "";
+              if (
+                configInfo.value.removeExtension &&
+                fileName.toLowerCase().endsWith(".dwg")
+              ) {
+                return fileName.substring(0, fileName.length - 4);
+              }
+              return fileName;
+            }
+
+            // 过滤后的子目录列表
+            const filteredSubDirs = computed(() => {
+              const kw = searchKeyword.value.trim().toLowerCase();
+              if (!kw) return subDirectories.value;
+              return subDirectories.value.filter((d) =>
+                (d.name || "").toLowerCase().includes(kw),
+              );
+            });
+
+            // 过滤后的 DWG 图纸列表
+            const filteredDwgFiles = computed(() => {
+              const kw = searchKeyword.value.trim().toLowerCase();
+              if (!kw) return dwgFiles.value;
+              return dwgFiles.value.filter((f) =>
+                (f.fileName || "").toLowerCase().includes(kw),
+              );
+            });
+
+            // 向 C# 宿主发送 WebMessage 报文
+            function postToCSharp(data) {
+              if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage(JSON.stringify(data));
+              }
+            }
+
+            // 顶栏拖拽事件
+            let isDragging = false;
+            let startScreenX = 0;
+            let startScreenY = 0;
+
+            function onHeaderMouseDown(e) {
+              if (e.button !== 0) return; // 仅响应鼠标左键
+              isDragging = true;
+              startScreenX = e.screenX;
+              startScreenY = e.screenY;
+
+              function onMouseMove(moveEvent) {
+                if (!isDragging) return;
+                const deltaX = moveEvent.screenX - startScreenX;
+                const deltaY = moveEvent.screenY - startScreenY;
+                startScreenX = moveEvent.screenX;
+                startScreenY = moveEvent.screenY;
+                postToCSharp({
+                  action: "moveWindow",
+                  deltaX: deltaX,
+                  deltaY: deltaY,
+                });
+              }
+
+              function onMouseUp() {
+                isDragging = false;
+                window.removeEventListener("mousemove", onMouseMove);
+                window.removeEventListener("mouseup", onMouseUp);
+              }
+
+              window.addEventListener("mousemove", onMouseMove);
+              window.addEventListener("mouseup", onMouseUp);
+            }
+
+            // 设置根目录
+            function selectBaseDirectory() {
+              postToCSharp({ action: "selectBaseDirectory" });
+            }
+
+            // 进入子目录
+            function enterDirectory(dirPath) {
+              searchKeyword.value = "";
+              postToCSharp({ action: "scanDirectory", path: dirPath });
+            }
+
+            // 返回上级目录核心逻辑
+            function goToParent() {
+              // 校验是否拥有上级有效物理路径
+              if (parentPath.value) {
+                // 清理输入过滤关键字
+                searchKeyword.value = "";
+                // 状态栏显示即时动作反馈
+                statusText.value = "正在返回上级目录...";
+                // 向宿主发起目录扫描请求
+                postToCSharp({
+                  action: "scanDirectory",
+                  path: parentPath.value,
+                });
+              } else {
+                // 无法返回时提示用户已达顶层
+                statusText.value = "已处于根目录，无法返回";
+              }
+            }
+
+            // 右击 DWG 图纸文件项：快捷返回上一级目录
+            function handleDwgRightClick(file) {
+              // 若当前在子目录下且可返回，则直接调起返回上级
+              if (canGoBack.value) {
+                goToParent();
+              } else {
+                // 根目录下右键提醒已在顶层
+                statusText.value = "已在根目录，无上一级";
+              }
+            }
+
+            // 右击列表空白背景区域：快捷返回上一级目录
+            function handleScrollAreaRightClick(e) {
+              // 若支持返回上级则执行返回
+              if (canGoBack.value) {
+                goToParent();
+              }
+            }
+
+            // 双击图纸绑定至当前 Excel 单元格所在行
+            function bindDwg(file) {
+              const dwgName = file.fileName || "";
+              const dirName = currentFolderName.value || "";
+              postToCSharp({
+                action: "bindDwg",
+                dirName: dirName,
+                dwgName: dwgName,
+              });
+              // 即时反馈动效
+              lastBoundDwg.value = dwgName;
+              setTimeout(() => {
+                lastBoundDwg.value = "";
+              }, 1200);
+            }
+
+            // 最小化窗口
+            function minimizeWindow() {
+              postToCSharp({ action: "minimizeWindow" });
+            }
+
+            // 关闭窗口
+            function closeWindow() {
+              postToCSharp({ action: "closeWindow" });
+            }
+
+            // 更新扫描结果数据模型
+            function applyScanResult(scanData) {
+              if (!scanData) return;
+              currentFullPath.value = scanData.currentPath || "";
+              parentPath.value = scanData.parentPath || "";
+              subDirectories.value = scanData.subDirectories || [];
+              dwgFiles.value = scanData.dwgFiles || [];
+
+              // 截取当前文件夹物理名称
+              if (currentFullPath.value) {
+                const clean = currentFullPath.value.replace(/[\\/]+$/, "");
+                const lastSlash = Math.max(
+                  clean.lastIndexOf("\\"),
+                  clean.lastIndexOf("/"),
+                );
+                currentFolderName.value =
+                  lastSlash >= 0 ? clean.substring(lastSlash + 1) : clean;
+              } else {
+                currentFolderName.value = "";
+              }
+            }
+
+            // 挂载与 C# IPC 通信监听
+            onMounted(() => {
+              if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.addEventListener("message", (event) => {
+                  try {
+                    let msg = event.data;
+                    if (typeof msg === "string") {
+                      msg = JSON.parse(msg);
+                    }
+                    if (!msg) return;
+
+                    // 1. 初始化数据回传
+                    if (msg.action === "initialDataLoaded") {
+                      baseDirectory.value = msg.baseDirectory || "";
+                      configInfo.value.targetDirColumn =
+                        msg.targetDirColumn || "Y";
+                      configInfo.value.targetDwgColumn =
+                        msg.targetDwgColumn || "X";
+                      configInfo.value.autoNextRow =
+                        msg.autoNextRow !== undefined ? msg.autoNextRow : true;
+                      configInfo.value.removeExtension =
+                        msg.removeExtension !== undefined
+                          ? msg.removeExtension
+                          : true;
+                      applyScanResult(msg.scanData);
+                      statusText.value = "就绪: 双击DWG写入Excel";
+                    }
+                    // 2. 根目录重新选择
+                    else if (msg.action === "baseDirectoryChanged") {
+                      baseDirectory.value = msg.baseDirectory || "";
+                      applyScanResult(msg.scanData);
+                      statusText.value = "已切换根目录";
+                    }
+                    // 3. 目录扫描完成
+                    else if (msg.action === "directoryScanned") {
+                      applyScanResult(msg.scanData);
+                    }
+                    // 4. 双击写入 Excel 结果回发
+                    else if (msg.action === "bindDwgResult") {
+                      if (msg.success) {
+                        statusText.value = `✅ 已写入 ${msg.nextRow ? msg.nextRow - 1 : ""} 行: ${getCleanDwgName(msg.dwgName)}`;
+                      } else {
+                        statusText.value = `❌ ${msg.message || "写入失败"}`;
+                      }
+                    }
+                  } catch (err) {
+                    console.error("IPC 消息解析异常:", err);
+                  }
+                });
+
+                // 发送初始化握手报文
+                postToCSharp({ action: "getInitialData" });
+              }
+            });
+
+            return {
+              baseDirectory,
+              currentFullPath,
+              currentFolderName,
+              parentPath,
+              canGoBack,
+              searchKeyword,
+              filteredSubDirs,
+              filteredDwgFiles,
+              statusText,
+              lastBoundDwg,
+              configInfo,
+              getCleanDwgName,
+              onHeaderMouseDown,
+              selectBaseDirectory,
+              enterDirectory,
+              goToParent,
+              handleDwgRightClick,
+              handleScrollAreaRightClick,
+              bindDwg,
+              minimizeWindow,
+              closeWindow,
+            };
+          },
+        });
+
+        app.use(ElementPlus);
+        app.mount("#app");
+      })();
+    </script>
+  </body>
+</html>
