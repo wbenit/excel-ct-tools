@@ -886,6 +886,24 @@ namespace ExcelAddInDemo.Models
 
         // 是否为二次元件组 (B列='元件组' 或以 '*' 开头，或第 32 列绑定了图号)
         public bool IsComponentGroup { get; set; }
+
+        // 元器件绑定的图纸所属目录名称 (来自 Excel 对应配置列，默认 Y 列)
+        public string DwgDir { get; set; } = string.Empty;
+
+        // 元器件绑定的 DWG 图纸文件名称 (来自 Excel 对应配置列，默认 X 列)
+        public string DwgName { get; set; } = string.Empty;
+
+        // 真实 CAD 外形宽度 (单位: mm，0 表示未获取)
+        public double RealWidth { get; set; } = 0.0;
+
+        // 真实 CAD 外形高度 (单位: mm，0 表示未获取)
+        public double RealHeight { get; set; } = 0.0;
+
+        // 从图纸文字中解析出的真实安装进深/厚度 (单位: mm，0 表示未获取)
+        public double RealDepth { get; set; } = 0.0;
+
+        // 标记该元器件是否成功命中并采用了 CAD 真实外形尺寸
+        public bool HasRealDimensions { get; set; } = false;
     }
 
     /// <summary>
@@ -1074,6 +1092,18 @@ namespace ExcelAddInDemo.Models
         // 未填写电流等计算警告与提醒列表 (如提示某些断路器W列为空未计入计算)
         [JsonPropertyName("warnings")]
         public List<string> Warnings { get; set; } = new List<string>();
+
+        // 整柜元器件中提取出的最大安装进深/厚度 (单位: mm)
+        [JsonPropertyName("maxComponentDepth")]
+        public double MaxComponentDepth { get; set; } = 0.0;
+
+        // 根据元器件最大进深计算的安全深度门限要求 (MaxComponentDepth + 60mm)
+        [JsonPropertyName("minRequiredDepth")]
+        public double MinRequiredDepth { get; set; } = 0.0;
+
+        // 整柜中成功命中并采用 CAD 真实外形尺寸的元器件项数
+        [JsonPropertyName("realDimensionsCount")]
+        public int RealDimensionsCount { get; set; } = 0;
     }
 
     /// <summary>

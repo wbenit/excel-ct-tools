@@ -519,6 +519,55 @@
       color: var(--theme-main);
       background-color: #f0fdfa;
     }
+
+    /* 汇总生成全屏进度遮罩与卡片 */
+    .progress-overlay {
+      position: absolute;
+      top: 36px;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(2px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .progress-card {
+      width: 440px;
+      background: #ffffff;
+      border: 1px solid #b2dfdb;
+      border-radius: 8px;
+      padding: 24px 28px;
+      box-shadow: 0 8px 24px rgba(0, 150, 136, 0.15);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .progress-card-title {
+      font-size: 14px;
+      font-weight: bold;
+      color: #00796b;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .progress-card-tip {
+      font-size: 12px;
+      color: #606266;
+      min-height: 18px;
+      line-height: 18px;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
   </style>
 </head>
 
@@ -683,6 +732,23 @@
           </div>
         </div>
       </div>
+
+      <!-- 汇总生成全屏动态进度遮罩 (当 generating 为 true 时展现) -->
+      <div v-if="generating" class="progress-overlay">
+        <div class="progress-card">
+          <div class="progress-card-title">
+            <el-icon class="is-loading" :size="16"><Loading></Loading></el-icon>
+            <span>正在极速生成元件汇总调价清单...</span>
+          </div>
+          <el-progress 
+            :percentage="progressPercent" 
+            :stroke-width="12" 
+            color="#009688"
+            :status="progressPercent === 100 ? 'success' : ''">
+          </el-progress>
+          <div class="progress-card-tip">{{ progressMessage }}</div>
+        </div>
+      </div>
     </template>
 
     <!-- ================= 视图 2：图二 紧凑编辑条 (高保真还原) ================= -->
@@ -772,6 +838,9 @@
         const generating = ref(false);
         const reGenerating = ref(false);
         const updating = ref(false);
+        // 生成汇总动态进度百分比与阶段说明
+        const progressPercent = ref(0);
+        const progressMessage = ref('正在准备生成...');
 
         // 缓存上一次成功生成的完整配置参数
         const lastSummaryConfig = ref(null);
@@ -1000,6 +1069,8 @@
           }
 
           generating.value = true;
+          progressPercent.value = 5;
+          progressMessage.value = '正在初始化汇总任务...';
           const payload = {
             action: 'generateSummary',
             selectedSheets: selectedSheets,
@@ -1104,17 +1175,26 @@
                     ElMessage.error(response.message || '获取分类列表失败');
                   }
                 }
+                // 1.5 汇总生成实时进度推送返回
+                else if (response.action === 'onSummaryProgress') {
+                  progressPercent.value = response.percent !== undefined ? response.percent : 0;
+                  progressMessage.value = response.message || '';
+                }
                 // 2. 汇总生成结果返回
                 else if (response.action === 'onSummaryGenerated') {
-                  generating.value = false;
-                  reGenerating.value = false;
-                  if (response.success) {
-                    ElMessage.success(response.message || '元件汇总表生成成功！');
-                    // 生成成功后切换至图二紧凑编辑条视图
-                    switchToEditorView();
-                  } else {
-                    ElMessage.error(response.message || '汇总表生成失败');
-                  }
+                  progressPercent.value = 100;
+                  progressMessage.value = '生成完成，正在切换视图...';
+                  setTimeout(() => {
+                    generating.value = false;
+                    reGenerating.value = false;
+                    if (response.success) {
+                      ElMessage.success(response.message || '元件汇总表生成成功！');
+                      // 生成成功后切换至图二紧凑编辑条视图
+                      switchToEditorView();
+                    } else {
+                      ElMessage.error(response.message || '汇总表生成失败');
+                    }
+                  }, 250);
                 }
                 // 3. 一键更新结果返回
                 else if (response.action === 'onSummaryUpdated') {
@@ -1159,6 +1239,8 @@
           generating,
           reGenerating,
           updating,
+          progressPercent,
+          progressMessage,
           hidePriceColumns,
           mergeOpts,
           displayOpts,

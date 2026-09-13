@@ -142,9 +142,9 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
-        /// 执行元件数据提取、内存合并聚合与生成“元件汇总表”
+        /// 执行元件数据提取、内存合并聚合与生成“元件汇总表”（支持过程进度回调）
         /// </summary>
-        public string GenerateSummary(GenerateSummaryRequest request)
+        public string GenerateSummary(GenerateSummaryRequest request, Action<int, string>? onProgress = null)
         {
             try
             {
@@ -159,8 +159,8 @@ namespace ExcelAddInDemo.Controllers
                     }, JsonOptions);
                 }
 
-                // 调用 ExcelServices 业务方法生成“元件汇总表”
-                bool success = ExcelServices.GenerateComponentSummarySheet(request);
+                // 调用 ExcelServices 业务方法生成“元件汇总表”并传递进度委托
+                bool success = ExcelServices.GenerateComponentSummarySheet(request, onProgress);
                 // 封装成功响应
                 var response = new
                 {

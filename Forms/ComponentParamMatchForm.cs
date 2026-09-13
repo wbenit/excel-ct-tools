@@ -256,6 +256,21 @@ namespace ExcelAddInDemo.Forms
                             cfg.RemoveExtension
                         );
 
+                        // 尝试从 SQLite 检索当前图纸的三维外形与进深尺寸
+                        string dimStr = string.Empty;
+                        try
+                        {
+                            // 优先通过 目录名/图纸名 组合检索
+                            string lookupKey = string.IsNullOrWhiteSpace(dirName) ? dwgName : $"{dirName}/{dwgName}";
+                            var dimItem = PersonalComponentDbService.GetDwgDimension(lookupKey);
+                            if (dimItem != null && dimItem.Width > 0 && dimItem.Height > 0)
+                            {
+                                // 拼接友好展示文本
+                                dimStr = $"{dimItem.Width}×{dimItem.Height}" + (dimItem.Depth > 0 ? $"×{dimItem.Depth}" : "");
+                            }
+                        }
+                        catch { }
+
                         // 向前端回发写入结果反馈
                         PostWebMessageSafe(JsonSerializer.Serialize(new
                         {
@@ -264,7 +279,8 @@ namespace ExcelAddInDemo.Forms
                             message = result.Message,
                             nextRow = result.NextRow,
                             dirName = dirName,
-                            dwgName = dwgName
+                            dwgName = dwgName,
+                            dimStr = dimStr
                         }, JsonOptions));
                     });
                 }

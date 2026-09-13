@@ -1709,7 +1709,7 @@ namespace ExcelAddInDemo
                 }
 
                 // 5. 【清理大于 cabCount 的多余旧箱柜定义名称，防止幽灵定义名称残留】
-                // 首先遍历工作表中所有现存定义名称，精准找出并删除序号超过 cabCount 的定义名称
+                // 采用双作用域（工作表级与工作簿级）现存集合倒序遍历精准清理，彻底杜绝盲目大循环引发数百次 COM 异常
                 try
                 {
                     // 遍历工作表自身的作用域名称集合
@@ -1732,19 +1732,33 @@ namespace ExcelAddInDemo
                             }
                         }
                     }
+
+                    // 检查并清理工作簿级别属于当前工作表的超额箱柜定义名称
+                    dynamic wbParent = sheet.Parent;
+                    if (wbParent != null && wbParent.Names != null)
+                    {
+                        // 倒序遍历工作簿级定义名称
+                        for (int wIdx = wbParent.Names.Count; wIdx >= 1; wIdx--)
+                        {
+                            // 提取工作簿级定义名称对象
+                            dynamic wbName = wbParent.Names.Item(wIdx);
+                            string wnStr = ExtractCleanNameStr(Convert.ToString(wbName.Name) ?? "");
+                            int wK = ExtractIndexFromName(wnStr, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                            // 仅针对序号大于当前箱柜总数的箱柜定义名称进行处理
+                            if (wK > cabCount)
+                            {
+                                // 判定该名称是否属于当前工作表
+                                string refers = Convert.ToString(wbName.RefersTo) ?? "";
+                                if (refers.Contains($"'{sheetName}'!") || refers.Contains($"{sheetName}!"))
+                                {
+                                    // 安全删除多余的工作簿级定义名称
+                                    wbName.Delete();
+                                }
+                            }
+                        }
+                    }
                 }
                 catch { }
-
-                // 补充安全循环兜底清理：清理 cabCount + 1 至 Math.Max(cabCount + 100, 200) 范围
-                int maxCleanK = Math.Max(cabCount + 100, 200);
-                for (int oldK = cabCount + 1; oldK <= maxCleanK; oldK++)
-                {
-                    // 安全删除残留的汇总行与明细行定义名称
-                    SafeDeleteSheetName(sheet, $"{sumPrefix}{oldK}");
-                    SafeDeleteSheetName(sheet, $"{detPrefix}{oldK}");
-                    SafeDeleteSheetName(sheet, $"{subsumPrefix}{oldK}");
-                    SafeDeleteSheetName(sheet, $"{tolsumPrefix}{oldK}");
-                }
 
 
                 // 返回当前工作表校准绑定的箱柜总数量
@@ -1778,22 +1792,36 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 安全设置/校准工作表级别的定义名称（若已存在则覆盖）
+        /// 安全设置/校准工作表级别的定义名称（若已存在且指向正确则跳过，避免盲目异常与跨进程往返）
         /// </summary>
         public static void SafeSetSheetName(dynamic sheet, string sheetName, string tagName, int row)
         {
             try
             {
-                // 尝试删除已有同名工作表级定义名称以实现干净校准覆盖
+                // 目标绝对单元格公式引用字符串
+                string targetRef = $"='{sheetName}'!$A${row}";
+                // 检查已存在同名定义名称是否已经指向目标行
                 try
                 {
+                    // 尝试提取同名定义名称
                     dynamic existing = sheet.Names.Item(tagName);
-                    if (existing != null) existing.Delete();
+                    if (existing != null)
+                    {
+                        // 获取现有引用的公式文本
+                        string curRef = Convert.ToString(existing.RefersTo) ?? "";
+                        // 若已精准指向目标单元格，直接安全保留，跳过 Delete/Add
+                        if (curRef.EndsWith($"$A${row}", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return;
+                        }
+                        // 指向不一致时安全删除旧引用
+                        existing.Delete();
+                    }
                 }
                 catch { }
 
                 // 添加工作表级别定义名称
-                sheet.Names.Add(tagName, $"='{sheetName}'!$A${row}");
+                sheet.Names.Add(tagName, targetRef);
             }
             catch { }
         }

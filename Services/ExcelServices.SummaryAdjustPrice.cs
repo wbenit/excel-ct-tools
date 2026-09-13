@@ -34,201 +34,186 @@ namespace ExcelAddInDemo
 
         /// <summary>
         /// 遍历当前工作簿，读取所有分类工作表（Sheet）及对应箱柜台数统计
+        /// 遵循规则 7 采用内存二维数组极速只读扫描，实现毫秒级瞬间打开弹窗
         /// </summary>
         public static List<Controllers.SummaryCategoryDto> GetCategorySheetsWithCabinetCount()
         {
+            // 初始化分类返回数据容器
             var result = new List<Controllers.SummaryCategoryDto>();
 
             try
             {
+                // 安全获取 Excel Application COM 接口实例
                 dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null) return result;
 
+                // 获取当前活动工作簿
                 dynamic activeWb = app.ActiveWorkbook;
                 if (activeWb == null) return result;
 
+                // 确保 Excel 界面渲染处于开启状态，杜绝视口被意外冻结
+                try { app.ScreenUpdating = true; } catch { }
+
                 // 遍历工作簿中的所有工作表
                 foreach (dynamic sheet in activeWb.Worksheets)
-                {
-                    string sheetName = Convert.ToString(sheet.Name) ?? string.Empty;
-                    string trimmedName = sheetName.Trim();
-
-                    // 精准排除明确的系统辅助表 --硬编码--
-                    if (string.Equals(trimmedName, "项目信息", StringComparison.OrdinalIgnoreCase))
                     {
-                        continue;
-                    }
+                        // 提取工作表名称文本
+                        string sheetName = Convert.ToString(sheet.Name) ?? string.Empty;
+                        string trimmedName = sheetName.Trim();
 
-                    // 规则 8: 在操作/读取 Excel 表格前，强制调用 FixAndFillCabinetNamesForSheet 自愈并校准定义名称
-                    Tool.FixAndFillCabinetNamesForSheet(sheet);
-
-                    // 1. 调用公共方法获取当前工作表校准后的有效箱柜锚点列表 (规则 6)
-                    var validCabinets = Tool.GetSheetValidCabinets(sheet, activeWb);
-
-                    // 声明当前分类下的箱柜总台数
-                    int totalCount = 0;
-
-                    // 若识别到了有效的箱柜定义名称
-                    if (validCabinets.Count > 0)
-                    {
-                        // 循环累加各有效箱柜台数
-                        foreach (var cab in validCabinets)
+                        // 精准排除系统保留工作表与非分类报表 --硬编码--
+                        if (string.Equals(trimmedName, "项目信息", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(trimmedName, "材料分布表", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(trimmedName, "元件汇总分布表", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(trimmedName, "元件汇总表", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(trimmedName, "元件汇总调价清单", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(trimmedName, "屏柜汇总表", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(trimmedName, "屏柜分项表", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(trimmedName, "元器件数据管理", StringComparison.OrdinalIgnoreCase))
                         {
-                            // 单柜台数初始化为 0
-                            int cabQty = 0;
-                            try
+                            // 忽略系统保留表
+                            continue;
+                        }
+
+                        // 声明当前分类下的箱柜累计总台数
+                        int totalCount = 0;
+
+                        // 规则 7: 优先通过内存二维数组极速只读扫描顶部汇总表区域 A1:H60 (仅 1 次 COM 调用，1ms 级响应)
+                        try
+                        {
+                            // 读取顶部 60 行 8 列矩形区域 (足以覆盖各类标准成套报价表汇总区)
+                            dynamic topRange = sheet.Range["A1:H60"];
+                            object[,]? topMatrix = topRange?.Value2 as object[,];
+
+                            if (topMatrix != null)
                             {
-                                // 优先从汇总行锚点提取台数
-                                if (cab.Value.Sum != null)
+                                int rowCount = topMatrix.GetLength(0);
+                                int colCount = topMatrix.GetLength(1);
+
+                                // 1. 定位顶部箱柜汇总表的表头行 (通常在前 15 行内)
+                                int headerRow = 0;
+                                for (int r = 1; r <= Math.Min(15, rowCount); r++)
                                 {
-                                    // 获取汇总行物理行号
-                                    int sumRow = Convert.ToInt32(cab.Value.Sum.Row);
-                                    // 提取柜号、箱柜名称与第 1 列文本，防范残留非箱柜行
-                                    string cabNo = Convert.ToString(sheet.Cells[sumRow, 2].Value)?.Trim() ?? "";
-                                    string cabName = Convert.ToString(sheet.Cells[sumRow, 3].Value)?.Trim() ?? "";
-                                    string col1Text = Convert.ToString(sheet.Cells[sumRow, 1].Value)?.Trim() ?? "";
+                                    // 提取当前行第 1~3 列文本
+                                    string c1 = Convert.ToString(topMatrix[r, 1])?.Trim() ?? "";
+                                    string c2 = Convert.ToString(topMatrix[r, 2])?.Trim() ?? "";
+                                    string c3 = (colCount >= 3) ? (Convert.ToString(topMatrix[r, 3])?.Trim() ?? "") : "";
 
-                                    // 严格拦截非箱柜行 (如合计、总计、小计、大写、说明、签字落款等)
-                                    if (cabNo.Contains("合计") || cabName.Contains("合计") || col1Text.Contains("合计") ||
-                                        cabNo.Contains("总计") || cabName.Contains("总计") || col1Text.Contains("总计") ||
-                                        cabNo.Contains("小计") || cabName.Contains("小计") || col1Text.Contains("小计") ||
-                                        cabNo.Contains("大写") || cabName.Contains("大写") || cabNo.Contains("说明") ||
-                                        cabNo.Contains("审核") || cabNo.Contains("批准") || cabNo.Contains("制表") || cabNo.Contains("编制"))
+                                    // 命中标准表头关键字特征
+                                    if (c1.Contains("序号") || c2.Contains("序号") || c2.Contains("柜号") || c2.Contains("设备") || c3.Contains("型号"))
                                     {
-                                        // 命中非箱柜行直接跳过
-                                        continue;
-                                    }
-
-                                    // 若柜号和名称全为空则判定为无效空行锚点，安全跳过
-                                    if (string.IsNullOrWhiteSpace(cabNo) && string.IsNullOrWhiteSpace(cabName))
-                                    {
-                                        continue;
-                                    }
-
-                                    // 用户明确要求：数量一定在 F 列 (第 6 列)，直接读取 F 列单元格内容，绝不尝试解析 E 列
-                                    object qVal = sheet.Cells[sumRow, 6].Value2 ?? sheet.Cells[sumRow, 6].Value;
-                                    // 采用 double 容错解析 (防范 Excel 单元格数值格式导致 int 解析失败)
-                                    if (qVal != null && double.TryParse(Convert.ToString(qVal), out double dQty) && dQty > 0)
-                                    {
-                                        // 赋值提取到的有效台数
-                                        cabQty = (int)Math.Round(dQty);
-                                    }
-                                    else
-                                    {
-                                        // 若已判定为有效箱柜行但 F 列未填数量，默认计 1 台
-                                        cabQty = 1;
+                                        headerRow = r;
+                                        break;
                                     }
                                 }
-                                else if (cab.Value.Det != null)
+
+                                // 2. 若成功识别到汇总表头，向下遍历各箱柜汇总数据行
+                                if (headerRow > 0)
                                 {
-                                    // 针对纯明细箱柜默认计 1 台
-                                    cabQty = 1;
+                                    for (int r = headerRow + 1; r <= rowCount; r++)
+                                    {
+                                        // 提取 A 列序号、B 列柜号与 C 列设备名称/型号
+                                        string noStr = Convert.ToString(topMatrix[r, 1])?.Trim() ?? "";
+                                        string cabNo = (colCount >= 2) ? (Convert.ToString(topMatrix[r, 2])?.Trim() ?? "") : "";
+                                        string cabName = (colCount >= 3) ? (Convert.ToString(topMatrix[r, 3])?.Trim() ?? "") : "";
+
+                                        // 关键截断：遇到合计、总计、小计、大写、说明或签字落款等行，立即终止扫描 (绝不穿透至落款区)
+                                        if (noStr.Contains("合计") || cabNo.Contains("合计") || cabName.Contains("合计") ||
+                                            noStr.Contains("总计") || cabNo.Contains("总计") || cabName.Contains("总计") ||
+                                            noStr.Contains("小计") || cabNo.Contains("小计") || cabName.Contains("小计") ||
+                                            cabNo.Contains("大写") || cabName.Contains("大写") || noStr.Contains("说明") ||
+                                            cabNo.Contains("说明") || cabNo.Contains("审核") || cabNo.Contains("批准") ||
+                                            cabNo.Contains("制表") || cabNo.Contains("编制") || cabNo.Contains("明细") ||
+                                            cabName.Contains("明细") || cabNo.Contains("元件"))
+                                        {
+                                            break;
+                                        }
+
+                                        // 排除 A、B、C 列全为空的无效空行
+                                        if (string.IsNullOrWhiteSpace(noStr) && string.IsNullOrWhiteSpace(cabNo) && string.IsNullOrWhiteSpace(cabName))
+                                        {
+                                            continue;
+                                        }
+
+                                        // 排除中间可能重复出现的表头文本行
+                                        if (noStr.Contains("序号") || cabNo.Contains("柜号") || cabName.Contains("设备"))
+                                        {
+                                            continue;
+                                        }
+
+                                        // 默认单台箱柜数量为 1
+                                        int cabQty = 1;
+                                        // 用户明确要求：数量一定在 F 列 (第 6 列)，直接读取 F 列单元格内容，绝不尝试解析 E 列
+                                        if (colCount >= 6)
+                                        {
+                                            object qVal = topMatrix[r, 6];
+                                            // 采用 double 容错解析 (防范 Excel 单元格浮点数值格式)
+                                            if (qVal != null && double.TryParse(Convert.ToString(qVal), out double dQty) && dQty > 0)
+                                            {
+                                                cabQty = (int)Math.Round(dQty);
+                                            }
+                                        }
+
+                                        // 累加当前箱柜有效台数
+                                        totalCount += cabQty;
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+
+                        // 3. 兜底 1: 若顶部扫描未提取到台数，尝试轻量统计现存的 Cab_Sum_ 定义名称数量 (不触发全量重构)
+                        if (totalCount == 0)
+                        {
+                            try
+                            {
+                                int existingSumCount = 0;
+                                dynamic sNames = sheet.Names;
+                                if (sNames != null)
+                                {
+                                    // 遍历工作表现存定义名称
+                                    foreach (dynamic n in sNames)
+                                    {
+                                        string nStr = Convert.ToString(n.Name) ?? "";
+                                        // 匹配 Cab_Sum_ 汇总行定义名称前缀
+                                        if (nStr.IndexOf("Cab_Sum_", StringComparison.OrdinalIgnoreCase) >= 0)
+                                        {
+                                            existingSumCount++;
+                                        }
+                                    }
+                                }
+                                if (existingSumCount > 0)
+                                {
+                                    // 采用现存汇总行数量
+                                    totalCount = existingSumCount;
                                 }
                             }
                             catch { }
-
-                            // 累加当前箱柜有效台数
-                            totalCount += cabQty;
                         }
-                    }
 
-                    // 2. 双轨兜底：若定义名称未统计出台数，直接智能扫描顶部箱柜汇总表区域
-                    if (totalCount == 0)
-                    {
-                        try
+                        // 4. 兜底 2: 最终保底（若已用行数超过 5 行，默认保底计 1 台）
+                        if (totalCount == 0)
                         {
-                            // 抓取顶部 A1:H40 范围
-                            dynamic topRange = sheet.Range["A1:H40"];
-                            // 批量读入内存二维数组 (规则 7)
-                            object[,] topMatrix = (object[,])topRange.Value2;
-
-                            // 寻找表头行
-                            int headerRow = 0;
-                            // 遍历前 15 行寻找表头
-                            for (int r = 1; r <= 15; r++)
+                            try
                             {
-                                // 提取前 3 列文本
-                                string c1 = Convert.ToString(topMatrix[r, 1]) ?? "";
-                                string c2 = Convert.ToString(topMatrix[r, 2]) ?? "";
-                                string c3 = Convert.ToString(topMatrix[r, 3]) ?? "";
-
-                                // 判断是否为汇总表头
-                                if (c1.Contains("序号") || c2.Contains("序号") || c2.Contains("柜号") || c2.Contains("设备") || c3.Contains("型号"))
+                                dynamic usedRange = sheet.UsedRange;
+                                if (usedRange != null && Convert.ToInt32(usedRange.Rows.Count) > 5)
                                 {
-                                    // 锁定表头行
-                                    headerRow = r;
-                                    break;
+                                    // 保底计 1 台
+                                    totalCount = 1;
                                 }
                             }
-
-                            // 找到表头则向下遍历箱柜数据行
-                            if (headerRow > 0)
-                            {
-                                // 遍历数据行
-                                for (int r = headerRow + 1; r <= 38; r++)
-                                {
-                                    // 提取序号、柜号、设备名与型号
-                                    string noStr = Convert.ToString(topMatrix[r, 1]) ?? "";
-                                    string nameStr = Convert.ToString(topMatrix[r, 2]) ?? "";
-                                    string modelStr = Convert.ToString(topMatrix[r, 3]) ?? "";
-
-                                    // 遇到合计、总计、小计、说明、落款、明细等关键字立即截断终止扫描
-                                    if (nameStr.Contains("合计") || noStr.Contains("合计") || modelStr.Contains("合计") ||
-                                        nameStr.Contains("总计") || noStr.Contains("总计") || modelStr.Contains("总计") ||
-                                        nameStr.Contains("小计") || noStr.Contains("小计") || modelStr.Contains("小计") ||
-                                        nameStr.Contains("大写") || nameStr.Contains("说明") || nameStr.Contains("审核") ||
-                                        nameStr.Contains("明细") || nameStr.Contains("元件"))
-                                    {
-                                        // 立即终止兜底扫描，绝不穿透至落款行
-                                        break;
-                                    }
-
-                                    // 全空行则跳过
-                                    if (string.IsNullOrWhiteSpace(noStr) && string.IsNullOrWhiteSpace(nameStr) && string.IsNullOrWhiteSpace(modelStr))
-                                    {
-                                        continue;
-                                    }
-
-                                    // 单行台数初始化
-                                    int rowQty = 1;
-                                    // 数量一定在 F 列 (第 6 列)，直接读取第 6 列，不解析 E 列
-                                    object q1 = topMatrix[r, 6];
-                                    // 采用 double 容错解析台数
-                                    if (q1 != null && double.TryParse(Convert.ToString(q1), out double dpQty) && dpQty > 0)
-                                    {
-                                        // 记录提取台数
-                                        rowQty = (int)Math.Round(dpQty);
-                                    }
-
-                                    // 累加台数
-                                    totalCount += rowQty;
-                                }
-                            }
+                            catch { }
                         }
-                        catch { }
-                    }
 
-                    // 3. 最终兜底
-                    if (totalCount == 0)
-                    {
-                        try
+                        // 将解析出的分类与台数加入结果列表
+                        result.Add(new Controllers.SummaryCategoryDto
                         {
-                            dynamic usedRange = sheet.UsedRange;
-                            if (usedRange != null && usedRange.Rows.Count > 5)
-                            {
-                                totalCount = 1;
-                            }
-                        }
-                        catch { }
+                            SheetName = sheetName,
+                            CabinetCount = totalCount,
+                            IsSelected = true
+                        });
                     }
-
-                    result.Add(new Controllers.SummaryCategoryDto
-                    {
-                        SheetName = sheetName,
-                        CabinetCount = totalCount,
-                        IsSelected = true
-                    });
-                }
             }
             catch
             {
@@ -592,12 +577,16 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// <summary>
         /// 执行元件数据提取、内存合并聚合并在当前工作簿生成“元件汇总表” (17 列双层表头版，包含“原型号规格”基准参考列)
+        /// 支持过程进度委托回调
         /// </summary>
-        public static bool GenerateComponentSummarySheet(Controllers.GenerateSummaryRequest request)
+        public static bool GenerateComponentSummarySheet(Controllers.GenerateSummaryRequest request, Action<int, string>? onProgress = null)
         {
             // 校验请求参数有效性
-            if (request == null || request.SelectedSheets == null || request.SelectedSheets.Count == 0) return false;
+            // 记录进入前的原始计算模式与事件监听状态，以便在 finally 中无损还原
+            object? oldCalculation = null;
+            bool? oldEnableEvents = null;
 
             try
             {
@@ -611,6 +600,14 @@ namespace ExcelAddInDemo
                 // 若工作簿为空则返回失败
                 if (activeWb == null) return false;
 
+                // 读取环境初始配置
+                try { oldCalculation = app.Calculation; } catch { }
+                try { oldEnableEvents = app.EnableEvents; } catch { }
+
+                // 核心提速：临时关闭 Excel 自动计算，防止写入数百行公式及设置样式时触发公式级联重算风暴
+                try { app.Calculation = -4135; /* -4135 代表 XlCalculation.xlCalculationManual 手动计算 --硬编码-- */ } catch { }
+                // 临时抑制工作表事件广播
+                try { app.EnableEvents = false; } catch { }
                 // 临时关闭屏幕刷新与提示警告以提升处理速度
                 app.ScreenUpdating = false;
                 // 关闭 Excel 警告弹窗
@@ -618,10 +615,18 @@ namespace ExcelAddInDemo
 
                 // 原始元器件提取列表
                 var rawComponents = new List<AggregatedComponent>();
+                // 获取选中的分类表总数
+                int totalSheets = request.SelectedSheets.Count;
+                int currentSheetIndex = 0;
 
                 // 遍历用户选中的所有分类工作表
                 foreach (string sheetName in request.SelectedSheets)
                 {
+                    currentSheetIndex++;
+                    // 阶段进度上报：计算当前分类表扫描百分比
+                    int progressVal = (int)(5 + (double)currentSheetIndex / (totalSheets + 1) * 70);
+                    onProgress?.Invoke(progressVal, $"正在读取分类表 [{sheetName}] ({currentSheetIndex}/{totalSheets})...");
+
                     // 定义工作表动态对象
                     dynamic? sheet = null;
                     try
@@ -633,10 +638,51 @@ namespace ExcelAddInDemo
                     // 校验工作表非空
                     if (sheet == null) continue;
 
+                    // 规则 8: 在操作/生成元件汇总表前，强制调用 FixAndFillCabinetNamesForSheet 自愈并校准定义名称
+                    Tool.FixAndFillCabinetNamesForSheet(sheet);
+
                     // 调用公共方法构建当前分类表的有效箱柜锚点字典 (规则 6)
                     var validCabinets = Tool.GetSheetValidCabinets(sheet, activeWb);
+                    if (validCabinets.Count == 0) continue;
 
-                    // 遍历当前分类表中的每个箱柜
+                    // 规则 7 终极优化：单次 COM 调用抓取该分类表整表 A1:AD{maxUsedRow} 大二维数组到内存
+                    // 彻底消除对 200+ 台箱柜进行数百次 Range 切片与单格读取的巨量 COM 往返
+                    int maxUsedRow = 200;
+                    try
+                    {
+                        // 动态获取当前分类表已用区域下边界
+                        dynamic uRange = sheet.UsedRange;
+                        if (uRange != null)
+                        {
+                            // 计算最大行号
+                            int uRow = Convert.ToInt32(uRange.Row);
+                            int uCount = Convert.ToInt32(uRange.Rows.Count);
+                            // 预留容错行
+                            maxUsedRow = Math.Max(uRow + uCount + 10, 200);
+                        }
+                    }
+                    catch { }
+
+                    // 一次性读取整张分类表 A1:AD{maxUsedRow} 共 30 列的值与公式矩阵 (单表仅 1 次 COM 调用)
+                    dynamic sheetDataRange = sheet.Range[$"A1:AD{maxUsedRow}"];
+                    object[,] sheetValMatrix = (object[,])sheetDataRange.Value2;
+                    object[,] sheetFormulaMatrix = (object[,])sheetDataRange.Formula;
+                    int maxArrRow = sheetValMatrix.GetLength(0);
+                    int maxArrCol = sheetValMatrix.GetLength(1);
+
+                    // 本地安全提取委托 (0 次 COM 调用)
+                    object? GetSheetVal(int r, int c)
+                    {
+                        if (r >= 1 && r <= maxArrRow && c >= 1 && c <= maxArrCol) return sheetValMatrix[r, c];
+                        return null;
+                    }
+                    object? GetSheetFormula(int r, int c)
+                    {
+                        if (r >= 1 && r <= maxArrRow && c >= 1 && c <= maxArrCol) return sheetFormulaMatrix[r, c];
+                        return null;
+                    }
+
+                    // 遍历当前分类表中的每个箱柜 (全内存切片提取，零 COM 开销)
                     foreach (var cab in validCabinets)
                     {
                         // 缺少明细锚点则跳过
@@ -651,13 +697,13 @@ namespace ExcelAddInDemo
                         // 默认单台箱柜台数
                         int cabQty = 1;
 
-                        // 获取柜体台数（规则 6 & 8，优先取汇总行 F 列数量）
+                        // 获取柜体台数（规则 6 & 8，优先从内存大矩阵读取汇总行 F 列数量，0 COM 调用）
                         if (sumRow > 0)
                         {
                             try
                             {
-                                // 优先读取汇总行数量
-                                object qVal = sheet.Cells[sumRow, 6].Value ?? sheet.Cells[sumRow, 5].Value;
+                                // 优先从内存大矩阵读取汇总行数量 (第 6 列 F 列与第 5 列 E 列)
+                                object? qVal = GetSheetVal(sumRow, 6) ?? GetSheetVal(sumRow, 5);
                                 // 转换台数整数
                                 if (qVal != null && int.TryParse(Convert.ToString(qVal), out int pQty) && pQty > 0)
                                 {
@@ -674,23 +720,13 @@ namespace ExcelAddInDemo
                         // 行号倒置则跳过
                         if (compEndRow < compStartRow) continue;
 
-                        // 计算区域总行数
-                        int rowCount = compEndRow - compStartRow + 1;
-
-                        // 采用 2D 数组一次性批量读入内存（包含值矩阵与公式矩阵，覆盖 A~AD 列共 30 列，规则 7）
-                        dynamic compRange = sheet.Range[$"A{compStartRow}:AD{compEndRow}"];
-                        // 读取值矩阵
-                        object[,] valMatrix = (object[,])compRange.Value2;
-                        // 读取公式矩阵
-                        object[,] formulaMatrix = (object[,])compRange.Formula;
-
-                        // 逐行解析元器件字段
-                        for (int r = 1; r <= rowCount; r++)
+                        // 逐行解析元器件字段 (直接在内存二维大数组中切片提取)
+                        for (int curR = compStartRow; curR <= compEndRow; curR++)
                         {
                             // B 列 (索引 2): 元件名称
-                            string compName = Convert.ToString(valMatrix[r, 2]) ?? string.Empty;
+                            string compName = Convert.ToString(GetSheetVal(curR, 2)) ?? string.Empty;
                             // C 列 (索引 3): 型号规格 (从分类表中提取时的原始型号规格)
-                            string model = Convert.ToString(valMatrix[r, 3]) ?? string.Empty;
+                            string model = Convert.ToString(GetSheetVal(curR, 3)) ?? string.Empty;
 
                             // 跳过名称与型号均为空的空白行
                             if (string.IsNullOrWhiteSpace(compName) && string.IsNullOrWhiteSpace(model))
@@ -699,125 +735,85 @@ namespace ExcelAddInDemo
                             }
 
                             // D 列 (索引 4): 生产厂家
-                            string mfg = Convert.ToString(valMatrix[r, 4]) ?? string.Empty;
+                            string mfg = Convert.ToString(GetSheetVal(curR, 4)) ?? string.Empty;
                             // E 列 (索引 5): 单位
-                            string unit = Convert.ToString(valMatrix[r, 5]) ?? string.Empty;
+                            string unit = Convert.ToString(GetSheetVal(curR, 5)) ?? string.Empty;
 
                             // F 列 (索引 6): 数量
                             decimal qty = 0;
                             // 解析数量数值
-                            if (decimal.TryParse(Convert.ToString(valMatrix[r, 6]), out decimal q)) qty = q;
+                            if (decimal.TryParse(Convert.ToString(GetSheetVal(curR, 6)), out decimal q)) qty = q;
 
                             // G 列 (索引 7): 销售单价
                             decimal unitPrice = 0;
                             // 解析单价值
-                            if (decimal.TryParse(Convert.ToString(valMatrix[r, 7]), out decimal p)) unitPrice = p;
+                            if (decimal.TryParse(Convert.ToString(GetSheetVal(curR, 7)), out decimal p)) unitPrice = p;
 
                             // H 列 (索引 8): 销售总价
                             decimal totalP = 0;
                             // 解析销售总价
-                            if (decimal.TryParse(Convert.ToString(valMatrix[r, 8]), out decimal tp)) totalP = tp;
+                            if (decimal.TryParse(Convert.ToString(GetSheetVal(curR, 8)), out decimal tp)) totalP = tp;
                             // 若总价未填写则自动计算
                             else totalP = qty * unitPrice;
 
                             // I 列 (索引 9): 备注
-                            string remark = Convert.ToString(valMatrix[r, 9]) ?? string.Empty;
+                            string remark = Convert.ToString(GetSheetVal(curR, 9)) ?? string.Empty;
 
                             // J 列 (索引 10): 成本单价
                             decimal costUnitPrice = 0;
                             // 解析成本单价
-                            if (decimal.TryParse(Convert.ToString(valMatrix[r, 10]), out decimal cp)) costUnitPrice = cp;
+                            if (decimal.TryParse(Convert.ToString(GetSheetVal(curR, 10)), out decimal cp)) costUnitPrice = cp;
 
                             // K 列 (索引 11): 成本总价
                             decimal costTotalPrice = 0;
                             // 解析成本总价
-                            if (decimal.TryParse(Convert.ToString(valMatrix[r, 11]), out decimal ctp)) costTotalPrice = ctp;
+                            if (decimal.TryParse(Convert.ToString(GetSheetVal(curR, 11)), out decimal ctp)) costTotalPrice = ctp;
                             // 缺省时自动计算成本总价
                             else costTotalPrice = qty * costUnitPrice;
 
                             // L 列 (索引 12): 报出系数 / 加价系数
                             decimal markupFactor = 1.0m;
                             // 解析报出系数值
-                            if (decimal.TryParse(Convert.ToString(valMatrix[r, 12]), out decimal mf) && mf > 0) markupFactor = mf;
+                            if (decimal.TryParse(Convert.ToString(GetSheetVal(curR, 12)), out decimal mf) && mf > 0) markupFactor = mf;
                             // 若未指定则根据售价与成本计算加价系数
                             else if (costUnitPrice > 0 && unitPrice > 0) markupFactor = Math.Round(unitPrice / costUnitPrice, 2);
 
                             // M 列 (索引 13): 表价 / 面价公式与拆分
-                            object valM = valMatrix[r, 13];
+                            object? valM = GetSheetVal(curR, 13);
                             // 获取 M 列公式
-                            object formulaM = formulaMatrix[r, 13];
+                            object? formulaM = GetSheetFormula(curR, 13);
                             // 拆分本体与附件表价
                             ParseBaseAndAccessoryPrice(valM, formulaM, out decimal basePrice, out decimal accPrice);
 
                             // N 列 (索引 14): 折扣公式与拆分
-                            object valN = valMatrix[r, 14];
+                            object? valN = GetSheetVal(curR, 14);
                             // 获取 N 列公式
-                            object formulaN = formulaMatrix[r, 14];
+                            object? formulaN = GetSheetFormula(curR, 14);
                             // 拆分本体与附件折扣
                             ParseBaseAndAccessoryDiscount(valN, formulaN, basePrice, accPrice, out decimal baseDiscount, out decimal accDiscount);
 
                             // Q 列 (索引 17): 类别
-                            string compCategory = Convert.ToString(valMatrix[r, 17]) ?? string.Empty;
+                            string compCategory = Convert.ToString(GetSheetVal(curR, 17)) ?? string.Empty;
                             // 默认分类名称为“元件” --硬编码--
                             if (string.IsNullOrWhiteSpace(compCategory)) compCategory = "元件";
 
                             // U 列 (索引 21): 原始型号 (分类明细表中该元件的原始信息)
-                            string uColModel = string.Empty;
-                            // 安全检查矩阵第二维宽度是否达到 21 列
-                            if (valMatrix.GetLength(1) >= 21)
-                            {
-                                // 读取 U 列单元格文本值
-                                uColModel = Convert.ToString(valMatrix[r, 21]) ?? string.Empty;
-                            }
+                            string uColModel = Convert.ToString(GetSheetVal(curR, 21)) ?? string.Empty;
 
                             // W 列 (索引 23): Current 额定电流
-                            string currentVal = string.Empty;
-                            if (valMatrix.GetLength(1) >= 23)
-                            {
-                                currentVal = Convert.ToString(valMatrix[r, 23])?.Trim() ?? string.Empty;
-                            }
-
+                            string currentVal = Convert.ToString(GetSheetVal(curR, 23))?.Trim() ?? string.Empty;
                             // X 列 (索引 24): Poles 极数
-                            string polesVal = string.Empty;
-                            if (valMatrix.GetLength(1) >= 24)
-                            {
-                                polesVal = Convert.ToString(valMatrix[r, 24])?.Trim() ?? string.Empty;
-                            }
-
+                            string polesVal = Convert.ToString(GetSheetVal(curR, 24))?.Trim() ?? string.Empty;
                             // Y 列 (索引 25): trip 脱扣方式
-                            string tripVal = string.Empty;
-                            if (valMatrix.GetLength(1) >= 25)
-                            {
-                                tripVal = Convert.ToString(valMatrix[r, 25])?.Trim() ?? string.Empty;
-                            }
-
+                            string tripVal = Convert.ToString(GetSheetVal(curR, 25))?.Trim() ?? string.Empty;
                             // Z 列 (索引 26): Accessory 配套附件
-                            string accVal = string.Empty;
-                            if (valMatrix.GetLength(1) >= 26)
-                            {
-                                accVal = Convert.ToString(valMatrix[r, 26])?.Trim() ?? string.Empty;
-                            }
-
+                            string accVal = Convert.ToString(GetSheetVal(curR, 26))?.Trim() ?? string.Empty;
                             // AA 列 (索引 27): BlockName 扩展参数1 / 图块名称
-                            string param1Val = string.Empty;
-                            if (valMatrix.GetLength(1) >= 27)
-                            {
-                                param1Val = Convert.ToString(valMatrix[r, 27])?.Trim() ?? string.Empty;
-                            }
-
+                            string param1Val = Convert.ToString(GetSheetVal(curR, 27))?.Trim() ?? string.Empty;
                             // AB 列 (索引 28): BlockCategory 扩展参数2 / 图块类别
-                            string param2Val = string.Empty;
-                            if (valMatrix.GetLength(1) >= 28)
-                            {
-                                param2Val = Convert.ToString(valMatrix[r, 28])?.Trim() ?? string.Empty;
-                            }
-
+                            string param2Val = Convert.ToString(GetSheetVal(curR, 28))?.Trim() ?? string.Empty;
                             // AD 列 (索引 30): CAD 句柄
-                            string handleVal = string.Empty;
-                            if (valMatrix.GetLength(1) >= 30)
-                            {
-                                handleVal = Convert.ToString(valMatrix[r, 30])?.Trim() ?? string.Empty;
-                            }
+                            string handleVal = Convert.ToString(GetSheetVal(curR, 30))?.Trim() ?? string.Empty;
 
                             // 计算经过箱柜台数放大后的实际总数量与实际总金额
                             decimal totalQty = qty * cabQty;
@@ -859,6 +855,9 @@ namespace ExcelAddInDemo
                         }
                     }
                 }
+
+                // 进度上报：进入内存合并阶段
+                onProgress?.Invoke(80, "正在进行元器件多维合并与加权聚合...");
 
                 // 内存合并聚合
                 var mergeConditions = request.MergeConditions;
@@ -973,6 +972,9 @@ namespace ExcelAddInDemo
                     grouped = grouped.OrderBy(x => x.SheetName).ThenBy(x => x.Name).ThenBy(x => x.Manufacturer).ThenBy(x => x.Model).ToList();
                 }
 
+                // 进度上报：进入汇总表构建与格式化阶段
+                onProgress?.Invoke(90, "正在生成【元件汇总表】并渲染格式...");
+
                 // 创建或清空“元件汇总表”
                 string summarySheetName = "元件汇总表"; // --硬编码--
                 dynamic summarySheet = null;
@@ -980,8 +982,9 @@ namespace ExcelAddInDemo
                 {
                     // 尝试获取已有的“元件汇总表”
                     summarySheet = activeWb.Worksheets[summarySheetName];
-                    // 清空既有内容与样式
-                    summarySheet.Cells.Clear();
+                    // 仅轻量清空已用区域，杜绝 Cells.Clear() 对 104 万行的全盘清空开销
+                    try { summarySheet.UsedRange.Clear(); }
+                    catch { summarySheet.Cells.Clear(); }
                 }
                 catch
                 {
@@ -1297,31 +1300,56 @@ namespace ExcelAddInDemo
                     tableExtRange.Borders.Weight = 2;
                 }
 
-                // 显式精准设置各列宽度（保证界面美观无挤压，注意宽度） --硬编码--
-                summarySheet.Columns[1].ColumnWidth = 6;   // A: 序号
-                summarySheet.Columns[2].ColumnWidth = 18;  // B: 元件名称
-                summarySheet.Columns[3].ColumnWidth = 24;  // C: 原型号规格 (基准参考列)
-                summarySheet.Columns[4].ColumnWidth = 24;  // D: 型号规格
-                summarySheet.Columns[5].ColumnWidth = 6;   // E: 单位
-                summarySheet.Columns[6].ColumnWidth = 8;   // F: 数量
-                summarySheet.Columns[7].ColumnWidth = 14;  // G: 单价
-                summarySheet.Columns[8].ColumnWidth = 15;  // H: 总价
-                summarySheet.Columns[9].ColumnWidth = 18;  // I: 生产厂家
-                summarySheet.Columns[10].ColumnWidth = 14; // J: 成本单价
-                summarySheet.Columns[11].ColumnWidth = 9;  // K: 报出系数
-                summarySheet.Columns[12].ColumnWidth = 12; // L: 本体表价
-                summarySheet.Columns[13].ColumnWidth = 8;  // M: 本体折扣
-                summarySheet.Columns[14].ColumnWidth = 12; // N: 附件表价
-                summarySheet.Columns[15].ColumnWidth = 8;  // O: 附件折扣
-                summarySheet.Columns[16].ColumnWidth = 18; // P: 备注
-                summarySheet.Columns[17].ColumnWidth = 8;  // Q: 类别
-                summarySheet.Columns[18].ColumnWidth = 24; // R: 原始型号 (明细表 U 列多项拼接)
-                summarySheet.Columns[20].ColumnWidth = 10; // T: 额定电流
-                summarySheet.Columns[21].ColumnWidth = 8;  // U: 极数
-                summarySheet.Columns[22].ColumnWidth = 10; // V: 脱扣方式
-                summarySheet.Columns[23].ColumnWidth = 14; // W: 附件
-                summarySheet.Columns[24].ColumnWidth = 12; // X: 参数1
-                summarySheet.Columns[25].ColumnWidth = 12; // Y: 参数2
+                // 聚合按相同宽度批量设置列宽，大幅削减跨进程 COM 往返 --硬编码: 列宽尺寸--
+                try
+                {
+                    // 宽度 6: A 序号, E 单位 --硬编码--
+                    summarySheet.Range["A:A, E:E"].ColumnWidth = 6;
+                    // 宽度 8: F 数量, M/O 折扣, Q 类别, U 极数 --硬编码--
+                    summarySheet.Range["F:F, M:M, O:O, Q:Q, U:U"].ColumnWidth = 8;
+                    // 宽度 9: K 报出系数 --硬编码--
+                    summarySheet.Range["K:K"].ColumnWidth = 9;
+                    // 宽度 10: T 额定电流, V 脱扣方式 --硬编码--
+                    summarySheet.Range["T:T, V:V"].ColumnWidth = 10;
+                    // 宽度 12: L/N 表价, X/Y 扩展参数1/2 --硬编码--
+                    summarySheet.Range["L:L, N:N, X:X, Y:Y"].ColumnWidth = 12;
+                    // 宽度 14: G 单价, J 成本单价, W 附件 --硬编码--
+                    summarySheet.Range["G:G, J:J, W:W"].ColumnWidth = 14;
+                    // 宽度 15: H 总价 --硬编码--
+                    summarySheet.Range["H:H"].ColumnWidth = 15;
+                    // 宽度 18: B 名称, I 厂家, P 备注 --硬编码--
+                    summarySheet.Range["B:B, I:I, P:P"].ColumnWidth = 18;
+                    // 宽度 24: C 原型号, D 新型号, R 原始型号 --硬编码--
+                    summarySheet.Range["C:C, D:D, R:R"].ColumnWidth = 24;
+                }
+                catch
+                {
+                    // 容错逐列回退
+                    summarySheet.Columns[1].ColumnWidth = 6;
+                    summarySheet.Columns[2].ColumnWidth = 18;
+                    summarySheet.Columns[3].ColumnWidth = 24;
+                    summarySheet.Columns[4].ColumnWidth = 24;
+                    summarySheet.Columns[5].ColumnWidth = 6;
+                    summarySheet.Columns[6].ColumnWidth = 8;
+                    summarySheet.Columns[7].ColumnWidth = 14;
+                    summarySheet.Columns[8].ColumnWidth = 15;
+                    summarySheet.Columns[9].ColumnWidth = 18;
+                    summarySheet.Columns[10].ColumnWidth = 14;
+                    summarySheet.Columns[11].ColumnWidth = 9;
+                    summarySheet.Columns[12].ColumnWidth = 12;
+                    summarySheet.Columns[13].ColumnWidth = 8;
+                    summarySheet.Columns[14].ColumnWidth = 12;
+                    summarySheet.Columns[15].ColumnWidth = 8;
+                    summarySheet.Columns[16].ColumnWidth = 18;
+                    summarySheet.Columns[17].ColumnWidth = 8;
+                    summarySheet.Columns[18].ColumnWidth = 24;
+                    summarySheet.Columns[20].ColumnWidth = 10;
+                    summarySheet.Columns[21].ColumnWidth = 8;
+                    summarySheet.Columns[22].ColumnWidth = 10;
+                    summarySheet.Columns[23].ColumnWidth = 14;
+                    summarySheet.Columns[24].ColumnWidth = 12;
+                    summarySheet.Columns[25].ColumnWidth = 12;
+                }
 
                 // 挂载 AutoFilter 自动筛选下拉箭头至第 5 行 (A5:Y5)
                 try
@@ -1332,6 +1360,8 @@ namespace ExcelAddInDemo
 
                 // 激活并高亮显示元件汇总表
                 summarySheet.Activate();
+                // 进度上报：100% 完成
+                onProgress?.Invoke(100, "元件汇总表生成完成！");
                 return true;
             }
             catch (Exception ex)
@@ -1346,7 +1376,35 @@ namespace ExcelAddInDemo
                     dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                     if (app != null)
                     {
+                        // 优先恢复原始计算模式，并触发一次全表重算确保公式即时呈现真实结果
+                        if (oldCalculation != null)
+                        {
+                            // 还原原有的计算模式设置
+                            try { app.Calculation = oldCalculation; } catch { }
+                        }
+                        else
+                        {
+                            // 默认兜底恢复为自动计算 --硬编码: xlCalculationAutomatic--
+                            try { app.Calculation = -4105; } catch { }
+                        }
+                        // 强制触发一次重算使所有汇总公式生效
+                        try { app.Calculate(); } catch { }
+
+                        // 恢复原始事件监听状态
+                        if (oldEnableEvents.HasValue)
+                        {
+                            // 还原原始事件状态
+                            try { app.EnableEvents = oldEnableEvents.Value; } catch { }
+                        }
+                        else
+                        {
+                            // 默认恢复事件开启
+                            try { app.EnableEvents = true; } catch { }
+                        }
+
+                        // 恢复屏幕刷新
                         app.ScreenUpdating = true;
+                        // 恢复系统警告提示
                         app.DisplayAlerts = true;
                     }
                 }

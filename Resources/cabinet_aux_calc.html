@@ -1054,6 +1054,12 @@
               <div class="result-card-desc">
                 类型: {{ calcResult.isCabinet ? '落地柜体' : '配电箱体' }} | 推荐深度: {{ calcResult.recommendedShellDepth || 200 }} mm (纯高度驱动)
               </div>
+              <div
+                v-if="calcResult.realDimensionsCount > 0"
+                style="margin-top: 4px; font-size: 11px; color: #00796b; background: #e0f2f1; padding: 2px 6px; border-radius: 3px; display: inline-flex; align-items: center; gap: 4px; line-height: 1.3;"
+              >
+                <span>📐 CAD真实尺寸: 匹配 {{ calcResult.realDimensionsCount }} 项, 最大进深 {{ calcResult.maxComponentDepth }}mm (安全门限+60mm: {{ calcResult.minRequiredDepth }}mm)</span>
+              </div>
             </div>
 
             <!-- 铜排卡片 -->

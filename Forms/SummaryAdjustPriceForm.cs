@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
+using ExcelDna.Integration;
 using ExcelAddInDemo.Controllers;
 
 namespace ExcelAddInDemo
@@ -257,12 +258,25 @@ namespace ExcelAddInDemo
                 {
                     SafeInvoke(() => this.Close());
                 }
-                // 响应获取分类列表指令
+                // 响应获取分类列表指令 (通过 Excel 纯净宏队列异步调度，彻底杜绝 Chromium IPC 线程死锁卡死 Excel)
                 else if (action == "getCategories")
                 {
-                    string resultJson = _controller.GetCategories();
-                    // 跨线程安全回发分类列表
-                    PostWebMessageAsStringSafe(resultJson);
+                    // 在 Excel 主线程宏队列中执行 COM 访问
+                    ExcelAsyncUtil.QueueAsMacro(() =>
+                    {
+                        try
+                        {
+                            // 执行分类读取逻辑
+                            string resultJson = _controller.GetCategories();
+                            // 跨线程安全向前端回发分类数据
+                            PostWebMessageAsStringSafe(resultJson);
+                        }
+                        catch (Exception ex)
+                        {
+                            // 捕获调度异常并记录
+                            LogHelper.WriteLog($"[SummaryAdjustPriceForm] getCategories 调度异常: {ex.Message}");
+                        }
+                    });
                 }
                 // 响应生成元件汇总表指令
                 else if (action == "generateSummary")
@@ -270,9 +284,37 @@ namespace ExcelAddInDemo
                     var req = JsonSerializer.Deserialize<GenerateSummaryRequest>(jsonString, JsonOptions);
                     if (req != null)
                     {
-                        string resultJson = _controller.GenerateSummary(req);
-                        // 跨线程安全回发生成结果
-                        PostWebMessageAsStringSafe(resultJson);
+                        // 在 Excel 纯净宏队列中调度生成逻辑
+                        ExcelAsyncUtil.QueueAsMacro(() =>
+                        {
+                            try
+                            {
+                                // 执行汇总表生成业务并实时推送阶段进度
+                                string resultJson = _controller.GenerateSummary(req, (percent, msg) =>
+                                {
+                                    // 线程安全回送阶段进度消息至前端
+                                    SafeInvoke(() =>
+                                    {
+                                        // 序列化进度消息包
+                                        var progressPayload = new
+                                        {
+                                            action = "onSummaryProgress",
+                                            percent = percent,
+                                            message = msg
+                                        };
+                                        // 回发前端 WebView2
+                                        PostWebMessageAsStringSafe(JsonSerializer.Serialize(progressPayload, JsonOptions));
+                                    });
+                                });
+                                // 跨线程安全回发最终生成结果
+                                PostWebMessageAsStringSafe(resultJson);
+                            }
+                            catch (Exception ex)
+                            {
+                                // 记录生成异常
+                                LogHelper.WriteLog($"[SummaryAdjustPriceForm] generateSummary 调度异常: {ex.Message}");
+                            }
+                        });
                     }
                 }
                 // 响应调整窗体尺寸指令 (例如切换为图二紧凑编辑条时动态收缩窗口)
@@ -294,13 +336,25 @@ namespace ExcelAddInDemo
                         }
                     });
                 }
-                // 响应一键更新指令 (预留接口)
+                // 响应一键更新指令
                 else if (action == "updateFromSummary")
                 {
-                    // 调用控制器执行一键更新业务
-                    string resultJson = _controller.UpdateFromSummary(jsonString);
-                    // 跨线程安全向前端回发更新结果
-                    PostWebMessageAsStringSafe(resultJson);
+                    // 在 Excel 纯净宏队列中调度反向回写逻辑
+                    ExcelAsyncUtil.QueueAsMacro(() =>
+                    {
+                        try
+                        {
+                            // 调用控制器执行一键更新业务
+                            string resultJson = _controller.UpdateFromSummary(jsonString);
+                            // 跨线程安全向前端回发更新结果
+                            PostWebMessageAsStringSafe(resultJson);
+                        }
+                        catch (Exception ex)
+                        {
+                            // 记录反向回写异常
+                            LogHelper.WriteLog($"[SummaryAdjustPriceForm] updateFromSummary 调度异常: {ex.Message}");
+                        }
+                    });
                 }
                 // 响应切换列隐藏状态指令
                 else if (action == "toggleColumnsVisibility")
@@ -310,18 +364,42 @@ namespace ExcelAddInDemo
                     // 读取隐藏标志
                     bool hidden = root.TryGetProperty("hidden", out var hElem) && hElem.GetBoolean();
 
-                    // 调用控制器执行切换
-                    string resultJson = _controller.ToggleColumnsVisibility(targetRange, hidden);
-                    // 跨线程安全回发执行结果
-                    PostWebMessageAsStringSafe(resultJson);
+                    // 在 Excel 纯净宏队列中调度列隐藏切换
+                    ExcelAsyncUtil.QueueAsMacro(() =>
+                    {
+                        try
+                        {
+                            // 调用控制器执行切换
+                            string resultJson = _controller.ToggleColumnsVisibility(targetRange, hidden);
+                            // 跨线程安全回发执行结果
+                            PostWebMessageAsStringSafe(resultJson);
+                        }
+                        catch (Exception ex)
+                        {
+                            // 记录列隐藏切换异常
+                            LogHelper.WriteLog($"[SummaryAdjustPriceForm] toggleColumnsVisibility 调度异常: {ex.Message}");
+                        }
+                    });
                 }
                 // 响应获取列隐藏状态指令
                 else if (action == "getColumnsHiddenStatus")
                 {
-                    // 调用控制器读取列隐藏状态
-                    string resultJson = _controller.GetColumnsHiddenStatus();
-                    // 跨线程安全回发状态报文
-                    PostWebMessageAsStringSafe(resultJson);
+                    // 在 Excel 宏队列中调度状态读取
+                    ExcelAsyncUtil.QueueAsMacro(() =>
+                    {
+                        try
+                        {
+                            // 调用控制器读取列隐藏状态
+                            string resultJson = _controller.GetColumnsHiddenStatus();
+                            // 跨线程安全回发状态报文
+                            PostWebMessageAsStringSafe(resultJson);
+                        }
+                        catch (Exception ex)
+                        {
+                            // 记录状态获取异常
+                            LogHelper.WriteLog($"[SummaryAdjustPriceForm] getColumnsHiddenStatus 调度异常: {ex.Message}");
+                        }
+                    });
                 }
             }
             catch (Exception ex)

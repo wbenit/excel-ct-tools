@@ -1,5 +1,70 @@
 # Session State
 
+- **汇总调价全表单次大数组读取、智能免重复自愈与 Element Plus 动态进度条系统级提速 (`ExcelServices.SummaryAdjustPrice.cs`, `Tool.cs`, `SummaryAdjustPriceController.cs`, `SummaryAdjustPriceForm.cs`, `summary_adjust_price.html`)**：
+  1. **问题根因剖析（200+台箱柜严重卡顿根本原因）**：
+     - **逐柜碎片化 Range 访问**：200 多台箱柜逐个调用 `sheet.Range` 读取，产生了 400 余次 COM 范围跨进程通信往返；
+     - **SafeSetSheetName 频繁异常与重写**：数百个定义名称每次都执行 Delete/Add，触发 COM 异常与跨进程往返；
+     - **无进度反馈**：长时间处理大工程时缺少可视化反馈，界面停留在转圈状态。
+  2. **落地实施方案**：
+     - **单表单次大数组读取 (终极规则 7)**：在分类表循环外层一次性抓取整表 `Range["A1:AD{maxUsedRow}"]` 的值矩阵与公式矩阵到内存，内层遍历 200+ 台箱柜时全部通过内存二维数组切片提取（0 次 COM 往返），单表耗时由数秒降至 0.05 秒；
+     - **智能免重复自愈 (`Tool.cs`)**：`SafeSetSheetName` 检查已存在名称是否已精准指向 `$A${row}`，若匹配则毫秒级直接跳过，根除大量 COM 异常与无谓重写；
+     - **全链路进度通信与 Element Plus 动态进度条**：在 C# 逐表扫描、内存聚合与汇总表渲染时注入 `onProgress` 委托，实时将百分比与正在扫描的分类表名称（如 `正在读取分类表 [12#楼] (4/7)...`）推送到 WebView2；前端以 `#009688` 绿蓝主题浮层卡片优雅呈现；
+     - **镜像多端同步**：`summary_adjust_price.html` 已强制覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`。
+  3. **编译与构建验证**：
+     - 执行 `dotnet build "e:\Ace\ExcelAddInCTtools\ExcelAddInDemo.csproj" /p:DebugType=none /p:RunExcelDnaBuild=false`：**0 警告，0 错误**。
+
+
+
+- **汇总调价与分布调价弹窗分类与箱柜台数读取极速化改造及 Chromium IPC 线程死锁根治 (`Tool.cs`, `ExcelServices.SummaryAdjustPrice.cs`, `ExcelServices.DistributedAdjustPrice.cs`, `SummaryAdjustPriceForm.cs`)**：
+  1. **问题根因剖析（Excel 卡死根本原因）**：
+     - **Chromium IPC 与 STA 线程死锁**：系统事件日志捕获到 Excel 崩溃于 `EmbeddedBrowserWebView.dll`，异常代码 `0x80000003`。原因为 `SummaryAdjustPriceForm` 在 WebView2 的 `WebMessageReceived` 回调中**直接同步执行** `GetCategories` 和 `GenerateSummary` 等重型 Excel COM 操作。此时 Chromium IPC 管道等待握手返回，而 Excel COM 跨进程 RPC 处于消息泵等待态，两端形成双向死锁，最终触发 Chromium 底层 Hard Breakpoint 断言崩溃或 Excel 全局卡死挂起；
+     - **主线程数十秒无响应**：真实运行日志显示此前扫描每张表耗时 11 秒（4 张表共 44 秒），Windows 系统直接判定 EXCEL.EXE 为“Not Responding”卡死；
+     - **旧代码暴力循环**：`Tool.cs` 循环 1~200 探测删除不存在的旧定义名称引发数千次 COM 异常与 CLR 堆栈展开；
+     - **视口冻结风险**：查询函数中曾尝试设置 `ScreenUpdating = false`，若捕获或恢复不当会导致 Excel 视口永久停止重绘产生假死。
+  2. **落地实施方案**：
+     - **全面接入 `ExcelAsyncUtil.QueueAsMacro` 宏队列调度**：`SummaryAdjustPriceForm.cs` 中的 `getCategories`、`generateSummary`、`updateFromSummary`、`toggleColumnsVisibility`、`getColumnsHiddenStatus` 全部包裹在 `QueueAsMacro` 中异步调度，彻底解耦 WebView2 IPC 与 Excel 主线程，杜绝线程死锁与 `0x80000003` 崩溃；
+     - **彻底移除只读扫描中的 `ScreenUpdating = false`**：保证 Excel 界面始终处于激活正常渲染状态；
+     - **轻量只读内存数组扫描 (规则 7)**：`GetCategorySheetsWithCabinetCount()` 与 `GetCategorySheetsForDistribution()` 单次 COM 调用抓取顶部 `A1:H60` 内存二维数组，毫秒级定位表头并提取 F 列（第 6 列）台数，弹窗打开耗时从十余秒骤降至几十毫秒；
+     - **消除 COM 异常大循环**：`Tool.cs` 清理超额定义名称改为基于现存集合精准删除，消除盲目循环与 COM 异常；
+     - **严格履行规则 8**：在用户点击【立即生成】真正操作 Excel 表格前，对选中的分类表显式调用 `Tool.FixAndFillCabinetNamesForSheet(sheet)`，确保规则 6 架构有效性；
+  3. **编译与构建验证**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none`：**0 错误**；
+     - 执行完整项目构建：**0 错误**。
+
+- **DWG 元器件真实外形尺寸与安装进深提取及箱体深度 +60mm 安全防干涉推导全系统落地交付 (`DwgDimensionModels.cs`, `PersonalComponentDbService.DwgDimensions.cs`, `ExcelServices.CabinetAuxCalc.cs`, `DwgPreviewService.cs`, `ComponentParamMatchForm.cs`, `component_param_match.html`, `cabinet_aux_calc.html`, `cad-net_1/TuFan/DwgDimensionScanner.cs`)**：
+  1. **用户核心需求与背景**：
+     - **摆脱元器件尺寸写死**：告别箱体尺寸推导中元件尺寸写死或硬编码估算，实现依据元器件绑定的路径/X列/Y列 DWG 文件真实外形尺寸计算箱体；
+     - **DWG 几何外框与进深文字正则提取**：从图纸中提取模型空间几何外框（宽 $W$、高 $H$），并自动遍历所有 `DBText`、`MText` 与块属性，匹配“高”、“高度”、“厚度”、“H”（如“高度: 85”、“高 120mm”、“厚度 90”、“H: 105”）提取数字填入 SQLite（`personal_components.db`）的 `depth`；
+     - **箱体推导安全装配准则落地**：推导箱体尺寸时，整柜最大元器件安装进深深度 $\max(depth)$，箱体默认深度必须满足：
+       $$D_{\text{箱柜}} \ge \max(depth) + 60\text{mm}$$
+       以确保门板装配与内部安装导轨无机械干涉，并向上靠拢标准深度阶梯（160, 180, 200, 250, 300, 350, 400...）；
+     - **修改时间与文件大小双重指纹防伪**：采用 `LastModifiedTicks + FileSizeBytes` 双重指纹，若图纸未被修改则实现秒级跳过缓存，CAD 重新保存图纸后自动热更新。
+  2. **AutoCAD 插件端扫描服务实现 (`cad-net_1/cad1/TuFan/DwgDimensionScanner.cs`)**：
+     - 提供 `SCAN_CURR_DWG_DIM` 命令：扫描当前活动图纸外框与进深文字，入库 SQLite 并在命令行打印结果；
+     - 提供 `SCAN_DWG_DIMS` 命令：弹出文件夹选择对话框（默认引导至 `E:\BaiduNetdiskWorkspace\BaseData\新库`，--硬编码--），利用静默 `Database.ReadDwgFile` 免视口极速递归扫描所有图纸；
+     - 具备指纹比对机制（比对已收录的 Ticks 与文件字节大小，跳过未修改图纸）；
+     - 支持每 50 张图纸批量事务写入 SQLite `dwg_component_dimensions` 表。
+  3. **Excel 插件推导引擎与数据层强化 (`ExcelAddInCTtools`)**：
+     - **数据库自愈与数据访问 (`PersonalComponentDbService.DwgDimensions.cs`)**：
+       - `dwg_component_dimensions` 包含 id, dir_name, dwg_name, rel_path, width, height, depth, has_text_depth, matched_text, last_modified_ticks, file_size_bytes, updated_at；
+       - 支持 `SaveOrUpdateDwgDimension`、`BatchSaveOrUpdateDwgDimensions`、`GetDwgDimension`、`BatchGetDwgDimensions`；
+     - **Excel 扫描与箱体尺寸推导 (`ExcelServices.CabinetAuxCalc.cs`)**：
+       - `ScanCabinetData` 提取元器件绑定的 DWG 文件名与目录名；
+       - `CalculateCabinetAuxAndShell` 批量查库，优先采用 CAD 真实长宽计算占用面积，提取最大进深 `maxCompDepth`，计算 `minRequiredDepth = maxCompDepth + 60.0`；
+       - 若推导深度小于安全门限，自动提升并调用 `AlignToStandardDepth` 向上对齐到标准箱体深度阶梯；
+     - **图纸文件浏览自动注入尺寸 (`DwgPreviewService.cs`)**：
+       - `DwgFileInfo` 增加 `Width`, `Height`, `Depth`, `HasDimension`, `HasTextDepth` 属性；
+       - `ScanDwgFiles` 扫描完成后批量检索 SQLite 自动为图纸列表注入物理尺寸。
+  4. **前端交互与信息呈现升级**：
+     - **`Resources/cabinet_aux_calc.html`**：在【① 壳体推荐尺寸】卡片中，若 `realDimensionsCount > 0`，以护眼底色展示：“📐 CAD真实尺寸: 匹配 x 项, 最大进深 xx mm (安全门限+60mm: xx mm)”；
+     - **`Resources/component_param_match.html`**：在 DWG 文件项增加 `.dwg-dim-tag` 展示 `W×H D:xx`，并在鼠标悬浮 Tooltip 及写入状态栏展示尺寸详情；
+     - **`Forms/ComponentParamMatchForm.cs`**：在 `bindDwg` 回写时，实时返回该 DWG 尺寸字符串 `dimStr` 并在前端状态栏呈现。
+  5. **工程构建与多端同步**：
+     - 静态资源同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - `ExcelAddInCTtools` 执行 `dotnet build /t:Compile /p:DebugType=none`：**0 错误**；
+     - `cad-net_1/cad1/TuFan` 执行 `dotnet build /p:DebugType=none /p:RunExcelDnaBuild=false`：**0 错误**。
+
+
 - **元器件图纸参数匹配浮窗调换 X/Y 列回写内容 (`AppConfig.cs`, `appsettings.json`, `publish/appsettings.json`, `ExcelServices.ComponentParamMatch.cs`, `component_param_match.html`)**：
   - **用户核心需求**：在“图纸参数匹配”侧边浮窗中，将写入当前行的 X、Y 列内容调换（原先：X 列写目录、Y 列写图纸；调换后：X 列写图纸名称、Y 列写目录名称）；
   - **落地改动**：

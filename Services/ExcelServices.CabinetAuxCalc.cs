@@ -237,6 +237,33 @@ namespace ExcelAddInDemo
                             // 综合二次元件组判定
                             bool isComponentGroup = isCategoryGroup || isModelStar || !string.IsNullOrWhiteSpace(boundDwgCode);
 
+                            // 提取 X 列与 Y 列文本，用于提取元器件绑定的 DWG 图纸名称与所属目录
+                            string col24Str = colCount >= 24 ? compMatrix[r, 24]?.ToString()?.Trim() ?? string.Empty : string.Empty;
+                            // 提取第 25 列 (Y 列)
+                            string col25Str = colCount >= 25 ? compMatrix[r, 25]?.ToString()?.Trim() ?? string.Empty : string.Empty;
+                            string dwgDir = string.Empty;
+                            string dwgName = string.Empty;
+
+                            // 智能识别哪一列为 .dwg 图纸文件名，另一列为所属目录名称
+                            if (col24Str.EndsWith(".dwg", StringComparison.OrdinalIgnoreCase))
+                            {
+                                // X 列显式以 .dwg 结尾
+                                dwgName = col24Str;
+                                dwgDir = col25Str;
+                            }
+                            else if (col25Str.EndsWith(".dwg", StringComparison.OrdinalIgnoreCase))
+                            {
+                                // Y 列显式以 .dwg 结尾
+                                dwgName = col25Str;
+                                dwgDir = col24Str;
+                            }
+                            else if (!string.IsNullOrWhiteSpace(col24Str) || !string.IsNullOrWhiteSpace(col25Str))
+                            {
+                                // 默认按照元器件参数匹配设置：X 为图纸名，Y 为目录名 --硬编码--
+                                dwgName = col24Str;
+                                dwgDir = col25Str;
+                            }
+
                             // 构造元器件条目实体
                             var compItem = new CabinetComponentItem
                             {
@@ -252,6 +279,8 @@ namespace ExcelAddInDemo
                                 BlockName = blockName,
                                 BlockCategory = blockCategory,
                                 BoundDwgCode = boundDwgCode,
+                                DwgDir = dwgDir,
+                                DwgName = dwgName,
                                 IsComponentGroup = isComponentGroup,
                                 IsAts = name.Contains("双电源") || model.Contains("双电源") || model.Contains("ATS") || model.Contains("NZ7") || model.Contains("WATSN"),
                                 IsFireTransformer = name.Contains("火灾") || model.Contains("火灾") || name.Contains("漏电互感器"),
@@ -308,6 +337,21 @@ namespace ExcelAddInDemo
             Dictionary<int, int> currentWireMap = new Dictionary<int, int>();
             // 元件名称 -> 数量汇总字典
             Dictionary<string, int> componentNameCountMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            // 批量提取整柜关联的 DWG 检索 Key (包含带目录与纯图名)
+            var dwgKeys = new List<string>();
+            foreach (var c in scanData.Components)
+            {
+                if (!string.IsNullOrWhiteSpace(c.DwgName))
+                {
+                    if (!string.IsNullOrWhiteSpace(c.DwgDir)) dwgKeys.Add($"{c.DwgDir}/{c.DwgName}");
+                    dwgKeys.Add(c.DwgName);
+                }
+            }
+            // 批量从 SQLite 数据库获取已收录的 DWG 三维尺寸字典 (毫秒级零延迟查库)
+            var dwgDimMap = PersonalComponentDbService.BatchGetDwgDimensions(dwgKeys);
+            // 记录成功采用 CAD 真实尺寸的元器件总项数
+            int realDimsCount = 0;
 
             // 记录计算过程中的警告与未填电流提醒列表
             var calcWarnings = new List<string>();
@@ -383,10 +427,44 @@ namespace ExcelAddInDemo
                         currentWireMap[comp.Current] = wireJointCount;
                 }
 
-                // 计算元件占用面积与接线空间
+                // 计算元件占用面积与接线空间 (依据电流门限与规则梯度)
                 int wireSpace = GetWiringSpace(effectiveCurrent, comp.Name, rules.ShellRules.WiringSpaceGradients);
-                // 获取元件外形物理尺寸 (宽*高)
-                var (compWidth, compHeight) = EstimateComponentDimensions(comp);
+
+                // 优先从 DWG 尺寸字典中检索该元器件真实外形尺寸与进深 (双通道精准匹配)
+                DwgDimensionItem? dimItem = null;
+                if (!string.IsNullOrWhiteSpace(comp.DwgName))
+                {
+                    // 构建带目录相对路径
+                    string keyWithDir = !string.IsNullOrWhiteSpace(comp.DwgDir) ? $"{comp.DwgDir}/{comp.DwgName}" : comp.DwgName;
+                    string normKey = PersonalComponentDbService.NormalizeDwgKey(keyWithDir);
+                    // 尝试匹配相对路径 Key 或纯图名
+                    if (!dwgDimMap.TryGetValue(normKey, out dimItem) && !dwgDimMap.TryGetValue(comp.DwgName, out dimItem))
+                    {
+                        // 字典未命中时尝试单条兜底查库
+                        dimItem = PersonalComponentDbService.GetDwgDimension(keyWithDir);
+                    }
+                }
+
+                int compWidth = 0;
+                int compHeight = 0;
+                // 若成功获取到有效的 CAD 真实外形长宽
+                if (dimItem != null && dimItem.Width > 0 && dimItem.Height > 0)
+                {
+                    compWidth = (int)Math.Round(dimItem.Width);
+                    compHeight = (int)Math.Round(dimItem.Height);
+                    comp.RealWidth = dimItem.Width;
+                    comp.RealHeight = dimItem.Height;
+                    comp.RealDepth = dimItem.Depth;
+                    comp.HasRealDimensions = true;
+                    realDimsCount++;
+                }
+                else
+                {
+                    // 未命中时平滑降级采用行业经典规则估算长宽
+                    var est = EstimateComponentDimensions(comp);
+                    compWidth = est.Width;
+                    compHeight = est.Height;
+                }
 
                 // 首个总开关特殊处理
                 if (i == 0 && mainSwitchHeight == 0)
@@ -448,8 +526,27 @@ namespace ExcelAddInDemo
             }
             if (shellHeight > 1000) isCabinet = true;
 
-            // 纯高度推导箱柜推荐深度 (与电流彻底解耦，依据纯高度阶梯规则)
+            // 统计整柜元器件从 DWG 文字中提取出的最大安装进深/厚度 (单位: mm)
+            double maxCompDepth = scanData.Components.Where(c => c.RealDepth > 0)
+                                                    .Select(c => c.RealDepth)
+                                                    .DefaultIfEmpty(0.0)
+                                                    .Max();
+
+            // 纯高度推导箱柜基础推荐深度 (与电流彻底解耦，依据纯高度阶梯规则)
             int shellDepth = DeriveDepthFromHeight(shellHeight, rules.ShellRules);
+            double minRequiredDepth = 0.0;
+
+            // 核心规则联动：默认箱体深度至少要大于元器件最大高度(进深) + 60mm (防门板与导轨干涉) --硬编码--
+            if (maxCompDepth > 0)
+            {
+                // 计算最低安全深度门限 (元件最大深度 + 60mm 安全裕量) --硬编码--
+                minRequiredDepth = maxCompDepth + 60.0;
+                if (minRequiredDepth > shellDepth)
+                {
+                    // 深度不足以关门，提升深度并靠拢到标准箱体深度阶梯库 (如 160, 180, 200, 250, 300...)
+                    shellDepth = AlignToStandardDepth((int)Math.Ceiling(minRequiredDepth), rules.ShellRules);
+                }
+            }
 
             // -------------------------------------------------------------
             // 2. 铜排 (TMY) 基于 tmy.DrawIO 全新制作规则与定额计算
@@ -1047,6 +1144,16 @@ namespace ExcelAddInDemo
 
             // 组合推导说明描述
             string desc = $"推导完成: 最大电流 {maxCurrent}A, 判定为{(isCabinet ? "落地柜" : "配电箱")}, 推荐尺寸 {recommendedSize}";
+            // 若成功匹配到 CAD 真实尺寸，在描述中显式标明
+            if (realDimsCount > 0)
+            {
+                desc += $" | 已采用 {realDimsCount} 项元件 CAD 真实尺寸";
+            }
+            // 若存在文字提取的安装深度，标明安全裕量约束
+            if (maxCompDepth > 0)
+            {
+                desc += $" (元件最大进深: {maxCompDepth:F0}mm, 安全深度门限(+60mm): {minRequiredDepth:F0}mm, 匹配推荐深度: {shellDepth}mm)";
+            }
             if (secondarySchemeDetails.Count > 0)
             {
                 double totalSecLabor = secondarySchemeDetails.Sum(s => s.LaborCost);
@@ -1098,8 +1205,47 @@ namespace ExcelAddInDemo
                 SecondaryTotalWireLength = totalSecWireLength,
                 CopperFormulaDetails = copperFormulaDetails,
                 Description = desc,
-                Warnings = calcWarnings
+                Warnings = calcWarnings,
+                MaxComponentDepth = maxCompDepth,
+                MinRequiredDepth = minRequiredDepth,
+                RealDimensionsCount = realDimsCount
             };
+        }
+
+        /// <summary>
+        /// 将最低要求深度向上靠拢对齐到标准箱体常用深度阶梯库 (如 160, 180, 200, 250, 300, 350, 400...)
+        /// </summary>
+        /// <param name="minDepth">最低安全深度要求 (mm)</param>
+        /// <param name="shellRules">壳体规则配置</param>
+        /// <returns>对齐后的标准深度数值 (mm)</returns>
+        private static int AlignToStandardDepth(int minDepth, ShellConfig shellRules)
+        {
+            // 默认常用工业标准深度候选集合 (从小到大排序) --硬编码: 常用深度阶梯--
+            var candidates = new SortedSet<int> { 120, 140, 160, 180, 200, 220, 250, 300, 350, 400, 500, 600, 800, 1000, 1200 };
+
+            // 若配置中定义了纯高度深度推荐规则，合并其设定的深度候选
+            if (shellRules?.HeightDepthGradients != null)
+            {
+                foreach (var g in shellRules.HeightDepthGradients)
+                {
+                    if (g.Depth > 0) candidates.Add(g.Depth);
+                    if (g.CandidateDepths != null)
+                    {
+                        foreach (var cd in g.CandidateDepths) if (cd > 0) candidates.Add(cd);
+                    }
+                }
+            }
+
+            // 遍历寻找首个能够满足最小安全深度要求的标准阶梯
+            foreach (var d in candidates)
+            {
+                if (d >= minDepth)
+                {
+                    return d;
+                }
+            }
+            // 若超出已知最大阶梯，则返回自身
+            return minDepth;
         }
 
         /// <summary>

@@ -136,6 +136,23 @@ namespace ExcelAddInDemo.Services
                         CREATE INDEX IF NOT EXISTS idx_sec_scheme_name ON secondary_circuit_schemes(scheme_name);
                         CREATE INDEX IF NOT EXISTS idx_sec_group ON secondary_circuit_schemes(group_name);
                         CREATE INDEX IF NOT EXISTS idx_sec_cad_drawing ON secondary_circuit_schemes(cad_drawing_name);
+
+                        CREATE TABLE IF NOT EXISTS dwg_component_dimensions (
+                            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                            dir_name            TEXT NOT NULL DEFAULT '',
+                            dwg_name            TEXT NOT NULL,
+                            rel_path            TEXT NOT NULL UNIQUE,
+                            width               REAL NOT NULL DEFAULT 0.0,
+                            height              REAL NOT NULL DEFAULT 0.0,
+                            depth               REAL NOT NULL DEFAULT 0.0,
+                            has_text_depth      INTEGER NOT NULL DEFAULT 0,
+                            matched_text        TEXT DEFAULT '',
+                            last_modified_ticks INTEGER NOT NULL DEFAULT 0,
+                            file_size_bytes     INTEGER NOT NULL DEFAULT 0,
+                            updated_at          TEXT
+                        );
+                        CREATE INDEX IF NOT EXISTS idx_dwg_dims_rel_path ON dwg_component_dimensions(rel_path);
+                        CREATE INDEX IF NOT EXISTS idx_dwg_dims_name ON dwg_component_dimensions(dwg_name);
                     "; // --硬编码-- SQLite 建表与索引 DDL 脚本
 
                     // 执行 DDL 创建数据表和索引

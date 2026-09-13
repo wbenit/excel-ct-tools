@@ -6,6 +6,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json.Serialization;
+using ExcelAddInDemo.Models;
 
 namespace ExcelAddInDemo.Services
 {
@@ -38,6 +39,26 @@ namespace ExcelAddInDemo.Services
         // 最后修改时间字符串
         [JsonPropertyName("lastModified")]
         public string LastModified { get; set; } = string.Empty;
+
+        // 图纸外形宽度 W (mm)
+        [JsonPropertyName("width")]
+        public double Width { get; set; } = 0.0;
+
+        // 图纸外形高度 H (mm)
+        [JsonPropertyName("height")]
+        public double Height { get; set; } = 0.0;
+
+        // 图纸安装进深/厚度 Depth (mm)
+        [JsonPropertyName("depth")]
+        public double Depth { get; set; } = 0.0;
+
+        // 标记是否已在数据库中录入三维物理尺寸
+        [JsonPropertyName("hasDimension")]
+        public bool HasDimension { get; set; } = false;
+
+        // 标记进深是否来自图纸文字正则提取
+        [JsonPropertyName("hasTextDepth")]
+        public bool HasTextDepth { get; set; } = false;
     }
 
     /// <summary>
@@ -227,6 +248,61 @@ namespace ExcelAddInDemo.Services
 
                 // 按照文件名称自然拼音升序排列
                 resultList.Sort((a, b) => string.Compare(a.FileName, b.FileName, StringComparison.OrdinalIgnoreCase));
+
+                // 批量向 SQLite 检索当前图纸的三维外形与进深尺寸并回填实体
+                if (resultList.Count > 0)
+                {
+                    try
+                    {
+                        // 提取当前物理文件夹名称以组装相对路径
+                        string currentDirName = Path.GetFileName(directoryPath.TrimEnd('\\', '/'));
+                        // 收集待查询的组合相对路径与纯文件名键列表
+                        var queryKeys = new List<string>();
+                        foreach (var dwg in resultList)
+                        {
+                            // 加入纯图纸文件名
+                            queryKeys.Add(dwg.FileName);
+                            if (!string.IsNullOrWhiteSpace(currentDirName))
+                            {
+                                // 加入 目录名/图纸名 相对组合键
+                                queryKeys.Add($"{currentDirName}/{dwg.FileName}");
+                            }
+                        }
+
+                        // 从本地 SQLite 批量检索尺寸字典
+                        var dimDict = PersonalComponentDbService.BatchGetDwgDimensions(queryKeys);
+                        if (dimDict != null && dimDict.Count > 0)
+                        {
+                            // 遍历扫描到的每个图纸实体回填尺寸
+                            foreach (var dwg in resultList)
+                            {
+                                // 规范化 Key 进行匹配
+                                string keyCombined = PersonalComponentDbService.NormalizeDwgKey($"{currentDirName}/{dwg.FileName}");
+                                string keyPure = PersonalComponentDbService.NormalizeDwgKey(dwg.FileName);
+
+                                // 优先匹配目录组合键，次选纯文件名键
+                                DwgDimensionItem? matchedDim = null;
+                                if (dimDict.TryGetValue(keyCombined, out var d1)) matchedDim = d1;
+                                else if (dimDict.TryGetValue(keyPure, out var d2)) matchedDim = d2;
+
+                                if (matchedDim != null)
+                                {
+                                    // 回填宽、高、深度与标志
+                                    dwg.Width = matchedDim.Width;
+                                    dwg.Height = matchedDim.Height;
+                                    dwg.Depth = matchedDim.Depth;
+                                    dwg.HasDimension = true;
+                                    dwg.HasTextDepth = matchedDim.HasTextDepth;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception exDim)
+                    {
+                        // 记录尺寸回填异常但不影响文件扫描主流程
+                        LogHelper.WriteLog($"[DwgPreviewService] 匹配 DWG 尺寸异常: {exDim.Message}");
+                    }
+                }
             }
             catch (Exception ex)
             {

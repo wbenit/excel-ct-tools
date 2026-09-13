@@ -345,6 +345,17 @@
         flex-shrink: 0;
       }
 
+      .dwg-dim-tag {
+        font-size: 9.5px;
+        color: #00796b;
+        font-family: Consolas, Monaco, monospace;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.2;
+        margin-top: 1px;
+      }
+
       /* 空态占位 */
       .empty-box {
         padding: 20px 10px;
@@ -491,10 +502,15 @@
               :class="{ 'just-bound': lastBoundDwg === file.fileName }"
               @dblclick="bindDwg(file)"
               @contextmenu.stop.prevent="handleDwgRightClick(file)"
-              :title="'双击: 填入当前行 (' + (configInfo.targetDwgColumn || 'X') + '=图纸, ' + (configInfo.targetDirColumn || 'Y') + '=目录)\n右击: 返回上一级目录'"
+              :title="'双击: 填入当前行 (' + (configInfo.targetDwgColumn || 'X') + '=图纸, ' + (configInfo.targetDirColumn || 'Y') + '=目录)\n右击: 返回上一级目录' + (file.hasDimension ? ('\nCAD尺寸: ' + file.width + '×' + file.height + (file.depth ? ' 深:' + file.depth : '') + 'mm' + (file.hasTextDepth ? ' [文字提取]' : '')) : '')"
             >
               <span class="dwg-icon">📄</span>
-              <span class="dwg-name">{{ getCleanDwgName(file.fileName) }}</span>
+              <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+                <span class="dwg-name">{{ getCleanDwgName(file.fileName) }}</span>
+                <span v-if="file.hasDimension" class="dwg-dim-tag">
+                  {{ file.width }}×{{ file.height }}<span v-if="file.depth" style="color: #d97706;"> D:{{ file.depth }}</span>
+                </span>
+              </div>
               <span class="dwg-action-tip">双击</span>
             </div>
           </div>
@@ -768,7 +784,8 @@
                     // 4. 双击写入 Excel 结果回发
                     else if (msg.action === "bindDwgResult") {
                       if (msg.success) {
-                        statusText.value = `✅ 已写入 ${msg.nextRow ? msg.nextRow - 1 : ""} 行: ${getCleanDwgName(msg.dwgName)}`;
+                        const dimSuffix = msg.dimStr ? ` (${msg.dimStr})` : "";
+                        statusText.value = `✅ 已写入 ${msg.nextRow ? msg.nextRow - 1 : ""} 行: ${getCleanDwgName(msg.dwgName)}${dimSuffix}`;
                       } else {
                         statusText.value = `❌ ${msg.message || "写入失败"}`;
                       }
