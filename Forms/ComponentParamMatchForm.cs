@@ -114,9 +114,9 @@ namespace ExcelAddInDemo.Forms
                 // 注册 Web 消息接收事件监听
                 _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
 
-                // 获取 Resources 资源物理文件夹
+                // 获取 Resources 资源物理文件夹 (优先检查输出目录，若无文件则回退基准目录)
                 string resDir = Path.Combine(Tool.GetAppDirectory(), "Resources");
-                if (!Directory.Exists(resDir))
+                if (!Directory.Exists(resDir) || !File.Exists(Path.Combine(resDir, "component_param_match.html")))
                 {
                     resDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources");
                 }
@@ -128,7 +128,7 @@ namespace ExcelAddInDemo.Forms
                     CoreWebView2HostResourceAccessKind.Allow
                 );
 
-                // 导航至图纸匹配页面
+                // 安全平滑导航至图纸匹配页面
                 _webView.CoreWebView2.Navigate("https://appassets.local/component_param_match.html");
             }
             catch (Exception ex)
@@ -167,13 +167,38 @@ namespace ExcelAddInDemo.Forms
                     // 扫描当前根目录层级
                     var scanResult = DwgPreviewService.ScanDirectoryHierarchy(baseDir);
 
+                    // 获取当前 Excel 活动工作表名称并自适应决定目标列
+                    string activeSheetName = string.Empty;
+                    string effectiveColDwg = "AA";
+                    string effectiveColDir = "AB";
+                    try
+                    {
+                        dynamic? app = ExcelDnaUtil.Application;
+                        if (app?.ActiveSheet != null)
+                        {
+                            activeSheetName = Convert.ToString(app.ActiveSheet.Name)?.Trim() ?? string.Empty;
+                            if (string.Equals(activeSheetName, "元件汇总表", StringComparison.OrdinalIgnoreCase))
+                            {
+                                effectiveColDwg = "X";
+                                effectiveColDir = "Y";
+                            }
+                            else
+                            {
+                                effectiveColDwg = cfg.TargetDwgColumn == "X" ? "AA" : cfg.TargetDwgColumn;
+                                effectiveColDir = cfg.TargetDirColumn == "Y" ? "AB" : cfg.TargetDirColumn;
+                            }
+                        }
+                    }
+                    catch { }
+
                     // 回发初始配置与根目录扫描数据
                     PostWebMessageSafe(JsonSerializer.Serialize(new
                     {
                         action = "initialDataLoaded",
                         baseDirectory = baseDir,
-                        targetDirColumn = cfg.TargetDirColumn,
-                        targetDwgColumn = cfg.TargetDwgColumn,
+                        activeSheetName = activeSheetName,
+                        targetDirColumn = effectiveColDir,
+                        targetDwgColumn = effectiveColDwg,
                         autoNextRow = cfg.AutoNextRow,
                         removeExtension = cfg.RemoveExtension,
                         scanData = scanResult
@@ -271,13 +296,16 @@ namespace ExcelAddInDemo.Forms
                         }
                         catch { }
 
-                        // 向前端回发写入结果反馈
+                        // 向前端回发写入结果反馈 (包含生效的列标与工作表名称)
                         PostWebMessageSafe(JsonSerializer.Serialize(new
                         {
                             action = "bindDwgResult",
                             success = result.Success,
                             message = result.Message,
                             nextRow = result.NextRow,
+                            colDwg = result.ColDwg,
+                            colDir = result.ColDir,
+                            sheetName = result.SheetName,
                             dirName = dirName,
                             dwgName = dwgName,
                             dimStr = dimStr

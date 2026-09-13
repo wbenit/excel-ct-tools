@@ -390,18 +390,53 @@ namespace ExcelAddInDemo.Forms
                         rules = JsonSerializer.Deserialize<QuotationRules>(rulesElem.GetRawText(), JsonOptions);
                     }
 
-                    // 调度当前分类表批量更新
-                    var res = _controller.UpdateCurrentCategory(sheetName, rules ?? new QuotationRules());
-                    // 序列化回执报文
-                    string resJson = JsonSerializer.Serialize(new
+                    var effectiveRules = rules ?? new QuotationRules();
+
+                    // 调度 Excel 异步宏队列执行，彻底解耦 Chromium IPC 与 Excel STA 线程
+                    ExcelAsyncUtil.QueueAsMacro(() =>
                     {
-                        action = "updateCurrentCategoryResult",
-                        success = res.Success,
-                        count = res.UpdatedCabinets,
-                        message = res.Message
-                    }, JsonOptions);
-                    // 线程安全回送前端
-                    PostWebMessageSafe(resJson);
+                        try
+                        {
+                            // 执行批量更新并实时回传阶段进度
+                            var res = _controller.UpdateCurrentCategory(sheetName, effectiveRules, (percent, msgText) =>
+                            {
+                                // 线程安全向前端 WebView2 推送进度报文
+                                SafeInvoke(() =>
+                                {
+                                    PostWebMessageSafe(JsonSerializer.Serialize(new
+                                    {
+                                        action = "updateProgress",
+                                        percent = percent,
+                                        message = msgText
+                                    }, JsonOptions));
+                                });
+                            });
+
+                            // 序列化最终回执报文
+                            string resJson = JsonSerializer.Serialize(new
+                            {
+                                action = "updateCurrentCategoryResult",
+                                success = res.Success,
+                                count = res.UpdatedCabinets,
+                                message = res.Message
+                            }, JsonOptions);
+
+                            // 线程安全回送前端
+                            SafeInvoke(() => PostWebMessageSafe(resJson));
+                        }
+                        catch (Exception ex)
+                        {
+                            // 记录异常日志并回传失败提示
+                            LogHelper.WriteLog($"[CabinetAuxCalcForm] updateCurrentCategory 异常: {ex.Message}");
+                            SafeInvoke(() => PostWebMessageSafe(JsonSerializer.Serialize(new
+                            {
+                                action = "updateCurrentCategoryResult",
+                                success = false,
+                                count = 0,
+                                message = $"更新失败: {ex.Message}"
+                            }, JsonOptions)));
+                        }
+                    });
                 }
                 // 响应更新全工作簿所有分类表
                 else if (action == "updateAllCategories")
@@ -413,19 +448,55 @@ namespace ExcelAddInDemo.Forms
                         rules = JsonSerializer.Deserialize<QuotationRules>(rulesElem.GetRawText(), JsonOptions);
                     }
 
-                    // 调度全工作簿批量更新
-                    var res = _controller.UpdateAllCategories(rules ?? new QuotationRules());
-                    // 序列化回执报文
-                    string resJson = JsonSerializer.Serialize(new
+                    var effectiveRules = rules ?? new QuotationRules();
+
+                    // 调度 Excel 异步宏队列执行，彻底解耦 Chromium IPC
+                    ExcelAsyncUtil.QueueAsMacro(() =>
                     {
-                        action = "updateAllCategoriesResult",
-                        success = res.Success,
-                        sheetCount = res.UpdatedSheets,
-                        cabinetCount = res.UpdatedCabinets,
-                        message = res.Message
-                    }, JsonOptions);
-                    // 线程安全回送前端
-                    PostWebMessageSafe(resJson);
+                        try
+                        {
+                            // 执行全工作簿批量更新并实时回传多表进度
+                            var res = _controller.UpdateAllCategories(effectiveRules, (percent, msgText) =>
+                            {
+                                // 线程安全向前端 WebView2 推送进度报文
+                                SafeInvoke(() =>
+                                {
+                                    PostWebMessageSafe(JsonSerializer.Serialize(new
+                                    {
+                                        action = "updateProgress",
+                                        percent = percent,
+                                        message = msgText
+                                    }, JsonOptions));
+                                });
+                            });
+
+                            // 序列化最终回执报文
+                            string resJson = JsonSerializer.Serialize(new
+                            {
+                                action = "updateAllCategoriesResult",
+                                success = res.Success,
+                                sheetCount = res.UpdatedSheets,
+                                cabinetCount = res.UpdatedCabinets,
+                                message = res.Message
+                            }, JsonOptions);
+
+                            // 线程安全回送前端
+                            SafeInvoke(() => PostWebMessageSafe(resJson));
+                        }
+                        catch (Exception ex)
+                        {
+                            // 记录异常日志并回传失败提示
+                            LogHelper.WriteLog($"[CabinetAuxCalcForm] updateAllCategories 异常: {ex.Message}");
+                            SafeInvoke(() => PostWebMessageSafe(JsonSerializer.Serialize(new
+                            {
+                                action = "updateAllCategoriesResult",
+                                success = false,
+                                sheetCount = 0,
+                                cabinetCount = 0,
+                                message = $"全工作簿更新失败: {ex.Message}"
+                            }, JsonOptions)));
+                        }
+                    });
                 }
                 // ==================== 二次回路图纸对齐与绑定工作台动作支持 ====================
                 // 1. 获取已持久化的 DWG 目录与图纸文件

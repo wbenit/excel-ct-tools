@@ -48,8 +48,8 @@ namespace ExcelAddInDemo.Forms
             this.ShowInTaskbar = false;
             // 窗体始终保持最前端置顶显示
             this.TopMost = true;
-            // 设定符合 Office 原生菜单规格的尺寸 (宽 250px，高 470px，容纳原生项与业务项且防截断)
-            this.Size = new Size(250, 470);
+            // 设定符合 Office 原生菜单规格的尺寸 (宽 250px，高 505px，完整容纳原生项与业务项且防 DPI 裁切截断)
+            this.Size = new Size(250, 505);
             // 启用手动绝对坐标定位
             this.StartPosition = FormStartPosition.Manual;
             // 设置白色背景

@@ -106,38 +106,21 @@ namespace ExcelAddInDemo
             }
         }
 
-        /// <summary>
-        /// 扫描指定分类工作表中的特定箱柜元器件数据 (采用 2D 数组一次性批量读入内存)
+        /// 根据已有的箱柜锚点实体快速扫描指定箱柜元器件数据 (轻量免重复检索定义名称)
+        /// 遵循规则 7 (2D数组一次性读入内存)
         /// </summary>
         /// <param name="ws">目标工作表</param>
-        /// <param name="cabDetName">箱柜 Det 定义名称 (如 Cab_Det_1)</param>
-        /// <returns>CabinetScanData 扫描结果</returns>
-        public static CabinetScanData? ScanCabinetData(Worksheet ws, string cabDetName)
+        /// <param name="cabIndex">箱柜序号数字</param>
+        /// <param name="anchor">已识别好的箱柜锚点实体</param>
+        /// <returns>箱柜扫描实体</returns>
+        public static CabinetScanData? ScanCabinetData(Worksheet ws, int cabIndex, CabinetAnchorModel anchor)
         {
-            // 校验工作表与名称有效性
-            if (ws == null || string.IsNullOrWhiteSpace(cabDetName)) return null;
+            // 校验工作表与锚点有效性
+            if (ws == null || anchor == null || anchor.Det == null || anchor.Subsum == null || anchor.Tolsum == null) return null;
 
             try
             {
-                // 从工作表中收集并获取所有有效箱柜锚点
-                var validCabinets = Tool.GetSheetValidCabinets(ws);
-                CabinetAnchorModel? anchor = null;
-                int cabIndex = 0;
-
-                // 遍历寻找匹配的目标箱柜
-                foreach (var kvp in validCabinets)
-                {
-                    if (string.Equals($"Cab_Det_{kvp.Key}", cabDetName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        cabIndex = kvp.Key;
-                        anchor = kvp.Value;
-                        break;
-                    }
-                }
-
-                // 校验关键行号的合法性
-                if (anchor == null || anchor.Det == null || anchor.Subsum == null || anchor.Tolsum == null) return null;
-
+                // 提取Det/Sum/Subsum/Tolsum各个锚点行号
                 int detRow = Convert.ToInt32(anchor.Det.Row);
                 int sumRow = anchor.Sum != null ? Convert.ToInt32(anchor.Sum.Row) : 0;
                 int subsumRow = Convert.ToInt32(anchor.Subsum.Row);
@@ -237,32 +220,11 @@ namespace ExcelAddInDemo
                             // 综合二次元件组判定
                             bool isComponentGroup = isCategoryGroup || isModelStar || !string.IsNullOrWhiteSpace(boundDwgCode);
 
-                            // 提取 X 列与 Y 列文本，用于提取元器件绑定的 DWG 图纸名称与所属目录
-                            string col24Str = colCount >= 24 ? compMatrix[r, 24]?.ToString()?.Trim() ?? string.Empty : string.Empty;
-                            // 提取第 25 列 (Y 列)
-                            string col25Str = colCount >= 25 ? compMatrix[r, 25]?.ToString()?.Trim() ?? string.Empty : string.Empty;
-                            string dwgDir = string.Empty;
-                            string dwgName = string.Empty;
-
-                            // 智能识别哪一列为 .dwg 图纸文件名，另一列为所属目录名称
-                            if (col24Str.EndsWith(".dwg", StringComparison.OrdinalIgnoreCase))
-                            {
-                                // X 列显式以 .dwg 结尾
-                                dwgName = col24Str;
-                                dwgDir = col25Str;
-                            }
-                            else if (col25Str.EndsWith(".dwg", StringComparison.OrdinalIgnoreCase))
-                            {
-                                // Y 列显式以 .dwg 结尾
-                                dwgName = col25Str;
-                                dwgDir = col24Str;
-                            }
-                            else if (!string.IsNullOrWhiteSpace(col24Str) || !string.IsNullOrWhiteSpace(col25Str))
-                            {
-                                // 默认按照元器件参数匹配设置：X 为图纸名，Y 为目录名 --硬编码--
-                                dwgName = col24Str;
-                                dwgDir = col25Str;
-                            }
+                            // 提取元器件绑定的 DWG 图纸名称与所属目录 (严格锁定 AA 列图纸名与 AB 列目录名)
+                            // 分类表中图纸名称位于 AA 列 (第 27 列 blockName)
+                            string dwgName = blockName;
+                            // 分类表中所属目录位于 AB 列 (第 28 列 blockCategory)
+                            string dwgDir = blockCategory;
 
                             // 构造元器件条目实体
                             var compItem = new CabinetComponentItem
@@ -296,6 +258,49 @@ namespace ExcelAddInDemo
 
                 // 返回完整扫描结果
                 return scanData;
+            }
+            catch (Exception ex)
+            {
+                // 记录扫描异常信息
+                System.Diagnostics.Debug.WriteLine($"扫描箱柜发生异常: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 从当前工作表中根据 Det 定义名称扫描目标箱柜的元器件数据
+        /// </summary>
+        /// <param name="ws">目标工作表</param>
+        /// <param name="cabDetName">箱柜 Det 锚点定义名称 (例如 Cab_Det_1)</param>
+        /// <returns>箱柜扫描实体</returns>
+        public static CabinetScanData? ScanCabinetData(Worksheet ws, string cabDetName)
+        {
+            // 校验工作表与名称有效性
+            if (ws == null || string.IsNullOrWhiteSpace(cabDetName)) return null;
+
+            try
+            {
+                // 从工作表中收集并获取所有有效箱柜锚点
+                var validCabinets = Tool.GetSheetValidCabinets(ws);
+                CabinetAnchorModel? anchor = null;
+                int cabIndex = 0;
+
+                // 遍历寻找匹配的目标箱柜
+                foreach (var kvp in validCabinets)
+                {
+                    if (string.Equals($"Cab_Det_{kvp.Key}", cabDetName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        cabIndex = kvp.Key;
+                        anchor = kvp.Value;
+                        break;
+                    }
+                }
+
+                // 校验关键行号的合法性
+                if (anchor == null) return null;
+
+                // 转调轻量高效重载方法
+                return ScanCabinetData(ws, cabIndex, anchor);
             }
             catch (Exception ex)
             {
@@ -350,6 +355,104 @@ namespace ExcelAddInDemo
             }
             // 批量从 SQLite 数据库获取已收录的 DWG 三维尺寸字典 (毫秒级零延迟查库)
             var dwgDimMap = PersonalComponentDbService.BatchGetDwgDimensions(dwgKeys);
+
+            // 获取元器件图纸库基准根目录（优先从配置中读取，若空则使用默认基准路径并标识硬编码）
+            string baseDwgDir = ConfigManager.Instance.Current?.ComponentParamMatch?.BaseDirectory ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(baseDwgDir))
+            {
+                // 默认图纸库根路径 --硬编码--
+                baseDwgDir = @"E:\BaiduNetdiskWorkspace\BaseData\新库";
+            }
+
+            // 收集本地 SQLite 未收录但磁盘物理存在的 DWG 图纸文件绝对路径集合
+            var missingDwgPaths = new List<string>();
+            var checkedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // 遍历当前箱柜元器件排查缺失尺寸的物理图纸
+            foreach (var c in scanData.Components)
+            {
+                // 若无图纸名称配置则跳过
+                if (string.IsNullOrWhiteSpace(c.DwgName)) continue;
+
+                // 构建带目录相对路径 Key 与规范化键
+                string keyWithDir = !string.IsNullOrWhiteSpace(c.DwgDir) ? $"{c.DwgDir}/{c.DwgName}" : c.DwgName;
+                string normKey = PersonalComponentDbService.NormalizeDwgKey(keyWithDir);
+
+                // 检查是否已经在 SQLite 缓存字典中存在有效长宽尺寸
+                bool hasDim = (dwgDimMap.TryGetValue(normKey, out var existingItem) && existingItem != null && existingItem.Width > 0 && existingItem.Height > 0)
+                           || (dwgDimMap.TryGetValue(c.DwgName, out existingItem) && existingItem != null && existingItem.Width > 0 && existingItem.Height > 0);
+
+                // 若未收录有效尺寸，探测磁盘物理文件是否存在
+                if (!hasDim)
+                {
+                    // 保证图纸文件名具备 .dwg 后缀
+                    string fileName = c.DwgName.EndsWith(".dwg", StringComparison.OrdinalIgnoreCase) ? c.DwgName : c.DwgName + ".dwg";
+                    // 拼接物理磁盘完整路径：baseDir / dwgDir / dwgName.dwg
+                    string fullPath = !string.IsNullOrWhiteSpace(c.DwgDir)
+                        ? Path.Combine(baseDwgDir, c.DwgDir, fileName)
+                        : Path.Combine(baseDwgDir, fileName);
+
+                    // 校验磁盘物理文件真实存在且未被重复记录
+                    if (File.Exists(fullPath) && checkedPaths.Add(fullPath))
+                    {
+                        // 记录待向 AutoCAD 索取尺寸测算的物理路径
+                        missingDwgPaths.Add(fullPath);
+                    }
+                }
+            }
+
+            // 若存在未收录且物理存在的图纸，主动向 AutoCAD 命名管道发送静默测算请求
+            if (missingDwgPaths.Count > 0)
+            {
+                // 快速检测本地是否存在 AutoCAD 运行进程，若未运行则 0 毫秒跳过跨进程管道连接 --硬编码: AutoCAD主进程名--
+                bool isCadRunning = false;
+                try
+                {
+                    isCadRunning = System.Diagnostics.Process.GetProcessesByName("acad").Length > 0;
+                }
+                catch { }
+
+                // 仅当 AutoCAD 正在运行时才发起管道跨进程提取
+                if (isCadRunning)
+                {
+                    // 跨进程调用 CAD 端静默 Database 测算并接收直接回传的尺寸列表（CAD 端同时自动持久化至 SQLite）
+                    var extractedCadDims = CadSyncClient.RequestExtractDwgDimensions(missingDwgPaths, 1500);
+                    if (extractedCadDims != null && extractedCadDims.Count > 0)
+                    {
+                        // 将 CAD 实时回传的尺寸直接注入内存字典 dwgDimMap，使当前箱柜计算直接享用真实尺寸
+                        foreach (var dim in extractedCadDims)
+                        {
+                            // 过滤无效尺寸
+                            if (dim == null || (dim.Width <= 0 && dim.Height <= 0)) continue;
+
+                            // 1. 以规范化相对路径为键注入内存字典（同时支持带.dwg与不带.dwg）
+                            if (!string.IsNullOrWhiteSpace(dim.RelPath))
+                            {
+                                string normRelKey = PersonalComponentDbService.NormalizeDwgKey(dim.RelPath);
+                                dwgDimMap[normRelKey] = dim;
+                                // 兼容不带 .dwg 扩展名的相对路径键注入
+                                if (normRelKey.EndsWith(".dwg"))
+                                {
+                                    dwgDimMap[normRelKey.Substring(0, normRelKey.Length - 4)] = dim;
+                                }
+                            }
+
+                            // 2. 同时以纯图纸名为键注入内存字典（同时支持带.dwg与不带.dwg）
+                            if (!string.IsNullOrWhiteSpace(dim.DwgName))
+                            {
+                                dwgDimMap[dim.DwgName] = dim;
+                                // 兼容不带 .dwg 扩展名的纯图纸名注入
+                                string pureName = Path.GetFileNameWithoutExtension(dim.DwgName);
+                                if (!string.IsNullOrWhiteSpace(pureName))
+                                {
+                                    dwgDimMap[pureName] = dim;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // 记录成功采用 CAD 真实尺寸的元器件总项数
             int realDimsCount = 0;
 
@@ -430,26 +533,38 @@ namespace ExcelAddInDemo
                 // 计算元件占用面积与接线空间 (依据电流门限与规则梯度)
                 int wireSpace = GetWiringSpace(effectiveCurrent, comp.Name, rules.ShellRules.WiringSpaceGradients);
 
-                // 优先从 DWG 尺寸字典中检索该元器件真实外形尺寸与进深 (双通道精准匹配)
+                // 优先从 DWG 尺寸字典中检索该元器件真实外形尺寸与进深 (多通道带/不带.dwg精准匹配)
                 DwgDimensionItem? dimItem = null;
                 if (!string.IsNullOrWhiteSpace(comp.DwgName))
                 {
-                    // 构建带目录相对路径
-                    string keyWithDir = !string.IsNullOrWhiteSpace(comp.DwgDir) ? $"{comp.DwgDir}/{comp.DwgName}" : comp.DwgName;
-                    string normKey = PersonalComponentDbService.NormalizeDwgKey(keyWithDir);
-                    // 尝试匹配相对路径 Key 或纯图名
-                    if (!dwgDimMap.TryGetValue(normKey, out dimItem) && !dwgDimMap.TryGetValue(comp.DwgName, out dimItem))
+                    // 规范化当前图纸名及其有无扩展名双重形式
+                    string cleanDwg = comp.DwgName.Trim();
+                    string dwgWithExt = cleanDwg.EndsWith(".dwg", StringComparison.OrdinalIgnoreCase) ? cleanDwg : cleanDwg + ".dwg";
+                    string dwgWithoutExt = Path.GetFileNameWithoutExtension(cleanDwg);
+
+                    // 构造带目录的相对路径双重形式
+                    string dir = comp.DwgDir?.Trim() ?? string.Empty;
+                    string relWithExt = !string.IsNullOrWhiteSpace(dir) ? $"{dir}/{dwgWithExt}" : dwgWithExt;
+                    string relWithoutExt = !string.IsNullOrWhiteSpace(dir) ? $"{dir}/{dwgWithoutExt}" : dwgWithoutExt;
+
+                    // 多维 Key 容错检索（带目录全名、带目录无后缀、纯图名带后缀、纯图名无后缀）
+                    if (!dwgDimMap.TryGetValue(PersonalComponentDbService.NormalizeDwgKey(relWithExt), out dimItem) &&
+                        !dwgDimMap.TryGetValue(PersonalComponentDbService.NormalizeDwgKey(relWithoutExt), out dimItem) &&
+                        !dwgDimMap.TryGetValue(dwgWithExt, out dimItem) &&
+                        !dwgDimMap.TryGetValue(dwgWithoutExt, out dimItem))
                     {
-                        // 字典未命中时尝试单条兜底查库
-                        dimItem = PersonalComponentDbService.GetDwgDimension(keyWithDir);
+                        // 字典均未命中时尝试单条兜底查库（双形式尝试）
+                        dimItem = PersonalComponentDbService.GetDwgDimension(relWithExt)
+                               ?? PersonalComponentDbService.GetDwgDimension(relWithoutExt);
                     }
                 }
 
                 int compWidth = 0;
                 int compHeight = 0;
-                // 若成功获取到有效的 CAD 真实外形长宽
+                // 若成功获取到确定的 CAD 真实外形长宽
                 if (dimItem != null && dimItem.Width > 0 && dimItem.Height > 0)
                 {
+                    // 采用确定的 CAD 真实长宽
                     compWidth = (int)Math.Round(dimItem.Width);
                     compHeight = (int)Math.Round(dimItem.Height);
                     comp.RealWidth = dimItem.Width;
@@ -460,10 +575,13 @@ namespace ExcelAddInDemo
                 }
                 else
                 {
-                    // 未命中时平滑降级采用行业经典规则估算长宽
-                    var est = EstimateComponentDimensions(comp);
-                    compWidth = est.Width;
-                    compHeight = est.Height;
+                    // 标记未获取到真实尺寸
+                    comp.HasRealDimensions = false;
+                    // 用户明确要求：若 AA列(图纸)与 AB列(目录)无内容，直接跳过不需要提示报错；仅在配置了图纸却未获取到尺寸时才记录错误
+                    if (!string.IsNullOrWhiteSpace(comp.DwgName))
+                    {
+                        calcWarnings.Add($"第 {comp.RowIndex} 行【{comp.Name} {comp.Model}】图纸【{comp.DwgName}】未能从 CAD 提取到确定的外形尺寸，已拒绝使用经验尺寸兜底！");
+                    }
                 }
 
                 // 首个总开关特殊处理
@@ -1165,7 +1283,7 @@ namespace ExcelAddInDemo
             }
             if (calcWarnings.Count > 0)
             {
-                desc += $" | ⚠️ 未填电流提醒: 有 {calcWarnings.Count} 项一次元器件W列电流为空，未计入计算";
+                desc += $" | ⚠️ 存在 {calcWarnings.Count} 项警示(未填电流或未获取确定CAD尺寸，严禁经验估算)";
             }
 
             // -------------------------------------------------------------
@@ -1928,17 +2046,48 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 更新当前指定分类表中的所有箱柜 (自底向上倒序更新，保障行号绝对稳定)
+        /// 更新当前指定分类表中的所有箱柜 (自底向上倒序更新，保障行号绝对稳定，带四重极速性能保护与进度反馈)
         /// </summary>
         /// <param name="ws">目标分类工作表</param>
         /// <param name="rules">定额与规则实体</param>
+        /// <param name="onProgress">阶段进度通知委托 (百分比, 状态描述)</param>
         /// <returns>包含是否成功、更新箱柜数量与反馈消息的元组</returns>
         public static (bool Success, int UpdatedCabinets, string Message) UpdateCurrentCategoryAuxAndShell(
             Worksheet ws,
-            QuotationRules rules)
+            QuotationRules rules,
+            Action<int, string>? onProgress = null)
         {
             // 基础空值校验
             if (ws == null) return (false, 0, "工作表对象为空。");
+
+            // 获取 Excel Application COM 实例以控制全局渲染与重算
+            dynamic? app = null;
+            try { app = ws.Application; } catch { }
+
+            // 暂存原有状态
+            bool origScreenUpdating = true;
+            bool origDisplayAlerts = true;
+            bool origEnableEvents = true;
+            XlCalculation origCalculation = XlCalculation.xlCalculationAutomatic;
+
+            if (app != null)
+            {
+                try
+                {
+                    // 记录原有状态
+                    origScreenUpdating = app.ScreenUpdating;
+                    origDisplayAlerts = app.DisplayAlerts;
+                    origEnableEvents = app.EnableEvents;
+                    origCalculation = app.Calculation;
+
+                    // 开启四重极速性能保护：挂起屏幕刷新、警告弹窗、COM事件与自动重算
+                    app.ScreenUpdating = false;
+                    app.DisplayAlerts = false;
+                    app.EnableEvents = false;
+                    app.Calculation = XlCalculation.xlCalculationManual;
+                }
+                catch { }
+            }
 
             try
             {
@@ -1983,14 +2132,23 @@ namespace ExcelAddInDemo
                     return rowB.CompareTo(rowA);
                 });
 
+                int totalCount = targetCabinets.Count;
                 int successCount = 0;
+
                 // 遍历倒序箱柜集合执行推导与回写
-                foreach (var kvp in targetCabinets)
+                for (int i = 0; i < totalCount; i++)
                 {
+                    var kvp = targetCabinets[i];
                     // 拼接当前箱柜的 Det 定义名称
                     string detName = $"Cab_Det_{kvp.Key}";
-                    // 动态重新扫描该箱柜数据 (每次读取最新实际行号)
-                    var scanData = ScanCabinetData(ws, detName);
+
+                    // 计算当前进度百分比 (0~99)
+                    int percent = (int)Math.Round((double)i / totalCount * 100);
+                    // 触发进度回调通知
+                    onProgress?.Invoke(percent, $"正在推导回写箱柜 [{detName}] ({i + 1}/{totalCount})...");
+
+                    // 关键性能优化：直接传入已知 anchor 实体，彻底杜绝在每个箱柜内部重复全量扫描定义名称！
+                    var scanData = ScanCabinetData(ws, kvp.Key, kvp.Value);
                     if (scanData == null) continue;
 
                     // 计算推导结果
@@ -2006,6 +2164,9 @@ namespace ExcelAddInDemo
                     }
                 }
 
+                // 结束前推送 100% 阶段完成提示
+                onProgress?.Invoke(100, $"工作表【{ws.Name}】共 {successCount} 台箱柜更新完成！");
+
                 // 返回成功更新的箱柜总台数
                 return (successCount > 0, successCount, $"成功更新分类表【{ws.Name}】共 {successCount} 台箱柜的数据与公式！");
             }
@@ -2015,15 +2176,35 @@ namespace ExcelAddInDemo
                 System.Diagnostics.Debug.WriteLine($"[UpdateCurrentCategoryAuxAndShell] 更新当前分类异常: {ex.Message}");
                 return (false, 0, $"更新分类表【{ws.Name}】发生异常: {ex.Message}");
             }
+            finally
+            {
+                // 恢复 Excel 原有状态并触发一次全表重算
+                if (app != null)
+                {
+                    try
+                    {
+                        // 恢复自动重算与事件通知
+                        app.Calculation = origCalculation;
+                        app.EnableEvents = origEnableEvents;
+                        app.DisplayAlerts = origDisplayAlerts;
+                        app.ScreenUpdating = origScreenUpdating;
+                        // 强制触发当前工作表公式重算以刷新最新数值
+                        ws.Calculate();
+                    }
+                    catch { }
+                }
+            }
         }
 
         /// <summary>
-        /// 更新当前工作簿中所有分类表的全部箱柜 (全工作簿多表倒序更新，带屏幕刷新性能保护)
+        /// 更新当前工作簿中所有分类表的全部箱柜 (全工作簿多表倒序更新，带屏幕刷新性能保护与多表层级进度反馈)
         /// </summary>
         /// <param name="rules">定额与规则实体</param>
+        /// <param name="onProgress">阶段进度通知委托 (百分比, 状态描述)</param>
         /// <returns>包含是否成功、更新工作表总数、更新箱柜总数与提示消息的元组</returns>
         public static (bool Success, int UpdatedSheets, int UpdatedCabinets, string Message) UpdateAllCategoriesAuxAndShell(
-            QuotationRules rules)
+            QuotationRules rules,
+            Action<int, string>? onProgress = null)
         {
             // 获取当前 Excel Application COM 接口实例
             dynamic? app = ExcelDnaSafeAccessor.GetApplication();
@@ -2037,16 +2218,34 @@ namespace ExcelAddInDemo
             Worksheet? origActiveSheet = null;
             try { origActiveSheet = app.ActiveSheet as Worksheet; } catch { }
 
-            // 临时关闭屏幕刷新与系统提示以提升 5~10 倍批量更新吞吐性能
-            app.ScreenUpdating = false;
-            app.DisplayAlerts = false;
+            // 暂存原有状态
+            bool origScreenUpdating = true;
+            bool origDisplayAlerts = true;
+            bool origEnableEvents = true;
+            XlCalculation origCalculation = XlCalculation.xlCalculationAutomatic;
+
+            try
+            {
+                origScreenUpdating = app.ScreenUpdating;
+                origDisplayAlerts = app.DisplayAlerts;
+                origEnableEvents = app.EnableEvents;
+                origCalculation = app.Calculation;
+
+                // 开启四重全局性能保护以提升数十倍批量更新吞吐性能
+                app.ScreenUpdating = false;
+                app.DisplayAlerts = false;
+                app.EnableEvents = false;
+                app.Calculation = XlCalculation.xlCalculationManual;
+            }
+            catch { }
 
             int totalUpdatedSheets = 0;
             int totalUpdatedCabinets = 0;
 
             try
             {
-                // 遍历活动工作簿下的每一个 Worksheet
+                // 先过滤出所有符合条件的有效分类表
+                var targetSheets = new List<Worksheet>();
                 foreach (Worksheet ws in activeWb.Worksheets)
                 {
                     try
@@ -2065,11 +2264,38 @@ namespace ExcelAddInDemo
                             continue;
                         }
 
+                        targetSheets.Add(ws);
+                    }
+                    catch { }
+                }
+
+                int sheetTotal = targetSheets.Count;
+                if (sheetTotal == 0)
+                {
+                    return (false, 0, 0, "未在工作簿中检测到可更新的有效分类表。");
+                }
+
+                // 逐个分类表执行批量倒序更新与公式回写
+                for (int sIdx = 0; sIdx < sheetTotal; sIdx++)
+                {
+                    var ws = targetSheets[sIdx];
+                    string wsName = Convert.ToString(ws.Name)?.Trim() ?? $"分类表{sIdx + 1}";
+
+                    try
+                    {
                         // 激活工作表以避免跨表操作时的 Excel 内部 1004 COM 异常
                         ws.Activate();
 
-                        // 调用当前分类表的批量倒序更新方法
-                        var categoryResult = UpdateCurrentCategoryAuxAndShell(ws, rules);
+                        int currentSheetIndex = sIdx;
+                        // 调用当前分类表的批量更新方法并平滑聚合全局进度
+                        var categoryResult = UpdateCurrentCategoryAuxAndShell(ws, rules, (subPercent, subMsg) =>
+                        {
+                            // 全局百分比 = (已完成表数 / 总表数) * 100 + (单表百分比 / 总表数)
+                            int globalPercent = (int)Math.Round(((double)currentSheetIndex / sheetTotal * 100.0) + ((double)subPercent / sheetTotal));
+                            if (globalPercent > 99) globalPercent = 99;
+                            onProgress?.Invoke(globalPercent, $"[{wsName}] ({currentSheetIndex + 1}/{sheetTotal}): {subMsg}");
+                        });
+
                         if (categoryResult.Success && categoryResult.UpdatedCabinets > 0)
                         {
                             // 累加成功更新的工作表数量与箱柜数量
@@ -2083,6 +2309,9 @@ namespace ExcelAddInDemo
                         System.Diagnostics.Debug.WriteLine($"[UpdateAllCategoriesAuxAndShell] 处理表【{ws.Name}】异常: {exSheet.Message}");
                     }
                 }
+
+                // 全工作簿处理完毕推送 100%
+                onProgress?.Invoke(100, $"全工作簿更新完毕！共更新 {totalUpdatedSheets} 个分类表，{totalUpdatedCabinets} 台箱柜。");
 
                 // 构建成功返回消息
                 string msg = totalUpdatedSheets > 0
@@ -2100,9 +2329,17 @@ namespace ExcelAddInDemo
                 }
                 catch { }
 
-                // 强制恢复系统屏幕刷新与警告提示，杜绝界面冻结
-                app.ScreenUpdating = true;
-                app.DisplayAlerts = true;
+                // 强制恢复系统屏幕刷新、警告提示与自动计算，杜绝界面冻结
+                try
+                {
+                    app.Calculation = origCalculation;
+                    app.EnableEvents = origEnableEvents;
+                    app.DisplayAlerts = origDisplayAlerts;
+                    app.ScreenUpdating = origScreenUpdating;
+                    // 触发 Excel 全局重算以刷新公式
+                    app.Calculate();
+                }
+                catch { }
             }
         }
 

@@ -109,6 +109,106 @@
       border-color: #80cbc4;
     }
 
+    /* 纯值紧凑型过滤标签 (去除参数名称，极简展示) */
+    .filter-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: #f1f5f9;
+      color: #334155;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 18px;
+      user-select: none;
+      border: 1px solid #cbd5e1;
+      transition: all 0.15s ease;
+      cursor: default;
+    }
+
+    .filter-chip:hover {
+      background: #e2e8f0;
+      border-color: #94a3b8;
+    }
+
+    /* 品牌标签: 蓝青色 */
+    .filter-chip.chip-brand {
+      background: #ecfeff;
+      color: #0e7490;
+      border-color: #a5f3fc;
+    }
+    .filter-chip.chip-brand:hover {
+      background: #cffafe;
+      border-color: #67e8f9;
+    }
+
+    /* 电气参数 (电流/极数/脱扣): 浅绿青 */
+    .filter-chip.chip-param {
+      background: #f0fdf4;
+      color: #166534;
+      border-color: #bbf7d0;
+    }
+    .filter-chip.chip-param:hover {
+      background: #dcfce7;
+      border-color: #86efac;
+    }
+
+    /* 元器件名称: 浅灰青 */
+    .filter-chip.chip-name {
+      background: #f8fafc;
+      color: #475569;
+      border-color: #cbd5e1;
+    }
+    .filter-chip.chip-name:hover {
+      background: #f1f5f9;
+      border-color: #94a3b8;
+    }
+
+    /* 标签内移除叉号图标 */
+    .chip-remove-icon {
+      font-size: 10px;
+      opacity: 0.55;
+      border-radius: 50%;
+      padding: 1px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+      cursor: pointer;
+    }
+
+    .chip-remove-icon:hover {
+      opacity: 1;
+      color: #ef4444;
+      background: #fee2e2;
+      transform: scale(1.15);
+    }
+
+    /* 一键重置过滤微按钮 */
+    .btn-reset-filters {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      height: 18px;
+      padding: 0 5px;
+      font-size: 10px;
+      font-weight: 600;
+      color: #64748b;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      line-height: 1;
+    }
+
+    .btn-reset-filters:hover {
+      color: #009688;
+      border-color: #009688;
+      background: #e0f2f1;
+    }
+
     /* 必含标签双击编辑提示文本 */
     .badge-must-text {
       cursor: text;
@@ -410,17 +510,33 @@
         <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap; flex: 1; min-width: 0;">
           <template v-if="!isAttachmentMode">
             <span style="color: #64748b;">过滤管道:</span>
-            <span class="pipeline-badge" :style="{ background: dataSource === 'personal' ? '#e0f2f1' : '#e0f2fe', color: dataSource === 'personal' ? '#00796b' : '#0284c7', fontWeight: '600' }">
+            <span class="pipeline-badge" :style="{ background: dataSource === 'personal' ? '#e0f2f1' : '#e0f2fe', color: dataSource === 'personal' ? '#00796b' : '#0284c7', fontWeight: '600' }" :title="dataSource === 'personal' ? '数据源: 本地个人库' : '数据源: 云端商城库'">
               <i :class="dataSource === 'personal' ? 'fa-solid fa-laptop-file' : 'fa-solid fa-cloud'" style="margin-right: 2px;"></i>
               {{ dataSource === 'personal' ? '个人库' : '云端库' }}
             </span>
-            <span class="pipeline-badge">品牌: {{ filterBrand || '全部' }}</span>
-            <!-- 动态必含约束标签列表 (支持快捷删除与双击编辑) -->
+
+            <!-- 动态纯值过滤标签列表 (去除品牌/电流/极数/名称等前缀，纯值紧凑展示，支持点击 ✕ 快速移除放宽) -->
+            <span 
+              v-for="chip in filterChips" 
+              :key="chip.key" 
+              class="filter-chip"
+              :class="'chip-' + chip.category"
+              :title="chip.tooltip + ' (点击 ✕ 移除此过滤)'"
+            >
+              <span>{{ chip.text }}</span>
+              <i 
+                class="fa-solid fa-xmark chip-remove-icon" 
+                @click.stop="removeFilterChip(chip)"
+                :title="'关闭过滤: ' + chip.tooltip"
+              ></i>
+            </span>
+
+            <!-- 动态必含约束标签列表 (纯值展示，支持快捷删除与双击编辑) -->
             <span 
               v-for="(r, idx) in activeMustRules" 
-              :key="idx" 
+              :key="'must-' + idx" 
               class="pipeline-badge-must"
-              :title="editingRuleIndex === idx ? '' : '双击编辑必含词，点击 ✕ 快捷移除'"
+              :title="editingRuleIndex === idx ? '' : `必含约束: ${r} (双击编辑，点击 ✕ 移除)`"
             >
               <!-- 处于编辑态 -->
               <template v-if="editingRuleIndex === idx">
@@ -437,12 +553,12 @@
               <!-- 处于普通展示态 -->
               <template v-else>
                 <span class="badge-must-text" @dblclick.stop="startRuleEdit(idx, r)">
-                  必含: {{ r }}
+                  {{ r }}
                 </span>
                 <i 
                   class="fa-solid fa-xmark rule-remove-icon" 
                   @click.stop="removeMustRule(idx)"
-                  title="快捷移除该必含约束"
+                  title="移除该必含约束"
                 ></i>
               </template>
             </span>
@@ -470,9 +586,20 @@
               <i class="fa-solid fa-plus" style="margin-right: 2px; font-size: 8px;"></i>必含
             </button>
 
+            <!-- 一键重置/还原过滤微按钮 (仅在有条件被移除或修改时展示) -->
+            <button 
+              v-if="hasFiltersChanged" 
+              type="button" 
+              class="btn-reset-filters" 
+              @click.stop="resetAllFilters" 
+              title="一键恢复单元格初始提取的所有过滤参数"
+            >
+              <i class="fa-solid fa-rotate-left"></i>还原
+            </button>
+
             <!-- 模式 B 双态分流：当规则被临时改动时展示临时状态与持久化保存/重置按钮 -->
             <template v-if="isRulesModified">
-              <span class="rule-modified-badge" title="当前为临时过滤条件，尚未保存为默认配置">
+              <span class="rule-modified-badge" title="当前必含规则已修改，尚未保存为全局配置">
                 <i class="fa-solid fa-bolt"></i> 临时
               </span>
               <button 
@@ -482,14 +609,6 @@
                 title="将当前必含规则保存为全局默认配置"
               >
                 <i class="fa-solid fa-floppy-disk"></i> 保存
-              </button>
-              <button 
-                type="button" 
-                class="rule-action-btn btn-reset-rule" 
-                @click.stop="resetRulesToDefault"
-                title="还原为默认配置中的必含规则"
-              >
-                <i class="fa-solid fa-rotate-left"></i> 重置
               </button>
             </template>
           </template>
@@ -558,7 +677,10 @@
 
       <div v-else-if="filteredDisplayItems.length === 0" style="text-align: center; padding: 24px 0; color: #94a3b8;">
         <i class="fa-solid fa-box-open" style="font-size: 24px; margin-bottom: 6px; display: block;"></i>
-        <span>{{ isAttachmentMode ? '暂无与当前型号匹配的配套附件' : '未找到符合管道约束的物料' }}</span>
+        <span>{{ isAttachmentMode ? '暂无与当前型号匹配的配套附件' : '未找到符合条件的物料' }}</span>
+        <div v-if="!isAttachmentMode && filterChips.length > 0" style="font-size: 11px; color: #64748b; margin-top: 6px;">
+          提示: 点击上方标签 <strong style="color: #ef4444;">✕</strong> 可快速关闭对应过滤项以放宽检索
+        </div>
       </div>
 
       <div v-else>
@@ -658,6 +780,93 @@
         // 当前物料数据源 (cloud=云端公共库, personal=本地个人库)
         const dataSource = ref('cloud');
 
+        // 动态过滤参数状态 (品牌、名称、额定电流、极数、脱扣方式)
+        const activeFilters = ref({
+          brand: '',
+          name: '',
+          current: '',
+          pole: '',
+          tripMode: ''
+        });
+
+        // 初始过滤参数快照 (用于一键重置与对比变动)
+        const initialFilters = ref({
+          brand: '',
+          name: '',
+          current: '',
+          pole: '',
+          tripMode: ''
+        });
+
+        // 纯值紧凑过滤标签列表 (严格去除品牌、电流、极数、名称等前缀，纯值极简展示，支持悬浮查看完整提示与点击 ✕ 快速移除放宽)
+        const filterChips = computed(() => {
+          const list = [];
+          // 1. 品牌过滤项 (纯值)
+          const b = (activeFilters.value.brand || '').trim();
+          if (b && b !== '全部' && b !== '全部品牌' && b.toLowerCase() !== 'all') {
+            list.push({
+              key: 'brand',
+              category: 'brand',
+              text: b,
+              tooltip: `品牌: ${b}`
+            });
+          }
+          // 2. 元件名称过滤项 (纯值)
+          const n = (activeFilters.value.name || '').trim();
+          if (n) {
+            list.push({
+              key: 'name',
+              category: 'name',
+              text: n,
+              tooltip: `名称: ${n}`
+            });
+          }
+          // 3. 额定电流过滤项 (纯值，纯数字时补 A 便于识别)
+          const c = (activeFilters.value.current || '').trim();
+          if (c) {
+            const curText = /^\d+(\.\d+)?$/.test(c) ? `${c}A` : c;
+            list.push({
+              key: 'current',
+              category: 'param',
+              text: curText,
+              tooltip: `额定电流: ${c}`
+            });
+          }
+          // 4. 极数过滤项 (纯值，纯数字时补 P 便于识别)
+          const p = (activeFilters.value.pole || '').trim();
+          if (p) {
+            const poleText = /^\d+$/.test(p) ? `${p}P` : p;
+            list.push({
+              key: 'pole',
+              category: 'param',
+              text: poleText,
+              tooltip: `极数: ${p}`
+            });
+          }
+          // 5. 脱扣方式过滤项 (纯值)
+          const t = (activeFilters.value.tripMode || '').trim();
+          if (t) {
+            list.push({
+              key: 'tripMode',
+              category: 'param',
+              text: t,
+              tooltip: `脱扣: ${t}`
+            });
+          }
+          return list;
+        });
+
+        // 判定当前过滤条件是否已被关闭或修改
+        const hasFiltersChanged = computed(() => {
+          if ((activeFilters.value.brand || '') !== (initialFilters.value.brand || '')) return true;
+          if ((activeFilters.value.name || '') !== (initialFilters.value.name || '')) return true;
+          if ((activeFilters.value.current || '') !== (initialFilters.value.current || '')) return true;
+          if ((activeFilters.value.pole || '') !== (initialFilters.value.pole || '')) return true;
+          if ((activeFilters.value.tripMode || '') !== (initialFilters.value.tripMode || '')) return true;
+          if (activeMustRules.value.length !== originalMustRules.value.length) return true;
+          return false;
+        });
+
         // 必含规则默认快照 (用于模式 B 双态分流判定及一键重置)
         const originalMustRules = ref([]);
         // 当前编辑的规则索引 (-1 表示未处于编辑状态)
@@ -688,6 +897,19 @@
           }
         };
 
+        // 统一触发带当前有效过滤条件与必含规则的即时重搜
+        const triggerSearchWithFilters = () => {
+          if (isAttachmentMode.value) return;
+          if (debounceTimer) clearTimeout(debounceTimer);
+          loading.value = true;
+          postToHost('searchKeyword', {
+            keyword: searchKeyword.value,
+            cellParams: cellParams.value,
+            filters: activeFilters.value,
+            overrideMustRules: activeMustRules.value
+          });
+        };
+
         // 动态绑定内联编辑输入框并在挂载时自动全选
         const setEditRuleInputRef = (el) => {
           editRuleInputRef.value = el;
@@ -699,10 +921,33 @@
           }
         };
 
+        // 直接移除某项过滤条件并即时重搜
+        const removeFilterChip = (chip) => {
+          if (!chip || !chip.key) return;
+          if (chip.key === 'brand') activeFilters.value.brand = '';
+          else if (chip.key === 'name') activeFilters.value.name = '';
+          else if (chip.key === 'current') activeFilters.value.current = '';
+          else if (chip.key === 'pole') activeFilters.value.pole = '';
+          else if (chip.key === 'tripMode') activeFilters.value.tripMode = '';
+          triggerSearchWithFilters();
+        };
+
+        // 一键恢复初始全部过滤条件
+        const resetAllFilters = () => {
+          activeFilters.value = { ...initialFilters.value };
+          activeMustRules.value = [...originalMustRules.value];
+          editingRuleIndex.value = -1;
+          isAddingRule.value = false;
+          triggerSearchWithFilters();
+          if (ElementPlus && ElementPlus.ElMessage) {
+            ElementPlus.ElMessage.info({ message: '已恢复初始过滤条件', duration: 1500 });
+          }
+        };
+
         // 移除单条必含约束并即时发起重搜
         const removeMustRule = (idx) => {
           activeMustRules.value.splice(idx, 1);
-          triggerSearchWithRules();
+          triggerSearchWithFilters();
         };
 
         // 开启单条必含规则内联编辑
@@ -723,7 +968,7 @@
           }
           editingRuleIndex.value = -1;
           editingRuleText.value = '';
-          triggerSearchWithRules();
+          triggerSearchWithFilters();
         };
 
         // 取消规则内联编辑
@@ -755,7 +1000,7 @@
           const trimmed = (newRuleText.value || '').trim();
           if (trimmed && !activeMustRules.value.includes(trimmed)) {
             activeMustRules.value.push(trimmed);
-            triggerSearchWithRules();
+            triggerSearchWithFilters();
           }
           isAddingRule.value = false;
           newRuleText.value = '';
@@ -784,22 +1029,10 @@
           activeMustRules.value = [...originalMustRules.value];
           editingRuleIndex.value = -1;
           isAddingRule.value = false;
-          triggerSearchWithRules();
+          triggerSearchWithFilters();
           if (ElementPlus && ElementPlus.ElMessage) {
             ElementPlus.ElMessage.info({ message: '已恢复默认必含规则', duration: 1500 });
           }
-        };
-
-        // 规则变更后触发即时异步重搜 (常规模式下向 C# 派发带 overrideMustRules 的搜索)
-        const triggerSearchWithRules = () => {
-          if (isAttachmentMode.value) return;
-          if (debounceTimer) clearTimeout(debounceTimer);
-          loading.value = true;
-          postToHost('searchKeyword', {
-            keyword: searchKeyword.value,
-            cellParams: cellParams.value,
-            overrideMustRules: activeMustRules.value
-          });
         };
 
         // 数量步进递增
@@ -888,6 +1121,17 @@
               isAddingRule.value = false;
               if (msg.cellParams) cellParams.value = msg.cellParams;
               if (msg.filterBrand !== undefined) filterBrand.value = msg.filterBrand;
+
+              // 初始化动态过滤参数对象与快照 (用于纯值标签展示与放宽检索)
+              activeFilters.value = {
+                brand: msg.filterBrand || '',
+                name: msg.cellParams?.name || '',
+                current: msg.cellParams?.current || '',
+                pole: msg.cellParams?.pole || '',
+                tripMode: msg.cellParams?.tripMode || ''
+              };
+              initialFilters.value = { ...activeFilters.value };
+
               if (msg.activeMustRules) {
                 activeMustRules.value = [...msg.activeMustRules];
                 originalMustRules.value = [...msg.activeMustRules];
@@ -927,7 +1171,7 @@
           }
         };
 
-        // 用户输入即时模糊搜索 (常规模式下走后端防抖搜索并附带当前最新必含规则，附件模式下直接本地过滤)
+        // 用户输入即时模糊搜索 (常规模式下走后端防抖搜索并附带当前最新有效过滤参数与必含规则，附件模式下直接本地过滤)
         const onSearchInput = () => {
           if (isAttachmentMode.value) {
             selectedIndex.value = 0;
@@ -940,6 +1184,7 @@
             postToHost('searchKeyword', {
               keyword: searchKeyword.value,
               cellParams: cellParams.value,
+              filters: activeFilters.value,
               overrideMustRules: activeMustRules.value
             });
           }, 120);
@@ -1015,6 +1260,12 @@
           filterBrand,
           activeMustRules,
           originalMustRules,
+          activeFilters,
+          initialFilters,
+          filterChips,
+          hasFiltersChanged,
+          removeFilterChip,
+          resetAllFilters,
           editingRuleIndex,
           editingRuleText,
           editRuleInputRef,

@@ -146,11 +146,11 @@ namespace ExcelAddInDemo
         // 默认图纸库根物理目录路径 (默认: E:\BaiduNetdiskWorkspace\BaseData\新库) --硬编码--
         public string BaseDirectory { get; set; } = @"E:\BaiduNetdiskWorkspace\BaseData\新库";
 
-        // 目录名称写入的目标 Excel 列号名称 (默认: Y，即第 25 列) --硬编码--
-        public string TargetDirColumn { get; set; } = "Y";
+        // 目录名称写入的目标 Excel 列号名称 (普通分类表默认: AB 列即第 28 列，元件汇总表自动识别为 Y 列) --硬编码--
+        public string TargetDirColumn { get; set; } = "AB";
 
-        // 图纸名称写入的目标 Excel 列号名称 (默认: X，即第 24 列) --硬编码--
-        public string TargetDwgColumn { get; set; } = "X";
+        // 图纸名称写入的目标 Excel 列号名称 (普通分类表默认: AA 列即第 27 列，元件汇总表自动识别为 X 列) --硬编码--
+        public string TargetDwgColumn { get; set; } = "AA";
 
         // 双击写入后是否自动跳转并选中下一行单元格 (默认: true)
         public bool AutoNextRow { get; set; } = true;

@@ -5,8 +5,10 @@ using System.IO.Pipes;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using ExcelAddInDemo.Models;
 
 namespace ExcelAddInDemo.Services
 {
@@ -107,8 +109,8 @@ namespace ExcelAddInDemo.Services
                         autoZoom = autoZoom
                     };
 
-                    // 序列化为 JSON 字符串
-                    string jsonStr = JsonSerializer.Serialize(payload);
+                    // 序列化为 JSON 字符串并在尾部添加换行符以契合服务端按行读取协议
+                    string jsonStr = JsonSerializer.Serialize(payload) + "\n";
                     byte[] buffer = Encoding.UTF8.GetBytes(jsonStr);
 
                     // 写入管道并刷新缓冲区
@@ -121,5 +123,124 @@ namespace ExcelAddInDemo.Services
                 // CAD 未运行或管道未就绪时静默忽略，保证 Excel 零感无缝运行
             }
         }
+
+        /// <summary>
+        /// 同步向 AutoCAD 发送缺失 DWG 图纸尺寸提取请求并等待直接回传结果
+        /// 超时默认 3000ms（连接握手超时 500ms），降级返回空列表，绝不卡死 Excel
+        /// </summary>
+        /// <param name="dwgPaths">待测算的 DWG 磁盘物理路径列表</param>
+        /// <param name="timeoutMs">总等待超时毫秒数，默认 3000ms --硬编码--</param>
+        /// <returns>CAD 端返回的尺寸实体列表</returns>
+        public static List<DwgDimensionItem> RequestExtractDwgDimensions(List<string>? dwgPaths, int timeoutMs = 3000)
+        {
+            // 校验路径集合是否为空
+            if (dwgPaths == null || dwgPaths.Count == 0)
+            {
+                return new List<DwgDimensionItem>();
+            }
+
+            try
+            {
+                // 在后台线程运行异步请求并同步等待结果
+                return Task.Run(() => RequestExtractDwgDimensionsAsync(dwgPaths, timeoutMs)).GetAwaiter().GetResult();
+            }
+            catch
+            {
+                // 出现任何不可预见异常时降级返回空列表
+                return new List<DwgDimensionItem>();
+            }
+        }
+
+        /// <summary>
+        /// 异步向 AutoCAD 命名管道发送 extractDimensions 请求并读取返回结果
+        /// </summary>
+        /// <param name="dwgPaths">图纸物理路径列表</param>
+        /// <param name="timeoutMs">超时毫秒数</param>
+        /// <returns>提取结果集合</returns>
+        public static async Task<List<DwgDimensionItem>> RequestExtractDwgDimensionsAsync(List<string> dwgPaths, int timeoutMs = 3000)
+        {
+            var resultList = new List<DwgDimensionItem>();
+            // 校验图纸路径列表是否为空
+            if (dwgPaths == null || dwgPaths.Count == 0) return resultList;
+
+            using (var cts = new CancellationTokenSource(timeoutMs))
+            {
+                try
+                {
+                    // 构造双向异步命名管道客户端以支持双向收发
+                    using (var pipeClient = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous))
+                    {
+                        // 尝试连接 CAD 服务端（握手连接超时设为 500ms 或剩余时间，CAD 未打开时极速降级）
+                        int connectTimeout = Math.Min(500, timeoutMs);
+                        await pipeClient.ConnectAsync(connectTimeout, cts.Token);
+
+                        // 创建流写入器并保留流开启状态
+                        using (var writer = new StreamWriter(pipeClient, Encoding.UTF8, 4096, leaveOpen: true))
+                        {
+                            // 构造提取图纸尺寸的请求载荷
+                            var reqPayload = new
+                            {
+                                action = "extractDimensions",
+                                dwgPaths = dwgPaths
+                            };
+
+                            // 序列化为 JSON 字符串
+                            string jsonStr = JsonSerializer.Serialize(reqPayload);
+                            // 换行发送并立即刷新缓冲区，服务端采用 ReadLineAsync 读取
+                            await writer.WriteLineAsync(jsonStr);
+                            await writer.FlushAsync();
+                        }
+
+                        // 创建流读取器以读取 CAD 端直接回传的尺寸响应
+                        using (var reader = new StreamReader(pipeClient, Encoding.UTF8, false, 4096, leaveOpen: true))
+                        {
+                            // 按行异步读取响应数据
+                            string? responseJson = await reader.ReadLineAsync();
+                            if (!string.IsNullOrWhiteSpace(responseJson))
+                            {
+                                // 配置 JSON 反序列化选项：开启大小写不敏感匹配以兼容 CAD 端返回的 PascalCase 格式
+                                var jsonOptions = new JsonSerializerOptions
+                                {
+                                    // 允许属性名称大小写不敏感（匹配 "Width" 与 "width"）
+                                    PropertyNameCaseInsensitive = true
+                                };
+
+                                // 反序列化 CAD 返回的尺寸数据载荷（采用大小写兼容配置）
+                                var resp = JsonSerializer.Deserialize<CadExtractDimensionsResponse>(responseJson, jsonOptions);
+                                if (resp != null && resp.Success && resp.Items != null)
+                                {
+                                    // 提取成功解析出的测算实体集合
+                                    resultList = resp.Items;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // 超时或管道中断时静默降级，确保 Excel 流程稳定
+                }
+            }
+
+            return resultList;
+        }
+    }
+
+    /// <summary>
+    /// CAD 端图纸尺寸提取响应数据载荷模型
+    /// </summary>
+    public class CadExtractDimensionsResponse
+    {
+        // 动作指令标识
+        [JsonPropertyName("action")]
+        public string? Action { get; set; }
+
+        // 是否执行成功
+        [JsonPropertyName("success")]
+        public bool Success { get; set; }
+
+        // 提取出的图纸尺寸实体集合
+        [JsonPropertyName("items")]
+        public List<DwgDimensionItem>? Items { get; set; }
     }
 }

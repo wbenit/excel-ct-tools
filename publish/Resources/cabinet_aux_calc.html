@@ -771,6 +771,75 @@
         justify-content: space-between;
         align-items: center;
       }
+
+      /* ===== 批量更新进度全局模态遮罩与卡片样式 (绿蓝相间主色调 #009688) ===== */
+      .batch-progress-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(15, 23, 42, 0.55);
+        backdrop-filter: blur(3px);
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .batch-progress-card {
+        background: #ffffff;
+        width: 460px;
+        border-radius: 8px;
+        padding: 24px 28px;
+        box-shadow: 0 12px 32px rgba(0, 150, 136, 0.22);
+        border: 1px solid #b2dfdb;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        animation: batchCardFadeIn 0.2s ease-out;
+      }
+      @keyframes batchCardFadeIn {
+        from {
+          opacity: 0;
+          transform: scale(0.96);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      .batch-progress-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #00796b;
+      }
+      .batch-progress-header svg {
+        animation: batchSpin 1.2s linear infinite;
+      }
+      @keyframes batchSpin {
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+      .batch-progress-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: #00796b;
+      }
+      .batch-progress-tip {
+        font-size: 12.5px;
+        color: #475569;
+        text-align: center;
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        border-radius: 4px;
+        padding: 6px 12px;
+        line-height: 1.5;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
     </style>
   </head>
 
@@ -3315,6 +3384,30 @@
         </div>
       </div>
 
+      <!-- 批量更新全局动态进度遮罩 (绿蓝相间主色调 #009688，显式闭合标签) -->
+      <div v-if="isBatchProcessing" class="batch-progress-overlay">
+        <div class="batch-progress-card">
+          <!-- 进度卡片头部标题与加载旋转图标 -->
+          <div class="batch-progress-header">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+            </svg>
+            <span class="batch-progress-title">{{ progressTitle }}</span>
+          </div>
+          <!-- Element Plus 绿蓝主题动态条纹进度条 -->
+          <el-progress
+            :percentage="progressPercent"
+            :stroke-width="14"
+            color="#009688"
+            :striped="true"
+            :striped-flow="true"
+            :status="progressPercent === 100 ? 'success' : ''"
+          ></el-progress>
+          <!-- 动态步骤与箱柜名称提示说明卡片 -->
+          <div class="batch-progress-tip">{{ progressMessage }}</div>
+        </div>
+      </div>
+
       <!-- 6. 二次回路图纸对齐与元件组绑定工作台 (三栏/折叠一体化工作台，屏幕正中央垂直水平居中) -->
       <el-dialog
         v-model="circuitDwgDialogVisible"
@@ -5079,6 +5172,12 @@
           const isUpdatingAllCategories = ref(false);
           const isSavingRules = ref(false);
 
+          // 批量更新全局动态进度条状态 (绿蓝相间主题驱动)
+          const isBatchProcessing = ref(false);
+          const progressPercent = ref(0);
+          const progressTitle = ref("正在批量处理...");
+          const progressMessage = ref("正在准备数据与公式...");
+
           // 工作表与箱柜数据
           const sheetNames = ref([]);
           const selectedSheet = ref("");
@@ -6535,31 +6634,48 @@
                     msg.message || "写入当前箱柜失败，请检查工作表",
                   );
                 }
+              } else if (msg.action === "updateProgress") {
+                // 收到 C# 宏队列实时派发的批量更新阶段进度
+                isBatchProcessing.value = true;
+                progressPercent.value = msg.percent !== undefined ? msg.percent : 0;
+                progressMessage.value = msg.message || "";
               } else if (msg.action === "updateCurrentCategoryResult") {
-                isUpdatingCurrentCategory.value = false;
-                if (msg.success) {
-                  ElementPlus.ElMessage.success(
-                    msg.message || `成功更新当前分类表共 ${msg.count} 台箱柜！`,
-                  );
-                } else {
-                  ElementPlus.ElMessage.error(
-                    msg.message || "更新当前分类失败，请检查工作表",
-                  );
-                }
+                // 当前分类表批量更新完成，置满进度条并平滑关闭
+                progressPercent.value = 100;
+                progressMessage.value = msg.message || "当前分类表全部箱柜更新完成！";
+                setTimeout(() => {
+                  isBatchProcessing.value = false;
+                  isUpdatingCurrentCategory.value = false;
+                  if (msg.success) {
+                    ElementPlus.ElMessage.success(
+                      msg.message || `成功更新当前分类表共 ${msg.count} 台箱柜！`,
+                    );
+                  } else {
+                    ElementPlus.ElMessage.error(
+                      msg.message || "更新当前分类失败，请检查工作表",
+                    );
+                  }
+                }, 250);
               } else if (msg.action === "updateAllCategoriesResult") {
-                isUpdatingAllCategories.value = false;
-                if (msg.success) {
-                  ElementPlus.ElMessageBox.alert(
-                    msg.message ||
-                      `成功更新 ${msg.sheetCount} 个分类表，共 ${msg.cabinetCount} 台箱柜！`,
-                    "全工作簿更新成功",
-                    { confirmButtonText: "确定", type: "success" },
-                  );
-                } else {
-                  ElementPlus.ElMessage.error(
-                    msg.message || "更新所有分类失败，请检查工作表",
-                  );
-                }
+                // 全工作簿所有分类表更新完成，置满进度条并平滑关闭
+                progressPercent.value = 100;
+                progressMessage.value = msg.message || "全工作簿分类表全部更新完成！";
+                setTimeout(() => {
+                  isBatchProcessing.value = false;
+                  isUpdatingAllCategories.value = false;
+                  if (msg.success) {
+                    ElementPlus.ElMessageBox.alert(
+                      msg.message ||
+                        `成功更新 ${msg.sheetCount} 个分类表，共 ${msg.cabinetCount} 台箱柜！`,
+                      "全工作簿更新成功",
+                      { confirmButtonText: "确定", type: "success" },
+                    );
+                  } else {
+                    ElementPlus.ElMessage.error(
+                      msg.message || "更新所有分类失败，请检查工作表",
+                    );
+                  }
+                }, 250);
               } else if (msg.action === "applyResult") {
                 isWritingCurrent.value = false;
                 if (msg.success) {
@@ -6925,6 +7041,12 @@
               return;
             }
             isUpdatingCurrentCategory.value = true;
+            // 立即唤起动态进度条全局模态遮罩
+            isBatchProcessing.value = true;
+            progressPercent.value = 0;
+            progressTitle.value = `正在更新分类表【${selectedSheet.value}】...`;
+            progressMessage.value = "正在初始化工作表与箱柜数据...";
+
             if (window.chrome && window.chrome.webview) {
               window.chrome.webview.postMessage({
                 action: "updateCurrentCategory",
@@ -6951,6 +7073,12 @@
             )
               .then(() => {
                 isUpdatingAllCategories.value = true;
+                // 立即唤起动态进度条全局模态遮罩
+                isBatchProcessing.value = true;
+                progressPercent.value = 0;
+                progressTitle.value = `正在批量更新全工作簿所有分类表（共 ${sheetNames.value.length} 个表）...`;
+                progressMessage.value = "正在扫描工作表与初始化计算引擎...";
+
                 if (window.chrome && window.chrome.webview) {
                   window.chrome.webview.postMessage({
                     action: "updateAllCategories",
@@ -8199,6 +8327,11 @@
             addShellPriceMaterialThickness,
             // 删除板材单价厚度规格函数
             removeShellPriceMaterialThickness,
+            // ==================== 批量更新动态进度条状态导出 ====================
+            isBatchProcessing,
+            progressPercent,
+            progressTitle,
+            progressMessage,
           };
         },
       });

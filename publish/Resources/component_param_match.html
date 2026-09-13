@@ -445,10 +445,10 @@
         />
       </div>
 
-      <!-- 规则提示行：单行不折行展示回写列与操作快捷键 -->
-      <div class="column-rule-bar">
-        <span>{{ configInfo.targetDwgColumn || 'X' }}=图纸 <span class="column-rule-tag">|</span> {{ configInfo.targetDirColumn || 'Y' }}=目录</span>
-        <span class="action-hint">双击写入 · 右击返回</span>
+      <!-- 规则提示行：单行不折行展示当前工作表与回写列 -->
+      <div class="column-rule-bar" :title="currentSheetName ? ('当前工作表: ' + currentSheetName) : '双击DWG写入当前行'">
+        <span class="column-tag-text">{{ currentSheetName === '元件汇总表' ? '📄汇总表' : '📋分类表' }}: {{ configInfo.targetDwgColumn || 'AA' }}=图纸 <span class="column-rule-tag">|</span> {{ configInfo.targetDirColumn || 'AB' }}=目录</span>
+        <span class="action-hint">双击写入</span>
       </div>
 
       <!-- 列表滚动展示区：支持空白处右键返回上一级 -->
@@ -559,10 +559,12 @@
             const statusText = ref("就绪: 双击DWG写入Excel");
             // 记录最近一次写入的 DWG 名称用于高亮反馈
             const lastBoundDwg = ref("");
-            // 配置项
+            // 当前聚焦识别到的 Excel 工作表名称
+            const currentSheetName = ref("");
+            // 配置项 (分类表默认 AA/AB，元件汇总表自适应为 X/Y)
             const configInfo = ref({
-              targetDirColumn: "Y",
-              targetDwgColumn: "X",
+              targetDirColumn: "AB",
+              targetDwgColumn: "AA",
               autoNextRow: true,
               removeExtension: true,
             });
@@ -758,10 +760,11 @@
                     // 1. 初始化数据回传
                     if (msg.action === "initialDataLoaded") {
                       baseDirectory.value = msg.baseDirectory || "";
+                      currentSheetName.value = msg.activeSheetName || "";
                       configInfo.value.targetDirColumn =
-                        msg.targetDirColumn || "Y";
+                        msg.targetDirColumn || (currentSheetName.value === "元件汇总表" ? "Y" : "AB");
                       configInfo.value.targetDwgColumn =
-                        msg.targetDwgColumn || "X";
+                        msg.targetDwgColumn || (currentSheetName.value === "元件汇总表" ? "X" : "AA");
                       configInfo.value.autoNextRow =
                         msg.autoNextRow !== undefined ? msg.autoNextRow : true;
                       configInfo.value.removeExtension =
@@ -784,8 +787,11 @@
                     // 4. 双击写入 Excel 结果回发
                     else if (msg.action === "bindDwgResult") {
                       if (msg.success) {
+                        if (msg.colDwg) configInfo.value.targetDwgColumn = msg.colDwg;
+                        if (msg.colDir) configInfo.value.targetDirColumn = msg.colDir;
+                        if (msg.sheetName) currentSheetName.value = msg.sheetName;
                         const dimSuffix = msg.dimStr ? ` (${msg.dimStr})` : "";
-                        statusText.value = `✅ 已写入 ${msg.nextRow ? msg.nextRow - 1 : ""} 行: ${getCleanDwgName(msg.dwgName)}${dimSuffix}`;
+                        statusText.value = `✅ [${msg.colDwg || 'AA'}] ${msg.nextRow ? msg.nextRow - 1 : ""}行已填: ${getCleanDwgName(msg.dwgName)}${dimSuffix}`;
                       } else {
                         statusText.value = `❌ ${msg.message || "写入失败"}`;
                       }
@@ -809,6 +815,7 @@
               searchKeyword,
               filteredSubDirs,
               filteredDwgFiles,
+              currentSheetName,
               statusText,
               lastBoundDwg,
               configInfo,

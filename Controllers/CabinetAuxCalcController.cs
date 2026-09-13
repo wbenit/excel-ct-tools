@@ -258,10 +258,12 @@ namespace ExcelAddInDemo.Controllers
         /// </summary>
         /// <param name="sheetName">分类工作表名称</param>
         /// <param name="rules">定额与规则</param>
+        /// <param name="onProgress">进度通知委托</param>
         /// <returns>更新结果元组</returns>
         public (bool Success, int UpdatedCabinets, string Message) UpdateCurrentCategory(
             string sheetName,
-            QuotationRules rules)
+            QuotationRules rules,
+            Action<int, string>? onProgress = null)
         {
             try
             {
@@ -278,7 +280,7 @@ namespace ExcelAddInDemo.Controllers
                 if (ws == null) return (false, 0, $"未找到工作表【{sheetName}】。");
 
                 // 调用服务层更新当前分类表方法
-                return ExcelServices.UpdateCurrentCategoryAuxAndShell(ws, rules);
+                return ExcelServices.UpdateCurrentCategoryAuxAndShell(ws, rules, onProgress);
             }
             catch (Exception ex)
             {
@@ -289,17 +291,19 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
-        /// 更新当前工作簿中所有分类表的全部箱柜
+        /// 更新当前工作簿中所有分类表的全部箱柜 (支持多表进度通知)
         /// </summary>
         /// <param name="rules">定额与规则</param>
+        /// <param name="onProgress">进度通知委托</param>
         /// <returns>全工作簿更新结果元组</returns>
         public (bool Success, int UpdatedSheets, int UpdatedCabinets, string Message) UpdateAllCategories(
-            QuotationRules rules)
+            QuotationRules rules,
+            Action<int, string>? onProgress = null)
         {
             try
             {
-                // 调用服务层更新全工作簿所有分类表方法
-                return ExcelServices.UpdateAllCategoriesAuxAndShell(rules);
+                // 调用服务层更新全工作簿所有分类表方法并传递进度委托
+                return ExcelServices.UpdateAllCategoriesAuxAndShell(rules, onProgress);
             }
             catch (Exception ex)
             {

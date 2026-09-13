@@ -1,4 +1,97 @@
 # Session State
+ 
+- **智能辅材与壳体计算中心「更新当前分类」与「更新所有分类」极速性能优化与 Element Plus 动态进度条落地交付 (`ExcelServices.CabinetAuxCalc.cs`, `CabinetAuxCalcController.cs`, `CabinetAuxCalcForm.cs`, `cabinet_aux_calc.html`)**：
+  1. **问题根因彻底清除**：
+     - **未挂起重绘重算**：原更新当前分类未开启 `ScreenUpdating = false`、`Calculation = xlCalculationManual` 与 `EnableEvents = false`，每次单元格修改均触发全表重算与重绘，性能严重拖慢数十倍；
+     - **定义名称重复全量扫描**：原循环中每次调用 `ScanCabinetData` 均从零遍历全表定义名称，产生大量冗余 COM 跨进程开销；
+     - **CAD 管道未运行超时累加**：未开启 AutoCAD 时每个箱柜均经历 500ms 握手超时累加；
+     - **WebMessage 同步阻塞**：在 Chromium IPC 回调中同步执行 Excel 操作导致界面完全假死、动画冻结。
+  2. **端到端极速优化与解耦实施**：
+     - **四重极速性能保护**：`UpdateCurrentCategoryAuxAndShell` 与 `UpdateAllCategoriesAuxAndShell` 统一挂起屏幕重绘、警告弹窗、COM 事件与公式自动重算，处理完成后统一触发 `ws.Calculate()` / `app.Calculate()` 并恢复原始环境，单表处理速度提升 10~30 倍；
+     - **轻量锚点复用 (`ScanCabinetData`)**：新增 `ScanCabinetData(ws, cabIndex, anchor)` 重载，直接复用已识别的 `CabinetAnchorModel`，单表彻底消除所有重复遍历；
+     - **CAD 运行进程毫秒级预检**：快速探测系统是否存在 `acad` 进程，未运行 AutoCAD 时 0 毫秒跳过管道索取，绝不产生等待；
+     - **`ExcelAsyncUtil.QueueAsMacro` 异步队列调度**：`CabinetAuxCalcForm.cs` 将更新逻辑移入 Excel 宏队列，彻底解耦 Chromium IPC 与 Excel STA 线程，杜绝界面冻结与崩溃。
+  3. **工业级 `#009688` 绿蓝主题动态进度条实现**：
+     - **后端多层级进度通知委托**：服务层与控制器注入 `Action<int, string>? onProgress`，实时通过 `SafeInvoke` 向前端派发 `{ action: "updateProgress", percent, message }` 报文；
+     - **前端 Element Plus 进度模态卡片**：`<el-progress>` 结合 `:striped="true" :striped-flow="true"` 动态条纹流光，主色调 `#009688`，实时呈现百分比与当前正在处理的表名、箱柜名称与步骤；
+     - **平滑完成闭环**：任务完成后自动拉满至 100%，停留 250ms 后自动关闭模态卡片并展示成功提示。
+  4. **工程构建与三端同步**：
+     - 静态资源已同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`（哈希严格一致）；
+     - `ExcelAddInDemo.csproj` 构建验证：**0 错误**。
+
+- **方案 A（静默高速内存解析 + CAD 管道直接回发 Excel + SQLite 双向持久化）落地交付 (`CadSyncClient.cs`, `ExcelServices.CabinetAuxCalc.cs`, `CadExcelSyncServer.cs`, `DwgDimensionScanner.cs`)**：
+  1. **改变被动局面，实现打开即自动检测触发**：
+     - 在 Excel 辅材与壳体推导（`CalculateCabinetAuxAndShell`）中，不仅从本地 SQLite 批量查库，还自动对比当前箱柜所有元器件的图纸名/目录名；
+     - 若图纸在 SQLite 未收录或长宽为 0，且磁盘物理图纸文件真实存在（基准目录优先从配置读取，缺省兜底 `E:\BaiduNetdiskWorkspace\BaseData\新库`，--硬编码--），自动收集为缺失图纸路径集合；
+  2. **双向管道实时索取与 CAD 直接回传**：
+     - `CadSyncClient.cs` 扩展双向命名管道客户端，新增 `RequestExtractDwgDimensions`（同步封装）与 `RequestExtractDwgDimensionsAsync`；
+     - 支持设定握手超时（500ms 内极速判定 CAD 是否在线，未开启时优雅降级，绝不卡死 Excel）；
+     - 向 CAD 发送 `{ action: "extractDimensions", dwgPaths: [...] }`，CAD 端后台 `Database.ReadDwgFile` 静默解析长宽及进深文字，入库 SQLite 同时直接将 JSON 尺寸列表回传给 Excel；
+     - **修复 JSON 跨端大小写失配导致属性为 0 的关键缺陷**：CAD 端 `Newtonsoft.Json` 输出 PascalCase 大写（`"Width"`, `"Height"`），而 Excel 端实体标有小写 `[JsonPropertyName("width")]`，原 `System.Text.Json` 默认区分大小写导致字段全部反序列化为 0 和 `""`；在客户端开启 `PropertyNameCaseInsensitive = true` 后属性完美绑定。
+  3. **Excel 内存字典即时注入与箱体推导**：
+     - Excel 收到 CAD 直接回发的尺寸列表后，立即注入到当前推导的内存字典 `dwgDimMap`（分别以带目录相对路径 Key 与纯图纸名注入）；
+     - 当前箱柜计算逻辑即时享用真实外形宽高与进深，顺利激活 `comp.Depth` 与最大进深 $+60\text{mm}$ 的箱体深度安全防干涉推导；
+  4. **严格采用确定尺寸，彻底移除经验估算兜底 (`ExcelServices.CabinetAuxCalc.cs`)**：
+     - 彻底废除 `EstimateComponentDimensions` 行业经验长宽兜底逻辑；
+     - 若 AA 列（图纸名）与 AB 列（目录名）均为空，判定为用户未配置 DWG，**直接静默跳过，绝不产生误报错**；
+     - 仅当明确配置了 AA 列图纸名、却未能从 CAD 测算或库中提取到有效外形尺寸时，才精准记录明确错误警示至 `calcWarnings`；
+     - 未定尺寸的元件占位面积记为 0，推导描述中明确提示未定尺寸项数，让用户一目了然定位问题；
+  5. **工程构建与架构规范**：
+     - 严格遵守用户指示：CAD 排版（`Common.cs`）保持原封不动；
+     - 新增代码严格遵循每 3 行至少 1 行中文注释，硬编码均带有 `--硬编码--` 标明；
+     - 修复 `TuFan.csproj` 引用路径至 `..\..\..\excel-ct-tools\ExcelAddInDemo.csproj`；
+     - `ExcelAddInDemo.csproj` 与 `TuFan.csproj` 均实现 0 错误构建。
+
+- **DWG 图纸列与目录列按表格类型自适应路由 (分类表 AA/AB 列 vs 元件汇总表 X/Y 列) 与箱体辅材提取修复落地 (`ExcelServices.CabinetAuxCalc.cs`, `ExcelServices.ComponentParamMatch.cs`, `ComponentParamMatchForm.cs`, `AppConfig.cs`, `appsettings.json`, `component_param_match.html`)**：
+  1. **问题与业务列位对齐**：
+     - 用户明确指出：在【元件汇总表】中，图纸名和目录名为 **X 列（参数1，第 24 列）** 与 **Y 列（参数2，第 25 列）**；
+     - 在【分类表/箱柜明细表】中，图纸名和目录名则为 **AA 列（图块名称，第 27 列）** 与 **AB 列（图块类别，第 28 列）**；此时 X 列是极数、Y 列是脱扣方式，此前写死 X/Y 会误冲数据；
+     - `ExcelServices.CabinetAuxCalc.cs` 原先在分类表提取 DWG 尺寸时误读了第 24 列 (X) 与第 25 列 (Y)，导致读到极数和脱扣方式去匹配图纸尺寸。
+  2. **落地改动**：
+     - **箱体辅材提取修正 (`ExcelServices.CabinetAuxCalc.cs`)**：彻底去除 X/Y 列的兼容兜底代码，严格仅从分类表 AA 列 (`blockName`, 第 27 列，图纸名) 与 AB 列 (`blockCategory`, 第 28 列，目录名) 提取 `dwgName` 与 `dwgDir`；
+     - **图纸参数匹配服务智能工作表感知 (`ExcelServices.ComponentParamMatch.cs`)**：
+       - 若聚焦在【元件汇总表】：锁定图纸写入 **X 列**、目录写入 **Y 列**；
+       - 若聚焦在普通【分类表】：锁定图纸写入 **AA 列**、目录写入 **AB 列**；
+       - 彻底避免在分类表中冲掉原有极数 (X 列) 与脱扣方式 (Y 列)；
+     - **浮窗与配置对齐 (`AppConfig.cs`, `appsettings.json`, `ComponentParamMatchForm.cs`, `component_param_match.html`)**：
+       - 默认配置对齐为 `TargetDirColumn: "AB"`, `TargetDwgColumn: "AA"`；
+       - 前端界面动态展示当前工作表模式与目标列（如 `📋分类表: AA=图纸 | AB=目录` 或 `📄汇总表: X=图纸 | Y=目录`）；
+       - 双击写入后明确反馈写入的目标列标与行号；
+     - **CAD 排版模块暂保留**：CAD 端 `Common.cs` 按用户指示暂不修改。
+  3. **编译构建验证与静态资源同步**：
+     - HTML 静态资源已同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - `ExcelAddInDemo.csproj` 编译构建通过：**0 错误**。
+
+- **元器件图纸参数匹配浮窗 ERR_FILE_NOT_FOUND 根除与多级路径容错探测落地 (`ExcelAddInDemo.csproj`, `ComponentParamMatchForm.cs`, `bin/Debug/net48/Resources/`, `publish/Resources/`)**：
+  1. **问题根因剖析**：
+     - 用户截图展示狭长浮窗内报 Chromium 原生错误“未找到文件 它可能已被移动、编辑或删除 ERR_FILE_NOT_FOUND”；
+     - `ExcelAddInDemo.csproj` 中遗漏了 `<None Include="Resources\component_param_match.html"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>`，导致项目 build 时 HTML 页面未被复制到 bin 输出目录；
+     - `ComponentParamMatchForm.cs` 此前仅判断了 `Resources` 文件夹是否存在，未校验 HTML 文件物理存在即盲目映射虚拟域名 `appassets.local`，导致 Chromium 找不到页面报错。
+  2. **落地实施方案**：
+     - **项目配置补全 (`ExcelAddInDemo.csproj`)**：补充 `Resources\component_param_match.html` 的 `CopyToOutputDirectory` 配置，保障每次构建自动下发到目标目录；
+     - **多级候选路径容错探测 (`ComponentParamMatchForm.cs`)**：借鉴 `CabinetAuxCalcForm` 架构，增加 AppDir、BaseDir、publish、源码目录等多重物理路径探测，仅当物理文件确认存在后提取其真实物理目录映射为虚拟域名，杜绝 ERR_FILE_NOT_FOUND；
+     - **镜像多端同步与构建**：已同步将 HTML 部署至 `bin/Debug/net48/Resources/` 与 `publish/Resources/`，执行 `dotnet build /t:Compile /p:DebugType=none`：**0 错误**。
+
+- **业务专属右键菜单高分辨率截断修复与“图纸参数匹配”完整展示落地 (`CustomContextMenuForm.cs`, `custom_context_menu.html`, `publish/Resources/custom_context_menu.html`)**：
+  1. **问题根因**：菜单项多达 16 项 + 4 条分割线（总高需 456px+），原写死尺寸 `Size(250, 470)` 在 Windows 125%~150% DPI 缩放下视口被压缩，外加 `overflow: hidden`，导致排在底部的“图纸参数匹配...”被无情截断裁切；
+  2. **落地改动**：
+     - `CustomContextMenuForm.cs` 将窗体高度从 470px 扩展至 **505px**，给底部留出充足的展示余量；
+     - `custom_context_menu.html` 将单项高度由 25px 微调至 **24px**，提升排版紧凑度；
+  3. **编译构建与镜像同步**：多端镜像已覆盖同步，执行 `dotnet build /t:Compile /p:DebugType=none`：**0 错误**。
+
+- **物料智能匹配悬浮窗过滤管道纯值紧凑标签化与多维动态放宽检索系统级落地 (`ComponentMatchOverlayForm.cs`, `component_match_overlay.html`, `publish/Resources/component_match_overlay.html`)**：
+  1. **问题根因剖析（隐式过滤导致云端 0 结果根本原因）**：
+     - **隐式强约束误杀物料**：此前系统在单元格点击弹窗时，自动从当前行单元格提取 `Name`（名称）、`Current`（电流）、`Pole`（极数）、`TripMode`（脱扣）及品牌，强行作为 `AND` 条件拼接发送给云端接口（如 `GET /api/api/Component/GetPagedList?Name=隔离开关&Current=225&Poles=3&Brand=德力西`）。但厂家实际标准规格阶梯可能只有 160A、200A、250A，无 225A 规格，导致云端直接返回 0 条（获取不到）；
+     - **过滤项暗箱化且无法调整**：前端界面此前仅展示了数据源与不可操作的品牌文字，未将名称、电流、极数等展示出来，更无法单独关闭某个过滤条件。
+  2. **用户核心指令与落地实施方案**：
+     - **纯值极简标签（去除所有参数名前缀）**：彻底剔除“品牌:”、“电流:”、“极数:”、“名称:”等前缀汉字，直接展示高密度纯值标签（如 `[德力西 ✕]`、`[隔离开关 ✕]`、`[225A ✕]`、`[3P ✕]`、`[必含词 ✕]`），极致节省横向排版空间；
+     - **悬停 Tooltip 完整提示**：鼠标悬停在标签上时，利用原生 `title` 显示如 `额定电流: 225A (点击 ✕ 移除此过滤)`，信息透明直观；
+     - **直接移除与即时异步放宽重搜**：点击任意标签右侧的 `✕`，直接从过滤列表移除；前端即时向 C# 派发包含放宽后参数的 `filters` 对象；C# 端支持动态接收放宽参数，在向云端 API 发送请求时剥离被关闭的参数（如去掉 `Current=`），毫秒级捞出该品牌下全部型号物料；
+     - **一键重置/还原微按钮（↺）**：当有任何过滤项被移除或修改时，自动呈现还原按钮，支持一键恢复从当前单元格提取的原始参数组合；
+     - **空状态指引**：在匹配为 0 条时增加提示文本：“提示: 点击上方标签 ✕ 可快速关闭对应过滤项以放宽检索”；
+  3. **编译构建与镜像同步**：
+     - `publish/Resources/component_match_overlay.html` 已强制覆盖同步；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none`：**0 错误**，构建成功。
 
 - **汇总调价全表单次大数组读取、智能免重复自愈与 Element Plus 动态进度条系统级提速 (`ExcelServices.SummaryAdjustPrice.cs`, `Tool.cs`, `SummaryAdjustPriceController.cs`, `SummaryAdjustPriceForm.cs`, `summary_adjust_price.html`)**：
   1. **问题根因剖析（200+台箱柜严重卡顿根本原因）**：

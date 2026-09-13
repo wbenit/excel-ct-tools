@@ -320,6 +320,51 @@ namespace ExcelAddInDemo.Forms
                         var searchCp = _cellParams;
                         var searchFc = _filterConfig;
 
+                        // 提取动态生效的检索过滤条件默认值 (若前端未传 filters 则沿用初始上下文)
+                        string effectiveBrand = searchFc.SelectedBrand ?? string.Empty;
+                        // 初始元器件名称条件
+                        string effectiveName = searchCp.Name;
+                        // 初始额定电流条件
+                        string effectiveCurrent = searchCp.Current;
+                        // 初始极数条件
+                        string effectivePole = searchCp.Pole;
+                        // 初始脱扣方式条件
+                        string effectiveTrip = searchCp.TripMode;
+
+                        // 解析前端动态过滤参数对象 (支持用户在界面上点击 ✕ 移除某项后放宽查询)
+                        if (root.TryGetProperty("filters", out var filtersProp) && filtersProp.ValueKind == JsonValueKind.Object)
+                        {
+                            // 动态覆盖品牌筛选 (前端关闭品牌后传入空字符串，实现不限品牌检索)
+                            if (filtersProp.TryGetProperty("brand", out var bProp))
+                            {
+                                effectiveBrand = bProp.GetString() ?? string.Empty;
+                            }
+
+                            // 动态覆盖名称筛选 (前端关闭名称后传入空字符串，放宽名称约束)
+                            if (filtersProp.TryGetProperty("name", out var nProp))
+                            {
+                                effectiveName = nProp.GetString() ?? string.Empty;
+                            }
+
+                            // 动态覆盖电流筛选 (前端关闭电流后传入空字符串，放宽电流阶梯限制)
+                            if (filtersProp.TryGetProperty("current", out var cProp))
+                            {
+                                effectiveCurrent = cProp.GetString() ?? string.Empty;
+                            }
+
+                            // 动态覆盖极数筛选 (前端关闭极数后传入空字符串，放宽极数约束)
+                            if (filtersProp.TryGetProperty("pole", out var pProp))
+                            {
+                                effectivePole = pProp.GetString() ?? string.Empty;
+                            }
+
+                            // 动态覆盖脱扣方式筛选 (前端关闭脱扣方式后传入空字符串)
+                            if (filtersProp.TryGetProperty("tripMode", out var tProp))
+                            {
+                                effectiveTrip = tProp.GetString() ?? string.Empty;
+                            }
+                        }
+
                         // 解析前端当前过滤管道传入的最新必含规则 (支持用户快捷删除/编辑后的临时覆盖)
                         List<MustContainRule> effectiveMustRules = searchFc.MustContainRules;
                         if (root.TryGetProperty("overrideMustRules", out var overrideProp) && overrideProp.ValueKind == JsonValueKind.Array)
@@ -347,27 +392,27 @@ namespace ExcelAddInDemo.Forms
                                 bool isPersonal = string.Equals(searchFc.DataSource, "personal", StringComparison.OrdinalIgnoreCase);
                                 if (isPersonal)
                                 {
-                                    // 路由到本地 SQLite 个人物料库执行模糊查询 (内置无匹配时自动降级放宽约束，支持动态必含规则)
+                                    // 路由到本地 SQLite 个人物料库执行模糊查询 (支持动态放宽多维参数)
                                     searchResults = PersonalComponentDbService.SearchComponents(
                                         kw,
-                                        searchCp.Name,
-                                        searchCp.Current,
-                                        searchCp.Pole,
-                                        searchCp.TripMode,
-                                        searchFc.SelectedBrand,
+                                        effectiveName,
+                                        effectiveCurrent,
+                                        effectivePole,
+                                        effectiveTrip,
+                                        effectiveBrand,
                                         effectiveMustRules
                                     );
                                 }
                                 else
                                 {
-                                    // 异步调用云端商城 WebAPI 执行动态必含规则约束检索
+                                    // 异步调用云端商城 WebAPI 执行动态放宽参数与必含规则约束检索
                                     searchResults = await ComponentApiClient.SearchComponentsAsync(
                                         kw,
-                                        searchCp.Name,
-                                        searchCp.Current,
-                                        searchCp.Pole,
-                                        searchCp.TripMode,
-                                        searchFc.SelectedBrand,
+                                        effectiveName,
+                                        effectiveCurrent,
+                                        effectivePole,
+                                        effectiveTrip,
+                                        effectiveBrand,
                                         effectiveMustRules
                                     ).ConfigureAwait(false);
                                 }
