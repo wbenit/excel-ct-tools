@@ -609,14 +609,18 @@ namespace ExcelAddInDemo
                     name = comp.Name ?? string.Empty;
                     spec = comp.Specification ?? string.Empty;
                     mfr = comp.Manufacturer ?? string.Empty;
-                    unit = comp.Unit ?? string.Empty;
+                    // 无论有无名称，只要存在元器件实体均默认填入"只" --硬编码: 默认元器件单位--
+                    unit = "只";
                     if (comp.UnitPrice > 0) mVal = comp.UnitPrice;
                 }
 
                 matrix[r, 1] = name;
                 matrix[r, 2] = spec;
                 matrix[r, 3] = mfr;
-                matrix[r, 4] = unit;
+                // 若单位有效非空则直接写入具体单位，否则写入自适应公式: 若B与C均为空则显示空，否则默认"只" --硬编码: 默认元器件单位--
+                matrix[r, 4] = !string.IsNullOrWhiteSpace(unit)
+                    ? (object)unit
+                    : $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",\"只\")";
 
                 // F 列 (索引 5): 数量 (若有实体按真实数量赋值，否则采用空行自适应公式)
                 if (components != null && r < components.Count)
@@ -711,10 +715,7 @@ namespace ExcelAddInDemo
                 {
                     try
                     {
-                        // 重点：显式跳过 A 列 (第 1 列)，绝对不触摸 A 列，100% 保护 A 列上绑定的定义名称与超链接
-                        if (cell.Column == 1) continue;
-
-                        // 读取单元格公式文本
+                        // 读取单元格公式文本 (取消 A 列一刀切跳过限制，使 A2/A5 等表头公式中的外部路径同样能被洗净)
                         string formula = Convert.ToString(cell.Formula) ?? "";
 
                         // 只有当公式中明确包含 .xlsx 外部文件引用时才进行精准替换

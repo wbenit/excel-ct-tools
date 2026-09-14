@@ -17,6 +17,9 @@ namespace ExcelAddInDemo
         // 缓存单例模态/非模态窗体引用，避免多开
         private static Forms.CategoryForm? _categoryFormInstance;
 
+        // 缓存批量删除分类窗体单例引用，避免重复打开
+        private static Forms.DeleteCategoryForm? _deleteCategoryFormInstance;
+
         // 剪贴板中暂存的被复制源分类工作表名称
         private static string _copiedCategorySheetName = string.Empty;
 
@@ -155,10 +158,11 @@ namespace ExcelAddInDemo
                 dynamic activeSheet = app.ActiveSheet;
                 string sheetName = Convert.ToString(activeSheet.Name)?.Trim() ?? string.Empty;
 
-                // 校验是否为受保护的系统工作表 --硬编码--
+                // 若当前聚焦在【项目信息】表，智能调起“一次性删除一个或多个分类”管理窗口
                 if (string.Equals(sheetName, "项目信息", StringComparison.OrdinalIgnoreCase))
                 {
-                    System.Windows.Forms.MessageBox.Show("【项目信息】是系统核心工作表，严禁删除！", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                    // 弹出基于 WebView2 + Vue 3 + Element Plus 的批量删除分类窗口
+                    ShowDeleteCategoryDialog();
                     return;
                 }
 
@@ -541,6 +545,8 @@ namespace ExcelAddInDemo
 
                     // 填入箱柜名称
                     catSheet.Cells[cabSumRow, 2].Value = safeCabName;
+                    // 写入汇总行单位 (E 列即第 5 列，默认 "台") --硬编码: 箱柜单位--
+                    catSheet.Cells[cabSumRow, 5].Value = "台";
                     // 写入汇总行数量 (F 列即第 6 列，默认 1) --硬编码: 第 6 列为 F 列 (数量列)--
                     catSheet.Cells[cabSumRow, 6].Value = 1;
                     // 在 tolsum 总计行 F 列填写数量 (默认 1) --硬编码: 第 6 列为 F 列 (数量列)--
@@ -810,6 +816,424 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 启动并弹出基于 WebView2 + Vue 3 的“删除分类”窗口 (非模态，支持一次性删除一个或多个分类)
+        /// </summary>
+        public static void ShowDeleteCategoryDialog()
+        {
+            try
+            {
+                // 获取当前正在运行的 Excel Application 对象 (安全调用)
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                // 校验工作簿是否打开
+                if (app == null || app.ActiveWorkbook == null)
+                {
+                    // 若无工作簿打开则提示用户
+                    System.Windows.Forms.MessageBox.Show("请先打开或新建一个报价项目工作簿！", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                    return;
+                }
+
+                // 以统一非模态方式展示删除分类窗口，保持 Excel 处于可交互编辑状态
+                ShowModelessForm(ref _deleteCategoryFormInstance, () => new Forms.DeleteCategoryForm());
+            }
+            catch (Exception ex)
+            {
+                // 记录弹出窗体异常
+                LogHelper.WriteLog($"弹出删除分类窗口异常: {ex.Message}");
+                System.Windows.Forms.MessageBox.Show($"弹出删除分类窗口失败: {ex.Message}", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// 获取待删除分类列表数据及当前选区智能感知信息 (全面支持正常分类表与 #REF! 僵尸失效行)
+        /// </summary>
+        /// <returns>待删除分类列表与选区命中数据</returns>
+        public static DeleteCategoriesDataResponse GetDeleteCategoriesData()
+        {
+            var response = new DeleteCategoriesDataResponse();
+
+            try
+            {
+                // 获取 Excel COM Application 接口实例
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                if (app == null || app.ActiveWorkbook == null) return response;
+
+                dynamic activeWb = app.ActiveWorkbook;
+                dynamic? activeSheet = app.ActiveSheet;
+                string activeSheetName = Convert.ToString(activeSheet?.Name)?.Trim() ?? string.Empty;
+
+                // 判断当前活动工作表是否为【项目信息】--硬编码: 项目信息工作表名--
+                bool isProjectInfo = string.Equals(activeSheetName, "项目信息", StringComparison.OrdinalIgnoreCase);
+                response.IsActiveSheetProjectInfo = isProjectInfo;
+
+                // 准备选区行范围检测集合
+                var selectedRowIndices = new HashSet<int>();
+                try
+                {
+                    // 仅当当前处于【项目信息】表时提取选区行
+                    if (isProjectInfo && app.Selection != null)
+                    {
+                        dynamic sel = app.Selection;
+                        int selStartRow = sel.Row;
+                        int selRowCount = sel.Rows.Count;
+                        // 记录选区覆盖的行区间
+                        for (int r = selStartRow; r < selStartRow + selRowCount; r++)
+                        {
+                            selectedRowIndices.Add(r);
+                        }
+                    }
+                }
+                catch { }
+
+                // 系统保留工作表黑名单 (严禁作为分类删除) --硬编码: 系统保留表名--
+                var reservedSheets = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "项目信息", "封面", "元件汇总表", "材料分布表",
+                    "元件汇总分布表", "元件汇总调价清单", "屏柜汇总表", "屏柜分项表", "元器件数据管理"
+                };
+
+                // 收集工作簿中现存的所有有效分类工作表名称集合
+                var existingCategorySheetNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (dynamic ws in activeWb.Worksheets)
+                {
+                    string wsName = Convert.ToString(ws.Name)?.Trim() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(wsName) && !reservedSheets.Contains(wsName))
+                    {
+                        existingCategorySheetNames.Add(wsName);
+                    }
+                }
+
+                // 1. 优先从【项目信息】表的分类汇总区域读取分类列表与金额/台数及 #REF! 损坏行
+                dynamic? infoSheet = null;
+                try { infoSheet = activeWb.Sheets["项目信息"]; } catch { }
+
+                var detectedCategories = new Dictionary<string, DeleteCategoryItemDto>(StringComparer.OrdinalIgnoreCase);
+                if (infoSheet != null)
+                {
+                    // 读取配置中的分类汇总起始物理行号与最大扫描数
+                    var cfg = ConfigManager.Instance.Current.Excel;
+                    int startRow = cfg.ProjectInfoCategorySummaryStartRow;
+                    int maxScan = cfg.ProjectInfoCategorySummaryMaxScanRows;
+
+                    // 扫描项目信息表分类汇总行
+                    for (int r = startRow; r < startRow + maxScan; r++)
+                    {
+                        // 读取 B 列单元格的值、文本与公式
+                        string cellB = Convert.ToString(infoSheet.Cells[r, 2].Value)?.Trim() ?? "";
+                        string textB = string.Empty;
+                        try { textB = Convert.ToString(infoSheet.Cells[r, 2].Text)?.Trim() ?? ""; } catch { }
+                        string formulaB = Convert.ToString(infoSheet.Cells[r, 2].Formula)?.Trim() ?? "";
+
+                        // 读取 C 列单元格的值与文本作为辅助校验
+                        string cellC = Convert.ToString(infoSheet.Cells[r, 3].Value)?.Trim() ?? "";
+                        string textC = string.Empty;
+                        try { textC = Convert.ToString(infoSheet.Cells[r, 3].Text)?.Trim() ?? ""; } catch { }
+
+                        // 遇到小计行说明汇总数据结束
+                        if (cellB.Contains("小计") || textB.Contains("小计")) break;
+
+                        // 判定是否为破坏性的 #REF! 错误或底表已删除导致的断链行
+                        bool isRefError = cellB.Contains("#REF") || formulaB.Contains("#REF") || textB.Contains("#REF") 
+                            || cellC.Contains("#REF") || textC.Contains("#REF") || cellB.StartsWith("#") || cellB == "-2146826288" || cellC == "-2146826288";
+
+                        // 若 B 列无值且无公式且无 #REF! 错误，说明到达未启用的预留空白行，跳过继续
+                        if (!isRefError && string.IsNullOrWhiteSpace(cellB) && string.IsNullOrWhiteSpace(formulaB) && string.IsNullOrWhiteSpace(textB))
+                        {
+                            continue;
+                        }
+
+                        // 判断当前行是否落在用户选区中
+                        bool isHit = selectedRowIndices.Contains(r);
+
+                        // 校验底表是否真实存在
+                        bool sheetExists = !string.IsNullOrWhiteSpace(cellB) && existingCategorySheetNames.Contains(cellB);
+
+                        if (isRefError || !sheetExists)
+                        {
+                            // 发现已损坏或底表丢失的失效残留行
+                            string displayName = isRefError ? $"#REF! (第 {r} 行)" : $"{cellB} (底表已丢失，第 {r} 行)";
+                            var item = new DeleteCategoryItemDto
+                            {
+                                CategoryName = displayName,
+                                CabinetCount = 0,
+                                TotalPrice = 0.0,
+                                CostPrice = 0.0,
+                                // 如果是失效行或选区命中，默认推荐勾选以方便用户一键清理
+                                IsSelectedInSheet = isHit || isRefError,
+                                InfoRowIndex = r,
+                                IsInvalid = true,
+                                InvalidReason = isRefError ? "#REF! 引用失效" : "对应工作表已不存在"
+                            };
+
+                            detectedCategories[$"__INVALID_ROW_{r}"] = item;
+                        }
+                        else
+                        {
+                            // 正常的现存分类汇总行
+                            int cabCount = 0;
+                            int.TryParse(Convert.ToString(infoSheet.Cells[r, 3].Value)?.Trim(), out cabCount);
+
+                            double totalPrice = 0.0;
+                            double.TryParse(Convert.ToString(infoSheet.Cells[r, 4].Value)?.Trim(), out totalPrice);
+
+                            double costPrice = 0.0;
+                            double.TryParse(Convert.ToString(infoSheet.Cells[r, 5].Value)?.Trim(), out costPrice);
+
+                            var item = new DeleteCategoryItemDto
+                            {
+                                CategoryName = cellB,
+                                CabinetCount = cabCount,
+                                TotalPrice = Math.Round(totalPrice, 2),
+                                CostPrice = Math.Round(costPrice, 2),
+                                IsSelectedInSheet = isHit,
+                                InfoRowIndex = r,
+                                IsInvalid = false,
+                                InvalidReason = string.Empty
+                            };
+
+                            detectedCategories[cellB] = item;
+                        }
+                    }
+                }
+
+                // 2. 遍历补充未在【项目信息】表中登记的孤立分类工作表
+                foreach (string wsName in existingCategorySheetNames)
+                {
+                    if (!detectedCategories.ContainsKey(wsName))
+                    {
+                        bool isCurrentActive = string.Equals(wsName, activeSheetName, StringComparison.OrdinalIgnoreCase);
+                        detectedCategories[wsName] = new DeleteCategoryItemDto
+                        {
+                            CategoryName = wsName,
+                            CabinetCount = 0,
+                            TotalPrice = 0.0,
+                            CostPrice = 0.0,
+                            IsSelectedInSheet = isCurrentActive,
+                            InfoRowIndex = 0,
+                            IsInvalid = false,
+                            InvalidReason = string.Empty
+                        };
+                    }
+                }
+
+                // 装载最终待删除分类列表响应模型
+                response.Categories = detectedCategories.Values.ToList();
+                response.TotalCategoryCount = existingCategorySheetNames.Count;
+                response.PreSelectedCount = response.Categories.Count(c => c.IsSelectedInSheet);
+                response.InvalidRowsCount = response.Categories.Count(c => c.IsInvalid);
+            }
+            catch (Exception ex)
+            {
+                // 记录数据提取异常日志
+                LogHelper.WriteLog($"提取待删除分类数据异常: {ex.Message}");
+            }
+
+            return response;
+        }
+
+        /// <summary>
+        /// 一次性批量删除一个或多个分类工作表（支持删除正常分类与清理 #REF! 失效汇总行）
+        /// </summary>
+        /// <param name="categoryNames">待删除的目标分类工作表名称集合</param>
+        /// <param name="explicitRowIndices">可选显式传入待整行删除的项目信息表物理行号集合</param>
+        /// <param name="explicitApp">可选显式传入的 Excel COM Application 实例</param>
+        /// <returns>操作执行结果</returns>
+        public static CategoryOperationResult DeleteCategories(List<string> categoryNames, List<int>? explicitRowIndices = null, dynamic? explicitApp = null)
+        {
+            // 整理待删除行号集合与待删除表名集合
+            var targetRowIndices = new HashSet<int>(explicitRowIndices ?? new List<int>());
+            categoryNames = categoryNames ?? new List<string>();
+
+            // 清洗待删除分类名称 (去重、去空、排除项目信息等保留表与纯 #REF! 标记) --硬编码: 系统保留表名--
+            var validCatNames = new List<string>();
+            foreach (var n in categoryNames)
+            {
+                if (string.IsNullOrWhiteSpace(n)) continue;
+                string trimmed = n.Trim();
+                if (string.Equals(trimmed, "项目信息", StringComparison.OrdinalIgnoreCase)) continue;
+
+                // 若项名为形如 "#REF! (第 30 行)"，尝试解析提取其物理行号
+                if (trimmed.StartsWith("#REF!") || trimmed.StartsWith("__INVALID_ROW_"))
+                {
+                    int leftParen = trimmed.IndexOf("第 ");
+                    int rightParen = trimmed.IndexOf(" 行");
+                    if (leftParen >= 0 && rightParen > leftParen)
+                    {
+                        string rowStr = trimmed.Substring(leftParen + 2, rightParen - leftParen - 2).Trim();
+                        if (int.TryParse(rowStr, out int rIdx) && rIdx > 0)
+                        {
+                            targetRowIndices.Add(rIdx);
+                        }
+                    }
+                }
+                else
+                {
+                    validCatNames.Add(trimmed);
+                }
+            }
+
+            // 若既无有效表名也无行号，返回提示
+            if (validCatNames.Count == 0 && targetRowIndices.Count == 0)
+            {
+                return new CategoryOperationResult { Success = false, Message = "未指定有效待删除的分类或待清理的失效行！" };
+            }
+
+            try
+            {
+                // 获取 Excel COM Application 实例
+                dynamic? app = explicitApp ?? ExcelDnaSafeAccessor.GetApplication();
+                if (app == null || app.ActiveWorkbook == null) return new CategoryOperationResult { Success = false, Message = "当前无活动工作簿" };
+
+                dynamic activeWb = app.ActiveWorkbook;
+
+                // 系统保留工作表黑名单
+                var reservedSheets = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "项目信息", "封面", "元件汇总表", "材料分布表",
+                    "元件汇总分布表", "元件汇总调价清单", "屏柜汇总表", "屏柜分项表", "元器件数据管理"
+                };
+
+                // 统计工作簿中当前现存有效分类表总数
+                int totalCatSheets = 0;
+                foreach (dynamic ws in activeWb.Worksheets)
+                {
+                    string name = Convert.ToString(ws.Name)?.Trim() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(name) && !reservedSheets.Contains(name))
+                    {
+                        totalCatSheets++;
+                    }
+                }
+
+                // 校验项目内分类表保有量：若删除了真实分类表，删除后必须至少保留一个有效分类工作表
+                if (validCatNames.Count > 0 && (totalCatSheets - validCatNames.Count < 1))
+                {
+                    return new CategoryOperationResult
+                    {
+                        Success = false,
+                        Message = $"项目中至少需要保留一个分类工作表！当前共有 {totalCatSheets} 个分类，无法全部删除。"
+                    };
+                }
+
+                // 挂起界面重绘、删除告警与系统事件以保障极速执行
+                app.ScreenUpdating = false;
+                app.DisplayAlerts = false;
+                app.EnableEvents = false;
+
+                try
+                {
+                    // 1. 批量物理删除目标分类工作表
+                    foreach (var catName in validCatNames)
+                    {
+                        try
+                        {
+                            dynamic? ws = null;
+                            try { ws = activeWb.Sheets[catName]; } catch { }
+                            if (ws != null)
+                            {
+                                ws.Delete();
+                            }
+                        }
+                        catch (Exception exWs)
+                        {
+                            LogHelper.WriteLog($"物理删除分类工作表【{catName}】异常: {exWs.Message}");
+                        }
+
+                        // 若暂存的复制源分类恰好被删除，重置暂存变量
+                        if (string.Equals(_copiedCategorySheetName, catName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _copiedCategorySheetName = string.Empty;
+                        }
+                    }
+
+                    // 2. 在【项目信息】表中批量倒序整行物理删除对应汇总行与指定失效行 (自下而上整行删除，行号不偏移)
+                    dynamic? infoSheet = null;
+                    try { infoSheet = activeWb.Sheets["项目信息"]; } catch { }
+                    if (infoSheet != null)
+                    {
+                        var cfg = ConfigManager.Instance.Current.Excel;
+                        int startRow = cfg.ProjectInfoCategorySummaryStartRow;
+                        int maxScan = cfg.ProjectInfoCategorySummaryMaxScanRows;
+                        var rowsToDelete = new HashSet<int>(targetRowIndices);
+
+                        // 扫描查找 B 列匹配已删除分类名或显式 #REF! 的行号
+                        for (int r = startRow; r < startRow + maxScan; r++)
+                        {
+                            string cellB = Convert.ToString(infoSheet.Cells[r, 2].Value)?.Trim() ?? "";
+                            if (cellB.Contains("小计")) break;
+
+                            // 命中待删除分类名称集合
+                            if (validCatNames.Contains(cellB, StringComparer.OrdinalIgnoreCase))
+                            {
+                                rowsToDelete.Add(r);
+                            }
+                        }
+
+                        // 从大到小倒序整行物理删除，保证序号公式自愈且不产生行号错位
+                        foreach (int r in rowsToDelete.OrderByDescending(x => x))
+                        {
+                            try
+                            {
+                                infoSheet.Rows[r].EntireRow.Delete();
+                            }
+                            catch (Exception exRow)
+                            {
+                                LogHelper.WriteLog($"整行物理删除项目信息表第 {r} 行异常: {exRow.Message}");
+                            }
+                        }
+                    }
+
+                    // 3. 统一全量自愈并校准剩余分类汇总行正向与反向超链接
+                    NormalizeCategorySummaryLinks(activeWb);
+
+                    // 4. 激活【项目信息】工作表或首个剩余分类表
+                    try
+                    {
+                        if (infoSheet != null)
+                        {
+                            infoSheet.Activate();
+                        }
+                        else
+                        {
+                            foreach (dynamic ws in activeWb.Worksheets)
+                            {
+                                string wName = Convert.ToString(ws.Name)?.Trim() ?? string.Empty;
+                                if (!reservedSheets.Contains(wName))
+                                {
+                                    ws.Activate();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+
+                    // 拼装反馈成功提示信息
+                    string msg = validCatNames.Count > 0
+                        ? $"已成功彻底删除 {validCatNames.Count} 个分类工作表及其在【项目信息】中的对应汇总！"
+                        : $"已成功彻底清理【项目信息】表中的失效分类残留行！";
+
+                    return new CategoryOperationResult
+                    {
+                        Success = true,
+                        Message = msg
+                    };
+                }
+                finally
+                {
+                    // 恢复界面重绘、告警与系统事件调度
+                    app.ScreenUpdating = true;
+                    app.DisplayAlerts = true;
+                    app.EnableEvents = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"批量删除分类业务执行异常: {ex.Message}");
+                return new CategoryOperationResult { Success = false, Message = $"批量删除分类执行失败: {ex.Message}" };
+            }
+        }
+
+        /// <summary>
         /// 执行插入复制的分类核心业务（克隆源工作表 -> 重新分配全局箱柜定义名称 -> 联动项目信息表）
         /// </summary>
         /// <param name="request">插入复制分类请求对象</param>
@@ -1023,6 +1447,9 @@ namespace ExcelAddInDemo
                 // 写入 A 列公式：跟随起始行上方表头自动动态计算序号，计算结果保留超链接属性与蓝色下划线
                 infoSheet.Cells[targetInfoRow, 1].Formula = $"=ROW()-ROW(A${headerRowIndex})";
 
+                // 选项 A: 为分类表 A5 挂载反向超链接，精准跳转回【项目信息】当前分类汇总行
+                SetCategorySheetBackHyperlink(targetWb, categorySheetName, targetInfoRow);
+
                 // 2. 写入 B 列分类名称动态公式: 对齐 ExWinner 原生机制，根据工作表引用动态解析分类名
                 // 使用 CELL("filename") 与 FIND 提取工作表名，实现随 Sheet 改名自动级联联动
                 try
@@ -1138,6 +1565,9 @@ namespace ExcelAddInDemo
 
                         // 4. 重新触发行属性判断公式
                         infoSheet.Cells[r, 8].Formula = $"=IF(OR(ISNUMBER(FIND(\"箱变\",B{r}))=TRUE,ISNUMBER(FIND(\"欧变\",B{r}))=TRUE,ISNUMBER(FIND(\"美变\",B{r}))=TRUE,ISNUMBER(FIND(\"KVA\",UPPER(B{r})))=TRUE,ISNUMBER(FIND(\"箱式变电\",B{r}))=TRUE),\"箱变\",\"常规\")";
+
+                        // 选项 A: 同步更新重命名后的新分类表 A5 反向超链接指向当前汇总行 r
+                        SetCategorySheetBackHyperlink(targetWb, newName, r);
                         break;
                     }
                 }
@@ -1179,6 +1609,8 @@ namespace ExcelAddInDemo
                     {
                         // 找到该分类汇总行，执行整行物理删除 (后方行自动上移，序号公式自愈，小计动态包裹)
                         infoSheet.Rows[r].EntireRow.Delete();
+                        // 重新全量校准剩余分类汇总行正反向超链接，避免删行引发物理行错位
+                        NormalizeCategorySummaryLinks(targetWb);
                         break;
                     }
                 }
@@ -1232,12 +1664,22 @@ namespace ExcelAddInDemo
                 // 遍历扫描分类汇总区域
                 for (int r = startRow; r < startRow + maxScan; r++)
                 {
-                    // 读取 B 列单元格的值与公式
+                    // 读取 B 列单元格的值、文本与公式
                     string cellBVal = Convert.ToString(infoSheet.Cells[r, 2].Value)?.Trim() ?? "";
+                    string cellBText = string.Empty;
+                    try { cellBText = Convert.ToString(infoSheet.Cells[r, 2].Text)?.Trim() ?? ""; } catch { }
                     string cellBFormula = Convert.ToString(infoSheet.Cells[r, 2].Formula)?.Trim() ?? "";
 
+                    // 读取 C 列单元格的文本辅助判断
+                    string cellCText = string.Empty;
+                    try { cellCText = Convert.ToString(infoSheet.Cells[r, 3].Text)?.Trim() ?? ""; } catch { }
+
                     // 若遇到小计行，说明分类汇总数据区域已结束
-                    if (cellBVal.Contains("小计")) break;
+                    if (cellBVal.Contains("小计") || cellBText.Contains("小计")) break;
+
+                    // 判定是否为破坏性的 #REF! 错误或断链
+                    bool isRefError = cellBVal.Contains("#REF") || cellBFormula.Contains("#REF") || cellBText.Contains("#REF") 
+                        || cellCText.Contains("#REF") || cellBVal == "-2146826288" || cellBVal.StartsWith("#");
 
                     // 判断该行是否为有效分类行：尝试提取对应的分类表名
                     string matchedCatName = string.Empty;
@@ -1270,8 +1712,8 @@ namespace ExcelAddInDemo
                             }
                         }
 
-                        // 3. 若仍未匹配且是第 r - startRow 个分类，按物理顺序匹配现存分类工作表
-                        if (string.IsNullOrEmpty(matchedCatName))
+                        // 3. 若仍未匹配且并非 #REF! 错误行，按物理顺序匹配现存分类工作表
+                        if (string.IsNullOrEmpty(matchedCatName) && !isRefError)
                         {
                             int catSeqIdx = r - startRow;
                             if (catSeqIdx >= 0 && catSeqIdx < existingCategorySheets.Count)
@@ -1284,7 +1726,20 @@ namespace ExcelAddInDemo
                     // 若未找到对应的分类表且单元格为空，说明到达空白区间，结束巡检
                     if (string.IsNullOrEmpty(matchedCatName))
                     {
-                        if (string.IsNullOrEmpty(cellBVal)) break;
+                        // 若该行包含破坏性的 #REF! 错误且工作簿中已无匹配分类表，直接整行物理删除该废弃断链行自愈
+                        if (isRefError)
+                        {
+                            try
+                            {
+                                infoSheet.Rows[r].EntireRow.Delete();
+                                r--;
+                                maxScan--;
+                            }
+                            catch { }
+                            continue;
+                        }
+
+                        if (string.IsNullOrEmpty(cellBVal) && string.IsNullOrEmpty(cellBText)) break;
                         continue;
                     }
 
@@ -1328,6 +1783,9 @@ namespace ExcelAddInDemo
                         infoSheet.Cells[r, 7].Formula = $"=IF(D{r}=0,0,F{r}/D{r})";
                         // H 列分类属性公式
                         infoSheet.Cells[r, 8].Formula = $"=IF(OR(ISNUMBER(FIND(\"箱变\",B{r}))=TRUE,ISNUMBER(FIND(\"欧变\",B{r}))=TRUE,ISNUMBER(FIND(\"美变\",B{r}))=TRUE,ISNUMBER(FIND(\"KVA\",UPPER(B{r})))=TRUE,ISNUMBER(FIND(\"箱式变电\",B{r}))=TRUE),\"箱变\",\"常规\")";
+
+                        // 7. 同步规范化分类表 A5 反向超链接，精准跳转回【项目信息】当前物理汇总行 (选项 A)
+                        SetCategorySheetBackHyperlink(targetWb, matchedCatName, r);
                     }
                     catch { }
                 }
@@ -1351,6 +1809,57 @@ namespace ExcelAddInDemo
             // 常见格式: '分类1'!A1 或 分类1!A1
             string clean = subAddr.Split('!')[0].Trim('\'', ' ');
             return sheetNames.FirstOrDefault(s => string.Equals(s, clean, StringComparison.OrdinalIgnoreCase)) ?? string.Empty;
+        }
+
+        /// <summary>
+        /// 选项 A: 为分类工作表的 A5 单元格 ("项目名称：") 挂载反向超链接，精准跳转回【项目信息】该分类对应的汇总行
+        /// 具备就地更新与防空保护，杜绝重复创建导致的 COM 泄漏
+        /// </summary>
+        /// <param name="targetWb">目标工作簿 COM 实例</param>
+        /// <param name="categorySheetName">分类工作表名称</param>
+        /// <param name="targetInfoRow">【项目信息】中该分类对应的汇总行物理行号</param>
+        public static void SetCategorySheetBackHyperlink(dynamic targetWb, string categorySheetName, int targetInfoRow)
+        {
+            // 校验工作簿与分类名称参数有效性
+            if (targetWb == null || string.IsNullOrWhiteSpace(categorySheetName) || targetInfoRow <= 0) return;
+
+            try
+            {
+                // 获取分类工作表 COM 实例
+                dynamic catSheet = null;
+                try { catSheet = targetWb.Sheets[categorySheetName]; } catch { }
+                if (catSheet == null) return;
+
+                // 提取 A5 单元格 (项目名称: 标签单元格)
+                dynamic a5Cell = catSheet.Range["A5"];
+                // 目标跳转子地址：指向【项目信息】中该分类对应的汇总行 A 列单元格
+                string targetSubAddress = $"'项目信息'!A{targetInfoRow}";
+                string screenTip = "点击返回【项目信息】汇总行"; // --硬编码: 屏幕提示文本--
+
+                // 若 A5 单元格已存在超链接，就地更新 SubAddress 与 ScreenTip，保留已有样式与动态公式
+                if (a5Cell.Hyperlinks != null && a5Cell.Hyperlinks.Count > 0)
+                {
+                    dynamic hl = a5Cell.Hyperlinks[1];
+                    hl.SubAddress = targetSubAddress;
+                    hl.ScreenTip = screenTip;
+                    // 注意：绝不可赋值 hl.TextToDisplay，否则 Excel COM 会强制将单元格公式抹除为纯静态文本
+                }
+                else
+                {
+                    // 挂载新超链接（不传 TextToDisplay 参数，确保 100% 保护 A5 单元格原有的 CONCATENATE 动态公式）
+                    catSheet.Hyperlinks.Add(
+                        Anchor: a5Cell,
+                        Address: "",
+                        SubAddress: targetSubAddress,
+                        ScreenTip: screenTip
+                    );
+                }
+            }
+            catch (Exception exLink)
+            {
+                // 记录反向超链接挂载异常日志
+                LogHelper.WriteLog($"绑定分类表【{categorySheetName}】A5 反向超链接异常: {exLink.Message}");
+            }
         }
     }
 }

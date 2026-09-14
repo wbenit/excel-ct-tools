@@ -48,8 +48,8 @@ namespace ExcelAddInDemo.Forms
             this.ShowInTaskbar = false;
             // 窗体始终保持最前端置顶显示
             this.TopMost = true;
-            // 设定符合 Office 原生菜单规格的尺寸 (宽 250px，高 505px，完整容纳原生项与业务项且防 DPI 裁切截断)
-            this.Size = new Size(250, 505);
+            // 设定符合 Office 原生菜单规格的尺寸 (宽 250px，高 530px，完整容纳原生项与业务项且防 DPI 裁切截断)
+            this.Size = new Size(250, 530);
             // 启用手动绝对坐标定位
             this.StartPosition = FormStartPosition.Manual;
             // 设置白色背景
@@ -320,6 +320,11 @@ namespace ExcelAddInDemo.Forms
                             // 容错回退：通过内置对话框枚举展示删除窗口
                             try { ((dynamic?)ExcelDnaUtil.Application)?.Dialogs[Microsoft.Office.Interop.Excel.XlBuiltInDialog.xlDialogEditDelete].Show(); } catch { }
                         }
+                        break;
+
+                    case "deleteCategory":
+                        // 调度执行删除分类业务 (在项目信息表中智能弹出批量删除，在分类表中执行当前删除)
+                        ExcelServices.DeleteCurrentCategory();
                         break;
 
                     case "excelFilterByValue":

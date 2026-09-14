@@ -169,6 +169,14 @@
       opacity: 0.8;
       margin-left: 2px;
     }
+
+    /* 数据配置共享目录提示说明样式 */
+    .data-dir-hint {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 4px;
+      line-height: 1.4;
+    }
   </style>
 </head>
 <body>
@@ -307,6 +315,24 @@
           </div>
         </el-form-item>
 
+        <!-- 数据配置存储目录设置项 -->
+        <el-form-item label="数据目录：">
+          <div style="width: 100%;">
+            <el-input
+              v-model="form.customDataDirectory"
+              placeholder="默认使用插件安装目录下的 data 文件夹，可自定义 CAD/Excel 两端共享目录"
+              clearable
+            >
+              <template #append>
+                <el-button @click="selectDataDirectory">浏览...</el-button>
+              </template>
+            </el-input>
+            <div class="data-dir-hint">
+              设置 CAD 与 Excel 共享的数据与配置文件存储目录（如调价公式、企业设置、物料库等，支持局域网共享路径）。
+            </div>
+          </div>
+        </el-form-item>
+
         <!-- 底部功能按钮与选择框 -->
         <div class="footer-action-bar">
           <el-checkbox v-model="form.syncOpenProject">保存以上设置时，同步更新当前打开的已选中项目</el-checkbox>
@@ -340,7 +366,8 @@
       salesRegion: '',
       quoteTemplate: '说明2',
       quoteDescription: '123444',
-      syncOpenProject: false
+      syncOpenProject: false,
+      customDataDirectory: ''
     });
 
     // 挂载加载回调：初始化时向 C# 宿主发送请求读取本地保存的数据反显
@@ -365,6 +392,11 @@
             else if (res && res.action === 'setLogo') {
               // 更新 Logo 数据
               form.logoBase64 = res.logoBase64;
+            }
+            // 若响应动作为 setDataDirectory，更新数据配置存储目录
+            else if (res && res.action === 'setDataDirectory') {
+              // 更新数据存储目录路径
+              form.customDataDirectory = res.dataDirectory || '';
             }
             // 若响应动作为 saveSettingsResult，非模态提示保存结果并安全退出
             else if (res && res.action === 'saveSettingsResult') {
@@ -391,6 +423,15 @@
       if (window.chrome && window.chrome.webview) {
         // 发送选择 Logo 请求
         window.chrome.webview.postMessage(JSON.stringify({ action: 'selectLogo' }));
+      }
+    };
+
+    // 触发弹出本地数据配置存储目录选择框
+    const selectDataDirectory = () => {
+      // 判断 WebView2 接口有效性
+      if (window.chrome && window.chrome.webview) {
+        // 发送选择数据存储目录请求
+        window.chrome.webview.postMessage(JSON.stringify({ action: 'selectDataDirectory' }));
       }
     };
 
@@ -461,7 +502,8 @@
         salesRegion: '',
         quoteTemplate: '说明2',
         quoteDescription: '123444',
-        syncOpenProject: false
+        syncOpenProject: false,
+        customDataDirectory: ''
       });
 
       // 挂载初始化：发送请求读取反显数据
@@ -484,8 +526,21 @@
                 form.quoteTemplate = d.quoteTemplate !== undefined ? d.quoteTemplate : (d.QuoteTemplate || '说明2');
                 form.quoteDescription = d.quoteDescription !== undefined ? d.quoteDescription : (d.QuoteDescription || '');
                 form.syncOpenProject = d.syncOpenProject !== undefined ? d.syncOpenProject : (d.SyncOpenProject !== undefined ? d.SyncOpenProject : false);
+                form.customDataDirectory = d.customDataDirectory !== undefined ? d.customDataDirectory : (d.CustomDataDirectory || '');
               } else if (res && res.action === 'setLogo') {
                 form.logoBase64 = res.logoBase64;
+              } else if (res && res.action === 'setDataDirectory') {
+                // 响应 C# 文件夹选择对话框回传的数据目录绝对路径
+                form.customDataDirectory = res.dataDirectory || '';
+              } else if (res && res.action === 'saveSettingsResult') {
+                if (res.success) {
+                  ElementPlus.ElMessage.success(res.message || '企业设置数据已成功保存至本地！');
+                  setTimeout(() => {
+                    window.chrome.webview.postMessage(JSON.stringify({ action: 'cancel' }));
+                  }, 600);
+                } else {
+                  ElementPlus.ElMessage.warning(res.message || '保存失败，请检查文件写入权限');
+                }
               }
             } catch (e) {
               console.error('反显解析异常', e);
@@ -498,6 +553,13 @@
       const selectLogo = () => {
         if (window.chrome && window.chrome.webview) {
           window.chrome.webview.postMessage(JSON.stringify({ action: 'selectLogo' }));
+        }
+      };
+
+      // 选择数据目录
+      const selectDataDirectory = () => {
+        if (window.chrome && window.chrome.webview) {
+          window.chrome.webview.postMessage(JSON.stringify({ action: 'selectDataDirectory' }));
         }
       };
 
@@ -536,6 +598,7 @@
       return {
         form,
         selectLogo,
+        selectDataDirectory,
         removeLogo,
         applyTemplate,
         saveSettings,

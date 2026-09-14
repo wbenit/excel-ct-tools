@@ -27,6 +27,9 @@ namespace ExcelAddInDemo.Models
         // 箱柜数量
         public int Quantity { get; set; } = 1;
 
+        // 计量单位 (顶部箱柜默认: 台)
+        public string Unit { get; set; } = "台"; // --硬编码: 默认箱柜单位--
+
         // 箱柜尺寸 (宽*高*深)
         public string Dimensions { get; set; } = string.Empty;
 

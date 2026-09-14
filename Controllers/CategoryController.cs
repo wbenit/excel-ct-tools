@@ -181,5 +181,53 @@ namespace ExcelAddInDemo.Controllers
                 return new CategoryOperationResult { Success = false, Message = $"删除分类失败: {ex.Message}" };
             }
         }
+
+        /// <summary>
+        /// WebAPI 接口: 获取待删除分类列表及当前活动表与选区感知数据
+        /// </summary>
+        /// <returns>包含分类列表与选区命中信息的响应数据包</returns>
+        public DeleteCategoriesDataResponse GetDeleteCategoriesData()
+        {
+            try
+            {
+                // 调度业务服务层扫描所有分类表并提取选区与汇总信息
+                return ExcelServices.GetDeleteCategoriesData();
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"控制器获取待删除分类数据异常: {ex.Message}");
+                return new DeleteCategoriesDataResponse();
+            }
+        }
+
+        /// <summary>
+        /// WebAPI 接口: 执行一次性批量删除一个或多个分类工作表核心业务 (支持正常分类与 #REF! 失效行清理)
+        /// </summary>
+        /// <param name="request">批量删除分类请求对象</param>
+        /// <returns>操作执行结果对象</returns>
+        public CategoryOperationResult DeleteCategories(DeleteCategoriesRequest request)
+        {
+            // 入参非空与合法性校验 (分类名或行号任一有值即可)
+            bool hasNames = request?.CategoryNames != null && request.CategoryNames.Count > 0;
+            bool hasRows = request?.RowIndices != null && request.RowIndices.Count > 0;
+            if (request == null || (!hasNames && !hasRows))
+            {
+                return new CategoryOperationResult { Success = false, Message = "请至少选择一个需要删除的分类或待清理的失效行！" };
+            }
+
+            try
+            {
+                // 调度业务服务层批量彻底删除分类表与项目信息表对应行
+                return ExcelServices.DeleteCategories(request.CategoryNames ?? new List<string>(), request.RowIndices ?? new List<int>());
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"控制器批量删除分类异常: {ex.Message}");
+                return new CategoryOperationResult { Success = false, Message = $"批量删除分类失败: {ex.Message}" };
+            }
+        }
     }
 }
+

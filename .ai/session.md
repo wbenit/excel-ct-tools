@@ -1,5 +1,96 @@
 # Session State
 
+- **在【项目信息】表中一次性删除分类功能及针对 #REF! 损坏残留行一键清理自愈全系统落地交付 (`ExcelServices.Category.cs`, `CategoryController.cs`, `CategoryModels.cs`, `DeleteCategoryForm.cs`, `delete_category.html`, `custom_context_menu.html`, `CustomContextMenuForm.cs`)**：
+  1. **问题与业务痛点彻底闭环**：
+     - 用户在【项目信息】表中期望一站式批量删除一个或多个不需要的分类；
+     - **#REF! 历史残留痛点根治**：用户截图中由于之前底表被删除，【项目信息】第 30、31 行（序号 2、3）B~G 列沦为 `#REF!` 破坏性断链行，残留孤立序号与超链接；
+     - 旧版扫描遇到 `#REF!` 直接跳过导致无法清理，且前端“至少保留 1 个分类”安全守门在仅清理 `#REF!` 失效行时误拦截了用户；
+  2. **端到端高品质方案落地**：
+     - **全方位错误感知与智能推荐 (`GetDeleteCategoriesData`)**：
+       - 支持读取 `.Text`、`.Value` 及 CVErr 错误码，多维探测识别 `#REF!` 错误行与底表缺失行，标记为 `IsInvalid = true`；
+       - 打开窗口时自动识别并在顶部横幅以醒目告警提示“检测到 X 个失效残留行”，并默认自动勾选方便一键清理；
+     - **Element Plus 绿蓝相间主题多选管理窗口 (`delete_category.html`)**：
+       - 主色调 `#009688`，严格遵循 `<script setup>` 结构与纯闭合标签规范；
+       - 失效行以红色高亮与警告图标呈现，标注 `[#REF! 引用失效]` 标签；
+       - 智能剩余分类安全守门：精准仅统计删除的“有效真实分类”，清理 `#REF!` 失效行不扣减有效分类，绝不误拦截；
+       - 快捷工具栏提供【全选】、【反选】、【仅选项目信息选区】、【仅选失效行】、【清空】与搜索过滤；
+     - **自下而上倒序整行物理删除与全量自愈 (`DeleteCategories` & `NormalizeCategorySummaryLinks`)**：
+       - 收集待清理的 `#REF!` 物理行号，按行号从大到小倒序执行 `EntireRow.Delete()`，行号不偏移、不影响下方预留行；
+       - 调用 `NormalizeCategorySummaryLinks` 时，对未匹配底表的破坏性 `#REF!` 行同样自动执行物理整行删除，A 列 `=ROW()-ROW(A$28)` 动态序号全线自愈重新连续；
+     - **多入口深度打通**：
+       - Ribbon【删除分类】按钮在【项目信息】表中自动弹窗；
+       - 右键菜单新增【删除分类...】项，支持随时右键调出。
+  3. **编译构建与代码规范验证**：
+     - 新增代码严格遵循每 3 行包含一行中文注释，硬编码均打上 `--硬编码--` 标明；
+     - `dotnet build` 编译成功：**0 警告，0 错误**；
+     - 静态资源已全量同步部署至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`。
+
+
+
+- **元器件导出单位「只」未显示根因闭环修复与进程锁定排查 (`ServerOp.cs`, `Tool.cs`)**：
+  1. **代码级根因**：
+     - **CAD 端属性失配**：CAD 图纸提取元器件时，断路器/继电器等主要数据存储在型号字段 `EleComponentTypeName` 中，而名称字段 `EleComponentName` 为空；
+     - 原先代码写为 `Unit = string.IsNullOrWhiteSpace(c.EleComponentName) ? string.Empty : "只"`，因名称为空导致将单位错判为空字符串；
+     - **Excel 端覆盖落空**：`Tool.cs` 的 `BuildComponentRowsMatrix` 同样仅校验了名称 `name`，导致 `unit` 再次被判为空，并在 `matrix[r, 4]` 中写入了空字符串 `""`；
+     - **ToExcelOld 缺失**：旧版导出方法完全未给第 5 列（E 列）写入单位。
+  2. **双重闭环彻底修复**：
+     - **CAD 端源头修正**：在 `ServerOp.cs` 中解除对名称的绑定，元器件统一默认赋予 `Unit = "只"`（--硬编码: 元器件单位--）；并在 `ToExcelOld` 中补齐第 5 列（E 列）写入 `"只"`；
+     - **Excel 端全矩阵兜底**：在 `Tool.cs` 中，只要有元器件实体默认单位均为 `"只"`；且若单位为空则写入自适应公式 `=IF(AND(B{row}="",C{row}=""),"","只")`，确保 100% 不会被空文本覆盖冲掉。
+  3. **运行时进程锁定与生效提醒**：
+     - AutoCAD 进程（PID 21672）当前处于打开状态，强占了 `ClassLibrary1\bin\Debug\ExcelAddInDemo.dll` 与 `TuFan.dll`，导致 CAD 内存中运行的依然是修改前的旧代码；
+     - 需要关闭 AutoCAD 后重新构建输出，再重启 CAD 执行导出即可生效。
+
+- **反向超链接 TextToDisplay 移除保护公式、放开 A 列清洗限制及模板多端全量同步落地 (`Category.cs`, `Tool.cs`, `CabinetTemplate.xlsx`)**：
+  1. **问题根因彻底清除**：
+     - **公式被抹除成纯文本**：`SetCategorySheetBackHyperlink` 中调用 `Hyperlinks.Add` 传入了 `TextToDisplay: "项目名称："`，触发了 Excel COM 底层将公式强制抹除为静态文本的机制；
+     - **A 列清洗盲目跳过**：`Tool.CleanRangeFormulas` 中第 719 行盲目写了 `if (cell.Column == 1) continue;`，导致 A2、A5 等 A 列表头的外部路径被跳过；
+     - **模板多端未同步**：修改后的模板仅存在于 `ExcelAddInCTtools` 编译输出目录，而 CAD 批量导出运行时读取的是 `cad-net_1\cad1\ClassLibrary1\bin\Debug\Resources\CabinetTemplate.xlsx` 旧模板；且模板内 H5、F35 仍有裸露直接引用。
+  2. **三重协同加固交付**：
+     - **超链接挂载保护原有动态公式**：在 `ExcelServices.Category.cs` 的 `SetCategorySheetBackHyperlink` 中彻底移除 `TextToDisplay` 参数，100% 保护 A5 单元格原本的 `=CONCATENATE("项目名称：", ...)` 动态公式；
+     - **放开 A 列清洗限制**：在 `Tool.cs` 的 `CleanRangeFormulas` 中移除 `if (cell.Column == 1) continue;`，仅对公式文本中明确包含 `.xlsx` 的单元格做精准正则替换，使 A 列表头同样享受清洗保护；
+     - **模板纯净化与全端同步**：将模板中剩余的 H5（报价序号）与 F35（箱变判定）公式全部升级为 `INDIRECT`，并全量同步覆盖至 CAD 运行目录、源码目录及发布目录。
+  3. **编译构建与代码规范验证**：
+     - 严格遵循每 3 行包含一行中文注释，硬编码标识 `--硬编码--`；
+     - `ExcelAddInDemo.csproj`（0 错误）与 `TuFan.csproj`（0 错误）编译均成功通过。
+
+- **分类表与【项目信息】工作表双向超链接跳转（选项 A：精准跳转回对应汇总行）落地交付 (`ExcelServices.Category.cs`)**：
+  1. **问题与业务痛点闭环**：
+     - 原先仅支持从【项目信息】分类汇总行 A 列单向跳转至分类表 A1；
+     - 分类表 A5（“项目名称：”）缺少反向超链接，导致用户查看与编辑分类后无法一键返回项目信息汇总表。
+  2. **双向跳转与全生命周期自愈落地（选项 A 规范）**：
+     - **反向超链接挂载 (`SetCategorySheetBackHyperlink`)**：提取分类表 A5 单元格，挂载反向超链接指向 `SubAddress = $"'项目信息'!A{targetInfoRow}"`，屏幕提示设为“点击返回【项目信息】汇总行”，保留“项目名称：”文本及样式；若已存在超链接则就地更新，杜绝重复创建导致的 COM 泄漏；
+     - **全生命周期维护集成**：
+       - `UpdateProjectInfoCategorySummary`：新建分类或插入复制分类时，在注册正向超链接的同时自动绑定分类表 A5 反向超链接；
+       - `RenameProjectInfoCategorySummary`：分类更名时，同步更新新分类名工作表 A5 指向当前汇总行；
+       - `RemoveProjectInfoCategorySummary`：删除分类后自动触发 `NormalizeCategorySummaryLinks`，防止删除行引发后续分类物理行错位；
+       - `NormalizeCategorySummaryLinks`：巡检工作簿时全量自动补齐并校准所有分类表的 A5 反向超链接。
+  3. **编译构建与代码规范验证**：
+     - 严格遵循每 3 行包含一行中文注释规范，硬编码打上 `--硬编码--` 标明；
+     - `ExcelAddInDemo.csproj` 构建成功，**0 错误**。
+
+- **导入与新建箱柜 E 列单位自动填入「台（顶部箱柜）」与「只（底部元器件）」落地 (`Cabinet.cs`, `Tool.cs`, `Category.cs`, `CabinetModels.cs`, `ServerOp.cs`)**：
+  1. **问题根因分析**：
+     - 在批量导入/导出箱柜（`ExportSingleCabinetOptimized`）中，组装汇总行数组时 `sumRowMatrix[0, 4]` 原写入了 `string.Empty`，导致顶部汇总行 E 列（单位列）为空；
+     - 在 CAD 端导出至 Excel（`ServerOp.cs`）中，元器件单位原本硬编码为 `"台"`，导致底部元器件单位与电气行业规范失配；
+     - 在新建分类初始化及单建箱柜复制时，汇总行 E 列亦缺失了默认单位。
+  2. **端到端闭环精准修复落地**：
+     - **顶部箱柜单位「台」**：在 `CabinetModels.CabinetHeader` 实体中扩展 `Unit` 属性默认值为 `"台"`（--硬编码: 默认箱柜单位--）；在 `ExportSingleCabinetOptimized` 写入 `sumRowMatrix[0, 4] = cabUnit`；同步在 `CopyCabinetDetailFromTemplate` 与 `InitializeCategorySheet` 中对汇总行第 5 列（E 列）填入 `"台"`；
+     - **底部元器件单位「只」**：在 `ServerOp.cs` 中将 CAD 导出元器件的单位修正为 `"只"`（--硬编码: 元器件单位--）；在 `Tool.BuildComponentRowsMatrix` 中增加双重防护，若元器件实体未传入单位则自动默认填入 `"只"`，若无实体（空行）则生成自适应公式 `=IF(AND(B{row}="",C{row}=""),"","只")`；
+  3. **编译构建与代码规范验证**：
+     - 严格遵循最小变动原则与每 3 行包含一行中文注释规范，硬编码均打上 `--硬编码--` 标明；
+     - `ExcelAddInDemo.csproj`（0 错误）与 `TuFan.csproj`（0 错误）均顺利通过编译。
+
+- **无明细箱柜新建箱柜「插入位置错至末尾」及「打断原最后一个箱柜最后一行」彻底修复交付 (`ExcelServices.Cabinet.cs`)**：
+  1. **问题根因彻底清除**：
+     - **明细错位末尾**：`CopyCabinetDetailFromTemplate` 在定位明细插入行时原仅判断 `srcCabAnchor?.Tolsum != null`，当光标位于无明细箱柜时判定为 false 粗暴回退至全表最后一个箱柜后面；
+     - **打断最后一行**：在步骤 7 插入汇总行后，整行下移导致下方所有明细下移 1 行，但步骤 8 使用了插行前静态缓存的 `lastIndexes.cabTolsumRow`（旧值 $R$）计算 $R+4$，而在物理表格中 $R+4$ 恰好是下移后的原箱柜最后一行落款，导致其被切断隔离。
+  2. **双重精准自愈修复落地**：
+     - **无明细箱柜双向嗅探中间锚点**：引入 `isIntermediateCabinet` 判定。若选中的是中间箱柜且为无明细箱柜，先逆序向前寻找最近拥有有效明细的箱柜并紧随其 `Tolsum + 4` 插入；若前方全无明细箱柜，则顺向寻找后方首台有明细箱柜并插在其大标题（`Det - 3`）上方；全表无明细时安全使用基准 41 行，确保明细顺序与汇总表严格一致；
+     - **末尾追加动态重新嗅探**：末尾追加模式下，动态调用 `Tool.FindStandardCategoryRowIndexes(activeSheet, -1)` 重新提取插行后最新的物理行号，彻底消除 Off-by-one 偏差，绝不打断最后一行；
+     - **强类型与安全循环**：强类型接收 `GetSheetValidCabinets` 避免 dynamic 传染，循环查找 `activeIdx` 消除 CS1977 动态调度问题。
+  3. **编译构建验证**：
+     - 执行 `dotnet build /p:DebugType=none /p:RunExcelDnaBuild=false` 构建成功，**0 警告 0 错误**。
+
 - **新建箱柜 `Cab_Subsum` 小计行定义名称偏移修正与动态嗅探自愈 (`ExcelServices.Cabinet.cs`)**：
   1. **问题根因彻底清除**：
      - `CopyCabinetDetailFromTemplate` 在从 `CabinetTemplate.xlsx` 母版复制明细块时，硬编码了 `int newSubsumRow = targetDetailStartRow + (65 - 41);`（即 $+24$ 行）；

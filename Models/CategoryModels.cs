@@ -95,4 +95,69 @@ namespace ExcelAddInDemo.Models
         // 复制生成的新分类工作表名称
         public string TargetCategoryName { get; set; } = string.Empty;
     }
+
+    /// <summary>
+    /// 待删除分类项信息传输对象
+    /// </summary>
+    public class DeleteCategoryItemDto
+    {
+        // 分类工作表名称或失效描述
+        public string CategoryName { get; set; } = string.Empty;
+
+        // 该分类包含的箱柜总台数
+        public int CabinetCount { get; set; } = 0;
+
+        // 该分类销售总价汇总金额
+        public double TotalPrice { get; set; } = 0.0;
+
+        // 该分类成本总价汇总金额
+        public double CostPrice { get; set; } = 0.0;
+
+        // 当前是否处于【项目信息】表的选中选区中 (用于打开窗口时自动默认勾选)
+        public bool IsSelectedInSheet { get; set; } = false;
+
+        // 在【项目信息】工作表中对应的汇总物理行号
+        public int InfoRowIndex { get; set; } = 0;
+
+        // 是否为 #REF! 或底表丢失的失效残留行
+        public bool IsInvalid { get; set; } = false;
+
+        // 失效具体原因说明 (例如: "#REF! 引用失效")
+        public string InvalidReason { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// 获取待删除分类列表界面初始化响应模型
+    /// </summary>
+    public class DeleteCategoriesDataResponse
+    {
+        // 所有现存的可删除分类列表集合
+        public List<DeleteCategoryItemDto> Categories { get; set; } = new List<DeleteCategoryItemDto>();
+
+        // 工作簿中现存的有效分类总数量
+        public int TotalCategoryCount { get; set; } = 0;
+
+        // 当前处于激活聚焦状态的工作表是否为【项目信息】
+        public bool IsActiveSheetProjectInfo { get; set; } = false;
+
+        // 选区智能命中的预选分类数量
+        public int PreSelectedCount { get; set; } = 0;
+
+        // 检测到的 #REF! 失效残留行数量
+        public int InvalidRowsCount { get; set; } = 0;
+    }
+
+    /// <summary>
+    /// 批量删除分类请求数据传输模型
+    /// </summary>
+    public class DeleteCategoriesRequest
+    {
+        // 待删除的目标分类工作表名称列表
+        public List<string> CategoryNames { get; set; } = new List<string>();
+
+        // 待物理整行删除的【项目信息】表行号列表 (专门用于清理 #REF! 失效行)
+        public List<int> RowIndices { get; set; } = new List<int>();
+    }
 }
+
+

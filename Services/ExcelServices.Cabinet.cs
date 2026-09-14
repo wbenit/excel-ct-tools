@@ -67,8 +67,8 @@ namespace ExcelAddInDemo
 
                 try
                 {
-                    // 4. 扫描当前工作表有效箱柜映射与末尾分布
-                    var validCabinets = Tool.GetSheetValidCabinets(activeSheet, wb);
+                    // 4. 扫描当前工作表有效箱柜映射与末尾分布 (显式强类型接收，避免 dynamic 传染)
+                    List<KeyValuePair<int, Models.CabinetAnchorModel>> validCabinets = Tool.GetSheetValidCabinets((object)activeSheet, (object)wb);
                     // 探测工作表基准/末尾行号分布
                     var lastIndexes = Tool.FindStandardCategoryRowIndexes((object)activeSheet, -1);
 
@@ -110,21 +110,92 @@ namespace ExcelAddInDemo
                     }
 
                     // 8. 定位底部明细块目标起始插入行
-                    int copyRowCount = 74 - 41 + 1; // 模板固定 41 行至 74 行，共 34 行
+                    int copyRowCount = 74 - 41 + 1; // 模板固定 41 行至 74 行，共 34 行 --硬编码: 模板行数34--
                     int targetDetailStartRow = targetStartRow;
                     // 若未显式传入明细起始行，则智能计算
                     if (targetDetailStartRow <= 0)
                     {
-                        // 若光标命中了源箱柜且源箱柜拥有明细块，且不是最后一台箱柜，则紧随源箱柜明细块之后插入
-                        if (srcCabAnchor?.Tolsum != null && validCabinets.Count > 0 && activeCab?.Key != validCabinets[validCabinets.Count - 1].Key)
+                        // 判断是否明确命中非末尾的中间箱柜
+                        bool isIntermediateCabinet = validCabinets.Count > 0 && activeCab != null && activeCab.Value.Key != validCabinets[validCabinets.Count - 1].Key;
+                        // 若为中间箱柜，优先定位其在中间明细的精准位置
+                        if (isIntermediateCabinet)
                         {
-                            // 紧随源箱柜附注与报价人落款之后 (Tolsum + 4)
-                            targetDetailStartRow = Convert.ToInt32(srcCabAnchor.Tolsum.Row) + 4;
+                            // 1. 若当前源箱柜自身拥有有效明细块，紧随其落款之后 (Tolsum + 4)
+                            if (srcCabAnchor?.Tolsum != null)
+                            {
+                                // 动态读取源箱柜实时 Tolsum 行号并后移 4 行
+                                targetDetailStartRow = Convert.ToInt32(srcCabAnchor.Tolsum.Row) + 4;
+                            }
+                            else
+                            {
+                                // 2. 当前为无明细箱柜：逆向向前寻找最近的一台拥有有效明细的箱柜
+                                int activeIdx = -1;
+                                int targetCabK = activeCab.Value.Key;
+                                // 循环遍历锁定当前箱柜索引
+                                for (int i = 0; i < validCabinets.Count; i++)
+                                {
+                                    // 匹配箱柜序号
+                                    if (validCabinets[i].Key == targetCabK)
+                                    {
+                                        activeIdx = i;
+                                        break;
+                                    }
+                                }
+                                Models.CabinetAnchorModel? prevDetailAnchor = null;
+                                // 逆序查找前置明细锚点
+                                for (int i = activeIdx - 1; i >= 0; i--)
+                                {
+                                    // 检查前置箱柜是否包含总计行锚点
+                                    if (validCabinets[i].Value.Tolsum != null)
+                                    {
+                                        // 锁定前置有明细箱柜并跳出
+                                        prevDetailAnchor = validCabinets[i].Value;
+                                        break;
+                                    }
+                                }
+
+                                // 若找到了前置有明细箱柜，紧随其后插入
+                                if (prevDetailAnchor?.Tolsum != null)
+                                {
+                                    // 紧随前置有明细箱柜附注与落款之后 (Tolsum + 4)
+                                    targetDetailStartRow = Convert.ToInt32(prevDetailAnchor.Tolsum.Row) + 4;
+                                }
+                                else
+                                {
+                                    // 3. 前方全无明细箱柜，顺向向后查找第一台拥有明细的箱柜
+                                    Models.CabinetAnchorModel? nextDetailAnchor = null;
+                                    // 正序查找后置首个明细锚点
+                                    for (int i = activeIdx + 1; i < validCabinets.Count; i++)
+                                    {
+                                        // 检查后置箱柜是否包含明细行锚点
+                                        if (validCabinets[i].Value.Det != null)
+                                        {
+                                            // 锁定后置首台明细箱柜
+                                            nextDetailAnchor = validCabinets[i].Value;
+                                            break;
+                                        }
+                                    }
+
+                                    // 若找到了后置明细箱柜
+                                    if (nextDetailAnchor?.Det != null)
+                                    {
+                                        // 插在后方首台明细大标题行 (Det - 3) 上方，确保顺序在前 --硬编码: 模板大标题在Det前3行--
+                                        targetDetailStartRow = Math.Max(41, Convert.ToInt32(nextDetailAnchor.Det.Row) - 3);
+                                    }
+                                    else
+                                    {
+                                        // 全表现存箱柜均无明细，首个明细使用基准起始行 41 --硬编码: 基准起始行41--
+                                        targetDetailStartRow = 41;
+                                    }
+                                }
+                            }
                         }
                         else
                         {
-                            // 回退至当前表末尾明细块之后 (Tolsum + 4) 或基准 41 行
-                            targetDetailStartRow = lastIndexes.cabTolsumRow > 0 ? lastIndexes.cabTolsumRow + 4 : 41;
+                            // 全表末尾追加模式（选中末尾箱柜或未命中特定箱柜）：重新动态嗅探工作表最新行号
+                            var curIndexes = Tool.FindStandardCategoryRowIndexes((object)activeSheet, -1);
+                            // 消除汇总插行导致的 1 行物理下移偏差，紧随全表现存最后一个明细落款行后插入
+                            targetDetailStartRow = curIndexes.cabTolsumRow > 0 ? curIndexes.cabTolsumRow + 4 : 41;
                         }
                     }
 
@@ -218,6 +289,8 @@ namespace ExcelAddInDemo
                     string cabDisplayName = string.IsNullOrWhiteSpace(initialCabName) ? $"箱柜{cabinetK}" : initialCabName.Trim();
                     // 写入汇总行箱柜名称 (Cell B)
                     activeSheet.Cells[insertSumRow, 2].Value = cabDisplayName;
+                    // 写入汇总行单位 (Cell E: 默认 "台") --硬编码: 箱柜单位--
+                    activeSheet.Cells[insertSumRow, 5].Value = "台";
                     // 写入明细行箱柜名称 (Cell B)
                     activeSheet.Cells[newDetRow, 2].Value = cabDisplayName;
                     // 计算元器件起始物理行号 (规则 6: Cab_Det + 2)
@@ -1597,12 +1670,14 @@ namespace ExcelAddInDemo
                 // 5. 批量组装汇总行 1 行 13 列数据矩阵 (A~M 列一次性单次 Range 批量写入)
                 // 提取箱柜有效数量 (最小为 1)
                 int cabQty = cab.Header.Quantity > 0 ? cab.Header.Quantity : 1;
+                // 提取箱柜单位 (优先读取 Header.Unit，若空则默认为"台") --硬编码: 箱柜单位--
+                string cabUnit = !string.IsNullOrWhiteSpace(cab.Header.Unit) ? cab.Header.Unit : "台";
                 object[,] sumRowMatrix = new object[1, 13];
                 sumRowMatrix[0, 0] = "=ROW()-ROW(A$6)"; // A 列: 序号 --硬编码--
-                sumRowMatrix[0, 1] = safeBoxName; // B 列: 箱柜名称
-                sumRowMatrix[0, 2] = string.IsNullOrWhiteSpace(cab.Header.Model) ? safeBoxName : cab.Header.Model; // C 列: 型号
-                sumRowMatrix[0, 3] = string.Empty; // D 列: 图号
-                sumRowMatrix[0, 4] = string.Empty; // E 列: 备注
+                sumRowMatrix[0, 1] = safeBoxName; // B 列: 箱柜名称 (柜号)
+                sumRowMatrix[0, 2] = string.IsNullOrWhiteSpace(cab.Header.Model) ? safeBoxName : cab.Header.Model; // C 列: 型号/名称
+                sumRowMatrix[0, 3] = string.Empty; // D 列: 箱柜型号/尺寸
+                sumRowMatrix[0, 4] = cabUnit; // E 列: 单位 (顶部箱柜默认写入"台") --硬编码: 单位名称--
                 sumRowMatrix[0, 5] = cabQty; // F 列: 数量 (使用提取的有效数量)
                 sumRowMatrix[0, 6] = $"=H{tolsumRow - 1}"; // G 列: 单价公式 (指向单台合计行)
                 sumRowMatrix[0, 7] = $"=F{sumRow}*G{sumRow}"; // H 列: 总价公式

@@ -66,6 +66,10 @@
     <None Include="Resources\category.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将批量删除分类前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\delete_category.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将箱柜综合管理(批建/编辑/调序)前端 Vue 3 页面复制至构建输出路径中 -->
     <None Include="Resources\cabinet_manage.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>删除分类</title>
+  <!-- 引入 Element Plus 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <!-- 引入 Font Awesome 图标库 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- 引入 Vue 3 核心库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入 Element Plus 组件库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <!-- 引入公共绿蓝相间主题样式 (主色调 #009688) -->
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    /* 全局样式重置 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+      user-select: none;
+      background-color: #ffffff;
+      color: #333333;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      border: 1px solid #dcdfe6;
+      background-color: #ffffff;
+    }
+
+    /* 顶部可拖拽标题栏 */
+    .window-header {
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px 0 12px;
+      background: var(--theme-gradient, linear-gradient(135deg, #009688 0%, #00796b 100%));
+      color: #ffffff;
+      cursor: move;
+      flex-shrink: 0;
+      touch-action: none;
+    }
+
+    .window-title-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .window-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .action-btn {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 3px;
+      color: #ffffff;
+      opacity: 0.85;
+      font-size: 13px;
+      transition: all 0.2s ease;
+    }
+
+    .action-btn:hover {
+      opacity: 1;
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .action-btn.close-btn:hover {
+      background-color: #ef4444;
+      color: #ffffff;
+    }
+
+    /* 主体容器区 */
+    .main-container {
+      flex: 1;
+      padding: 12px 16px 8px 16px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+      background-color: #ffffff;
+    }
+
+    /* 顶部提示横幅 - 正常状态 */
+    .tip-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #e0f2f1;
+      border: 1px solid #b2dfdb;
+      border-radius: 4px;
+      padding: 8px 12px;
+      margin-bottom: 10px;
+      color: #00796b;
+      font-size: 12px;
+      line-height: 1.4;
+      flex-shrink: 0;
+    }
+
+    /* 顶部提示横幅 - 发现失效行警告状态 */
+    .tip-banner-warning {
+      background: #fef2f2 !important;
+      border-color: #fecaca !important;
+      color: #b91c1c !important;
+    }
+
+    .tip-banner i {
+      font-size: 14px;
+      color: #009688;
+    }
+
+    .tip-banner-warning i {
+      color: #ef4444 !important;
+    }
+
+    /* 工具栏区域 */
+    .toolbar-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+      gap: 8px;
+    }
+
+    .toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .toolbar-right {
+      width: 180px;
+    }
+
+    /* 表格容器区 */
+    .table-container {
+      flex: 1;
+      min-height: 0;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    /* 表格高亮选区标签 */
+    .selection-tag {
+      font-size: 11px !important;
+      height: 20px !important;
+      line-height: 18px !important;
+      padding: 0 6px !important;
+      margin-left: 6px;
+      border-color: #b2dfdb !important;
+      color: #00796b !important;
+      background-color: #e0f2f1 !important;
+    }
+
+    /* 底部操作与统计栏 */
+    .footer-bar {
+      height: 50px;
+      padding: 0 16px;
+      background: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
+    .stat-text {
+      font-size: 12px;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .stat-text .highlight-num {
+      color: #ef4444;
+      font-weight: 600;
+    }
+
+    .stat-text .remain-num {
+      color: #009688;
+      font-weight: 600;
+    }
+
+    .footer-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn-danger-custom {
+      background-color: #ef4444 !important;
+      border-color: #ef4444 !important;
+      color: #ffffff !important;
+    }
+
+    .btn-danger-custom:hover {
+      background-color: #dc2626 !important;
+      border-color: #dc2626 !important;
+    }
+
+    .btn-danger-custom:disabled {
+      background-color: #fca5a5 !important;
+      border-color: #fca5a5 !important;
+      cursor: not-allowed;
+    }
+
+    /* 调整 Element Plus 紧凑表头与单元格行高 */
+    .el-table .el-table__cell {
+      padding: 6px 0 !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部拖拽标题栏 -->
+    <div class="window-header" @pointerdown="onHeaderPointerDown">
+      <div class="window-title-box">
+        <svg viewBox="0 0 1024 1024" width="16" height="16" style="fill: currentColor;">
+          <path d="M832 320h-96v-64c0-35.3-28.7-64-64-64H352c-35.3 0-64 28.7-64 64v64H192c-17.7 0-32 14.3-32 32v32c0 8.8 7.2 16 16 16h64v480c0 35.3 28.7 64 64 64h416c35.3 0 64-28.7 64-64V400h64c8.8 0 16-7.2 16-16v-32c0-17.7-14.3-32-32-32zM352 256h320v64H352v-64z m384 624H288V400h448v480z"></path>
+          <path d="M384 480h64v320h-64zM576 480h64v320h-64z"></path>
+        </svg>
+        <span>一次性删除分类</span>
+      </div>
+      <div class="window-actions" @mousedown.stop>
+        <div class="action-btn close-btn" title="关闭" @mousedown.stop @click.stop="closeWindow">
+          <svg viewBox="0 0 1024 1024" width="13" height="13" style="fill: currentColor;">
+            <path d="M764.288 214.592 512 466.88 259.712 214.592a31.936 31.936 0 0 0-45.12 45.12L466.88 512 214.592 764.288a31.936 31.936 0 0 0 45.12 45.12L512 557.12l252.288 252.288a31.936 31.936 0 0 0 45.12-45.12L557.12 512l252.288-252.288a31.936 31.936 0 0 0-45.12-45.12z"></path>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- 中部主操作区 -->
+    <div class="main-container">
+      <!-- 提示横幅 (自适应展示失效残留告警) -->
+      <div class="tip-banner" :class="{ 'tip-banner-warning': invalidRowsCount > 0 }">
+        <i v-if="invalidRowsCount > 0" class="fa-solid fa-circle-exclamation"></i>
+        <i v-else class="fa-solid fa-triangle-exclamation"></i>
+        <span v-if="invalidRowsCount > 0">
+          检测到 {{ invalidRowsCount }} 个失效残留分类行（包含 #REF! 或底表丢失），已默认自动勾选，可一键清理自愈！
+        </span>
+        <span v-else>
+          请勾选需要彻底删除的分类。系统将同步物理移除对应分类工作表及【项目信息】中的对应汇总行（项目中至少需保留一个分类）。
+        </span>
+      </div>
+
+      <!-- 快捷工具条 -->
+      <div class="toolbar-row">
+        <div class="toolbar-left">
+          <el-button size="small" @click="selectAll">全选</el-button>
+          <el-button size="small" @click="invertSelection">反选</el-button>
+          <el-button v-if="hasPreSelected" size="small" type="success" plain @click="selectOnlyPreSelected">
+            <i class="fa-solid fa-crosshairs" style="margin-right: 4px"></i>仅选项目信息选区
+          </el-button>
+          <el-button v-if="invalidRowsCount > 0" size="small" type="danger" plain @click="selectOnlyInvalid">
+            <i class="fa-solid fa-triangle-exclamation" style="margin-right: 4px"></i>仅选失效行 ({{ invalidRowsCount }})
+          </el-button>
+          <el-button size="small" @click="clearSelection">清空</el-button>
+        </div>
+        <div class="toolbar-right">
+          <el-input
+            v-model="searchKeyword"
+            size="small"
+            placeholder="搜索分类名称..."
+            clearable
+          >
+            <template #prefix>
+              <i class="fa-solid fa-magnifying-glass" style="color: #94a3b8"></i>
+            </template>
+          </el-input>
+        </div>
+      </div>
+
+      <!-- 分类多选表格 -->
+      <div class="table-container">
+        <el-table
+          ref="tableRef"
+          :data="filteredCategories"
+          height="100%"
+          style="width: 100%"
+          v-loading="loading"
+          :row-key="getRowKey"
+          @selection-change="onSelectionChange"
+        >
+          <!-- 多选复选框列 (无自闭合标签) -->
+          <el-table-column type="selection" width="45" align="center"></el-table-column>
+
+          <!-- 序号列 -->
+          <el-table-column type="index" label="序号" width="55" align="center"></el-table-column>
+
+          <!-- 分类名称列 -->
+          <el-table-column label="分类名称" min-width="190">
+            <template #default="{ row }">
+              <div style="display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                <!-- 失效行展示红色警告图标，正常行展示文件夹图标 -->
+                <i v-if="row.isInvalid" class="fa-solid fa-triangle-exclamation" style="color: #ef4444; margin-right: 6px;"></i>
+                <i v-else class="fa-regular fa-folder" style="color: #009688; margin-right: 6px;"></i>
+
+                <!-- 分类名称文本 -->
+                <span :style="{ fontWeight: '500', color: row.isInvalid ? '#ef4444' : '#333333' }">{{ row.categoryName }}</span>
+
+                <!-- 标签标识 -->
+                <el-tag v-if="row.isInvalid" type="danger" size="small" style="margin-left: 6px; height: 20px; line-height: 18px; padding: 0 6px;">
+                  {{ row.invalidReason || '#REF! 引用失效' }}
+                </el-tag>
+                <el-tag v-else-if="row.isSelectedInSheet" class="selection-tag" size="small">选区所选</el-tag>
+              </div>
+            </template>
+          </el-table-column>
+
+          <!-- 箱柜台数列 -->
+          <el-table-column prop="cabinetCount" label="箱柜台数" width="90" align="center">
+            <template #default="{ row }">
+              <span v-if="row.isInvalid" style="color: #94a3b8;">--</span>
+              <span v-else>{{ row.cabinetCount }} 台</span>
+            </template>
+          </el-table-column>
+
+          <!-- 汇总金额列 -->
+          <el-table-column prop="totalPrice" label="总价金额 (元)" width="120" align="right">
+            <template #default="{ row }">
+              <span v-if="row.isInvalid" style="color: #94a3b8;">--</span>
+              <span v-else style="font-family: Consolas, monospace; color: #334155;">
+                ¥ {{ row.totalPrice.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
+              </span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </div>
+
+    <!-- 底部操作与统计栏 -->
+    <div class="footer-bar">
+      <div class="stat-text">
+        <span>已选中 <span class="highlight-num">{{ selectedList.length }}</span> 项</span>
+        <span v-if="selectedInvalidCount > 0" style="color: #ef4444; margin-left: 2px;">(含 {{ selectedInvalidCount }} 个失效行)</span>
+        <span style="margin: 0 4px;">|</span>
+        <span>删除后剩余 <span :class="{ 'remain-num': remainingValidCount >= 1, 'highlight-num': remainingValidCount < 1 }">{{ remainingValidCount }}</span> 个有效分类</span>
+        <span v-if="selectedValidCount > 0 && remainingValidCount < 1" style="color: #ef4444; margin-left: 8px; font-weight: 500;">
+          <i class="fa-solid fa-circle-exclamation"></i> 至少保留 1 个有效分类
+        </span>
+      </div>
+
+      <div class="footer-actions">
+        <el-button @click="closeWindow">取消</el-button>
+        <el-button
+          type="danger"
+          class="btn-danger-custom"
+          :disabled="selectedList.length === 0 || (selectedValidCount > 0 && remainingValidCount < 1)"
+          :loading="submitting"
+          @click="confirmDelete"
+        >
+          <i class="fa-solid fa-trash-can" style="margin-right: 4px;"></i>
+          彻底删除 {{ selectedList.length > 0 ? `(${selectedList.length})` : '' }}
+        </el-button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 使用 Vue 3 Script Setup 架构模式配置 Vue 组件 -->
+  <script setup>
+    // 引入 Vue 3 核心组合式 API
+    const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
+
+    // 创建 Vue 3 应用程序实例
+    const app = createApp({
+      setup() {
+        // 分类总列表数据
+        const categories = ref([]);
+        // 选中的行对象集合
+        const selectedList = ref([]);
+        // 搜索关键字
+        const searchKeyword = ref('');
+        // 数据加载中遮罩状态
+        const loading = ref(false);
+        // 提交删除中状态
+        const submitting = ref(false);
+        // 表格 DOM 句柄引用
+        const tableRef = ref(null);
+        // 是否存在选区预选分类
+        const hasPreSelected = ref(false);
+        // 工作簿中现存有效分类表总数
+        const totalCount = ref(0);
+        // 检测到的失效残留行数量
+        const invalidRowsCount = ref(0);
+
+        // 计算每行的唯一 Key (防止 #REF! 名称同名导致多选异常)
+        const getRowKey = (row) => {
+          return (row.categoryName || '') + '_' + (row.infoRowIndex || 0);
+        };
+
+        // 计算过滤后的分类列表
+        const filteredCategories = computed(() => {
+          if (!searchKeyword.value || !searchKeyword.value.trim()) {
+            return categories.value;
+          }
+          const kw = searchKeyword.value.trim().toLowerCase();
+          return categories.value.filter(c => c.categoryName && c.categoryName.toLowerCase().includes(kw));
+        });
+
+        // 选中的有效真实分类数量
+        const selectedValidCount = computed(() => {
+          return selectedList.value.filter(item => !item.isInvalid).length;
+        });
+
+        // 选中的失效行数量
+        const selectedInvalidCount = computed(() => {
+          return selectedList.value.filter(item => item.isInvalid).length;
+        });
+
+        // 计算删除后剩余的有效分类数 (清理失效行不减少有效分类数)
+        const remainingValidCount = computed(() => {
+          return totalCount.value - selectedValidCount.value;
+        });
+
+        // 监听表格多选变更
+        const onSelectionChange = (selection) => {
+          selectedList.value = selection;
+        };
+
+        // 全选功能
+        const selectAll = () => {
+          if (!tableRef.value) return;
+          filteredCategories.value.forEach(row => {
+            tableRef.value.toggleRowSelection(row, true);
+          });
+        };
+
+        // 反选功能
+        const invertSelection = () => {
+          if (!tableRef.value) return;
+          filteredCategories.value.forEach(row => {
+            const isSelected = selectedList.value.some(s => getRowKey(s) === getRowKey(row));
+            tableRef.value.toggleRowSelection(row, !isSelected);
+          });
+        };
+
+        // 仅选中项目信息选区命中的分类
+        const selectOnlyPreSelected = () => {
+          if (!tableRef.value) return;
+          tableRef.value.clearSelection();
+          categories.value.forEach(row => {
+            if (row.isSelectedInSheet) {
+              tableRef.value.toggleRowSelection(row, true);
+            }
+          });
+        };
+
+        // 仅选中所有检测到的失效行
+        const selectOnlyInvalid = () => {
+          if (!tableRef.value) return;
+          tableRef.value.clearSelection();
+          categories.value.forEach(row => {
+            if (row.isInvalid) {
+              tableRef.value.toggleRowSelection(row, true);
+            }
+          });
+        };
+
+        // 清空选择
+        const clearSelection = () => {
+          if (tableRef.value) {
+            tableRef.value.clearSelection();
+          }
+        };
+
+        // 统一向 C# 发送消息辅助函数
+        const sendMessage = (action, data = null) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ action, data }));
+          }
+        };
+
+        // 触发批量删除并弹出防呆确认框
+        const confirmDelete = () => {
+          if (selectedList.value.length === 0) return;
+
+          // 守门校验：若删除了真实分类，必须至少保留 1 个有效分类
+          if (selectedValidCount.value > 0 && remainingValidCount.value < 1) {
+            ElementPlus.ElMessage.warning('项目中至少需要保留一个有效分类工作表，无法全部删除！');
+            return;
+          }
+
+          // 收集选中的分类名称与对应的项目信息物理行号
+          const names = selectedList.value.map(item => item.categoryName);
+          const rowIndices = selectedList.value
+            .filter(item => item.infoRowIndex && item.infoRowIndex > 0)
+            .map(item => item.infoRowIndex);
+
+          // 提示语组装
+          let tipContent = '';
+          if (selectedValidCount.value === 0 && selectedInvalidCount.value > 0) {
+            tipContent = `确定要彻底清理选中的 ${selectedInvalidCount.value} 个失效分类残留行（含 #REF!）吗？\n\n清理后【项目信息】表将自动物理删除废弃行并重置序号，且不可撤销！`;
+          } else {
+            const namesDisplay = names.slice(0, 5).join('、') + (names.length > 5 ? ` 等共 ${names.length} 项` : '');
+            tipContent = `确定要彻底删除选中的【${namesDisplay}】吗？\n\n此操作将同时物理删除对应的分类工作表及【项目信息】中的对应汇总行，且不可撤销！`;
+          }
+
+          ElementPlus.ElMessageBox.confirm(
+            tipContent,
+            '确认批量删除分类',
+            {
+              confirmButtonText: '确定彻底删除',
+              cancelButtonText: '取消',
+              type: 'warning',
+              confirmButtonClass: 'el-button--danger'
+            }
+          ).then(() => {
+            submitting.value = true;
+            // 派发批量删除请求至 C# 后端 (同时携带分类名集合与物理行号集合)
+            sendMessage('deleteCategories', { 
+              categoryNames: names,
+              rowIndices: rowIndices
+            });
+          }).catch(() => {
+            // 用户取消删除
+          });
+        };
+
+        // 关闭窗口
+        const closeWindow = () => {
+          sendMessage('close');
+        };
+
+        // 平滑位移拖拽
+        let isDragging = false;
+        let lastScreenX = 0;
+        let lastScreenY = 0;
+
+        const onHeaderPointerDown = (e) => {
+          if (e.target.closest('.action-btn')) return;
+          isDragging = true;
+          lastScreenX = e.screenX;
+          lastScreenY = e.screenY;
+          window.addEventListener('pointermove', onPointerMove);
+          window.addEventListener('pointerup', onPointerUp);
+        };
+
+        const onPointerMove = (e) => {
+          if (!isDragging) return;
+          const deltaX = e.screenX - lastScreenX;
+          const deltaY = e.screenY - lastScreenY;
+          lastScreenX = e.screenX;
+          lastScreenY = e.screenY;
+          if (deltaX !== 0 || deltaY !== 0) {
+            sendMessage('moveWindow', { deltaX, deltaY });
+          }
+        };
+
+        const onPointerUp = () => {
+          isDragging = false;
+          window.removeEventListener('pointermove', onPointerMove);
+          window.removeEventListener('pointerup', onPointerUp);
+        };
+
+        // 初始化加载
+        onMounted(() => {
+          loading.value = true;
+          // 注册 C# 消息接收
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (event) => {
+              try {
+                const res = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                if (!res || !res.action) return;
+
+                // 接收分类列表渲染数据
+                if (res.action === 'renderDeleteCategoriesData' && res.data) {
+                  loading.value = false;
+                  const d = res.data;
+                  categories.value = d.categories || [];
+                  totalCount.value = d.totalCategoryCount || 0;
+                  invalidRowsCount.value = d.invalidRowsCount || 0;
+                  hasPreSelected.value = d.preSelectedCount > 0;
+
+                  // 自动预先勾选命中选区或被识别为失效残留的分类
+                  nextTick(() => {
+                    if (tableRef.value) {
+                      categories.value.forEach(row => {
+                        if (row.isSelectedInSheet || row.isInvalid) {
+                          tableRef.value.toggleRowSelection(row, true);
+                        }
+                      });
+                    }
+                  });
+                }
+
+                // 接收批量删除操作结果
+                if (res.action === 'deleteCategoriesResult' && res.data) {
+                  submitting.value = false;
+                  if (res.data.success) {
+                    ElementPlus.ElMessage.success(res.data.message || '删除分类成功！');
+                  } else {
+                    ElementPlus.ElMessage.error(res.data.message || '删除分类失败！');
+                  }
+                }
+              } catch (err) {
+                console.error('处理消息异常:', err);
+              }
+            });
+
+            // 向后端请求数据
+            sendMessage('getDeleteCategoriesData');
+          }
+        });
+
+        return {
+          categories,
+          selectedList,
+          searchKeyword,
+          loading,
+          submitting,
+          tableRef,
+          hasPreSelected,
+          totalCount,
+          invalidRowsCount,
+          getRowKey,
+          filteredCategories,
+          selectedValidCount,
+          selectedInvalidCount,
+          remainingValidCount,
+          onSelectionChange,
+          selectAll,
+          invertSelection,
+          selectOnlyPreSelected,
+          selectOnlyInvalid,
+          clearSelection,
+          confirmDelete,
+          closeWindow,
+          onHeaderPointerDown
+        };
+      }
+    });
+
+    // 注册 Element Plus 组件库并挂载
+    app.use(ElementPlus);
+    app.mount('#app');
+  </script>
+</body>
+</html>
