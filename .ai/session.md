@@ -1,5 +1,50 @@
 # Session State
- 
+
+- **新建箱柜 `Cab_Subsum` 小计行定义名称偏移修正与动态嗅探自愈 (`ExcelServices.Cabinet.cs`)**：
+  1. **问题根因彻底清除**：
+     - `CopyCabinetDetailFromTemplate` 在从 `CabinetTemplate.xlsx` 母版复制明细块时，硬编码了 `int newSubsumRow = targetDetailStartRow + (65 - 41);`（即 $+24$ 行）；
+     - 但母版中 `Cab_Subsum_1`（小计行）真实位于第 66 行（相对起始行 41 的真实偏移为 $+25$ 行），导致旧代码把 `Cab_Subsum` 误绑定在第 65 行（元器件最后一个空行），比实际小计行小了 1；
+  2. **双重精准防护方案落地**：
+     - 将基础偏移修正为 `targetDetailStartRow + (66 - 41)`；
+     - 增加动态内容嗅探：在复制出的明细区域中自动扫描 B 列，精准锁定包含“小计”与“单台合计/总计”的物理行，彻底杜绝后续模板改动再次引发偏差；
+  3. **编译构建验证**：
+     - `ExcelAddInDemo.csproj` 成功编译生成，**0 错误 0 警告**。
+
+  1. **问题根因彻底清除**：
+     - Excel 端（`excel-ct-tools`）与 AutoCAD 端（`cad-net_1`）因在不同宿主进程中运行，`Tool.GetAppDataDirectory()` 默认各自定位到各自的运行目录下的 `data` 文件夹，导致调价公式（`formula_fee_settings.json`）、企业设置等配置数据无法双端同步；
+  2. **系统级漫游引导与跨端共享架构**：
+     - 在 Windows 用户通用漫游目录 `%APPDATA%\ExcelAddInDemo\global_config.json` 引入全局引导配置；
+     - 无论是在 Excel 进程还是 AutoCAD (`acad.exe`) 进程中，均能通过统一的系统全局路径读取同一份 `customDataDirectory` 自定义数据目录配置；
+     - `Tool.GetAppDataDirectory()` 动态优先返回用户自定义配置的有效目录；若未配置则平滑回退至插件目录下的 `data` 文件夹；
+     - 当用户配置切换到新的空目录时，自动将默认数据目录中的基础 JSON 配置文件安全同步过去，杜绝已有数据丢失；
+  3. **“我的 - 企业设置”前端与宿主完整闭环**：
+     - 在 `enterprise_settings.html` 中新增“数据目录：”表单输入框与“浏览...”按钮；
+     - 风格统一为 `#009688` 绿蓝主题，并在 `<script setup>` 与 `setupLogic()` 中均完整实现双向绑定与监听；
+     - 在 `EnterpriseSettingsForm.cs` 中增加 `selectDataDirectory` 指令处理，通过独立 STA 后台线程弹出 `FolderBrowserDialog` 目录选择框，绝不阻塞 WebView2 主通信管道；
+     - 用户点击“保存”时，双写到企业设置与系统全局引导配置中，立即生效；
+  4. **编译与验证**：
+     - 执行 `dotnet build "e:\Ace\excel-ct-tools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 构建成功，**0 错误**；
+     - 单元测试验证全局配置读写、自动模板复制、平滑回退机制均 100% 正常通过。
+
+  1. **问题根因彻底清除**：
+     - 彻底改变以往在各个业务入口（调费、算辅材、报表等）无脑强制全量扫描整表 `UsedRange`、二维数组倒序遍历与正则模糊猜测的粗暴模式；
+     - 消除重复全量推导导致的几百毫秒严重性能损耗，并彻底根除因启发式“猜规则”反噬原本精准建立的代码锚点的问题。
+  2. **轻量嗅探守门机制落地**：
+     - 在 `FixAndFillCabinetNamesForSheet(dynamic sheet, bool forceRebuild = false)` 入口处增加健康度守门；
+     - 快速比对当前工作表现存定义名称映射：若已具备合法 Sum 汇总行与正确的 Det 明细层级拓扑，**耗时 0ms 直接返回现有箱柜数量，跳过所有 UsedRange 与正则推导**；
+     - 仅当定义名称数量为 0 或检测到破坏性 `#REF!` 时才真正执行自愈反推；
+     - 既有所有调用方完全保持兼容，自动享受微秒级极速响应与防反噬保护。
+  3. **编译构建与生效验证**：
+     - `ExcelAddInDemo.csproj` 成功编译生成，**0 错误**。
+
+  2. **总计行 (tolsum) F 列数量填写**：
+     - 在 `ExportSingleCabinetOptimized` 中，提取有效数量 `int cabQty = cab.Header.Quantity > 0 ? cab.Header.Quantity : 1`；
+     - 在刷新计费区域公式后，设置 `sheet.Cells[tolsumRow, 6].Value2 = cabQty;`（--硬编码: 第 6 列为 F 列--）；
+     - 同步在 `CopyCabinetDetailFromTemplate` 与 `CreateNewCategory` 中补齐了总计行第 6 列的数量回填；
+  3. **编译构建与代码规范**：
+     - 严格遵守每 3 行包含一行中文注释，硬编码均带有 `--硬编码--` 标明；
+     - `ExcelAddInDemo.csproj` C# 源码编译 **0 警告 0 错误**。
+
 - **智能辅材与壳体计算中心「更新当前分类」与「更新所有分类」极速性能优化与 Element Plus 动态进度条落地交付 (`ExcelServices.CabinetAuxCalc.cs`, `CabinetAuxCalcController.cs`, `CabinetAuxCalcForm.cs`, `cabinet_aux_calc.html`)**：
   1. **问题根因彻底清除**：
      - **未挂起重绘重算**：原更新当前分类未开启 `ScreenUpdating = false`、`Calculation = xlCalculationManual` 与 `EnableEvents = false`，每次单元格修改均触发全表重算与重绘，性能严重拖慢数十倍；

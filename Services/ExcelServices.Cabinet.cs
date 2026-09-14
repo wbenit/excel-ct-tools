@@ -163,11 +163,11 @@ namespace ExcelAddInDemo
                     }
 
                     // 11. 计算新复制箱柜明细的关键物理行号映射
-                    // 模板中 44 行对应 Cab_Det，相对起始行 41 的偏移为 3 行
+                    // 模板中 44 行对应 Cab_Det (箱柜信息行)，相对起始行 41 的偏移为 3 行 --硬编码--
                     int newDetRow = targetDetailStartRow + (44 - 41);
-                    // 模板中 65 行对应 Cab_Subsum，相对起始行 41 的偏移为 24 行
-                    int newSubsumRow = targetDetailStartRow + (65 - 41);
-                    // 模板中 71 行对应 Cab_Tolsum，相对起始行 41 的偏移为 30 行
+                    // 模板中 66 行对应 Cab_Subsum (小计行)，相对起始行 41 的真实偏移为 25 行 --硬编码--
+                    int newSubsumRow = targetDetailStartRow + (66 - 41);
+                    // 模板中 71 行对应 Cab_Tolsum (总计行)，相对起始行 41 的偏移为 30 行 --硬编码--
                     int newTolsumRow = targetDetailStartRow + (71 - 41);
 
                     // 12. 注册当前工作表的 4 个定义名称 (规则 6)
@@ -228,6 +228,10 @@ namespace ExcelAddInDemo
                     // 保留明细表头 C 列静态标签(型号:)，清空明细表头备注旧数据 (Cell I)
                     activeSheet.Cells[newDetRow, 9].Value = string.Empty;
                     activeSheet.Cells[insertSumRow, 5].Formula = $"台";
+                    // 写入汇总行数量 (F 列即第 6 列) --硬编码: 第 6 列为 F 列 (数量列)--
+                    activeSheet.Cells[insertSumRow, 6].Value = 1;
+                    // 在 tolsum 总计行 F 列填写数量 --硬编码: 第 6 列为 F 列 (数量列)--
+                    activeSheet.Cells[newTolsumRow, 6].Value = 1;
                     // 汇总行公式绑定至明细总计行
                     // G 列单价公式指向明细总计行的销售总价 (H 列)
                     activeSheet.Cells[insertSumRow, 7].Formula = $"=H{newTolsumRow}";
@@ -1273,6 +1277,10 @@ namespace ExcelAddInDemo
                     }
                     lastSheet = currentSheet;
 
+                    // 再次强制静默 Excel 运行环境，防止路由表或模板初始化意外开启了事件
+                    try { app.EnableEvents = false; } catch { }
+                    try { app.ScreenUpdating = false; } catch { }
+
                     // 获取或初始化该分类工作表的内存状态上下文
                     string actualSheetName = Convert.ToString(currentSheet.Name) ?? lastSheetName;
                     if (!sheetContextMap.TryGetValue(actualSheetName, out var sheetCtx))
@@ -1587,13 +1595,15 @@ namespace ExcelAddInDemo
                 }
 
                 // 5. 批量组装汇总行 1 行 13 列数据矩阵 (A~M 列一次性单次 Range 批量写入)
+                // 提取箱柜有效数量 (最小为 1)
+                int cabQty = cab.Header.Quantity > 0 ? cab.Header.Quantity : 1;
                 object[,] sumRowMatrix = new object[1, 13];
                 sumRowMatrix[0, 0] = "=ROW()-ROW(A$6)"; // A 列: 序号 --硬编码--
                 sumRowMatrix[0, 1] = safeBoxName; // B 列: 箱柜名称
                 sumRowMatrix[0, 2] = string.IsNullOrWhiteSpace(cab.Header.Model) ? safeBoxName : cab.Header.Model; // C 列: 型号
                 sumRowMatrix[0, 3] = string.Empty; // D 列: 图号
                 sumRowMatrix[0, 4] = string.Empty; // E 列: 备注
-                sumRowMatrix[0, 5] = cab.Header.Quantity > 0 ? cab.Header.Quantity : 1; // F 列: 数量
+                sumRowMatrix[0, 5] = cabQty; // F 列: 数量 (使用提取的有效数量)
                 sumRowMatrix[0, 6] = $"=H{tolsumRow - 1}"; // G 列: 单价公式 (指向单台合计行)
                 sumRowMatrix[0, 7] = $"=F{sumRow}*G{sumRow}"; // H 列: 总价公式
                 sumRowMatrix[0, 8] = string.Empty; // I 列
@@ -1604,7 +1614,67 @@ namespace ExcelAddInDemo
                 // 单次 COM 批量写入汇总行
                 sheet.Range[$"A{sumRow}:M{sumRow}"].Formula = sumRowMatrix;
 
-                // 6. 写入明细信息行表头属性
+                // 6. 极致加速：规范注册当前箱柜的 4 个工作表级定义名称 (使用 SafeSetSheetName 避免同名残留冲突)
+                string sumNameTag = $"Cab_Sum_{cabinetK}";
+                string detNameTag = $"Cab_Det_{cabinetK}";
+                string subsumNameTag = $"Cab_Subsum_{cabinetK}";
+                string tolsumNameTag = $"Cab_Tolsum_{cabinetK}";
+
+                // 统一通过 SafeSetSheetName 注册工作表级定义名称锚点 (规则 6 规范)
+                Tool.SafeSetSheetName(sheet, sheetName, sumNameTag, sumRow);
+                Tool.SafeSetSheetName(sheet, sheetName, detNameTag, detRow);
+                Tool.SafeSetSheetName(sheet, sheetName, subsumNameTag, subsumRow);
+                Tool.SafeSetSheetName(sheet, sheetName, tolsumNameTag, tolsumRow);
+
+                // 7. 建立双向超链接绑定 (规则 6，在写入表头属性前完成绑定，杜绝旧链接残留导致的反向覆盖)
+                try
+                {
+                    // 汇总行 A 列单元格句柄
+                    dynamic sumAnchorCell = sheet.Cells[sumRow, 1];
+                    // 明细行 A 列单元格句柄
+                    dynamic detAnchorCell = sheet.Cells[detRow, 1];
+
+                    // 汇总行 A 列超链接：若已存在就地更新，不存在则挂载新链接
+                    if (sumAnchorCell.Hyperlinks != null && sumAnchorCell.Hyperlinks.Count > 0)
+                    {
+                        // 就地更新目标地址与序号文本
+                        dynamic hl = sumAnchorCell.Hyperlinks[1];
+                        hl.SubAddress = $"'{sheetName}'!{detNameTag}";
+                        hl.TextToDisplay = Convert.ToString(cabinetK);
+                    }
+                    else
+                    {
+                        // 挂载汇总行超链接并显示箱柜序号
+                        sheet.Hyperlinks.Add(
+                            Anchor: sumAnchorCell,
+                            Address: "",
+                            SubAddress: $"'{sheetName}'!{detNameTag}",
+                            TextToDisplay: Convert.ToString(cabinetK)
+                        );
+                    }
+
+                    // 明细行 A 列超链接：若从母版克隆后已有超链接，必须就地更新，避免直接 Add 抛出 COM 异常被静默忽略
+                    if (detAnchorCell.Hyperlinks != null && detAnchorCell.Hyperlinks.Count > 0)
+                    {
+                        // 就地更新返回汇总行子地址与屏幕提示
+                        dynamic hl = detAnchorCell.Hyperlinks[1];
+                        hl.SubAddress = $"'{sheetName}'!{sumNameTag}";
+                        hl.ScreenTip = "返回汇总行"; // --硬编码: 屏幕提示文本--
+                    }
+                    else
+                    {
+                        // 挂载明细行返回顶部汇总行超链接
+                        sheet.Hyperlinks.Add(
+                            Anchor: detAnchorCell,
+                            Address: "",
+                            SubAddress: $"'{sheetName}'!{sumNameTag}",
+                            ScreenTip: "返回汇总行" // --硬编码: 屏幕提示文本--
+                        );
+                    }
+                }
+                catch { }
+
+                // 8. 写入明细信息行表头属性
                 sheet.Cells[detRow, 2].Value2 = safeBoxName;
                 sheet.Cells[detRow, 9].Value2 = installMode;
                 if (cab.Header.MinMaxPoints != null && cab.Header.MinMaxPoints.Count > 0)
@@ -1613,39 +1683,12 @@ namespace ExcelAddInDemo
                     sheet.Cells[detRow, 30].Value2 = string.Join("-", cab.Header.MinMaxPoints);
                 }
 
-                // 7. 极致加速：直接注册 4 个定义名称 (零异常抛接，消灭 400 次 COM 异常)
-                string sumNameTag = $"Cab_Sum_{cabinetK}";
-                string detNameTag = $"Cab_Det_{cabinetK}";
-                string subsumNameTag = $"Cab_Subsum_{cabinetK}";
-                string tolsumNameTag = $"Cab_Tolsum_{cabinetK}";
-
-                try { sheet.Names.Add(sumNameTag, $"='{sheetName}'!$A${sumRow}"); } catch { }
-                try { sheet.Names.Add(detNameTag, $"='{sheetName}'!$A${detRow}"); } catch { }
-                try { sheet.Names.Add(subsumNameTag, $"='{sheetName}'!$A${subsumRow}"); } catch { }
-                try { sheet.Names.Add(tolsumNameTag, $"='{sheetName}'!$A${tolsumRow}"); } catch { }
-
-                // 8. 建立双向超链接绑定 (规则 6)
-                try
-                {
-                    dynamic sumAnchorCell = sheet.Cells[sumRow, 1];
-                    dynamic detAnchorCell = sheet.Cells[detRow, 1];
-                    sheet.Hyperlinks.Add(
-                        Anchor: sumAnchorCell,
-                        Address: "",
-                        SubAddress: $"'{sheetName}'!{detNameTag}",
-                        TextToDisplay: Convert.ToString(cabinetK)
-                    );
-                    sheet.Hyperlinks.Add(
-                        Anchor: detAnchorCell,
-                        Address: "",
-                        SubAddress: $"'{sheetName}'!{sumNameTag}",
-                        ScreenTip: "返回汇总行"
-                    );
-                }
-                catch { }
-
                 // 9. 刷新小计行自适应求和公式与计费区域 A 列序号公式 (抽取独立方法，契合规则 6 & 规则 7)
                 RefreshCabinetFeeAreaFormulas(sheet, detRow, compStartRow, subsumRow, tolsumRow);
+
+                // 10. 用户需求：在 tolsum 行 (总计行) 的 F 列 (第 6 列) 填写箱柜数量 --硬编码: 第 6 列为 F 列--
+                // 保证底表明细总计行数量与顶部汇总行 F 列保持严格一致
+                sheet.Cells[tolsumRow, 6].Value2 = cabQty;
 
                 return true;
             }

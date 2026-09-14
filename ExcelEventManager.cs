@@ -611,6 +611,20 @@ namespace ExcelAddInDemo
                         sumAnchorA = FindRangeByTag(wb, sh, $"{sumPrefix}{k}");
                     }
 
+                    // 安全校验：校验当前被修改的行是否确实是对应箱柜 K 的明细信息行
+                    // 防止因模板克隆残留超链接导致跨箱柜错误反向覆盖
+                    if (k > 0)
+                    {
+                        // 查找箱柜 K 对应的预期明细行锚点
+                        Microsoft.Office.Interop.Excel.Range? expectedDetAnchor = FindRangeByTag(wb, sh, $"{detPrefix}{k}");
+                        // 比较当前修改物理行与预期箱柜明细物理行
+                        if (expectedDetAnchor != null && expectedDetAnchor.Row != row)
+                        {
+                            // 当前行与超链接指向的箱柜 K 不匹配，属于残留旧链接，拒绝跨箱柜误写
+                            return false;
+                        }
+                    }
+
                     // 若成功定位到 Sum 汇总行
                     if (sumAnchorA != null)
                     {

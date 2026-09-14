@@ -345,10 +345,19 @@ namespace ExcelAddInDemo
                     }
                 }
 
+                // 保存调用前的 Excel 环境状态，防止在批量导出等外部上下文中提前泄露恢复全局事件
+                bool prevScreenUpdating = true;
+                bool prevDisplayAlerts = true;
+                bool prevEnableEvents = true;
+                // 安全提取原始环境状态
+                try { prevScreenUpdating = app.ScreenUpdating; } catch { }
+                try { prevDisplayAlerts = app.DisplayAlerts; } catch { }
+                try { prevEnableEvents = app.EnableEvents; } catch { }
+
                 // 临时关闭屏幕刷新与提示警告以提高初始化速度
-                app.ScreenUpdating = false;
-                app.DisplayAlerts = false;
-                app.EnableEvents = false;
+                try { app.ScreenUpdating = false; } catch { }
+                try { app.DisplayAlerts = false; } catch { }
+                try { app.EnableEvents = false; } catch { }
 
                 try
                 {
@@ -402,10 +411,10 @@ namespace ExcelAddInDemo
                 }
                 finally
                 {
-                    // 恢复 Excel 屏幕刷新、告警与事件调度
-                    app.ScreenUpdating = true;
-                    app.DisplayAlerts = true;
-                    app.EnableEvents = true;
+                    // 保护性还原 Excel 屏幕刷新、告警与事件调度（遵循进入前原始状态）
+                    try { app.ScreenUpdating = prevScreenUpdating; } catch { }
+                    try { app.DisplayAlerts = prevDisplayAlerts; } catch { }
+                    try { app.EnableEvents = prevEnableEvents; } catch { }
                 }
             }
             catch (Exception ex)
@@ -532,6 +541,10 @@ namespace ExcelAddInDemo
 
                     // 填入箱柜名称
                     catSheet.Cells[cabSumRow, 2].Value = safeCabName;
+                    // 写入汇总行数量 (F 列即第 6 列，默认 1) --硬编码: 第 6 列为 F 列 (数量列)--
+                    catSheet.Cells[cabSumRow, 6].Value = 1;
+                    // 在 tolsum 总计行 F 列填写数量 (默认 1) --硬编码: 第 6 列为 F 列 (数量列)--
+                    catSheet.Cells[cabTolsumRow, 6].Value = 1;
                     // G 列单价公式指向明细总计行的销售总价 (H 列)
                     catSheet.Cells[cabSumRow, 7].Formula = $"=H{cabTolsumRow - 1}";
                     // H 列总价公式 = 数量(F列) * 单价(G列)

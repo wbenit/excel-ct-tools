@@ -39,6 +39,9 @@ namespace ExcelAddInDemo.Controllers
 
         // 保存设置时是否同步更新当前打开的已选中项目
         public bool SyncOpenProject { get; set; } = false;
+
+        // 自定义数据配置共享存储目录 (留空则默认使用插件目录下的 data 目录)
+        public string CustomDataDirectory { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -46,8 +49,8 @@ namespace ExcelAddInDemo.Controllers
     /// </summary>
     public class EnterpriseSettingsController
     {
-        // 存储企业配置 JSON 文件的本地绝对路径
-        private readonly string _settingsFilePath;
+        // 企业设置配置文件的默认保存文件名 --硬编码--
+        private const string SettingsFileName = "EnterpriseSettings.json";
 
         // 定义全局 JSON 序列化选项，开启驼峰命名与忽略大小写匹配以保障前后端属性精准同步
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
@@ -61,15 +64,21 @@ namespace ExcelAddInDemo.Controllers
         };
 
         /// <summary>
-        /// 构造函数：初始化本地存储目录与文件路径
+        /// 构造函数
         /// </summary>
         public EnterpriseSettingsController()
         {
-            // 获取插件运行目录下的 data 专属数据目录
-            string appDataDir = Tool.GetAppDataDirectory();
+        }
 
+        /// <summary>
+        /// 获取当前生效的企业设置文件物理存储绝对路径
+        /// </summary>
+        private string GetCurrentSettingsFilePath()
+        {
+            // 动态获取当前生效的数据目录 (优先取自定义目录，兜底取默认目录)
+            string appDataDir = Tool.GetAppDataDirectory();
             // 拼接 EnterpriseSettings.json 的完整保存路径
-            _settingsFilePath = Path.Combine(appDataDir, "EnterpriseSettings.json");
+            return Path.Combine(appDataDir, SettingsFileName);
         }
 
         /// <summary>
@@ -82,21 +91,36 @@ namespace ExcelAddInDemo.Controllers
             {
                 try
                 {
+                    // 获取当前配置文件绝对路径
+                    string filePath = GetCurrentSettingsFilePath();
+
+                    // 实例化默认实体
+                    var settings = new EnterpriseSettingsData();
+
                     // 判断本地配置文件是否存在
-                    if (!File.Exists(_settingsFilePath))
+                    if (File.Exists(filePath))
                     {
-                        // 若不存在配置文件，则直接返回默认的企业配置示例数据
-                        return new EnterpriseSettingsData();
+                        // 读取本地 JSON 文本内容
+                        string jsonText = File.ReadAllText(filePath);
+                        // 反序列化为 EnterpriseSettingsData 数据对象
+                        var loaded = JsonSerializer.Deserialize<EnterpriseSettingsData>(jsonText, JsonOptions);
+                        if (loaded != null)
+                        {
+                            settings = loaded;
+                        }
                     }
 
-                    // 读取本地 EnterpriseSettings.json 中的全部文本内容
-                    string jsonText = File.ReadAllText(_settingsFilePath);
+                    // 若模型中尚未记录自定义目录，尝试读取全局引导配置中的目录进行反显
+                    if (string.IsNullOrWhiteSpace(settings.CustomDataDirectory))
+                    {
+                        // 读取全局引导配置中配置的路径
+                        string globalCustomDir = Tool.GetCustomDataDirectoryFromGlobalConfig();
+                        // 赋值反显
+                        settings.CustomDataDirectory = globalCustomDir;
+                    }
 
-                    // 将读出的 JSON 字符串反序列化为 EnterpriseSettingsData 数据对象
-                    var settings = JsonSerializer.Deserialize<EnterpriseSettingsData>(jsonText, JsonOptions);
-
-                    // 若反序列化结果不为空则返回，否则返回默认新对象
-                    return settings ?? new EnterpriseSettingsData();
+                    // 返回最终设置对象
+                    return settings;
                 }
                 catch
                 {
@@ -116,11 +140,17 @@ namespace ExcelAddInDemo.Controllers
             {
                 try
                 {
-                    // 将设置对象序列化为 JSON 格式的格式化字符串
+                    // 1. 同步将用户在界面中配置的自定义目录更新持久化至全局引导文件
+                    Tool.SetCustomDataDirectory(settings.CustomDataDirectory);
+
+                    // 2. 重新获取更新后生效的目标保存路径 (若切换了目录则写入新目录)
+                    string filePath = GetCurrentSettingsFilePath();
+
+                    // 3. 将设置对象序列化为 JSON 格式化字符串
                     string jsonText = JsonSerializer.Serialize(settings, JsonOptions);
 
-                    // 将最新的 JSON 文本覆盖写入本地 EnterpriseSettings.json 文件
-                    File.WriteAllText(_settingsFilePath, jsonText);
+                    // 4. 将最新的 JSON 文本覆盖写入文件
+                    File.WriteAllText(filePath, jsonText);
 
                     // 写入成功返回 true
                     return true;

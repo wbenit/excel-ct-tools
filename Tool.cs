@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Text.Json;
 using ExcelAddInDemo.Controllers;
 using ExcelAddInDemo.Models;
 
@@ -118,13 +119,184 @@ namespace ExcelAddInDemo
             return currentDir;
         }
 
+        // 缓存当前进程中用户自定义的数据存储目录
+        private static string? _customDataDirectoryCache = null;
+
+        // 全局引导配置文件的默认应用名称 --硬编码--
+        private const string GlobalConfigFolderName = "ExcelAddInDemo";
+
+        // 全局引导配置文件的默认文件名 --硬编码--
+        private const string GlobalConfigFileName = "global_config.json";
+
+        // 线程同步锁对象，确保多线程下读写配置安全
+        private static readonly object _configLock = new object();
+
         /// <summary>
-        /// 获取当前插件运行目录下的 data 专属数据与配置存储目录路径
+        /// 获取存储在用户 AppData 漫游目录下的全局引导配置文件全路径
         /// </summary>
-        /// <returns>插件运行目录/data 专属目录全路径</returns>
+        /// <returns>全局引导配置文件绝对路径</returns>
+        public static string GetGlobalConfigFilePath()
+        {
+            // 获取 Windows 系统当前用户的 Roaming AppData 路径
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            // 拼接专用的全局配置文件夹路径
+            string folder = Path.Combine(appData, GlobalConfigFolderName);
+            // 若配置目录不存在则自动创建
+            if (!Directory.Exists(folder))
+            {
+                // 创建目录
+                Directory.CreateDirectory(folder);
+            }
+            // 返回 global_config.json 完整文件路径
+            return Path.Combine(folder, GlobalConfigFileName);
+        }
+
+        /// <summary>
+        /// 从全局引导配置文件中读取用户自定义设置的数据目录路径
+        /// </summary>
+        /// <returns>用户自定义的数据目录路径，若未配置则返回空字符串</returns>
+        public static string GetCustomDataDirectoryFromGlobalConfig()
+        {
+            // 加锁保护多线程并发读取
+            lock (_configLock)
+            {
+                // 如果内存已有缓存且非空，直接返回内存缓存
+                if (!string.IsNullOrWhiteSpace(_customDataDirectoryCache))
+                {
+                    return _customDataDirectoryCache;
+                }
+                try
+                {
+                    // 获取全局配置文件物理路径
+                    string configPath = GetGlobalConfigFilePath();
+                    // 校验配置文件是否存在
+                    if (File.Exists(configPath))
+                    {
+                        // 读取全局配置文件文本
+                        string json = File.ReadAllText(configPath);
+                        // 解析 JSON 根元素
+                        using var doc = JsonDocument.Parse(json);
+                        // 提取 customDataDirectory 属性
+                        if (doc.RootElement.TryGetProperty("customDataDirectory", out var prop))
+                        {
+                            // 读取配置的目录字符串
+                            string? dir = prop.GetString();
+                            // 校验配置路径有效性
+                            if (!string.IsNullOrWhiteSpace(dir))
+                            {
+                                // 缓存并返回
+                                _customDataDirectoryCache = dir;
+                                return dir;
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // 容错处理，读取异常时不影响正常流程
+                }
+                // 未设置则返回空字符串
+                return string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// 设置并持久化用户自定义的数据配置存储目录，同时完成新目录基础文件同步
+        /// </summary>
+        /// <param name="targetDir">目标自定义数据目录路径</param>
+        /// <returns>是否设置成功</returns>
+        public static bool SetCustomDataDirectory(string targetDir)
+        {
+            // 加锁保护写操作
+            lock (_configLock)
+            {
+                try
+                {
+                    // 修剪入参字符串
+                    string cleanPath = (targetDir ?? "").Trim();
+                    // 更新当前进程内存缓存
+                    _customDataDirectoryCache = cleanPath;
+
+                    // 获取全局配置文件路径
+                    string configPath = GetGlobalConfigFilePath();
+                    // 构建全局配置实体
+                    var configObj = new Dictionary<string, string>
+                    {
+                        { "customDataDirectory", cleanPath }
+                    };
+                    // 序列化全局配置 JSON
+                    string json = JsonSerializer.Serialize(configObj, new JsonSerializerOptions { WriteIndented = true });
+                    // 写入持久化文件
+                    File.WriteAllText(configPath, json);
+
+                    // 如果指定了有效的新路径，确保目录存在并进行基础模板与配置文件自动复制
+                    if (!string.IsNullOrWhiteSpace(cleanPath))
+                    {
+                        // 检查新目录是否存在，不存在则创建
+                        if (!Directory.Exists(cleanPath))
+                        {
+                            Directory.CreateDirectory(cleanPath);
+                        }
+                        // 获取默认运行目录下的旧 data 目录路径
+                        string defaultDataDir = Path.Combine(GetAppDirectory(), "data");
+                        // 若默认 data 目录存在，自动将原先的 json 配置文件复制到新目录 (不覆盖新目录已存在文件)
+                        if (Directory.Exists(defaultDataDir) && !string.Equals(Path.GetFullPath(defaultDataDir), Path.GetFullPath(cleanPath), StringComparison.OrdinalIgnoreCase))
+                        {
+                            // 遍历原目录所有 JSON 配置文件
+                            foreach (string file in Directory.GetFiles(defaultDataDir, "*.json"))
+                            {
+                                // 获取文件名
+                                string fileName = Path.GetFileName(file);
+                                // 计算目标文件路径
+                                string destFile = Path.Combine(cleanPath, fileName);
+                                // 仅在目标文件不存在时复制，保护新目录既有数据
+                                if (!File.Exists(destFile))
+                                {
+                                    File.Copy(file, destFile, false);
+                                }
+                            }
+                        }
+                    }
+                    // 设置并同步成功
+                    return true;
+                }
+                catch
+                {
+                    // 出现异常返回 false
+                    return false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 获取当前插件运行目录下的 data 专属数据与配置存储目录路径 (支持自定义目录优先)
+        /// </summary>
+        /// <returns>插件有效数据配置专属目录全路径</returns>
         public static string GetAppDataDirectory()
         {
-            // 获取插件当前运行的根物理目录
+            // 1. 优先尝试获取用户在全局配置或企业设置中指定的自定义目录
+            string customDir = GetCustomDataDirectoryFromGlobalConfig();
+            // 判断自定义目录是否非空有效
+            if (!string.IsNullOrWhiteSpace(customDir))
+            {
+                try
+                {
+                    // 若配置的文件夹尚不存在则自动创建
+                    if (!Directory.Exists(customDir))
+                    {
+                        // 创建目标文件夹
+                        Directory.CreateDirectory(customDir);
+                    }
+                    // 返回用户自定义的共享数据目录
+                    return customDir;
+                }
+                catch
+                {
+                    // 若自定义目录访问异常 (如网络驱动器脱机或权限不足)，自动降级回退到默认目录
+                }
+            }
+
+            // 2. 回退机制：获取插件当前运行的根物理目录
             string appDir = GetAppDirectory();
 
             // 拼接插件目录下的 data 专用数据与配置文件保存目录
@@ -1133,10 +1305,12 @@ namespace ExcelAddInDemo
         /// 针对单张工作表，根据顶部汇总与明细区域特征校准补齐 4 个定义名称
         /// 规则 6: Cab_Sum_k (汇总行), Cab_Det_k (信息行), Cab_Subsum_k (小计行), Cab_Tolsum_k (总计行)
         /// 规则 7: 采用数组一次性读到内存
+        /// 架构优化：内置健康嗅探守门（Lazy Check），健康完好时耗时 0ms 直接跳过，仅在定义名称缺失或损坏时才执行逆向反推自愈
         /// </summary>
         /// <param name="sheet">目标工作表 COM 引用</param>
-        /// <returns>当前工作表修复的箱柜数量</returns>
-        public static int FixAndFillCabinetNamesForSheet(dynamic sheet)
+        /// <param name="forceRebuild">是否强制全量重建（默认 false，走轻量健康嗅探守门）</param>
+        /// <returns>当前工作表有效/修复的箱柜数量</returns>
+        public static int FixAndFillCabinetNamesForSheet(dynamic sheet, bool forceRebuild = false)
         {
             // 校验工作表入参有效性
             if (sheet == null) return 0;
@@ -1152,6 +1326,69 @@ namespace ExcelAddInDemo
 
                 // 读取顶部汇总行基准起始物理行号配置项 (默认 7)
                 int cabSumStartRow = ConfigManager.Instance.Current.Excel.CabSumRowIndex;
+
+                // 1. 【防御性快速嗅探守门（Lazy Check）】：若非强制重建，优先校验现有定义名称健康度
+                // 若本表已由代码或历史流程正确注册了完备的定义名称，耗时 0ms 直接跳过，彻底消灭性能损耗与启发式反噬
+                if (!forceRebuild)
+                {
+                    try
+                    {
+                        // 尝试获取所属工作簿句柄以支持双作用域扫描
+                        dynamic? parentWb = null;
+                        try { parentWb = sheet.Parent; } catch { }
+
+                        // 快速收集当前表的现有定义名称（注意 autoRebuildIfEmpty 设为 false，杜绝递归触发）
+                        var existingNames = CollectAllDefinedNames(parentWb, sheet, autoRebuildIfEmpty: false);
+                        // 构建现有定义名称映射列表
+                        var existingMap = BuildCabinetMap(existingNames, sheetName, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+
+                        // 校验现有定义名称的健康度与拓扑合法性
+                        if (existingMap != null && existingMap.Count > 0)
+                        {
+                            bool isHealthy = true;
+                            // 逐个箱柜校验锚点有效性
+                            foreach (var cab in existingMap)
+                            {
+                                var anchor = cab.Value;
+                                // 必须具有汇总行锚点，且物理行号合法
+                                if (anchor.Sum == null) { isHealthy = false; break; }
+                                int sRow = Convert.ToInt32(anchor.Sum.Row);
+                                if (sRow < cabSumStartRow) { isHealthy = false; break; }
+
+                                // 若具有明细行锚点，明细行物理行必须严格位于汇总行下方
+                                if (anchor.Det != null)
+                                {
+                                    int dRow = Convert.ToInt32(anchor.Det.Row);
+                                    if (dRow <= sRow) { isHealthy = false; break; }
+
+                                    // 若包含小计行锚点，必须位于明细表头行下方
+                                    if (anchor.Subsum != null)
+                                    {
+                                        int subRow = Convert.ToInt32(anchor.Subsum.Row);
+                                        if (subRow <= dRow) { isHealthy = false; break; }
+
+                                        // 若包含总计行锚点，必须位于或等于小计行下方
+                                        if (anchor.Tolsum != null)
+                                        {
+                                            int tolRow = Convert.ToInt32(anchor.Tolsum.Row);
+                                            if (tolRow < subRow) { isHealthy = false; break; }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 若现有定义名称全部健康完好，耗时 0ms 直接返回现有箱柜数量，跳过后续所有 UsedRange 遍历与正则推导
+                            if (isHealthy)
+                            {
+                                return existingMap.Count;
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // 嗅探阶段若遇任何异常，安全兜底放行至后续标准反推自愈流程
+                    }
+                }
 
                 // 获取工作表已用区域 UsedRange
                 dynamic usedRange = sheet.UsedRange;

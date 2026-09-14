@@ -57,8 +57,8 @@ namespace ExcelAddInDemo
             // 设置窗体标题为“我的企业设置”
             this.Text = "我的企业设置";
 
-            // 设置窗体显示尺寸为 880x680 像素
-            this.ClientSize = new Size(880, 680);
+            // 设置窗体显示尺寸为 880x720 像素 (适配新增数据配置目录设置区域)
+            this.ClientSize = new Size(880, 720);
 
             // 设置窗体在屏幕正中央居中弹出
             this.StartPosition = FormStartPosition.CenterScreen;
@@ -217,6 +217,12 @@ namespace ExcelAddInDemo
                         SelectLogoImage();
                         break;
 
+                    // 选择本地数据配置存储共享目录
+                    case "selectDataDirectory":
+                        // 调用文件夹浏览对话框选择配置存储目录
+                        SelectDataDirectoryFolder();
+                        break;
+
                     // 保存配置：前端提交保存最新的企业设置
                     case "saveSettings":
                         // 解析获取 data 数据节点
@@ -362,6 +368,62 @@ namespace ExcelAddInDemo
             });
             dialogThread.SetApartmentState(System.Threading.ApartmentState.STA);
             dialogThread.IsBackground = true;
+            dialogThread.Start();
+        }
+
+        /// <summary>
+        /// 弹出本地文件夹浏览对话框选择数据配置存储目录并将所选路径发送至前端
+        /// 遵循规范：独立 STA 线程异步执行，绝不阻塞主消息循环与 WebView2 渲染管道
+        /// </summary>
+        private void SelectDataDirectoryFolder()
+        {
+            // 启动独立 STA 工作线程打开 FolderBrowserDialog
+            var dialogThread = new System.Threading.Thread(() =>
+            {
+                try
+                {
+                    // 实例化 FolderBrowserDialog 对话框对象
+                    using var dialog = new FolderBrowserDialog
+                    {
+                        // 设置文件夹选择对话框的提示说明文本 --硬编码--
+                        Description = "请选择数据与配置文件存储目录（用于存放调价公式、企业设置、物料库等，支持局域网共享目录）",
+                        // 允许用户在对话框中新建文件夹
+                        ShowNewFolderButton = true,
+                        // 设置对话框根目录为桌面，方便用户选择任意驱动器或网络位置
+                        RootFolder = Environment.SpecialFolder.Desktop
+                    };
+
+                    // 模态弹窗在独立工作线程中运行，绝不冻结宿主窗体
+                    if (dialog.ShowDialog() == DialogResult.OK)
+                    {
+                        // 提取用户选定的文件夹绝对路径
+                        string selectedDir = dialog.SelectedPath;
+
+                        // 校验路径有效性
+                        if (!string.IsNullOrWhiteSpace(selectedDir))
+                        {
+                            // 构造回发给前端更新数据目录的 JSON 消息并在主线程推送
+                            SafeInvoke(() =>
+                            {
+                                // 封装回显消息对象
+                                var msg = new { action = "setDataDirectory", dataDirectory = selectedDir };
+                                // 跨线程安全推送至 WebView2
+                                PostWebMessageSafe(JsonSerializer.Serialize(msg));
+                            });
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // 记录异常日志
+                    LogHelper.WriteLog($"[EnterpriseSettingsForm] SelectDataDirectoryFolder 异常: {ex.Message}");
+                }
+            });
+            // 设置单线程单元 (STA) 属性以满足 COM/Shell 对话框要求
+            dialogThread.SetApartmentState(System.Threading.ApartmentState.STA);
+            // 标记为后台线程，不阻止主应用退出
+            dialogThread.IsBackground = true;
+            // 启动线程
             dialogThread.Start();
         }
 
