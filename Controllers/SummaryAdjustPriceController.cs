@@ -242,7 +242,7 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
-        /// 切换指定列区域的显示或隐藏（例如 F:P 或 Q:W）
+        /// 切换指定列区域的显示或隐藏（例如 E:E, G:H, J:K, M:M, O:O, Q:S）
         /// </summary>
         /// <param name="targetRange">列区域范围字符串</param>
         /// <param name="hidden">是否隐藏</param>
@@ -251,6 +251,12 @@ namespace ExcelAddInDemo.Controllers
         {
             try
             {
+                // 若未传入列范围则默认使用 EGHJKMOQRS 目标列范围 --硬编码--
+                if (string.IsNullOrWhiteSpace(targetRange))
+                {
+                    targetRange = "E:E, G:H, J:K, M:M, O:O, Q:S";
+                }
+
                 // 调用 ExcelServices 底层服务执行列隐藏/显示
                 bool success = ExcelServices.SetSheetColumnsHidden(targetRange, hidden);
 
@@ -288,24 +294,25 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
-        /// 获取当前活动工作表中价格列 (G:O) 的隐藏状态
+        /// 获取当前活动工作表中目标列 (EGHJKMOQRS) 的隐藏状态
         /// </summary>
         /// <returns>JSON 响应报文</returns>
         public string GetColumnsHiddenStatus()
         {
             try
             {
-                // 调用 ExcelServices 底层服务读取价格列隐藏状态
-                bool hidePrice = ExcelServices.GetSheetColumnsHiddenStatus();
+                // 调用 ExcelServices 底层服务读取目标列隐藏状态
+                bool isHidden = ExcelServices.GetSheetColumnsHiddenStatus();
 
-                // 封装结构化响应结果
+                // 封装结构化响应结果（同时提供 hideTargetColumns 与旧版兼容字段 hidePriceColumns）
                 var response = new
                 {
                     action = "onColumnsHiddenStatusLoaded",
                     success = true,
                     data = new
                     {
-                        hidePriceColumns = hidePrice
+                        hideTargetColumns = isHidden,
+                        hidePriceColumns = isHidden
                     }
                 };
 
@@ -324,6 +331,7 @@ namespace ExcelAddInDemo.Controllers
                     success = false,
                     data = new
                     {
+                        hideTargetColumns = false,
                         hidePriceColumns = false
                     },
                     message = ex.Message

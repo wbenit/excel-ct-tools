@@ -463,34 +463,58 @@ namespace ExcelAddInDemo.Forms
         }
 
         /// <summary>
+        /// 线程安全地在 UI 主线程执行委托 (严格遵循 Local Heuristics 规范 10)
+        /// </summary>
+        private void SafeInvoke(Action action)
+        {
+            // 防御性校验当前窗体是否已被释放或句柄尚未创建
+            if (this.IsDisposed || !this.IsHandleCreated) return;
+
+            // 检测当前调用是否需要跨线程切回 UI 调度
+            if (this.InvokeRequired)
+            {
+                // 异步将委托推入 UI 主线程消息循环执行
+                this.BeginInvoke(action);
+            }
+            else
+            {
+                // 若已处于主线程直接同步调用
+                action();
+            }
+        }
+
+        /// <summary>
         /// 线程安全地向前端 WebView2 发送 JSON 格式的回调消息
+        /// 严格在 UI 主线程中校验与调用 CoreWebView2，杜绝 InvalidOperationException
         /// </summary>
         private void PostMessageSafe(string action, object? data)
         {
-            if (this.IsDisposed || _webView.IsDisposed || _webView.CoreWebView2 == null) return;
-
-            // 切回 UI 主线程发送消息
-            this.BeginInvoke(new Action(() =>
+            // 切回 UI 主线程后再执行组件检查与消息发送
+            SafeInvoke(() =>
             {
                 try
                 {
-                    // 封装统一的回调信封
+                    // 在主线程中安全校验 WebView2 控件及其内核实例生命周期
+                    if (this.IsDisposed || _webView.IsDisposed || _webView.CoreWebView2 == null) return;
+
+                    // 封装统一的回调信封实体
                     var envelope = new
                     {
                         action = action,
                         data = data
                     };
 
-                    // 序列化
+                    // 按照指定选项序列化为 JSON 字符串
                     string json = JsonSerializer.Serialize(envelope, JsonOptions);
-                    // 投递给 JavaScript 端
+                    // 安全投递给前端 JavaScript 监听器
                     _webView.CoreWebView2.PostWebMessageAsJson(json);
                 }
                 catch (Exception ex)
                 {
+                    // 记录消息投递异常日志
                     LogHelper.WriteLog($"[CloudSolutionForm] 投递消息失败: {ex.Message}");
                 }
-            }));
+            });
         }
 
         /// <summary>

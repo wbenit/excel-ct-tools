@@ -2862,9 +2862,16 @@
               <span style="font-size: 13px; color: #475569">个回路</span>
             </div>
 
-            <!-- 核心一键插入箱柜按钮 (带醒目图标) -->
-            <button class="btn-img-orange" @click="onInsertCurrentDetail" title="将当前方案勾选的 BOM 元器件插入当前活动 Excel 分类表">
-              <i class="fa-solid fa-arrow-down-to-bracket" style="margin-right: 4px"></i> 插入箱柜
+            <!-- 核心一键插入箱柜按钮 (带醒目图标与极速加载动画) -->
+            <button
+              class="btn-img-orange"
+              @click="onInsertCurrentDetail"
+              :disabled="isInsertingBom"
+              :style="{ opacity: isInsertingBom ? 0.75 : 1, cursor: isInsertingBom ? 'not-allowed' : 'pointer' }"
+              title="将当前方案勾选的 BOM 元器件插入当前活动 Excel 分类表"
+            >
+              <i :class="isInsertingBom ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-arrow-down-to-bracket'" style="margin-right: 4px"></i>
+              {{ isInsertingBom ? '正在写入...' : '插入箱柜' }}
             </button>
           </div>
         </div>
@@ -3680,8 +3687,9 @@
           // 拖拽起始鼠标 X 绝对坐标
           const panStartX = ref(0);
           // 拖拽起始鼠标 Y 绝对坐标
-          const panStartY = ref(0);
           const loopMultiplier = ref(1);
+          // 是否正在向 Excel 写入 BOM 元器件列表
+          const isInsertingBom = ref(false);
           // 计算 BOM 是否处于半选状态
           const isBomIndeterminate = computed(() => {
             if (
@@ -3796,20 +3804,52 @@
             dirSettingDialogVisible.value = true;
           };
 
+          // 浏览目录探测轮询定时器句柄
+          let browsePollTimer = null;
+
           // 点击浏览目录按钮
           const onBrowseSecondaryDir = () => {
+            // 清理可能遗留的旧轮询定时器
+            if (browsePollTimer) {
+              clearInterval(browsePollTimer);
+              browsePollTimer = null;
+            }
+
+            // 向 C# 宿主发送弹出原生文件夹选择框请求
             postToHost("selectSecondaryCircuitDir");
+
+            // 启动轻量防御性主动轮询 (每 800ms 探测一次配置更新，共探测 15 次)
+            let pollCount = 0;
+            browsePollTimer = setInterval(() => {
+              pollCount++;
+              // 若超过上限或弹窗已关闭则停止轮询
+              if (pollCount > 15 || !dirSettingDialogVisible.value) {
+                clearInterval(browsePollTimer);
+                browsePollTimer = null;
+                return;
+              }
+              // 主动向宿主查询最新保存的二次图纸根目录
+              loadSecondaryCircuitConfig();
+            }, 800);
           };
 
           // 应用手动输入的目录
           const onApplyManualDir = () => {
+            // 校验输入框内容是否为空
             if (!inputSecondaryDir.value || !inputSecondaryDir.value.trim()) {
               ElementPlus.ElMessage.warning("请输入有效的文件夹路径！");
               return;
             }
+            // 停止轮询定时器
+            if (browsePollTimer) {
+              clearInterval(browsePollTimer);
+              browsePollTimer = null;
+            }
+            // 向 C# 宿主发送持久化保存指令
             postToHost("setSecondaryCircuitDirManual", {
               path: inputSecondaryDir.value.trim(),
             });
+            // 关闭目录配置弹窗
             dirSettingDialogVisible.value = false;
           };
 
@@ -4609,20 +4649,73 @@
 
           // 插入当前方案 BOM 到 Excel
           const onInsertCurrentDetail = () => {
+            // 防御性校验当前详情对象是否存在
             if (!currentDetail.value) return;
+
+            // 过滤提取所有被选中的 BOM 元器件条目
             const selectedItems = (currentDetail.value.bomItems || []).filter(
               (item) => item.selected,
             );
+
+            // 若未勾选任何元器件则拦截并提示
             if (selectedItems.length === 0) {
               ElementPlus.ElMessage.warning("请至少勾选一项 BOM 元器件！");
               return;
             }
+
+            // 规范化选中的 BOM 列表，将 id 与数值严格格式化为安全类型，彻底杜绝反序列化类型冲突
+            const normalizedItems = selectedItems.map((item, idx) => ({
+              ...item,
+              // 强制将数字或时间戳 id 转换为纯字符串
+              id: String(item.id ?? (Date.now() + idx)),
+              // 强制转换关联方案主键为字符串
+              schemeId: String(item.schemeId ?? currentDetail.value.id ?? ""),
+              // 确保元件名称非空
+              name: String(item.name || "元件"),
+              // 确保规格型号非空
+              model: String(item.model || ""),
+              // 确保品牌信息规范
+              brand: String(item.brand || currentDetail.value.brand || ""),
+              // 确保单位非空
+              unit: String(item.unit || "只"),
+              // 确保序号为合法数字
+              sortOrder: Number(item.sortOrder) || (idx + 1),
+              // 确保数量为数值类型
+              quantity: Number(item.quantity) || 1,
+              // 确保布尔标志有效
+              isWlDoubled: Boolean(item.isWlDoubled),
+              // 确保价格数值合法
+              catalogPrice: Number(item.catalogPrice ?? item.quotePrice ?? 0),
+              // 确保进货折扣率合法
+              discount: Number(item.discount) || 1.0,
+              // 确保报价折扣率合法
+              quoteDiscount: Number(item.quoteDiscount) || 1.0,
+              // 确保报价单价合法
+              quotePrice: Number(item.quotePrice ?? item.unitPrice ?? 0),
+            }));
+
+            // 组装插入请求传输 DTO 实体
             const dto = {
-              schemeId: currentDetail.value.id,
-              loopMultiplier: loopMultiplier.value,
-              insertMode: "newCabinet",
-              selectedBomItems: selectedItems,
+              // 方案主键转为纯字符串
+              schemeId: String(currentDetail.value.id || ""),
+              // 传递方案名称作为默认箱柜名称
+              schemeName: String(currentDetail.value.schemeName || currentDetail.value.dwgName || "二次方案"),
+              // 回路倍增器系数
+              loopMultiplier: Number(loopMultiplier.value) || 1,
+              // 插入模式: 优先写入当前活动箱柜
+              insertMode: "currentCabinet",
+              // 规范化后的安全 BOM 列表
+              selectedBomItems: normalizedItems,
             };
+
+            // 激活前端写入加载动画并防止二次重复点击
+            isInsertingBom.value = true;
+            // 设置 8 秒安全超时保护兜底
+            setTimeout(() => {
+              if (isInsertingBom.value) isInsertingBom.value = false;
+            }, 8000);
+
+            // 发送给 C# 后端执行插入操作
             postToHost("insertSchemeToExcel", dto);
           };
 
@@ -4749,12 +4842,22 @@
             }
           };
 
-          // 监听 C# 回传的消息响应
-          window.addEventListener("DOMContentLoaded", () => {
-            if (window.chrome?.webview) {
-              window.chrome.webview.addEventListener("message", (event) => {
-                const envelope = event.data;
+          // 消息监听器是否已挂载标识，防止重复注册监听
+          let isMsgListenerBound = false;
+
+          // 注册并监听 C# WebView2 回传的消息响应中心
+          const initWebMessageListener = () => {
+            // 防御性校验是否已绑定以及宿主信使对象是否存在
+            if (isMsgListenerBound || !window.chrome?.webview) return;
+
+            // 监听宿主发送的 message 原生事件
+            window.chrome.webview.addEventListener("message", (event) => {
+              try {
+                // 安全兼容反序列化 JSON 文本与原生对象
+                const envelope = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+                // 空校验拦截
                 if (!envelope) return;
+                // 解构动作标识与响应负载
                 const { action, data } = envelope;
 
                 // 1. 查询方案列表响应
@@ -4829,6 +4932,7 @@
                 }
                 // 5. 插入 Excel 响应
                 else if (action === "insertSchemeToExcelResult") {
+                  isInsertingBom.value = false;
                   if (data.success) {
                     ElementPlus.ElMessage.success(data.message || "插入成功！");
                   } else {
@@ -4837,21 +4941,32 @@
                 }
                 // 6. 二次方案图纸根目录配置回传
                 else if (action === "getSecondaryCircuitConfigResult") {
-                  if (data && data.rootDir) {
-                    secondaryDwgRootDir.value = data.rootDir;
-                    inputSecondaryDir.value = data.rootDir;
+                  const rDir = (data?.rootDir || data?.RootDir || "").trim();
+                  if (rDir) {
+                    // 同步二次回路根目录变量
+                    secondaryDwgRootDir.value = rDir;
+                    // 同步反显至弹窗输入框中
+                    inputSecondaryDir.value = rDir;
+                    // 自动执行子文件夹树扫描
                     scanSecondaryFolders();
                   }
                 }
-                // 7. 弹窗或手动设置目录结果
+                // 7. 弹窗或手动设置目录结果 (点击浏览选择或手动保存)
                 else if (action === "selectSecondaryCircuitDirResult") {
-                  if (data.success && data.path) {
-                    secondaryDwgRootDir.value = data.path;
-                    inputSecondaryDir.value = data.path;
-                    ElementPlus.ElMessage.success("已设置二次回路图纸目录！");
+                  const isSuccess = Boolean(data?.success ?? data?.Success);
+                  const chosenPath = (data?.path || data?.Path || "").trim();
+                  if (isSuccess && chosenPath) {
+                    // 同步保存根目录至本地响应式状态
+                    secondaryDwgRootDir.value = chosenPath;
+                    // 立即将选定的物理路径反显在弹窗当前的 input 框中
+                    inputSecondaryDir.value = chosenPath;
+                    // 给出明确的操作成功反馈通知
+                    ElementPlus.ElMessage.success("已成功选择并设置二次回路图纸目录！");
+                    // 自动触发扫描子文件夹与 DWG 方案卡片
                     scanSecondaryFolders();
-                  } else if (!data.success && data.message) {
-                    ElementPlus.ElMessage.warning(data.message);
+                  } else if (data && !isSuccess && (data.message || data.Message)) {
+                    // 提示目录校验异常警告信息
+                    ElementPlus.ElMessage.warning(data.message || data.Message);
                   }
                 }
                 // 8. 扫描子文件夹列表回传
@@ -4985,11 +5100,34 @@
                     vectorCadLoading.value = false;
                   }
                 }
-              });
-            }
-            // 首次启动拉取方案列表并预读二次方案目录配置
+              } catch (msgErr) {
+                // 记录接收处理异常
+                console.error("[WebMessage] 处理异常:", msgErr);
+              }
+            });
+
+            // 标记已成功绑定监听
+            isMsgListenerBound = true;
+          };
+
+          // 尝试在 setup 初始化时直接执行初次注册
+          initWebMessageListener();
+
+          // 挂载 Vue 3 生命周期钩子 (彻底摆脱失效的 DOMContentLoaded)
+          onMounted(() => {
+            // 防御性再次确保消息监听器就绪
+            initWebMessageListener();
+            // 首次启动拉取方案列表数据
             fetchSchemes();
+            // 读取已持久化的二次方案本地图纸根目录
             loadSecondaryCircuitConfig();
+            // 监听窗口获焦事件，当用户从系统文件夹选择窗口切回时主动同步一次配置
+            window.addEventListener("focus", () => {
+              // 仅当目录设置弹窗处于展示状态时执行探测同步
+              if (dirSettingDialogVisible.value) {
+                loadSecondaryCircuitConfig();
+              }
+            });
           });
 
           return {
@@ -5014,6 +5152,7 @@
             imgScale,
             imgRotation,
             loopMultiplier,
+            isInsertingBom,
             allBomChecked,
             isBomIndeterminate,
             selectedCount,

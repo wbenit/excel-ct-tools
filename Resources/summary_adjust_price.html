@@ -787,11 +787,11 @@
             </div>
           </div>
 
-          <!-- 中间复选框控制区：控制价格列隐藏 -->
+          <!-- 中间复选框控制区：控制指定列隐藏 -->
           <div class="editor-checkbox-group">
-            <!-- 隐藏价格列(G~O) 复选框 (显式闭合标签) -->
-            <el-checkbox class="theme-checkbox" v-model="hidePriceColumns" @change="handleTogglePriceColumns">
-              隐藏价格列(G~O)
+            <!-- 隐藏EGHJKMOQRS列 复选框 (显式闭合标签) -->
+            <el-checkbox class="theme-checkbox" v-model="hideTargetColumns" @change="handleToggleTargetColumns" title="隐藏E、G、H、J、K、M、O、Q、R、S列">
+              隐藏EGHJKMOQRS列
             </el-checkbox>
           </div>
 
@@ -845,8 +845,9 @@
         // 缓存上一次成功生成的完整配置参数
         const lastSummaryConfig = ref(null);
 
-        // 列隐藏控制状态 (仅保留价格列 F~P 隐藏控制)
-        const hidePriceColumns = ref(false);
+        // 目标列隐藏控制状态 (控制 EGHJKMOQRS 列隐藏)
+        const hideTargetColumns = ref(false);
+        const hidePriceColumns = hideTargetColumns; // 向后兼容别名
 
         // 合并条件配置
         const mergeOpts = ref({
@@ -1010,16 +1011,17 @@
           fetchColumnsHiddenStatus();
         };
 
-        // 切换价格列 (G~O) 隐藏状态
-        const handleTogglePriceColumns = (val) => {
+        // 切换目标列 (EGHJKMOQRS) 隐藏状态
+        const handleToggleTargetColumns = (val) => {
           if (window.chrome && window.chrome.webview) {
             window.chrome.webview.postMessage(JSON.stringify({
               action: 'toggleColumnsVisibility',
-              targetRange: 'G:O',
+              targetRange: 'E:E, G:H, J:K, M:M, O:O, Q:S',
               hidden: val
             }));
           }
         };
+        const handleTogglePriceColumns = handleToggleTargetColumns; // 向后兼容别名
 
         // 主动向 C# 获取当前活动工作表的列隐藏状态
         const fetchColumnsHiddenStatus = () => {
@@ -1208,7 +1210,8 @@
                 // 4. 列隐藏状态加载返回
                 else if (response.action === 'onColumnsHiddenStatusLoaded') {
                   if (response.success && response.data) {
-                    hidePriceColumns.value = !!response.data.hidePriceColumns;
+                    const isHidden = response.data.hideTargetColumns !== undefined ? response.data.hideTargetColumns : response.data.hidePriceColumns;
+                    hideTargetColumns.value = !!isHidden;
                   }
                 }
                 // 5. 列隐藏操作结果返回
@@ -1241,6 +1244,7 @@
           updating,
           progressPercent,
           progressMessage,
+          hideTargetColumns,
           hidePriceColumns,
           mergeOpts,
           displayOpts,
@@ -1256,6 +1260,7 @@
           closeWindow,
           switchToConfigView,
           switchToEditorView,
+          handleToggleTargetColumns,
           handleTogglePriceColumns,
           fetchColumnsHiddenStatus,
           refreshData,

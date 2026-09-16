@@ -133,11 +133,12 @@ namespace ExcelAddInDemo
                     queryParams.Add($"Name={Uri.EscapeDataString(cleanName)}");
                 }
 
-                // 2. 处理电流参数 (提取纯整型数字，如 "32A" ➔ 32)
+                // 2. 处理电流参数 (提取纯整型数字，如 "32A" ➔ 32，向上兼容大于等于指定电流)
                 int? parsedCurrent = ExtractIntegerCurrent(current);
                 if (parsedCurrent.HasValue)
                 {
-                    queryParams.Add($"Current={parsedCurrent.Value}");
+                    // 传递 MinCurrent 参数兼容后端大于等于查询 (避免线上旧接口因等于匹配导致筛选结果为空)
+                    queryParams.Add($"MinCurrent={parsedCurrent.Value}");
                 }
 
                 // 3. 处理极数参数 (剥离末尾 P 字符，如 "4P" ➔ "4")
@@ -168,9 +169,10 @@ namespace ExcelAddInDemo
                     queryParams.Add($"Keyword={Uri.EscapeDataString(kw)}");
                 }
 
-                // 7. 设置分页请求大小为 20 条
+                // 7. 设置分页拉取大小 (若指定了电流过滤则适当放大单次拉取量，以便完整获取多规格阶梯)
                 queryParams.Add("PageIndex=1");
-                queryParams.Add($"PageSize={maxResults}"); // --硬编码-- 第一层接口仅获取前20条数据
+                int fetchSize = parsedCurrent.HasValue ? Math.Max(maxResults, 100) : maxResults; // --硬编码: 批量拉取上限--
+                queryParams.Add($"PageSize={fetchSize}");
 
                 // 组合拼接完整的请求 URL 地址
                 string queryString = string.Join("&", queryParams);
@@ -228,6 +230,32 @@ namespace ExcelAddInDemo
                     }).ToList();
                 }
 
+                // 10. 全局过滤管道第四层: 额定电流大于等于过滤 (修改为大于等于指定电流的都展示)
+                if (parsedCurrent.HasValue)
+                {
+                    // 提取目标基准电流阈值 (如 225A)
+                    int targetCurVal = parsedCurrent.Value;
+                    // 过滤保留额定电流大于等于该数值的所有物料
+                    items = items.Where(item =>
+                    {
+                        // 优先使用实体自带的结构化 current 字段比对
+                        if (item.Current.HasValue)
+                        {
+                            return item.Current.Value >= targetCurVal;
+                        }
+                        // 兜底尝试从型号文本提取电流数字比对
+                        int? curFromModel = ExtractIntegerCurrent(item.Model);
+                        return curFromModel.HasValue && curFromModel.Value >= targetCurVal;
+                    }).ToList();
+                }
+
+                // 11. 按电流大小升序排序 (优先展示最接近且大于等于该电流的标准规格，缺失电流排在末尾)
+                items = items.OrderBy(item => item.Current ?? ExtractIntegerCurrent(item.Model) ?? int.MaxValue)
+                             .ThenBy(item => item.Price)
+                             .ThenBy(item => item.Model)
+                             .ToList();
+
+                // 截取指定条数返回
                 return items.Take(maxResults).ToList();
             }
             catch (Exception ex)
@@ -609,14 +637,16 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 从电流字符串中提取纯数字整型 (如 "32A", "100A", "32" ➔ 32)
+        /// 从电流字符串中提取纯数字整型 (如 "32A", "100A", "≥225", "32" ➔ 32)
         /// </summary>
         public static int? ExtractIntegerCurrent(string? currentStr)
         {
             if (string.IsNullOrWhiteSpace(currentStr)) return null;
 
-            // 清洗字符串
+            // 清洗字符串并去除可能存在的符号与单位
             string clean = currentStr.Trim().ToUpper();
+            // 剥离可能存在的比较符或空格 (如 "≥225", ">=225", ">225")
+            clean = clean.TrimStart('≥', '>', '=', ' ');
             if (clean.EndsWith("A"))
             {
                 clean = clean.Substring(0, clean.Length - 1).Trim();
@@ -632,6 +662,13 @@ namespace ExcelAddInDemo
             if (double.TryParse(clean, out double dVal))
             {
                 return (int)Math.Round(dVal);
+            }
+
+            // 正则匹配型号文本中的电流数字 (如 CDQ1s-100/4P 32A 或 /100A)
+            var m = System.Text.RegularExpressions.Regex.Match(currentStr, @"(\d+)\s*A\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (m.Success && int.TryParse(m.Groups[1].Value, out int regCur))
+            {
+                return regCur;
             }
 
             return null;

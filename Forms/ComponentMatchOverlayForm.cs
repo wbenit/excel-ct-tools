@@ -470,18 +470,84 @@ namespace ExcelAddInDemo.Forms
                         }
                         break;
 
-                    // 3. 用户确认选择某一条物料 -> 先隐藏窗口，后台执行 Excel 回填
+                    // 3. 用户确认选择某一条物料 -> 先回填主体至 Excel，若有配套附件则自动进入附件选择，无附件则关闭窗口
                     case "selectComponent":
-                        SafeInvoke(this.Hide);
                         if (root.TryGetProperty("item", out var itemProp))
                         {
                             var selectedItem = JsonSerializer.Deserialize<ComponentApiDto>(itemProp.GetRawText(), JsonOptions);
                             if (selectedItem != null && _targetCell != null)
                             {
-                                // 调用业务服务层执行单元格所在行多列回填
+                                // 1. 立即回填主体元器件至当前活动行单元格 (B列名称、D列型号、G列单价等立即落地落盘)
                                 ExcelServices.FillSelectedComponentToActiveRow(selectedItem, _targetCell);
+
+                                // 2. 同步更新上下文参数中的主体型号、单价与名称
+                                _cellParams.CurrentModel = selectedItem.Model ?? string.Empty;
+                                _cellParams.CurrentPrice = selectedItem.Price > 0 ? selectedItem.Price.ToString("F2") : string.Empty;
+                                if (!string.IsNullOrWhiteSpace(selectedItem.Name))
+                                {
+                                    _cellParams.Name = selectedItem.Name;
+                                }
+
+                                // 3. 提取用于查询配套附件的品牌、名称与主体型号
+                                string hostBrand = !string.IsNullOrWhiteSpace(selectedItem.Brand)
+                                    ? selectedItem.Brand
+                                    : (_filterConfig.SelectedBrand ?? _cellParams.Brand ?? string.Empty);
+                                string hostName = selectedItem.Name ?? _cellParams.Name ?? string.Empty;
+                                string hostModel = selectedItem.Model ?? string.Empty;
+
+                                // 4. 在后台异步探测并拉取当前选定元器件的配套附件
+                                Task.Run(async () =>
+                                {
+                                    try
+                                    {
+                                        List<ComponentApiDto> attachmentList;
+                                        bool isPersonal = string.Equals(_filterConfig.DataSource, "personal", StringComparison.OrdinalIgnoreCase);
+                                        if (isPersonal)
+                                        {
+                                            // 从本地个人库 SQLite 查询配套附件
+                                            attachmentList = PersonalComponentDbService.GetAttachments(hostBrand, hostName, hostModel);
+                                        }
+                                        else
+                                        {
+                                            // 从云端商城 WebAPI 异步检索配套附件
+                                            attachmentList = await ComponentApiClient.GetAttachmentsAsync(hostBrand, hostName, hostModel).ConfigureAwait(false);
+                                        }
+
+                                        // 切回 UI 主线程分流处理
+                                        SafeInvoke(() =>
+                                        {
+                                            // 校验窗体可用状态，若已被用户关闭则不再打扰
+                                            if (this.IsDisposed || !this.Visible) return;
+
+                                            if (attachmentList != null && attachmentList.Count > 0)
+                                            {
+                                                // 分支 A: 存在配套附件 -> 保持悬浮窗显示，通知前端无缝切入附件选配模式
+                                                PostMessageToWeb(new
+                                                {
+                                                    action = "autoEnterAttachmentMode",
+                                                    items = attachmentList,
+                                                    currentModel = hostModel,
+                                                    brand = hostBrand,
+                                                    name = hostName
+                                                });
+                                            }
+                                            else
+                                            {
+                                                // 分支 B: 无配套附件 -> 顺畅隐藏关闭悬浮窗，完成主体回填闭环
+                                                this.Hide();
+                                            }
+                                        });
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        LogHelper.WriteLog($"[ComponentMatchOverlayForm] 自动探查配套附件异常: {ex.Message}");
+                                        SafeInvoke(this.Hide);
+                                    }
+                                });
+                                break;
                             }
                         }
+                        SafeInvoke(this.Hide);
                         break;
 
                     // 3.1 用户请求加载当前物料的配套附件列表 (支持个人库与云端分流)

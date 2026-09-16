@@ -11,12 +11,22 @@ namespace ExcelAddInDemo.Controllers
     public class CloudSolutionController
     {
         // 通用 JSON 序列化配置参数
-        private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
+        private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+
+        // 构建全局 JSON 选项实例并挂载宽松反序列化转换器
+        private static JsonSerializerOptions CreateJsonOptions()
         {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            PropertyNameCaseInsensitive = true,
-            WriteIndented = false
-        };
+            // 实例化基础序列化配置
+            var opt = new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                PropertyNameCaseInsensitive = true,
+                WriteIndented = false
+            };
+            // 挂载宽容字符串转换器，杜绝数字与字符串类型不匹配
+            opt.Converters.Add(new FlexibleStringConverter());
+            return opt;
+        }
 
         /// <summary>
         /// 分页多维检索方案列表

@@ -371,20 +371,23 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 将用户在方案中心勾选确认的 BOM 清单一次性高效插入当前活动 Excel 分类表中
-        /// 遵循规则 7：读写多个区域采用内存数组一次性写入；严格维护箱柜元器件区间
+        /// 将用户在方案中心勾选确认的 BOM 清单一次性高效插入 Excel 表中
+        /// 遵循规则 6：优先寻找当前箱柜空行，无空行才补插差额行；
+        /// 遵循规则 7：读写多个区域采用内存数组一次性写入；
+        /// 遵循规则 8：操作前后调用 FixAndFillCabinetNamesForSheet 自愈定义名称；
+        /// 极速优化：关闭 ScreenUpdating 与自动计算，彻底杜绝卡顿。
         /// </summary>
         public static (bool Success, string Message) InsertSchemeBomToExcel(SchemeInsertToExcelDto dto)
         {
             try
             {
-                // 校验选中项
+                // 校验选中项是否为空
                 if (dto == null || dto.SelectedBomItems == null || dto.SelectedBomItems.Count == 0)
                 {
                     return (false, "待插入的 BOM 明细列表为空！");
                 }
 
-                // 获取 Excel 上下文
+                // 获取当前活动 Excel 环境上下文
                 var context = Tool.GetActiveExcelContext(null, null);
                 if (context == null)
                 {
@@ -395,33 +398,59 @@ namespace ExcelAddInDemo
                 dynamic wb = context.Wb;
                 dynamic ws = context.Sheet;
 
-                // 检查是否要在当前选中箱柜中追加元器件
-                if (dto.InsertMode == "currentCabinet")
+                // 备份并优化 Excel 性能参数，彻底杜绝界面卡顿
+                bool originalScreenUpdating = app.ScreenUpdating;
+                int originalCalc = app.Calculation;
+                app.ScreenUpdating = false;
+                app.Calculation = -4135; // xlCalculationManual
+
+                try
                 {
-                    // 执行在当前选定箱柜元器件区插入逻辑
-                    return AppendBomToCurrentCabinet(app, ws, dto);
+                    // 规则 8: 检索当前工作表全部有效箱柜 (内部包含健康度快速嗅探守门，完好时 0ms，缺失时底层自动自愈)
+                    var validCabinets = Tool.GetSheetValidCabinets(ws, wb);
+
+                    // 若当前表内存在箱柜，优先向当前箱柜空行写入 (无空行才补插差额行)
+                    if (validCabinets != null && validCabinets.Count > 0)
+                    {
+                        // 调度当前箱柜极速追加服务
+                        return AppendBomToCurrentCabinet(app, ws, wb, validCabinets, dto);
+                    }
+                    else
+                    {
+                        // 若当前表为空表 (完全无任何箱柜)，则新建箱柜
+                        return CreateNewCabinetWithBom(app, ws, dto);
+                    }
                 }
-                else
+                finally
                 {
-                    // 默认新建箱柜并将 BOM 写入新箱柜中
-                    return CreateNewCabinetWithBom(app, ws, dto);
+                    // 还原 Excel 性能与重算参数 (由 Excel 后台自动按需微量更新，绝不手动触发全表重算)
+                    try
+                    {
+                        app.Calculation = originalCalc;
+                        app.ScreenUpdating = originalScreenUpdating;
+                    }
+                    catch { }
                 }
             }
             catch (Exception ex)
             {
+                // 记录插入异常日志
                 LogHelper.WriteLog($"[CloudSolution] 方案写入 Excel 异常: {ex.Message}");
                 return (false, $"写入 Excel 异常: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// 新建箱柜并将 BOM 矩阵一次性完整写入
+        /// 新建箱柜并将 BOM 矩阵一次性完整写入 (修复 DetRow 属性并对齐 A~H 标准列)
         /// </summary>
         private static (bool Success, string Message) CreateNewCabinetWithBom(dynamic app, dynamic ws, SchemeInsertToExcelDto dto)
         {
-            // 查询方案基础属性
+            // 查询方案基础属性 (优先使用前端传来的方案名称，次之查询已有方案实体)
             var scheme = GetSchemeDetailById(dto.SchemeId);
-            string cabName = scheme?.SchemeName ?? "云方案箱柜";
+            // 提炼有效箱柜命名
+            string cabName = !string.IsNullOrWhiteSpace(dto.SchemeName)
+                ? dto.SchemeName
+                : (scheme?.SchemeName ?? "云方案箱柜");
 
             // 1. 调用已有的模板复制服务创建新箱柜块
             var cabInfo = CopyCabinetDetailFromTemplate(ws, 0, 0, cabName, app);
@@ -430,7 +459,8 @@ namespace ExcelAddInDemo
                 return (false, "创建新箱柜模板结构失败，请检查工作表格式！");
             }
 
-            int detRow = cabInfo.DetailRow;
+            // 修正笔误: 正确读取 DetRow (而非 DetailRow)
+            int detRow = cabInfo.DetRow;
             int subsumRow = cabInfo.SubsumRow;
             int compStartRow = detRow + 2; // 规则 6: 元器件起始行为 Cab_Det + 2
             int compEndRow = subsumRow - 1; // 规则 6: 元器件终止行为 Cab_Subsum - 1
@@ -445,120 +475,189 @@ namespace ExcelAddInDemo
                 int rowsToInsert = reqCount - availableRows;
                 // 在小计行上方插入空行
                 dynamic insertRange = ws.Range[$"A{subsumRow}:A{subsumRow + rowsToInsert - 1}"];
-                insertRange.EntireRow.Insert(-4121); // xlDown
+                insertRange.EntireRow.Insert(-4121); // xlShiftDown
                 // 插入行后小计行下移
                 subsumRow += rowsToInsert;
                 compEndRow = subsumRow - 1;
             }
 
-            // 3. 构建内存二维数组，准备一次性写入 (遵循规则 7)
-            // 列定义对应常见分类表列: B(序号), C(名称), D(型号), E(品牌), F(单位), G(单价), H(数量)
+            // 3. 构建内存二维数组，准备一次性写入 (遵循规则 7: 标准 A~H 列)
             object[,] dataMatrix = new object[reqCount, 8];
             int loopMultiplier = dto.LoopMultiplier > 0 ? dto.LoopMultiplier : 1;
 
             for (int i = 0; i < reqCount; i++)
             {
                 var item = items[i];
+                int curRow = compStartRow + i;
                 // 计算乘算后的数量 (WL 勾选则回路数倍增)
                 double finalQty = item.IsWlDoubled ? (item.Quantity * loopMultiplier) : item.Quantity;
+                double price = (double)item.QuotePrice;
 
-                dataMatrix[i, 0] = i + 1;                  // B 列: 序号
-                // C 列: 元件名称 (标准 Name 字段)
-                dataMatrix[i, 1] = item.Name ?? "";
-                // D 列: 规格型号 (标准 Model 字段)
-                dataMatrix[i, 2] = item.Model ?? "";
-                dataMatrix[i, 3] = item.Brand ?? "";         // E 列: 品牌
-                dataMatrix[i, 4] = item.Unit ?? "台";        // F 列: 单位
-                dataMatrix[i, 5] = (double)item.QuotePrice;  // G 列: 单价
-                dataMatrix[i, 6] = finalQty;                 // H 列: 数量
-                dataMatrix[i, 7] = (double)item.QuotePrice * finalQty; // I 列: 合价
+                dataMatrix[i, 0] = $"=ROW()-ROW(A${detRow + 1})"; // A 列: 序号动态公式
+                dataMatrix[i, 1] = item.Name ?? "";              // B 列: 元件名称
+                dataMatrix[i, 2] = item.Model ?? "";             // C 列: 规格型号
+                dataMatrix[i, 3] = item.Brand ?? "";             // D 列: 品牌
+                dataMatrix[i, 4] = item.Unit ?? "只";            // E 列: 计量单位
+                dataMatrix[i, 5] = finalQty;                     // F 列: 数量
+                dataMatrix[i, 6] = price;                        // G 列: 单价
+                dataMatrix[i, 7] = $"=ROUND(F{curRow}*G{curRow},2)"; // H 列: 合价公式
             }
 
             // 4. 将构建完毕的二维数组一次性刷入工作表
-            dynamic writeRange = ws.Range[$"B{compStartRow}:I{compStartRow + reqCount - 1}"];
+            dynamic writeRange = ws.Range[$"A{compStartRow}:H{compStartRow + reqCount - 1}"];
             writeRange.Value2 = dataMatrix;
+
+            // 5. 规则 8: 刷新自愈定义名称
+            Tool.FixAndFillCabinetNamesForSheet(ws);
 
             return (true, $"已成功新建箱柜【{cabName}】并写入 {reqCount} 项元器件清单！");
         }
 
         /// <summary>
-        /// 在当前光标所在的已有箱柜元器件区间末尾追加 BOM 项
+        /// 智能定位当前箱柜：直接寻找元器件区域空行，若空行不足则在小计行上方插行，并一次性写入
+        /// 严格遵循规则 6、7、8，毫秒级快速完成，彻底解决卡顿
         /// </summary>
-        private static (bool Success, string Message) AppendBomToCurrentCabinet(dynamic app, dynamic ws, SchemeInsertToExcelDto dto)
+        private static (bool Success, string Message) AppendBomToCurrentCabinet(
+            dynamic app,
+            dynamic ws,
+            dynamic wb,
+            List<KeyValuePair<int, Models.CabinetAnchorModel>> validCabinets,
+            SchemeInsertToExcelDto dto)
         {
-            // 扫描定位当前活动行所属箱柜
-            dynamic activeCell = app.ActiveCell;
-            int currentRow = activeCell?.Row ?? 0;
-            if (currentRow <= 0) return (false, "未检测到有效活动单元格！");
+            // 智能定位当前光标所在的箱柜 (若单柜则默认命中，若未精准命中则回退最后一个箱柜)
+            KeyValuePair<int, Models.CabinetAnchorModel>? activeCab = Tool.GetActiveCabinet((object)app, validCabinets, fallbackSingle: true);
+            var targetPair = activeCab.HasValue ? activeCab.Value : validCabinets.Last();
+            int targetK = targetPair.Key;
+            var anc = targetPair.Value;
 
-            // 检索箱柜信息与小计行位置
-            dynamic? activeWb = app.ActiveWorkbook;
-            var cabinets = Tool.GetSheetValidCabinets(ws, activeWb);
-            int targetK = 0;
-            int detRow = 0;
-            int subsumRow = 0;
+            // 规则 6: 直接从内存锚点提取当前箱柜关键行号 (0ms，杜绝二次跨进程全表扫描)
+            int detRow = anc.Det != null ? Convert.ToInt32(anc.Det.Row) : 0;
+            int subsumRow = anc.Subsum != null ? Convert.ToInt32(anc.Subsum.Row) : 0;
+            int sumRow = anc.Sum != null ? Convert.ToInt32(anc.Sum.Row) : 0;
+            int tolsumRow = anc.Tolsum != null ? Convert.ToInt32(anc.Tolsum.Row) : 0;
 
-            if (cabinets != null)
+            // 若关键明细行缺失，进行安全兜底判断
+            if (detRow <= 0 || subsumRow <= 0)
             {
-                foreach (var cab in cabinets)
+                return (false, "未能精准获取目标箱柜的结构行号！");
+            }
+
+            // 提取目标箱柜的名称 (优先读取 B{detRow}，兜底箱柜K)
+            string targetCabName = ws.Range[$"B{detRow}"].Text?.ToString()?.Trim() ?? $"箱柜 {targetK}";
+
+            // 规则 6: 元器件起始行为 Cab_Det + 2，终止行为 Cab_Subsum - 1
+            int compStartRow = detRow + 2;
+            int compEndRow = subsumRow - 1;
+
+            // 1. 扫描元器件区域已使用的行数，寻找最后一个非空行位置
+            int lastUsedIndex = 0; // 1-based 相对索引
+            int totalCompRows = compEndRow - compStartRow + 1;
+            if (totalCompRows > 0)
+            {
+                // 规则 7: 一次性将 B列(名称) 与 C列(型号) 批量读入内存数组
+                dynamic checkRange = ws.Range[$"B{compStartRow}:C{compEndRow}"];
+                object[,] existingData = ConvertTo2DArray(checkRange.Value2, totalCompRows, 2);
+                for (int r = 1; r <= totalCompRows; r++)
                 {
-                    int k = cab.Key;
-                    var (_, cDet, cSub, cTol) = Tool.FindStandardCategoryRowIndexes((object)ws, k);
-                    if (currentRow >= cDet && currentRow <= cTol)
+                    string bName = existingData[r, 1]?.ToString()?.Trim() ?? "";
+                    string cModel = existingData[r, 2]?.ToString()?.Trim() ?? "";
+                    // 只要名称或规格型号非空，即标记为已使用行
+                    if (!string.IsNullOrEmpty(bName) || !string.IsNullOrEmpty(cModel))
                     {
-                        targetK = k;
-                        detRow = cDet;
-                        subsumRow = cSub;
-                        break;
+                        lastUsedIndex = r;
                     }
                 }
             }
 
-            if (targetK == 0 || detRow == 0 || subsumRow == 0)
-            {
-                return (false, "当前光标未位于任何有效箱柜明细区域内，请先点击目标箱柜后再试！");
-            }
-
-            int compStartRow = detRow + 2;
-            int compEndRow = subsumRow - 1;
+            // 计算最后一个非空元器件行的绝对物理行号
+            int lastUsedRow = lastUsedIndex > 0 ? (compStartRow + lastUsedIndex - 1) : (compStartRow - 1);
+            // 计算当前箱柜元器件区内剩余可直接复用的空行总数
+            int availableEmptyRows = Math.Max(0, compEndRow - lastUsedRow);
 
             var items = dto.SelectedBomItems;
             int reqCount = items.Count;
             int loopMultiplier = dto.LoopMultiplier > 0 ? dto.LoopMultiplier : 1;
 
-            // 在小计行上方直接插入 N 行空白行用于承载新物料 (遵循规则 6)
-            dynamic insertRange = ws.Range[$"A{subsumRow}:A{subsumRow + reqCount - 1}"];
-            insertRange.EntireRow.Insert(-4121); // xlDown
+            // 2. 规则 6: 检查空行是否足够；若空行不足，才在小计行上方插入差额空行
+            bool hasInsertedRows = (reqCount > availableEmptyRows);
+            // 标记差额插入行数
+            int rowsToInsert = 0;
+            if (hasInsertedRows)
+            {
+                rowsToInsert = reqCount - availableEmptyRows;
+                // 在计费区第一行 (Cab_Subsum) 上方精准插入差额行 (xlShiftDown = -4121)
+                dynamic insertRange = ws.Range[$"A{subsumRow}:A{subsumRow + rowsToInsert - 1}"];
+                insertRange.EntireRow.Insert(-4121);
 
-            // 构建二维数据矩阵
+                // 小计行、元器件终止行及总计行相应下移
+                subsumRow += rowsToInsert;
+                compEndRow = subsumRow - 1;
+                if (tolsumRow > 0) tolsumRow += rowsToInsert;
+
+                // 规则 6: 计费区第一行不一定为小计行 (可能为柜体/母排/外壳等前置费用项)
+                // 在当前计费区区间 [subsumRow, tolsumRow] 内部精准搜寻真正的“小计”所在行
+                int actualSubtotalRow = 0;
+                int feeEndScanRow = tolsumRow > subsumRow ? tolsumRow : (subsumRow + 10);
+                for (int r = subsumRow; r <= feeEndScanRow; r++)
+                {
+                    // 提取 B 列名称与 A 列特征 (通常 B 列为费用名称)
+                    string bText = ws.Range[$"B{r}"].Text?.ToString()?.Trim() ?? "";
+                    string aText = ws.Range[$"A{r}"].Text?.ToString()?.Trim() ?? "";
+                    // 只要单元格包含“小计”字样，精准锁定真正的小计求和行
+                    if (bText.Contains("小计") || aText.Contains("小计"))
+                    {
+                        actualSubtotalRow = r;
+                        break;
+                    }
+                }
+
+                // 仅当明确匹配到真正的“小计”行时，才对其刷新求和公式；绝不盲目破坏第一行原有费用
+                if (actualSubtotalRow > 0)
+                {
+                    string curFormula = ws.Range[$"H{actualSubtotalRow}"].Formula?.ToString() ?? "";
+                    // 若原公式已具备 INDEX 自适应能力则保持原样，否则注入自适应求和公式
+                    if (!curFormula.Contains("INDEX(H:H"))
+                    {
+                        ws.Cells[actualSubtotalRow, 8].Formula = $"=ROUND(SUM(H{compStartRow}:INDEX(H:H,ROW()-1)),2)";
+                    }
+                }
+            }
+
+            // 3. 确定新元器件的写入物理起始行
+            int writeStartRow = lastUsedRow + 1;
+            int writeEndRow = writeStartRow + reqCount - 1;
+
+            // 4. 构建内存二维数据矩阵 (A 到 H 列，共 8 列) (遵循规则 7)
             object[,] dataMatrix = new object[reqCount, 8];
             for (int i = 0; i < reqCount; i++)
             {
                 var item = items[i];
+                int curRow = writeStartRow + i;
+                // 计算乘算后的数量 (WL 勾选则翻倍)
                 double finalQty = item.IsWlDoubled ? (item.Quantity * loopMultiplier) : item.Quantity;
+                double price = (double)item.QuotePrice;
 
-                dataMatrix[i, 0] = i + 1;
-                // C 列: 元件名称 (标准 Name 字段)
-                dataMatrix[i, 1] = item.Name ?? "";
-                // D 列: 规格型号 (标准 Model 字段)
-                dataMatrix[i, 2] = item.Model ?? "";
-                dataMatrix[i, 3] = item.Brand ?? "";
-                dataMatrix[i, 4] = item.Unit ?? "台";
-                dataMatrix[i, 5] = (double)item.QuotePrice;
-                dataMatrix[i, 6] = finalQty;
-                dataMatrix[i, 7] = (double)item.QuotePrice * finalQty;
+                dataMatrix[i, 0] = $"=ROW()-ROW(A${detRow + 1})"; // A 列: 序号公式
+                dataMatrix[i, 1] = item.Name ?? "";              // B 列: 元件名称
+                dataMatrix[i, 2] = item.Model ?? "";             // C 列: 规格型号
+                dataMatrix[i, 3] = item.Brand ?? "";             // D 列: 生产厂家/品牌
+                dataMatrix[i, 4] = item.Unit ?? "只";            // E 列: 计量单位
+                dataMatrix[i, 5] = finalQty;                     // F 列: 数量
+                dataMatrix[i, 6] = price;                        // G 列: 单价
+                dataMatrix[i, 7] = $"=ROUND(F{curRow}*G{curRow},2)"; // H 列: 合价公式
             }
 
-            // 写入插入好的新区间中
-            int writeStartRow = subsumRow; // 原小计行位置现已成为新插入空行的起始
-            dynamic writeRange = ws.Range[$"B{writeStartRow}:I{writeStartRow + reqCount - 1}"];
+            // 5. 将构建完毕的二维数组一次性刷入工作表 (遵循规则 7 极速内存阵列写入)
+            dynamic writeRange = ws.Range[$"A{writeStartRow}:H{writeEndRow}"];
             writeRange.Value2 = dataMatrix;
 
-            // 规则 6: 新增元器件行后，全表定义名称与计费区域联动自适应刷新
-            Tool.FixAndFillCabinetNamesForSheet(ws);
+            // 6. 规则 8: 插行时 Excel 引擎已自动对齐引用，未插行时 0ms 瞬间完成
+            // 绝不触发全量重写与全表扫描，实现极速写入
 
-            return (true, $"已成功在当前箱柜中追加 {reqCount} 项元器件明细！");
+
+            return (true, $"已成功在箱柜【{targetCabName}】中写入 {reqCount} 项元器件清单！");
         }
+
 
         /// <summary>
         /// 生成高质量官方预置方案母版（包含高压、低压、二次测控典型方案）

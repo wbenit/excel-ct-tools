@@ -614,8 +614,8 @@
           </template>
           <template v-else>
             <span style="color: #009688; font-weight: 600; flex-shrink: 0;">配套附件:</span>
-            <span class="pipeline-badge" style="background: #fef3c7; color: #b45309; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="(cellParams.name || '') + ' ' + (cellParams.currentModel || '当前行物料')">
-              主体: {{ cellParams.name }} {{ cellParams.currentModel || '当前行物料' }}
+            <span class="pipeline-badge" style="background: #e0f2f1; color: #00796b; border: 1px solid #b2dfdb; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="'主体物料已回填: ' + (cellParams.name || '') + ' ' + (cellParams.currentModel || '当前行物料')">
+              <i class="fa-solid fa-circle-check" style="margin-right: 3px; color: #009688;"></i>已填: {{ cellParams.name }} {{ cellParams.currentModel || '当前物料' }}
             </span>
           </template>
         </div>
@@ -642,10 +642,23 @@
 
             <el-button 
               size="small" 
+              type="success" 
+              plain 
+              @click="closeOverlay"
+              style="height: 22px; padding: 0 8px; font-size: 11px; border-color: #009688; color: #009688;"
+              title="主体物料已成功回填，无需附件直接完成退出 (按 Esc 也可退出)"
+            >
+              <i class="fa-solid fa-check" style="margin-right: 3px;"></i>
+              完成 (Esc)
+            </el-button>
+
+            <el-button 
+              size="small" 
               type="info" 
               plain 
               @click="switchToNormalMode"
               style="height: 22px; padding: 0 8px; font-size: 11px;"
+              title="返回原物料候选列表重新选择主体元器件"
             >
               <i class="fa-solid fa-arrow-left" style="margin-right: 4px;"></i>
               返回物料
@@ -732,7 +745,7 @@
       </span>
       <span>
         <template v-if="isAttachmentMode">
-          [点击/回车] 自动拼接 <strong style="color: #009688;">+附件{{ attachmentQuantity > 1 ? '*' + attachmentQuantity : '' }}</strong> 并累加单价公式
+          [点击/回车] 选择附件并累加公式 | <strong style="color: #009688; cursor: pointer;" @click="closeOverlay" title="点击直接完成退出">[Esc / 点击完成]</strong> 跳过附件退出
         </template>
         <template v-else>
           [↑/↓] 切换 | [Enter] 确认回填 | [Esc] 退出
@@ -829,7 +842,7 @@
               key: 'current',
               category: 'param',
               text: curText,
-              tooltip: `额定电流: ${c}`
+              tooltip: `额定电流: ≥${curText} (筛选≥${curText}的规格，按电流大小排序)`
             });
           }
           // 4. 极数过滤项 (纯值，纯数字时补 P 便于识别)
@@ -1061,17 +1074,29 @@
           }
         };
 
-        // 计算当前界面展示的过滤列表 (在附件模式下支持本地输入过滤)
+        // 计算当前界面展示的过滤列表 (在常规模式下保障按电流大小升序排序，在附件模式下支持本地输入过滤)
         const filteredDisplayItems = computed(() => {
-          if (!isAttachmentMode.value) {
-            return items.value;
+          let list = items.value || [];
+          if (isAttachmentMode.value) {
+            const kw = (searchKeyword.value || '').trim().toLowerCase();
+            if (!kw) return list;
+            return list.filter(it => {
+              const text = `${it.model || ''} ${it.param2 || ''} ${it.name || ''}`.toLowerCase();
+              return text.indexOf(kw) >= 0;
+            });
           }
-          const kw = (searchKeyword.value || '').trim().toLowerCase();
-          if (!kw) return items.value;
-          return items.value.filter(it => {
-            const text = `${it.model || ''} ${it.param2 || ''} ${it.name || ''}`.toLowerCase();
-            return text.indexOf(kw) >= 0;
-          });
+          // 常规物料模式：若存在电流过滤条件，确保按电流从小到大升序排序展示
+          const cStr = (activeFilters.value.current || '').replace(/[^\d.]/g, '');
+          const curNum = parseFloat(cStr);
+          if (!isNaN(curNum) && list.length > 1) {
+            return [...list].sort((a, b) => {
+              const curA = (a.current !== undefined && a.current !== null && a.current !== '') ? Number(a.current) : 999999;
+              const curB = (b.current !== undefined && b.current !== null && b.current !== '') ? Number(b.current) : 999999;
+              if (curA !== curB) return curA - curB;
+              return (Number(a.price) || 0) - (Number(b.price) || 0);
+            });
+          }
+          return list;
         });
 
         // 切换至配套附件模式：暂存当前物料，向 C# 发送请求拉取附件
@@ -1146,12 +1171,32 @@
               });
               break;
 
-            // 配套附件列表返回
+            // 配套附件列表返回 (手动点击配套附件按钮返回)
             case 'attachmentsResult':
               loading.value = false;
               items.value = msg.items || [];
               selectedIndex.value = 0;
               if (msg.currentModel) cellParams.value.currentModel = msg.currentModel;
+              break;
+
+            // 自动联动切入配套附件模式 (主体物料已先行成功回填至当前单元格)
+            case 'autoEnterAttachmentMode':
+              loading.value = false;
+              isAttachmentMode.value = true;
+              items.value = msg.items || [];
+              normalModeItems.value = msg.items || [];
+              selectedIndex.value = 0;
+              searchKeyword.value = '';
+              attachmentQuantity.value = 1;
+              if (msg.currentModel) cellParams.value.currentModel = msg.currentModel;
+              if (msg.name) cellParams.value.name = msg.name;
+              if (msg.brand) cellParams.value.brand = msg.brand;
+              // 自动聚焦搜索框以支持即时过滤附件
+              nextTick(() => {
+                if (searchInputRef.value && searchInputRef.value.focus) {
+                  searchInputRef.value.focus();
+                }
+              });
               break;
 
             // 模糊搜索结果返回

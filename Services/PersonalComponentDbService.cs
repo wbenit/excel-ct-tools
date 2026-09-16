@@ -482,12 +482,12 @@ namespace ExcelAddInDemo.Services
                         cmd.Parameters.AddWithValue("@name", $"%{name!.Trim()}%");
                     }
 
-                    // 3. 额定电流过滤 (兼容字段存储及型号中内嵌如 16A 的情况)
+                    // 3. 额定电流过滤 (兼容大于等于指定电流，以实现规格向上选型展示)
                     int? parsedCurrent = ExtractIntegerCurrent(current);
                     if (parsedCurrent.HasValue)
                     {
                         int cVal = parsedCurrent.Value;
-                        sb.Append("AND (current = @current OR (current IS NULL AND (model LIKE @curLike1 OR model LIKE @curLike2 OR model LIKE @curLike3))) ");
+                        sb.Append("AND (current >= @current OR (current IS NULL AND (model LIKE @curLike1 OR model LIKE @curLike2 OR model LIKE @curLike3))) ");
                         cmd.Parameters.AddWithValue("@current", cVal);
                         cmd.Parameters.AddWithValue("@curLike1", $"%{cVal}A%");
                         cmd.Parameters.AddWithValue("@curLike2", $"%/{cVal}%");
@@ -536,8 +536,8 @@ namespace ExcelAddInDemo.Services
                         }
                     }
 
-                    // 限制最大返回行数
-                    sb.Append($"ORDER BY id DESC LIMIT {maxResults};");
+                    // 排序并限制返回条数 (优先按电流大小升序排序)
+                    sb.Append($"ORDER BY CASE WHEN current IS NOT NULL THEN current ELSE 999999 END ASC, id ASC LIMIT {Math.Max(maxResults, 100)};");
                     cmd.CommandText = sb.ToString();
 
                     // 执行主要条件查询
@@ -586,7 +586,7 @@ namespace ExcelAddInDemo.Services
                             }
                         }
 
-                        fallbackSb.Append($"ORDER BY id DESC LIMIT {maxResults};");
+                        fallbackSb.Append($"ORDER BY CASE WHEN current IS NOT NULL THEN current ELSE 999999 END ASC, id ASC LIMIT {Math.Max(maxResults, 100)};");
                         fallbackCmd.CommandText = fallbackSb.ToString();
 
                         using var fbReader = fallbackCmd.ExecuteReader();
@@ -594,6 +594,28 @@ namespace ExcelAddInDemo.Services
                         {
                             result.Add(MapReaderToDto(fbReader));
                         }
+                    }
+
+                    // 9. 内存级精确过滤与按电流大小升序排序 (确保结果集严格按电流升序呈现)
+                    if (parsedCurrent.HasValue)
+                    {
+                        int targetCurVal = parsedCurrent.Value;
+                        result = result
+                            .Where(it => (it.Current ?? ExtractIntegerCurrent(it.Model) ?? 0) >= targetCurVal)
+                            .OrderBy(it => it.Current ?? ExtractIntegerCurrent(it.Model) ?? int.MaxValue)
+                            .ThenBy(it => it.Price)
+                            .ThenBy(it => it.Id)
+                            .Take(maxResults)
+                            .ToList();
+                    }
+                    else
+                    {
+                        result = result
+                            .OrderBy(it => it.Current ?? ExtractIntegerCurrent(it.Model) ?? int.MaxValue)
+                            .ThenBy(it => it.Price)
+                            .ThenBy(it => it.Id)
+                            .Take(maxResults)
+                            .ToList();
                     }
                 }
             }
@@ -864,18 +886,29 @@ namespace ExcelAddInDemo.Services
         }
 
         /// <summary>
-        /// 从电流字符串中提取纯数字整型 (如 "32A", "100A", "32" ➔ 32)
+        /// 从电流字符串中提取纯数字整型 (如 "32A", "100A", "≥225", "32" ➔ 32)
         /// </summary>
         private static int? ExtractIntegerCurrent(string? currentStr)
         {
             if (string.IsNullOrWhiteSpace(currentStr)) return null;
+            // 清洗字符串并去除可能存在的符号与单位
             string clean = currentStr.Trim().ToUpper();
+            // 剥离可能存在的比较符或空格 (如 "≥225", ">=225", ">225")
+            clean = clean.TrimStart('≥', '>', '=', ' ');
             if (clean.EndsWith("A"))
             {
                 clean = clean.Substring(0, clean.Length - 1).Trim();
             }
             if (int.TryParse(clean, out int curVal)) return curVal;
             if (double.TryParse(clean, out double dVal)) return (int)Math.Round(dVal);
+
+            // 正则匹配型号文本中的电流数字 (如 CDQ1s-100/4P 32A 或 /100A)
+            var m = System.Text.RegularExpressions.Regex.Match(currentStr, @"(\d+)\s*A\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (m.Success && int.TryParse(m.Groups[1].Value, out int regCur))
+            {
+                return regCur;
+            }
+
             return null;
         }
 

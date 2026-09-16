@@ -1307,8 +1307,8 @@ namespace ExcelAddInDemo
                     summarySheet.Range["A:A, E:E"].ColumnWidth = 6;
                     // 宽度 8: F 数量, M/O 折扣, Q 类别, U 极数 --硬编码--
                     summarySheet.Range["F:F, M:M, O:O, Q:Q, U:U"].ColumnWidth = 8;
-                    // 宽度 9: K 报出系数 --硬编码--
-                    summarySheet.Range["K:K"].ColumnWidth = 9;
+                    // 宽度 9: K 报出系数, P 备注 (备注列原宽18缩小一半为9) --硬编码--
+                    summarySheet.Range["K:K, P:P"].ColumnWidth = 9;
                     // 宽度 10: T 额定电流, V 脱扣方式 --硬编码--
                     summarySheet.Range["T:T, V:V"].ColumnWidth = 10;
                     // 宽度 12: L/N 表价, X/Y 扩展参数1/2 --硬编码--
@@ -1317,8 +1317,8 @@ namespace ExcelAddInDemo
                     summarySheet.Range["G:G, J:J, W:W"].ColumnWidth = 14;
                     // 宽度 15: H 总价 --硬编码--
                     summarySheet.Range["H:H"].ColumnWidth = 15;
-                    // 宽度 18: B 名称, I 厂家, P 备注 --硬编码--
-                    summarySheet.Range["B:B, I:I, P:P"].ColumnWidth = 18;
+                    // 宽度 18: B 名称, I 厂家 --硬编码--
+                    summarySheet.Range["B:B, I:I"].ColumnWidth = 18;
                     // 宽度 24: C 原型号, D 新型号, R 原始型号 --硬编码--
                     summarySheet.Range["C:C, D:D, R:R"].ColumnWidth = 24;
                 }
@@ -1340,7 +1340,7 @@ namespace ExcelAddInDemo
                     summarySheet.Columns[13].ColumnWidth = 8;
                     summarySheet.Columns[14].ColumnWidth = 12;
                     summarySheet.Columns[15].ColumnWidth = 8;
-                    summarySheet.Columns[16].ColumnWidth = 18;
+                    summarySheet.Columns[16].ColumnWidth = 9; // P列 备注 (原宽18缩小一半为9) --硬编码--
                     summarySheet.Columns[17].ColumnWidth = 8;
                     summarySheet.Columns[18].ColumnWidth = 24;
                     summarySheet.Columns[20].ColumnWidth = 10;
@@ -2039,9 +2039,9 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 切换指定列区域的隐藏与显示状态（如 F:P 或 Q:W）
+        /// 切换指定列区域的隐藏与显示状态（支持连续区间及逗号分隔多区域，如 "E:E, G:H, J:K, M:M, O:O, Q:S"）
         /// </summary>
-        /// <param name="columnRange">列区域范围字符串，例如 "F:P" 或 "Q:W"</param>
+        /// <param name="columnRange">列区域范围字符串</param>
         /// <param name="hidden">是否隐藏，true 为隐藏，false 为显示</param>
         /// <returns>操作是否成功</returns>
         public static bool SetSheetColumnsHidden(string columnRange, bool hidden)
@@ -2053,10 +2053,12 @@ namespace ExcelAddInDemo
 
                 // 获取当前活动 Excel 应用程序实例
                 dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                // 若未获取到应用程序实例则返回失败
                 if (app == null) return false;
 
                 // 获取当前活动工作表
                 dynamic activeSheet = app.ActiveSheet;
+                // 若无活动工作表则返回失败
                 if (activeSheet == null) return false;
 
                 // 优化 Excel 渲染性能，临时关闭屏幕刷新
@@ -2064,8 +2066,36 @@ namespace ExcelAddInDemo
 
                 try
                 {
-                    // 设置目标列区域的 Hidden 属性实现隐藏或展开
-                    activeSheet.Columns[columnRange].Hidden = hidden;
+                    // 支持按逗号分隔处理多个分散列段（如 E:E, G:H, J:K, M:M, O:O, Q:S）
+                    string[] parts = columnRange.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                    // 逐个设置每个列区域段的隐藏状态
+                    foreach (string part in parts)
+                    {
+                        // 剔除前后空白字符
+                        string trimmed = part.Trim();
+                        // 空片段跳过
+                        if (string.IsNullOrEmpty(trimmed)) continue;
+
+                        try
+                        {
+                            // 优先使用 Range 对象的 EntireColumn 属性设置隐藏
+                            activeSheet.Range[trimmed].EntireColumn.Hidden = hidden;
+                        }
+                        catch
+                        {
+                            try
+                            {
+                                // 容错回退使用 Columns 属性设置隐藏
+                                string colExpr = trimmed.Contains(":") ? trimmed : $"{trimmed}:{trimmed}";
+                                activeSheet.Columns[colExpr].Hidden = hidden;
+                            }
+                            catch (Exception innerEx)
+                            {
+                                // 记录局部列隐藏失败日志
+                                LogHelper.WriteLog($"隐藏列 [{trimmed}] 局部异常: {innerEx.Message}");
+                            }
+                        }
+                    }
                 }
                 finally
                 {
@@ -2085,26 +2115,38 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 获取当前活动工作表中价格列 (G:O) 的隐藏状态
+        /// 获取当前活动工作表中目标列 (EGHJKMOQRS) 的隐藏状态
         /// </summary>
-        /// <returns>价格列是否处于隐藏状态</returns>
+        /// <returns>目标列是否处于隐藏状态</returns>
         public static bool GetSheetColumnsHiddenStatus()
         {
             try
             {
                 // 获取当前活动 Excel 应用程序实例
                 dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                // 未获取到实例则返回 false
                 if (app == null) return false;
 
                 // 获取当前活动工作表
                 dynamic activeSheet = app.ActiveSheet;
+                // 无活动工作表返回 false
                 if (activeSheet == null) return false;
 
-                // 读取 G 列的 Hidden 状态作为价格列 (G:O) 的代表状态 (因新增原型号规格列整体向右顺延一列) --硬编码--
-                bool isPriceHidden = Convert.ToBoolean(activeSheet.Columns["G"].Hidden);
+                // 优先读取 E 列的 Hidden 状态作为目标列隐藏状态的代表状态 --硬编码--
+                bool isTargetHidden = false;
+                try
+                {
+                    // 读取 E 列隐藏状态
+                    isTargetHidden = Convert.ToBoolean(activeSheet.Columns["E"].Hidden);
+                }
+                catch
+                {
+                    // 容错读取 G 列隐藏状态 --硬编码--
+                    isTargetHidden = Convert.ToBoolean(activeSheet.Columns["G"].Hidden);
+                }
 
-                // 返回价格列隐藏状态
-                return isPriceHidden;
+                // 返回目标列隐藏状态
+                return isTargetHidden;
             }
             catch
             {

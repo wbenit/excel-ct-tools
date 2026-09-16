@@ -104,14 +104,49 @@ namespace ExcelAddInDemo.Models
     }
 
     /// <summary>
+    /// 宽容字符串反序列化转换器，支持从 JSON 中的数字、布尔值等任意类型宽松转换为 string
+    /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+    /// </summary>
+    public class FlexibleStringConverter : JsonConverter<string>
+    {
+        // 反序列化时执行多类型智能转字符串处理
+        public override string Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
+        {
+            // 若为数字类型则提取整型或浮点文本
+            if (reader.TokenType == System.Text.Json.JsonTokenType.Number)
+            {
+                // 优先以 64 位整数提取，次之以浮点数转字符串
+                return reader.TryGetInt64(out long lVal) ? lVal.ToString() : reader.GetDouble().ToString();
+            }
+            // 若为布尔真则返回小写字符串 true
+            if (reader.TokenType == System.Text.Json.JsonTokenType.True) return "true";
+            // 若为布尔假则返回小写字符串 false
+            if (reader.TokenType == System.Text.Json.JsonTokenType.False) return "false";
+            // 若为空类型则返回空字符串
+            if (reader.TokenType == System.Text.Json.JsonTokenType.Null) return string.Empty;
+            // 字符串类型直接读取返回
+            return reader.GetString() ?? string.Empty;
+        }
+
+        // 序列化时按标准字符串输出
+        public override void Write(System.Text.Json.Utf8JsonWriter writer, string value, System.Text.Json.JsonSerializerOptions options)
+        {
+            // 直接写入字符串值
+            writer.WriteStringValue(value);
+        }
+    }
+
+    /// <summary>
     /// 方案 BOM 元器件清单明细项实体
     /// </summary>
     public class CloudSchemeBomItem
     {
-        // BOM 条目唯一标识 ID
+        // BOM 条目唯一标识 ID (支持从纯数字/时间戳宽松反序列化)
+        [JsonConverter(typeof(FlexibleStringConverter))]
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
 
-        // 关联的方案主键 ID
+        // 关联的方案主键 ID (支持从数字宽松反序列化)
+        [JsonConverter(typeof(FlexibleStringConverter))]
         public string SchemeId { get; set; } = string.Empty;
 
         // 行排列展示序号
@@ -254,8 +289,12 @@ namespace ExcelAddInDemo.Models
     /// </summary>
     public class SchemeInsertToExcelDto
     {
-        // 方案主键 ID
+        // 方案主键 ID (支持从数字或字符串宽松转换)
+        [JsonConverter(typeof(FlexibleStringConverter))]
         public string SchemeId { get; set; } = string.Empty;
+
+        // 方案标题名称 (插入新箱柜时优先用作箱柜名称)
+        public string SchemeName { get; set; } = string.Empty;
 
         // 回路数倍增器数值 (默认 1 个回路)
         public int LoopMultiplier { get; set; } = 1;
