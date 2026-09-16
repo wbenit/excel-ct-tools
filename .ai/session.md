@@ -1,76 +1,10 @@
 # Session State
 
-- **汇总调价隐藏列修改为隐藏 EGHJKMOQRS 列及备注列宽度减半落地交付 (`ExcelServices.SummaryAdjustPrice.cs`, `SummaryAdjustPriceController.cs`, `Resources/summary_adjust_price.html`, `publish/Resources/summary_adjust_price.html`)**：
-  1. **需求与变更要点**：
-     - **隐藏列由原「隐藏价格列(G~O)」升级为「隐藏EGHJKMOQRS列」**：涵盖 E（单位）、G（单价）、H（总价）、J（成本单价）、K（报出系数）、M（本体折扣）、O（附件折扣）、Q（类别）、R（原始型号）、S（空列）共 10 列，界面仅保留核心字段（序号、元件名称、原型号规格、型号规格、数量、生产厂家、本体表价、附件表价、备注），视野更聚焦清晰；
-     - **备注列宽度缩小一半**：在生成【元件汇总表】时，原备注列 P 宽为 18，现调整缩小一半至 9（与 K 列等宽），节省横向滚动空间；
-  2. **高品质落地实现**：
-     - **前端高保真还原与多端同步 (`summary_adjust_price.html`)**：复选框文本精准改为「隐藏EGHJKMOQRS列」，传递目标列范围 `"E:E, G:H, J:K, M:M, O:O, Q:S"`；已全量同步覆盖至 `Resources/`、`publish/Resources/`、`bin/Debug/net48/Resources/` 及 `bin/Debug/net48/publish/Resources/`；
-     - **多区域列隐藏兼容引擎 (`ExcelServices.SummaryAdjustPrice.cs`)**：`SetSheetColumnsHidden` 增强支持逗号分隔的非连续列分段设置，逐段执行 `EntireColumn.Hidden`，消除 COM 语法限制；`GetSheetColumnsHiddenStatus` 优先嗅探 E 列/G 列隐藏状态；
-     - **列宽参数优化 (`ExcelServices.SummaryAdjustPrice.cs`)**：`summarySheet.Range["K:K, P:P"].ColumnWidth = 9;`，并在 catch 回退中将第 16 列（P列）设为 9；
-  3. **编译构建与代码规范**：
-     - 遵循每 3 行包含一行中文注释，硬编码标识 `--硬编码--`；
-     - `ExcelAddInDemo.csproj` 编译构建成功：**0 警告，0 错误**。
+- **代码同步与多端拉取（Git Pull）**：
+  1. `excel-ct-tools` (分支 `main`)：成功拉取远程最新代码至提交 `87833d2`，包含分类管理删除窗口（`DeleteCategoryForm`、`delete_category.html`）等 18 个更新文件，全工程重新编译通过（0 错误）；
+  2. `cad-net_1` (分支 `随机布局`)：成功拉取远程更新至提交 `97c9854`（`ServerOp.cs`, `TuFan.csproj`），项目源码编译通过（0 错误）；
+  3. `draw-code-pcui`、`draw-code`、`draw-mall`：检测完成，均为最新状态。
 
-- **选择元器件后自动探测配套附件并无缝就地切入附件选配系统级落地交付 (`Forms/ComponentMatchOverlayForm.cs`, `Resources/component_match_overlay.html`, `publish/Resources/component_match_overlay.html`)**：
-  1. **问题与业务痛点闭环**：
-     - 原先用户在悬浮框中选定主体元器件后，窗口立即被自动关闭；若该元件需要选配附件，用户必须再次点击单元格弹起悬浮框、再点击“配套附件”按钮切换，步骤繁琐且打断连续选型流程。
-  2. **端到端高品质方案落地**：
-     - **主体先行落地 + 后台非阻塞探测 (`ComponentMatchOverlayForm.cs`)**：
-       - 用户点击/回车选定主体元器件后，先立即调用 `ExcelServices.FillSelectedComponentToActiveRow` 将主体数据完整回填至 Excel 单元格（B列名称、D列型号、G列单价），确保主体数据百分之百先落地入库；
-       - 在后台线程异步拉取该主体型号的配套附件（支持云端库与个人库路由）；
-       - **若检测到配套附件 (`attachmentList.Count > 0`)**：保持悬浮窗展示，向前端派发 `autoEnterAttachmentMode` 报文，无缝切入配套附件选择模式；
-       - **若无配套附件 (`attachmentList.Count == 0`)**：顺畅隐藏关闭悬浮窗，完成主体回填闭环（0 额外感知与等待）；
-     - **前端友好视觉与防困扰交互 (`component_match_overlay.html`)**：
-       - 顶部标签明确呈现：`✓ 已填: [名称] [型号]`，让用户确信主体已写入；
-       - 快捷操作栏新增绿色 `【完成 (Esc)】` 按钮，并在底部提示栏标注 `[Esc / 点击完成] 跳过附件退出`；
-       - 彻底去除弹出的 `ElMessage` 绿色浮动气泡提示，杜绝遮挡狭小悬浮窗内的物料列表与搜索框，保持操作区清爽无阻；
-       - 用户若不需要附件，直接按 `Esc` 或点击【完成】即可退出，主体完好保留；若需要附件直接回车/点击添加；
-       - 4 端静态资源（`Resources/`、`publish/Resources/`、`bin/Debug/net48/Resources/`）已全量同步。
-  3. **编译构建与代码规范**：
-     - 新增代码严格遵循每 3 行包含一行中文注释，硬编码均打上 `--硬编码--` 标明；
-     - `ExcelAddInDemo.csproj` 构建编译验证：**0 警告，0 错误**。
-
-- **物料智能匹配悬浮窗额定电流大于等于匹配与升序排序系统级落地交付 (`ComponentApiClient.cs`, `PersonalComponentDbService.cs`, `component_match_overlay.html`, `DrawMall.Ability/ComponentServicer.cs`, `DrawMall.Ability.Docking/Dto/ComponentDtos.cs`)**：
-  1. **问题与业务痛点根因分析**：
-     - **电气设计与厂家规格阶梯不对称**：图纸/设计提取的额定电流常为设计计算值（如 225A），而断路器、双电源等开关元件厂家的标准生产规格阶梯往往是 160A、250A、630A，不存在 225A 的型号；
-     - **严格等于匹配误杀可用物料**：旧版云端客户端及服务端此前使用 `x.Current == query.Current` 严格精确匹配，导致云端接口直接返回 0 条（“未找到符合条件的物料”）；
-     - **未实现电气向上选型推荐**：电气工程规范要求当设计电流为 225A 时，必须向上选取大于等于 225A 的最近标准规格（如 250A），且应按电流从小到大升序排序展示。
-  2. **端到端高品质改造方案落地**：
-     - **云端客户端自适应升序匹配 (`ComponentApiClient.cs`)**：
-       - `ExtractIntegerCurrent` 增强支持清洗前导 `≥`、`>`、`=` 符号，并集成正则容错提取；
-       - 请求云端服务端时传 `MinCurrent` 参数，PageSize 适度按需放大（`Math.Max(maxResults, 100)`），避免线上旧版精准匹配返回 0 条；
-       - 客户端拿到数据后执行双重保险过滤：保留 `item.Current >= targetCurVal`（兜底正则从型号中识别电流），并统一通过 `.OrderBy(item => item.Current ?? ...).ThenBy(item => item.Price).ThenBy(item => item.Model)` 按电流大小升序排列，使最接近目标电流的规格（如 250A）自动排在第一位；
-     - **本地个人库 SQLite 向上选型改造 (`PersonalComponentDbService.cs`)**：
-       - SQL 过滤由 `current = @current` 升级为 `current >= @current`，并在返回结果集后进行内存级电流升序排列；
-     - **商城后端服务升级 (`ComponentDtos.cs` & `ComponentServicer.cs`)**：
-       - `ComponentQueryDto` 增加 `MinCurrent` 入参；
-       - `ComponentServicer.GetPagedListAsync` 额定电流过滤改为 `queryable.Where(x => x.Current != null && x.Current >= minCur.Value)`，并优先按 `Current` 升序排序；
-       - 编写并成功运行单元测试 `Test_ComponentServicer_FilterCurrentGreaterThanOrEqual`（德力西 4P 双电源 225A 成功匹配出 250A、630A、1000A、1250A、1600A 共 5 条，第一项精确为 250A）；
-     - **前端交互与展示保障 (`component_match_overlay.html`)**：
-       - 顶部纯值电流标签 Tooltip 明确说明 `额定电流: ≥xxA (筛选≥xxA的规格，按电流大小排序)`；
-       - 前端计算属性 `filteredDisplayItems` 增加常规物料模式下的电流升序排序保障；
-       - 4 端静态资源（`Resources/`、`publish/Resources/`、`bin/Debug/net48/Resources/`）已全量同步。
-  3. **编译构建与验证状态**：
-     - `excel-ct-tools` 执行 `dotnet build /t:Compile /p:DebugType=none`：**0 警告，0 错误**；
-     - `draw-mall` 执行 `dotnet build DrawMall.sln` 与 `dotnet test`：**全部测试通过，0 错误**。
-
-- **云方案中心插入箱柜卡顿根治、当前箱柜空行优先复用及 DetailRow 属性异常彻底修复 (`ExcelServices.CloudSolution.cs`, `ExcelServices.ComponentGroup.cs`, `cloud_solution.html`)**：
-  1. **问题根因分析**：
-     - **DetailRow 编译/运行时异常**：`CabinetCreatedInfo` 实体类中定义的是 `DetRow`，而在早期新建箱柜逻辑中被笔误写成了 `DetailRow`，触发异常提示“ExcelAddInDemo.Models.CabinetCreatedInfo 未包含 DetailRow 的定义”；
-     - **为什么执行插入很慢（三大性能瓶颈）**：
-       - **重复全表启发式扫描与 COM 密集调用（占 70% 耗时）**：此前在写入前调用了一次 `Tool.FixAndFillCabinetNamesForSheet(ws)`，紧接着 `Tool.GetSheetValidCabinets` 又调用，写入后又无条件调用一次。`FixAndFillCabinetNamesForSheet` 针对整表所有箱柜遍历 UsedRange、比对数十种费用方案、跨进程大量调用 `Names.Add` 和设置超链接；而在当前箱柜空行写入时，**所有箱柜物理行号完全没有变动**，重复全表扫描纯属巨大开销；
-       - **恢复自动计算引发的全簿重算风暴（占 20% 耗时）**：在 `finally` 中恢复 `app.Calculation = originalCalc` 时，Excel 检测到新写了公式，立即触发当前工作簿中所有关联公式乃至整簿的级联计算，在复杂大表中阻塞 COM 线程数秒；
-       - **主 UI 线程同步等待且无前端 Loading 反馈**：WebView2 点击后按钮无旋转菊花与禁用状态，UI 线程被同步阻塞在 Excel COM 交互中，视觉呈现为假死卡顿。
-  2. **深度极速优化方案落地（耗时从 5~8 秒降至 50 毫秒）**：
-     - **消除冗余前置扫描**：移除入口处硬调用的 `FixAndFillCabinetNamesForSheet(ws)`，直接借助 `Tool.GetSheetValidCabinets` 的内置 Lazy Check（完好时 0ms 瞬间返回）；
-     - **按需决定后置自愈（空行写入 0 开销）**：空行充足场景直接跳过全表扫描，仅在差额插行时针对性处理；
-     - **重算策略优化**：移除阻塞性的 `ws.Calculate()`，消除全簿失控重算风暴；
-     - **前端体验加固**：增加 `isInsertingBom` 响应式变量，点击瞬间按钮置灰并展示 `fa-spinner fa-spin` 旋转加载动画与“正在写入...”，防止重复连击并消除假死感；
-       - 收到结果后自动复位，并配有 8 秒超时保护兜底；
-       - 4 端静态资源（`Resources/`、`publish/Resources/`、`bin/Debug/net48/...`）已全量同步。
-  3. **编译构建与验证状态**：
-     - `dotnet build /t:Compile /p:DebugType=none` 构建成功，**0 错误**。
 - **在【项目信息】表中一次性删除分类功能及针对 #REF! 损坏残留行一键清理自愈全系统落地交付 (`ExcelServices.Category.cs`, `CategoryController.cs`, `CategoryModels.cs`, `DeleteCategoryForm.cs`, `delete_category.html`, `custom_context_menu.html`, `CustomContextMenuForm.cs`)**：
   1. **问题与业务痛点彻底闭环**：
      - 用户在【项目信息】表中期望一站式批量删除一个或多个不需要的分类；
@@ -2811,49 +2745,21 @@
      - 资源已全量热同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
      - 遵循每 3 行包含至少 1 行中文注释，执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
 
-- **彻底修复云方案中心“设置二次回路图纸目录”选择目录后未在 input 框显示且未生效故障 (`Forms/CloudSolutionForm.cs`, `Resources/cloud_solution.html`)**：
-  1. **深度根因定位与排查**：
-     - **根因 A (前端消息通道失效)**：`cloud_solution.html` 将所有的 WebMessage 监听器以及首次数据拉取（`fetchSchemes`、`loadSecondaryCircuitConfig`）错误地包裹在 `window.addEventListener("DOMContentLoaded", ...)` 中。在 Vue 3 应用挂载时，`DOMContentLoaded` 事件早已经发射完毕，后添加的 listener 永远不会被触发，导致前端**完全没有挂载来自 C# 的任何消息监听器**，任何 C# 发出的结果（`selectSecondaryCircuitDirResult` 等）前端根本无法接收。
-     - **根因 B (C# 后台线程跨线程访问 WebView2 异常)**：`CloudSolutionForm.cs` 的 `selectSecondaryCircuitDir` 在独立的 STA 线程 `dialogThread` 中调用了 `PostMessageSafe`。而 `PostMessageSafe` 在入口处直接访问了 `_webView.CoreWebView2`，违反了 WebView2 必须在 UI 主线程调用的单线程限制，抛出 `InvalidOperationException` 被后台捕获，导致消息根本未投递。
-  2. **C# 宿主窗体跨线程安全重构 (`Forms/CloudSolutionForm.cs`)**：
-     - 新增 `SafeInvoke(Action action)` 方法，严格遵循启发式规范 10，校验 `!IsDisposed && IsHandleCreated` 与 `InvokeRequired`；
-     - 重构 `PostMessageSafe`，使用 `SafeInvoke` 将对 `_webView.CoreWebView2` 的校验与 `PostWebMessageAsJson` 完整调度到 UI 主线程执行，彻底杜绝跨线程异常。
-  3. **前端消息机制与全方位保障体系重构 (`Resources/cloud_solution.html`)**：
-     - 彻底废弃失效的 `DOMContentLoaded` 嵌套，提取 `initWebMessageListener` 在 setup 初始化时立即注册，并在 `onMounted` 钩子中防御性确保挂载；
-     - 优化 `selectSecondaryCircuitDirResult` 响应：选定目录后立即更新 `secondaryDwgRootDir.value` 并反显到当前弹窗的 `inputSecondaryDir.value`，并自动触发 `scanSecondaryFolders()` 扫描图纸；
-     - 增加主动探测与窗口焦点联动双重保障：在点击【浏览目录】时启动轻量轮询 `loadSecondaryCircuitConfig`，且监听 `window.focus` 事件，当用户从系统文件夹选择窗口切回界面时自动拉取并反显最新目录；
-     - 同步热更新至 `publish/Resources/`、`bin/Debug/net48/Resources/` 以及 `bin/Debug/net48/publish/Resources/` 所有运行目录。
-
-- **彻底修复云方案中心“插入箱柜”报错 `The JSON value could not be converted to System.String. Path: $.selectedBomItems[0].id` (`Resources/cloud_solution.html`, `Models/CloudSolutionModels.cs`, `Controllers/CloudSolutionController.cs`, `Services/ExcelServices.CloudSolution.cs`)**：
-  1. **故障根因定位**：
-     - 前端在详情大视口组装 BOM 清单时，各元件的 `id` 属性由 `Date.now() + idx` 生成，为 JavaScript 纯数字（Number）类型；
-     - 后端 `CloudSchemeBomItem` 的 `Id` 属性定义为 `string` 类型，C# 采用 System.Text.Json 进行强类型反序列化；
-     - 默认的 System.Text.Json 严格禁止将 JSON 数字类型直接赋给 `string` 属性，导致触发反序列化异常中断：`The JSON value could not be converted to System.String. Path: $.selectedBomItems[0].id`。
-  2. **前端数据安全类型归一化修复 (`Resources/cloud_solution.html`, `publish/Resources/cloud_solution.html`)**：
-     - 在 `onInsertCurrentDetail` 中对被选中的 BOM 项进行安全映射转换，将 `id`、`schemeId` 严格转换为纯字符串（`String(...)`），数值字段转为安全数值；
-     - 请求体中新增携带 `schemeName`，确保插入新箱柜时使用真实方案名称。
-  3. **后端宽容反序列化转换器落地 (`Models/CloudSolutionModels.cs`, `Controllers/CloudSolutionController.cs`)**：
-     - 新增 `FlexibleStringConverter` 转换器，支持从 JSON 中的数字、长整数、浮点数、布尔值等任意类型宽容反序列化为 `string`；
-     - 在 `CloudSchemeBomItem.Id`、`SchemeId` 以及 `SchemeInsertToExcelDto.SchemeId` 上显式应用该转换器，并在 `CloudSolutionController.JsonOptions` 中全局挂载，杜绝任意接口的类型冲突；
-     - 在 `ExcelServices.CloudSolution.cs` 中优先采用前端传入的 `dto.SchemeName` 作为箱柜名称，增强方案命名准确度。
-  4. **全量同步与语法验证**：
-     - 前端修改已同步覆盖至 `Resources/`、`publish/Resources/`、`bin/Debug/net48/Resources/` 与 `bin/Debug/net48/publish/Resources/`；
-     - `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
-
 ## [Completed]
 
-- [已验证] 前端 `cloud_solution.html` 的 `onInsertCurrentDetail` 中，`id` 和 `schemeId` 均已强制转为字符串类型。
-- [已验证] 后端 `CloudSolutionModels.cs` 增加 `FlexibleStringConverter` 宽容转换器，支持数字、浮点与布尔向字符串的平滑转换。
-- [已验证] `CloudSolutionController.cs` 全局挂载 `FlexibleStringConverter`，杜绝任何类型反序列化失败。
-- [已验证] `SchemeInsertToExcelDto` 补充 `SchemeName` 传递，新建箱柜名称与方案名称准确联动。
-- [已验证] 编译通过：0 错误，前端文件已热同步至全部运行目录。
+- [已验证] `Forms/DistributedAdjustPriceForm.cs` 线程模型已修复为 STA 同步调用。
+- [已验证] `Services/ExcelServices.DistributedAdjustPrice.cs` 表头增加所属分类工作表（行 13），D 列重构为 SUMPRODUCT 动态加权求和公式。
+- [已验证] `Services/ExcelServices.DistributedAdjustPrice.cs` 支持修改横向箱柜单台数量并反向回写（改成 0 设为 0 保留行；原本没有的器件自动插入新行并填入型号、厂家、数量和单价）。
+- [已验证] 级联刷新各箱柜小计行、总计行求和公式，并触发规则 8 定义名称自愈。
+- [已验证] 前端 UI 资源与模板已同步更新。
+- [已验证] 代码编译通过，0 错误。
 
 ## [In-Progress]
 
-- 提示用户刷新云方案页面或重新打开浮窗，点击“插入箱柜”进行验证。
+- 提示用户重启 Excel 以使最新插件与功能生效。
 
 ## [Next]
 
-- 验证箱柜新建、元器件明细行、单价、合价与小计/总计公式在 Excel 中的生成效果。
+- 验证用户在【材料分布表】中调整单价、型号、厂家以及横向箱柜数量，点击【一键更新到明细】后各箱柜数据与新增行的回写情况。
 
 
