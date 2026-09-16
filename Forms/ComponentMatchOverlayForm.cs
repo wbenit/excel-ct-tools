@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows.Forms;
 using ExcelAddInDemo.Models;
@@ -25,8 +26,8 @@ namespace ExcelAddInDemo.Forms
         public string CurrentModel { get; set; } = string.Empty;
         // 当前 G 列已有的单价或公式内容
         public string CurrentPrice { get; set; } = string.Empty;
-        // 当前所属品牌
-        public string Brand { get; set; } = string.Empty;
+        // 多选品牌偏好列表
+        public List<string> Brands { get; set; } = new List<string>();
     }
 
     /// <summary>
@@ -52,6 +53,64 @@ namespace ExcelAddInDemo.Forms
         // WebView2 是否已完成初始化
         private bool _isWebReady = false;
 
+        // 窗口是否处于“固定置顶”模式 (固定时失焦不关闭、切行不重新搜索)
+        private bool _isPinned = false;
+
+        // 是否待切入配套附件模式 (供右键一键选配附件使用)
+        private bool _pendingAttachmentMode = false;
+
+        /// <summary>
+        /// 对外暴露当前窗口是否处于固定状态
+        /// </summary>
+        public bool IsPinned => _isPinned;
+
+        /// <summary>
+        /// 重写展示无焦点激活属性，确保弹窗时不争抢 Excel 键盘焦点，保障 Excel 原生自由就地编辑
+        /// </summary>
+        protected override bool ShowWithoutActivation => true;
+
+        // Windows 原生拖拽 API 声明
+        [DllImport("user32.dll")]
+        private static extern bool ReleaseCapture();
+
+        // Windows 窗口消息分发 API
+        [DllImport("user32.dll")]
+        private static extern int SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam);
+
+        // Windows 窗口 Z-order 与无激活显示 API
+        [DllImport("user32.dll")]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+        // 置顶窗口句柄标识
+        private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+        // 保留原尺寸
+        private const uint SWP_NOSIZE = 0x0001;
+        // 保留原位置
+        private const uint SWP_NOMOVE = 0x0002;
+        // 关键: 不激活窗口焦点
+        private const uint SWP_NOACTIVATE = 0x0010;
+        // 显示窗口
+        private const uint SWP_SHOWWINDOW = 0x0040;
+
+        // 标题栏按下常数标识
+        private const int WM_NCLBUTTONDOWN = 0xA1;
+        // 客户区命中标题栏常数
+        private const int HT_CAPTION = 0x2;
+
+        /// <summary>
+        /// 开启系统级无抖动平滑窗口拖拽
+        /// </summary>
+        public void BeginDrag()
+        {
+            SafeInvoke(() =>
+            {
+                // 释放鼠标捕获
+                ReleaseCapture();
+                // 向窗体句柄发送标题栏按下消息触发拖拽
+                SendMessage(this.Handle, WM_NCLBUTTONDOWN, HT_CAPTION, 0);
+            });
+        }
+
         // JSON 序列化配置
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
@@ -60,6 +119,9 @@ namespace ExcelAddInDemo.Forms
             WriteIndented = false
         };
 
+        // 静态记忆用户自定义的窗口高度 (默认 340 像素，范围 220~800)
+        private static int _customHeight = 340;
+
         /// <summary>
         /// 构造函数: 初始化窗口几何属性与 WebView2 控件
         /// </summary>
@@ -67,11 +129,11 @@ namespace ExcelAddInDemo.Forms
         {
             _webView = new WebView2();
 
-            // 配置窗体外观与尺寸 (480x340 像素)
+            // 配置窗体外观与尺寸 (480 宽，高度采用用户自定义记忆值)
             this.FormBorderStyle = FormBorderStyle.None;
             this.ShowInTaskbar = false;
             this.TopMost = true;
-            this.Size = new Size(480, 340);
+            this.Size = new Size(480, _customHeight);
             this.StartPosition = FormStartPosition.Manual;
             this.BackColor = Color.White;
 
@@ -137,8 +199,18 @@ namespace ExcelAddInDemo.Forms
         {
             if (activeCell == null) return;
 
+            // 若当前处于固定置顶模式且窗口已在显示中，则锁定现有位置与搜索结果，绝不打扰用户连续回填
+            if (_isPinned && this.Visible)
+            {
+                // 仅更新当前绑定的活动单元格引用
+                _targetCell = activeCell;
+                return;
+            }
+
             try
             {
+                // 应用用户自定义记忆高度
+                this.Height = _customHeight;
                 _targetCell = activeCell;
                 _cellParams = cellParams ?? new CellParamsContext();
                 _filterConfig = filterConfig ?? ExcelServices.LoadComponentMatchFilterConfig();
@@ -168,12 +240,16 @@ namespace ExcelAddInDemo.Forms
 
                 this.Location = new Point(targetX, targetY);
 
-                // 显示窗口并激活
+                // 显示窗口但绝不强占 Excel 焦点
                 if (!this.Visible)
                 {
                     this.Show();
                 }
-                this.BringToFront();
+                // 使用 SWP_NOACTIVATE 保持窗口位于最前端，但 100% 将输入焦点留在 Excel 单元格中
+                SetWindowPos(this.Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+
+                // 重置附件模式标记
+                _pendingAttachmentMode = false;
 
                 // 若 WebView2 已经就绪，立即推送初始候选数据或触发后台异步加载
                 if (_isWebReady)
@@ -185,6 +261,137 @@ namespace ExcelAddInDemo.Forms
             {
                 LogHelper.WriteLog($"ShowAtCell 计算定位异常: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 在活动单元格下方弹出并直接切入配套附件选配模式 (供右键菜单一键选配配套附件使用)
+        /// </summary>
+        /// <param name="activeCell">当前选中的活动单元格 COM 句柄</param>
+        /// <param name="cellParams">当前行元器件参数上下文</param>
+        /// <param name="filterConfig">匹配过滤配置</param>
+        public void ShowAttachmentsAtCell(
+            dynamic activeCell,
+            CellParamsContext cellParams,
+            ComponentMatchFilterConfig filterConfig)
+        {
+            // 校验目标单元格有效性
+            if (activeCell == null) return;
+
+            try
+            {
+                // 应用用户自定义记忆高度
+                this.Height = _customHeight;
+                // 绑定当前活动单元格句柄
+                _targetCell = activeCell;
+                // 缓存参数上下文与过滤配置
+                _cellParams = cellParams ?? new CellParamsContext();
+                _filterConfig = filterConfig ?? ExcelServices.LoadComponentMatchFilterConfig();
+                // 标记为附件模式
+                _pendingAttachmentMode = true;
+                _pendingInitialItems = new List<ComponentApiDto>();
+
+                // 计算单元格屏幕像素矩形区域
+                Rectangle cellRect = CalculateCellScreenRect(activeCell);
+
+                // 将悬浮窗定位在单元格正下方
+                int targetX = cellRect.Left;
+                int targetY = cellRect.Bottom + 2;
+
+                // 获取当前屏幕可用工作区域
+                Screen currentScreen = Screen.FromPoint(new Point(targetX, targetY));
+                Rectangle workingArea = currentScreen.WorkingArea;
+
+                // 若下方空间不足则向上弹出
+                if (targetY + this.Height > workingArea.Bottom)
+                {
+                    targetY = Math.Max(workingArea.Top, cellRect.Top - this.Height - 2);
+                }
+                // 若右侧超出屏幕则向左靠拢
+                if (targetX + this.Width > workingArea.Right)
+                {
+                    targetX = Math.Max(workingArea.Left, workingArea.Right - this.Width - 10);
+                }
+
+                this.Location = new Point(targetX, targetY);
+
+                // 显示窗口并置顶但不抢占输入焦点
+                if (!this.Visible)
+                {
+                    this.Show();
+                }
+                SetWindowPos(this.Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+
+                // 若前端已就绪，立即拉取配套附件并通知切入附件模式
+                if (_isWebReady)
+                {
+                    TriggerLoadAttachments();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"ShowAttachmentsAtCell 计算定位异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 后台异步拉取当前行物料的配套附件并向前端推送切入附件模式指令
+        /// </summary>
+        private void TriggerLoadAttachments()
+        {
+            // 准备待查询的品牌、名称与型号
+            string brandToQuery = _filterConfig.GetEffectiveBrands().FirstOrDefault() ?? _cellParams.Brands.FirstOrDefault() ?? string.Empty;
+            string nameToQuery = _cellParams.Name ?? string.Empty;
+            string modelToQuery = _cellParams.CurrentModel ?? string.Empty;
+
+            // 先通知前端进入 loading 状态
+            PostMessageToWeb(new
+            {
+                action = "autoEnterAttachmentMode",
+                items = new List<ComponentApiDto>(),
+                currentModel = modelToQuery,
+                brand = brandToQuery,
+                name = nameToQuery,
+                loading = true
+            });
+
+            // 在工作线程中异步拉取附件数据
+            Task.Run(async () =>
+            {
+                try
+                {
+                    List<ComponentApiDto> attachmentList;
+                    bool isPersonal = string.Equals(_filterConfig.DataSource, "personal", StringComparison.OrdinalIgnoreCase);
+                    if (isPersonal)
+                    {
+                        // 从本地 SQLite 查询配套附件
+                        attachmentList = PersonalComponentDbService.GetAttachments(brandToQuery, nameToQuery, modelToQuery);
+                    }
+                    else
+                    {
+                        // 从云端商城 WebAPI 异步查询配套附件
+                        attachmentList = await ComponentApiClient.GetAttachmentsAsync(brandToQuery, nameToQuery, modelToQuery).ConfigureAwait(false);
+                    }
+
+                    // 切回 UI 主线程推送附件模式数据
+                    SafeInvoke(() =>
+                    {
+                        if (this.IsDisposed || !this.Visible) return;
+                        PostMessageToWeb(new
+                        {
+                            action = "autoEnterAttachmentMode",
+                            items = attachmentList ?? new List<ComponentApiDto>(),
+                            currentModel = modelToQuery,
+                            brand = brandToQuery,
+                            name = nameToQuery,
+                            loading = false
+                        });
+                    });
+                }
+                catch (Exception ex)
+                {
+                    LogHelper.WriteLog($"[ComponentMatchOverlayForm] TriggerLoadAttachments 异常: {ex.Message}");
+                }
+            });
         }
 
         /// <summary>
@@ -205,7 +412,8 @@ namespace ExcelAddInDemo.Forms
                     action = "initCandidates",
                     items = _pendingInitialItems,
                     cellParams = _cellParams,
-                    filterBrand = _filterConfig.SelectedBrand ?? string.Empty,
+                    filterBrand = _filterConfig.GetEffectiveBrands().FirstOrDefault() ?? string.Empty,
+                    filterBrands = _filterConfig.GetEffectiveBrands(),
                     activeMustRules,
                     dataSource = _filterConfig.DataSource ?? "cloud",
                     loading = false
@@ -219,7 +427,8 @@ namespace ExcelAddInDemo.Forms
                 action = "initCandidates",
                 items = new List<ComponentApiDto>(),
                 cellParams = _cellParams,
-                filterBrand = _filterConfig.SelectedBrand ?? string.Empty,
+                filterBrand = _filterConfig.GetEffectiveBrands().FirstOrDefault() ?? string.Empty,
+                filterBrands = _filterConfig.GetEffectiveBrands(),
                 activeMustRules,
                 dataSource = _filterConfig.DataSource ?? "cloud",
                 loading = true
@@ -238,29 +447,31 @@ namespace ExcelAddInDemo.Forms
                 {
                     List<ComponentApiDto> items;
                     bool isPersonal = string.Equals(fc.DataSource, "personal", StringComparison.OrdinalIgnoreCase);
+                    // 提取配置中生效的多选品牌列表
+                    var effectiveBrands = fc.GetEffectiveBrands();
                     if (isPersonal)
                     {
-                        // 从本地 SQLite 个人物料库高速检索
+                        // 从本地 SQLite 个人物料库高速检索 (支持多选品牌)
                         items = PersonalComponentDbService.SearchComponents(
                             null,
                             cp.Name,
                             cp.Current,
                             cp.Pole,
                             cp.TripMode,
-                            fc.SelectedBrand,
+                            effectiveBrands,
                             fc.MustContainRules
                         );
                     }
                     else
                     {
-                        // 异步调用云端商城 WebAPI 检索
+                        // 异步调用云端商城 WebAPI 检索 (支持多选品牌)
                         items = await ComponentApiClient.SearchComponentsAsync(
                             null,
                             cp.Name,
                             cp.Current,
                             cp.Pole,
                             cp.TripMode,
-                            fc.SelectedBrand,
+                            effectiveBrands,
                             fc.MustContainRules
                         ).ConfigureAwait(false);
                     }
@@ -307,7 +518,15 @@ namespace ExcelAddInDemo.Forms
                     // 1. 前端页面加载完成
                     case "overlayReady":
                         _isWebReady = true;
-                        PushInitialCandidates();
+                        // 若处于待切入附件模式，立即触发加载附件；否则拉取常规初始候选物料
+                        if (_pendingAttachmentMode)
+                        {
+                            TriggerLoadAttachments();
+                        }
+                        else
+                        {
+                            PushInitialCandidates();
+                        }
                         break;
 
                     // 2. 即时模糊搜索 (全异步非阻塞 + 请求防竞态版本保护 + 支持个人库与云端分流 + 临时必含规则覆盖)
@@ -320,8 +539,9 @@ namespace ExcelAddInDemo.Forms
                         var searchCp = _cellParams;
                         var searchFc = _filterConfig;
 
-                        // 提取动态生效的检索过滤条件默认值 (若前端未传 filters 则沿用初始上下文)
-                        string effectiveBrand = searchFc.SelectedBrand ?? string.Empty;
+                        // 提取动态生效的检索多品牌条件默认值
+                        var effectiveBrands = searchFc.GetEffectiveBrands();
+                        string effectiveBrand = effectiveBrands.Count > 0 ? effectiveBrands[0] : string.Empty;
                         // 初始元器件名称条件
                         string effectiveName = searchCp.Name;
                         // 初始额定电流条件
@@ -470,17 +690,70 @@ namespace ExcelAddInDemo.Forms
                         }
                         break;
 
-                    // 3. 用户确认选择某一条物料 -> 先回填主体至 Excel，若有配套附件则自动进入附件选择，无附件则关闭窗口
+                    // 2.2 用户切换“固定”置顶状态 (固定后切行不重搜、失焦不关闭)
+                    case "togglePin":
+                        if (root.TryGetProperty("pinned", out var pinProp))
+                        {
+                            _isPinned = pinProp.GetBoolean();
+                            if (_isPinned)
+                            {
+                                this.TopMost = true;
+                                this.BringToFront();
+                            }
+                        }
+                        break;
+
+                    // 2.3 响应前端请求启动窗口平滑拖拽移动
+                    case "startDrag":
+                        BeginDrag();
+                        break;
+
+                    // 2.4 响应前端拖拽调整窗口高度并实时记忆
+                    case "resizeHeight":
+                        if (root.TryGetProperty("height", out var hProp) && hProp.TryGetInt32(out int newH))
+                        {
+                            // 限制窗口高度在合理区间内 (220 ~ 800 像素)
+                            int clampedH = Math.Max(220, Math.Min(800, newH));
+                            _customHeight = clampedH;
+                            SafeInvoke(() =>
+                            {
+                                this.Height = clampedH;
+                            });
+                        }
+                        break;
+
+                    // 3. 用户确认选择某一条物料 -> 回填至 Excel (固定模式下不关窗，支持跨行连续点击)
                     case "selectComponent":
                         if (root.TryGetProperty("item", out var itemProp))
                         {
                             var selectedItem = JsonSerializer.Deserialize<ComponentApiDto>(itemProp.GetRawText(), JsonOptions);
-                            if (selectedItem != null && _targetCell != null)
-                            {
-                                // 1. 立即回填主体元器件至当前活动行单元格 (B列名称、D列型号、G列单价等立即落地落盘)
-                                ExcelServices.FillSelectedComponentToActiveRow(selectedItem, _targetCell);
+                            // 动态获取当前 Excel 的活动单元格 (若用户切行则优先回填至最新的 ActiveCell)
+                            dynamic? app = ExcelDna.Integration.ExcelDnaUtil.Application;
+                            dynamic? curActiveCell = null;
+                            try { curActiveCell = app?.ActiveCell; } catch { }
+                            dynamic? target = curActiveCell ?? _targetCell;
 
-                                // 2. 同步更新上下文参数中的主体型号、单价与名称
+                            if (selectedItem != null && target != null)
+                            {
+                                // 1. 立即回填主体元器件至当前目标单元格所在行
+                                ExcelServices.FillSelectedComponentToActiveRow(selectedItem, target);
+
+                                int targetRow = 0;
+                                try { targetRow = Convert.ToInt32(target.Row); } catch { }
+
+                                // 2. 若处于“固定”模式：保持窗口继续显示，不触发关闭，保留物料列表供连续回填
+                                if (_isPinned)
+                                {
+                                    PostMessageToWeb(new
+                                    {
+                                        action = "fillSuccess",
+                                        row = targetRow,
+                                        model = selectedItem.Model ?? string.Empty
+                                    });
+                                    break;
+                                }
+
+                                // 3. 非固定模式：同步更新上下文参数中的主体型号、单价与名称
                                 _cellParams.CurrentModel = selectedItem.Model ?? string.Empty;
                                 _cellParams.CurrentPrice = selectedItem.Price > 0 ? selectedItem.Price.ToString("F2") : string.Empty;
                                 if (!string.IsNullOrWhiteSpace(selectedItem.Name))
@@ -488,14 +761,14 @@ namespace ExcelAddInDemo.Forms
                                     _cellParams.Name = selectedItem.Name;
                                 }
 
-                                // 3. 提取用于查询配套附件的品牌、名称与主体型号
+                                // 4. 提取用于查询配套附件的品牌、名称与主体型号
                                 string hostBrand = !string.IsNullOrWhiteSpace(selectedItem.Brand)
                                     ? selectedItem.Brand
-                                    : (_filterConfig.SelectedBrand ?? _cellParams.Brand ?? string.Empty);
+                                    : (_filterConfig.GetEffectiveBrands().FirstOrDefault() ?? _cellParams.Brands.FirstOrDefault() ?? string.Empty);
                                 string hostName = selectedItem.Name ?? _cellParams.Name ?? string.Empty;
                                 string hostModel = selectedItem.Model ?? string.Empty;
 
-                                // 4. 在后台异步探测并拉取当前选定元器件的配套附件
+                                // 5. 在后台异步探测并拉取当前选定元器件的配套附件
                                 Task.Run(async () =>
                                 {
                                     try
@@ -552,7 +825,7 @@ namespace ExcelAddInDemo.Forms
 
                     // 3.1 用户请求加载当前物料的配套附件列表 (支持个人库与云端分流)
                     case "getAttachments":
-                        string brandToQuery = _filterConfig.SelectedBrand ?? _cellParams.Brand ?? string.Empty;
+                        string brandToQuery = _filterConfig.GetEffectiveBrands().FirstOrDefault() ?? _cellParams.Brands.FirstOrDefault() ?? string.Empty;
                         string nameToQuery = _cellParams.Name ?? string.Empty;
                         string modelToQuery = _cellParams.CurrentModel ?? string.Empty;
 
@@ -613,6 +886,7 @@ namespace ExcelAddInDemo.Forms
 
                     // 4. 关闭悬浮窗
                     case "closeOverlay":
+                        _isPinned = false;
                         SafeInvoke(this.Hide);
                         break;
                 }
@@ -624,12 +898,18 @@ namespace ExcelAddInDemo.Forms
         }
 
         /// <summary>
-        /// 窗体失去焦点时自动隐藏
+        /// 窗体失去焦点时事件处理
         /// </summary>
         private void OnOverlayDeactivate(object? sender, EventArgs e)
         {
             try
             {
+                // 若用户已开启“固定”置顶状态，保持前端显示，绝不随失焦隐藏
+                if (_isPinned)
+                {
+                    return;
+                }
+
                 // 失去焦点时自动平滑隐藏，不干扰 Excel 操作
                 this.Hide();
             }

@@ -258,6 +258,26 @@ namespace ExcelAddInDemo
                 {
                     SafeInvoke(() => this.Close());
                 }
+                // 响应检查元件汇总表是否存在指令 (通过 Excel 纯净宏队列异步调度，防死锁)
+                else if (action == "checkSummarySheet")
+                {
+                    // 在 Excel 主线程宏队列中执行 COM 访问与状态探测
+                    ExcelAsyncUtil.QueueAsMacro(() =>
+                    {
+                        try
+                        {
+                            // 执行汇总表存在性检测并自动激活
+                            string resultJson = _controller.CheckSummarySheetExists();
+                            // 跨线程安全向前端回发检测结果报文
+                            PostWebMessageAsStringSafe(resultJson);
+                        }
+                        catch (Exception ex)
+                        {
+                            // 记录异常日志
+                            LogHelper.WriteLog($"[SummaryAdjustPriceForm] checkSummarySheet 调度异常: {ex.Message}");
+                        }
+                    });
+                }
                 // 响应获取分类列表指令 (通过 Excel 纯净宏队列异步调度，彻底杜绝 Chromium IPC 线程死锁卡死 Excel)
                 else if (action == "getCategories")
                 {

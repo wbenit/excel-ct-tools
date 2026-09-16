@@ -35,12 +35,32 @@ namespace ExcelAddInDemo.Forms
         };
 
         /// <summary>
+        /// 启用 Windows 系统原生右键菜单阴影效果 (CS_DROPSHADOW)
+        /// </summary>
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                // 系统原生下拉阴影样式常数 --硬编码--
+                const int CS_DROPSHADOW = 0x00020000;
+                // 获取基础创建参数
+                CreateParams cp = base.CreateParams;
+                // 附加阴影样式位，提供 Office 原生柔和外阴影
+                cp.ClassStyle |= CS_DROPSHADOW;
+                // 返回配置后的创建参数
+                return cp;
+            }
+        }
+
+        /// <summary>
         /// 私有构造函数：配置无边框置顶菜单窗体与 WebView2
         /// </summary>
         private CustomContextMenuForm()
         {
             // 初始化 WebView2 控件
             _webView = new WebView2();
+            // 设置 WebView2 默认背景色为透明，避免加载时闪白并完美贴边消除多余内圈
+            _webView.DefaultBackgroundColor = Color.Transparent;
 
             // 设置无边框模式
             this.FormBorderStyle = FormBorderStyle.None;
@@ -48,8 +68,8 @@ namespace ExcelAddInDemo.Forms
             this.ShowInTaskbar = false;
             // 窗体始终保持最前端置顶显示
             this.TopMost = true;
-            // 设定符合 Office 原生菜单规格的尺寸 (宽 250px，高 530px，完整容纳原生项与业务项且防 DPI 裁切截断)
-            this.Size = new Size(250, 530);
+            // 设定符合 Office 原生菜单规格的尺寸 (宽 250px，高 480px，支持前端自适应高度)
+            this.Size = new Size(250, 480);
             // 启用手动绝对坐标定位
             this.StartPosition = FormStartPosition.Manual;
             // 设置白色背景
@@ -156,6 +176,14 @@ namespace ExcelAddInDemo.Forms
                     case "menuReady":
                         // 标记前端已准备好
                         _isWebReady = true;
+                        // 若前端传递了实际自适应高度，按真实高度重设窗体尺寸
+                        if (root.TryGetProperty("height", out var hProp) && hProp.GetInt32() > 200)
+                        {
+                            SafeInvoke(() =>
+                            {
+                                this.Height = hProp.GetInt32();
+                            });
+                        }
                         // 若有待发送的上下文数据，立即推送
                         if (_pendingContextData != null)
                         {
@@ -179,6 +207,7 @@ namespace ExcelAddInDemo.Forms
                     case "excelClearFilter":
                     case "createCabinet":
                     case "parseAndMatch":
+                    case "openComponentAttachment":
                     case "openMatchSetting":
                     case "openSmartInput":
                     case "openSummaryAdjustPrice":
@@ -376,6 +405,11 @@ namespace ExcelAddInDemo.Forms
                                 result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning
                             );
                         }
+                        break;
+
+                    case "openComponentAttachment":
+                        // 调度业务层打开当前行元器件的选配配套附件浮窗
+                        ExcelServices.ShowComponentAttachmentOverlay();
                         break;
 
                     case "openMatchSetting":

@@ -438,6 +438,25 @@ namespace ExcelAddInDemo.Services
             List<MustContainRule>? mustContainRules,
             int maxResults = 100)
         {
+            // 将单个品牌包装为列表转调多品牌重载
+            var brands = string.IsNullOrWhiteSpace(brand) ? null : new List<string> { brand };
+            // 执行多品牌查询
+            return SearchComponents(searchKeyword, name, current, pole, tripMode, brands, mustContainRules, maxResults);
+        }
+
+        /// <summary>
+        /// 根据多维度参数组合从本地 SQLite 数据库中快速检索匹配的元器件记录 (原生支持多选品牌筛选)
+        /// </summary>
+        public static List<ComponentApiDto> SearchComponents(
+            string? searchKeyword,
+            string? name,
+            string? current,
+            string? pole,
+            string? tripMode,
+            IEnumerable<string>? brands,
+            List<MustContainRule>? mustContainRules,
+            int maxResults = 100)
+        {
             // 初始化返回值列表
             var result = new List<ComponentApiDto>();
 
@@ -449,6 +468,16 @@ namespace ExcelAddInDemo.Services
                 // 加锁线程安全读取
                 lock (_dbLock)
                 {
+                    // 提取并清洗有效品牌列表 (自动排除通配项与空字符串)
+                    var cleanBrands = brands?
+                        .Where(b => !string.IsNullOrWhiteSpace(b))
+                        .Select(b => b.Trim())
+                        .Where(b => !string.Equals(b, "全部", StringComparison.OrdinalIgnoreCase) &&
+                                    !string.Equals(b, "全部品牌", StringComparison.OrdinalIgnoreCase) &&
+                                    !string.Equals(b, "All", StringComparison.OrdinalIgnoreCase))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList() ?? new List<string>();
+
                     // 创建数据库连接
                     using var conn = new SQLiteConnection(connStr);
                     // 打开连接
@@ -464,15 +493,22 @@ namespace ExcelAddInDemo.Services
                     // 创建命令
                     using var cmd = new SQLiteCommand(conn);
 
-                    // 1. 品牌精确过滤 (排除“全部”、“全部品牌”等非真实品牌)
-                    string cleanBrand = brand?.Trim() ?? string.Empty;
-                    if (!string.IsNullOrEmpty(cleanBrand) &&
-                        !string.Equals(cleanBrand, "全部", StringComparison.OrdinalIgnoreCase) &&
-                        !string.Equals(cleanBrand, "全部品牌", StringComparison.OrdinalIgnoreCase) &&
-                        !string.Equals(cleanBrand, "All", StringComparison.OrdinalIgnoreCase))
+                    // 1. 品牌精确过滤 (支持单选与多选品牌 IN 条件)
+                    if (cleanBrands.Count == 1)
                     {
                         sb.Append("AND brand = @brand ");
-                        cmd.Parameters.AddWithValue("@brand", cleanBrand);
+                        cmd.Parameters.AddWithValue("@brand", cleanBrands[0]);
+                    }
+                    else if (cleanBrands.Count > 1)
+                    {
+                        var brandParamNames = new List<string>();
+                        for (int bi = 0; bi < cleanBrands.Count; bi++)
+                        {
+                            string pName = $"@brand{bi}";
+                            brandParamNames.Add(pName);
+                            cmd.Parameters.AddWithValue(pName, cleanBrands[bi]);
+                        }
+                        sb.Append($"AND brand IN ({string.Join(", ", brandParamNames)}) ");
                     }
 
                     // 2. 名称模糊过滤
@@ -558,13 +594,22 @@ namespace ExcelAddInDemo.Services
                             WHERE 1=1 
                         ");
                         using var fallbackCmd = new SQLiteCommand(conn);
-                        if (!string.IsNullOrEmpty(cleanBrand) &&
-                            !string.Equals(cleanBrand, "全部", StringComparison.OrdinalIgnoreCase) &&
-                            !string.Equals(cleanBrand, "全部品牌", StringComparison.OrdinalIgnoreCase) &&
-                            !string.Equals(cleanBrand, "All", StringComparison.OrdinalIgnoreCase))
+                        // 降级检索同样支持多品牌过滤
+                        if (cleanBrands.Count == 1)
                         {
                             fallbackSb.Append("AND brand = @fbBrand ");
-                            fallbackCmd.Parameters.AddWithValue("@fbBrand", cleanBrand);
+                            fallbackCmd.Parameters.AddWithValue("@fbBrand", cleanBrands[0]);
+                        }
+                        else if (cleanBrands.Count > 1)
+                        {
+                            var fbBrandParamNames = new List<string>();
+                            for (int bi = 0; bi < cleanBrands.Count; bi++)
+                            {
+                                string pName = $"@fbBrand{bi}";
+                                fbBrandParamNames.Add(pName);
+                                fallbackCmd.Parameters.AddWithValue(pName, cleanBrands[bi]);
+                            }
+                            fallbackSb.Append($"AND brand IN ({string.Join(", ", fbBrandParamNames)}) ");
                         }
                         string kw = searchKeyword!.Trim();
                         fallbackSb.Append("AND (model LIKE @fbKw OR name LIKE @fbKw OR param1 LIKE @fbKw OR remark LIKE @fbKw) ");

@@ -1,5 +1,110 @@
 # Session State
 
+- **右键菜单去除多余包围框与挂接【🧩 选配配套附件...】一键选配落地交付 (`custom_context_menu.html`, `CustomContextMenuForm.cs`, `ComponentMatchOverlayForm.cs`, `ExcelServices.ComponentMatch.cs`)**：
+  1. **右键菜单“多余包围框”根因深度剖析与彻底消除**：
+     - **根因定位**：`custom_context_menu.html` 原样式中设置了 `html, body { padding: 2px; }`，同时容器 `.context-menu-container` 自带 `border-radius: 4px;`、`border: 1px solid #d4d4d4;` 和 `box-shadow`。在无边框 WinForms 窗体（`FormBorderStyle.None`，250x530）下，透明底色无法向系统桌面/Excel穿透，导致 2px 外层间距与内部灰边、伪造阴影在纯白背景窗体上叠合成“内缩 2px 的双层矩形边框”，产生明显的灰脏包围框；
+     - **极简原生贴边治理**：
+       - `custom_context_menu.html`：设置 `margin: 0; padding: 0; overflow: hidden;`，容器 `border-radius: 0; box-shadow: none; border: 1px solid var(--menu-border); box-sizing: border-box;`，使唯一单层 1px Office 经典边框紧密贴合窗口 4 条外边缘，彻底消除任何内外层冗余留白与多余框线；
+       - `CustomContextMenuForm.cs`：重写 `CreateParams` 引入 Windows 原生菜单级阴影 `CS_DROPSHADOW (0x00020000)`，窗口外围自然呈现 Office 原生柔和立体阴影；设置 `_webView.DefaultBackgroundColor = Color.Transparent;` 防止渲染闪白；
+       - **高度自适应防空白**：前端通过 `menuReady` 实时上报容器真实测得的紧凑高度，C# 动态重设 `this.Height`，消除底部冗余空白；
+  2. **右键菜单一键【🧩 选配配套附件...】端到端全链路落地**：
+     - **业务入口增加**：在 `custom_context_menu.html` 的“识别参数并匹配物料”下方添加【选配配套附件...】（动作 `openComponentAttachment`，带拼图图标与“D 列附件”快捷提示）；
+     - **无感安全调度 (`CustomContextMenuForm.cs`)**：通过 `ExcelAsyncUtil.QueueAsMacro` 异步调度，执行 `ExcelServices.ShowComponentAttachmentOverlay()`；
+     - **业务层智能定位与附件模式直切 (`ExcelServices.ComponentMatch.cs` & `ComponentMatchOverlayForm.cs`)**：
+       - 智能识别当前选区所在行的 D 列（规格型号），提取品牌、名称与型号（型号若空自动回退取 C 列原型号）；
+       - 若未检测到型号，友好提示先选择或输入型号；
+       - 若已有型号，对齐 D 列单元格下方弹窗，并通过 `ShowAttachmentsAtCell` / `TriggerLoadAttachments` 后台异步查询本地 SQLite / 云端商城的配套附件，直接向前端推送 `autoEnterAttachmentMode`；
+       - 用户在浮窗中直接搜索当前型号适用的附件，调整数量（+/-），点击即一键追加填充至该行附件列与单价，彻底打通已有型号行的附件选配链路！
+  3. **多端静态资源同步与工程构建**：
+     - `custom_context_menu.html` 强制覆盖同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 严格遵循每 3 行包含一行中文注释与无硬编码规范；
+     - `dotnet build /p:RunExcelDnaBuild=false` 构建验证：**0 错误，0 警告**。
+
+
+- **D 列支持原生自由手写/双击就地编辑与云端物料智能联想无冲突共存全链路交付（方案 A） (`ExcelEventManager.cs`, `ComponentMatchOverlayForm.cs`, `component_match_overlay.html`)**：
+  1. **问题与冲突根因闭环**：
+     - 用户单选 D 列单元格时，原弹窗强抢键盘焦点，导致直接敲键盘时无法将文字输入到单元格中；
+     - `SheetBeforeDoubleClick` 原本硬编码了 `cancel = true`，导致双击进入单元格光标编辑的 Excel 原生能力被完全阻断。
+  2. **端到端分流协同与共存落地（方案 A）**：
+     - **双击 100% 归还 Excel 就地编辑**：移除 `SheetBeforeDoubleClick` 中的 `cancel = true` 拦截，双击时自动平滑收起物料下拉框，保持 `cancel = false`，允许 Excel 正常进入就地光标编辑态，支持光标选词、退格删除、复制粘贴；
+     - **弹窗不夺取键盘焦点（`ShowWithoutActivation` + `SetWindowPos SWP_NOACTIVATE`）**：在 `ComponentMatchOverlayForm` 中重写 `ShowWithoutActivation => true`，并通过 Windows API `SWP_NOACTIVATE` 保持悬浮窗置顶但不抢焦，100% 将键盘焦点保留在 Excel 单元格中；
+     - **前端取消被动聚焦**：移除 `component_match_overlay.html` 在 `initCandidates` 时的自动抢焦代码，仅当用户主动鼠标点击搜索框时才触发聚焦；
+     - **单元格改动收尾联动**：在 `OnSheetChange` 中监听 D 列手动输入改动，手动编辑敲回车完成后自动平滑隐藏悬浮窗；
+     - **完美共存体验**：单选单元格时，悬浮窗在下方安静显示物料参考列表；若想直接手写，敲键盘即可直接输入单元格或按 F2 编辑；若想用云端物料，鼠标点击物料条目直接回填！两者彻底互不打架。
+  3. **静态资源同步与工程构建验证**：
+     - 静态资源已同步部署至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 代码严格遵循每 3 行包含一行中文注释规范；
+     - `ExcelAddInDemo.csproj` 构建验证：**0 错误**。
+
+- **元器件物料联想下拉悬浮窗“📌固定置顶”连续回填与“上下拖拽调整高度”端到端全链路落地交付 (`component_match_overlay.html`, `ComponentMatchOverlayForm.cs`, `ExcelServices.ComponentMatch.cs`)**：
+  1. **痛点与核心需求闭环**：
+     - 用户在做电气成套 BOM 表或明细时，常常遇到多个回路或连续多行使用相同规格型号的元器件；
+     - 原先每次回填或点击其它单元格，悬浮窗都会自动关闭（失焦或回填关闭），切到下一行时又重新触发提取参数与模糊搜索，耗费重复等待时间；
+     - 需求目标：点击固定 icon 后，窗口置顶固定在 Excel 最前端，切到其他行时**不重新搜索、不关闭窗口**，用户直接点击条目即可将物料连续回填到最新选中的 Excel 活动行！
+     - **自由拖拽调节高度**：窗口支持底部手柄上下拖拽修改高度（支持 220px ~ 800px），并具备动态记忆特性，下次弹窗自动保留用户偏好的高度！
+  2. **前端交互与视觉设计 (`component_match_overlay.html`)**：
+     - **📌 固定按钮**：在顶部搜索框右侧设计了专属操作工具条，放置固定钉子按钮（`<i class="fa-solid fa-thumbtack"></i>`）与快速关闭按钮（`<i class="fa-solid fa-xmark"></i>`）；
+     - **双态视觉微交互**：
+       - 未固定状态：图标为柔和灰 `#94a3b8`，带有微小倾斜（`transform: rotate(-45deg)`）；
+       - 固定置顶状态：主色调 `#009688` 绿底浅色高亮（`#e0f2f1`），图标竖直立起（`transform: rotate(0deg)`）并带有精致发光微投影；
+     - **无遮挡自由拖拽**：在顶部 header 区域支持按住空白处平滑拖拽移动窗口（底层调用 Windows API 原生无抖动移动），避免固定时遮挡用户正在编辑的表格；
+     - **底部操作提示联动**：底部状态栏显示 `[已固定置顶]` 与 `[点击物料直接回填选中行]`，并给予即时 Toast 提示（如“已成功回填至第 15 行: YKYV1-40C/4”）。
+  3. **后端窗体生命周期与防重置防失焦 (`ComponentMatchOverlayForm.cs`)**：
+     - **固定状态管理**：维护 `_isPinned` 状态，对外暴露 `IsPinned`；
+     - **防失焦关闭**：重写 `OnOverlayDeactivate`，当处于 `_isPinned` 时直接跳过隐藏，保持置顶停留在前端；
+     - **动态感知 ActiveCell**：在回填 `selectComponent` 时，优先通过 `ExcelDnaUtil.Application.ActiveCell` 动态获取当前用户最新选中的目标行，回填后不关闭窗口，发送 `fillSuccess` 消息；
+     - **原生拖拽支持**：引入 `ReleaseCapture` 与 `SendMessage(WM_NCLBUTTONDOWN, HT_CAPTION)` 实现平滑无缝窗体拖动。
+  4. **选区联动门控守门 (`ExcelServices.ComponentMatch.cs`)**：
+     - 在 `ShowComponentMatchOverlay` 门控处：若窗口处于固定置顶状态，不重新搜索、不重新定位覆盖候选，仅更新单元格句柄，彻底保障用户已搜出的列表不被冲刷；
+     - 在 `HideComponentMatchOverlay` 门控处：若处于固定状态，忽略选区变动触发的隐藏调用。
+  5. **工程构建与多端静态资源同步**：
+     - 静态资源已同步至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 代码严格遵循每 3 行包含一行中文注释与无硬编码规范；
+     - `ExcelAddInDemo.csproj` 构建验证：**0 错误**。
+  1. **前端交互与视觉设计全面升级 (`component_match_dialog.html`)**：
+     - **支持多选品牌**：品牌卡片改为复选切换模式，支持用户同时选中多个品牌（如同时勾选“国优”和“派沃”）；
+     - **精致视觉徽标与主题规范**：选中的品牌以主色调 `#009688` 绿底白字呈现，并在右上角呈现小巧精密的白色对勾（`✓`），带来清晰直观的多选勾选感知；
+     - **智能互斥与自愈回退**：点击【全部品牌 (不限)】自动清空所有具体品牌并高亮；当所有已选具体品牌被反选清空后，自动恢复【全部品牌 (不限)】激活；
+     - **计数标签与一键清空**：顶部卡片栏动态展示 `已选 X 个品牌` 成功标签，并提供便捷的【清空】按钮；
+  2. **全面采用纯粹的多选品牌架构（不兼容旧代码，代码库纯净轻量）**：
+     - **彻底移除兼容字段**：在 `ComponentMatchModels.cs` 中彻底删除了 `SelectedBrand` 单值属性与 `_legacySelectedBrand` 胶水逻辑，仅保留纯净的 `SelectedBrands`（`List<string>`）列表；
+     - **控制器与客户端接口精炼**：彻底删除 `ComponentMatchController` 与 `ComponentApiClient` 中遗留的单品牌 `string? brand` 重载与逗号拆分逻辑，统一为纯粹的 `brands` 列表参数；
+     - **前端纯化与样式注释校准**：在 `component_match_dialog.html` 中彻底清除 `selectedBrand` 属性与字符串拼接代码，并将 CSS 注释校准为 `/* 品牌多选按钮组网格 */`；
+     - **悬浮窗上下文统一**：`ComponentMatchOverlayForm.cs` 与 `ExcelServices.ComponentMatch.cs` 彻底剔除单品牌字段，统一由 `Brands` 列表驱动；
+  3. **数据查询层原生多选与并发聚合落地**：
+     - **本地 SQLite 个人物料库 (`PersonalComponentDbService.cs`)**：
+       - `SearchComponents` 新增多品牌集合重载，构建 `AND brand IN (@brand0, @brand1...)` 安全参数化查询；
+       - 在智能降级检索中同样无缝享受多品牌过滤；
+     - **云端公共库客户端 (`ComponentApiClient.cs`)**：
+       - `SearchComponentsAsync` 与 `QueryComponents` 新增多品牌集合重载；
+       - 多品牌时采用 `Task.WhenAll` 并发请求各品牌并在内存中根据 `Id` 去重合并，即使线上商城尚未升级部署单次多品牌接口亦能 100% 正确拉取全部候选物料；
+     - **商城后端服务升级 (`DrawMall.Ability/ComponentServicer.cs`)**：
+       - `GetPagedListAsync` 品牌筛选升级为支持逗号分隔多品牌拆分与 `IN` 集合查询；
+  4. **选区批量反查与单元格联想全链路打通**：
+     - **批量反查回填 (`ExcelServices.ComponentMatch.cs`)**：选区批量识别反查物料库时，严格根据用户多选的品牌列表执行精准过滤；
+     - **联想下拉悬浮窗 (`ComponentMatchOverlayForm.cs`)**：贴合单元格激活查询时，将多选品牌列表注入上下文，保障用户多选偏好即时生效；
+  5. **工程构建与多端静态资源同步**：
+     - 新增代码严格遵循每 3 行包含一行中文注释，硬编码处带有 `--硬编码--` 标明；
+     - 静态资源 `component_match_dialog.html` 已强制覆盖同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - `ExcelAddInDemo.csproj` 与 `DrawMall.Web.csproj` 均实现 **0 错误** 编译通过。
+
+
+  1. **问题与业务痛点彻底闭环**：
+     - 原先每次打开【汇总调价】永远展现图一（分类选择配置大面板），用户若想进入图二，必须点击【立即生成】重新全量扫描几百台箱柜，导致工程师之前在【元件汇总表】中调整好的价格、折扣等数据被**强制覆盖抹除**；
+     - 且在已有汇总表时缺少【一键更新】等核心功能的直接入口。
+  2. **端到端智能探测与优雅流转落地**：
+     - **后端服务层轻量守门 (`ExcelServices.CheckSummarySheetStatus`)**：毫秒级探测活动工作簿中是否存在名为“元件汇总表”且有效行数 $\ge 5$ 的工作表；命中时自动调用 `ws.Activate()` 激活聚焦该表，提升视口连贯性；
+     - **WebAPI 控制器与宏队列防死锁 (`CheckSummarySheetExists` & `QueueAsMacro`)**：在 `ExcelAsyncUtil.QueueAsMacro` 中安全异步调度，跨进程向 WebView2 派发探测报文，杜绝 Chromium IPC 线程死锁；
+     - **前端生命周期双路由驱动 (`summary_adjust_price.html`)**：`onMounted` 钩子中优先发送 `checkSummarySheet` 探测：
+       - 若已存在汇总表：直接将 `currentView = 'editor'` 进入图二紧凑编辑条（690x115），自动拉取列隐藏状态，提示直接进入调价模式，杜绝重复生成与抹除数据；
+       - 若不存在：保持图一（720x620），拉取分类列表走初次生成向导；
+       - 用户在图二中随时可点击【⚙️ 修改配置】图标平滑退回图一重新配置。
+  3. **静态资源多端同步与构建验证**：
+     - 静态资源已同步至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`（哈希严格一致）；
+     - 新增代码严格遵循每 3 行包含一行中文注释，硬编码均打上 `--硬编码--` 标明；
+     - `ExcelAddInDemo.csproj` 成功编译通过：**0 错误**。
+
+
 - **代码同步与多端拉取（Git Pull）**：
   1. `excel-ct-tools` (分支 `main`)：成功拉取远程最新代码至提交 `87833d2`，包含分类管理删除窗口（`DeleteCategoryForm`、`delete_category.html`）等 18 个更新文件，全工程重新编译通过（0 错误）；
   2. `cad-net_1` (分支 `随机布局`)：成功拉取远程更新至提交 `97c9854`（`ServerOp.cs`, `TuFan.csproj`），项目源码编译通过（0 错误）；

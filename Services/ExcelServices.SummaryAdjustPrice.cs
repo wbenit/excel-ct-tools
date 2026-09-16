@@ -33,6 +33,86 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 探测当前活动工作簿中是否存在有效的“元件汇总表”
+        /// 若存在有效汇总表，自动激活聚焦该工作表供用户即时编辑调价
+        /// </summary>
+        /// <param name="autoActivate">若存在是否自动激活切换至该表，默认为 true</param>
+        /// <returns>汇总表存在状态数据模型</returns>
+        public static Controllers.SummarySheetStatusDto CheckSummarySheetStatus(bool autoActivate = true)
+        {
+            // 初始化返回实体模型
+            var status = new Controllers.SummarySheetStatusDto();
+
+            try
+            {
+                // 获取 Excel Application 实例
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                // 若未获取到应用程序实例则直接返回未找到
+                if (app == null) return status;
+
+                // 获取当前活动工作簿
+                dynamic? activeWb = app.ActiveWorkbook;
+                // 若工作簿为空则直接返回未找到
+                if (activeWb == null) return status;
+
+                // 目标汇总表标准名称 (元件汇总表) --硬编码--
+                string targetName = ComponentMatchDefaults.ComponentSummarySheetName;
+
+                // 遍历活动工作簿下的所有工作表寻找目标表
+                foreach (dynamic ws in activeWb.Worksheets)
+                {
+                    // 获取当前工作表名称文本
+                    string wsName = Convert.ToString(ws.Name)?.Trim() ?? string.Empty;
+
+                    // 比对是否为“元件汇总表”
+                    if (string.Equals(wsName, targetName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // 探测已用行数，校验是否为具有有效元器件数据的表 (至少包含大标题、表头与数据行，行数 >= 5)
+                        int usedRows = 0;
+                        try { usedRows = ws.UsedRange.Rows.Count; } catch { }
+
+                        // 若已用行数大于等于 5，判定为有效存在
+                        if (usedRows >= 5)
+                        {
+                            // 标记存在状态为 true
+                            status.Exists = true;
+                            // 记录工作表名称
+                            status.SheetName = wsName;
+                            // 记录已用行数
+                            status.RowCount = usedRows;
+                            // 记录提示信息
+                            status.Message = $"检测到已有有效【{wsName}】(包含 {usedRows} 行数据)";
+
+                            // 若开启自动激活且当前活动表不是汇总表，平滑切换激活
+                            if (autoActivate)
+                            {
+                                try
+                                {
+                                    // 激活聚焦至元件汇总表，提升用户即时交互体验
+                                    ws.Activate();
+                                }
+                                catch { }
+                            }
+
+                            // 成功命中直接跳出遍历
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"CheckSummarySheetStatus 异常: {ex.Message}");
+                // 异常时记录说明
+                status.Message = ex.Message;
+            }
+
+            // 返回检测结果模型
+            return status;
+        }
+
+        /// <summary>
         /// 遍历当前工作簿，读取所有分类工作表（Sheet）及对应箱柜台数统计
         /// 遵循规则 7 采用内存二维数组极速只读扫描，实现毫秒级瞬间打开弹窗
         /// </summary>

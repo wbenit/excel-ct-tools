@@ -134,7 +134,7 @@
       color: var(--primary-color);
     }
 
-    /* 品牌单选按钮组网格 */
+    /* 品牌多选按钮组网格 */
     .brand-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -142,6 +142,7 @@
     }
 
     .brand-pill {
+      position: relative;
       border: 1px solid var(--border-color);
       border-radius: 6px;
       padding: 6px 8px;
@@ -166,6 +167,18 @@
       color: #ffffff;
       font-weight: 600;
       box-shadow: 0 2px 6px rgba(0, 150, 136, 0.3);
+    }
+
+    /* 多选激活时右上角展示微型白色对勾 */
+    .brand-pill.active::after {
+      content: "✓";
+      position: absolute;
+      top: 1px;
+      right: 4px;
+      font-size: 9px;
+      line-height: 1;
+      color: rgba(255, 255, 255, 0.95);
+      font-weight: bold;
     }
 
     .brand-pill .brand-name {
@@ -303,25 +316,35 @@
         </div>
       </div>
 
-      <!-- 1. 目标品牌筛选模块 -->
+      <!-- 1. 目标品牌筛选模块 (支持多选品牌) -->
       <div class="section-card">
         <div class="section-header">
           <div class="section-title">
             <i class="fa-solid fa-tags"></i>
             <span>1. 目标品牌偏好设置 ({{ filterConfig.dataSource === 'personal' ? '个人库' : '云端库' }})</span>
           </div>
-          <el-tag size="small" type="info" effect="plain">{{ brands.length }} 个品牌可选</el-tag>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <!-- 已选品牌计数标签 (多选时醒目展示) -->
+            <el-tag v-if="filterConfig.selectedBrands.length > 0" size="small" type="success" effect="plain" style="font-weight: 500;">
+              已选 {{ filterConfig.selectedBrands.length }} 个品牌
+            </el-tag>
+            <el-tag size="small" type="info" effect="plain">{{ brands.length }} 个品牌可选</el-tag>
+            <!-- 一键清空已选品牌按钮 -->
+            <el-button v-if="filterConfig.selectedBrands.length > 0" type="primary" link size="small" @click="clearSelectedBrands" style="font-size: 11px; padding: 0 4px; color: #009688;">
+              清空
+            </el-button>
+          </div>
         </div>
         <div class="brand-grid">
-          <!-- 全部品牌选项 -->
-          <div class="brand-pill" :class="{ active: filterConfig.selectedBrand === '' }"
-            @click="filterConfig.selectedBrand = ''">
+          <!-- 全部品牌选项 (未选中任何具体品牌时处于激活状态) -->
+          <div class="brand-pill" :class="{ active: filterConfig.selectedBrands.length === 0 }"
+            @click="selectAllBrands">
             <span class="brand-name">全部品牌</span>
             <span class="brand-count">(不限)</span>
           </div>
-          <!-- 动态从当前数据源取得的各品牌 -->
+          <!-- 动态从当前数据源取得的各品牌 (支持点击切换多选状态) -->
           <div v-for="b in brands" :key="b.brand" class="brand-pill"
-            :class="{ active: filterConfig.selectedBrand === b.brand }" @click="filterConfig.selectedBrand = b.brand">
+            :class="{ active: isBrandSelected(b.brand) }" @click="toggleBrand(b.brand)">
             <span class="brand-name">{{ b.brand }}</span>
             <span class="brand-count">({{ b.count }})</span>
           </div>
@@ -462,13 +485,40 @@
       setup() {
         // 品牌列表
         const brands = ref([]);
-        // 过滤配置对象 (包含数据源、品牌、必含规则及搜索弹起开关)
+        // 过滤配置对象 (包含数据源、多选品牌、必含规则及搜索弹起开关)
         const filterConfig = reactive({
           dataSource: 'cloud',
-          selectedBrand: '',
+          selectedBrands: [], // 多选品牌列表
           mustContainRules: [],
           enableSearchOverlay: false
         });
+
+        // 判断指定品牌是否已被多选
+        const isBrandSelected = (brandName) => {
+          return filterConfig.selectedBrands.includes(brandName);
+        };
+
+        // 切换品牌的选中状态 (多选切换)
+        const toggleBrand = (brandName) => {
+          const idx = filterConfig.selectedBrands.indexOf(brandName);
+          if (idx >= 0) {
+            // 已选中则取消
+            filterConfig.selectedBrands.splice(idx, 1);
+          } else {
+            // 未选中则追加
+            filterConfig.selectedBrands.push(brandName);
+          }
+        };
+
+        // 选择全部品牌 (清空所有具体品牌选择)
+        const selectAllBrands = () => {
+          filterConfig.selectedBrands = [];
+        };
+
+        // 清空多选品牌
+        const clearSelectedBrands = () => {
+          filterConfig.selectedBrands = [];
+        };
 
         // 单条测试表单
         const testForm = reactive({
@@ -510,7 +560,8 @@
               if (msg.brands) brands.value = msg.brands;
               if (msg.config) {
                 filterConfig.dataSource = msg.config.dataSource || 'cloud';
-                filterConfig.selectedBrand = msg.config.selectedBrand || '';
+                // 绑定多选品牌列表
+                filterConfig.selectedBrands = Array.isArray(msg.config.selectedBrands) ? [...msg.config.selectedBrands] : [];
                 filterConfig.mustContainRules = msg.config.mustContainRules || [];
                 filterConfig.enableSearchOverlay = !!msg.config.enableSearchOverlay;
               }
@@ -518,6 +569,8 @@
 
             case 'brandsLoaded':
               if (msg.brands) brands.value = msg.brands;
+              // 切换数据源时清空已选品牌
+              filterConfig.selectedBrands = [];
               break;
 
             case 'testResult':
@@ -546,7 +599,7 @@
 
         // 切换物料数据源 (云端公共库 vs 本地个人物料库)
         const onDataSourceChange = (val) => {
-          filterConfig.selectedBrand = '';
+          filterConfig.selectedBrands = [];
           postToHost('changeDataSource', { dataSource: val });
         };
 
@@ -576,7 +629,7 @@
           });
         };
 
-        // 运行单条模拟测试
+        // 运行单条模拟测试 (支持多选品牌)
         const runTest = () => {
           isTesting.value = true;
           postToHost('testMatch', {
@@ -584,13 +637,13 @@
             current: testForm.current,
             pole: testForm.pole,
             tripMode: testForm.trip,
-            brand: filterConfig.selectedBrand,
+            brands: [...filterConfig.selectedBrands],
             rules: JSON.parse(JSON.stringify(filterConfig.mustContainRules)),
             dataSource: filterConfig.dataSource
           });
         };
 
-        // 立即执行当前选区批量匹配
+        // 立即执行当前选区批量匹配 (支持多选品牌)
         const executeBatch = () => {
           isExecuting.value = true;
           statusMsg.value = filterConfig.dataSource === 'personal'
@@ -698,6 +751,10 @@
         return {
           brands,
           filterConfig,
+          isBrandSelected,
+          toggleBrand,
+          selectAllBrands,
+          clearSelectedBrands,
           testForm,
           isTesting,
           testResult,

@@ -282,6 +282,79 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 多维度同步检索元器件列表 (支持多选品牌集合)
+        /// </summary>
+        public static List<ComponentApiDto> SearchComponents(
+            string? searchKeyword,
+            string? name,
+            string? current,
+            string? pole,
+            string? tripMode,
+            IEnumerable<string>? brands,
+            List<MustContainRule>? mustContainRules = null,
+            int maxResults = 20)
+        {
+            // 同步等待异步多选品牌查询完成
+            return Task.Run(() => SearchComponentsAsync(searchKeyword, name, current, pole, tripMode, brands, mustContainRules, maxResults)).GetAwaiter().GetResult();
+        }
+
+        /// <summary>
+        /// 多维度异步检索元器件列表 (支持多选品牌列表并发请求与结果合并去重)
+        /// </summary>
+        public static async Task<List<ComponentApiDto>> SearchComponentsAsync(
+            string? searchKeyword,
+            string? name,
+            string? current,
+            string? pole,
+            string? tripMode,
+            IEnumerable<string>? brands,
+            List<MustContainRule>? mustContainRules = null,
+            int maxResults = 20)
+        {
+            // 提取有效且非空的品牌集合
+            var cleanBrands = brands?
+                .Where(b => !string.IsNullOrWhiteSpace(b))
+                .Select(b => b.Trim())
+                .Where(b => !string.Equals(b, "全部", StringComparison.OrdinalIgnoreCase) &&
+                            !string.Equals(b, "全部品牌", StringComparison.OrdinalIgnoreCase) &&
+                            !string.Equals(b, "All", StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
+
+            // 若未指定具体品牌或为空，直接走单次全品牌请求
+            if (cleanBrands.Count == 0)
+            {
+                return await SearchComponentsAsync(searchKeyword, name, current, pole, tripMode, (string?)null, mustContainRules, maxResults).ConfigureAwait(false);
+            }
+
+            // 若仅指定了 1 个品牌，走常规单品牌请求
+            if (cleanBrands.Count == 1)
+            {
+                return await SearchComponentsAsync(searchKeyword, name, current, pole, tripMode, cleanBrands[0], mustContainRules, maxResults).ConfigureAwait(false);
+            }
+
+            // 多品牌并发向云端发起查询
+            var queryTasks = cleanBrands.Select(b => SearchComponentsAsync(searchKeyword, name, current, pole, tripMode, b, mustContainRules, maxResults));
+            var taskResults = await Task.WhenAll(queryTasks).ConfigureAwait(false);
+
+            // 合并多品牌结果并根据 Id 去重
+            var merged = new List<ComponentApiDto>();
+            var seenIds = new HashSet<int>();
+            foreach (var list in taskResults)
+            {
+                foreach (var item in list)
+                {
+                    // 仅添加未见过的物料条目
+                    if (seenIds.Add(item.Id))
+                    {
+                        merged.Add(item);
+                    }
+                }
+            }
+            return merged;
+        }
+
+        /// <summary>
         /// 异步多维元器件查询
         /// </summary>
         public static async Task<List<ComponentApiDto>> QueryComponentsAsync(
@@ -295,18 +368,20 @@ namespace ExcelAddInDemo
             return await SearchComponentsAsync(null, name, current, pole, tripMode, brand, mustContainRules).ConfigureAwait(false);
         }
 
+
         /// <summary>
-        /// 调用远程商城 WebAPI 根据【名称、电流、极数、脱扣、品牌、必含字段】多维组合检索元器件数据列表
+        /// 调用远程商城 WebAPI 根据【名称、电流、极数、脱扣、多选品牌、必含字段】多维组合检索元器件数据列表
         /// </summary>
         public static List<ComponentApiDto> QueryComponents(
             string name,
             string current,
             string pole,
             string tripMode,
-            string? brand = null,
+            IEnumerable<string>? brands,
             List<MustContainRule>? mustContainRules = null)
         {
-            return SearchComponents(null, name, current, pole, tripMode, brand, mustContainRules);
+            // 调度多品牌查询并取回结果
+            return SearchComponents(null, name, current, pole, tripMode, brands, mustContainRules);
         }
 
         /// <summary>
@@ -314,8 +389,8 @@ namespace ExcelAddInDemo
         /// </summary>
         public static List<ComponentApiDto> QueryComponents(string name, string current, string pole, string tripMode)
         {
-            // 转发调用完整参数重载
-            return QueryComponents(name, current, pole, tripMode, null, null);
+            // 转发调用多品牌参数重载
+            return QueryComponents(name, current, pole, tripMode, (IEnumerable<string>?)null, null);
         }
 
         /// <summary>

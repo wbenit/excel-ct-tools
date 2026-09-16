@@ -1000,6 +1000,10 @@
           currentView.value = 'config';
           // 恢复 720x620 尺寸
           sendResizeWindow(720, 620);
+          // 若分类数据尚未拉取，触发拉取
+          if (categories.value.length === 0) {
+            refreshData();
+          }
         };
 
         // 切换为图二紧凑编辑条
@@ -1009,6 +1013,15 @@
           sendResizeWindow(690, 115);
           // 探测当前表格的列隐藏状态
           fetchColumnsHiddenStatus();
+        };
+
+        // 探测当前工作簿是否已经存在“元件汇总表”
+        const checkSummarySheet = () => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({
+              action: 'checkSummarySheet'
+            }));
+          }
         };
 
         // 切换目标列 (EGHJKMOQRS) 隐藏状态
@@ -1164,8 +1177,22 @@
               try {
                 const response = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
 
+                // 0. 元件汇总表存在性检测返回 (实现“先检查有没有元件汇总表，如果有不用重新生成了”)
+                if (response.action === 'onSummarySheetStatusChecked') {
+                  if (response.success && response.data && response.data.exists) {
+                    // 若已存在有效的“元件汇总表”，直接切换为图二紧凑编辑条视图
+                    switchToEditorView();
+                    ElMessage.success({
+                      message: '检测到当前工作簿已有【元件汇总表】，已直接进入编辑调价模式',
+                      duration: 2500
+                    });
+                  } else {
+                    // 若不存在，则保持图一配置面板并开始加载各分类工作表
+                    refreshData();
+                  }
+                }
                 // 1. 分类数据返回
-                if (response.action === 'onCategoriesLoaded') {
+                else if (response.action === 'onCategoriesLoaded') {
                   loading.value = false;
                   if (response.success && response.data) {
                     categories.value = response.data.map(item => ({
@@ -1226,13 +1253,14 @@
             });
           }
 
-          // 初始化读取分类（立即触发 + 延时触发确保 WebView2 桥接稳固）
-          refreshData();
+          // 初始化时优先探测是否已存在“元件汇总表”
+          checkSummarySheet();
           setTimeout(() => {
-            if (categories.value.length === 0) {
-              refreshData();
+            // 若 200ms 内处于 config 视图且分类列表为空，补充触发一次检测
+            if (currentView.value === 'config' && categories.value.length === 0 && !loading.value) {
+              checkSummarySheet();
             }
-          }, 150);
+          }, 200);
         });
 
         return {
@@ -1260,6 +1288,7 @@
           closeWindow,
           switchToConfigView,
           switchToEditorView,
+          checkSummarySheet,
           handleToggleTargetColumns,
           handleTogglePriceColumns,
           fetchColumnsHiddenStatus,

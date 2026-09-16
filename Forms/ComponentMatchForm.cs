@@ -178,14 +178,21 @@ namespace ExcelAddInDemo.Forms
                         }
                         break;
 
-                    // 5. 运行单条模拟测试
+                    // 5. 运行单条模拟测试 (支持多选品牌列表与云端/个人库)
                     case "testMatch":
                         string tName = root.TryGetProperty("name", out var np) ? np.GetString() ?? "" : "";
                         string tCur = root.TryGetProperty("current", out var cp) ? cp.GetString() ?? "" : "";
                         string tPole = root.TryGetProperty("pole", out var pp) ? pp.GetString() ?? "" : "";
                         string tTrip = root.TryGetProperty("tripMode", out var tp) ? tp.GetString() ?? "" : "";
-                        string tBrand = root.TryGetProperty("brand", out var bp) ? bp.GetString() ?? "" : "";
                         string tDs = root.TryGetProperty("dataSource", out var tdsp) ? tdsp.GetString() ?? "cloud" : "cloud";
+
+                        // 解析多选品牌列表
+                        List<string>? tBrands = null;
+                        if (root.TryGetProperty("brands", out var bsp) && bsp.ValueKind == JsonValueKind.Array)
+                        {
+                            // 直接反序列化前端传来的多选品牌字符串数组
+                            tBrands = JsonSerializer.Deserialize<List<string>>(bsp.GetRawText(), JsonOptions);
+                        }
 
                         List<MustContainRule>? rules = null;
                         if (root.TryGetProperty("rules", out var rp))
@@ -194,7 +201,8 @@ namespace ExcelAddInDemo.Forms
                         }
 
                         var sw = Stopwatch.StartNew();
-                        var testItems = _controller.TestMatch(tName, tCur, tPole, tTrip, tBrand, rules, tDs);
+                        // 调用控制器执行多品牌模拟检索测试
+                        var testItems = _controller.TestMatch(tName, tCur, tPole, tTrip, tBrands, rules, tDs);
                         sw.Stop();
 
                         PostMessageToWeb(new

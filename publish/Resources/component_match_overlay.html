@@ -66,6 +66,77 @@
       gap: 6px;
     }
 
+    /* 顶部操作按钮容器 */
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    /* 窗口固定/钉子按钮 */
+    .pin-btn {
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s ease;
+      outline: none;
+    }
+
+    .pin-btn:hover {
+      background: #e2e8f0;
+      color: #475569;
+      border-color: #94a3b8;
+    }
+
+    /* 固定激活状态：主色调 #009688，坚立高亮 */
+    .pin-btn.active {
+      background: #e0f2f1;
+      border-color: #009688;
+      color: #009688;
+      box-shadow: 0 0 6px rgba(0, 150, 136, 0.35);
+    }
+
+    .pin-btn i {
+      transition: transform 0.2s ease;
+      transform: rotate(-45deg);
+    }
+
+    .pin-btn.active i {
+      transform: rotate(0deg);
+    }
+
+    /* 顶部微型关闭按钮 */
+    .close-icon-btn {
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.15s ease;
+      outline: none;
+    }
+
+    .close-icon-btn:hover {
+      background: #fee2e2;
+      border-color: #fca5a5;
+      color: #ef4444;
+    }
+
     .pipeline-tags {
       display: flex;
       align-items: center;
@@ -473,6 +544,38 @@
       flex-shrink: 0;
     }
 
+    /* 底部边缘高度拖拽把手条 (支持上下拖拽调整窗口高度) */
+    .resize-handle-bar {
+      height: 7px;
+      background: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+      cursor: ns-resize;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s ease;
+      user-select: none;
+    }
+
+    .resize-handle-bar:hover {
+      background: #e0f2f1;
+    }
+
+    /* 把手中部小胶囊线条指示器 */
+    .resize-handle-pill {
+      width: 38px;
+      height: 3px;
+      background: #cbd5e1;
+      border-radius: 2px;
+      transition: all 0.15s ease;
+    }
+
+    .resize-handle-bar:hover .resize-handle-pill {
+      background: #009688;
+      width: 52px;
+    }
+
     /* 覆盖 Element-Plus 样式 */
     .el-input__wrapper {
       padding: 1px 8px !important;
@@ -484,8 +587,8 @@
 </head>
 <body>
   <div id="app">
-    <!-- 顶部搜索条与当前过滤管道标识 -->
-    <div class="header-bar">
+    <!-- 顶部搜索条与当前过滤管道标识 (支持按住空白处拖动窗口) -->
+    <div class="header-bar" @mousedown="onHeaderMouseDown" title="按住空白区域可自由拖拽移动窗口">
       <div class="search-input-box">
         <el-input
           ref="searchInputRef"
@@ -503,6 +606,29 @@
             <i class="fa-solid" :class="isAttachmentMode ? 'fa-puzzle-piece' : 'fa-magnifying-glass'" style="color: #009688;"></i>
           </template>
         </el-input>
+
+        <!-- 顶部操作区：窗口固定/取消固定与微型关闭按钮 -->
+        <div class="header-actions">
+          <!-- 固定图标按钮: 点击后锁定窗口置顶，切行不重新搜索，直接点击候选连续回填 -->
+          <button 
+            type="button" 
+            class="pin-btn" 
+            :class="{ active: isPinned }" 
+            @click.stop="togglePin" 
+            :title="isPinned ? '取消固定 (当前已固定在前端，切行不重新搜索)' : '固定窗口 (固定在前端，切行不重新搜索，直接点击连续回填)'"
+          >
+            <i class="fa-solid fa-thumbtack"></i>
+          </button>
+          <!-- 优雅关闭按钮 -->
+          <button 
+            type="button" 
+            class="close-icon-btn" 
+            @click.stop="closeOverlay" 
+            title="关闭窗口 (Esc)"
+          >
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
       </div>
 
       <!-- 管道约束与模式切换栏 -->
@@ -742,15 +868,28 @@
     <div class="footer-bar">
       <span>
         共匹配到 <strong style="color: #009688;">{{ filteredDisplayItems.length }}</strong> 条{{ isAttachmentMode ? '配套附件' : '物料' }}
+        <span v-if="isPinned" style="color: #009688; margin-left: 6px; font-weight: 600;">
+          <i class="fa-solid fa-thumbtack" style="font-size: 10px;"></i> 已固定置顶
+        </span>
       </span>
       <span>
         <template v-if="isAttachmentMode">
           [点击/回车] 选择附件并累加公式 | <strong style="color: #009688; cursor: pointer;" @click="closeOverlay" title="点击直接完成退出">[Esc / 点击完成]</strong> 跳过附件退出
         </template>
         <template v-else>
-          [↑/↓] 切换 | [Enter] 确认回填 | [Esc] 退出
+          <template v-if="isPinned">
+            <span style="color: #009688; font-weight: 500;">[点击物料直接回填选中行]</span> | [Esc] 退出固定
+          </template>
+          <template v-else>
+            [↑/↓] 切换 | [Enter] 确认回填 | [Esc] 退出
+          </template>
         </template>
       </span>
+    </div>
+
+    <!-- 底部边缘拖拽调整高度把手 (支持上下拖拽调整窗口高度) -->
+    <div class="resize-handle-bar" @mousedown="onResizeMouseDown" title="按住上下拖拽可调整窗口高度">
+      <div class="resize-handle-pill"></div>
     </div>
   </div>
 
@@ -769,6 +908,9 @@
         const items = ref([]);
         const selectedIndex = ref(0);
         const loading = ref(false);
+
+        // 窗口固定置顶状态 (固定后切行不重新搜索，直接点击物料连续回填)
+        const isPinned = ref(false);
 
         // 模式控制：false=常规物料选择模式，true=配套附件选择模式 (方式 A 原位切换)
         const isAttachmentMode = ref(false);
@@ -1163,12 +1305,7 @@
               }
               if (msg.dataSource) dataSource.value = msg.dataSource;
 
-              // 自动聚焦到搜索框
-              nextTick(() => {
-                if (searchInputRef.value && searchInputRef.value.focus) {
-                  searchInputRef.value.focus();
-                }
-              });
+              // 方案 A: 初始化时不主动抢占输入焦点，让 Excel 单元格保持原生可直接打字或 F2 编辑
               break;
 
             // 配套附件列表返回 (手动点击配套附件按钮返回)
@@ -1211,6 +1348,16 @@
               originalMustRules.value = [...activeMustRules.value];
               if (ElementPlus && ElementPlus.ElMessage) {
                 ElementPlus.ElMessage.success({ message: '已保存为默认必含规则', duration: 1800 });
+              }
+              break;
+
+            // 回填成功确认通知 (固定模式下保持原样，给予轻量 Toast 提示)
+            case 'fillSuccess':
+              if (ElementPlus && ElementPlus.ElMessage) {
+                ElementPlus.ElMessage.success({
+                  message: `已成功回填至第 ${msg.row} 行: ${msg.model}`,
+                  duration: 1800
+                });
               }
               break;
           }
@@ -1283,7 +1430,70 @@
           }
         };
 
+        // 切换窗口固定置顶状态 (固定后切行不重新搜索，直接点击候选连续回填)
+        const togglePin = () => {
+          isPinned.value = !isPinned.value;
+          postToHost('togglePin', { pinned: isPinned.value });
+          if (ElementPlus && ElementPlus.ElMessage) {
+            if (isPinned.value) {
+              ElementPlus.ElMessage.success({
+                message: '已固定窗口：切行不会重新搜索，直接点击物料即可连续回填',
+                duration: 2000
+              });
+            } else {
+              ElementPlus.ElMessage.info({
+                message: '已取消固定窗口',
+                duration: 1500
+              });
+            }
+          }
+        };
+
+        // 按住头部非交互空白区域平滑拖拽移动窗口
+        const onHeaderMouseDown = (e) => {
+          if (e.target.closest('input, button, .filter-chip, .pipeline-badge-must, .el-input__clear')) {
+            return;
+          }
+          postToHost('startDrag');
+        };
+
+        // 底部边缘按住上下拖拽调整窗口高度
+        const onResizeMouseDown = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const startScreenY = e.screenY;
+          const startHeight = window.innerHeight;
+
+          document.body.style.cursor = 'ns-resize';
+          document.body.style.userSelect = 'none';
+
+          let animFrameId = null;
+
+          const onMouseMove = (moveEvent) => {
+            const deltaY = moveEvent.screenY - startScreenY;
+            const newHeight = Math.max(220, Math.min(800, startHeight + deltaY));
+
+            if (animFrameId) cancelAnimationFrame(animFrameId);
+            animFrameId = requestAnimationFrame(() => {
+              postToHost('resizeHeight', { height: Math.round(newHeight) });
+            });
+          };
+
+          const onMouseUp = () => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            if (animFrameId) cancelAnimationFrame(animFrameId);
+          };
+
+          document.addEventListener('mousemove', onMouseMove);
+          document.addEventListener('mouseup', onMouseUp);
+        };
+
         const closeOverlay = () => {
+          isPinned.value = false;
           postToHost('closeOverlay');
         };
 
@@ -1319,6 +1529,10 @@
           addRuleInputRef,
           isRulesModified,
           dataSource,
+          isPinned,
+          togglePin,
+          onHeaderMouseDown,
+          onResizeMouseDown,
           setEditRuleInputRef,
           removeMustRule,
           startRuleEdit,

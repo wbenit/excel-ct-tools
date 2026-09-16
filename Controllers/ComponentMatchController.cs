@@ -50,13 +50,13 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
-        /// 单条参数实时模拟匹配测试 (支持选择云端或个人物料库)
+        /// 单条参数实时模拟匹配测试 (支持多选品牌与选择云端或个人物料库)
         /// </summary>
         /// <param name="name">元器件名称</param>
         /// <param name="current">额定电流</param>
         /// <param name="pole">极数</param>
         /// <param name="tripMode">脱扣方式</param>
-        /// <param name="brand">指定品牌</param>
+        /// <param name="brands">多选品牌列表</param>
         /// <param name="rules">动态必含字段规则列表</param>
         /// <param name="dataSource">物料数据源 ("cloud" 或 "personal")</param>
         /// <returns>匹配到的物料列表</returns>
@@ -65,19 +65,19 @@ namespace ExcelAddInDemo.Controllers
             string current,
             string pole,
             string tripMode,
-            string? brand,
+            List<string>? brands,
             List<MustContainRule>? rules,
             string dataSource = "cloud")
         {
-            // 判断是否针对个人物料库执行测试
+            // 判断是否针对本地个人物料库执行测试
             if (string.Equals(dataSource, "personal", StringComparison.OrdinalIgnoreCase))
             {
-                // 调用 SQLite 个人库检索
-                return Services.PersonalComponentDbService.SearchComponents(null, name, current, pole, tripMode, brand, rules);
+                // 调用本地 SQLite 个人库检索 (支持多选品牌列表)
+                return Services.PersonalComponentDbService.SearchComponents(null, name, current, pole, tripMode, brands, rules);
             }
 
-            // 调用 API 客户端执行多维检索与管道过滤
-            return ComponentApiClient.QueryComponents(name, current, pole, tripMode, brand, rules);
+            // 调用 API 客户端执行多维检索与管道过滤 (支持多选品牌列表)
+            return ComponentApiClient.QueryComponents(name, current, pole, tripMode, brands, rules);
         }
 
         /// <summary>

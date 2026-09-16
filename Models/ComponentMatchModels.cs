@@ -45,8 +45,9 @@ namespace ExcelAddInDemo.Models
         // 当前选中的物料数据源 ("cloud": 云端公共库, "personal": 本地个人物料库)
         public string DataSource { get; set; } = "cloud"; // --硬编码-- 默认物料数据源为云端
 
-        // 当前选中的目标品牌筛选 (为空表示匹配全部品牌)
-        public string SelectedBrand { get; set; } = string.Empty;
+        // 多选品牌列表 (为空表示不限品牌/匹配全部品牌)
+        [JsonPropertyName("selectedBrands")]
+        public List<string> SelectedBrands { get; set; } = new List<string>();
 
         // 动态必含字段约束规则集合 (多条规则间为 AND 与关系)
         public List<MustContainRule> MustContainRules { get; set; } = new List<MustContainRule>();
@@ -56,6 +57,24 @@ namespace ExcelAddInDemo.Models
 
         // 列映射配置对象
         public ComponentMatchColumnConfig ColumnConfig { get; set; } = new ComponentMatchColumnConfig();
+
+        /// <summary>
+        /// 提取规范化后的有效品牌筛选列表 (自动剔除“全部”、“全部品牌”等无约束项)
+        /// </summary>
+        public List<string> GetEffectiveBrands()
+        {
+            // 校验多选列表是否为空
+            if (SelectedBrands == null || SelectedBrands.Count == 0) return new List<string>();
+
+            // 清洗空格、去除重复项并剔除全部等通配占位项
+            return SelectedBrands.Where(b => !string.IsNullOrWhiteSpace(b))
+                                 .Select(b => b.Trim())
+                                 .Where(b => !string.Equals(b, "全部", StringComparison.OrdinalIgnoreCase) &&
+                                             !string.Equals(b, "全部品牌", StringComparison.OrdinalIgnoreCase) &&
+                                             !string.Equals(b, "All", StringComparison.OrdinalIgnoreCase))
+                                 .Distinct(StringComparer.OrdinalIgnoreCase)
+                                 .ToList();
+        }
 
         /// <summary>
         /// 创建带有默认推荐规则的配置实例

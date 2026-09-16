@@ -21,6 +21,24 @@ namespace ExcelAddInDemo.Controllers
     }
 
     /// <summary>
+    /// 元件汇总表存在性与状态数据模型
+    /// </summary>
+    public class SummarySheetStatusDto
+    {
+        // 是否存在有效的元件汇总表
+        public bool Exists { get; set; } = false;
+
+        // 汇总表工作表名称
+        public string SheetName { get; set; } = string.Empty;
+
+        // 已用行数
+        public int RowCount { get; set; } = 0;
+
+        // 提示信息
+        public string Message { get; set; } = string.Empty;
+    }
+
+    /// <summary>
     /// 元件合并条件配置数据模型
     /// </summary>
     public class MergeConditionsDto
@@ -104,6 +122,51 @@ namespace ExcelAddInDemo.Controllers
             PropertyNameCaseInsensitive = true,
             WriteIndented = false
         };
+
+        /// <summary>
+        /// 检查当前工作簿中是否存在有效的“元件汇总表”并返回状态 JSON
+        /// </summary>
+        public string CheckSummarySheetExists()
+        {
+            try
+            {
+                // 调用服务层轻量探测当前工作簿是否已包含元件汇总表 (默认自动激活聚焦)
+                var status = ExcelServices.CheckSummarySheetStatus(autoActivate: true);
+
+                // 封装标准 WebAPI 响应报文
+                var response = new
+                {
+                    // 对应前端 message 监听的 action
+                    action = "onSummarySheetStatusChecked",
+                    // 标记请求处理成功
+                    success = true,
+                    // 提示说明文本
+                    message = status.Message,
+                    // 详细探测数据模型
+                    data = status
+                };
+
+                // 序列化并返回 JSON
+                return JsonSerializer.Serialize(response, JsonOptions);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"CheckSummarySheetExists 执行异常: {ex.Message}");
+
+                // 封装失败报文
+                var errorResponse = new
+                {
+                    action = "onSummarySheetStatusChecked",
+                    success = false,
+                    message = $"检查元件汇总表状态失败: {ex.Message}",
+                    data = new SummarySheetStatusDto { Exists = false }
+                };
+
+                // 序列化返回错误 JSON
+                return JsonSerializer.Serialize(errorResponse, JsonOptions);
+            }
+        }
 
         /// <summary>
         /// 获取当前工作簿中所有分类工作表及其箱柜数量

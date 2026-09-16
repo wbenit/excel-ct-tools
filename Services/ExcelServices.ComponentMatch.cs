@@ -181,8 +181,8 @@ namespace ExcelAddInDemo
                 var activeFilterCfg = filterConfig ?? LoadComponentMatchFilterConfig();
                 var activeColCfg = GetEffectiveColumnConfig(activeFilterCfg);
 
-                // 提取品牌限定与动态必含字段规则
-                string selectedBrand = activeFilterCfg.SelectedBrand ?? string.Empty;
+                // 提取多选品牌限定与动态必含字段规则
+                var selectedBrands = activeFilterCfg.GetEffectiveBrands();
                 var mustContainRules = activeFilterCfg.MustContainRules ?? new List<MustContainRule>();
 
                 // 规范化列名 (分类明细表标准: W=Current, X=Poles, Y=trip, Z=Accessory, AA=BlockName, AB=BlockCategory)
@@ -270,15 +270,15 @@ namespace ExcelAddInDemo
                             continue;
                         }
 
-                        // 调用 WebAPI 客户端或本地 SQLite 个人物料库反查真实数据库
+                        // 调用 WebAPI 客户端或本地 SQLite 个人物料库反查真实数据库 (支持多选品牌列表)
                         var matchedItems = string.Equals(activeFilterCfg.DataSource, "personal", StringComparison.OrdinalIgnoreCase)
-                            ? Services.PersonalComponentDbService.SearchComponents(null, rawName, minCur, pole, tripMode, selectedBrand, mustContainRules)
+                            ? Services.PersonalComponentDbService.SearchComponents(null, rawName, minCur, pole, tripMode, selectedBrands, mustContainRules)
                             : ComponentApiClient.QueryComponents(
                                 rawName,
                                 minCur,
                                 pole,
                                 tripMode,
-                                selectedBrand,
+                                selectedBrands,
                                 mustContainRules
                             );
 
@@ -405,6 +405,14 @@ namespace ExcelAddInDemo
         {
             if (activeCell == null) return;
 
+            // 核心门控: 若当前下拉悬浮窗已处于显示且被用户“固定置顶”，绝不重新搜索覆盖现有结果
+            if (_matchOverlayForm != null && !_matchOverlayForm.IsDisposed && _matchOverlayForm.Visible && _matchOverlayForm.IsPinned)
+            {
+                // 仅更新目标活动单元格引用，确保后续直接点击候选条目时精准回填至最新行
+                _matchOverlayForm.ShowAtCell(activeCell, null, new CellParamsContext(), null!);
+                return;
+            }
+
             try
             {
                 // 1. 校验是否处于 D 列 (第 4 列: 规格型号)
@@ -456,7 +464,7 @@ namespace ExcelAddInDemo
                     rawPriceFormula = Convert.ToString(sheet.Range[$"G{row}"].Value2)?.Trim() ?? string.Empty;
                 }
 
-                // 构造上下文参数 (带上原型号、原单价与所属品牌)
+                // 构造上下文参数 (带上原型号、原单价与多选品牌列表)
                 var cellParams = new CellParamsContext
                 {
                     Name = rawName,
@@ -465,7 +473,7 @@ namespace ExcelAddInDemo
                     TripMode = rawTrip,
                     CurrentModel = rawModel,
                     CurrentPrice = rawPriceFormula,
-                    Brand = filterConfig.SelectedBrand ?? string.Empty
+                    Brands = filterConfig.GetEffectiveBrands()
                 };
 
                 // 核心门控: 只有当用户在设置面板中勾选开启了“搜索”时，点击 D 列才弹起搜索框
@@ -491,6 +499,105 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 在活动单元格 (或当前行 D 列) 位置一键弹出配套附件选配浮窗 (供右键菜单【选配配套附件...】调用)
+        /// </summary>
+        /// <param name="targetCell">目标单元格 COM 句柄 (为空则自动采用 Application.ActiveCell)</param>
+        public static void ShowComponentAttachmentOverlay(dynamic? targetCell = null)
+        {
+            try
+            {
+                // 获取 Excel 应用程序实例
+                dynamic? app = ExcelDna.Integration.ExcelDnaUtil.Application;
+                if (app == null) return;
+
+                // 获取活动单元格
+                dynamic activeCell = targetCell ?? app.ActiveCell;
+                if (activeCell == null) return;
+
+                // 获取当前行号与所属工作表
+                int row = 0;
+                try { row = Convert.ToInt32(activeCell.Row); } catch { }
+                if (row <= 0) return;
+
+                dynamic sheet = activeCell.Worksheet;
+                if (sheet == null) return;
+
+                // 获取当前活动行 D 列单元格，确保悬浮窗始终对齐型号所在列
+                dynamic dCell = sheet.Range[$"D{row}"];
+
+                // 加载当前生效的全局过滤管道配置与列配置
+                var filterConfig = LoadComponentMatchFilterConfig();
+                var activeColCfg = GetEffectiveColumnConfig(filterConfig);
+
+                // 动态获取各参数所在列名
+                string colName = string.IsNullOrWhiteSpace(activeColCfg.NameColumn) ? "B" : activeColCfg.NameColumn.Trim().ToUpper();
+                string colCur = string.IsNullOrWhiteSpace(activeColCfg.CurrentColumn) ? "W" : activeColCfg.CurrentColumn.Trim().ToUpper();
+                string colPole = string.IsNullOrWhiteSpace(activeColCfg.PoleColumn) ? "X" : activeColCfg.PoleColumn.Trim().ToUpper();
+                string colTrip = string.IsNullOrWhiteSpace(activeColCfg.TripModeColumn) ? "Y" : activeColCfg.TripModeColumn.Trim().ToUpper();
+
+                // 读取当前行已有的名称(B)、额定电流(W)、极数(X)、脱扣(Y)、型号(D)、原型号(C)
+                string rawName = Convert.ToString(sheet.Range[$"{colName}{row}"].Value2)?.Trim() ?? string.Empty;
+                string rawCur = Convert.ToString(sheet.Range[$"{colCur}{row}"].Value2)?.Trim() ?? string.Empty;
+                string rawPole = Convert.ToString(sheet.Range[$"{colPole}{row}"].Value2)?.Trim() ?? string.Empty;
+                string rawTrip = Convert.ToString(sheet.Range[$"{colTrip}{row}"].Value2)?.Trim() ?? string.Empty;
+
+                // 读取当前 D 列型号与 C 列原型号
+                string rawModel = Convert.ToString(sheet.Range[$"D{row}"].Value2)?.Trim() ?? string.Empty;
+                string refModel = Convert.ToString(sheet.Range[$"C{row}"].Value2)?.Trim() ?? string.Empty;
+                if (string.IsNullOrEmpty(rawModel) || string.Equals(rawModel, "点击查询", StringComparison.OrdinalIgnoreCase))
+                {
+                    rawModel = refModel;
+                }
+
+                // 读取当前 G 列单价或公式
+                string rawPriceFormula = Convert.ToString(sheet.Range[$"G{row}"].Formula)?.Trim() ?? string.Empty;
+                if (string.IsNullOrEmpty(rawPriceFormula))
+                {
+                    rawPriceFormula = Convert.ToString(sheet.Range[$"G{row}"].Value2)?.Trim() ?? string.Empty;
+                }
+
+                // 构造上下文参数
+                var cellParams = new CellParamsContext
+                {
+                    Name = rawName,
+                    Current = rawCur,
+                    Pole = rawPole,
+                    TripMode = rawTrip,
+                    CurrentModel = rawModel,
+                    CurrentPrice = rawPriceFormula,
+                    Brands = filterConfig.GetEffectiveBrands()
+                };
+
+                // 若当前型号为空，友好提示用户先填写或选择型号
+                if (string.IsNullOrWhiteSpace(rawModel))
+                {
+                    System.Windows.Forms.MessageBox.Show(
+                        "当前行尚未填写或匹配元器件规格型号，请先输入或选择物料型号后再配置配套附件！",
+                        "提示",
+                        System.Windows.Forms.MessageBoxButtons.OK,
+                        System.Windows.Forms.MessageBoxIcon.Information
+                    );
+                    // 顺畅弹起常规物料选择框引导用户先选型号
+                    ShowComponentMatchOverlay(dCell);
+                    return;
+                }
+
+                // 初始化或复用下拉悬浮窗实例
+                if (_matchOverlayForm == null || _matchOverlayForm.IsDisposed)
+                {
+                    _matchOverlayForm = new ComponentMatchOverlayForm();
+                }
+
+                // 直接进入配套附件选配模式展示
+                _matchOverlayForm.ShowAttachmentsAtCell(dCell, cellParams, filterConfig);
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"ShowComponentAttachmentOverlay 异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// 隐藏物料联想下拉悬浮框
         /// </summary>
         public static void HideComponentMatchOverlay()
@@ -499,6 +606,11 @@ namespace ExcelAddInDemo
             {
                 if (_matchOverlayForm != null && !_matchOverlayForm.IsDisposed && _matchOverlayForm.Visible)
                 {
+                    // 若已被用户“固定置顶”在前端，绝不自动隐藏
+                    if (_matchOverlayForm.IsPinned)
+                    {
+                        return;
+                    }
                     _matchOverlayForm.Hide();
                 }
             }

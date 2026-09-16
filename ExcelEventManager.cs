@@ -307,15 +307,13 @@ namespace ExcelAddInDemo
                 if (sheetName == ComponentMatchDefaults.ComponentSummarySheetName &&
                     target.Rows.Count == 1 && target.Columns.Count == 1 && target.Column == 4)
                 {
-                    // 先校验当前是否开启了“搜索”功能
-                    var cfg = ExcelServices.LoadComponentMatchFilterConfig();
-                    if (cfg != null && cfg.EnableSearchOverlay)
-                    {
-                        // 仅在开启“搜索”时拦截双击并弹起智能联想下拉
-                        cancel = true;
-                        ExcelServices.ShowComponentMatchOverlay(target);
-                    }
-                    // 若未开启“搜索”，保持 cancel = false，允许 Excel 正常双击进入单元格进行文本编辑
+                    // 方案 A: 双击完全归还 Excel 原生文本就地编辑
+                    // 先平滑隐藏可能已弹出的物料联想悬浮框，避免遮挡单元格视线
+                    ExcelServices.HideComponentMatchOverlay();
+
+                    // 保持 cancel = false，100% 允许 Excel 正常双击进入单元格进行文本光标编辑
+                    cancel = false;
+                    return;
                 }
             }
             catch { }
@@ -453,6 +451,14 @@ namespace ExcelAddInDemo
                             }
                         }
                     }
+                    return;
+                }
+
+                // 3. 处理元件汇总表 D 列手动输入或就地编辑完成时的收尾联动
+                if (target.Column == 4 && target.Cells.Count == 1)
+                {
+                    // 手动完成编辑后，平滑隐藏物料联想下拉框
+                    ExcelServices.HideComponentMatchOverlay();
                     return;
                 }
             }
