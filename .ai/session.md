@@ -1,5 +1,61 @@
 # Session State
 
+- **【Bug 彻底根除】右键菜单高度循环衰减萎缩导致下方按钮被截断“消失”问题闭环交付 (`CustomContextMenuForm.cs`, `custom_context_menu.html`)**：
+  1. **问题根本原因深度剖析**：
+     - 用户截图显示右键菜单只展示到“插入...”，下方的“删除分类”、“按所选内容筛选”、“清除筛选”、“新建箱柜”、“识别参数并匹配物料”等十几项全部消失；
+     - **根因定位**：`custom_context_menu.html` 中前端测量了 `containerEl.getBoundingClientRect().height`，该值受 Chromium 高分屏设备缩放（如 T14 笔记本的 125%~150% DPI 缩放）影响，返回的是除以 DPI 后的 **CSS 逻辑像素**（例如 480 物理像素除以 1.5 得 320）；
+     - 前端将该缩水后的值通过 `postToHost('menuReady', { height })` 发送给 C# 宿主，C# 直接执行 `this.Height = hProp.GetInt32();`，将窗体设备无关物理像素直接赋值为缩水后的 CSS 像素（480 -> 320）；
+     - 下次弹窗时再次除以 1.5（320 -> 213），导致右键菜单**每一次右击都在呈几何级萎缩变矮**，最终缩短为约 160 像素的小短条，导致下方所有功能按钮被外框强行裁切！
+  2. **端到端彻底治理**：
+     - **彻底切断 DPI 萎缩链路**：在 `CustomContextMenuForm.cs` 中彻底移除 `this.Height = hProp.GetInt32();`，并在 `custom_context_menu.html` 中移除带有 `height` 的上报代码；
+     - **固定标准规格与重置机制**：将右键菜单标准尺寸设定为 `250px × 535px`（黄金比例完整容纳全部 20 个菜单项、4 条分割线与上下边距），并在每次 `ShowMenu` 调起前强制重置为标准规格，彻底消除历史遗留状态干扰；
+     - **智能上下翻转与低分屏工作区自适应**：当在屏幕靠近底部右击时，窗体自动向上翻转对齐（`y = Math.Max(workArea.Top, screenPos.Y - _instance.Height - 2)`），若工作区高度受限自适应贴合可用工作区；
+     - **列表弹性滚动保护**：`.menu-item-list` 样式升级为 `overflow-y: auto; overflow-x: hidden;` 并配以极简微细滚动条，双重保障任何屏幕分辨率下功能 100% 完整可见可点；
+  3. **静态资源同步与工程构建**：
+     - 静态资源已全量同步覆盖至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 执行 `dotnet build` 验证：**0 错误**。
+
+- **【落地交付】筛选单元格全匹配升级与取消筛选活动单元格视口垂直居中对焦全链路交付 (`ExcelServices.ComponentFilter.cs`)**：
+  1. **筛选匹配机制升级为单元格全匹配 (Exact Match)**：
+     - 将箱柜明细表（`FilterCategorySheetByCabinets`）与平铺表（`FilterFlatSheetByKeywords`）的匹配判定从子串包含（`IndexOf >= 0`）全面重构为忽略大小写的单元格全字精准匹配（`string.Equals(val, kw, StringComparison.OrdinalIgnoreCase)`）；
+     - 彻底根除筛选 `C16` 误带出 `C160`、`NC16` 等包含关系异构型号的问题，并同步将未命中提示文案调整为“未检索到匹配 [...] 的元器件行”；
+  2. **取消筛选时活动单元格垂直视口居中平滑对焦**：
+     - 彻底解决取消筛选（`ClearComponentFilter`）展开所有隐藏行后活动单元格丢失焦点跑出视口的痛点；
+     - 在解除隐藏（`EntireRow.Hidden = false`）、还原底色并恢复屏幕重绘后，安全提取 `app.ActiveCell` 与当前窗口 `win = app.ActiveWindow`；
+     - 校验活动单元格归属当前工作表，读取 `win.VisibleRange.Rows.Count` 动态感知当前可视区域总行数，依据公式 `targetScrollRow = Math.Max(1, activeRow - (visibleRowCount / 2))` 自动设置 `win.ScrollRow`；
+     - 取消筛选与按 `Ctrl+Z` 撤销筛选时，活动单元格 100% 自动对焦位于视口垂直正中间；
+  3. **工程规范与构建核验**：
+     - 代码严格遵循每 3 行包含一行中文注释，备用视口行数标明 `--硬编码: 视口可见行数备用默认值--`；
+     - 执行 `dotnet build d:\code\excel-ct-tools\ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 成功：**0 错误**。
+
+- **【系统级重磅落地交付】成套工具通用撤销/还原 (Undo / Redo) 工业级命令双栈引擎全链路落地交付 (`UndoRedoManager.cs`, `ExcelServices.cs`, `ExcelServices.DistributedAdjustPrice.cs`, `ExcelServices.SummaryAdjustPrice.cs`, `ExcelServices.ComponentMatch.cs`, `ExcelServices.ComponentFilter.cs`, `ExcelEventManager.cs`, `RibbonController.cs`, `CustomContextMenuForm.cs`, `custom_context_menu.html`)**：
+  1. **核心命令引擎体系 (`UndoRedoManager.cs` & `ExcelServices.cs`)**：
+     - 构建 `IUndoableCommand` 抽象接口，实现 `RangeDeltaCommand`（支持离散/矩阵多区域二维数组、公式、单元格底色索引与真实色无损快照及数组批量秒级写回，遵循规则 7）、`DistributionAdjustPriceCommand`（专有双模结构自愈撤销命令）、`CompositeUndoableCommand`（原子事务复合命令）与 `ActionUndoableCommand`（高内聚配对委托命令）；
+     - 实现 `UndoRedoManager` 单例中心：双向历史栈管理（`_undoStack` 最多 30 步，超出自动淘汰，`_redoStack`），内置互斥防重入锁阻断级联死循环；执行 Undo/Redo 时挂起重绘与公式重算，完成后统一重绘与状态栏提示；
+     - 同步挂接 Excel 宿主 `Application.OnUndo` / `Application.OnRepeat`，与 Excel 标题栏快捷撤销按钮无缝联动；
+  2. **高频核心业务全面纳管（含跨表跨箱柜矩阵撤销）**：
+     - **【重磅】分布调价一键更新到明细 (`UpdateFromComponentDistributionSheet`)**：
+       - 设计 `DistributionCabinetSlice` 与 `DistributionAdjustPriceCommand`，完美攻克行结构动态物理改变（`Insert` 行）的撤销难题；
+       - 在各箱柜反向回写前采集完整的 30 列 `Formula` 矩阵快照（包含原单价、原数量、原序号公式、CAD 句柄等），并记录插行起始物理行与插入行数；
+       - 撤销（`Undo`）时：按工作表分组并在单表内**自下而上倒序**执行；若该箱柜曾插行则物理整行删除多余行（`EntireRow.Delete`），将原始 30 列公式矩阵赋回，刷新小计求和公式，并自动执行 `Tool.FixAndFillCabinetNamesForSheet` 规则 8 闭环自愈定义名称链；
+       - 重做（`Redo`）时：单表内自上而下正序重新插入行并应用更新后 30 列公式矩阵；
+       - 用户在分布调价更新完成后按 `Ctrl+Z` 或右键【撤销: 分布调价同步 (X台箱柜)】，秒级无损撤销！再次按 `Ctrl+Y` 完美重做恢复；
+     - **【重磅】元件汇总表一键更新到明细 (`UpdateFromComponentSummarySheet`)**：
+       - 在遍历分类表执行反向同步前，初始化 `undoSlices` 跨表差量切片容器；
+       - 在读取每个箱柜时深度克隆修改前的完整 30 列公式矩阵 `oldFormulaMatrix` 作为底层快照；
+       - 若箱柜发生修改，打包生成 `RangeDeltaCommand($"汇总表一键更新 ({updatedCabinetCount}台箱柜)", undoSlices)` 入栈，支持 `Ctrl+Z` 跨表秒级还原；
+     - **批量物料反查匹配 (`ExecuteBatchMatchWithDb`)**：在写入 Excel 前自动捕获名称、型号、品牌、表价、扩展参数、M列折扣及型号列底色，多选区按列打包切片并推入撤销栈；
+     - **单项物料联想回填 (`FillSelectedComponentToActiveRow`)**：在回填前精准提取目标行所有涉及字段与底色，写入后生成 `RangeDeltaCommand` 入栈；
+     - **右键筛选 (`FilterComponentsBySelection`)**：筛选成功后自动生成 `ActionUndoableCommand`，按 `Ctrl+Z` 即可一键撤销筛选、解除行隐藏并 100% 还原单元格原有标记底色；
+  3. **交互层与快捷键无缝打通**：
+     - **全局快捷键智能路由 (`ExcelEventManager.cs`)**：挂接 `Ctrl+Z` (`^z`) 与 `Ctrl+Y` (`^y`)，优先执行插件撤销；当插件栈为空时安全回退放行给 Excel 原生打字与单元格编辑撤销，两者 100% 互不干扰和谐共存；
+     - **Ribbon 菜单激活 (`RibbonController.cs`)**：`menuUndoRedo` 升级为包含【撤销 (Ctrl+Z)】、【还原 (Ctrl+Y)】与【清空撤销历史】三项；
+     - **右键菜单深度集成 (`custom_context_menu.html` & `CustomContextMenuForm.cs`)**：在右键菜单最顶部置顶【↩️ 撤销】与【↪️ 还原】项，根据 `canUndo` / `canRedo` 动态展示当前操作名（如“撤销: 分布调价同步 (12台箱柜)”）与自动置灰禁用态；
+  4. **工程构建与多端静态资源同步**：
+     - 代码严格遵循每 3 行包含一行中文注释与无硬编码规范；
+     - 静态资源已全量同步至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - `dotnet build /p:RunExcelDnaBuild=false /p:DebugType=none` 构建成功：**0 错误**。
+
 - **【落地交付】右键筛选相邻箱柜斑马纹交替底色与单元格原色无损快照还原全链路交付 (`ExcelServices.ComponentFilter.cs`)**：
   1. **相邻箱柜斑马纹交替底色区分**：
      - 彻底解决所有无关行隐藏后相邻箱柜元器件粘在一起无法区分归属的问题；

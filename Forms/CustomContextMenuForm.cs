@@ -68,8 +68,8 @@ namespace ExcelAddInDemo.Forms
             this.ShowInTaskbar = false;
             // 窗体始终保持最前端置顶显示
             this.TopMost = true;
-            // 设定符合 Office 原生菜单规格的尺寸 (宽 250px，高 480px，支持前端自适应高度)
-            this.Size = new Size(250, 480);
+            // 设定符合 Office 原生菜单规格的标准尺寸 (宽 250px，高 535px，容纳全部 20 项业务与原生菜单)
+            this.Size = new Size(250, 535);
             // 启用手动绝对坐标定位
             this.StartPosition = FormStartPosition.Manual;
             // 设置白色背景
@@ -176,14 +176,6 @@ namespace ExcelAddInDemo.Forms
                     case "menuReady":
                         // 标记前端已准备好
                         _isWebReady = true;
-                        // 若前端传递了实际自适应高度，按真实高度重设窗体尺寸
-                        if (root.TryGetProperty("height", out var hProp) && hProp.GetInt32() > 200)
-                        {
-                            SafeInvoke(() =>
-                            {
-                                this.Height = hProp.GetInt32();
-                            });
-                        }
                         // 若有待发送的上下文数据，立即推送
                         if (_pendingContextData != null)
                         {
@@ -198,6 +190,8 @@ namespace ExcelAddInDemo.Forms
                         break;
 
                     // 核心业务与原生菜单动作集合
+                    case "undoAction":
+                    case "redoAction":
                     case "excelCut":
                     case "excelCopy":
                     case "excelPaste":
@@ -271,6 +265,16 @@ namespace ExcelAddInDemo.Forms
 
                 switch (actionName)
                 {
+                    case "undoAction":
+                        // 调度执行撤销
+                        ExcelServices.Undo();
+                        break;
+
+                    case "redoAction":
+                        // 调度执行重做/还原
+                        ExcelServices.Redo();
+                        break;
+
                     case "excelCut":
                         // 调度执行 Excel 原生剪切指令
                         try
@@ -511,12 +515,22 @@ namespace ExcelAddInDemo.Forms
                     cellAddress = cellAddress,
                     row = row,
                     column = column,
-                    isAboveFirstDet = isAboveFirstDet
+                    isAboveFirstDet = isAboveFirstDet,
+                    canUndo = ExcelServices.CanUndo,
+                    canRedo = ExcelServices.CanRedo,
+                    undoName = ExcelServices.CurrentUndoName ?? "撤销",
+                    redoName = ExcelServices.CurrentRedoName ?? "还原"
                 };
 
                 // 获取当前屏幕可用工作区域
                 Screen currentScreen = Screen.FromPoint(screenPos);
                 Rectangle workArea = currentScreen.WorkingArea;
+
+                // 每次显示前重置为标准尺寸，杜绝历史状态残留与 DPI 缩放萎缩
+                int standardHeight = 535; // --硬编码: 右键菜单标准高度--
+                // 若工作区高度受限 (如低分辨率笔记本屏幕)，自适应贴合可用工作区
+                int targetHeight = Math.Min(standardHeight, workArea.Height - 10);
+                _instance.Size = new Size(250, targetHeight);
 
                 // 初始坐标偏移 2 像素防止挡住鼠标
                 int x = screenPos.X + 2;

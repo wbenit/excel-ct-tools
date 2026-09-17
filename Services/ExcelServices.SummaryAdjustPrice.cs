@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using ExcelDna.Integration;
 using ExcelAddInDemo.Models;
+using ExcelAddInDemo.Services;
 using static ExcelAddInDemo.Tool;
 
 namespace ExcelAddInDemo
@@ -1851,6 +1852,9 @@ namespace ExcelAddInDemo
                 int updatedCabinetCount = 0;
                 int updatedComponentCount = 0;
 
+                // 收集所有发生更新的箱柜差量切片，用于支持整簿跨表跨箱柜一键撤销
+                var undoSlices = new List<RangeDeltaSlice>();
+
                 try
                 {
                     // 遍历工作簿中的所有工作表
@@ -1900,6 +1904,9 @@ namespace ExcelAddInDemo
                             dynamic compRange = sheet.Range[$"A{compStartRow}:AD{compEndRow}"];
                             object[,] valMatrix = (object[,])compRange.Value2;
                             object[,] formulaMatrix = (object[,])compRange.Formula;
+
+                            // 克隆修改前的完整 30 列公式与值矩阵，作为撤销时 100% 无损还原的底层快照
+                            object[,] oldFormulaMatrix = (object[,])formulaMatrix.Clone();
 
                             bool cabinetModified = false;
 
@@ -2079,6 +2086,19 @@ namespace ExcelAddInDemo
                                 compRange.Formula = formulaMatrix;
                                 updatedCabinetCount++;
                                 sheetModified = true;
+
+                                // 收集当前箱柜的撤销差量切片 (包含修改前后的完整 30 列公式与值矩阵)
+                                undoSlices.Add(new RangeDeltaSlice
+                                {
+                                    // 记录工作表名称
+                                    SheetName = sheetName,
+                                    // 记录元器件区间地址
+                                    RangeAddress = $"A{compStartRow}:AD{compEndRow}",
+                                    // 记录修改前的完整公式与文本快照
+                                    OldFormulas = oldFormulaMatrix,
+                                    // 独立深拷贝修改后的完整公式与文本快照
+                                    NewFormulas = (object[,])formulaMatrix.Clone()
+                                });
                             }
                         }
 
@@ -2097,12 +2117,21 @@ namespace ExcelAddInDemo
                     app.EnableEvents = true;
                 }
 
+                // 若有箱柜发生数据更新，打包为跨表跨箱柜差量命令推入撤销栈
+                if (undoSlices.Count > 0 && updatedCabinetCount > 0)
+                {
+                    // 构建整簿一键更新撤销命令
+                    var summaryUpdateCmd = new RangeDeltaCommand($"汇总表一键更新 ({updatedCabinetCount}台箱柜)", undoSlices);
+                    // 压入全局撤销管理中心
+                    UndoRedoManager.Instance.PushCommand(summaryUpdateCmd);
+                }
+
                 // 组装成功结果报文
                 result.Success = true;
                 result.UpdatedSheetCount = updatedSheetCount;
                 result.UpdatedCabinetCount = updatedCabinetCount;
                 result.UpdatedComponentCount = updatedComponentCount;
-                result.Message = "一键更新成功：共同步 " + updatedSheetCount + " 个分类表、" + updatedCabinetCount + " 台箱柜、" + updatedComponentCount + " 项元器件明细！";
+                result.Message = "一键更新成功：共同步 " + updatedSheetCount + " 个分类表、" + updatedCabinetCount + " 台箱柜、" + updatedComponentCount + " 项元器件明细！(可按 Ctrl+Z 随时撤销)";
 
                 // 记录成功日志
                 LogHelper.WriteLog(result.Message);

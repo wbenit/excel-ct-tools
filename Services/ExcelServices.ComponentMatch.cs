@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using ExcelAddInDemo.Forms;
 using ExcelAddInDemo.Models;
+using ExcelAddInDemo.Services;
 
 namespace ExcelAddInDemo
 {
@@ -445,6 +446,9 @@ namespace ExcelAddInDemo
                 int multipleCount = 0;
                 int noneCount = 0;
 
+                // 收集所有子选区的可撤销差量切片列表
+                var undoSlices = new List<RangeDeltaSlice>();
+
                 // 遍历当前选区的所有子区域 (支持连续区域及按住 Ctrl 的多选区)
                 foreach (dynamic area in selection.Areas)
                 {
@@ -509,12 +513,28 @@ namespace ExcelAddInDemo
 
                     // 汇总表 M 列折扣底稿
                     object[,] discountMArray = null;
+                    object[,] origDiscountMArray = null;
                     if (isSummarySheet)
                     {
                         dynamic discountMRange = activeSheet.Range[$"M{startRow}:M{endRow}"];
                         object[,] discRaw = ConvertTo2DArray(discountMRange.Value2, rowCount);
                         discountMArray = new object[rowCount, 1];
-                        for (int k = 0; k < rowCount; k++) discountMArray[k, 0] = discRaw[k + 1, 1];
+                        origDiscountMArray = new object[rowCount, 1];
+                        for (int k = 0; k < rowCount; k++)
+                        {
+                            discountMArray[k, 0] = discRaw[k + 1, 1];
+                            origDiscountMArray[k, 0] = discRaw[k + 1, 1];
+                        }
+                    }
+
+                    // 记录型号列单元格的原始底色 (用于撤销时无损精准还原)
+                    int[,] origModelColorIndexes = new int[rowCount, 1];
+                    int[,] origModelColors = new int[rowCount, 1];
+                    for (int k = 0; k < rowCount; k++)
+                    {
+                        dynamic mCell = activeSheet.Range[$"{colModel}{startRow + k}"];
+                        origModelColorIndexes[k, 0] = (int)mCell.Interior.ColorIndex;
+                        origModelColors[k, 0] = (int)mCell.Interior.Color;
                     }
 
                     // 收集当前区域中需要高亮淡黄底色的行号集合
@@ -665,6 +685,56 @@ namespace ExcelAddInDemo
                             targetCell.Interior.ColorIndex = ComponentMatchDefaults.XlNoneColorIndex;
                         }
                     }
+
+                    // 记录型号列最新底色 (用于重做时准确恢复淡黄等样式)
+                    int[,] newModelColorIndexes = new int[rowCount, 1];
+                    int[,] newModelColors = new int[rowCount, 1];
+                    for (int k = 0; k < rowCount; k++)
+                    {
+                        dynamic mCell = activeSheet.Range[$"{colModel}{startRow + k}"];
+                        newModelColorIndexes[k, 0] = (int)mCell.Interior.ColorIndex;
+                        newModelColors[k, 0] = (int)mCell.Interior.Color;
+                    }
+
+                    // 构造原值二维切片数组
+                    object[,] origNameArr = new object[rowCount, 1];
+                    object[,] origModelArr = new object[rowCount, 1];
+                    object[,] origBrandArr = new object[rowCount, 1];
+                    object[,] origPriceArr = new object[rowCount, 1];
+                    object[,] origParam1Arr = new object[rowCount, 1];
+                    object[,] origParam2Arr = new object[rowCount, 1];
+                    for (int k = 0; k < rowCount; k++)
+                    {
+                        origNameArr[k, 0] = nameRawArray[k + 1, 1];
+                        origModelArr[k, 0] = origModelRaw[k + 1, 1];
+                        origBrandArr[k, 0] = origBrandRaw[k + 1, 1];
+                        origPriceArr[k, 0] = origPriceRaw[k + 1, 1];
+                        origParam1Arr[k, 0] = origParam1Raw[k + 1, 1];
+                        origParam2Arr[k, 0] = origParam2Raw[k + 1, 1];
+                    }
+
+                    // 登记各输出列差量切片至撤销集合
+                    undoSlices.Add(new RangeDeltaSlice { SheetName = sheetName, RangeAddress = $"{colName}{startRow}:{colName}{endRow}", OldValues = origNameArr, NewValues = nameArray });
+                    undoSlices.Add(new RangeDeltaSlice { SheetName = sheetName, RangeAddress = $"{colModel}{startRow}:{colModel}{endRow}", OldValues = origModelArr, NewValues = modelArray, OldColorIndexes = origModelColorIndexes, NewColorIndexes = newModelColorIndexes, OldColors = origModelColors, NewColors = newModelColors });
+                    undoSlices.Add(new RangeDeltaSlice { SheetName = sheetName, RangeAddress = $"{colBrand}{startRow}:{colBrand}{endRow}", OldValues = origBrandArr, NewValues = brandArray });
+                    undoSlices.Add(new RangeDeltaSlice { SheetName = sheetName, RangeAddress = $"{colPrice}{startRow}:{colPrice}{endRow}", OldValues = origPriceArr, NewValues = priceArray });
+                    undoSlices.Add(new RangeDeltaSlice { SheetName = sheetName, RangeAddress = $"{colParam1}{startRow}:{colParam1}{endRow}", OldValues = origParam1Arr, NewValues = param1Array });
+                    undoSlices.Add(new RangeDeltaSlice { SheetName = sheetName, RangeAddress = $"{colParam2}{startRow}:{colParam2}{endRow}", OldValues = origParam2Arr, NewValues = param2Array });
+
+                    // 汇总表特殊维护：登记 M 列折扣切片
+                    if (isSummarySheet && discountMArray != null && origDiscountMArray != null)
+                    {
+                        undoSlices.Add(new RangeDeltaSlice { SheetName = sheetName, RangeAddress = $"M{startRow}:M{endRow}", OldValues = origDiscountMArray, NewValues = discountMArray });
+                    }
+                }
+
+                // 若有有效修改切片且实际处理了数据行，打包生成撤销命令并入栈
+                if (undoSlices.Count > 0 && totalRows > 0)
+                {
+                    // 创建批量物料匹配的差量撤销命令
+                    var batchCmd = new RangeDeltaCommand($"批量匹配物料 ({totalRows}行)", undoSlices);
+                    // 压入全局撤销重做中心
+                    UndoRedoManager.Instance.PushCommand(batchCmd);
                 }
 
                 // 停止计时并汇总执行结果
@@ -1094,6 +1164,27 @@ namespace ExcelAddInDemo
                 string sheetName = Convert.ToString(sheet.Name) ?? string.Empty;
                 bool isSummarySheet = string.Equals(sheetName.Trim(), ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase);
 
+                // 定义当前操作将涉及的所有列字段及是否捕获底色的映射配置
+                var targetColumns = isSummarySheet
+                    ? new (string Col, bool HasColor)[]
+                    {
+                        ("B", false), ("D", true), ("I", false), ("L", false), ("M", false),
+                        ("P", false), ("T", false), ("U", false), ("V", false), ("W", false),
+                        ("X", false), ("Y", false)
+                    }
+                    : new (string Col, bool HasColor)[]
+                    {
+                        ("B", false), ("C", true), ("D", true), ("M", false), ("W", false),
+                        ("X", false), ("Y", false), ("Z", false), ("AA", false), ("AB", false)
+                    };
+
+                // 在修改前集中捕获涉及字段的原值与底色切片
+                var singleRowSlices = new List<RangeDeltaSlice>();
+                foreach (var itemCol in targetColumns)
+                {
+                    singleRowSlices.Add(CaptureSingleCellSlice(sheet, sheetName, itemCol.Col, row, itemCol.HasColor));
+                }
+
                 // 1. 回填 B 列 (标准名称)
                 if (!string.IsNullOrEmpty(item.Name))
                 {
@@ -1192,6 +1283,17 @@ namespace ExcelAddInDemo
                     catch { }
                 }
 
+                // 统一补充并完成新值与新底色切片收集
+                for (int i = 0; i < targetColumns.Length; i++)
+                {
+                    FinalizeSingleCellSlice(sheet, singleRowSlices[i], targetColumns[i].HasColor);
+                }
+
+                // 创建单行物料回填的撤销命令并推入撤销栈
+                string modelDesc = !string.IsNullOrWhiteSpace(item.Model) ? item.Model : item.Name;
+                var fillCommand = new RangeDeltaCommand($"物料回填: {modelDesc}", singleRowSlices);
+                UndoRedoManager.Instance.PushCommand(fillCommand);
+
                 return true;
             }
             catch (Exception ex)
@@ -1199,6 +1301,51 @@ namespace ExcelAddInDemo
                 // 记录异常日志
                 LogHelper.WriteLog($"FillSelectedComponentToActiveRow 回填异常: {ex.Message}");
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// 捕获单个单元格的原始差量切片数据包 (支持底色快照)
+        /// </summary>
+        private static RangeDeltaSlice CaptureSingleCellSlice(dynamic sheet, string sheetName, string col, int row, bool includeColor = false)
+        {
+            // 获取目标单元格对象
+            dynamic cell = sheet.Range[$"{col}{row}"];
+            // 提取修改前的值
+            object oldVal = cell.Value2;
+            // 实例化切片数据对象
+            var slice = new RangeDeltaSlice
+            {
+                SheetName = sheetName,
+                RangeAddress = $"{col}{row}",
+                OldValues = new object[,] { { oldVal } }
+            };
+
+            // 若需捕获底色，记录原始 ColorIndex 与 Color
+            if (includeColor)
+            {
+                slice.OldColorIndexes = new int[,] { { (int)cell.Interior.ColorIndex } };
+                slice.OldColors = new int[,] { { (int)cell.Interior.Color } };
+            }
+
+            return slice;
+        }
+
+        /// <summary>
+        /// 封装并补充单个单元格的新值与新底色切片
+        /// </summary>
+        private static void FinalizeSingleCellSlice(dynamic sheet, RangeDeltaSlice slice, bool includeColor = false)
+        {
+            // 获取目标单元格对象
+            dynamic cell = sheet.Range[slice.RangeAddress];
+            // 写入最新的值
+            slice.NewValues = new object[,] { { cell.Value2 } };
+
+            // 若需捕获底色，记录最新 ColorIndex 与 Color
+            if (includeColor)
+            {
+                slice.NewColorIndexes = new int[,] { { (int)cell.Interior.ColorIndex } };
+                slice.NewColors = new int[,] { { (int)cell.Interior.Color } };
             }
         }
 

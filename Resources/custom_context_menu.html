@@ -61,14 +61,29 @@
       box-sizing: border-box;
     }
 
-    /* 菜单项列表容器 */
+    /* 菜单项列表容器：允许内容完整排版并在极端小屏下支持丝滑细滚动条 */
     .menu-item-list {
       display: flex;
       flex-direction: column;
       gap: 1px;
       padding: 0 2px;
       flex: 1;
-      overflow: hidden;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    /* 极简自定义细滚动条 */
+    .menu-item-list::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .menu-item-list::-webkit-scrollbar-thumb {
+      background: #e0e0e0;
+      border-radius: 2px;
+    }
+
+    .menu-item-list::-webkit-scrollbar-thumb:hover {
+      background: #bdbdbd;
     }
 
     /* 单个菜单项：标准 Office 菜单紧凑排版 */
@@ -157,6 +172,29 @@
   <div id="app">
     <div class="context-menu-container" id="menuContainer">
       <div class="menu-item-list">
+        <!-- 0. 撤销 (Ctrl+Z) -->
+        <div class="menu-item" data-action="undoAction" id="menuItemUndo">
+          <div class="item-icon-wrap">
+            <!-- 撤销弯曲箭头 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>
+          </div>
+          <span class="item-label" id="labelUndo">撤销</span>
+          <span class="item-shortcut">Ctrl+Z</span>
+        </div>
+
+        <!-- 0. 重做/还原 (Ctrl+Y) -->
+        <div class="menu-item" data-action="redoAction" id="menuItemRedo">
+          <div class="item-icon-wrap">
+            <!-- 重做弯曲箭头 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/></svg>
+          </div>
+          <span class="item-label" id="labelRedo">还原</span>
+          <span class="item-shortcut">Ctrl+Y</span>
+        </div>
+
+        <!-- 分割线 -->
+        <div class="menu-divider"></div>
+
         <!-- 1. 剪切 (Excel 原生) -->
         <div class="menu-item" data-action="excelCut">
           <div class="item-icon-wrap">
@@ -459,8 +497,40 @@
             }
           }
 
-          // 重置聚焦为第 1 项
+          // 动态控制“撤销”项状态与描述
+          const undoItem = document.getElementById('menuItemUndo');
+          const undoLabel = document.getElementById('labelUndo');
+          if (undoItem) {
+            if (msg.canUndo) {
+              undoItem.classList.remove('disabled');
+              if (undoLabel) {
+                undoLabel.textContent = msg.undoName ? `撤销: ${msg.undoName}` : '撤销';
+              }
+            } else {
+              undoItem.classList.add('disabled');
+              if (undoLabel) undoLabel.textContent = '撤销';
+            }
+          }
+
+          // 动态控制“还原/重做”项状态与描述
+          const redoItem = document.getElementById('menuItemRedo');
+          const redoLabel = document.getElementById('labelRedo');
+          if (redoItem) {
+            if (msg.canRedo) {
+              redoItem.classList.remove('disabled');
+              if (redoLabel) {
+                redoLabel.textContent = msg.redoName ? `还原: ${msg.redoName}` : '还原';
+              }
+            } else {
+              redoItem.classList.add('disabled');
+              if (redoLabel) redoLabel.textContent = '还原';
+            }
+          }
+
+          // 重置聚焦为第 1 个可用项
           updateFocus(0);
+          // 通知宿主页面已就绪
+          postToHost('menuReady');
         }
       }
 
@@ -469,11 +539,9 @@
         window.chrome.webview.addEventListener('message', handleHostMessage);
       }
 
-      // 页面 DOM 加载就绪后立即通知宿主 (自适应菜单真实高度并上报)
+      // 页面 DOM 加载就绪后立即通知宿主
       updateFocus(0);
-      const containerEl = document.getElementById('menuContainer');
-      const measuredHeight = containerEl ? Math.ceil(containerEl.getBoundingClientRect().height) : 0;
-      postToHost('menuReady', { height: measuredHeight });
+      postToHost('menuReady');
     })();
   </script>
 </body>

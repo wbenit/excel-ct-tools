@@ -298,5 +298,54 @@ namespace ExcelAddInDemo
                 LogHelper.WriteLog($"激活工作簿异常: {ex.Message}");
             }
         }
+
+        /// <summary>
+        /// 执行一步撤销操作 (Undo)
+        /// </summary>
+        /// <returns>是否成功执行撤销</returns>
+        public static bool Undo()
+        {
+            // 调度撤销重做中心单例执行撤销操作
+            return Services.UndoRedoManager.Instance.Undo();
+        }
+
+        /// <summary>
+        /// 执行一步重做/还原操作 (Redo)
+        /// </summary>
+        /// <returns>是否成功执行重做</returns>
+        public static bool Redo()
+        {
+            // 调度撤销重做中心单例执行重做操作
+            return Services.UndoRedoManager.Instance.Redo();
+        }
+
+        /// <summary>
+        /// 清空所有撤销与还原历史记录
+        /// </summary>
+        public static void ClearUndoHistory()
+        {
+            // 调度撤销重做中心清空历史栈
+            Services.UndoRedoManager.Instance.Clear();
+        }
+
+        /// <summary>
+        /// 当前是否有可撤销的操作
+        /// </summary>
+        public static bool CanUndo => Services.UndoRedoManager.Instance.CanUndo;
+
+        /// <summary>
+        /// 当前是否有可还原重做的操作
+        /// </summary>
+        public static bool CanRedo => Services.UndoRedoManager.Instance.CanRedo;
+
+        /// <summary>
+        /// 下一个可撤销操作的显示名称
+        /// </summary>
+        public static string? CurrentUndoName => Services.UndoRedoManager.Instance.CurrentUndoName;
+
+        /// <summary>
+        /// 下一个可还原操作的显示名称
+        /// </summary>
+        public static string? CurrentRedoName => Services.UndoRedoManager.Instance.CurrentRedoName;
     }
 }

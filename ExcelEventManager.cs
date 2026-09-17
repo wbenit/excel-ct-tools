@@ -67,6 +67,14 @@ namespace ExcelAddInDemo
                 // 重新绑定 WorkbookActivate 事件，激活或新建工作簿时自动挂载视口
                 _excelApp.WorkbookActivate += OnWorkbookActivate;
 
+                // 挂接全局快捷键：Ctrl+Z (撤销) 与 Ctrl+Y (重做/还原)
+                try
+                {
+                    _excelApp.OnKey("^z", "MacroUndoAction");
+                    _excelApp.OnKey("^y", "MacroRedoAction");
+                }
+                catch { }
+
                 // 启动后台空闲静默预热：提前加载 WebView2 内核与物料下拉界面，彻底消除用户首次点击冷启动延迟
                 try
                 {
@@ -107,6 +115,14 @@ namespace ExcelAddInDemo
                     _excelApp.SheetActivate -= OnSheetActivate;
                     // 解除 WorkbookActivate 事件绑定
                     _excelApp.WorkbookActivate -= OnWorkbookActivate;
+
+                    // 释放快捷键挂钩，恢复 Excel 原生按键映射
+                    try
+                    {
+                        _excelApp.OnKey("^z");
+                        _excelApp.OnKey("^y");
+                    }
+                    catch { }
                 }
 
                 // 隐藏覆盖输入框与物料联想下拉浮窗
@@ -1380,6 +1396,92 @@ namespace ExcelAddInDemo
             }
             catch { }
             return null;
+        }
+
+        /// <summary>
+        /// Excel-DNA 宏入口：撤销上一步操作 (响应快捷键 Ctrl+Z 或 Excel 原生 OnUndo)
+        /// </summary>
+        [ExcelCommand]
+        public static void MacroUndoAction()
+        {
+            try
+            {
+                // 若插件撤销管理器中存在可撤销记录，优先执行插件撤销
+                if (ExcelServices.CanUndo)
+                {
+                    // 调度插件撤销
+                    ExcelServices.Undo();
+                }
+                else
+                {
+                    // 若插件撤销栈为空，安全放行给 Excel 原生撤销能力 (临时释放钩子后调用原生 Undo)
+                    dynamic? app = ExcelDnaUtil.Application;
+                    if (app != null)
+                    {
+                        try
+                        {
+                            // 临时重置快捷键为原生行为
+                            app.OnKey("^z");
+                            // 执行原生撤销
+                            app.Undo();
+                        }
+                        catch { }
+                        finally
+                        {
+                            // 重新挂载 Ctrl+Z 快捷键调度
+                            try { app.OnKey("^z", "MacroUndoAction"); } catch { }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录宏执行异常
+                LogHelper.WriteLog($"MacroUndoAction 执行异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Excel-DNA 宏入口：重做/还原上一步操作 (响应快捷键 Ctrl+Y 或 Excel 原生 OnRepeat)
+        /// </summary>
+        [ExcelCommand]
+        public static void MacroRedoAction()
+        {
+            try
+            {
+                // 若插件重做栈中存在可还原记录，优先执行插件重做
+                if (ExcelServices.CanRedo)
+                {
+                    // 调度插件重做
+                    ExcelServices.Redo();
+                }
+                else
+                {
+                    // 若插件重做栈为空，安全放行给 Excel 原生重复/重做
+                    dynamic? app = ExcelDnaUtil.Application;
+                    if (app != null)
+                    {
+                        try
+                        {
+                            // 临时重置快捷键为原生行为
+                            app.OnKey("^y");
+                            // 执行原生 Repeat
+                            app.Repeat();
+                        }
+                        catch { }
+                        finally
+                        {
+                            // 重新挂载 Ctrl+Y 快捷键调度
+                            try { app.OnKey("^y", "MacroRedoAction"); } catch { }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录宏执行异常
+                LogHelper.WriteLog($"MacroRedoAction 执行异常: {ex.Message}");
+            }
         }
     }
 }

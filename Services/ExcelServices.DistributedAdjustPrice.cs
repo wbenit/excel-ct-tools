@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using ExcelDna.Integration;
 using ExcelAddInDemo.Controllers;
 using ExcelAddInDemo.Models;
+using ExcelAddInDemo.Services;
 using static ExcelAddInDemo.Tool;
 
 namespace ExcelAddInDemo
@@ -1367,6 +1368,9 @@ namespace ExcelAddInDemo
                 int updatedCompCount = 0;
                 int currentCabIndex = 0;
 
+                // 收集所有发生更新的箱柜差量切片 (用于支持整簿跨表跨箱柜一键撤销与还原)
+                var undoSlices = new List<DistributionCabinetSlice>();
+
                 // 4. 仅遍历涉及的目标分类工作表并精准回写 (避免对无关表执行空转)
                 foreach (dynamic sheet in validTargetSheets)
                 {
@@ -1433,6 +1437,13 @@ namespace ExcelAddInDemo
                         // 一次性读取该箱柜的全部 30 列区域 (覆盖 A 列至 AD 列 CAD 句柄，规则 7)
                         dynamic compRange = sheet.Range[$"A{compStartRow}:AD{compEndRow}"];
                         object[,] compMatrix = (object[,])compRange.Value2;
+                        // 克隆修改前的完整 30 列公式矩阵，作为撤销时的底层快照 (包含原序号、原单价公式、原合价公式等)
+                        object[,] origFormulaMatrix = (object[,])((object[,])compRange.Formula).Clone();
+                        // 记录更新前的关键行号
+                        int origCompEndRow = compEndRow;
+                        int origSubsumRow = subsumRow;
+                        int insertedRowCount = 0;
+                        int insertedRowStart = 0;
                         bool cabModified = false;
 
                         // 记录可用空白行相对索引列表 (1..cabRowsCount)
@@ -1663,6 +1674,9 @@ namespace ExcelAddInDemo
                                 int neededRows = pendingNewItems.Count - availableEmptyRowIndices.Count;
                                 if (neededRows > 0)
                                 {
+                                    // 记录插行起始物理行与插入行数，供撤销时倒序物理删除
+                                    insertedRowStart = subsumRow;
+                                    insertedRowCount = neededRows;
                                     // 严格遵守规则 6：“如果元器件数量多于区域行数，先要插入行”
                                     // 批量一次性在小计行前插入 neededRows 整行，避免循环内单行多次插入导致的反复重排与重算
                                     sheet.Range[$"{subsumRow}:{subsumRow + neededRows - 1}"].Insert(-4121); // xlDown 批量插入新行
@@ -1854,6 +1868,36 @@ namespace ExcelAddInDemo
 
                             sheetModified = true;
                             updatedCabCount++;
+
+                            // 提取修改后该箱柜完整的 30 列公式矩阵快照 (覆盖 A 列至 AD 列 CAD 句柄，规则 7)
+                            object[,] newFormulaMatrix = (object[,])((object[,])sheet.Range[$"A{compStartRow}:AD{compEndRow}"].Formula).Clone();
+
+                            // 收集该箱柜的分布调价差量切片
+                            undoSlices.Add(new DistributionCabinetSlice
+                            {
+                                // 记录工作表名称
+                                SheetName = sheetName,
+                                // 记录箱柜柜号
+                                CabinetNo = cabNo,
+                                // 记录元器件起始行
+                                CompStartRow = compStartRow,
+                                // 记录修改前的元器件终止行
+                                OrigCompEndRow = origCompEndRow,
+                                // 记录修改前的小计行
+                                OrigSubsumRow = origSubsumRow,
+                                // 记录插入的新行数
+                                InsertedRowCount = insertedRowCount,
+                                // 记录插入行的起始物理行号
+                                InsertedRowStart = insertedRowStart,
+                                // 记录修改后的元器件终止行
+                                NewCompEndRow = compEndRow,
+                                // 记录修改后的小计行
+                                NewSubsumRow = subsumRow,
+                                // 记录修改前的完整公式与数值快照
+                                OldFormulas = origFormulaMatrix,
+                                // 记录修改后的完整公式与数值快照
+                                NewFormulas = newFormulaMatrix
+                            });
                         }
                     }
 
@@ -1891,11 +1935,20 @@ namespace ExcelAddInDemo
                 // 发送 100% 完成通知
                 progressCallback?.Invoke(100, "分布调价同步完成！");
 
+                // 若有箱柜发生数据更新，打包为分布调价专有可撤销命令推入撤销栈
+                if (undoSlices.Count > 0 && updatedCabCount > 0)
+                {
+                    // 构建整簿分布调价可逆命令
+                    var distCmd = new DistributionAdjustPriceCommand($"分布调价同步 ({updatedCabCount}台箱柜)", undoSlices);
+                    // 压入全局撤销管理中心
+                    UndoRedoManager.Instance.PushCommand(distCmd);
+                }
+
                 result.Success = true;
                 result.UpdatedSheetCount = updatedSheetCount;
                 result.UpdatedCabinetCount = updatedCabCount;
                 result.UpdatedComponentCount = updatedCompCount;
-                result.Message = $"分布调价同步成功！共更新 {updatedSheetCount} 个分类表，{updatedCabCount} 台箱柜，{updatedCompCount} 项元器件（包含单价与数量同步）。";
+                result.Message = $"分布调价同步成功！共更新 {updatedSheetCount} 个分类表，{updatedCabCount} 台箱柜，{updatedCompCount} 项元器件（可随时按 Ctrl+Z 撤销）。";
             }
             catch (Exception ex)
             {

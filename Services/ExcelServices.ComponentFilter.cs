@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using ExcelDna.Integration;
+using ExcelAddInDemo.Services;
 using static ExcelAddInDemo.Tool;
 
 namespace ExcelAddInDemo
@@ -109,12 +110,23 @@ namespace ExcelAddInDemo
                 {
                     // 执行普通扁平数据表的当前列多选筛选降级逻辑
                     FilterFlatSheetByKeywords(app, activeSheet, targetCol, filterKeywords);
-                    // 结束并返回
-                    return;
+                }
+                else
+                {
+                    // 执行分类明细表专属的箱柜区间多选筛选与同柜标记逻辑
+                    FilterCategorySheetByCabinets(app, activeSheet, validCabinets, targetCol, filterKeywords);
                 }
 
-                // 执行分类明细表专属的箱柜区间多选筛选与同柜标记逻辑
-                FilterCategorySheetByCabinets(app, activeSheet, validCabinets, targetCol, filterKeywords);
+                // 准备筛选关键词摘要描述
+                string kwSummary = string.Join(", ", filterKeywords.Take(2));
+                if (filterKeywords.Count > 2) kwSummary += "...";
+
+                // 创建并推入撤销命令：撤销时清除筛选恢复全貌
+                UndoRedoManager.Instance.PushCommand(new ActionUndoableCommand(
+                    $"按所选内容筛选 [{kwSummary}]",
+                    () => ClearComponentFilter(activeSheet),
+                    () => FilterComponentsBySelection()
+                ));
             }
             catch (Exception ex)
             {
@@ -294,11 +306,11 @@ namespace ExcelAddInDemo
                     // 计算在 Excel 工作表中的真实绝对物理行号
                     int physicalRow = compStartRow + r - 1;
 
-                    // 检查是否命中了用户选中的任一关键词 (使用 Contains 包含匹配，支持型号或名称模糊识别)
+                    // 检查是否命中了用户选中的任一关键词 (必须单元格全匹配，忽略大小写)
                     foreach (string kw in filterKeywords)
                     {
-                        // 进行忽略大小写的子串包含匹配
-                        if (cellValue.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0)
+                        // 进行忽略大小写的单元格内容完全精准匹配
+                        if (string.Equals(cellValue, kw, StringComparison.OrdinalIgnoreCase))
                         {
                             // 记录命中的关键词类别
                             hitKwsInCabinet.Add(kw);
@@ -339,7 +351,7 @@ namespace ExcelAddInDemo
                 // 拼接所选关键词字符串
                 string kwStr = string.Join("、", filterKeywords);
                 // 弹出提示告知用户未找到匹配项
-                MessageBox.Show($"未在当前分类表中检索到包含 [{kwStr}] 的元器件行！", "筛选结果", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show($"未在当前分类表中检索到匹配 [{kwStr}] 的元器件行！", "筛选结果", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 // 中断退出
                 return;
             }
@@ -485,11 +497,11 @@ namespace ExcelAddInDemo
                 // 绝对物理行号
                 int physicalRow = startRow + r - 1;
 
-                // 检查是否包含任一关键字
+                // 检查是否完全匹配任一关键字 (必须单元格全匹配，忽略大小写)
                 foreach (string kw in filterKeywords)
                 {
-                    // 子串包含匹配
-                    if (val.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0)
+                    // 进行忽略大小写的单元格内容完全精准匹配
+                    if (string.Equals(val, kw, StringComparison.OrdinalIgnoreCase))
                     {
                         // 记录命中行
                         hitRows.Add(physicalRow);
@@ -660,6 +672,48 @@ namespace ExcelAddInDemo
                         app.ScreenUpdating = prevUpdating;
                     }
                     catch { }
+                }
+
+                // 5. 交互体验优化：将垂直滚动条移动到活动单元格处于视口中间位置
+                try
+                {
+                    // 获取当前焦点活动单元格 ActiveCell
+                    dynamic? activeCell = app.ActiveCell;
+                    // 获取 Excel 活动窗口 Window
+                    dynamic? win = app.ActiveWindow;
+                    // 校验活动单元格与窗口对象有效性
+                    if (activeCell != null && win != null)
+                    {
+                        // 获取活动单元格所在工作表的名称
+                        string activeCellSheet = Convert.ToString(activeCell.Worksheet?.Name) ?? "";
+                        // 获取当前被取消筛选的目标工作表名称
+                        string targetSheetName = Convert.ToString(targetSheet.Name) ?? "";
+                        // 确保活动单元格归属于当前目标工作表，杜绝跨表误滚动
+                        if (string.Equals(activeCellSheet, targetSheetName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            // 提取活动单元格所在的绝对物理行号
+                            int activeRow = (int)activeCell.Row;
+                            // 获取当前视口可见区域的总行数 (备用默认 25 行)
+                            // --硬编码: 视口可见行数备用默认值--
+                            int visibleRowCount = 25;
+                            try
+                            {
+                                // 动态读取当前窗口可视范围内的总行数
+                                visibleRowCount = (int)win.VisibleRange.Rows.Count;
+                            }
+                            catch { }
+
+                            // 计算使活动单元格居中显示的视口首行号 (最小为 1)
+                            int targetScrollRow = Math.Max(1, activeRow - (visibleRowCount / 2));
+                            // 将垂直滚动条起始行 ScrollRow 定位到目标居中行
+                            win.ScrollRow = targetScrollRow;
+                        }
+                    }
+                }
+                catch (Exception scrollEx)
+                {
+                    // 记录垂直视口居中异常日志 (不阻断正常业务流)
+                    LogHelper.WriteLog($"取消筛选调整视口居中异常: {scrollEx.Message}");
                 }
             }
             catch (Exception ex)

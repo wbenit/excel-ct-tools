@@ -212,8 +212,14 @@ namespace ExcelAddInDemo
           </menu>
           <!-- 撤销/还原下拉菜单 -->
           <menu id='menuUndoRedo' label='撤销/还原' imageMso='Undo' size='large'>
-            <!-- 撤销/还原项 -->
-            <button id='btnUndoRedoSub' label='撤销/还原' onAction='OnMenuAction' />
+            <!-- 1. 撤销指令 (Ctrl+Z) -->
+            <button id='btnUndoAction' label='撤销 (Ctrl+Z)' imageMso='Undo' screentip='撤销 (Ctrl+Z)' supertip='撤销上一步执行的操作（支持批量物料匹配、单项回填、右键筛选等）' onAction='OnMenuAction' />
+            <!-- 2. 还原/重做指令 (Ctrl+Y) -->
+            <button id='btnRedoAction' label='还原 (Ctrl+Y)' imageMso='Redo' screentip='还原/重做 (Ctrl+Y)' supertip='还原已被撤销的操作' onAction='OnMenuAction' />
+            <!-- 分割线 -->
+            <menuSeparator id='sepUndoRedo' />
+            <!-- 3. 清空历史记录 -->
+            <button id='btnClearUndoHistory' label='清空撤销历史' imageMso='Delete' screentip='清空历史记录' supertip='清空当前已记录的撤销与重做历史栈' onAction='OnMenuAction' />
           </menu>
         </group>
         <!-- ④出报表 功能分组 -->
@@ -623,6 +629,44 @@ namespace ExcelAddInDemo
             else if (controlId == "btnReportAdvanced" || controlId == "btnReportSGCC" || controlId == "btnReportOriginal" || controlId == "btnReportMarket")
             {
                 System.Windows.Forms.MessageBox.Show("该报表样式正在迁移流水线中，可先使用【常规样式报表】导出！", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+            }
+            // 响应“撤销 (Ctrl+Z)”按钮指令
+            else if (controlId == "btnUndoAction" || controlId == "btnUndoRedoSub")
+            {
+                // 若有可撤销操作则执行撤销
+                if (ExcelServices.CanUndo)
+                {
+                    // 调度执行撤销业务
+                    ExcelServices.Undo();
+                }
+                else
+                {
+                    // 给出友好状态提示
+                    System.Windows.Forms.MessageBox.Show("当前没有可撤销的插件操作记录。", "撤销提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                }
+            }
+            // 响应“还原/重做 (Ctrl+Y)”按钮指令
+            else if (controlId == "btnRedoAction")
+            {
+                // 若有可还原重做操作则执行重做
+                if (ExcelServices.CanRedo)
+                {
+                    // 调度执行重做业务
+                    ExcelServices.Redo();
+                }
+                else
+                {
+                    // 给出友好状态提示
+                    System.Windows.Forms.MessageBox.Show("当前没有可还原的重做记录。", "还原提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                }
+            }
+            // 响应“清空撤销历史”按钮指令
+            else if (controlId == "btnClearUndoHistory")
+            {
+                // 调度执行清空所有历史
+                ExcelServices.ClearUndoHistory();
+                // 弹出清空成功提示
+                System.Windows.Forms.MessageBox.Show("已成功清空所有撤销与还原历史记录！", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
     }
