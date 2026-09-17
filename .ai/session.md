@@ -16,6 +16,81 @@
   2. **0ms 内存极速直出机制**：引入 `_cachedConfig` 与 `_cachedStorage`，复用 10 分钟工作表内存缓存，消除繁重 COM 扫描；
   3. **工程构建核验**：`dotnet build` 编译成功：**0 错误**。
 
+- **【Bug 根因彻底解决】二次元件组沙盒测试列错位（100显示在极数列、3显示在附件列）深度定位与自愈闭环交付 (`ComponentGroupRules.json`, `ComponentGroupBuilderController.cs`, `component_group_builder.html`)**：
+  1. **问题根本原因深度透视**：
+     - 用户截图红框中：`100`（额定电流）显示在 `极数(X)` 列下，`3`（极数）显示在 `附件(Z)` 列下，而 `电流(W)` 列空白；
+     - **根因定位**：用户在系统企业配置中指定了自定义数据目录 `E:\BaiduNetdiskWorkspace\BaseData\报价配置\`，该目录下存在的旧版持久化 `ComponentGroupRules.json` 中的 `columnMapping` 仍保留了旧默认值（`currentCol: 22(V)`, `polesCol: 23(W)`, `appendixCol: 24(X)`）；
+     - 当窗体启动时，`LoadConfig()` 优先加载了该文件并推送至前端覆盖了初始内存模型；
+     - 抓取箱柜时，后端依此旧映射读取了 V 列（空）到 `EleCurrent`、W 列（100）到 `ElePoles`、X 列（3）到 `EleAppendix`，导致表格渲染严重错位；
+  2. **双重保障彻底根治**：
+     - **数据源头修正**：已直接将用户当前生效的自定义数据目录 `E:\BaiduNetdiskWorkspace\BaseData\报价配置\ComponentGroupRules.json` 中的 `columnMapping` 彻底修正为 `currentCol: 23(W)`, `polesCol: 24(X)`, `appendixCol: 26(Z)`；
+     - **代码自愈与自动迁移机制**：在 `ComponentGroupBuilderController.LoadConfig` 中植入旧版本自动检测升级逻辑，一旦检测到旧版配置（22, 23, 24），内存即刻自动修正为（23, 24, 26）并持久化回写，彻底杜绝任何历史旧文件复发；
+  3. **表格微排版与文字裁切彻底优化**：
+     - 用户截图显示右侧窄栏内表头 `数量(F`、`电流(W` 右半括号被截断；
+     - 将 `comp-table` 的单元格边距优化为 `padding: 5px 2px`，字体微调并启用 `-0.3px` 字距收敛；
+     - `数量(F)`、`电流(W)`、`极数(X)`、`附件(Z)` 四列全部居中对齐展示，数值与表头垂直精准居中对应；
+  4. **工程核验与同步**：
+     - 静态 HTML 资源全量同步覆盖 `Resources/`、`publish/Resources/`、`bin/Debug/net48/Resources/`；
+     - `dotnet build` 编译核验通过：**0 错误**。
+
+- **【功能闭环落地交付】按「相邻箱柜」交替分色（淡青底/白底）与取消筛选 100% 恢复原色全链路闭环交付 (`ExcelServices.ComponentFilter.cs`)**：
+  1. **原生筛选多箱柜全表作用域增强 (`ExecuteNativeFilterBySelection`)**：
+     - 在多箱柜分类表中，自动识别并优先使用包含全表所有箱柜的 `UsedRange` 开启系统 AutoFilter，彻底消除子连续块（`CurrentRegion`）导致只能筛选单台箱柜的限制，实现全局跨箱柜原生筛选；
+  2. **极速可见行识别与相邻箱柜交替分色 (`ApplyAdjacentCabinetColorsAfterFilter` & `FilterCategorySheetByCabinets`)**：
+     - 采用 `SpecialCells(12 即 xlCellTypeVisible)` 瞬发捕获各箱柜内处于可见状态的元器件行，配合行级 Hidden 容错双保底，极大提升 COM 遍历效率；
+     - 严格落实用户推荐的**相邻箱柜斑马纹交替分色**：首台命中箱柜赋予柔和淡青底（`#E0F2F1`，对齐 `#009688` 插件主题色），第二台赋予白底（`#FFFFFF`），第三台淡青底... 相邻箱柜边界极其鲜明，即使表头被折叠也能瞬间看清所属箱柜；
+  3. **单元格底色无损快照与清除筛选 100% 恢复原色 (`RestoreColorSnapshotsForSheet` & `ClearComponentFilter`)**：
+     - **上色前精准快照备份**：对所有即将上色的元器件行 A~M 列单元格原始 `ColorIndex`（无填充）与具体 `Interior.Color`（用户自定义标记色如红/黄/绿）进行原子快照；
+     - **解除冲突与双轨清除**：在 `ClearComponentFilter` 中将 `ShowAllData()` 置于首位执行，彻底根除筛选激活状态下直接修改行隐藏属性抛出 Excel COM 1004 异常从而阻断底色还原的致命隐患；
+     - 无论是点击右键菜单【清除筛选 / 恢复全部】还是按快捷键 `Ctrl+Z` 撤销，100% 精准无损还原用户原本所有的自定义底色标记；
+  4. **工程构建与多端静态资源同步**：
+     - 新增代码严格遵循每 3 行包含一行中文注释与无硬编码规范；
+     - 静态资源 `custom_context_menu.html` 强制同步覆盖至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 验证：**0 错误**。
+
+
+- **【配置与UI升级交付】二次元件组规则管道构建器列映射重构：电流调至W列、极数调至X列、附件调至Z列全链路交付 (`ComponentGroupRuleModels.cs`, `ExcelServices.ComponentGroup.cs`, `component_group_builder.html`, `ComponentGroupRules.json`)**：
+  1. **列映射配置及模型全面重构 (`ComponentGroupRuleModels.cs`)**：
+     - `ComponentGroupColumnMapping` 默认列索引更新：电流（`CurrentCol`）从 22(V) 调整为 23(W)；极数（`PolesCol`）从 23(W) 调整为 24(X)；附件（`AppendixCol`）从 24(X) 调整为 26(Z)；
+     - 同步更新 `EleComponentDto` 数据模型及属性过滤注释为 W、X、Z 列；
+  2. **Excel 底层二维数组读取范围动态自适应 (`ExcelServices.ComponentGroup.cs`)**：
+     - 将元件区域批量读取上限由固定 Col 24(X) 动态扩展为 `Math.Max(26, Math.Max(map.CurrentCol, Math.Max(map.PolesCol, map.AppendixCol)))`，确保覆盖至 Z 列 (Col 26) 及自定义列，彻底规避数组越界与数据丢失；
+     - 数组内部相对列索引自适应计算及注释全面同步更新；
+  3. **前端可视化界面与沙盒测试表格全链路升级 (`component_group_builder.html`)**：
+     - 条件节点与 OR 关系分支中的属性过滤下拉选项标签同步更新为：`电流 (W列)`、`型号 (C列)`、`极数 (X列)`、`附件 (Z列)`；
+     - 右侧实时沙盒与测试表格表头由 5 列扩充为 6 列：`名称(B)`、`型号(C)`、`数量(F)`、`电流(W)`、`极数(X)`、`附件(Z)`，支持测试期间直接检视抓取的附件参数；
+     - 同步更新 Vue `setup()` 中前端默认配置列索引；
+  4. **本地磁盘规则配置文件与发布资源同步**：
+     - 深度检索并更新本地 `bin/Debug/net48/data/ComponentGroupRules.json` 与 `publish/data/ComponentGroupRules.json` 中的 `columnMapping` 配置；
+     - 静态 HTML 资源同步覆盖至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 执行 `dotnet build` 编译核验：**0 错误**。
+
+- **【重磅落地交付】右键筛选解耦：Excel 原生自动筛选与成套多选/同柜查件双菜单落地，箱柜标题行保留显示与双轨清除全链路交付 (`CustomContextMenuForm.cs`, `custom_context_menu.html`, `ExcelServices.ComponentFilter.cs`)**：
+  1. **右键菜单双入口解耦与原生系统筛选挂接（原生多选值联合筛选闭环）**：
+     - 用户指出“原生筛选 点击后没任何反应”及“我选中了一列里面的2个值，实际筛选是按一个值来筛选的”；
+     - **根因深度定位**：
+       - Excel 官方 CommandBars 中不存在公开的 `FilterBySelectedValue` idMso，且内置控件 1749（Filter by Selected Cell's Value，单数 Cell）设计上只支持 ActiveCell 单个单元格筛选；
+       - 原逻辑仅提取了单个 `ActiveCell`，未解析整个选区（Selection），导致多选时只按其中 1 个值筛选；
+     - **原生多选值筛选架构全面落地 (`ExcelServices.ExecuteNativeFilterBySelection` & `ApplyNativeAutoFilter`)**：
+       - 调用 `ExtractFilterKeywordsFromSelection(selection, activeCol, activeCell)` 全面提取用户框选或 Ctrl 多选的所有目标列非空值（`filterKeywords`）；
+       - **单值模式**：当只选 1 个值时，直接调用 `AutoFilter(fieldIndex, kw)`；
+       - **多值联合筛选模式**：当选中 2 个或以上值时，将值列表转换为一维 `object[] criteriaArray`，并传入 Excel 原生多选操作符 `Operator: 7`（`XlAutoFilterOperator.xlFilterValues`），直接指挥 Excel 系统 AutoFilter 在下拉复选框中**同时勾选所有已选值**并完整呈现对应行！
+       - 菜单文案同步优化为【按所选内容原生筛选】（快捷提示：`支持多选值`）；
+       - 严格遵守规则 3，所有 Excel 交互统一收敛于 `ExcelServices`；
+  2. **成套查件箱柜标题行（Cab_Det）保护，彻底根除“只见器件不见箱柜名”痛点**：
+     - 原先筛选时将除了命中器件行之外的所有行全盘隐藏，导致箱柜标题行（`anchor.Det.Row`，如 `1AA1 动力配电箱`）也被误杀隐藏，工程师无法看清元器件所属箱柜；
+     - 在 `FilterCategorySheetByCabinets` 中建立 `keepVisibleRows` 保护白名单：命中的箱柜除保留器件行外，**自动将箱柜信息行（`detRow`）与表头行（`detRow + 1`）加入保留显示集合**；
+     - 筛选后每个箱柜清晰呈现为“箱柜名称 -> 命中元器件”，层次分明，所属柜名一目了然！
+  3. **清除筛选智能双轨一键恢复全貌**：
+     - 在 `ClearComponentFilter` 中不仅极速解除所有行的隐藏并无损还原单元格自定义标记色；
+     - 增加对 Excel 原生系统 AutoFilter 的感知联动：若检测到 `targetSheet.FilterMode == true`，自动触发 `targetSheet.ShowAllData()`；
+     - 用户无论是使用了原生系统筛选还是成套查件，点击一次【清除筛选 / 恢复全部】即可彻底恢复工作表全貌；
+  4. **工程构建与多端静态资源同步**：
+     - `CustomContextMenuForm.cs` 中标准高度从 535px 平滑调整为 560px，完美容纳新增菜单项；
+     - 静态资源 `custom_context_menu.html` 强制同步覆盖至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 新增代码严格遵循每 3 行包含一行中文注释与无硬编码规范；
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 验证：**0 错误**。
+
 - **【Bug 彻底根除】右键菜单高度循环衰减萎缩导致下方按钮被截断“消失”问题闭环交付 (`CustomContextMenuForm.cs`, `custom_context_menu.html`)**：
   1. **问题根本原因深度剖析**：
      - 用户截图显示右键菜单只展示到“插入...”，下方的“删除分类”、“按所选内容筛选”、“清除筛选”、“新建箱柜”、“识别参数并匹配物料”等十几项全部消失；

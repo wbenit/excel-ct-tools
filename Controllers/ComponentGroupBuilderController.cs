@@ -53,6 +53,22 @@ namespace ExcelAddInDemo.Controllers
                 string jsonText = File.ReadAllText(_configFilePath);
                 var config = JsonSerializer.Deserialize<ComponentGroupConfig>(jsonText, JsonOptions);
 
+                // 若配置存在且仍包含旧版列映射 (V=22, W=23, X=24)，自动迁移升级为 (W=23, X=24, Z=26)
+                if (config?.ColumnMapping != null &&
+                    config.ColumnMapping.CurrentCol == 22 &&
+                    config.ColumnMapping.PolesCol == 23 &&
+                    config.ColumnMapping.AppendixCol == 24)
+                {
+                    // 将电流列迁移至 W 列 (23)
+                    config.ColumnMapping.CurrentCol = 23;
+                    // 将极数列迁移至 X 列 (24)
+                    config.ColumnMapping.PolesCol = 24;
+                    // 将附件列迁移至 Z 列 (26)
+                    config.ColumnMapping.AppendixCol = 26;
+                    // 持久化保存升级后的新配置
+                    SaveConfig(config);
+                }
+
                 // 若反序列化有效则返回，否则返回默认配置
                 return config ?? ComponentGroupConfig.CreateDefault();
             }

@@ -52,6 +52,356 @@ namespace ExcelAddInDemo
         private const int XlCalcAutomatic = -4105;
 
         /// <summary>
+        /// 执行 Excel 系统原生自动筛选：按当前选区（支持单选或多选值）的值筛选 (100% 系统级 AutoFilter)
+        /// </summary>
+        public static void ExecuteNativeFilterBySelection()
+        {
+            try
+            {
+                // 获取 Excel Application 动态实例
+                dynamic? app = ExcelDnaUtil.Application;
+                // 校验 Excel 全局实例有效性
+                if (app == null) return;
+
+                // 获取当前活动单元格与活动工作表
+                dynamic? activeCell = app.ActiveCell;
+                // 获取当前活动工作表
+                dynamic? activeSheet = app.ActiveSheet;
+                // 获取当前工作簿选区 Selection
+                dynamic? selection = app.Selection;
+
+                // 若未检测到有效活动单元格，友好提示并返回
+                if (activeCell == null || activeSheet == null)
+                {
+                    // 弹窗提示需要先选中单元格
+                    MessageBox.Show("未检测到有效活动单元格，请先选中需要筛选的单元格！", "原生筛选提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    // 中断返回
+                    return;
+                }
+
+                // 提取活动单元格所在的绝对物理列号
+                int activeCol = (int)activeCell.Column;
+
+                // 从用户当前选区中提取目标列的所有非空文本（去重保序，支持单选与多选）
+                List<string> filterKeywords = ExtractFilterKeywordsFromSelection(selection, activeCol, activeCell);
+
+                // 标记原生自动筛选是否成功应用
+                bool isFilterApplied = false;
+
+                // 场景 A: 当前工作表已经处于 AutoFilter 开启状态
+                if (activeSheet.AutoFilterMode == true && activeSheet.AutoFilter != null)
+                {
+                    // 提取现有的筛选区域 Range
+                    dynamic filterRange = activeSheet.AutoFilter.Range;
+                    // 提取筛选区域起始列
+                    int startCol = (int)filterRange.Column;
+                    // 计算筛选区域结束列
+                    int endCol = startCol + (int)filterRange.Columns.Count - 1;
+
+                    // 若活动单元格列落在该筛选列范围内
+                    if (activeCol >= startCol && activeCol <= endCol)
+                    {
+                        // 计算列在筛选区域内部的相对列索引 (1-based)
+                        int fieldIndex = activeCol - startCol + 1;
+                        // 调用多值原生 AutoFilter 执行筛选
+                        ApplyNativeAutoFilter(filterRange, fieldIndex, filterKeywords);
+                        // 标记已成功应用筛选
+                        isFilterApplied = true;
+                    }
+                }
+
+                // 场景 B: 若为多箱柜分类表，优先使用包含所有箱柜的已用区域 UsedRange 开启全局 AutoFilter；若为普通平铺表，优先定位 CurrentRegion
+                dynamic? targetWb = null;
+                try { targetWb = activeSheet.Parent; } catch { }
+                // 提取工作表合规箱柜列表
+                var validCabinets = Tool.GetSheetValidCabinets((object)activeSheet, (object?)targetWb);
+                // 判定是否为包含多台箱柜的成套分类表
+                bool isMultiCabinetSheet = (validCabinets != null && validCabinets.Count > 1);
+
+                // 若非多箱柜表且尚未应用筛选，智能定位当前单元格所在的连续数据块 CurrentRegion
+                if (!isFilterApplied && !isMultiCabinetSheet)
+                {
+                    dynamic? targetRegion = null;
+                    try
+                    {
+                        // 读取活动单元格连续区域
+                        targetRegion = activeCell.CurrentRegion;
+                    }
+                    catch { }
+
+                    // 校验连续区域行数有效性 (至少包含表头与一行数据，>= 2 行)
+                    if (targetRegion != null && (int)targetRegion.Rows.Count >= 2)
+                    {
+                        // 提取连续区域起始列
+                        int startCol = (int)targetRegion.Column;
+                        // 计算连续区域结束列
+                        int endCol = startCol + (int)targetRegion.Columns.Count - 1;
+
+                        // 检查活动列是否在连续区域内
+                        if (activeCol >= startCol && activeCol <= endCol)
+                        {
+                            // 计算相对字段列号
+                            int fieldIndex = activeCol - startCol + 1;
+                            // 在连续数据块上开启并执行原生 AutoFilter (单值或多值)
+                            ApplyNativeAutoFilter(targetRegion, fieldIndex, filterKeywords);
+                            // 标记已成功应用筛选
+                            isFilterApplied = true;
+                        }
+                    }
+                }
+
+                // 场景 C: 多箱柜成套明细表或兜底：使用整表已用区域 UsedRange 开启全局原生自动筛选
+                if (!isFilterApplied)
+                {
+                    dynamic usedRange = activeSheet.UsedRange;
+                    // 校验已用区域行数
+                    if (usedRange != null && (int)usedRange.Rows.Count >= 2)
+                    {
+                        // 提取起始列
+                        int startCol = (int)usedRange.Column;
+                        // 计算相对列号
+                        int fieldIndex = activeCol - startCol + 1;
+                        // 校验列索引范围
+                        if (fieldIndex >= 1 && fieldIndex <= (int)usedRange.Columns.Count)
+                        {
+                            // 对整表执行自动筛选
+                            ApplyNativeAutoFilter(usedRange, fieldIndex, filterKeywords);
+                            // 标记已成功应用筛选
+                            isFilterApplied = true;
+                        }
+                    }
+                }
+
+                // 若未能成功应用筛选，友好弹窗提示
+                if (!isFilterApplied)
+                {
+                    // 弹出友好提示
+                    MessageBox.Show("当前选区未处于可识别的数据表格区域内，无法开启原生自动筛选！", "原生筛选提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    // 退出
+                    return;
+                }
+
+                // 核心业务增强：若当前表为分类明细表，自动对命中行执行“相邻箱柜”白/淡青底交替分色并备份原色快照
+                ApplyAdjacentCabinetColorsAfterFilter(app, activeSheet);
+
+                // 更新底部状态栏提示
+                ShowNativeFilterStatusBar(app, filterKeywords);
+
+                // 准备关键词摘要
+                string kwSummary = (filterKeywords != null && filterKeywords.Count > 0)
+                    ? string.Join("、", filterKeywords.Take(2))
+                    : "空值";
+                if (filterKeywords != null && filterKeywords.Count > 2) kwSummary += "...";
+
+                // 推入通用撤销命令：支持按 Ctrl+Z 一键撤销原生筛选、解除隐藏并 100% 还原用户原始底色
+                UndoRedoManager.Instance.PushCommand(new ActionUndoableCommand(
+                    $"原生筛选 [{kwSummary}]",
+                    () => ClearComponentFilter(activeSheet),
+                    () => ExecuteNativeFilterBySelection()
+                ));
+            }
+            catch (Exception ex)
+            {
+                // 记录原生筛选异常日志
+                LogHelper.WriteLog($"执行原生筛选异常: {ex.Message}\r\n{ex.StackTrace}");
+                // 弹出异常提示框
+                MessageBox.Show($"原生筛选执行失败: {ex.Message}", "原生筛选提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        /// <summary>
+        /// 在原生筛选后，若当前表为多箱柜分类明细表，自动对命中可见行执行相邻箱柜淡青/白底交替分色并备份原色快照
+        /// </summary>
+        private static void ApplyAdjacentCabinetColorsAfterFilter(dynamic app, dynamic activeSheet)
+        {
+            try
+            {
+                // 获取工作簿句柄
+                dynamic? activeWb = null;
+                try { activeWb = activeSheet.Parent; } catch { }
+
+                // 提取合规箱柜列表
+                var validCabinets = Tool.GetSheetValidCabinets((object)activeSheet, (object?)activeWb);
+                // 若当前工作表不存在箱柜定义名称（如普通平铺表），直接退出无需箱柜分色
+                if (validCabinets == null || validCabinets.Count == 0) return;
+
+                // 收集各命中的箱柜及其当前可见元器件行
+                var hitCabinetsOrdered = new List<(int CabIdx, List<int> VisibleRows)>();
+                // 收集全表所有命中可见物理行号 (使用 HashSet 自动去重)
+                HashSet<int> allVisibleHitRows = new HashSet<int>();
+
+                // 遍历工作表中每一个合规箱柜
+                foreach (var kv in validCabinets)
+                {
+                    var anchor = kv.Value;
+                    if (anchor?.Det == null || anchor?.Subsum == null) continue;
+
+                    // 根据规则 6：Cab_Det.row+2 为元器件起始行，Cab_Subsum.row-1 为元器件终止行
+                    int compStartRow = anchor.Det.Row + 2;
+                    int compEndRow = anchor.Subsum.Row - 1;
+                    if (compEndRow < compStartRow) continue;
+
+                    // 收集当前箱柜内处于可见状态的元器件行
+                    List<int> visibleRowsInCab = new List<int>();
+
+                    try
+                    {
+                        // 优先通过 SpecialCells(12 即 xlCellTypeVisible) 一次性极速获取该箱柜元器件区所有可见行
+                        // --硬编码: Excel 常数 xlCellTypeVisible 为 12--
+                        dynamic compRange = activeSheet.Range[$"A{compStartRow}:A{compEndRow}"];
+                        dynamic visibleCells = compRange.SpecialCells(12);
+                        if (visibleCells != null)
+                        {
+                            // 遍历可见离散块区域 Areas
+                            foreach (dynamic area in visibleCells.Areas)
+                            {
+                                int areaRow = (int)area.Row;
+                                int areaCount = (int)area.Rows.Count;
+                                // 登记各可见物理行号
+                                for (int r = areaRow; r < areaRow + areaCount; r++)
+                                {
+                                    visibleRowsInCab.Add(r);
+                                    allVisibleHitRows.Add(r);
+                                }
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // 若 SpecialCells 抛出异常 (说明该区间内无任何可见行，全部被过滤隐藏)，静默跳过
+                    }
+
+                    // 容错兜底：若 SpecialCells 未获取到且包含行数时，逐行校验 Hidden
+                    if (visibleRowsInCab.Count == 0)
+                    {
+                        for (int r = compStartRow; r <= compEndRow; r++)
+                        {
+                            try
+                            {
+                                bool isHidden = true;
+                                try { isHidden = Convert.ToBoolean(activeSheet.Rows[r].Hidden); } catch { }
+                                // 若当前行未被隐藏，登记该可见行
+                                if (!isHidden)
+                                {
+                                    visibleRowsInCab.Add(r);
+                                    allVisibleHitRows.Add(r);
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+
+                    // 若当前箱柜存在可见行，登记该箱柜
+                    if (visibleRowsInCab.Count > 0)
+                    {
+                        hitCabinetsOrdered.Add((kv.Key, visibleRowsInCab));
+                    }
+                }
+
+                // 若存在需要上色的可见行
+                if (allVisibleHitRows.Count > 0)
+                {
+                    // 挂起屏幕更新保证备份与上色丝滑流畅
+                    bool prevUpdating = true;
+                    try
+                    {
+                        prevUpdating = app.ScreenUpdating;
+                        app.ScreenUpdating = false;
+                    }
+                    catch { }
+
+                    try
+                    {
+                        // 步骤 1: 若先前已有快照，先还原旧快照，杜绝用户原色丢失
+                        RestoreColorSnapshotsForSheet(activeSheet);
+
+                        // 步骤 2: 对即将上色的所有可见行 A~M 列执行原始背景色快照备份（100% 保护用户自定义标记色）
+                        BackupColorSnapshotsForRows(activeSheet, allVisibleHitRows);
+
+                        // 步骤 3: 相邻箱柜斑马纹交替上色 (第一台淡青底，第二台白底...)
+                        int cyanOle = ColorTranslator.ToOle(AlternateCyanColor);
+                        int whiteOle = ColorTranslator.ToOle(AlternateWhiteColor);
+
+                        // 遍历命中箱柜序列
+                        for (int cabOrder = 0; cabOrder < hitCabinetsOrdered.Count; cabOrder++)
+                        {
+                            var cabItem = hitCabinetsOrdered[cabOrder];
+                            // 偶数序号赋予淡青底，奇数序号赋予白底，相邻箱柜边界极其鲜明
+                            int targetOle = (cabOrder % 2 == 0) ? cyanOle : whiteOle;
+
+                            // 遍历该箱柜内的可见行
+                            foreach (int r in cabItem.VisibleRows)
+                            {
+                                try
+                                {
+                                    // 为 A 列至 M 列赋予对应箱柜的交替背景底色
+                                    activeSheet.Range[$"A{r}:M{r}"].Interior.Color = targetOle;
+                                }
+                                catch { }
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        // 恢复屏幕更新
+                        try { app.ScreenUpdating = prevUpdating; } catch { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录相邻箱柜上色异常日志
+                LogHelper.WriteLog($"原生筛选后相邻箱柜分色异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 核心辅助方法：对指定 Range 区域应用单值或多值 Excel 系统原生 AutoFilter
+        /// </summary>
+        private static void ApplyNativeAutoFilter(dynamic targetRange, int fieldIndex, List<string> filterKeywords)
+        {
+            // 若未提取到有效值，按空白单元格筛选
+            if (filterKeywords == null || filterKeywords.Count == 0)
+            {
+                // 等号表示空白筛选
+                targetRange.AutoFilter(fieldIndex, "=");
+            }
+            else if (filterKeywords.Count == 1)
+            {
+                // 单值筛选：直接传入单一字符串准则
+                targetRange.AutoFilter(fieldIndex, filterKeywords[0]);
+            }
+            else
+            {
+                // 多值联合筛选：必须将值列表转换为一维 object[] 数组
+                object[] criteriaArray = filterKeywords.Cast<object>().ToArray();
+                // Operator 传入 7 即 Excel 常数 XlAutoFilterOperator.xlFilterValues (支持同时勾选多个值)
+                // --硬编码: Excel xlFilterValues 枚举数值为 7--
+                targetRange.AutoFilter(fieldIndex, criteriaArray, (dynamic)7);
+            }
+        }
+
+        /// <summary>
+        /// 在 Excel 底部状态栏展示原生筛选统计提示
+        /// </summary>
+        private static void ShowNativeFilterStatusBar(dynamic app, List<string> filterKeywords)
+        {
+            try
+            {
+                // 拼接关键词摘要 (最多展示前 3 个)
+                string summary = (filterKeywords != null && filterKeywords.Count > 0)
+                    ? string.Join("、", filterKeywords.Take(3))
+                    : "空白";
+                // 若超过 3 个追加省略号
+                if (filterKeywords != null && filterKeywords.Count > 3) summary += "...";
+                // 写入 Excel 状态栏提示信息
+                int count = filterKeywords?.Count ?? 0;
+                app.StatusBar = $"[原生筛选] 已对当前列按 [{summary}] (共 {count} 个值) 应用系统自动筛选";
+            }
+            catch { }
+        }
+
+        /// <summary>
         /// 根据用户当前选区（单选或多选行）在当前激活列的内容，执行多选联合筛选并进行同箱柜共存标记
         /// </summary>
         public static void FilterComponentsBySelection()
@@ -123,7 +473,7 @@ namespace ExcelAddInDemo
 
                 // 创建并推入撤销命令：撤销时清除筛选恢复全貌
                 UndoRedoManager.Instance.PushCommand(new ActionUndoableCommand(
-                    $"按所选内容筛选 [{kwSummary}]",
+                    $"成套查件定位 [{kwSummary}]",
                     () => ClearComponentFilter(activeSheet),
                     () => FilterComponentsBySelection()
                 ));
@@ -405,22 +755,39 @@ namespace ExcelAddInDemo
                 // 步骤 2：对本次命中的所有元器件行 A~M 列执行原始背景色快照备份（100% 保护用户自定义标记色）
                 BackupColorSnapshotsForRows(activeSheet, allHitRows);
 
-                // 步骤 3：执行“全部隐藏，只留下筛选出的行”
-                // 将 1 到 maxRow 中所有不属于 allHitRows 的行划分为离散区间，批量设置 Hidden = true
-                ApplyBatchRowVisibility(activeSheet, 1, maxRow, allHitRows);
+                // 步骤 3：汇总需要保留显示的物理行集合 (包含命中元器件行与所属箱柜的标题行、表头行)
+                HashSet<int> keepVisibleRows = new HashSet<int>(allHitRows);
+                // 遍历各个命中的箱柜
+                foreach (var cabItem in hitCabinetsOrdered)
+                {
+                    // 校验箱柜 Det 锚点有效性
+                    if (cabItem.Anchor?.Det != null)
+                    {
+                        // 提取箱柜标题信息行物理行号 (如 "1AA1 进线柜")
+                        int detRow = cabItem.Anchor.Det.Row;
+                        // 保留箱柜信息标题行，让用户一眼看清元器件归属哪台柜
+                        keepVisibleRows.Add(detRow);
+                        // 保留箱柜表头行 (序号/名称/型号...)，保持列位直观对齐
+                        keepVisibleRows.Add(detRow + 1);
+                    }
+                }
 
-                // 步骤 4：相邻箱柜斑马纹交替上色（第一台白底，第二台青底，第三台白底...）
-                int whiteOle = ColorTranslator.ToOle(AlternateWhiteColor);
-                // 获取淡青底 OLE 数值
+                // 执行“隐藏非保留行，只留下命中元器件及其所属箱柜标题行”
+                // 将 1 到 maxRow 中所有不属于 keepVisibleRows 的行批量设置 Hidden = true
+                ApplyBatchRowVisibility(activeSheet, 1, maxRow, keepVisibleRows);
+
+                // 步骤 4：相邻箱柜斑马纹交替上色（第一台淡青底，第二台白底，第三台淡青底...）
                 int cyanOle = ColorTranslator.ToOle(AlternateCyanColor);
+                // 获取白底 OLE 数值
+                int whiteOle = ColorTranslator.ToOle(AlternateWhiteColor);
 
                 // 遍历命中箱柜序列
                 for (int cabOrder = 0; cabOrder < hitCabinetsOrdered.Count; cabOrder++)
                 {
                     // 提取当前命中箱柜数据
                     var cabItem = hitCabinetsOrdered[cabOrder];
-                    // 偶数序号 (0, 2, 4...) 赋予白底，奇数序号 (1, 3, 5...) 赋予青底，相邻箱柜边界极其鲜明
-                    int targetOleColor = (cabOrder % 2 == 0) ? whiteOle : cyanOle;
+                    // 偶数序号 (0, 2, 4...) 赋予淡青底，奇数序号 (1, 3, 5...) 赋予白底，相邻箱柜边界极其鲜明
+                    int targetOleColor = (cabOrder % 2 == 0) ? cyanOle : whiteOle;
 
                     // 遍历该箱柜内的所有命中行
                     foreach (int row in cabItem.HitRows)
@@ -630,13 +997,38 @@ namespace ExcelAddInDemo
                     // 暂停事件处理
                     app.EnableEvents = false;
 
-                    // 1. 一行代码极速解除整表所有行的隐藏状态，100% 恢复全貌
-                    targetSheet.Rows.EntireRow.Hidden = false;
+                    // 1. 双轨联动：若当前工作表处于 Excel 系统原生 AutoFilter 筛选状态，优先一键清除系统筛选条件 (显示全部数据)
+                    try
+                    {
+                        // 检查工作表是否处于系统原生自动筛选过滤状态
+                        if (targetSheet.FilterMode == true)
+                        {
+                            // 清除系统筛选条件，显示全部数据并恢复漏斗箭头
+                            targetSheet.ShowAllData();
+                        }
+                    }
+                    catch (Exception filterEx)
+                    {
+                        // 记录清除系统原生 AutoFilter 异常日志
+                        LogHelper.WriteLog($"清除原生 AutoFilter 异常: {filterEx.Message}");
+                    }
 
-                    // 2. 核心技术点：无损还原单元格原始背景色（完美保留用户原本所有的自定义标记色）
+                    // 2. 解除可能由成套查件产生的整表隐藏状态 (安全容错包装，杜绝因 AutoFilter 冲突抛出 1004 阻断后续流程)
+                    try
+                    {
+                        // 一行代码极速解除整表所有行的隐藏状态，100% 恢复全貌
+                        targetSheet.Rows.EntireRow.Hidden = false;
+                    }
+                    catch (Exception hideEx)
+                    {
+                        // 记录解除隐藏异常日志
+                        LogHelper.WriteLog($"解除行隐藏异常: {hideEx.Message}");
+                    }
+
+                    // 3. 核心技术点：无损还原单元格原始背景色（完美保留用户原本所有的自定义标记色）
                     bool restoredBySnapshot = RestoreColorSnapshotsForSheet(targetSheet);
 
-                    // 3. 容错兜底：若无快照存在（例如首次打开直接点清除），才执行常规清除
+                    // 4. 容错兜底：若无快照存在（例如首次打开直接点清除），才执行常规清除
                     if (!restoredBySnapshot)
                     {
                         dynamic? targetWb = null;
@@ -658,7 +1050,7 @@ namespace ExcelAddInDemo
                         }
                     }
 
-                    // 4. 在状态栏给出恢复提示
+                    // 5. 在状态栏给出恢复提示
                     try { app.StatusBar = "已清除筛选，已恢复显示全部行并还原原有标记底色。"; } catch { }
                 }
                 finally
@@ -735,8 +1127,8 @@ namespace ExcelAddInDemo
                 // 准备单元格快照列表
                 var list = new List<CellColorSnapshot>();
 
-                // 遍历所有待上色的物理行号
-                foreach (int row in rows)
+                // 遍历所有待上色的物理行号 (使用 Distinct 规避可能传入的重复行)
+                foreach (int row in rows.Distinct())
                 {
                     // 遍历 A 列至 M 列 (1 到 13 列) --硬编码: 13 列覆盖成套报价核心列--
                     for (int col = 1; col <= 13; col++)
@@ -745,8 +1137,8 @@ namespace ExcelAddInDemo
                         {
                             // 获取单元格对象
                             dynamic cell = sheet.Cells[row, col];
-                            // 获取背景色索引
-                            int cIdx = (int)cell.Interior.ColorIndex;
+                            // 安全读取背景色索引 (转为 int32 避免 COM VARIANT 异常)
+                            int cIdx = Convert.ToInt32(cell.Interior.ColorIndex);
 
                             // 若原先为无填充色
                             if (cIdx == XlNoneColorIndex)

@@ -256,23 +256,39 @@
           <span class="item-shortcut">批量删除</span>
         </div>
 
-        <!-- 6. 按所选单元格/多选行的值筛选 (多选行/同柜标记) -->
-        <div class="menu-item" data-action="excelFilterByValue">
+        <!-- 6. Excel 原生自动筛选：按所选内容原生筛选 (系统 AutoFilter，支持多选值) -->
+        <div class="menu-item" data-action="excelFilterByValueNative">
           <div class="item-icon-wrap">
-            <!-- 漏斗筛选 SVG -->
+            <!-- 原生漏斗筛选 SVG 图标 -->
             <svg viewBox="0 0 24 24"><path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/></svg>
           </div>
-          <span class="item-label">按所选内容筛选</span>
+          <!-- 菜单标签文字 -->
+          <span class="item-label">按所选内容原生筛选</span>
+          <!-- 快捷右侧标识 -->
+          <span class="item-shortcut">支持多选值</span>
+        </div>
+
+        <!-- 7. 成套明细多选/同柜查件定位 (多选行/同柜标记) -->
+        <div class="menu-item" data-action="excelFilterByValue">
+          <div class="item-icon-wrap">
+            <!-- 成套查件放大镜比对 SVG 图标 -->
+            <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14zM7 9h5v1H7V9zm0-2h5v1H7V7z"/></svg>
+          </div>
+          <!-- 菜单标签文字 -->
+          <span class="item-label">成套多选/同柜查件...</span>
+          <!-- 快捷右侧标识 -->
           <span class="item-shortcut">多选/同柜标记</span>
         </div>
 
-        <!-- 7. 清除筛选 / 恢复全部显示 -->
+        <!-- 8. 清除筛选 / 恢复全部显示 (双轨清除原生筛选与成套隐藏) -->
         <div class="menu-item" data-action="excelClearFilter">
           <div class="item-icon-wrap">
-            <!-- 清除筛选漏斗 SVG -->
+            <!-- 清除筛选漏斗 SVG 图标 -->
             <svg viewBox="0 0 24 24"><path d="M14.79 10.62L13 12.41V18h-2v-5.59L4.21 4.62C3.76 4.04 4.17 3.2 4.91 3.2h14.18c.74 0 1.15.84.7 1.42l-5 6zm5.92 5.09l-1.41-1.41-2.12 2.12-2.12-2.12-1.41 1.41 2.12 2.12-2.12 2.12 1.41 1.41 2.12-2.12 2.12 2.12 1.41-1.41-2.12-2.12 2.12-2.12z"/></svg>
           </div>
+          <!-- 菜单标签文字 -->
           <span class="item-label">清除筛选 / 恢复全部</span>
+          <!-- 快捷右侧标识 -->
           <span class="item-shortcut">恢复全貌</span>
         </div>
 
