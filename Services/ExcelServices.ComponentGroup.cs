@@ -122,13 +122,16 @@ namespace ExcelAddInDemo
                     return resultList;
                 }
 
-                // 提取列映射配置 (B=2, C=3, F=6, V=22, W=23, X=24)
+                // 提取列映射配置 (B=2, C=3, F=6, W=23, X=24, Z=26)
                 var map = config?.ColumnMapping ?? new ComponentGroupColumnMapping();
 
-                // 使用二维数组一次性读取 B 列到 X 列 (从 Col 2 到 Col 24)
+                // 使用二维数组一次性读取 B 列到 Z 列 (从 Col 2 到至少 Col 26)
                 int colStart = 2; // B 列
-                int colEnd = 24;  // X 列
+                // 动态计算最大所需列，确保至少完整覆盖到 Z 列 (Col 26)
+                int colEnd = Math.Max(26, Math.Max(map.CurrentCol, Math.Max(map.PolesCol, map.AppendixCol)));
+                // 计算行总数
                 int totalRows = compEndRow - compStartRow + 1;
+                // 计算列总数
                 int totalCols = colEnd - colStart + 1;
 
                 dynamic range = sheet.Range[sheet.Cells[compStartRow, colStart], sheet.Cells[compEndRow, colEnd]];
@@ -143,9 +146,9 @@ namespace ExcelAddInDemo
                     int nameRelCol = map.NameCol - colStart + 1;       // B 列相对索引 = 1
                     int normsRelCol = map.NormsCol - colStart + 1;     // C 列相对索引 = 2
                     int qtyRelCol = map.QuantityCol - colStart + 1;    // F 列相对索引 = 5
-                    int curRelCol = map.CurrentCol - colStart + 1;     // V 列相对索引 = 21
-                    int poleRelCol = map.PolesCol - colStart + 1;      // W 列相对索引 = 22
-                    int appRelCol = map.AppendixCol - colStart + 1;    // X 列相对索引 = 23
+                    int curRelCol = map.CurrentCol - colStart + 1;     // W 列相对索引 = 22
+                    int poleRelCol = map.PolesCol - colStart + 1;      // X 列相对索引 = 23
+                    int appRelCol = map.AppendixCol - colStart + 1;    // Z 列相对索引 = 25
 
                     string eleName = data[r, nameRelCol]?.ToString()?.Trim() ?? "";
                     string eleNorms = data[r, normsRelCol]?.ToString()?.Trim() ?? "";
@@ -305,9 +308,12 @@ namespace ExcelAddInDemo
                     .OrderBy(r => r.Priority)
                     .ToList();
 
+                // 提取列映射配置
                 var map = config.ColumnMapping ?? new ComponentGroupColumnMapping();
                 int colStart = 2; // B 列
-                int colEnd = 24;  // X 列
+                // 动态计算最大所需列，确保至少完整覆盖到 Z 列 (Col 26)
+                int colEnd = Math.Max(26, Math.Max(map.CurrentCol, Math.Max(map.PolesCol, map.AppendixCol)));
+                // 计算总列数
                 int totalCols = colEnd - colStart + 1;
 
                 // 倒序遍历箱柜 (自底向上处理箱柜，防止上方箱柜插行影响下方箱柜行号)

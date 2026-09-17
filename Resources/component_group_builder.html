@@ -517,16 +517,17 @@
       background: #f1f5f9;
       color: #475569;
       font-weight: 600;
-      font-size: 11px;
-      padding: 5px 6px;
+      font-size: 10px;
+      padding: 5px 2px;
       text-align: left;
       border-bottom: 1px solid #e2e8f0;
       white-space: nowrap;
+      letter-spacing: -0.3px;
       z-index: 1;
     }
 
     .comp-table td {
-      padding: 4px 6px;
+      padding: 4px 2px;
       font-size: 11px;
       border-bottom: 1px solid #f1f5f9;
       white-space: nowrap;
@@ -906,10 +907,10 @@
                 >
                   <span style="font-size: 11px; color: #64748b;">属性:</span>
                   <el-select v-model="filter.propertyType" size="small" style="width: 110px;" @change="syncToRawExpression">
-                    <el-option value="Current" label="电流 (V列)"></el-option>
+                    <el-option value="Current" label="电流 (W列)"></el-option>
                     <el-option value="Model" label="型号 (C列)"></el-option>
-                    <el-option value="Poles" label="极数 (W列)"></el-option>
-                    <el-option value="Appendix" label="附件 (X列)"></el-option>
+                    <el-option value="Poles" label="极数 (X列)"></el-option>
+                    <el-option value="Appendix" label="附件 (Z列)"></el-option>
                   </el-select>
 
                   <el-select v-model="filter.operator" size="small" style="width: 85px;" @change="syncToRawExpression">
@@ -1002,10 +1003,10 @@
                       >
                         <span style="font-size: 11px; color: #64748b;">属性:</span>
                         <el-select v-model="filter.propertyType" size="small" style="width: 110px;" @change="syncToRawExpression">
-                          <el-option value="Current" label="电流 (V列)"></el-option>
+                          <el-option value="Current" label="电流 (W列)"></el-option>
                           <el-option value="Model" label="型号 (C列)"></el-option>
-                          <el-option value="Poles" label="极数 (W列)"></el-option>
-                          <el-option value="Appendix" label="附件 (X列)"></el-option>
+                          <el-option value="Poles" label="极数 (X列)"></el-option>
+                          <el-option value="Appendix" label="附件 (Z列)"></el-option>
                         </el-select>
 
                         <el-select v-model="filter.operator" size="small" style="width: 85px;" @change="syncToRawExpression">
@@ -1067,11 +1068,12 @@
             <table class="comp-table">
               <thead>
                 <tr>
-                  <th style="width: 25%;">名称(B)</th>
-                  <th style="width: 32%;">型号(C)</th>
-                  <th style="width: 15%; text-align: center;">数量(F)</th>
-                  <th style="width: 14%;">电流(V)</th>
-                  <th style="width: 14%;">极数(W)</th>
+                  <th style="width: 20%;">名称(B)</th>
+                  <th style="width: 24%;">型号(C)</th>
+                  <th style="width: 14%; text-align: center;">数量(F)</th>
+                  <th style="width: 14%; text-align: center;">电流(W)</th>
+                  <th style="width: 14%; text-align: center;">极数(X)</th>
+                  <th style="width: 14%; text-align: center;">附件(Z)</th>
                 </tr>
               </thead>
               <tbody>
@@ -1079,11 +1081,12 @@
                   <td :title="comp.eleName" style="font-weight: 600; color: #1e293b;">{{ comp.eleName }}</td>
                   <td :title="comp.eleNorms" style="color: #475569;">{{ comp.eleNorms }}</td>
                   <td style="text-align: center; color: #009688; font-weight: 700;">{{ comp.eleNums }}</td>
-                  <td style="color: #64748b;">{{ comp.eleCurrent }}</td>
-                  <td style="color: #64748b;">{{ comp.elePoles }}</td>
+                  <td style="text-align: center; color: #64748b;">{{ comp.eleCurrent }}</td>
+                  <td style="text-align: center; color: #64748b;">{{ comp.elePoles }}</td>
+                  <td style="text-align: center; color: #64748b;">{{ comp.eleAppendix }}</td>
                 </tr>
                 <tr v-if="!testComponents || testComponents.length === 0">
-                  <td colspan="5" style="text-align: center; color: #94a3b8; padding: 25px 10px; font-size: 11px;">
+                  <td colspan="6" style="text-align: center; color: #94a3b8; padding: 25px 10px; font-size: 11px;">
                     暂无元件数据 (请在 Excel 切换至分类表并点击“抓取当前箱柜”)
                   </td>
                 </tr>
@@ -1176,9 +1179,9 @@
             normsCol: 3,
             quantityCol: 6,
             unitCol: 5,
-            currentCol: 22,
-            polesCol: 23,
-            appendixCol: 24,
+            currentCol: 23,
+            polesCol: 24,
+            appendixCol: 26,
             categoryCol: 2
           },
           rules: [],

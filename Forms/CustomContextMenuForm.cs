@@ -197,6 +197,9 @@ namespace ExcelAddInDemo.Forms
                     case "excelPaste":
                     case "excelInsert":
                     case "excelDelete":
+                    // Excel 原生系统自动筛选动作
+                    case "excelFilterByValueNative":
+                    // 成套多选与同柜查件动作
                     case "excelFilterByValue":
                     case "excelClearFilter":
                     case "createCabinet":
@@ -360,13 +363,18 @@ namespace ExcelAddInDemo.Forms
                         ExcelServices.DeleteCurrentCategory();
                         break;
 
+                    case "excelFilterByValueNative":
+                        // 调度业务服务层执行 Excel 原生自动筛选 (严格遵守规则 3：Excel 操作统一收敛于 ExcelServices)
+                        ExcelServices.ExecuteNativeFilterBySelection();
+                        break;
+
                     case "excelFilterByValue":
-                        // 调度业务层执行“多选行当前列筛选与同箱柜高亮标记”
+                        // 调度业务层执行“成套多选行当前列筛选与同箱柜高亮标记”
                         ExcelServices.FilterComponentsBySelection();
                         break;
 
                     case "excelClearFilter":
-                        // 调度业务层执行“清除筛选并恢复全部行显示”
+                        // 调度业务层执行“清除筛选并双轨恢复全貌”
                         ExcelServices.ClearComponentFilter();
                         break;
 
@@ -527,7 +535,7 @@ namespace ExcelAddInDemo.Forms
                 Rectangle workArea = currentScreen.WorkingArea;
 
                 // 每次显示前重置为标准尺寸，杜绝历史状态残留与 DPI 缩放萎缩
-                int standardHeight = 535; // --硬编码: 右键菜单标准高度--
+                int standardHeight = 560; // --硬编码: 右键菜单标准高度--
                 // 若工作区高度受限 (如低分辨率笔记本屏幕)，自适应贴合可用工作区
                 int targetHeight = Math.Min(standardHeight, workArea.Height - 10);
                 _instance.Size = new Size(250, targetHeight);

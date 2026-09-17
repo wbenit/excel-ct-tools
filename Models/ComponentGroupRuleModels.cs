@@ -310,19 +310,19 @@ namespace ExcelAddInDemo.Models
         public int UnitCol { get; set; } = 5;
 
         /// <summary>
-        /// 电流参数列索引 (默认 V 列 = 22)
+        /// 电流参数列索引 (默认 W 列 = 23)
         /// </summary>
-        public int CurrentCol { get; set; } = 22;
+        public int CurrentCol { get; set; } = 23;
 
         /// <summary>
-        /// 极数参数列索引 (默认 W 列 = 23)
+        /// 极数参数列索引 (默认 X 列 = 24)
         /// </summary>
-        public int PolesCol { get; set; } = 23;
+        public int PolesCol { get; set; } = 24;
 
         /// <summary>
-        /// 附件参数列索引 (默认 X 列 = 24)
+        /// 附件参数列索引 (默认 Z 列 = 26)
         /// </summary>
-        public int AppendixCol { get; set; } = 24;
+        public int AppendixCol { get; set; } = 26;
 
         /// <summary>
         /// 类别标识列索引 (默认 B 列 = 2，写入 "元件组")
@@ -719,17 +719,17 @@ namespace ExcelAddInDemo.Models
         public int EleNums { get; set; } = 1;
 
         /// <summary>
-        /// 电流参数 (V 列)
+        /// 电流参数 (W 列)
         /// </summary>
         public string EleCurrent { get; set; } = "";
 
         /// <summary>
-        /// 极数参数 (W 列)
+        /// 极数参数 (X 列)
         /// </summary>
         public string ElePoles { get; set; } = "";
 
         /// <summary>
-        /// 附件参数 (X 列)
+        /// 附件参数 (Z 列)
         /// </summary>
         public string EleAppendix { get; set; } = "";
     }
@@ -1617,7 +1617,7 @@ namespace ExcelAddInDemo.Models
             // 根据属性类型分别进行精确评估
             switch (propType)
             {
-                // 电流过滤 (V 列)
+                // 电流过滤 (W 列)
                 case "Current":
                     // 评估电流数值条件比较
                     return EvaluateCurrentConditionWithOp(ec.EleCurrent, op, targetVal);
@@ -1633,12 +1633,12 @@ namespace ExcelAddInDemo.Models
                     // 否则判断型号是否包含目标文本
                     return ec.EleNorms != null && ec.EleNorms.Contains(targetVal);
 
-                // 极数过滤 (W 列)
+                // 极数过滤 (X 列)
                 case "Poles":
                     // 评估极数格式比较
                     return EvaluatePoleConditionWithOp(ec.ElePoles, op, targetVal);
 
-                // 附件过滤 (X 列)
+                // 附件过滤 (Z 列)
                 case "Appendix":
                     // 若目标值为空，要求必须无附件标识
                     if (string.IsNullOrEmpty(targetVal))
