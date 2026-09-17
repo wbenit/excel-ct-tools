@@ -1074,17 +1074,26 @@ namespace ExcelAddInDemo
             public bool HasQuantitySpecified { get; set; } = false;
             // 排序ID (对应分布表 A 列，支持任意小数)
             public double SortId { get; set; } = 0;
+            // 该分布项是否已在阶段 1 匹配认领，防止重复认领或在阶段 2 误当新增项
+            public bool IsConsumed { get; set; } = false;
         }
 
         /// <summary>
         /// 核心服务：从【材料分布表】反向一键更新调价与数量数据到所有分类工作表各箱柜明细中 (支持数量修改与自动插入新增行)
         /// </summary>
-        public static DistributionUpdateResult UpdateFromComponentDistributionSheet(DistributionUpdateOptions options)
+        public static DistributionUpdateResult UpdateFromComponentDistributionSheet(DistributionUpdateOptions options, Action<int, string>? progressCallback = null)
         {
             var result = new DistributionUpdateResult();
+            // 暂存 Excel 原始计算模式 (用于异常与正常结束时的可靠恢复)
+            dynamic? prevCalc = null;
+            // 暂存 Excel 原始事件启用状态
+            bool prevEvents = true;
 
             try
             {
+                // 发送初始进度通知 (5%)
+                progressCallback?.Invoke(5, "正在获取 Excel 实例并定位【元件汇总分布表】...");
+
                 dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null)
                 {
@@ -1115,6 +1124,9 @@ namespace ExcelAddInDemo
                     result.Message = $"当前工作簿中未找到【{DistributionSheetName}】，请先生成分布表";
                     return result;
                 }
+
+                // 发送解析数据中进度通知 (8%)
+                progressCallback?.Invoke(8, "正在读取并解析【元件汇总分布表】调价数据...");
 
                 // 2. 从【元件汇总分布表】中动态定位元器件表头行 (自适应第 8 行与历史排版)
                 int rowCompHeader = 8;
@@ -1278,42 +1290,98 @@ namespace ExcelAddInDemo
                     return result;
                 }
 
-                // 3. 冻结刷新提升反向回写效率
+                // 3. 冻结计算、事件与屏幕刷新以极致提升反向回写性能 (核心性能优化)
+                try
+                {
+                    // 记录原有计算模式
+                    prevCalc = app.Calculation;
+                }
+                catch { }
+                try
+                {
+                    // 记录原有事件启用状态
+                    prevEvents = app.EnableEvents;
+                }
+                catch { }
+
+                try
+                {
+                    // 强制设为手动计算，避免每次写入单元格或插入行时 Excel 在后台触发全簿公式重算风暴
+                    app.Calculation = -4135; // XlCalculation.xlCalculationManual
+                }
+                catch { }
+
+                try
+                {
+                    // 禁用事件触发，杜绝 COM 内部监听频繁响应
+                    app.EnableEvents = false;
+                }
+                catch { }
+
+                // 禁用屏幕刷新与系统提示弹窗
                 app.ScreenUpdating = false;
                 app.DisplayAlerts = false;
+
+                // 从分布表箱柜列中提取涉及的有效目标分类工作表名称集合
+                var targetSheetNames = cabColumns
+                    .Select(c => c.SheetName)
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                // 收集工作簿中实际存在的有效目标工作表列表，跳过所有无关表
+                var validTargetSheets = new List<dynamic>();
+                // 遍历当前工作簿的所有表以定位目标表
+                foreach (dynamic ws in activeWb.Worksheets)
+                {
+                    // 提取工作表名称
+                    string wsName = Convert.ToString(ws.Name)?.Trim() ?? "";
+                    // 仅收录属于目标分类且非辅助表的工作表
+                    if (targetSheetNames.Contains(wsName) &&
+                        !string.Equals(wsName, DistributionSheetName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        validTargetSheets.Add(ws);
+                    }
+                }
+
+                // 预先统计总箱柜数以计算平滑进度
+                int totalCabCountAcrossSheets = 0;
+                // 缓存各表的有效箱柜列表映射 (使用正确的 CabinetAnchorModel 类型)
+                var sheetCabMap = new Dictionary<string, List<KeyValuePair<int, Models.CabinetAnchorModel>>>(StringComparer.OrdinalIgnoreCase);
+                // 遍历目标表执行自愈并统计箱柜
+                foreach (dynamic sheet in validTargetSheets)
+                {
+                    // 提取表名
+                    string sName = Convert.ToString(sheet.Name)?.Trim() ?? "";
+                    // 严格遵守规则 8：在回写前显式调用自愈校准箱柜名称
+                    Tool.FixAndFillCabinetNamesForSheet(sheet);
+                    // 获取当前工作表的有效箱柜列表
+                    var validCabs = Tool.GetSheetValidCabinets(sheet, activeWb);
+                    // 登记字典缓存
+                    sheetCabMap[sName] = validCabs;
+                    // 累加总箱柜台数
+                    totalCabCountAcrossSheets += validCabs.Count;
+                }
 
                 int updatedSheetCount = 0;
                 int updatedCabCount = 0;
                 int updatedCompCount = 0;
+                int currentCabIndex = 0;
 
-                // 4. 遍历工作簿中的所有分类工作表并回写
-                foreach (dynamic sheet in activeWb.Worksheets)
+                // 4. 仅遍历涉及的目标分类工作表并精准回写 (避免对无关表执行空转)
+                foreach (dynamic sheet in validTargetSheets)
                 {
                     string sheetName = Convert.ToString(sheet.Name)?.Trim() ?? "";
-                    // 排除系统辅助工作表与分布表自身
-                    if (string.Equals(sheetName, DistributionSheetName, StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(sheetName, "材料分布表", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(sheetName, "项目信息", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(sheetName, "元件汇总表", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(sheetName, "元件汇总调价清单", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(sheetName, "屏柜汇总表", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(sheetName, "屏柜分项表", StringComparison.OrdinalIgnoreCase))
+                    if (!sheetCabMap.TryGetValue(sheetName, out var validCabinets) || validCabinets.Count == 0)
                     {
                         continue;
                     }
-
-                    // 严格遵守规则 8：在回写前显式调用自愈校准箱柜名称
-                    Tool.FixAndFillCabinetNamesForSheet(sheet);
-
-                    // 获取当前工作表的有效箱柜
-                    var validCabinets = Tool.GetSheetValidCabinets(sheet, activeWb);
-                    if (validCabinets.Count == 0) continue;
 
                     bool sheetModified = false;
 
                     // 遍历工作表下的每个箱柜
                     foreach (var cabEntry in validCabinets)
                     {
+                        currentCabIndex++;
                         var anchor = cabEntry.Value;
                         if (anchor.Det == null || anchor.Subsum == null) continue;
 
@@ -1321,6 +1389,8 @@ namespace ExcelAddInDemo
                         int subsumRow = Convert.ToInt32(anchor.Subsum.Row);
                         int compStartRow = detRow + 2;
                         int compEndRow = subsumRow - 1;
+                        // 计算当前箱柜明细表头行 (detRow + 1)，用于生成动态序号公式 =ROW()-ROW(A${headerRow})
+                        int headerRow = detRow + 1;
 
                         if (compEndRow < compStartRow) continue;
 
@@ -1328,51 +1398,173 @@ namespace ExcelAddInDemo
                         string cabNo = "";
                         if (anchor.Sum != null)
                         {
+                            // 汇总行存在时从汇总行提取柜号 (B列)
                             int sumRow = Convert.ToInt32(anchor.Sum.Row);
                             cabNo = Convert.ToString(sheet.Cells[sumRow, 2].Value)?.Trim() ?? "";
                         }
                         if (string.IsNullOrWhiteSpace(cabNo))
                         {
+                            // 汇总行无柜号时从明细行提取
                             cabNo = Convert.ToString(sheet.Cells[detRow, 2].Value)?.Trim() ?? "";
                         }
+
+                        // 计算当前箱柜进度百分比 (10% ~ 90%)
+                        int cabProgress = totalCabCountAcrossSheets > 0
+                            ? 10 + (int)Math.Round((double)currentCabIndex / totalCabCountAcrossSheets * 80.0)
+                            : 50;
+                        // 触发进度回调通知前端当前正在更新的工作表与箱柜号
+                        progressCallback?.Invoke(cabProgress, $"正在更新: [{sheetName}] - {cabNo} ({currentCabIndex}/{totalCabCountAcrossSheets})...");
 
                         // 查找该箱柜在分布表中的具体配置项列表
                         string cabKey = $"{sheetName}|{cabNo}";
                         cabSpecificComponentsMap.TryGetValue(cabKey, out var expectedCompItems);
 
+                        // 重置该箱柜所有分布项的消费认领状态，确保状态纯净
+                        if (expectedCompItems != null)
+                        {
+                            // 遍历条目重置消费标记
+                            foreach (var item in expectedCompItems)
+                            {
+                                item.IsConsumed = false;
+                            }
+                        }
+
                         int cabRowsCount = compEndRow - compStartRow + 1;
-                        // 一次性读取该箱柜的元器件区域 (A~H 列: 序号、名称、型号、厂家、单位、数量、单价、合价) (规则 7)
-                        dynamic compRange = sheet.Range[$"A{compStartRow}:H{compEndRow}"];
+                        // 一次性读取该箱柜的全部 30 列区域 (覆盖 A 列至 AD 列 CAD 句柄，规则 7)
+                        dynamic compRange = sheet.Range[$"A{compStartRow}:AD{compEndRow}"];
                         object[,] compMatrix = (object[,])compRange.Value2;
                         bool cabModified = false;
 
                         // 记录可用空白行相对索引列表 (1..cabRowsCount)
                         var availableEmptyRowIndices = new List<int>();
-                        // 记录已处理的元器件复合键集合
-                        var handledExpectedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        // 记录箱柜内首次出现的器件复合键与对应主行行号 (用于合并相同元器件)
+                        var primaryRowMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                        // 判定是否执行合并相同元件：未勾选“不合并相同元件”时默认合并
+                        bool shouldMergeSameBom = options == null || !options.NotMergeSameBom;
 
                         // 1. 扫描并更新已有行
                         for (int r = 1; r <= cabRowsCount; r++)
                         {
+                            // 提取明细表现有行器件名称 (B列)
                             string cName = Convert.ToString(compMatrix[r, 2])?.Trim() ?? "";
+                            // 提取明细表现有行规格型号 (C列)
                             string cModel = Convert.ToString(compMatrix[r, 3])?.Trim() ?? "";
+                            // 提取明细表现有行生产厂家 (D列)
+                            string cMfg = Convert.ToString(compMatrix[r, 4])?.Trim() ?? "";
 
                             // 识别空白行并记录
                             if (string.IsNullOrWhiteSpace(cName) && string.IsNullOrWhiteSpace(cModel))
                             {
+                                // 登记可用空白行索引
                                 availableEmptyRowIndices.Add(r);
                                 continue;
                             }
 
-                            // 优先在当前箱柜特定分布清单中匹配 (名称+型号 或 型号)
+                            // 构建相同元器件判定复合键 (名称 + 型号 + 厂家)
+                            string sameCompKey = $"{cName.ToUpperInvariant()}|||{cModel.ToUpperInvariant()}|||{cMfg.ToUpperInvariant()}";
+
+                            // 若启用了合并相同元件，且前面已经登记过该相同器件的主行
+                            if (shouldMergeSameBom && primaryRowMap.TryGetValue(sameCompKey, out int mainR))
+                            {
+                                // 提取重复行的 CAD 句柄 (AD 列，第 30 列)
+                                string subHandle = Convert.ToString(compMatrix[r, 30])?.Trim() ?? "";
+                                // 提取主行的 CAD 句柄
+                                string mainHandle = Convert.ToString(compMatrix[mainR, 30])?.Trim() ?? "";
+
+                                // 若重复行有 CAD 句柄，将其安全追加合并至主行 AD 列，杜绝句柄丢失
+                                if (!string.IsNullOrWhiteSpace(subHandle))
+                                {
+                                    if (string.IsNullOrWhiteSpace(mainHandle))
+                                    {
+                                        // 主行无句柄直接继承
+                                        compMatrix[mainR, 30] = subHandle;
+                                    }
+                                    else
+                                    {
+                                        // 拆分现有句柄以去重
+                                        var existingHandles = mainHandle.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                                            .Select(h => h.Trim())
+                                            .ToList();
+                                        if (!existingHandles.Contains(subHandle))
+                                        {
+                                            // 逗号拼接追加句柄
+                                            compMatrix[mainR, 30] = $"{mainHandle},{subHandle}";
+                                        }
+                                    }
+                                }
+
+                                // 清空当前重复行的全部 30 列数据 (实现合并消除重复行)
+                                for (int col = 1; col <= 30; col++)
+                                {
+                                    compMatrix[r, col] = "";
+                                }
+
+                                // 将清空后的重复行登记为可用空行
+                                availableEmptyRowIndices.Add(r);
+                                cabModified = true;
+                                updatedCompCount++;
+                                continue;
+                            }
+
+                            // 登记该元器件首次出现的主行索引 (供后续相同元器件合并)
+                            if (shouldMergeSameBom)
+                            {
+                                primaryRowMap[sameCompKey] = r;
+                            }
+
+                            // 采用多级优先级匹配当前箱柜特定分布项清单 (未被消费认领的项)
                             CabinetUpdateComponentItem? matchedExpected = null;
                             if (expectedCompItems != null)
                             {
+                                // 优先级 1: 名称 + 型号 + 厂家完全匹配，且在当前箱柜明确填有有效数量
                                 matchedExpected = expectedCompItems.FirstOrDefault(item =>
+                                    !item.IsConsumed &&
+                                    item.HasQuantitySpecified &&
                                     string.Equals(item.Name, cName, StringComparison.OrdinalIgnoreCase) &&
-                                    string.Equals(item.Model, cModel, StringComparison.OrdinalIgnoreCase)) ??
-                                    expectedCompItems.FirstOrDefault(item =>
-                                    string.Equals(item.Model, cModel, StringComparison.OrdinalIgnoreCase));
+                                    string.Equals(item.Model, cModel, StringComparison.OrdinalIgnoreCase) &&
+                                    string.Equals(item.Manufacturer, cMfg, StringComparison.OrdinalIgnoreCase));
+
+                                // 优先级 2: 名称 + 型号匹配，且在当前箱柜明确填有有效数量
+                                if (matchedExpected == null)
+                                {
+                                    // 次优先名称与型号匹配
+                                    matchedExpected = expectedCompItems.FirstOrDefault(item =>
+                                        !item.IsConsumed &&
+                                        item.HasQuantitySpecified &&
+                                        string.Equals(item.Name, cName, StringComparison.OrdinalIgnoreCase) &&
+                                        string.Equals(item.Model, cModel, StringComparison.OrdinalIgnoreCase));
+                                }
+
+                                // 优先级 3: 仅型号匹配，且在当前箱柜明确填有有效数量
+                                if (matchedExpected == null)
+                                {
+                                    // 兜底优先型号匹配有数量项
+                                    matchedExpected = expectedCompItems.FirstOrDefault(item =>
+                                        !item.IsConsumed &&
+                                        item.HasQuantitySpecified &&
+                                        string.Equals(item.Model, cModel, StringComparison.OrdinalIgnoreCase));
+                                }
+
+                                // 优先级 4 (删除判定): 只有当所有未消费条目中都明确未填数量时，才匹配到空数量项执行删除
+                                if (matchedExpected == null)
+                                {
+                                    // 匹配同名同型号的空数量项
+                                    matchedExpected = expectedCompItems.FirstOrDefault(item =>
+                                        !item.IsConsumed &&
+                                        !item.HasQuantitySpecified &&
+                                        string.Equals(item.Name, cName, StringComparison.OrdinalIgnoreCase) &&
+                                        string.Equals(item.Model, cModel, StringComparison.OrdinalIgnoreCase));
+                                }
+
+                                // 优先级 5 (兜底删除判定): 型号匹配且未填数量
+                                if (matchedExpected == null)
+                                {
+                                    // 仅型号匹配空数量项
+                                    matchedExpected = expectedCompItems.FirstOrDefault(item =>
+                                        !item.IsConsumed &&
+                                        !item.HasQuantitySpecified &&
+                                        string.Equals(item.Model, cModel, StringComparison.OrdinalIgnoreCase));
+                                }
                             }
 
                             // 全局单价规则兜底
@@ -1384,18 +1576,19 @@ namespace ExcelAddInDemo
 
                             if (matchedExpected != null)
                             {
+                                // 立即标记为已消费认领，防止后续重复认领或在阶段 2 被当成新增项
+                                matchedExpected.IsConsumed = true;
+
                                 // 🌟 核心践行截图红字规范：*更新到项目时，数量为空删除，为0保留
                                 if (!matchedExpected.HasQuantitySpecified)
                                 {
-                                    // 单元格为空：在该箱柜中删除该器件 (清空 B~H 列单元格内容)
-                                    compMatrix[r, 2] = ""; // 名称清空
-                                    compMatrix[r, 3] = ""; // 型号清空
-                                    compMatrix[r, 4] = ""; // 厂家清空
-                                    compMatrix[r, 5] = ""; // 单位清空
-                                    compMatrix[r, 6] = ""; // 数量清空
-                                    compMatrix[r, 7] = ""; // 单价清空
-                                    compMatrix[r, 8] = ""; // 合价清空
+                                    // 单元格为空：在该箱柜中删除该器件 (清空整行全部 30 列单元格内容)
+                                    for (int col = 2; col <= 30; col++)
+                                    {
+                                        compMatrix[r, col] = "";
+                                    }
 
+                                    // 登记清空后的可用空白行
                                     availableEmptyRowIndices.Add(r);
                                     cabModified = true;
                                     updatedCompCount++;
@@ -1417,13 +1610,21 @@ namespace ExcelAddInDemo
                                     // 回写新单价 (取 G 列报出单价)
                                     compMatrix[r, 7] = matchedExpected.UnitPrice;
 
-                                    // 方式 A：数量按分布表中填写的数值更新 (若为 0 则保留 0，合价为 0)
-                                    compMatrix[r, 6] = matchedExpected.Quantity;
+                                    // 数量更新策略：
+                                    // 若允许合并 (shouldMergeSameBom)，主行采用分布表中聚合总数量；
+                                    // 若用户勾选了“不合并相同元件”，则保持当前行原有的数量不变，仅调价。
+                                    if (shouldMergeSameBom)
+                                    {
+                                        // 采用分布表聚合总数量
+                                        compMatrix[r, 6] = matchedExpected.Quantity;
+                                    }
 
+                                    // 提取当前最终数量以重新计算合价
+                                    decimal currentQty = 0;
+                                    decimal.TryParse(Convert.ToString(compMatrix[r, 6]), out currentQty);
                                     // 重新计算合价 (合价 = 数量 * 单价)
-                                    compMatrix[r, 8] = Math.Round(matchedExpected.Quantity * matchedExpected.UnitPrice, 2);
+                                    compMatrix[r, 8] = Math.Round(currentQty * matchedExpected.UnitPrice, 2);
 
-                                    handledExpectedKeys.Add($"{matchedExpected.Name}|||{matchedExpected.Model}");
                                     cabModified = true;
                                     updatedCompCount++;
                                 }
@@ -1435,6 +1636,7 @@ namespace ExcelAddInDemo
                                 if (!string.IsNullOrWhiteSpace(matchedGlobal.Manufacturer)) compMatrix[r, 4] = matchedGlobal.Manufacturer;
                                 compMatrix[r, 7] = matchedGlobal.UnitPrice;
 
+                                // 计算并刷新合价
                                 decimal qty = 0;
                                 decimal.TryParse(Convert.ToString(compMatrix[r, 6]), out qty);
                                 compMatrix[r, 8] = Math.Round(qty * matchedGlobal.UnitPrice, 2);
@@ -1444,141 +1646,193 @@ namespace ExcelAddInDemo
                             }
                         }
 
-                        // 将已有行的修改先一次性写回当前区域 (规则 7)
+                        // 将已有行的修改先一次性写回当前 30 列区域 (规则 7)
                         compRange.Value2 = compMatrix;
 
-                        // 2. 🌟 核心处理：对于分布表中针对该箱柜有数量 (> 0) 但该箱柜原本没有的“新增器件”
+                        // 2. 🌟 核心处理：对于分布表中针对该箱柜有数量 (> 0) 但未在阶段 1 被消费认领的“真正新增器件”
                         if (expectedCompItems != null)
                         {
+                            // 筛选当前箱柜有数量且未被消费的新增器件
                             var pendingNewItems = expectedCompItems
-                                .Where(item => item.Quantity > 0 && !handledExpectedKeys.Contains($"{item.Name}|||{item.Model}"))
+                                .Where(item => item.Quantity > 0 && !item.IsConsumed)
                                 .ToList();
 
-                            foreach (var newItem in pendingNewItems)
+                            if (pendingNewItems.Count > 0)
                             {
-                                // 优先使用元器件区域内现有的空白行
-                                if (availableEmptyRowIndices.Count > 0)
-                                {
-                                    int emptyIdx = availableEmptyRowIndices[0];
-                                    availableEmptyRowIndices.RemoveAt(0);
-
-                                    int targetRow = compStartRow + emptyIdx - 1;
-                                    // 填入新增器件各项属性与公式
-                                    sheet.Cells[targetRow, 1].Formula = $"=ROW()-ROW(A$6)";
-                                    sheet.Cells[targetRow, 2].Value = newItem.Name;
-                                    sheet.Cells[targetRow, 3].Value = newItem.Model;
-                                    sheet.Cells[targetRow, 4].Value = newItem.Manufacturer;
-                                    sheet.Cells[targetRow, 5].Value = newItem.Unit;
-                                    sheet.Cells[targetRow, 6].Value = newItem.Quantity;
-                                    sheet.Cells[targetRow, 7].Value = newItem.UnitPrice;
-                                    sheet.Cells[targetRow, 8].Formula = $"=ROUND(F{targetRow}*G{targetRow}, 2)";
-
-                                    cabModified = true;
-                                    updatedCompCount++;
-                                }
-                                else
+                                // 计算当前元器件区域缺少多少可用空行
+                                int neededRows = pendingNewItems.Count - availableEmptyRowIndices.Count;
+                                if (neededRows > 0)
                                 {
                                     // 严格遵守规则 6：“如果元器件数量多于区域行数，先要插入行”
-                                    // 在当前小计行前插入整行
-                                    sheet.Rows[subsumRow].Insert(-4121); // xlDown 插入新行
-                                    // 插入后新行的行号即为原本的 subsumRow
-                                    int insertedRow = subsumRow;
+                                    // 批量一次性在小计行前插入 neededRows 整行，避免循环内单行多次插入导致的反复重排与重算
+                                    sheet.Range[$"{subsumRow}:{subsumRow + neededRows - 1}"].Insert(-4121); // xlDown 批量插入新行
 
-                                    // 填入新增器件数据与公式
-                                    sheet.Cells[insertedRow, 1].Formula = $"=ROW()-ROW(A$6)";
-                                    sheet.Cells[insertedRow, 2].Value = newItem.Name;
-                                    sheet.Cells[insertedRow, 3].Value = newItem.Model;
-                                    sheet.Cells[insertedRow, 4].Value = newItem.Manufacturer;
-                                    sheet.Cells[insertedRow, 5].Value = newItem.Unit;
-                                    sheet.Cells[insertedRow, 6].Value = newItem.Quantity;
-                                    sheet.Cells[insertedRow, 7].Value = newItem.UnitPrice;
-                                    sheet.Cells[insertedRow, 8].Formula = $"=ROUND(F{insertedRow}*G{insertedRow}, 2)";
+                                    // 将新插入的多行相对行号追加登记为可用空行
+                                    for (int i = 0; i < neededRows; i++)
+                                    {
+                                        // 计算插入行相对元器件起始行的索引
+                                        int newRelIdx = (subsumRow + i) - compStartRow + 1;
+                                        // 登记为可用空行
+                                        availableEmptyRowIndices.Add(newRelIdx);
+                                    }
 
                                     // 插入行后元器件终止行与小计行顺延
-                                    compEndRow++;
-                                    subsumRow++;
+                                    compEndRow += neededRows;
+                                    subsumRow += neededRows;
+                                }
 
-                                    cabModified = true;
-                                    updatedCompCount++;
+                                // 遍历逐个追加新增器件到可用空行中
+                                foreach (var newItem in pendingNewItems)
+                                {
+                                    // 标记消费状态
+                                    newItem.IsConsumed = true;
+
+                                    // 从可用空行列表中取出空行索引
+                                    if (availableEmptyRowIndices.Count > 0)
+                                    {
+                                        // 提取并移出第一个空行
+                                        int emptyIdx = availableEmptyRowIndices[0];
+                                        availableEmptyRowIndices.RemoveAt(0);
+
+                                        // 计算目标物理行号
+                                        int targetRow = compStartRow + emptyIdx - 1;
+                                        // 填入新增器件各项属性与公式 (动态使用当前箱柜表头行 headerRow)
+                                        sheet.Cells[targetRow, 1].Formula = $"=ROW()-ROW(A${headerRow})";
+                                        sheet.Cells[targetRow, 2].Value = newItem.Name;
+                                        sheet.Cells[targetRow, 3].Value = newItem.Model;
+                                        sheet.Cells[targetRow, 4].Value = newItem.Manufacturer;
+                                        sheet.Cells[targetRow, 5].Value = newItem.Unit;
+                                        sheet.Cells[targetRow, 6].Value = newItem.Quantity;
+                                        sheet.Cells[targetRow, 7].Value = newItem.UnitPrice;
+                                        sheet.Cells[targetRow, 8].Formula = $"=ROUND(F{targetRow}*G{targetRow}, 2)";
+
+                                        cabModified = true;
+                                        updatedCompCount++;
+                                    }
                                 }
                             }
                         }
 
-                        // 3. 若勾选“调整元件排序”，按分布表 A 列排序ID对箱柜内元件重排序
-                        if (options != null && options.UpdateBomOrder && cabModified && compEndRow >= compStartRow)
+                        // 3. 元器件行紧凑排版与重排序 (第一行主元器件固定不动，空行整齐沉底，30列全数据联动)
+                        // 条件：若勾选了调整排序，或者执行了相同元件合并，则触发紧凑规整与排版
+                        bool needReorder = options != null && options.UpdateBomOrder;
+                        if ((needReorder || shouldMergeSameBom) && cabModified && compEndRow >= compStartRow)
                         {
                             try
                             {
                                 int currentCompRows = compEndRow - compStartRow + 1;
-                                dynamic freshRange = sheet.Range[$"A{compStartRow}:H{compEndRow}"];
-                                object[,] freshMatrix = (object[,])freshRange.Value2;
-
-                                var validRows = new List<(double sortId, string name, string model, string mfg, string unit, decimal qty, decimal price, decimal total)>();
-
-                                for (int r = 1; r <= currentCompRows; r++)
+                                // 只有当行数大于 1 时才有排版必要 (第一行主开关保持不动，仅对从第 2 行起的元件整理)
+                                if (currentCompRows > 1)
                                 {
-                                    string cName = Convert.ToString(freshMatrix[r, 2])?.Trim() ?? "";
-                                    string cModel = Convert.ToString(freshMatrix[r, 3])?.Trim() ?? "";
-                                    if (string.IsNullOrWhiteSpace(cName) && string.IsNullOrWhiteSpace(cModel)) continue;
+                                    // 一次性读取整整 30 列数据矩阵 (从 A 列至 AD 列 CAD 句柄，规则 7)
+                                    dynamic fullCompRange = sheet.Range[$"A{compStartRow}:AD{compEndRow}"];
+                                    object[,] fullMatrix = (object[,])fullCompRange.Value2;
 
-                                    string cMfg = Convert.ToString(freshMatrix[r, 4])?.Trim() ?? "";
-                                    string cUnit = Convert.ToString(freshMatrix[r, 5])?.Trim() ?? "";
-                                    decimal cQty = 0;
-                                    decimal.TryParse(Convert.ToString(freshMatrix[r, 6]), out cQty);
-                                    decimal cPrice = 0;
-                                    decimal.TryParse(Convert.ToString(freshMatrix[r, 7]), out cPrice);
-                                    decimal cTotal = Math.Round(cQty * cPrice, 2);
+                                    // 收集从第 2 行起的有效元器件 (第 1 行主器件保留原位，不参与排序)
+                                    var validTailRows = new List<(double sortId, object[] rowCells)>();
 
-                                    // 确定该元件在分布表中的排序ID
-                                    double itemSortId = 999999 + r;
-                                    if (expectedCompItems != null)
+                                    // 从第 2 行遍历至末尾
+                                    for (int r = 2; r <= currentCompRows; r++)
                                     {
-                                        var m = expectedCompItems.FirstOrDefault(it =>
-                                            string.Equals(it.Name, cName, StringComparison.OrdinalIgnoreCase) &&
-                                            string.Equals(it.Model, cModel, StringComparison.OrdinalIgnoreCase));
-                                        if (m != null && m.SortId > 0) itemSortId = m.SortId;
+                                        string cName = Convert.ToString(fullMatrix[r, 2])?.Trim() ?? "";
+                                        string cModel = Convert.ToString(fullMatrix[r, 3])?.Trim() ?? "";
+                                        // 过滤合并或删除后的空白行
+                                        if (string.IsNullOrWhiteSpace(cName) && string.IsNullOrWhiteSpace(cModel)) continue;
+
+                                        // 完整提取该行的全部 30 列数据 (保证 AD 列 CAD 句柄及右侧所有属性完整跟随平移)
+                                        object[] rowCells = new object[30];
+                                        for (int c = 0; c < 30; c++)
+                                        {
+                                            rowCells[c] = fullMatrix[r, c + 1];
+                                        }
+
+                                        // 确定该元件的排序权重 (勾选排序取分布表 SortId，未勾选排序保持原相对行号)
+                                        double itemSortId = needReorder ? 999999 + r : r;
+                                        if (needReorder && expectedCompItems != null)
+                                        {
+                                            // 匹配分布表排序 ID
+                                            var m = expectedCompItems.FirstOrDefault(it =>
+                                                string.Equals(it.Name, cName, StringComparison.OrdinalIgnoreCase) &&
+                                                string.Equals(it.Model, cModel, StringComparison.OrdinalIgnoreCase));
+                                            if (m != null && m.SortId > 0) itemSortId = m.SortId;
+                                        }
+
+                                        validTailRows.Add((itemSortId, rowCells));
                                     }
 
-                                    validRows.Add((itemSortId, cName, cModel, cMfg, cUnit, cQty, cPrice, cTotal));
-                                }
+                                    // 排序整理：勾选排序按 SortId 升序，未勾选排序保持原出现顺序，空行自动沉底
+                                    var sortedTailRows = validTailRows.OrderBy(v => v.sortId).ToList();
 
-                                // 按 SortId 升序排列
-                                var sortedRows = validRows.OrderBy(v => v.sortId).ToList();
+                                    // 重构 30 列大矩阵写回
+                                    object[,] reorderedMatrix = new object[currentCompRows, 30];
 
-                                // 重构矩阵写回
-                                object[,] reorderedMatrix = new object[currentCompRows, 8];
-                                for (int r = 0; r < currentCompRows; r++)
-                                {
-                                    if (r < sortedRows.Count)
+                                    // 1. 第 1 行元器件原位保留，整行 30 列数据纹丝不动 (包含 AD 列 CAD 句柄)
+                                    for (int c = 0; c < 30; c++)
                                     {
-                                        var item = sortedRows[r];
-                                        reorderedMatrix[r, 0] = ""; // 序号公式后续统一灌入
-                                        reorderedMatrix[r, 1] = item.name;
-                                        reorderedMatrix[r, 2] = item.model;
-                                        reorderedMatrix[r, 3] = item.mfg;
-                                        reorderedMatrix[r, 4] = item.unit;
-                                        reorderedMatrix[r, 5] = item.qty;
-                                        reorderedMatrix[r, 6] = item.price;
-                                        reorderedMatrix[r, 7] = item.total;
+                                        reorderedMatrix[0, c] = fullMatrix[1, c + 1];
                                     }
-                                    else
+
+                                    // 2. 从第 2 行开始填入排序与紧凑排列后的有效元器件
+                                    int availableTailRows = currentCompRows - 1;
+                                    for (int i = 0; i < availableTailRows; i++)
                                     {
-                                        // 剩余行变为空白行
-                                        for (int col = 0; col < 8; col++) reorderedMatrix[r, col] = "";
+                                        int destR = i + 1; // 目标行索引 (1..currentCompRows-1)
+                                        if (i < sortedTailRows.Count)
+                                        {
+                                            // 写入有效元器件的 30 列数据
+                                            var rowData = sortedTailRows[i].rowCells;
+                                            for (int c = 0; c < 30; c++)
+                                            {
+                                                reorderedMatrix[destR, c] = rowData[c];
+                                            }
+                                        }
+                                        else
+                                        {
+                                            // 超出有效元件数的剩余行变为空白行 (清空整行 30 列，空行整齐沉底)
+                                            for (int c = 0; c < 30; c++)
+                                            {
+                                                reorderedMatrix[destR, c] = "";
+                                            }
+                                        }
                                     }
-                                }
 
-                                freshRange.Value2 = reorderedMatrix;
+                                    // 一次性批量写回 30 列大矩阵 (规则 7)
+                                    fullCompRange.Value2 = reorderedMatrix;
 
-                                // 重新灌入有效行的序号公式与合价公式
-                                for (int r = 0; r < sortedRows.Count; r++)
-                                {
-                                    int realR = compStartRow + r;
-                                    sheet.Cells[realR, 1].Formula = "=ROW()-ROW(A$6)";
-                                    sheet.Cells[realR, 8].Formula = $"=ROUND(F{realR}*G{realR}, 2)";
+                                    // 3. 统一批量重新灌入自适应动态序号公式与合价公式 (范围批量赋值，消除数十次 COM 细碎往返)
+                                    object[,] formulasColA = new object[currentCompRows, 1];
+                                    object[,] formulasColH = new object[currentCompRows, 1];
+
+                                    // 刷新第 1 行序号与合价公式
+                                    formulasColA[0, 0] = $"=ROW()-ROW(A${headerRow})";
+                                    formulasColH[0, 0] = $"=ROUND(F{compStartRow}*G{compStartRow}, 2)";
+
+                                    // 刷新第 2 行起有效元器件行的序号与合价公式
+                                    for (int i = 0; i < sortedTailRows.Count; i++)
+                                    {
+                                        int relIdx = 1 + i;
+                                        int realR = compStartRow + relIdx;
+                                        formulasColA[relIdx, 0] = $"=ROW()-ROW(A${headerRow})";
+                                        formulasColH[relIdx, 0] = $"=ROUND(F{realR}*G{realR}, 2)";
+                                    }
+
+                                    // 清空多余沉底空行的公式，保持表格纯净
+                                    for (int relIdx = 1 + sortedTailRows.Count; relIdx < currentCompRows; relIdx++)
+                                    {
+                                        formulasColA[relIdx, 0] = "";
+                                        formulasColH[relIdx, 0] = "";
+                                    }
+
+                                    // 一次性范围批量写入 A 列序号公式与 H 列合价公式 (规则 7)
+                                    sheet.Range[$"A{compStartRow}:A{compEndRow}"].Formula = formulasColA;
+                                    sheet.Range[$"H{compStartRow}:H{compEndRow}"].Formula = formulasColH;
                                 }
                             }
-                            catch { }
+                            catch (Exception ex)
+                            {
+                                // 记录排序与规整异常日志
+                                LogHelper.WriteLog($"[分布调价] 箱柜 {cabNo} 调整元件排序/合并规整异常: {ex.Message}");
+                            }
                         }
 
                         // 若该箱柜有元器件发生更新或新增，重新联动刷新公式 (规则 6 & 8)
@@ -1611,9 +1865,31 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 恢复屏幕刷新
+                // 发送最终重算与校准进度通知 (95%)
+                progressCallback?.Invoke(95, "正在执行公式重算与最终工作表自愈校准...");
+
+                // 统一触发一次全簿公式重新计算，刷新所有小计、总计与跨表联动
+                try
+                {
+                    app.Calculate();
+                }
+                catch { }
+
+                // 恢复 Excel 原始计算模式
+                if (prevCalc != null)
+                {
+                    try { app.Calculation = prevCalc; } catch { }
+                }
+
+                // 恢复事件监听响应
+                try { app.EnableEvents = prevEvents; } catch { }
+
+                // 恢复屏幕刷新与提示
                 app.ScreenUpdating = true;
                 app.DisplayAlerts = true;
+
+                // 发送 100% 完成通知
+                progressCallback?.Invoke(100, "分布调价同步完成！");
 
                 result.Success = true;
                 result.UpdatedSheetCount = updatedSheetCount;
@@ -1634,6 +1910,14 @@ namespace ExcelAddInDemo
                     dynamic? app = ExcelDnaSafeAccessor.GetApplication();
                     if (app != null)
                     {
+                        // 确保计算模式恢复
+                        if (prevCalc != null)
+                        {
+                            try { app.Calculation = prevCalc; } catch { }
+                        }
+                        // 确保事件恢复
+                        try { app.EnableEvents = prevEvents; } catch { }
+                        // 确保屏幕刷新恢复
                         app.ScreenUpdating = true;
                         app.DisplayAlerts = true;
                     }

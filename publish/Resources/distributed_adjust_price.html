@@ -355,6 +355,69 @@
       font-size: 11px;
       color: #00796b;
     }
+
+    /* 实时进度条展示卡片 (绿蓝相间主色调 #009688) */
+    .progress-card {
+      border: 1px solid #80cbc4;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #e0f2f1 0%, #f0fdfa 100%);
+      padding: 12px 16px;
+      box-shadow: 0 2px 8px rgba(0, 150, 136, 0.12);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      animation: progressFadeIn 0.3s ease-in-out;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: #004d40;
+    }
+
+    .progress-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .progress-percent-badge {
+      background: #009688;
+      color: #ffffff;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+    }
+
+    .progress-status-box {
+      font-size: 12px;
+      color: #00796b;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 18px;
+      font-family: Consolas, "PingFang SC", "Microsoft YaHei", monospace;
+    }
+
+    .loading-spin-icon {
+      display: inline-block;
+      animation: spin 1.2s linear infinite;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes progressFadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
   </style>
 </head>
 
@@ -546,6 +609,34 @@
           </div>
         </div>
 
+        <!-- 实时更新进度条展示卡片 (绿蓝相间主色调 #009688) -->
+        <div v-if="progress.visible" class="progress-card">
+          <div class="progress-header">
+            <div class="progress-title">
+              <span class="loading-spin-icon">🔄</span>
+              <span>正在一键同步回写明细...</span>
+            </div>
+            <span class="progress-percent-badge">{{ progress.percent }}%</span>
+          </div>
+
+          <!-- Element Plus 绿蓝主题动效流光进度条 -->
+          <el-progress
+            :percentage="progress.percent"
+            :stroke-width="14"
+            :show-text="false"
+            color="#009688"
+            striped
+            striped-flow
+            :duration="15"
+          />
+
+          <!-- 当前处理工作表与箱柜状态明细 -->
+          <div class="progress-status-box">
+            <span>⚡</span>
+            <span>{{ progress.statusText || '正在调度处理任务...' }}</span>
+          </div>
+        </div>
+
         <!-- 调价操作指南 -->
         <div class="guide-box">
           <div style="font-weight: bold; margin-bottom: 6px; font-size: 13px;">💡 分布调价矩阵使用指引：</div>
@@ -579,6 +670,13 @@
         const loading = ref(false);
         const generating = ref(false);
         const updating = ref(false);
+
+        // 实时更新进度条状态对象
+        const progress = reactive({
+          visible: false,      // 进度卡片是否可见
+          percent: 0,          // 当前完成百分比 (0~100)
+          statusText: ''       // 当前正在处理的表和箱柜描述文字
+        });
 
         // 分类工作表列表
         const categories = ref([]);
@@ -716,6 +814,11 @@
         // 3. 一键反向更新到明细
         const updateFromDistributionSheet = () => {
           updating.value = true;
+          // 初始化并展开进度条
+          progress.visible = true;
+          progress.percent = 0;
+          progress.statusText = '准备就绪，正在获取 Excel 实例并读取分布表矩阵...';
+
           postMessageToCSharp({
             action: 'updateFromDistributionSheet',
             payload: updateOptions
@@ -772,18 +875,37 @@
                   }
                 }
 
-                // 响应: 一键反向更新
+                // 响应: 实时更新进度推进通知
+                else if (type === 'updateProgress') {
+                  if (data.payload) {
+                    progress.visible = true;
+                    progress.percent = data.payload.percent || 0;
+                    progress.statusText = data.payload.statusText || '';
+                  }
+                }
+
+                // 响应: 一键反向更新完成
                 else if (type === 'updateFromDistributionSheetResult') {
                   updating.value = false;
                   if (response && response.success) {
+                    progress.percent = 100;
+                    progress.statusText = '同步全部完成！各箱柜明细已全部更新并刷新。';
                     ElementPlus.ElNotification({
                       title: '同步成功',
                       message: response.message || '各分类表箱柜明细已全部更新',
                       type: 'success',
                       duration: 4500
                     });
+                    // 延迟 2.2 秒后平滑隐藏进度条
+                    setTimeout(() => {
+                      progress.visible = false;
+                    }, 2200);
                   } else {
                     ElementPlus.ElMessage.error(response.message || '更新失败');
+                    progress.statusText = '更新过程中出现异常终止';
+                    setTimeout(() => {
+                      progress.visible = false;
+                    }, 3000);
                   }
                 }
 
@@ -811,6 +933,7 @@
           loading,
           generating,
           updating,
+          progress,
           categories,
           customExpanded,
           mergeCond,

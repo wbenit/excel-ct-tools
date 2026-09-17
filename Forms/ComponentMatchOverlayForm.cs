@@ -22,10 +22,16 @@ namespace ExcelAddInDemo.Forms
         public string Current { get; set; } = string.Empty;
         public string Pole { get; set; } = string.Empty;
         public string TripMode { get; set; } = string.Empty;
-        // 当前 D 列已有的型号内容
+        // 当前型号内容 (汇总表为 D 列，分类明细表为 C 列)
         public string CurrentModel { get; set; } = string.Empty;
-        // 当前 G 列已有的单价或公式内容
+        // 当前单价或基准表价公式/数值
         public string CurrentPrice { get; set; } = string.Empty;
+        // 扩展参数 1 (汇总表 X 列，分类明细表 AA 列)
+        public string Param1 { get; set; } = string.Empty;
+        // 扩展参数 2 (汇总表 Y 列，分类明细表 AB 列)
+        public string Param2 { get; set; } = string.Empty;
+        // 当前工作表是否为分类明细表 (false 为元件汇总表)
+        public bool IsCategorySheet { get; set; } = false;
         // 多选品牌偏好列表
         public List<string> Brands { get; set; } = new List<string>();
     }
@@ -146,20 +152,59 @@ namespace ExcelAddInDemo.Forms
             this.Deactivate += OnOverlayDeactivate;
         }
 
+        // 标记是否正在执行 WebView2 异步初始化，防止多次并发初始化
+        private bool _isInitializing = false;
+
+        /// <summary>
+        /// 预热浮窗控件与 WebView2 运行时环境 (在后台静默就绪，消除首次点击冷启动延迟)
+        /// </summary>
+        public void WarmUp()
+        {
+            try
+            {
+                // 确保 WinForm 控件句柄已在 UI 线程创建
+                if (!this.IsHandleCreated)
+                {
+                    // 强制触发底层窗口句柄创建
+                    this.CreateControl();
+                }
+
+                // 若尚未就绪且未在初始化中，立即触发 WebView2 环境加载
+                if (!_isWebReady && !_isInitializing)
+                {
+                    // 主动调用初始化函数
+                    OnFormLoadAsync(this, EventArgs.Empty);
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录预热异常日志
+                LogHelper.WriteLog($"ComponentMatchOverlayForm 预热异常: {ex.Message}");
+            }
+        }
+
         /// <summary>
         /// 异步加载 WebView2 环境并导航至 component_match_overlay.html
         /// </summary>
         private async void OnFormLoadAsync(object? sender, EventArgs e)
         {
+            // 防重复初始化门控
+            if (_isInitializing || _isWebReady) return;
+            // 标记初始化状态
+            _isInitializing = true;
+
             try
             {
                 // 获取专属用户缓存数据目录
                 string userDataDir = Path.Combine(Tool.GetAppDataDirectory(), "WebView2_MatchOverlay");
+                // 异步创建环境实例
                 var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
+                // 确保 WebView2 控件初始化成功
                 await _webView.EnsureCoreWebView2Async(env);
 
                 // 配置环境参数
                 _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+                // 禁用底部状态栏
                 _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
 
                 // 注册 Web 消息监听
@@ -167,12 +212,15 @@ namespace ExcelAddInDemo.Forms
 
                 // 获取前端 HTML 路径
                 string appDir = Tool.GetAppDirectory();
+                // 拼接资源目录绝对路径
                 string htmlPath = Path.Combine(appDir, "Resources", "component_match_overlay.html");
                 if (!File.Exists(htmlPath))
                 {
+                    // 回退基准目录
                     htmlPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "component_match_overlay.html");
                 }
 
+                // 若文件存在则导航加载页面
                 if (File.Exists(htmlPath))
                 {
                     _webView.CoreWebView2.Navigate(new Uri(htmlPath).AbsoluteUri);
@@ -180,7 +228,13 @@ namespace ExcelAddInDemo.Forms
             }
             catch (Exception ex)
             {
+                // 记录初始化异常日志
                 LogHelper.WriteLog($"ComponentMatchOverlayForm 初始化异常: {ex.Message}");
+            }
+            finally
+            {
+                // 重置正在初始化标记
+                _isInitializing = false;
             }
         }
 
@@ -331,6 +385,26 @@ namespace ExcelAddInDemo.Forms
             {
                 LogHelper.WriteLog($"ShowAttachmentsAtCell 计算定位异常: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 重新加载最新的全局物料匹配过滤配置并向前端推送同步 (在规则设置窗口修改并保存后自动联动)
+        /// </summary>
+        /// <param name="newConfig">最新的过滤配置对象 (若为 null 则自动从磁盘文件重载)</param>
+        public void ReloadFilterConfig(ComponentMatchFilterConfig? newConfig = null)
+        {
+            SafeInvoke(() =>
+            {
+                // 重新读取或更新本地过滤配置
+                _filterConfig = newConfig ?? ExcelServices.LoadComponentMatchFilterConfig();
+
+                // 若前端已就绪且当前处于可见状态，立即触发最新候选拉取与数据源状态刷新
+                if (_isWebReady && this.Visible)
+                {
+                    // 重新推送初始候选数据以刷新数据源与品牌规则
+                    PushInitialCandidates();
+                }
+            });
         }
 
         /// <summary>
@@ -888,6 +962,16 @@ namespace ExcelAddInDemo.Forms
                     case "closeOverlay":
                         _isPinned = false;
                         SafeInvoke(this.Hide);
+                        break;
+
+                    // 5. 点击“云端库/个人库”药丸徽标或右上角设置按钮 -> 弹出“元器件物料匹配与品牌规则设置”窗口 (图2)
+                    case "openMatchSettingDialog":
+                        LogHelper.WriteLog("[ComponentMatchOverlayForm] 收到 openMatchSettingDialog 请求，正在唤起规则设置窗口");
+                        SafeInvoke(() =>
+                        {
+                            // 启动并弹出基于 WebView2 + Vue 3 的规则设置对话框
+                            ExcelServices.ShowComponentMatchDialog();
+                        });
                         break;
                 }
             }

@@ -148,13 +148,30 @@
     .pipeline-badge {
       display: inline-flex;
       align-items: center;
+      gap: 3px;
       background: var(--primary-light);
       color: var(--primary-color);
-      padding: 1px 6px;
+      padding: 1px 7px;
       border-radius: 4px;
-      font-weight: 500;
+      font-weight: 600;
       font-size: 11px;
       line-height: 18px;
+      cursor: pointer;
+      user-select: none;
+      border: 1px solid transparent;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .pipeline-badge:hover {
+      filter: brightness(0.92);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      border-color: rgba(0, 150, 136, 0.25);
+    }
+
+    .pipeline-badge:active {
+      transform: translateY(0);
+      filter: brightness(0.85);
     }
 
     /* 必含标签专属交互样式 */
@@ -607,13 +624,24 @@
           </template>
         </el-input>
 
-        <!-- 顶部操作区：窗口固定/取消固定与微型关闭按钮 -->
+        <!-- 顶部操作区：规则设置、窗口固定/取消固定与微型关闭按钮 -->
         <div class="header-actions">
+          <!-- 规则设置按钮: 点击直达物料匹配与品牌规则设置弹窗 (图2) -->
+          <button 
+            type="button" 
+            class="pin-btn" 
+            @mousedown.stop
+            @click.stop="openMatchSettingDialog" 
+            title="元器件物料匹配与品牌规则设置 (配置品牌/必含约束/数据源)"
+          >
+            <i class="fa-solid fa-gear"></i>
+          </button>
           <!-- 固定图标按钮: 点击后锁定窗口置顶，切行不重新搜索，直接点击候选连续回填 -->
           <button 
             type="button" 
             class="pin-btn" 
             :class="{ active: isPinned }" 
+            @mousedown.stop
             @click.stop="togglePin" 
             :title="isPinned ? '取消固定 (当前已固定在前端，切行不重新搜索)' : '固定窗口 (固定在前端，切行不重新搜索，直接点击连续回填)'"
           >
@@ -623,6 +651,7 @@
           <button 
             type="button" 
             class="close-icon-btn" 
+            @mousedown.stop
             @click.stop="closeOverlay" 
             title="关闭窗口 (Esc)"
           >
@@ -636,9 +665,16 @@
         <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap; flex: 1; min-width: 0;">
           <template v-if="!isAttachmentMode">
             <span style="color: #64748b;">过滤管道:</span>
-            <span class="pipeline-badge" :style="{ background: dataSource === 'personal' ? '#e0f2f1' : '#e0f2fe', color: dataSource === 'personal' ? '#00796b' : '#0284c7', fontWeight: '600' }" :title="dataSource === 'personal' ? '数据源: 本地个人库' : '数据源: 云端商城库'">
+            <span 
+              class="pipeline-badge" 
+              :style="{ background: dataSource === 'personal' ? '#e0f2f1' : '#e0f2fe', color: dataSource === 'personal' ? '#00796b' : '#0284c7', borderColor: dataSource === 'personal' ? '#80cbc4' : '#7dd3fc', fontWeight: '600' }" 
+              :title="dataSource === 'personal' ? '数据源: 本地个人库 (点击打开匹配与品牌规则设置)' : '数据源: 云端商城库 (点击打开匹配与品牌规则设置)'"
+              @mousedown.stop
+              @click.stop="openMatchSettingDialog"
+            >
               <i :class="dataSource === 'personal' ? 'fa-solid fa-laptop-file' : 'fa-solid fa-cloud'" style="margin-right: 2px;"></i>
               {{ dataSource === 'personal' ? '个人库' : '云端库' }}
+              <i class="fa-solid fa-gear" style="font-size: 10px; margin-left: 3px; opacity: 0.85;" title="配置品牌规则"></i>
             </span>
 
             <!-- 动态纯值过滤标签列表 (去除品牌/电流/极数/名称等前缀，纯值紧凑展示，支持点击 ✕ 快速移除放宽) -->
@@ -1190,6 +1226,11 @@
           }
         };
 
+        // 点击“云端库/个人库”药丸徽标，唤起图2【元器件物料匹配与品牌规则设置】对话框
+        const openMatchSettingDialog = () => {
+          postToHost('openMatchSettingDialog');
+        };
+
         // 数量步进递增
         const incrementQty = () => {
           if (attachmentQuantity.value < 99) {
@@ -1449,9 +1490,9 @@
           }
         };
 
-        // 按住头部非交互空白区域平滑拖拽移动窗口
+        // 按住头部非交互空白区域平滑拖拽移动窗口 (排除输入框、按钮、标签徽标及操作按钮)
         const onHeaderMouseDown = (e) => {
-          if (e.target.closest('input, button, .filter-chip, .pipeline-badge-must, .el-input__clear')) {
+          if (e.target.closest('input, button, .filter-chip, .pipeline-badge, .pipeline-badge-must, .header-actions, .el-input__clear')) {
             return;
           }
           postToHost('startDrag');
@@ -1553,7 +1594,8 @@
           movePrev,
           confirmSelect,
           selectItem,
-          closeOverlay
+          closeOverlay,
+          openMatchSettingDialog
         };
       }
     }).use(ElementPlus).mount('#app');

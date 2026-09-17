@@ -52,8 +52,8 @@ namespace ExcelAddInDemo.Models
         // 动态必含字段约束规则集合 (多条规则间为 AND 与关系)
         public List<MustContainRule> MustContainRules { get; set; } = new List<MustContainRule>();
 
-        // 是否开启 D 列单元格点击自动弹起物料搜索框 (默认关闭，仅开启勾选时点击 D 列才弹起搜索框)
-        public bool EnableSearchOverlay { get; set; } = false;
+        // 是否开启单元格点击自动弹起物料搜索框 (默认开启，提供开箱即用的智能物料联想)
+        public bool EnableSearchOverlay { get; set; } = true;
 
         // 列映射配置对象
         public ComponentMatchColumnConfig ColumnConfig { get; set; } = new ComponentMatchColumnConfig();

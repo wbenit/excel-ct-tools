@@ -224,7 +224,9 @@ namespace ExcelAddInDemo.Controllers
         /// <summary>
         /// 从当前【元件汇总分布表】中反向同步更新调价结果到所有分类工作表的各个箱柜明细中
         /// </summary>
-        public string UpdateFromDistributionSheetJson(string optionsJson)
+        /// <param name="optionsJson">前端传递的高级选项 JSON 字符串</param>
+        /// <param name="progressCallback">更新进度与状态提示回调委托 (百分比 0~100, 状态描述)</param>
+        public string UpdateFromDistributionSheetJson(string optionsJson, Action<int, string>? progressCallback = null)
         {
             try
             {
@@ -240,8 +242,8 @@ namespace ExcelAddInDemo.Controllers
                     if (parsed != null) options = parsed;
                 }
 
-                // 调用核心服务层执行批量反向同步调价逻辑
-                var result = ExcelServices.UpdateFromComponentDistributionSheet(options);
+                // 调用核心服务层执行批量反向同步调价逻辑，传入进度回调
+                var result = ExcelServices.UpdateFromComponentDistributionSheet(options, progressCallback);
 
                 // 组织响应报文实体
                 var response = new

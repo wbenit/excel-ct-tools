@@ -357,35 +357,13 @@ namespace ExcelAddInDemo.Forms
                         break;
 
                     case "excelFilterByValue":
-                        // 调度执行 Excel 原生“按所选单元格的值筛选”指令
-                        try
-                        {
-                            // 获取 Excel 宿主动态句柄
-                            dynamic? dynApp = ExcelDnaUtil.Application;
-                            // 触发针对当前单元格数值的快速自动筛选
-                            dynApp?.CommandBars?.ExecuteMso("FilterBySelectedValue");
-                        }
-                        catch (Exception filterEx)
-                        {
-                            // 记录筛选异常日志
-                            LogHelper.WriteLog($"执行按值筛选异常: {filterEx.Message}");
-                        }
+                        // 调度业务层执行“多选行当前列筛选与同箱柜高亮标记”
+                        ExcelServices.FilterComponentsBySelection();
                         break;
 
                     case "excelClearFilter":
-                        // 调度执行 Excel 原生“清除筛选 / 自动筛选”指令
-                        try
-                        {
-                            // 获取 Excel 宿主动态句柄
-                            dynamic? dynApp = ExcelDnaUtil.Application;
-                            // 优先尝试清除所有筛选条件
-                            dynApp?.CommandBars?.ExecuteMso("FilterClearAllFilters");
-                        }
-                        catch
-                        {
-                            // 容错回退：若无活跃筛选条件则切换自动筛选开关
-                            try { ((dynamic?)ExcelDnaUtil.Application)?.CommandBars?.ExecuteMso("FilterToggleFilter"); } catch { }
-                        }
+                        // 调度业务层执行“清除筛选并恢复全部行显示”
+                        ExcelServices.ClearComponentFilter();
                         break;
 
                     case "createCabinet":

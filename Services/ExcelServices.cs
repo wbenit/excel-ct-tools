@@ -101,19 +101,26 @@ namespace ExcelAddInDemo
             }
             else
             {
+                // 若窗体处于隐藏状态，则重新显示出来
+                if (!formInstance.Visible)
+                {
+                    // 显示窗体
+                    formInstance.Show();
+                }
+
                 // 若窗体已处于最小化状态则恢复正常大小
                 if (formInstance.WindowState == System.Windows.Forms.FormWindowState.Minimized)
                 {
                     // 还原窗体
                     formInstance.WindowState = System.Windows.Forms.FormWindowState.Normal;
                 }
-
-                // 将窗体推至最前
-                formInstance.BringToFront();
-
-                // 激活窗体获得焦点
-                formInstance.Activate();
             }
+
+            // 无论新创建还是已存在实例，统一将窗体推至最前展示
+            formInstance.BringToFront();
+
+            // 激活窗体获得焦点
+            formInstance.Activate();
         }
 
         /// <summary>

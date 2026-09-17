@@ -295,8 +295,30 @@ namespace ExcelAddInDemo
             // 在 Excel 纯净宏上下文中调度反向回写
             ExcelAsyncUtil.QueueAsMacro(() =>
             {
-                // 调用控制器执行同步回写
-                string jsonResult = _controller.UpdateFromDistributionSheetJson(optionsJson);
+                // 定义进度回调委托，向前端推送实时更新百分比与状态文本
+                Action<int, string> onProgress = (percent, statusText) =>
+                {
+                    // 构造进度通知数据包
+                    var progressPayload = new
+                    {
+                        // 消息类型标识
+                        type = "updateProgress",
+                        // 进度载荷对象
+                        payload = new
+                        {
+                            // 当前完成百分比 (0~100)
+                            percent = percent,
+                            // 当前执行状态文字说明
+                            statusText = statusText
+                        }
+                    };
+
+                    // 线程安全将进度消息回发前端 WebView2
+                    PostWebMessageSafe(JsonSerializer.Serialize(progressPayload, JsonOptions));
+                };
+
+                // 调用控制器执行同步回写，并传入进度监听回调
+                string jsonResult = _controller.UpdateFromDistributionSheetJson(optionsJson, onProgress);
 
                 // 封装回传消息
                 var payload = new

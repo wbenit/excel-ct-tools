@@ -66,6 +66,16 @@ namespace ExcelAddInDemo
                 _excelApp.WorkbookActivate -= OnWorkbookActivate;
                 // 重新绑定 WorkbookActivate 事件，激活或新建工作簿时自动挂载视口
                 _excelApp.WorkbookActivate += OnWorkbookActivate;
+
+                // 启动后台空闲静默预热：提前加载 WebView2 内核与物料下拉界面，彻底消除用户首次点击冷启动延迟
+                try
+                {
+                    ExcelDna.Integration.ExcelAsyncUtil.QueueAsMacro(() =>
+                    {
+                        ExcelServices.PreloadComponentMatchOverlay();
+                    });
+                }
+                catch { }
             }
             catch (Exception ex)
             {
@@ -182,26 +192,40 @@ namespace ExcelAddInDemo
                 {
                     int col = target.Column;
 
-                    // 2.1 若选中的是 C 列 (第 3 列: 规格型号 / 元件汇总表原型号规格)
+                    // 2.1 若选中的是 C 列 (第 3 列: 规格型号 / 汇总表原型号)
                     if (col == 3)
                     {
-                        // 隐藏物料智能联想下拉浮窗
-                        ExcelServices.HideComponentMatchOverlay();
                         // 获取当前工作表名称
                         string curSheetName = (shObj as Microsoft.Office.Interop.Excel.Worksheet)?.Name ?? target.Worksheet?.Name ?? string.Empty;
-                        // 仅在非“元件汇总表”的普通分类表中激活智能输入覆盖框 (元件汇总表 C 列专用于基准查看与 CAD 夹点联动)
-                        if (curSheetName != ComponentMatchDefaults.ComponentSummarySheetName)
+                        bool isSummarySheet = string.Equals(curSheetName.Trim(), ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase);
+
+                        if (!isSummarySheet)
                         {
-                            // 弹出智能输入覆盖框
-                            ExcelServices.ShuRu(target);
+                            // 在常规分类明细表中: C 列为规格型号，关闭旧版输入浮窗
+                            ExcelServices.HideSmartInputOverlay();
+
+                            // 校验是否落在箱柜元器件有效行区间 (规则 6: Cab_Det+2 至 Cab_Subsum-1)
+                            dynamic curSheet = target.Worksheet;
+                            int targetRow = target.Row;
+                            if (ExcelServices.IsCategoryComponentRow(curSheet, targetRow))
+                            {
+                                // 处于有效元器件行: 弹出全新的云端/本地物料智能联想下拉悬浮框 (贴合 C 列下方，标记已验证避免二次计算)
+                                ExcelServices.ShowComponentMatchOverlay(target, isCategoryRowValidated: true);
+                            }
+                            else
+                            {
+                                // 落在汇总区、信息行、计费区或小计总计行时静默隐藏
+                                ExcelServices.HideComponentMatchOverlay();
+                            }
                         }
                         else
                         {
-                            // 在元件汇总表中隐藏智能输入覆盖框，确保纯粹的 CAD 夹点联动体验
+                            // 在“元件汇总表”中: C 列专用于基准查看与 CAD 夹点联动，隐藏全部浮窗
                             ExcelServices.HideSmartInputOverlay();
+                            ExcelServices.HideComponentMatchOverlay();
                         }
                     }
-                    // 2.2 若选中的是 D 列 (第 4 列: 规格型号/点击查询) -> 检查是否在“元件汇总表”中并触发物料智能联想下拉
+                    // 2.2 若选中的是 D 列 (第 4 列: 规格型号 / 分类表明细厂家品牌)
                     else if (col == 4)
                     {
                         // 隐藏智能输入覆盖框
@@ -209,9 +233,10 @@ namespace ExcelAddInDemo
 
                         // 获取当前工作表名称
                         string curSheetName = (shObj as Microsoft.Office.Interop.Excel.Worksheet)?.Name ?? target.Worksheet?.Name ?? string.Empty;
+                        bool isSummarySheet = string.Equals(curSheetName.Trim(), ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase);
 
-                        // 仅限定在“元件汇总表”下触发
-                        if (curSheetName == ComponentMatchDefaults.ComponentSummarySheetName)
+                        // 仅在“元件汇总表”中 D 列触发物料联想下拉
+                        if (isSummarySheet)
                         {
                             // 读取当前单元格文本值
                             string cellVal = Convert.ToString(target.Value2)?.Trim() ?? string.Empty;
@@ -228,13 +253,13 @@ namespace ExcelAddInDemo
                         }
                         else
                         {
-                            // 非“元件汇总表”隐藏物料下拉浮窗
+                            // 分类表中 D 列为厂家品牌列，隐藏物料下拉浮窗
                             ExcelServices.HideComponentMatchOverlay();
                         }
                     }
                     else
                     {
-                        // 离开 C/D 列时全部隐藏
+                        // 离开 C/D 列时全部隐藏浮窗
                         ExcelServices.HideSmartInputOverlay();
                         ExcelServices.HideComponentMatchOverlay();
                     }
@@ -286,6 +311,9 @@ namespace ExcelAddInDemo
                     // 刷新聚光灯位置
                     ExcelServices.UpdateSpotlightPosition(null);
                 }
+
+                // 切换工作簿时同步清空上一工作簿的元器件行区间缓存
+                ExcelServices.InvalidateCategoryRowCache();
             }
             catch { }
         }
@@ -303,9 +331,15 @@ namespace ExcelAddInDemo
                 // 获取当前双击所在的工作表名称
                 string sheetName = (shObj as Microsoft.Office.Interop.Excel.Worksheet)?.Name ?? target.Worksheet?.Name ?? string.Empty;
 
-                // 核心条件：必须在“元件汇总表”工作表中，且双击的是 D 列单个单元格
-                if (sheetName == ComponentMatchDefaults.ComponentSummarySheetName &&
-                    target.Rows.Count == 1 && target.Columns.Count == 1 && target.Column == 4)
+                // 条件 1: “元件汇总表”中双击 D 列 (规格型号)
+                bool isSummaryColD = sheetName == ComponentMatchDefaults.ComponentSummarySheetName &&
+                    target.Rows.Count == 1 && target.Columns.Count == 1 && target.Column == 4;
+
+                // 条件 2: 常规分类明细表中双击 C 列 (规格型号)
+                bool isCategoryColC = sheetName != ComponentMatchDefaults.ComponentSummarySheetName &&
+                    target.Rows.Count == 1 && target.Columns.Count == 1 && target.Column == 3;
+
+                if (isSummaryColD || isCategoryColC)
                 {
                     // 方案 A: 双击完全归还 Excel 原生文本就地编辑
                     // 先平滑隐藏可能已弹出的物料联想悬浮框，避免遮挡单元格视线
@@ -383,6 +417,9 @@ namespace ExcelAddInDemo
                 // 2. 处理第 3 列 (C列 - 元器件规格型号) 修改时的智能属性联动回填
                 if (target.Column == 3 && target.Cells.Count == 1)
                 {
+                    // 手动完成编辑后，平滑隐藏物料联想下拉框
+                    ExcelServices.HideComponentMatchOverlay();
+
                     // 读取 C 列最新输入的规格型号字符串
                     string newModel = Convert.ToString(target.Value)?.Trim() ?? "";
                     if (!string.IsNullOrWhiteSpace(newModel))
