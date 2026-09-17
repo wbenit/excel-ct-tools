@@ -970,11 +970,29 @@ namespace ExcelAddInDemo
                     // 一次性将全部数据矩阵写入 Excel (规则 7)
                     distrSheet.Range[$"A{rowDataStart}:{endCabColLetter}{endDataRow}"].Value2 = mainDataMatrix;
 
-                    // 写入 K 列动态公式：元件总数 = SUMPRODUCT($L$7:$末尾$7, L9:末尾9)
-                    for (int r = rowDataStart; r <= endDataRow; r++)
+                    // 批量写入 A 列动态行号排序公式：=ROW()-ROW(A$8)，确保用户在 Excel 移动/剪切行时序号自动联动连续
+                    object[,] formulasColA = new object[totalCompRowsCount, 1];
+                    // 遍历构建 A 列动态自适应序号公式
+                    for (int r = 0; r < totalCompRowsCount; r++)
                     {
-                        distrSheet.Cells[r, 11].Formula = $"=SUMPRODUCT(${startCabColLetter}${rowCabQty}:${endCabColLetter}${rowCabQty}, {startCabColLetter}{r}:{endCabColLetter}{r})";
+                        // 动态引用表头行 rowCompHeader (第8行)，实现从 1 递增
+                        formulasColA[r, 0] = $"=ROW()-ROW(A${rowCompHeader})";
                     }
+                    // 一次性批量写入 A 列公式 (规则 7)
+                    distrSheet.Range[$"A{rowDataStart}:A{endDataRow}"].Formula = formulasColA;
+
+                    // 一次性批量写入 K 列动态公式 (规则 7)：元件总数 = SUMPRODUCT($L$7:$末尾$7, L9:末尾9)
+                    object[,] formulasColK = new object[totalCompRowsCount, 1];
+                    // 遍历构建 K 列乘积求和公式
+                    for (int r = 0; r < totalCompRowsCount; r++)
+                    {
+                        // 计算当前元器件绝对物理行号
+                        int currRow = rowDataStart + r;
+                        // 组装 SUMPRODUCT 公式
+                        formulasColK[r, 0] = $"=SUMPRODUCT(${startCabColLetter}${rowCabQty}:${endCabColLetter}${rowCabQty}, {startCabColLetter}{currRow}:{endCabColLetter}{currRow})";
+                    }
+                    // 一次性批量写入 K 列公式 (规则 7)
+                    distrSheet.Range[$"K{rowDataStart}:K{endDataRow}"].Formula = formulasColK;
 
                     // 样式设定 (白底黑字可编辑，细黑色网格边框)：
                     distrSheet.Range[$"A{rowDataStart}:{endCabColLetter}{endDataRow}"].Interior.Color = ColorTranslator.ToOle(Color.White);
@@ -1025,6 +1043,33 @@ namespace ExcelAddInDemo
 
                 // 激活并选中【元件汇总分布表】
                 distrSheet.Activate();
+
+                // 冻结前 8 行表头 (1~8 行为表头与柜号，第 9 行起为元器件数据)
+                try
+                {
+                    // 获取当前 Excel 活动窗口
+                    dynamic win = app.ActiveWindow;
+                    if (win != null)
+                    {
+                        // 先解除历史冻结状态以保证窗口干净
+                        win.FreezePanes = false;
+                        // 视口滚动复位至第 1 行第 1 列
+                        win.ScrollRow = 1;
+                        win.ScrollColumn = 1;
+                        // 设定在第 8 行下方拆分窗格
+                        win.SplitRow = rowCompHeader;
+                        // 不进行列拆分
+                        win.SplitColumn = 0;
+                        // 锁定开启冻结窗格
+                        win.FreezePanes = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // 记录冻结窗格失败日志
+                    LogHelper.WriteLog($"[分布调价] 冻结前8行表头窗格异常: {ex.Message}");
+                }
+
                 distrSheet.Cells[rowDataStart, 7].Select(); // 选中第一个报出单价单元格 (G9)
 
                 // 恢复屏幕刷新与提示
@@ -1199,6 +1244,14 @@ namespace ExcelAddInDemo
                         });
                     }
                 }
+
+                // 预先重算分布表以确保 A 列自适应行号公式与 SUMPRODUCT 处于最新计算结果状态
+                try
+                {
+                    // 触发单表公式刷新重算
+                    distrSheet.Calculate();
+                }
+                catch { }
 
                 // 一次性读取数据大矩阵 (从 A9 到最后一列) (规则 7)
                 string maxDataColLetter = totalCabCols > 0 ? GetExcelColumnLetter(totalUsedCols) : "K";

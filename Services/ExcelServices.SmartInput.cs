@@ -483,7 +483,8 @@ namespace ExcelAddInDemo
         /// 100% 还原 ZhiNengEn.ShuRu(Target) 的业务逻辑与交互行为
         /// </summary>
         /// <param name="activeCell">当前选中的活动单元格 COM 实例</param>
-        public static void ShuRu(dynamic activeCell)
+        /// <param name="isCategoryRowValidated">是否已经前置校验过属于有效元器件行 (默认 false，为 true 时跳过二次判定)</param>
+        public static void ShuRu(dynamic activeCell, bool isCategoryRowValidated = false)
         {
             if (activeCell == null) return;
 
@@ -499,7 +500,7 @@ namespace ExcelAddInDemo
                     return;
                 }
 
-                // 2. 读取当前智能输入配置
+                // 2. 读取当前智能输入配置 (优先内存直出)
                 var controller = new SmartInputController();
                 var config = controller.GetConfig();
                 // 若用户在配置中关闭了自动弹出，则直接退出
@@ -526,42 +527,11 @@ namespace ExcelAddInDemo
                 }
 
                 // 4. 判定当前单元格行是否处于当前表箱柜元器件插槽行 (Cab_Det+2 至 Cab_Subsum-1)
-                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
-                if (app == null) return;
-                dynamic wb = app.ActiveWorkbook;
-                if (wb == null) return;
-
-                // 读取箱柜定义名称前缀值对象 (零堆分配)
-                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
-
-                // 构建当前工作表箱柜字典 (复用 Tool 公共方法，内置空值自动智能补齐重建)
-                var validCabinets = Tool.GetSheetValidCabinets(sheet, wb);
-
-                // 判断是否落在某个箱柜的元器件行区间内
-                bool isComponentRow = false;
-                if (validCabinets.Count > 0)
+                bool isComponentRow = isCategoryRowValidated;
+                if (!isComponentRow)
                 {
-                    foreach (var cab in validCabinets)
-                    {
-                        if (cab.Value.Det != null && cab.Value.Subsum != null)
-                        {
-                            int detRow = Convert.ToInt32(cab.Value.Det.Row);
-                            int subsumRow = Convert.ToInt32(cab.Value.Subsum.Row);
-                            int startRow = detRow + 2;
-                            int endRow = subsumRow - 1;
-
-                            if (row >= startRow && row <= endRow)
-                            {
-                                isComponentRow = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    // 若无定义名称但行号大于 1 则宽松兼容支持输入联想
-                    if (row > 1) isComponentRow = true;
+                    // 优先复用带 10 分钟长效内存缓存的 IsCategoryComponentRow 判定，0ms 极速响应
+                    isComponentRow = IsCategoryComponentRow(sheet, row);
                 }
 
                 if (!isComponentRow)
@@ -620,6 +590,88 @@ namespace ExcelAddInDemo
                 }
             }
             catch { }
+        }
+
+        /// <summary>
+        /// 从分类明细表指定物理行中智能提取并学习新录入的元器件数据 (规则 6 & 规则 7)
+        /// 遵循规则 7 向量批量读入内存数组，遵循规则 6 严格限定在元器件行插槽
+        /// </summary>
+        /// <param name="sheet">目标工作表 COM 句柄</param>
+        /// <param name="row">发生变动的物理行号</param>
+        /// <returns>若成功学习或更新返回 true，否则返回 false</returns>
+        public static bool CheckAndLearnComponentFromRow(dynamic sheet, int row)
+        {
+            // 校验入参有效性
+            if (sheet == null || row <= 0) return false;
+
+            try
+            {
+                // 获取当前工作表名称
+                string sheetName = Convert.ToString(sheet.Name)?.Trim() ?? string.Empty;
+                // 过滤隐藏表、字典表或选择表
+                if (string.IsNullOrEmpty(sheetName) || sheetName.StartsWith("_") ||
+                    string.Equals(sheetName, "选择表", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(sheetName, ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                // 规则 6 架构门控: 必须处于有效箱柜元器件行 (Cab_Det+2 至 Cab_Subsum-1)
+                if (!IsCategoryComponentRow(sheet, row))
+                {
+                    return false;
+                }
+
+                // 规则 7: 一次性读取该行 B~G 列 (第 2 列至第 7 列，共 6 列) 注入二维数据矩阵
+                dynamic range = sheet.Range[$"B{row}:G{row}"];
+                // 转换为 object[,] 二维数组
+                object[,] data = range.Value2 as object[,];
+                // 校验数据矩阵非空
+                if (data == null) return false;
+
+                // 提取 C 列 (规格型号, 对应相对列索引 2: 3-2+1=2)
+                string model = Convert.ToString(data[1, 2])?.Trim() ?? string.Empty;
+                // 型号为空直接返回
+                if (string.IsNullOrWhiteSpace(model)) return false;
+
+                // 提取 B 列 (元件名称, 对应相对列索引 1: 2-2+1=1)
+                string name = Convert.ToString(data[1, 1])?.Trim() ?? string.Empty;
+                // 提取 D 列 (生产厂家, 对应相对列索引 3: 4-2+1=3)
+                string mfr = Convert.ToString(data[1, 3])?.Trim() ?? string.Empty;
+                // 提取 E 列 (计量单位, 对应相对列索引 4: 5-2+1=4)
+                string unit = Convert.ToString(data[1, 4])?.Trim() ?? string.Empty;
+
+                // 提取 G 列 (销售单价, 对应相对列索引 6: 7-2+1=6)
+                decimal unitPrice = 0;
+                if (decimal.TryParse(Convert.ToString(data[1, 6]), out decimal pVal))
+                {
+                    // 记录有效单价
+                    unitPrice = pVal;
+                }
+
+                // 构造智能元器件实体对象
+                var newItem = new SmartComponentItem
+                {
+                    Model = model,
+                    Name = name,
+                    Manufacturer = mfr,
+                    Unit = unit,
+                    UnitPrice = unitPrice,
+                    SheetName = sheetName,
+                    CabinetNo = $"行_{row}"
+                };
+
+                // 调用控制器执行增量学习与防抖持久化
+                var controller = new Controllers.SmartInputController();
+                // 尝试提交学习并返回结果
+                return controller.TryLearnComponent(newItem);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"CheckAndLearnComponentFromRow 异常: {ex.Message}");
+                return false;
+            }
         }
     }
 }

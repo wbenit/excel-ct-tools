@@ -1,5 +1,21 @@
 # Session State
 
+- **【落地交付】智能填写「新录入纯型号自动学习与候选库自愈机制」全链路闭环交付 (`SmartInputModels.cs`, `SmartInputController.cs`, `ExcelServices.SmartInput.cs`, `ExcelEventManager.cs`, `smart_input.html`)**：
+  1. **彻底放开辅助属性限制**：
+     - 依据用户要求，解除对必须填写名称或单价的限制：只要在分类明细表有效元器件行 C 列输入有效规格型号（长度 $\ge 2$ 且非小计/合计等占位符），即使名称、厂家、单价为空，系统**立即无条件将该型号增量学习并加入候选词库**；
+     - 后续若在同行或异行录入或补全了名称、厂家、单价，系统自动对该条目进行增量自愈补齐；
+  2. **内存 0ms 秒级直出与后台 2.5 秒防抖持久化**：
+     - 用户在上一行输入完全新型号后，光标跳到下一行 C 列时**瞬间即可模糊联想命中**；
+     - 采用后台防抖定时器，在用户停笔 2.5 秒后异步写入 `smart_components.json`，零卡顿；
+  3. **工程构建与多端静态资源同步**：
+     - `smart_input.html` 同步覆盖至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 执行 `dotnet build` 验证：**0 错误**。
+
+- **【落地交付】智能填写原生单元格覆盖输入框（TextBox + ListBox）与云端物料匹配双模开关联动路由全链路闭环交付 (`ExcelEventManager.cs`, `SmartInputController.cs`, `ExcelServices.SmartInput.cs`)**：
+  1. **开关联动路由**：在【智能填写模式配置】中开启【智能输入功能】时，C 列优先唤出 1:1 贴合单元格大小的原生 TextBox+ListBox 覆盖输入框；关闭时走云端物料悬浮框；
+  2. **0ms 内存极速直出机制**：引入 `_cachedConfig` 与 `_cachedStorage`，复用 10 分钟工作表内存缓存，消除繁重 COM 扫描；
+  3. **工程构建核验**：`dotnet build` 编译成功：**0 错误**。
+
 - **【Bug 彻底根除】右键菜单高度循环衰减萎缩导致下方按钮被截断“消失”问题闭环交付 (`CustomContextMenuForm.cs`, `custom_context_menu.html`)**：
   1. **问题根本原因深度剖析**：
      - 用户截图显示右键菜单只展示到“插入...”，下方的“删除分类”、“按所选内容筛选”、“清除筛选”、“新建箱柜”、“识别参数并匹配物料”等十几项全部消失；

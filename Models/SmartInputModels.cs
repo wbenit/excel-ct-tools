@@ -91,5 +91,8 @@ namespace ExcelAddInDemo.Models
 
         // 是否在选中 C 列元器件行时自动启用智能覆盖输入 (默认开启)
         public bool AutoPopupFloatWindow { get; set; } = true;
+
+        // 是否自动学习并加入新录入的元器件至候选词库 (默认开启)
+        public bool AutoLearnNewComponents { get; set; } = true;
     }
 }

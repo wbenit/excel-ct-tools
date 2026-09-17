@@ -217,20 +217,35 @@ namespace ExcelAddInDemo
 
                         if (!isSummarySheet)
                         {
-                            // 在常规分类明细表中: C 列为规格型号，关闭旧版输入浮窗
-                            ExcelServices.HideSmartInputOverlay();
-
                             // 校验是否落在箱柜元器件有效行区间 (规则 6: Cab_Det+2 至 Cab_Subsum-1)
                             dynamic curSheet = target.Worksheet;
                             int targetRow = target.Row;
                             if (ExcelServices.IsCategoryComponentRow(curSheet, targetRow))
                             {
-                                // 处于有效元器件行: 弹出全新的云端/本地物料智能联想下拉悬浮框 (贴合 C 列下方，标记已验证避免二次计算)
-                                ExcelServices.ShowComponentMatchOverlay(target, isCategoryRowValidated: true);
+                                // 读取智能输入配置，判断是否开启了覆盖式智能输入功能 (内存直出 0ms)
+                                var smartCtrl = new Controllers.SmartInputController();
+                                var smartCfg = smartCtrl.GetConfig();
+
+                                // 依据用户在【智能填写模式配置】中的总开关状态执行智能路由分流
+                                if (smartCfg != null && smartCfg.AutoPopupFloatWindow)
+                                {
+                                    // 模式 1: 用户开启了智能输入，隐藏云端浮窗，唤起和单元格等大的原生 TextBox+ListBox 覆盖输入窗体
+                                    ExcelServices.HideComponentMatchOverlay();
+                                    // 激活原生覆盖输入框 (传入已校验标志跳过二次计算)
+                                    ExcelServices.ShuRu(target, isCategoryRowValidated: true);
+                                }
+                                else
+                                {
+                                    // 模式 2: 用户关闭了智能输入，隐藏原生覆盖框，唤起云端/本地物料匹配下拉悬浮框
+                                    ExcelServices.HideSmartInputOverlay();
+                                    // 弹出全新的云端/本地物料智能联想下拉悬浮框 (贴合 C 列下方)
+                                    ExcelServices.ShowComponentMatchOverlay(target, isCategoryRowValidated: true);
+                                }
                             }
                             else
                             {
-                                // 落在汇总区、信息行、计费区或小计总计行时静默隐藏
+                                // 落在汇总区、信息行、计费区或小计总计行时静默隐藏全部浮窗
+                                ExcelServices.HideSmartInputOverlay();
                                 ExcelServices.HideComponentMatchOverlay();
                             }
                         }
@@ -358,8 +373,10 @@ namespace ExcelAddInDemo
                 if (isSummaryColD || isCategoryColC)
                 {
                     // 方案 A: 双击完全归还 Excel 原生文本就地编辑
-                    // 先平滑隐藏可能已弹出的物料联想悬浮框，避免遮挡单元格视线
+                    // 先平滑隐藏可能已弹出的物料联想悬浮框与原生覆盖输入框，避免遮挡单元格视线
                     ExcelServices.HideComponentMatchOverlay();
+                    // 隐藏原生覆盖输入框
+                    ExcelServices.HideSmartInputOverlay();
 
                     // 保持 cancel = false，100% 允许 Excel 正常双击进入单元格进行文本光标编辑
                     cancel = false;
@@ -435,6 +452,8 @@ namespace ExcelAddInDemo
                 {
                     // 手动完成编辑后，平滑隐藏物料联想下拉框
                     ExcelServices.HideComponentMatchOverlay();
+                    // 手动完成编辑后，同步平滑隐藏原生覆盖输入框
+                    ExcelServices.HideSmartInputOverlay();
 
                     // 读取 C 列最新输入的规格型号字符串
                     string newModel = Convert.ToString(target.Value)?.Trim() ?? "";
@@ -504,6 +523,8 @@ namespace ExcelAddInDemo
                             }
                         }
                     }
+                    // 尝试学习当前行元器件数据 (若为新物料或属性更全则增量沉淀至候选库)
+                    ExcelServices.CheckAndLearnComponentFromRow(sh, target.Row);
                     return;
                 }
 
@@ -513,6 +534,15 @@ namespace ExcelAddInDemo
                     // 手动完成编辑后，平滑隐藏物料联想下拉框
                     ExcelServices.HideComponentMatchOverlay();
                     return;
+                }
+
+                // 4. 处理分类明细表元器件同行属性列 (B 列:名称, D 列:厂家, E 列:单位, G 列:单价) 修改时的自动学习自愈
+                int modCol = target.Column;
+                // 校验改动列是否属于元器件核心属性列且为单单元格
+                if ((modCol == 2 || modCol == 4 || modCol == 5 || modCol == 7) && target.Cells.Count == 1)
+                {
+                    // 尝试对变动行进行元器件质量门控检测与增量学习
+                    ExcelServices.CheckAndLearnComponentFromRow(sh, target.Row);
                 }
             }
             catch { }
