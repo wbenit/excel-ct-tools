@@ -1,5 +1,10 @@
 # Session State
 
+- **【Git 协同操作】多分支代码合并冲突解决与全量远程同步推送 (`origin/main`)**：
+  1. **冲突识别与全量保留**：精准合并远程 `f41a877`（二次元件组沙盒列映射自愈与右键原生多选筛选斑马纹分色）与本地 `1a6f112`（智能填写模块与输入自动学习），对 `.ai/session.md` 的工作进度记录实施双向无损融合；
+  2. **工程编译验证**：合并后运行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none`，确保 0 错误通过；
+  3. **合并提交与推送**：生成 Merge Commit `681ec69` 并顺利推送至 `origin/main`，本地工作区状态完全 Clean 且与远程完全同步。
+
 - **【落地交付】智能填写「新录入纯型号自动学习与候选库自愈机制」全链路闭环交付 (`SmartInputModels.cs`, `SmartInputController.cs`, `ExcelServices.SmartInput.cs`, `ExcelEventManager.cs`, `smart_input.html`)**：
   1. **彻底放开辅助属性限制**：
      - 依据用户要求，解除对必须填写名称或单价的限制：只要在分类明细表有效元器件行 C 列输入有效规格型号（长度 $\ge 2$ 且非小计/合计等占位符），即使名称、厂家、单价为空，系统**立即无条件将该型号增量学习并加入候选词库**；
