@@ -1150,17 +1150,44 @@
           </div>
         </div>
 
-        <!-- 底部主生成按钮区 -->
+        <!-- 底部主生成按钮与流光动效进度条区 -->
         <div class="sandbox-footer">
           <div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px;">
             <span>生成范围:</span>
-            <el-radio-group v-model="batchScope" size="small">
+            <el-radio-group v-model="batchScope" size="small" :disabled="isExecuting">
               <el-radio :label="true">当前选中箱柜</el-radio>
               <el-radio :label="false">全表所有箱柜</el-radio>
             </el-radio-group>
           </div>
-          <el-button type="primary" size="large" @click="executeBatchGenerate" style="background-color: #009688; border-color: #009688; font-weight: 600; width: 100%;">
-            <i class="fa-solid fa-bolt" style="margin-right: 6px;"></i>立即生成二次元件组到 Excel
+
+          <!-- Element Plus 绿蓝主题动效流光进度条 (生成处理中动态展示) -->
+          <div v-if="isExecuting" class="batch-progress-card" style="margin-top: 8px; padding: 8px 10px; background: #e0f2f1; border-radius: 6px; border: 1px solid #b2dfdb;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-size: 11.5px; font-weight: 600; color: #00796b;">
+              <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 82%;">
+                <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i>{{ execProgress.statusText || '正在极速处理...' }}
+              </span>
+              <span>{{ execProgress.percent }}%</span>
+            </div>
+            <el-progress
+              :percentage="execProgress.percent"
+              :stroke-width="10"
+              :show-text="false"
+              color="#009688"
+              striped
+              striped-flow
+              :duration="12"
+            />
+          </div>
+
+          <el-button 
+            type="primary" 
+            size="large" 
+            :loading="isExecuting"
+            :disabled="isExecuting"
+            @click="executeBatchGenerate" 
+            style="background-color: #009688; border-color: #009688; font-weight: 600; width: 100%; margin-top: 8px;">
+            <i v-if="!isExecuting" class="fa-solid fa-bolt" style="margin-right: 6px;"></i>
+            {{ isExecuting ? '正在极速生成到 Excel...' : '立即生成二次元件组到 Excel' }}
           </el-button>
         </div>
       </div>
@@ -1200,6 +1227,10 @@
         const testResult = ref({ totalComponents: 0, matchedRules: [], logs: [] });
         // 生成范围 (true: 仅当前箱柜, false: 全表)
         const batchScope = ref(true);
+        // 是否正在执行批量生成
+        const isExecuting = ref(false);
+        // 批量生成动态进度对象
+        const execProgress = ref({ percent: 0, statusText: '' });
 
         // 过滤后的规则列表
         const filteredRules = computed(() => {
@@ -1265,7 +1296,16 @@
                 testResult.value = data.result || { totalComponents: 0, matchedRules: [], logs: [] };
                 break;
 
+              case 'updateProgress':
+                // 实时更新当前完成百分比与状态文本
+                execProgress.value.percent = data.percent || 0;
+                execProgress.value.statusText = data.statusText || '';
+                break;
+
               case 'batchExecuteResult':
+                // 重置执行加载状态
+                isExecuting.value = false;
+                execProgress.value.percent = 100;
                 if (data.result && data.result.success) {
                   ElementPlus.ElMessageBox.alert(data.result.message, '生成成功', {
                     confirmButtonText: '确定',
@@ -1601,6 +1641,13 @@
 
         // 执行批量生成
         const executeBatchGenerate = () => {
+          // 防重复点击拦截
+          if (isExecuting.value) return;
+          // 激活加载执行状态
+          isExecuting.value = true;
+          // 初始化进度状态
+          execProgress.value = { percent: 0, statusText: '正在准备执行环境与箱柜锚点...' };
+          // 发送批量执行指令
           postMessageToHost({
             action: 'executeBatch',
             config: config.value,
@@ -1755,6 +1802,8 @@
           testComponents,
           testResult,
           batchScope,
+          isExecuting,
+          execProgress,
           selectRule,
           addNewRule,
           deleteCurrentRule,

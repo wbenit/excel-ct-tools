@@ -349,7 +349,8 @@ namespace ExcelAddInDemo.Controllers
                     card.LaborCost = matchedScheme.LaborCost;
                     card.MaterialCost = matchedScheme.TotalMaterialCost;
                     card.TotalCost = matchedScheme.TotalCost;
-                    card.LayoutDwgName = matchedScheme.CadDrawingName ?? string.Empty;
+                    // 二次排布图正确对应方案实体的 GroupName (group_name)
+                    card.GroupName = matchedScheme.GroupName ?? string.Empty;
                     card.SchemeData = matchedScheme;
                     if (!string.IsNullOrWhiteSpace(matchedScheme.UpdatedAt))
                     {
@@ -369,7 +370,8 @@ namespace ExcelAddInDemo.Controllers
                     card.LaborCost = 0.0;
                     card.MaterialCost = 0.0;
                     card.TotalCost = 0.0;
-                    card.LayoutDwgName = string.Empty;
+                    // 二次排布图默认置空
+                    card.GroupName = string.Empty;
                     // 初始化一个默认实体供编辑使用
                     card.SchemeData = new SecondarySchemeEntity
                     {

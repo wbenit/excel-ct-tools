@@ -343,29 +343,20 @@ namespace ExcelAddInDemo.Services
                 {
                     try
                     {
+                        // 实例化当前子目录信息对象
                         var di = new DirectoryInfo(sub);
                         // 过滤操作系统隐藏文件夹
                         if ((di.Attributes & FileAttributes.Hidden) != 0) continue;
 
-                        // 探测该子目录下是否包含内容
-                        bool hasSub = false;
-                        try
-                        {
-                            // 尝试嗅探子文件夹或文件实体
-                            hasSub = Directory.EnumerateFileSystemEntries(sub).GetEnumerator().MoveNext();
-                        }
-                        catch
-                        {
-                            // 忽略无权限探测异常
-                            hasSub = false;
-                        }
-
-                        // 组装子目录描述项
+                        // 浅层收集子目录描述项 (依据用户规范：不再往下深入探测内容，消灭多余磁盘IO)
                         result.SubDirectories.Add(new DwgDirectoryItem
                         {
+                            // 记录子目录名称
                             Name = di.Name,
+                            // 记录子目录物理绝对路径
                             FullPath = di.FullName,
-                            HasChildren = hasSub
+                            // 浅层模式默认标记无需深入探测
+                            HasChildren = true
                         });
                     }
                     catch (Exception exSub)
@@ -375,7 +366,7 @@ namespace ExcelAddInDemo.Services
                     }
                 }
 
-                // 复用扫描当前目录下的所有 DWG 图纸文件
+                // 浅层读取当前目录下的 DWG 图纸文件 (不递归)
                 result.DwgFiles = ScanDwgFiles(dirPath);
             }
             catch (Exception ex)

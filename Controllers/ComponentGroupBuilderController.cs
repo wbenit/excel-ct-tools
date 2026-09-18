@@ -147,16 +147,25 @@ namespace ExcelAddInDemo.Controllers
         /// <summary>
         /// 执行批量二次元件组生成至 Excel
         /// </summary>
-        public BatchGroupResultDto ExecuteBatch(ComponentGroupConfig config, bool activeCabinetOnly)
+        /// <param name="config">二次元件组规则配置</param>
+        /// <param name="activeCabinetOnly">是否仅处理当前选中的单个箱柜</param>
+        /// <param name="progressCallback">执行进度与状态更新委托</param>
+        public BatchGroupResultDto ExecuteBatch(
+            ComponentGroupConfig config, 
+            bool activeCabinetOnly, 
+            Action<int, string>? progressCallback = null)
         {
             // 若传入配置，先保存配置
             if (config != null)
             {
+                // 持久化当前配置到文件
                 SaveConfig(config);
             }
 
+            // 提取有效配置对象
             var activeConfig = config ?? LoadConfig();
-            return ExcelServices.ExecuteBatchComponentGroup(activeConfig, activeCabinetOnly);
+            // 调用服务层核心执行逻辑并透传进度委托
+            return ExcelServices.ExecuteBatchComponentGroup(activeConfig, activeCabinetOnly, progressCallback);
         }
     }
 }

@@ -564,20 +564,25 @@ namespace ExcelAddInDemo.Forms
                     dialogThread.IsBackground = true;
                     dialogThread.Start();
                 }
-                // 3. 扫描目录层级结构 (包含子文件夹与 DWG 图纸，支持双击下钻与面包屑)
+                // 3. 扫描目录层级结构 (包含子文件夹与 DWG 图纸，异步后台线程池调度，杜绝阻塞 UI 线程)
                 else if (action == "scanDirectoryHierarchy")
                 {
                     // 提取待层级扫描路径
                     string? hierPath = root.TryGetProperty("dirPath", out var hpProp) ? hpProp.GetString() : null;
                     if (!string.IsNullOrWhiteSpace(hierPath))
                     {
-                        // 调度控制器层级扫描
-                        var hierData = _secController.ScanDirectoryHierarchy(hierPath);
-                        PostWebMessageSafe(JsonSerializer.Serialize(new
+                        // 调度后台线程池执行磁盘枚举，释放 WinForms 与 WebView2 主线程
+                        System.Threading.Tasks.Task.Run(() =>
                         {
-                            action = "directoryHierarchyScanned",
-                            data = hierData
-                        }, JsonOptions));
+                            // 调度控制器轻量浅层扫描
+                            var hierData = _secController.ScanDirectoryHierarchy(hierPath);
+                            // 异步线程安全回发扫描结果数据
+                            PostWebMessageSafe(JsonSerializer.Serialize(new
+                            {
+                                action = "directoryHierarchyScanned",
+                                data = hierData
+                            }, JsonOptions));
+                        });
                     }
                 }
                 // 4. 全局递归定位指定回路图号或文件名的具体物理路径及其所在父目录 (跨目录穿透反显图纸)

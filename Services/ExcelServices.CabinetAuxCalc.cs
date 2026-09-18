@@ -1191,6 +1191,19 @@ namespace ExcelAddInDemo
                         UnitLaborCost = matchedScheme.LaborCost,
                         LaborCost = circuitLaborCost
                     });
+
+                    // 记录二次元件组 Excel 回填参数 (仅对通过 AF 列第 32 列绑定了图号的行执行精准回写)
+                    if (!string.IsNullOrWhiteSpace(comp.BoundDwgCode))
+                    {
+                        // 标记已命中二次方案
+                        comp.HasMatchedSecondaryScheme = true;
+                        // G 列写入单套二次材料单价 (如 8.1)
+                        comp.SecondaryPrice = Math.Round(matchedScheme.TotalMaterialCost, 2);
+                        // S 列写入方案装配工费小计 (如 1280)
+                        comp.SecondaryLaborCost = circuitLaborCost;
+                        // AA 列写入二次排布图名称 (取自方案 groupName)
+                        comp.SecondaryLayoutName = matchedScheme.GroupName ?? string.Empty;
+                    }
                 }
                 else
                 {
@@ -1624,6 +1637,65 @@ namespace ExcelAddInDemo
                         if (compMatrixModified)
                         {
                             compRange.Formula = compMatrix;
+                        }
+                    }
+                }
+
+                // ---------------------------------------------------------
+                // 3.5 二次元件组参数回写 (根据 AF 列匹配二次方案，回填 G/H/S/AA/AB 列)
+                // 业务规范: 人工填入 S 列，二次价格填入 G 列，H 列写公式 =ROUND(F*G, 2)，
+                // 二次排布图填入 AA 列，AB 列写死 "二次组" --硬编码--；仅做匹配回填，绝不插入空行。
+                // ---------------------------------------------------------
+                // 筛选出当前箱柜元器件区中通过 AF 列成功匹配二次方案的所有组件
+                var matchedSecComps = scanData.Components
+                    .Where(c => c.HasMatchedSecondaryScheme && c.RowIndex >= compStartRow && c.RowIndex <= compEndRow)
+                    .ToList();
+
+                // 若存在命中的二次元件组行且元器件区域有效
+                if (matchedSecComps.Count > 0 && compEndRow >= compStartRow)
+                {
+                    // 规则 7: 采用 2D 数组一次性批量读写元器件区域 G 列 (第 7 列) 至 AB 列 (第 28 列)
+                    // 列索引对应关系: G(相对列1), H(相对列2), S(相对列13), AA(相对列21), AB(相对列22)
+                    Range secCompRange = ws.Range[$"G{compStartRow}:AB{compEndRow}"];
+                    // 读取二维公式/数值矩阵
+                    object[,] secCompMatrix = secCompRange.Formula as object[,];
+
+                    // 校验是否成功获取二维数组
+                    if (secCompMatrix != null)
+                    {
+                        // 标记二维数组是否被二次参数修改
+                        bool secMatrixModified = false;
+                        // 建立行号到元件实体的哈希映射以保障 O(1) 查询吞吐
+                        var secCompMap = matchedSecComps.ToDictionary(c => c.RowIndex, c => c);
+                        // 获取区域实际总行数
+                        int secRowCount = secCompMatrix.GetLength(0);
+
+                        // 循环扫描元器件区域每一行
+                        for (int r = 1; r <= secRowCount; r++)
+                        {
+                            // 计算该行对应的 Excel 实际物理行号
+                            int currentPhysRow = compStartRow + r - 1;
+                            // 判断该行是否为命中的二次元件行
+                            if (secCompMap.TryGetValue(currentPhysRow, out var targetComp))
+                            {
+                                // M列 (相对列 1): 填入方案单套二次价格 (如 8.1)
+                                secCompMatrix[r, 7] = targetComp.SecondaryPrice;
+                                // S 列 (相对列 13): 填入方案装配工费小计 (如 1280)
+                                secCompMatrix[r, 13] = targetComp.SecondaryLaborCost;
+                                // AA 列 (相对列 21): 填入方案二次排布图名称 (取自方案 groupName)
+                                secCompMatrix[r, 21] = targetComp.SecondaryLayoutName ?? string.Empty;
+                                // AB 列 (相对列 22): 写死为 "二次组" --硬编码--
+                                secCompMatrix[r, 22] = "二次组";
+                                // 标记已修改待写回
+                                secMatrixModified = true;
+                            }
+                        }
+
+                        // 若存在修改项，通过单次 COM 调用批量写回 Excel
+                        if (secMatrixModified)
+                        {
+                            // 一次性写回二维矩阵
+                            secCompRange.Formula = secCompMatrix;
                         }
                     }
                 }

@@ -352,18 +352,23 @@ namespace ExcelAddInDemo
                         }
                         break;
 
-                    // 5.3.1 扫描目录层级结构 (包含子文件夹与 DWG 图纸，支持双击下钻与面包屑)
+                    // 5.3.1 扫描目录层级结构 (包含子文件夹与 DWG 图纸，异步后台线程池调度，杜绝阻塞 UI 线程)
                     case "scanDirectoryHierarchy":
                         string? hierPath = root.TryGetProperty("dirPath", out var hpProp) ? hpProp.GetString() : null;
                         if (!string.IsNullOrWhiteSpace(hierPath))
                         {
-                            // 调度控制器执行综合层级扫描
-                            var hierData = _controller.ScanDirectoryHierarchy(hierPath);
-                            PostWebMessageSafe(JsonSerializer.Serialize(new
+                            // 调度后台线程池异步执行磁盘扫描
+                            System.Threading.Tasks.Task.Run(() =>
                             {
-                                action = "directoryHierarchyScanned",
-                                data = hierData
-                            }, JsonOptions));
+                                // 调度控制器执行轻量浅层扫描
+                                var hierData = _controller.ScanDirectoryHierarchy(hierPath);
+                                // 异步线程安全回发扫描结果
+                                PostWebMessageSafe(JsonSerializer.Serialize(new
+                                {
+                                    action = "directoryHierarchyScanned",
+                                    data = hierData
+                                }, JsonOptions));
+                            });
                         }
                         break;
 

@@ -2290,8 +2290,9 @@
                       "
                     >
                       <span class="sec-p-label">二次排布图:</span>
+                      <!-- 绑定二次排布图字段 (对应数据库 group_name) -->
                       <span class="sec-layout-badge"
-                        >{{ card.layoutDwgName }}</span
+                        >{{ card.groupName }}</span
                       >
                     </div>
                   </div>
@@ -2827,7 +2828,8 @@
                 <div style="font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 8px">图纸关联与工费信息</div>
                 <div style="font-size: 12.5px; color: #64748b; line-height: 1.8">
                   <div>• DWG 原图: <b style="color: #009688; font-family: monospace">{{ currentSecondaryCard?.dwgName || currentDetail?.schemeName || 'DWG' }}.dwg</b></div>
-                  <div v-if="currentSecondaryCard?.layoutDwgName">• 二次排布图: <b style="color: #0f172a">{{ currentSecondaryCard.layoutDwgName }}</b></div>
+                  <!-- 二次排布图信息展示 (对应数据库 group_name) -->
+                  <div v-if="currentSecondaryCard?.groupName">• 二次排布图: <b style="color: #0f172a">{{ currentSecondaryCard.groupName }}</b></div>
                   <div v-if="currentSecondaryCard?.laborCost">• 参考人工工费: <b style="color: #059669">¥{{ formatMoney(currentSecondaryCard.laborCost) }}</b></div>
                   <div v-if="currentSecondaryCard?.materialCost">• 二次辅料成本: <b style="color: #059669">¥{{ formatMoney(currentSecondaryCard.materialCost) }}</b></div>
                 </div>
@@ -3005,11 +3007,12 @@
                 size="default"
               ></el-input>
             </div>
-            <!-- 5. 二次排布图名称 -->
+            <!-- 5. 二次排布图名称 (严格对应数据库 group_name 字段) -->
             <div>
-              <div class="sec-field-label" title="二次排布图名称">二次排布图:</div>
+              <div class="sec-field-label" title="二次排布图名称 (对应数据库 group_name)">二次排布图:</div>
+              <!-- 绑定二次排布图输入项为 groupName -->
               <el-input
-                v-model="editingSecScheme.layoutDwgName"
+                v-model="editingSecScheme.groupName"
                 placeholder="例如: FA"
                 size="default"
               ></el-input>
@@ -3552,7 +3555,8 @@
             crossDoorCount: 10,
             holeSpec: "圆6",
             laborCost: 180.0,
-            layoutDwgName: "",
+            // 二次排布图名称 (严格对应数据库 group_name 字段)
+            groupName: "",
           });
           const secBomList = ref([]); // 当前编辑方案的 BOM 列表
           const materialSelectorVisible = ref(false); // 物料库选型弹窗
@@ -3956,7 +3960,8 @@
                 typeof card.laborCost === "number"
                   ? card.laborCost
                   : (card.schemeData ? Number(card.schemeData.laborCost) || 0 : 0),
-              layoutDwgName: card.layoutDwgName || (card.schemeData ? card.schemeData.cadDrawingName : "") || "",
+              // 二次排布图直接提取 groupName (对应数据库 group_name 字段)
+              groupName: (card.schemeData ? card.schemeData.groupName : card.groupName) || card.groupName || "",
             };
 
             // 解析 BOM 清单 (优先从 schemeData.bomItems 提取，次之从 bomJson 反序列化)
@@ -4045,11 +4050,11 @@
             }));
 
             // 组织标准二次回路方案传输实体 (id 严格保证为数值型数字，去除已废弃的 remark)
+            // groupName 严格由用户在排布图输入框填写的 editingSecScheme.groupName 提供
             const payload = {
               id: Number(editingSecScheme.value.id) || 0,
-              groupName:
-                editingSecScheme.value.folderName ||
-                (selectedSecondaryFolder.value ? selectedSecondaryFolder.value.name : "通用"),
+              // 二次排布图对应数据库中的 group_name 字段
+              groupName: editingSecScheme.value.groupName || "-",
               schemeName:
                 editingSecScheme.value.dwgName ||
                 editingSecScheme.value.cadDrawingName ||
@@ -4063,7 +4068,6 @@
               crossDoorCount: Number(editingSecScheme.value.crossDoorCount) || 0,
               holeSpec: editingSecScheme.value.holeSpec || "",
               laborCost: Number(editingSecScheme.value.laborCost) || 0,
-              layoutDwgName: editingSecScheme.value.layoutDwgName || "",
               bomItems: bomArray,
               bomJson: JSON.stringify(bomArray),
             };
@@ -4143,10 +4147,11 @@
                 editingSecScheme.value.brand = brandVal;
               }
 
-              // 2. 复制二次排布图名称 (优先取 layoutDwgName，其次兼容数据库中的 cadDrawingName)
-              const layoutVal = sourceScheme.layoutDwgName || sourceScheme.cadDrawingName || sourceScheme.CadDrawingName;
+              // 2. 复制二次排布图名称 (直接取 groupName 赋给 groupName)
+              const layoutVal = sourceScheme.groupName || sourceScheme.GroupName;
               if (layoutVal) {
-                editingSecScheme.value.layoutDwgName = layoutVal;
+                // 赋值给当前编辑表单的二次排布图字段
+                editingSecScheme.value.groupName = layoutVal;
               }
 
               // 3. 复制适用图名集合 (支持数组转换与字符串直接继承)
@@ -5007,7 +5012,12 @@
                       currentSecondaryCard.value.laborCost = Number(editingSecScheme.value.laborCost) || 0;
                       currentSecondaryCard.value.materialCost = secBomMaterialSubtotal.value;
                       currentSecondaryCard.value.holeSpec = editingSecScheme.value.holeSpec || "";
-                      currentSecondaryCard.value.layoutDwgName = editingSecScheme.value.layoutDwgName || "";
+                      // 同步卡片上的二次排布图名称 (对应数据库 group_name)
+                      currentSecondaryCard.value.groupName = editingSecScheme.value.groupName || "";
+                      if (currentSecondaryCard.value.schemeData) {
+                        // 同步卡片下挂实体数据的 groupName
+                        currentSecondaryCard.value.schemeData.groupName = editingSecScheme.value.groupName || "";
+                      }
                       // 映射最新的 BOM 清单至详情大视口 (统一使用 name 与 model)
                       currentDetail.value.bomItems = (secBomList.value || []).map((item, idx) => ({
                         id: item.id || Date.now() + idx,

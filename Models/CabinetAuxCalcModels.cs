@@ -904,6 +904,18 @@ namespace ExcelAddInDemo.Models
 
         // 标记该元器件是否成功命中并采用了 CAD 真实外形尺寸
         public bool HasRealDimensions { get; set; } = false;
+
+        // 二次方案单套材料费 (填入 Excel M 列，单价)
+        public double SecondaryPrice { get; set; } = 0.0;
+
+        // 二次方案装配与接线工费小计 (填入 Excel S 列，单套工价 × 数量)
+        public double SecondaryLaborCost { get; set; } = 0.0;
+
+        // 二次排布图名称 (填入 Excel AA 列，取自方案 groupName)
+        public string SecondaryLayoutName { get; set; } = string.Empty;
+
+        // 标记该行是否命中有效二次方案 (用于执行 G/H/S/AA/AB 回写)
+        public bool HasMatchedSecondaryScheme { get; set; } = false;
     }
 
     /// <summary>

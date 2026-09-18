@@ -3277,13 +3277,8 @@
                           highlightLeftDwg(pendingHighlightCode.value);
                           pendingHighlightCode.value = "";
                         });
-                      } else if (
-                        dirDwgFiles.value.length > 0 &&
-                        !currentVectorDwg.value
-                      ) {
-                        // 否则若当前视口尚未选中任何图纸且当前目录有图纸，默认选中首张并触发矢量渲染
-                        renderDwgVector(dirDwgFiles.value[0]);
                       }
+                      // 依据规范：彻底取消自动拉取首张图纸渲染，杜绝巨型Base64传输与主线程解码卡顿，改为纯按需手工点选看图
                     }
                   } else if (action === "dwgLocated") {
                     // 接收跨目录全局递归穿透定位图纸结果
@@ -3391,8 +3386,6 @@
                         if (excelGroupTableRef.value) {
                           excelGroupTableRef.value.setCurrentRow(firstRow);
                         }
-                        // 自动触发一次联动，若首行已绑定图纸则即时在视口呈现
-                        handleExcelGroupRowSelect(firstRow);
                       });
                     }
                     // 弹出成功提示

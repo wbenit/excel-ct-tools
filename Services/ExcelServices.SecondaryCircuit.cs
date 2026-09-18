@@ -343,52 +343,66 @@ namespace ExcelAddInDemo
                 dynamic sheet = context.Sheet;
                 dynamic? activeWb = context.Wb;
 
-                // 获取当前工作表定义的所有有效箱柜
-                var cabinets = Tool.GetSheetValidCabinets(sheet, activeWb);
+                // 单次扫描当前工作表中定义的所有有效箱柜集合 (避免循环内重复全表扫描)
+                var cabinets = Tool.GetSheetValidCabinets((object)sheet, activeWb);
                 if (cabinets == null || cabinets.Count == 0) return resultList;
 
                 // 使用字典按型号规格进行唯一去重聚合
                 var groupMap = new Dictionary<string, ExcelComponentGroupItemDto>(StringComparer.OrdinalIgnoreCase);
 
-                // 遍历每一个箱柜
+                // 遍历每一个有效箱柜
                 foreach (var cab in cabinets)
                 {
-                    int k = cab.Key;
-                    // 获取该箱柜的标准行索引定义 (柜信息行、元器件起始行、小计行)
-                    var (sumRow, detRow, subsumRow, tolsumRow) = Tool.FindStandardCategoryRowIndexes((object)sheet, k);
+                    var anchor = cab.Value;
+                    // 防空核验：必须具备明细信息行 Det 与小计行 Subsum
+                    if (anchor?.Det == null || anchor?.Subsum == null) continue;
+
+                    // 直接复用已提取的物理行号，彻底消除循环内调用 FindStandardCategoryRowIndexes 的 O(N²) 级全量扫描
+                    int detRow = anchor.Det.Row;
+                    int subsumRow = anchor.Subsum.Row;
+
                     // 元器件起始行与截止行
                     int compStartRow = detRow + 2;
                     int compEndRow = subsumRow - 1;
                     if (compStartRow > compEndRow) continue;
 
                     // 提取箱柜物理名称 (如 1AA1)
-                    string cabName = sheet.Cells[detRow, 1]?.Value?.ToString()?.Trim() ?? $"柜{k}";
+                    string cabName = sheet.Cells[detRow, 1]?.Value?.ToString()?.Trim() ?? $"柜{cab.Key}";
                     // 若 A 列是定义标签，尝试提取其具体展示名称
                     if (cabName.StartsWith("Cab_Det_", StringComparison.OrdinalIgnoreCase))
                     {
-                        cabName = sheet.Cells[detRow, 2]?.Value?.ToString()?.Trim() ?? $"柜{k}";
+                        cabName = sheet.Cells[detRow, 2]?.Value?.ToString()?.Trim() ?? $"柜{cab.Key}";
                     }
 
-                    // 逐行扫描该箱柜中的元器件
-                    for (int r = compStartRow; r <= compEndRow; r++)
-                    {
-                        // 提取 B 列: 类别 (第 2 列)
-                        string category = sheet.Cells[r, 2]?.Value?.ToString()?.Trim() ?? string.Empty;
-                        // 提取 C 列: 型号规格 (第 3 列)
-                        string model = sheet.Cells[r, 3]?.Value?.ToString()?.Trim() ?? string.Empty;
+                    // 计算当前箱柜元器件行数与列跨度 (B列=Col 2 到 AF列=Col 32，共计 31 列)
+                    int rowCount = compEndRow - compStartRow + 1;
+                    int colStart = 2;   // B 列 (类别)
+                    int colEnd = 32;   // AF 列 (第 32 列: 绑定的图号)
+                    int totalCols = colEnd - colStart + 1;
 
-                        // 判别准则修正 (严格识别)：
-                        // 1. B 列明确等于 "元件组"
-                        // 2. 若 B 列为空白且 C 列以 "*" 开头作为辅助兜底
-                        // 3. 绝不使用 Contains("*")，排除任何 B 列非元件组的行 (如开孔 HK91*91)
+                    // 严格落实规则 7：二维数组一次性批量读入内存 (单箱柜仅 1 次 COM 跨进程往返)
+                    dynamic range = sheet.Range[sheet.Cells[compStartRow, colStart], sheet.Cells[compEndRow, colEnd]];
+                    object[,] data = ConvertTo2DArray(range.Value2, rowCount, totalCols);
+
+                    // 在 C# 纯内存中毫秒级高速遍历当前箱柜的所有元器件
+                    for (int r = 1; r <= rowCount; r++)
+                    {
+                        int realRow = compStartRow + r - 1;
+
+                        // B 列: 类别 (相对偏移: 2 - 2 + 1 = 1)
+                        string category = data[r, 1]?.ToString()?.Trim() ?? string.Empty;
+                        // C 列: 型号规格 (相对偏移: 3 - 2 + 1 = 2)
+                        string model = data[r, 2]?.ToString()?.Trim() ?? string.Empty;
+
+                        // 判别准则：B 列明确为 "元件组"，或 B 列为空且 C 列以 "*" 开头兜底
                         bool isCategoryGroup = string.Equals(category, "元件组", StringComparison.OrdinalIgnoreCase);
                         bool isModelStar = string.IsNullOrWhiteSpace(category) && model.StartsWith("*");
                         bool isComponentGroup = (isCategoryGroup || isModelStar) && !string.IsNullOrWhiteSpace(model);
 
                         if (isComponentGroup)
                         {
-                            // 提取第 32 列 (AF列) 中已持久化绑定的图号
-                            string boundCode = sheet.Cells[r, 32]?.Value?.ToString()?.Trim() ?? string.Empty;
+                            // AF 列: 绑定的图号 (相对偏移: 32 - 2 + 1 = 31)
+                            string boundCode = data[r, 31]?.ToString()?.Trim() ?? string.Empty;
 
                             // 查找或创建该型号对应的聚合实体
                             if (!groupMap.TryGetValue(model, out var item))
@@ -404,16 +418,17 @@ namespace ExcelAddInDemo
                                 groupMap[model] = item;
                             }
 
-                            // 累加出现次数
+                            // 累加出现次数并记录实际物理行号
                             item.OccurrenceCount++;
-                            // 记录物理行号
-                            item.RowIndexes.Add(r);
+                            item.RowIndexes.Add(realRow);
+
                             // 记录涵盖箱柜 (去重)
                             if (!string.IsNullOrWhiteSpace(cabName) && !item.Cabinets.Contains(cabName))
                             {
                                 item.Cabinets.Add(cabName);
                             }
-                            // 若之前未获取到图号但当前行有图号，补齐图号
+
+                            // 优先保留非空图号
                             if (string.IsNullOrWhiteSpace(item.BoundDwgCode) && !string.IsNullOrWhiteSpace(boundCode))
                             {
                                 item.BoundDwgCode = boundCode;
@@ -460,8 +475,9 @@ namespace ExcelAddInDemo
                 dynamic app = context.App;
                 dynamic sheet = context.Sheet;
 
-                // 挂起屏幕刷新与自动计算以提速
+                // 挂起屏幕刷新、自动计算与全局事件以提速 (杜绝触发 OnSheetChange 与双向同步风暴)
                 app.ScreenUpdating = false;
+                app.EnableEvents = false;
                 app.Calculation = -4135; // xlCalculationManual --硬编码-- 手动计算常量
 
                 int count = 0;
@@ -503,7 +519,8 @@ namespace ExcelAddInDemo
                 }
                 finally
                 {
-                    // 恢复屏幕刷新与自动计算
+                    // 恢复全局事件、自动计算与屏幕刷新
+                    app.EnableEvents = true;
                     app.Calculation = -4105; // xlCalculationAutomatic --硬编码-- 自动计算常量
                     app.ScreenUpdating = true;
                 }

@@ -15,7 +15,7 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("id")]
         public int Id { get; set; }
 
-        // 所属二次组别分类 (如: "双电源组", "电动机控制组", "照明组")
+        // 所属二次组别分类 / 二次排布图 (对应 SQLite 数据库 group_name，如: "通用排布图", "FA")
         [JsonPropertyName("groupName")]
         public string GroupName { get; set; } = string.Empty;
 

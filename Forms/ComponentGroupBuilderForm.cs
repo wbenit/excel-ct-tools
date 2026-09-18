@@ -8,6 +8,7 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using ExcelAddInDemo.Controllers;
 using ExcelAddInDemo.Models;
+using ExcelDna.Integration;
 
 namespace ExcelAddInDemo
 {
@@ -247,24 +248,67 @@ namespace ExcelAddInDemo
                         }, JsonOptions));
                         break;
 
-                    // 6. 执行 Excel 批量生成
+                    // 6. 执行 Excel 批量生成 (采用 Excel-DNA 异步宏调度，彻底释放 WinForms UI 线程)
                     case "executeBatch":
                         ComponentGroupConfig? execCfg = null;
+                        // 尝试反序列化规则配置
                         if (root.TryGetProperty("config", out var execCfgProp))
                         {
+                            // 解析配置对象
                             execCfg = JsonSerializer.Deserialize<ComponentGroupConfig>(execCfgProp.GetRawText(), JsonOptions);
                         }
+                        // 默认仅处理当前活动箱柜
                         bool activeCabinetOnly = true;
+                        // 读取处理作用域
                         if (root.TryGetProperty("activeCabinetOnly", out var scopeProp))
                         {
+                            // 赋值作用域
                             activeCabinetOnly = scopeProp.GetBoolean();
                         }
-                        var batchRes = _controller.ExecuteBatch(execCfg!, activeCabinetOnly);
-                        PostWebMessageSafe(JsonSerializer.Serialize(new
+
+                        // 使用 ExcelAsyncUtil.QueueAsMacro 在 Excel 纯净宏上下文中异步调度
+                        ExcelAsyncUtil.QueueAsMacro(() =>
                         {
-                            action = "batchExecuteResult",
-                            result = batchRes
-                        }, JsonOptions));
+                            try
+                            {
+                                // 定义进度通知委托，向前端 WebView2 发送进度包
+                                Action<int, string> onProgress = (percent, statusText) =>
+                                {
+                                    // 封装进度通知载荷
+                                    var progressPayload = new
+                                    {
+                                        action = "updateProgress",
+                                        percent = percent,
+                                        statusText = statusText
+                                    };
+                                    // 线程安全回发前端
+                                    PostWebMessageSafe(JsonSerializer.Serialize(progressPayload, JsonOptions));
+                                };
+
+                                // 调用控制器执行批量生成并注入进度委托
+                                var batchRes = _controller.ExecuteBatch(execCfg!, activeCabinetOnly, onProgress);
+
+                                // 线程安全向前端回发最终完成结果
+                                PostWebMessageSafe(JsonSerializer.Serialize(new
+                                {
+                                    action = "batchExecuteResult",
+                                    result = batchRes
+                                }, JsonOptions));
+                            }
+                            catch (Exception ex)
+                            {
+                                // 捕获未处理异常并安全通知前端
+                                PostWebMessageSafe(JsonSerializer.Serialize(new
+                                {
+                                    action = "batchExecuteResult",
+                                    result = new BatchGroupResultDto
+                                    {
+                                        Success = false,
+                                        Message = $"异步调度执行发生异常: {ex.Message}"
+                                    }
+                                }, JsonOptions));
+                            }
+                        });
                         break;
 
                     // 8. 窗口平滑位移拖拽 (基于非模态物理增量，彻底杜绝 Win32 模态循环死锁导致 Excel 崩溃)

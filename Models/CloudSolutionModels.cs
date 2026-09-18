@@ -367,8 +367,8 @@ namespace ExcelAddInDemo.Models
         // 综合总成本 (人工 + 材料)
         public double TotalCost { get; set; } = 0.0;
 
-        // 二次排布图 DWG (对应 cad_drawing_name，如: "FA")
-        public string LayoutDwgName { get; set; } = string.Empty;
+        // 二次排布图名称 (直接对应 secondary_circuit_schemes 的 group_name，如: "FA", "通用排布图")
+        public string GroupName { get; set; } = string.Empty;
 
         // DWG 缩略图 Base64 图像流
         public string PreviewBase64 { get; set; } = string.Empty;
