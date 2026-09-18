@@ -377,17 +377,21 @@ namespace ExcelAddInDemo
 
         /// <summary>
         /// 动态平移公式表达式中的相对行号，将其映射到箱柜物理小计行 (如将 H2 转换为 H{subtotalRow})
+        /// <summary>
+        /// 平移公式中的相对行号，并解析动态宏（如 [器件首行]）为实际物理行号
         /// </summary>
         /// <param name="formula">待平移的公式字符串</param>
         /// <param name="subtotalRow">箱柜小计行实际物理行号</param>
+        /// <param name="compStartRow">元器件起始物理行号 (依据规则 6: Cab_Det + 2，默认 0)</param>
         /// <returns>平移修正后的公式字符串</returns>
-        public static string TransformFormulaRowOffset(string formula, int subtotalRow)
+        public static string TransformFormulaRowOffset(string formula, int subtotalRow, int compStartRow = 0)
         {
             // 校验公式格式是否以等号开头
             if (string.IsNullOrWhiteSpace(formula) || !formula.StartsWith("=")) return formula;
 
-            // 正则匹配公式中的单元格引用与行号 (如 H2, H3, H4, H5, H6, K2, K5, F7, G7 等)
-            return System.Text.RegularExpressions.Regex.Replace(formula, @"([A-Z]+)(\d+)", match =>
+            // 1. 正则匹配公式中的单元格引用与行号 (如 H2, H3, H4, H5, H6, K2, K5, F7, G7 等)
+            // 先平移 1~10 计费区内部相对行号，此时 [器件首行] 为非数字字符串，不会被误平移
+            string transformed = System.Text.RegularExpressions.Regex.Replace(formula, @"([A-Z]+)(\d+)", match =>
             {
                 string col = match.Groups[1].Value;
                 if (int.TryParse(match.Groups[2].Value, out int rowNum))
@@ -402,6 +406,18 @@ namespace ExcelAddInDemo
                 }
                 return match.Value;
             });
+
+            // 2. 解析 [器件首行] 宏占位符: 替换为当前箱柜实际元器件起始物理行号 (规则 6: Cab_Det + 2)
+            if (compStartRow > 0 && transformed.Contains("[器件首行]"))
+            {
+                // 正则容错替换 [器件首行] (允许内部空白) 为实际物理行号
+                transformed = System.Text.RegularExpressions.Regex.Replace(
+                    transformed,
+                    @"\[\s*器件首行\s*\]",
+                    compStartRow.ToString());
+            }
+
+            return transformed;
         }
 
         /// <summary>
@@ -468,11 +484,11 @@ namespace ExcelAddInDemo
                 // E 列 (索引 4): 单位
                 feeMatrix[i, 4] = item.Unit ?? string.Empty;
 
-                // F 列 (索引 5): 数量 (支持公式行号平移)
+                // F 列 (索引 5): 数量 (支持公式行号平移及 [器件首行] 宏解析)
                 if (!string.IsNullOrEmpty(item.Quantity))
                 {
                     if (item.Quantity.StartsWith("="))
-                        feeMatrix[i, 5] = TransformFormulaRowOffset(item.Quantity, subsumRow);
+                        feeMatrix[i, 5] = TransformFormulaRowOffset(item.Quantity, subsumRow, compStartRow);
                     else
                         feeMatrix[i, 5] = item.Quantity;
                 }
@@ -481,11 +497,11 @@ namespace ExcelAddInDemo
                     feeMatrix[i, 5] = string.Empty;
                 }
 
-                // G 列 (索引 6): 单价 (支持公式行号平移)
+                // G 列 (索引 6): 单价 (支持公式行号平移及 [器件首行] 宏解析)
                 if (!string.IsNullOrEmpty(item.Price))
                 {
                     if (item.Price.StartsWith("="))
-                        feeMatrix[i, 6] = TransformFormulaRowOffset(item.Price, subsumRow);
+                        feeMatrix[i, 6] = TransformFormulaRowOffset(item.Price, subsumRow, compStartRow);
                     else
                         feeMatrix[i, 6] = item.Price;
                 }
@@ -504,8 +520,8 @@ namespace ExcelAddInDemo
                     }
                     else if (item.TotalPriceFormula.StartsWith("="))
                     {
-                        // 相对公式平移
-                        feeMatrix[i, 7] = TransformFormulaRowOffset(item.TotalPriceFormula, subsumRow);
+                        // 相对公式平移及 [器件首行] 宏解析
+                        feeMatrix[i, 7] = TransformFormulaRowOffset(item.TotalPriceFormula, subsumRow, compStartRow);
                     }
                     else
                     {
@@ -533,8 +549,8 @@ namespace ExcelAddInDemo
                     }
                     else if (item.CostTotalPriceFormula.StartsWith("="))
                     {
-                        // 相对成本公式平移
-                        feeMatrix[i, 10] = TransformFormulaRowOffset(item.CostTotalPriceFormula, subsumRow);
+                        // 相对成本公式平移及 [器件首行] 宏解析
+                        feeMatrix[i, 10] = TransformFormulaRowOffset(item.CostTotalPriceFormula, subsumRow, compStartRow);
                     }
                     else
                     {

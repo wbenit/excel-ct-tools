@@ -76,6 +76,13 @@ namespace ExcelAddInDemo
                     return (false, 0, 0, false, $"未获取到公式组【{groupName}】的明细项，请检查配置。");
                 }
 
+                // 规则安全防线：静态强类型语法与合法性前置审查，杜绝非法残缺公式流入 Excel 执行层导致表格损坏
+                if (!ValidateFormulaDetails(items, out string formulaValidationError))
+                {
+                    // 若前置校验发现语法错误，立即阻止执行并返回具体错误原因提示
+                    return (false, 0, 0, false, formulaValidationError);
+                }
+
                 // 读取 4 种定义名称前缀配置项 (零堆分配元组解构)
                 var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
 
@@ -428,8 +435,30 @@ namespace ExcelAddInDemo
                 object[,] feeMatrix = Tool.BuildFeeMatrix(items, cabDetRow, newSubsumRow, compStartRow, compEndRow, 17);
 
                 // 批量一次性覆盖写入 Excel 计费区域 (彻底替换旧计费区域)
-                dynamic feeRange = sheet.Range[$"A{newSubsumRow}:Q{newTolsumRow}"];
-                feeRange.Formula = feeMatrix;
+                try
+                {
+                    // 获取新计费区域 Range
+                    dynamic feeRange = sheet.Range[$"A{newSubsumRow}:Q{newTolsumRow}"];
+                    // 覆盖写入公式矩阵
+                    feeRange.Formula = feeMatrix;
+                }
+                catch (Exception exFeeFormula)
+                {
+                    // 关键防御：若曾执行差额插行，发生异常时立即原子回滚删除插入的行，杜绝在 Excel 留下空白行
+                    if (delta > 0)
+                    {
+                        try
+                        {
+                            // 物理删除刚刚插入的差额空白行
+                            sheet.Rows[$"{oldTolsumRow}:{oldTolsumRow + delta - 1}"].Delete(-4121);
+                        }
+                        catch { }
+                    }
+                    // 记录详细异常原因
+                    LogHelper.WriteLog($"[公式写入拦截] 写入箱柜 [{k}] 计费区域失败: {exFeeFormula.Message}");
+                    // 向上抛出明确的异常提示信息
+                    throw new InvalidOperationException($"写入箱柜 [{k}] 计费公式失败（可能包含未闭合括号或语法错误）: {exFeeFormula.Message}", exFeeFormula);
+                }
 
                 // 确保总计行底边框实线完好 (xlEdgeBottom = -4107, xlContinuous = 1, xlThin = 2) --硬编码--
                 try
@@ -691,6 +720,126 @@ namespace ExcelAddInDemo
                     try { System.Runtime.InteropServices.Marshal.ReleaseComObject(templateWb); } catch { }
                 }
             }
+        }
+
+        /// <summary>
+        /// 静态校验公式明细项集合中所有公式的语法完整性 (严格审查左右括号平衡、引号闭合与算式有效性)
+        /// 遵循防御性编程原则，在修改 Excel 物理行前彻底拦截非法公式
+        /// </summary>
+        /// <param name="items">公式明细项集合</param>
+        /// <param name="errorMessage">若校验不通过，输出明确具体的错误提示文本</param>
+        /// <returns>全部合法返回 true，否则返回 false</returns>
+        public static bool ValidateFormulaDetails(
+            System.Collections.Generic.List<Controllers.FormulaItemModel>? items,
+            out string errorMessage)
+        {
+            // 初始化错误提示文本为空
+            errorMessage = string.Empty;
+            // 校验公式集合是否为空
+            if (items == null || items.Count == 0)
+            {
+                errorMessage = "公式明细项列表为空，无法执行调费。";
+                return false;
+            }
+
+            // 逐行扫描明细集合中的公式
+            for (int i = 0; i < items.Count; i++)
+            {
+                // 提取当前行配置项
+                var item = items[i];
+                // 计算 1-based 行序号
+                int lineNo = i + 1;
+                // 安全提取行名称用于友好提示
+                string itemName = string.IsNullOrWhiteSpace(item.Name)
+                    ? (item.No == "总计" ? "总计" : $"第{lineNo}行")
+                    : item.Name;
+
+                // 待审查的所有公式字段映射元组列表
+                var fields = new (string FieldName, string? FormulaVal)[]
+                {
+                    ("总价", item.TotalPriceFormula),
+                    ("成本总价", item.CostTotalPriceFormula),
+                    ("单价", item.Price),
+                    ("数量", item.Quantity)
+                };
+
+                // 遍历检查每个公式字段
+                foreach (var (fieldName, fVal) in fields)
+                {
+                    // 仅对以等号开头的 Excel 公式做语法分析 (排除宏占位符)
+                    if (string.IsNullOrWhiteSpace(fVal) || !fVal.Trim().StartsWith("="))
+                    {
+                        continue;
+                    }
+
+                    // 去除前后空白字符
+                    string formulaText = fVal.Trim();
+
+                    // 1. 检查是否仅含有单独一个等号
+                    if (formulaText.Length <= 1)
+                    {
+                        errorMessage = $"第 {lineNo} 行【{itemName}】的【{fieldName}】公式仅输入了 '='，缺少具体算式，请完善！";
+                        return false;
+                    }
+
+                    // 统计左右括号与双引号成对性
+                    int leftParenCount = 0;
+                    int rightParenCount = 0;
+                    bool insideQuotes = false;
+
+                    // 字符级逐字审查
+                    for (int c = 0; c < formulaText.Length; c++)
+                    {
+                        char ch = formulaText[c];
+                        // 忽略双引号内部的字面量文本
+                        if (ch == '"')
+                        {
+                            insideQuotes = !insideQuotes;
+                            continue;
+                        }
+                        if (insideQuotes) continue;
+
+                        // 遇到左括号
+                        if (ch == '(')
+                        {
+                            leftParenCount++;
+                        }
+                        // 遇到右括号
+                        else if (ch == ')')
+                        {
+                            rightParenCount++;
+                            // 若右括号数量提前多于左括号，属于括号顺序错乱
+                            if (rightParenCount > leftParenCount)
+                            {
+                                errorMessage = $"第 {lineNo} 行【{itemName}】的【{fieldName}】公式括号顺序错误（多出未闭合的右括号 ')'）：\n{formulaText}";
+                                return false;
+                            }
+                        }
+                    }
+
+                    // 校验双引号是否闭合
+                    if (insideQuotes)
+                    {
+                        errorMessage = $"第 {lineNo} 行【{itemName}】的【{fieldName}】公式中的文本双引号未闭合：\n{formulaText}";
+                        return false;
+                    }
+
+                    // 校验左右圆括号数量是否绝对相等
+                    if (leftParenCount != rightParenCount)
+                    {
+                        // 计算缺失说明
+                        string diff = leftParenCount > rightParenCount
+                            ? $"缺少闭合右括号 ')'（左括号有 {leftParenCount} 个，右括号仅 {rightParenCount} 个）"
+                            : $"右括号数量多于左括号（左括号 {leftParenCount} 个，右括号 {rightParenCount} 个）";
+
+                        errorMessage = $"第 {lineNo} 行【{itemName}】的【{fieldName}】公式括号不匹配：{diff}！\n公式内容: {formulaText}";
+                        return false;
+                    }
+                }
+            }
+
+            // 全部公式审查合法
+            return true;
         }
     }
 }

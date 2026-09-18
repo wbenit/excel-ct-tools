@@ -264,11 +264,11 @@ namespace ExcelAddInDemo.Forms
                     // 调度最小化状态
                     SafeInvoke(() => this.WindowState = FormWindowState.Minimized);
                 }
-                // 响应关闭窗口
+                // 响应关闭窗口 (使用 BeginInvoke 异步排队，彻底消除 WebMessageReceived 消息泵内部 Dispose 导致的死锁与超时)
                 else if (action == "close")
                 {
-                    // 调度关闭窗体
-                    SafeInvoke(() => this.Close());
+                    // 异步投递至 Windows 消息队列下一帧调度关闭，使当前的 IPC 消息调用安全返回退出
+                    this.BeginInvoke(new Action(() => this.Close()));
                 }
                 // 响应获取初始上下文数据
                 else if (action == "getContext")
@@ -325,31 +325,54 @@ namespace ExcelAddInDemo.Forms
                         PostWebMessageSafe(resJson);
                     }
                 }
-                // 响应单个箱柜推导分析
+                // 响应单个箱柜推导分析 (采用 ExcelAsyncUtil.QueueAsMacro 异步宏调度，释放 WinForms UI 消息泵)
                 else if (action == "analyzeCabinet")
                 {
-                    // 提取工作表名称
+                    // 提取目标工作表名称
                     string sheetName = root.TryGetProperty("sheetName", out var sn) ? sn.GetString() ?? string.Empty : string.Empty;
-                    // 提取箱柜 Det 定义名称
+                    // 提取目标箱柜 Det 定义名称
                     string detName = root.TryGetProperty("detName", out var dn) ? dn.GetString() ?? string.Empty : string.Empty;
                     // 规则配置可空对象
                     QuotationRules? rules = null;
+                    // 反序列化前端传入的规则
                     if (root.TryGetProperty("rules", out var rulesElem))
                     {
-                        // 反序列化规则
+                        // 解析为强类型规则对象
                         rules = JsonSerializer.Deserialize<QuotationRules>(rulesElem.GetRawText(), JsonOptions);
                     }
-                    // 调度控制器单柜分析
-                    var result = _controller.AnalyzeSingleCabinet(sheetName, detName, rules ?? new QuotationRules());
-                    // 序列化分析结果数据
-                    string resJson = JsonSerializer.Serialize(new
+                    // 获取生效的规则实例
+                    var effectiveRules = rules ?? new QuotationRules();
+
+                    // 调度 Excel 异步宏队列执行，彻底杜绝在 UI 线程同步裸调 COM 造成界面鼠标拖拽与点击假死
+                    ExcelAsyncUtil.QueueAsMacro(() =>
                     {
-                        action = "analyzeResult",
-                        success = result != null,
-                        data = result
-                    }, JsonOptions);
-                    // 线程安全回送前端
-                    PostWebMessageSafe(resJson);
+                        try
+                        {
+                            // 调度业务控制器单柜推导分析
+                            var result = _controller.AnalyzeSingleCabinet(sheetName, detName, effectiveRules);
+                            // 序列化分析结果数据报文
+                            string resJson = JsonSerializer.Serialize(new
+                            {
+                                action = "analyzeResult",
+                                success = result != null,
+                                data = result
+                            }, JsonOptions);
+                            // 线程安全回送前端 WebView2 渲染
+                            SafeInvoke(() => PostWebMessageSafe(resJson));
+                        }
+                        catch (Exception exAnalyze)
+                        {
+                            // 记录分析异常日志
+                            System.Diagnostics.Debug.WriteLine($"[CabinetAuxCalcForm] analyzeCabinet 异步异常: {exAnalyze.Message}");
+                            // 失败安全反馈
+                            SafeInvoke(() => PostWebMessageSafe(JsonSerializer.Serialize(new
+                            {
+                                action = "analyzeResult",
+                                success = false,
+                                data = (CabinetCalcResult?)null
+                            }, JsonOptions)));
+                        }
+                    });
                 }
                 // 响应写入当前选中的箱柜
                 else if (action == "writeCurrentCabinet")
@@ -823,7 +846,7 @@ namespace ExcelAddInDemo.Forms
         }
 
         /// <summary>
-        /// 窗体关闭时显式释放 WebView2 控件资源，杜绝进程残留与 Excel 退出阻塞
+        /// 窗体关闭中事件处理：仅解绑消息监听事件，杜绝死锁
         /// </summary>
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
@@ -832,16 +855,37 @@ namespace ExcelAddInDemo.Forms
                 // 解绑 WebMessageReceived 事件防止悬空引用
                 if (_webView?.CoreWebView2 != null)
                 {
+                    // 移除事件监听
                     _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
                 }
-                // 显式销毁 WebView2 控件释放底层 Chromium 句柄
+                // 注意：严禁在此处同步调用 _webView.Dispose()，避免底层 Chromium 句柄通信死锁挂起
+            }
+            catch (Exception ex)
+            {
+                // 记录关闭中异常
+                System.Diagnostics.Debug.WriteLine($"[CabinetAuxCalcForm] OnFormClosing 异常: {ex.Message}");
+            }
+            // 调度基类关闭事件
+            base.OnFormClosing(e);
+        }
+
+        /// <summary>
+        /// 窗体已完全关闭事件处理：在窗体完全卸载退出后安全释放 WebView2 控件资源
+        /// </summary>
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            try
+            {
+                // 窗体已完全脱离 Windows 屏幕视口，安全释放 WebView2
                 _webView?.Dispose();
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CabinetAuxCalcForm] OnFormClosing 释放异常: {ex.Message}");
+                // 记录释放异常信息
+                System.Diagnostics.Debug.WriteLine($"[CabinetAuxCalcForm] OnFormClosed 释放异常: {ex.Message}");
             }
-            base.OnFormClosing(e);
+            // 调度基类关闭完成事件
+            base.OnFormClosed(e);
         }
     }
 }

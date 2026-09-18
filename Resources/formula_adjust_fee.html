@@ -351,6 +351,16 @@
         font-weight: 600 !important;
       }
 
+      /* 公式语法错误单元格警示样式 (红色高亮边框与淡红警示底色) */
+      .formula-error-border .el-input__wrapper {
+        box-shadow: inset 0 0 0 1.5px #ef4444 !important;
+        background-color: #fef2f2 !important;
+      }
+      .formula-error-border .el-input__inner {
+        color: #b91c1c !important;
+        font-weight: 600 !important;
+      }
+
       /* 表格最左侧行标记索引列 (1, 2, 3, 4, 5...) 专属样式 */
       .row-index-cell {
         background-color: #eff6ff;
@@ -548,11 +558,13 @@
         <div class="info-bar">
           <span>公式组明细</span>
           <span class="highlight-vip"
-            >VIP可用调价参数: [人工定额]、[辅料定额]</span
+            >可用参数: [器件首行]</span
           >
           <i
             class="fa-regular fa-circle-question"
             style="color: #64748b; cursor: pointer"
+            title="可用参数说明：
+• [器件首行]：自动解析为当前箱柜元器件明细的实际起始行号，例如：=ROUND(SUM(H[器件首行]:INDEX(H:H, ROW()-1)), 2)"
           ></i>
         </div>
 
@@ -691,6 +703,7 @@
                 <el-input
                   v-model="scope.row.quantity"
                   class="table-cell-input"
+                  :class="{'formula-error-border': isFormulaError(scope.row.quantity)}"
                   size="small"
                   @change="saveAllToHost"
                 ></el-input>
@@ -707,6 +720,7 @@
                 <el-input
                   v-model="scope.row.price"
                   class="table-cell-input"
+                  :class="{'formula-error-border': isFormulaError(scope.row.price)}"
                   size="small"
                   @change="saveAllToHost"
                 ></el-input>
@@ -723,7 +737,10 @@
                 <el-input
                   v-model="scope.row.totalPriceFormula"
                   class="table-cell-input"
-                  :class="{'formula-text-red': !scope.row.totalPriceFormula.startsWith('=')}"
+                  :class="{
+                    'formula-text-red': !scope.row.totalPriceFormula || !scope.row.totalPriceFormula.startsWith('='),
+                    'formula-error-border': isFormulaError(scope.row.totalPriceFormula)
+                  }"
                   size="small"
                   @change="saveAllToHost"
                 ></el-input>
@@ -756,7 +773,10 @@
                 <el-input
                   v-model="scope.row.costTotalPriceFormula"
                   class="table-cell-input"
-                  :class="{'formula-text-red': !scope.row.costTotalPriceFormula.startsWith('=')}"
+                  :class="{
+                    'formula-text-red': !scope.row.costTotalPriceFormula || !scope.row.costTotalPriceFormula.startsWith('='),
+                    'formula-error-border': isFormulaError(scope.row.costTotalPriceFormula)
+                  }"
                   size="small"
                   @change="saveAllToHost"
                 ></el-input>
@@ -871,8 +891,106 @@
             }
           };
 
+          // 校验单个单元格公式语法是否异常 (用于单元格动态红色边框警示)
+          const isFormulaError = (val) => {
+            if (!val || typeof val !== "string" || !val.trim().startsWith("=")) return false;
+            const str = val.trim();
+            // 仅单个等号属于非法公式
+            if (str.length <= 1) return true;
+            let left = 0, right = 0, inQuote = false;
+            for (let i = 0; i < str.length; i++) {
+              const ch = str[i];
+              if (ch === '"') { inQuote = !inQuote; continue; }
+              if (inQuote) continue;
+              if (ch === '(') left++;
+              else if (ch === ')') {
+                right++;
+                // 右括号提前多于左括号，属于语法错误
+                if (right > left) return true;
+              }
+            }
+            // 双引号未闭合或左右括号数量不相等
+            if (inQuote) return true;
+            return left !== right;
+          };
+
+          // 校验整组明细中的全部公式合法性 (更新及设为默认时执行前置强审查)
+          const validateDetailList = (list) => {
+            if (!list || !Array.isArray(list) || list.length === 0) return true;
+
+            const fields = [
+              { key: "totalPriceFormula", label: "总价" },
+              { key: "costTotalPriceFormula", label: "成本总价" },
+              { key: "price", label: "单价" },
+              { key: "quantity", label: "数量" }
+            ];
+
+            const errors = [];
+
+            list.forEach((row, idx) => {
+              const lineNo = idx + 1;
+              const rowName = row.name && row.name.trim() ? row.name.trim() : (row.no === "总计" ? "总计" : `第${lineNo}行`);
+
+              fields.forEach(f => {
+                const val = row[f.key];
+                if (!val || typeof val !== "string" || !val.trim().startsWith("=")) return;
+                const str = val.trim();
+
+                // 1. 单独等号检查
+                if (str.length <= 1) {
+                  errors.push(`• 第 ${lineNo} 行【${rowName}】的【${f.label}】公式仅包含 '='，缺少具体算式`);
+                  return;
+                }
+
+                // 2. 括号与引号完整性检查
+                let left = 0, right = 0, inQuote = false, prematureRight = false;
+                for (let i = 0; i < str.length; i++) {
+                  const ch = str[i];
+                  if (ch === '"') { inQuote = !inQuote; continue; }
+                  if (inQuote) continue;
+                  if (ch === '(') left++;
+                  else if (ch === ')') {
+                    right++;
+                    if (right > left) prematureRight = true;
+                  }
+                }
+
+                if (inQuote) {
+                  errors.push(`• 第 ${lineNo} 行【${rowName}】的【${f.label}】公式双引号未闭合：${str}`);
+                } else if (prematureRight) {
+                  errors.push(`• 第 ${lineNo} 行【${rowName}】的【${f.label}】公式括号顺序错误（多出未匹配的右括号 ')'）：${str}`);
+                } else if (left !== right) {
+                  const diff = left > right
+                    ? `缺少闭合右括号 ')'（左括号 ${left} 个，右括号 ${right} 个）`
+                    : `多出右括号 ')'（左括号 ${left} 个，右括号 ${right} 个）`;
+                  errors.push(`• 第 ${lineNo} 行【${rowName}】的【${f.label}】公式括号不匹配：${diff}！\n  公式: ${str}`);
+                }
+              });
+            });
+
+            // 若存在公式语法错误，使用 Element Plus 醒目通知弹窗阻断并提醒用户
+            if (errors.length > 0) {
+              ElementPlus.ElNotification({
+                title: "公式语法错误提醒（已拦截）",
+                message: errors.join("\n\n"),
+                type: "error",
+                duration: 9000,
+                position: "top-right",
+              });
+              return false;
+            }
+
+            return true;
+          };
+
           // 设为默认公式组
           const setDefaultGroup = (row) => {
+            const targetDetails = row.details || detailList.value || [];
+            // 设为默认前进行公式语法前置审查，阻断残缺公式写入模板
+            if (!validateDetailList(targetDetails)) {
+              return;
+            }
+
             groupList.value.forEach((g) => (g.isDefault = g.id === row.id));
             if (selectedGroup.value && selectedGroup.value.id === row.id) {
               row.details = JSON.parse(JSON.stringify(detailList.value));
@@ -930,6 +1048,10 @@
 
           // 应用调费指令 (向 C# WebView2 后端发送 postMessage)
           const applyFormula = (targetScope) => {
+            // 关键安全防线：调费前先校验公式合法性，若有括号不匹配等语法错误立即阻断并弹窗提示
+            if (!validateDetailList(detailList.value)) {
+              return;
+            }
             // 先保存配置
             saveAllToHost();
             sendMessageToHost({
@@ -1387,6 +1509,8 @@
             handleHeaderMouseDown,
             handleMinimize,
             handleClose,
+            isFormulaError,
+            validateDetailList,
           };
         },
       })
