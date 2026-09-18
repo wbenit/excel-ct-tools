@@ -779,7 +779,7 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("laborMatchName")]
         public string LaborMatchName { get; set; } = "人工费";
 
-        // 壳体面积平铺制作工价系数 (单位: 元/分米² 即 元/0.01㎡，默认 2.95) --硬编码--
+        // 壳体人工定额 (单位: 元/分米² 即 元/0.01㎡，默认 2.95) --硬编码--
         [JsonPropertyName("areaBaseRate")]
         public double AreaBaseRate { get; set; } = 2.95;
 
@@ -826,6 +826,27 @@ namespace ExcelAddInDemo.Models
 
         // 箱柜台数 (默认 1)
         public int Quantity { get; set; } = 1;
+
+        // 是否识别到箱体行 C 列既有外形尺寸
+        public bool HasExistingShellSize { get; set; } = false;
+
+        // 识别到的既有壳体外形宽度 (单位: mm)
+        public int ExistingShellWidth { get; set; } = 0;
+
+        // 识别到的既有壳体外形高度/长度 (单位: mm)
+        public int ExistingShellHeight { get; set; } = 0;
+
+        // 识别到的既有壳体外形深度 (单位: mm)
+        public int ExistingShellDepth { get; set; } = 0;
+
+        // 箱体行 C 列原始规格尺寸描述文本
+        public string ExistingShellModel { get; set; } = string.Empty;
+
+        // 箱体所在真实物理行号
+        public int ExistingShellRow { get; set; } = 0;
+
+        // 标识箱体行是否位于计费区域中 (true 表示计费区，false 表示 Cab_Det 信息行)
+        public bool IsShellInFeeArea { get; set; } = false;
 
         // 扫描提取的元器件明细项列表
         public List<CabinetComponentItem> Components { get; set; } = new List<CabinetComponentItem>();
@@ -908,7 +929,10 @@ namespace ExcelAddInDemo.Models
         // 二次方案单套材料费 (填入 Excel M 列，单价)
         public double SecondaryPrice { get; set; } = 0.0;
 
-        // 二次方案装配与接线工费小计 (填入 Excel S 列，单套工价 × 数量)
+        // 二次方案装配与接线单套人工单价 (填入 Excel S 列，单套工价)
+        public double SecondaryLaborUnitPrice { get; set; } = 0.0;
+
+        // 二次方案装配与接线工费小计 (单套工价 × 数量)
         public double SecondaryLaborCost { get; set; } = 0.0;
 
         // 二次排布图名称 (填入 Excel AA 列，取自方案 groupName)
@@ -1044,6 +1068,18 @@ namespace ExcelAddInDemo.Models
         // 人工费用算式内容与动态公式 (如 "=ROUND((6*8*2.95+5*2)*1*1.13,1)")
         [JsonPropertyName("laborFormula")]
         public string LaborFormula { get; set; } = string.Empty;
+
+        // 箱体制作人工费动态算式 (如 "=ROUND(1000*2200*2.95/10000,1)")
+        [JsonPropertyName("shellLaborFormula")]
+        public string ShellLaborFormula { get; set; } = string.Empty;
+
+        // 箱体制作人工金额 (单位: 元)
+        [JsonPropertyName("shellLaborCost")]
+        public double ShellLaborCost { get; set; }
+
+        // 是否采用工作表中既有外形尺寸核算下游指标
+        [JsonPropertyName("isUsingExistingShellSize")]
+        public bool IsUsingExistingShellSize { get; set; }
 
         // 一次导线用量与费用明细列表
         [JsonPropertyName("primaryWireDetails")]

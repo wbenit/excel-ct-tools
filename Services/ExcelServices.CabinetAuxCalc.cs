@@ -110,6 +110,47 @@ namespace ExcelAddInDemo
             }
         }
 
+        /// <summary>
+        /// 从规格型号文本中解析长宽高尺寸 (支持 1000*2200*1000, XM-800*600*200, 1000*2200, 1000×2200 等)
+        /// </summary>
+        /// <param name="modelOrSize">规格描述字符串</param>
+        /// <param name="width">提取出的宽度(mm)</param>
+        /// <param name="height">提取出的高度/长度(mm)</param>
+        /// <param name="depth">提取出的深度(mm，若无则为0)</param>
+        /// <returns>是否成功提取有效外形尺寸</returns>
+        public static bool TryParseShellDimensions(string? modelOrSize, out int width, out int height, out int depth)
+        {
+            // 初始化输出参数
+            width = 0;
+            height = 0;
+            depth = 0;
+            // 空字符串直接返回失败
+            if (string.IsNullOrWhiteSpace(modelOrSize)) return false;
+
+            // 正则匹配连续 2 个或 3 个以乘号(*, x, X, ×)分隔的数字 (2~4位纯数字)
+            var match = System.Text.RegularExpressions.Regex.Match(
+                modelOrSize,
+                @"(?<!\d)(\d{2,4})\s*[*×xX]\s*(\d{2,4})(?:\s*[*×xX]\s*(\d{2,4}))?(?!\d)"
+            );
+
+            // 若未匹配到有效数字结构直接返回
+            if (!match.Success) return false;
+
+            // 提取前两项为宽高 (长与宽)
+            int.TryParse(match.Groups[1].Value, out width);
+            int.TryParse(match.Groups[2].Value, out height);
+
+            // 若存在第三组则提取为深度
+            if (match.Groups[3].Success && !string.IsNullOrWhiteSpace(match.Groups[3].Value))
+            {
+                int.TryParse(match.Groups[3].Value, out depth);
+            }
+
+            // 必须满足长宽均大于等于 50mm 才视作有效外形尺寸 --硬编码: 最小有效箱体尺寸门限--
+            return width >= 50 && height >= 50;
+        }
+
+        /// <summary>
         /// 根据已有的箱柜锚点实体快速扫描指定箱柜元器件数据 (轻量免重复检索定义名称)
         /// 遵循规则 7 (2D数组一次性读入内存)
         /// </summary>
@@ -117,7 +158,7 @@ namespace ExcelAddInDemo
         /// <param name="cabIndex">箱柜序号数字</param>
         /// <param name="anchor">已识别好的箱柜锚点实体</param>
         /// <returns>箱柜扫描实体</returns>
-        public static CabinetScanData? ScanCabinetData(Worksheet ws, int cabIndex, CabinetAnchorModel anchor)
+        public static CabinetScanData? ScanCabinetData(Worksheet ws, int cabIndex, CabinetAnchorModel anchor, QuotationRules? rules = null)
         {
             // 校验工作表与锚点有效性
             if (ws == null || anchor == null || anchor.Det == null || anchor.Subsum == null || anchor.Tolsum == null) return null;
@@ -148,6 +189,69 @@ namespace ExcelAddInDemo
                     CabinetName = ws.Range[$"A{detRow}"].Value?.ToString() ?? $"箱柜{cabIndex}",
                     Quantity = 1
                 };
+
+                // 提取用户在配置中指定的壳体匹配名称，若未传入则自动读取规则配置
+                if (rules == null) rules = LoadQuotationRules();
+                string shellMatchName = rules?.ShellRules?.ShellMatchName?.Trim() ?? "箱体";
+
+                // -------------------------------------------------------------
+                // 探测箱体行 C 列既有尺寸 (优先级: 1. 优先计费区“箱体”行; 2. 兜底 Cab_Det 信息行)
+                // -------------------------------------------------------------
+                int feeScanStart = subsumRow;
+                int feeScanEnd = tolsumRow - 1;
+                bool shellFoundInFee = false;
+
+                // 1. 优先检测计费区域 (Subsum 到 Tolsum-1)
+                if (feeScanEnd >= feeScanStart)
+                {
+                    // 规则 7: 二维数组一次性读取计费区 B 列至 C 列 (物料名与型号规格)
+                    Range feeCheckRange = ws.Range[$"B{feeScanStart}:C{feeScanEnd}"];
+                    object[,] feeCheckMatrix = feeCheckRange.Value2 as object[,];
+                    if (feeCheckMatrix != null)
+                    {
+                        int feeRowCount = feeCheckMatrix.GetLength(0);
+                        // 遍历计费区各行，严格按配置中的壳体名称查找，不进行枚举盲猜
+                        for (int r = 1; r <= feeRowCount; r++)
+                        {
+                            string bName = feeCheckMatrix[r, 1]?.ToString()?.Trim() ?? string.Empty;
+                            // 严格匹配配置中已指定的壳体名称 (shellMatchName)
+                            if (string.Equals(bName, shellMatchName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                string cModel = feeCheckMatrix[r, 2]?.ToString()?.Trim() ?? string.Empty;
+                                // 尝试解析 C 列外形尺寸
+                                if (TryParseShellDimensions(cModel, out int w, out int h, out int d))
+                                {
+                                    scanData.HasExistingShellSize = true;
+                                    scanData.ExistingShellWidth = w;
+                                    scanData.ExistingShellHeight = h;
+                                    scanData.ExistingShellDepth = d;
+                                    scanData.ExistingShellModel = cModel;
+                                    scanData.ExistingShellRow = feeScanStart + r - 1;
+                                    scanData.IsShellInFeeArea = true;
+                                    shellFoundInFee = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2. 若计费区未识别到或无有效尺寸，检测 Cab_Det 信息行 C 列
+                if (!shellFoundInFee)
+                {
+                    string detC = ws.Range[$"C{detRow}"].Text?.ToString()?.Trim() ?? string.Empty;
+                    // 尝试解析 Cab_Det 行 C 列尺寸
+                    if (TryParseShellDimensions(detC, out int w, out int h, out int d))
+                    {
+                        scanData.HasExistingShellSize = true;
+                        scanData.ExistingShellWidth = w;
+                        scanData.ExistingShellHeight = h;
+                        scanData.ExistingShellDepth = d;
+                        scanData.ExistingShellModel = detC;
+                        scanData.ExistingShellRow = detRow;
+                        scanData.IsShellInFeeArea = false;
+                    }
+                }
 
                 // 若元器件区域行数有效，采用 2D 数组一次性批量读入内存 (覆盖 A 到 AF 列即第 32 列)
                 if (compEndRow >= compStartRow)
@@ -276,8 +380,9 @@ namespace ExcelAddInDemo
         /// </summary>
         /// <param name="ws">目标工作表</param>
         /// <param name="cabDetName">箱柜 Det 锚点定义名称 (例如 Cab_Det_1)</param>
+        /// <param name="rules">规则实体 (可选)</param>
         /// <returns>箱柜扫描实体</returns>
-        public static CabinetScanData? ScanCabinetData(Worksheet ws, string cabDetName)
+        public static CabinetScanData? ScanCabinetData(Worksheet ws, string cabDetName, QuotationRules? rules = null)
         {
             // 校验工作表与名称有效性
             if (ws == null || string.IsNullOrWhiteSpace(cabDetName)) return null;
@@ -303,8 +408,8 @@ namespace ExcelAddInDemo
                 // 校验关键行号的合法性
                 if (anchor == null) return null;
 
-                // 转调轻量高效重载方法
-                return ScanCabinetData(ws, cabIndex, anchor);
+                // 转调轻量高效重载方法并透传 rules
+                return ScanCabinetData(ws, cabIndex, anchor, rules);
             }
             catch (Exception ex)
             {
@@ -633,48 +738,76 @@ namespace ExcelAddInDemo
             if (plasticCaseCount >= 6 && maxCurrent >= 160) isCabinet = true;
             if (plasticCaseCount >= 8 && maxCurrent >= 125) isCabinet = true;
 
-            // 智能推导匹配壳体尺寸
-            string recommendedSize = MatchOptimalShellSize(
-                totalComponentArea,
-                isCabinet,
-                maxCurrent,
-                mainSwitchHeight,
-                rules.ShellRules
-            );
-
-            // 解析推荐壳体的宽高 (mm)
             int shellWidth = 600;
             int shellHeight = 800;
-            if (recommendedSize.Contains("*"))
-            {
-                var parts = recommendedSize.Split('*');
-                if (parts.Length >= 2)
-                {
-                    int.TryParse(parts[0].Trim(), out shellWidth);
-                    int.TryParse(parts[1].Trim(), out shellHeight);
-                }
-            }
-            if (shellHeight > 1000) isCabinet = true;
+            int shellDepth = 300;
+            string recommendedSize;
 
             // 统计整柜元器件从 DWG 文字中提取出的最大安装进深/厚度 (单位: mm)
             double maxCompDepth = scanData.Components.Where(c => c.RealDepth > 0)
                                                     .Select(c => c.RealDepth)
                                                     .DefaultIfEmpty(0.0)
                                                     .Max();
-
-            // 纯高度推导箱柜基础推荐深度 (与电流彻底解耦，依据纯高度阶梯规则)
-            int shellDepth = DeriveDepthFromHeight(shellHeight, rules.ShellRules);
             double minRequiredDepth = 0.0;
 
-            // 核心规则联动：默认箱体深度至少要大于元器件最大高度(进深) + 60mm (防门板与导轨干涉) --硬编码--
-            if (maxCompDepth > 0)
+            // 门控判定: 若箱体行 C 列已经有有效尺寸，直接锁定现有尺寸，坚决不重新计算尺寸推导
+            if (scanData.HasExistingShellSize && scanData.ExistingShellWidth > 0 && scanData.ExistingShellHeight > 0)
             {
-                // 计算最低安全深度门限 (元件最大深度 + 60mm 安全裕量) --硬编码--
-                minRequiredDepth = maxCompDepth + 60.0;
-                if (minRequiredDepth > shellDepth)
+                // 直接利用现有尺寸的长与宽
+                shellWidth = scanData.ExistingShellWidth;
+                shellHeight = scanData.ExistingShellHeight;
+                // 若现有尺寸包含深度则使用现有深度，否则按高度规则推导深度
+                if (scanData.ExistingShellDepth > 0)
                 {
-                    // 深度不足以关门，提升深度并靠拢到标准箱体深度阶梯库 (如 160, 180, 200, 250, 300...)
-                    shellDepth = AlignToStandardDepth((int)Math.Ceiling(minRequiredDepth), rules.ShellRules);
+                    shellDepth = scanData.ExistingShellDepth;
+                }
+                else
+                {
+                    shellDepth = DeriveDepthFromHeight(shellHeight, rules.ShellRules);
+                }
+
+                // 高度大于 1000mm 判定为落地柜
+                if (shellHeight > 1000) isCabinet = true;
+                recommendedSize = scanData.ExistingShellDepth > 0
+                    ? $"{shellWidth}*{shellHeight}*{shellDepth}"
+                    : $"{shellWidth}*{shellHeight}";
+            }
+            else
+            {
+                // 智能推导匹配壳体尺寸
+                recommendedSize = MatchOptimalShellSize(
+                    totalComponentArea,
+                    isCabinet,
+                    maxCurrent,
+                    mainSwitchHeight,
+                    rules.ShellRules
+                );
+
+                // 解析推荐壳体的宽高 (mm)
+                if (recommendedSize.Contains("*"))
+                {
+                    var parts = recommendedSize.Split('*');
+                    if (parts.Length >= 2)
+                    {
+                        int.TryParse(parts[0].Trim(), out shellWidth);
+                        int.TryParse(parts[1].Trim(), out shellHeight);
+                    }
+                }
+                if (shellHeight > 1000) isCabinet = true;
+
+                // 纯高度推导箱柜基础推荐深度 (与电流彻底解耦，依据纯高度阶梯规则)
+                shellDepth = DeriveDepthFromHeight(shellHeight, rules.ShellRules);
+
+                // 核心规则联动：默认箱体深度至少要大于元器件最大高度(进深) + 60mm (防门板与导轨干涉) --硬编码--
+                if (maxCompDepth > 0)
+                {
+                    // 计算最低安全深度门限 (元件最大深度 + 60mm 安全裕量) --硬编码--
+                    minRequiredDepth = maxCompDepth + 60.0;
+                    if (minRequiredDepth > shellDepth)
+                    {
+                        // 深度不足以关门，提升深度并靠拢到标准箱体深度阶梯库 (如 160, 180, 200, 250, 300...)
+                        shellDepth = AlignToStandardDepth((int)Math.Ceiling(minRequiredDepth), rules.ShellRules);
+                    }
                 }
             }
 
@@ -1211,7 +1344,9 @@ namespace ExcelAddInDemo
                         comp.HasMatchedSecondaryScheme = true;
                         // G 列写入单套二次材料单价 (如 8.1)
                         comp.SecondaryPrice = Math.Round(matchedScheme.TotalMaterialCost, 2);
-                        // S 列写入方案装配工费小计 (如 1280)
+                        // S 列写入各元件组单套人工工价单价 (不再乘以数量，单价化)
+                        comp.SecondaryLaborUnitPrice = Math.Round(matchedScheme.LaborCost, 2);
+                        // 记录方案装配工费小计供总人工费累加
                         comp.SecondaryLaborCost = circuitLaborCost;
                         // AA 列写入二次排布图名称 (取自方案 groupName)
                         comp.SecondaryLayoutName = matchedScheme.GroupName ?? string.Empty;
@@ -1281,12 +1416,18 @@ namespace ExcelAddInDemo
             string laborFormula = $"=ROUND(({combinedLaborExpr})*{xishu}*{taxRatio},1)";
             totalLaborCost = Math.Round(totalLaborCost * xishu * taxRatio, 1);
 
+            // 计算箱体所在行 S 列动态人工算式: 长度*宽度*2.95/10000 (如 =ROUND(1000*2200*2.95/10000, 1))
+            double shellLaborRate = rules.LaborRules != null ? rules.LaborRules.AreaBaseRate : 2.95;
+            string shellLaborFormula = $"=ROUND({shellWidth}*{shellHeight}*{shellLaborRate:F2}/10000,1)";
+            double shellLaborCost = Math.Round((shellWidth * shellHeight * shellLaborRate) / 10000.0, 1);
+
             // 汇总二次导线全局统计指标
             double totalCrossDoor = secondarySchemeDetails.Sum(s => s.CrossDoorCount * s.Quantity);
             double totalSecWireLength = Math.Round(secondarySchemeDetails.Sum(s => s.TotalWireLength), 1);
 
             // 组合推导说明描述
-            string desc = $"推导完成: 最大电流 {maxCurrent}A, 判定为{(isCabinet ? "落地柜" : "配电箱")}, 推荐尺寸 {recommendedSize}";
+            string sizeDescTag = scanData.HasExistingShellSize ? " [已锁定现有尺寸]" : "";
+            string desc = $"推导完成: 最大电流 {maxCurrent}A, 判定为{(isCabinet ? "落地柜" : "配电箱")},{sizeDescTag} 尺寸 {recommendedSize}";
             // 若成功匹配到 CAD 真实尺寸，在描述中显式标明
             if (realDimsCount > 0)
             {
@@ -1341,6 +1482,9 @@ namespace ExcelAddInDemo
                 AuxiliaryFormula = auxFormula,
                 LaborCost = totalLaborCost,
                 LaborFormula = laborFormula,
+                ShellLaborFormula = shellLaborFormula,
+                ShellLaborCost = shellLaborCost,
+                IsUsingExistingShellSize = scanData.HasExistingShellSize,
                 PrimaryWireDetails = primaryWireDetails,
                 SecondarySchemeDetails = secondarySchemeDetails,
                 SecondarySingleWireLength = secSingleWireLen,
@@ -1467,8 +1611,8 @@ namespace ExcelAddInDemo
 
                 if (feeEndRow >= feeStartRow)
                 {
-                    // 规则 7: 采用 2D 数组一次性批量读取计费区域 (A 到 H 列覆盖至销售总价列)
-                    Range feeRange = ws.Range[$"A{feeStartRow}:H{feeEndRow}"];
+                    // 规则 7: 采用 2D 数组一次性批量读取计费区域 (A 到 S 列覆盖至人工列第 19 列)
+                    Range feeRange = ws.Range[$"A{feeStartRow}:S{feeEndRow}"];
                     object[,] feeMatrix = feeRange.Formula as object[,];
 
                     if (feeMatrix != null)
@@ -1483,15 +1627,20 @@ namespace ExcelAddInDemo
                             string bName = feeMatrix[r, 2]?.ToString()?.Trim() ?? string.Empty;
                             int currentPhysRow = feeStartRow + r - 1;
 
-                            // 1.1 壳体匹配: 在计费区 B 列匹配同名，命中则写入该行 C 列规格、E 列单位、F 列数量、G 列单价、H 列总价公式
-                            if (!matchedShellInFeeArea && string.Equals(bName, shellMatchName, StringComparison.OrdinalIgnoreCase))
+                            // 1.1 壳体匹配: 在计费区 B 列严格查找配置同名项 (shellMatchName)，不进行枚举盲猜
+                            bool isShellRow = string.Equals(bName, shellMatchName, StringComparison.OrdinalIgnoreCase);
+
+                            if (!matchedShellInFeeArea && isShellRow)
                             {
-                                // 优先写入拼装好的标准工业型号，兜底使用三维尺寸
-                                string shellModel = !string.IsNullOrWhiteSpace(result.RecommendedShellModel)
-                                    ? result.RecommendedShellModel
-                                    : (!string.IsNullOrWhiteSpace(result.RecommendedShellSizeFull) ? result.RecommendedShellSizeFull : result.RecommendedShellSize);
-                                // C 列写入规格型号
-                                feeMatrix[r, 3] = shellModel;
+                                // 若没有既有尺寸才写入推荐型号；若已有尺寸则保护原有规格不覆盖
+                                if (!scanData.HasExistingShellSize || string.IsNullOrWhiteSpace(feeMatrix[r, 3]?.ToString()))
+                                {
+                                    string shellModel = !string.IsNullOrWhiteSpace(result.RecommendedShellModel)
+                                        ? result.RecommendedShellModel
+                                        : (!string.IsNullOrWhiteSpace(result.RecommendedShellSizeFull) ? result.RecommendedShellSizeFull : result.RecommendedShellSize);
+                                    // C 列写入规格型号
+                                    feeMatrix[r, 3] = shellModel;
+                                }
                                 // E 列写入单位 (默认 "台") --硬编码--
                                 feeMatrix[r, 5] = "台";
                                 // F 列检查数量 (若原数量为空或为0，则默认补 1) --硬编码--
@@ -1507,10 +1656,15 @@ namespace ExcelAddInDemo
                                     // H 列写入销售总价联动公式 =ROUND(F*G, 2)
                                     feeMatrix[r, 8] = $"=ROUND(F{currentPhysRow}*G{currentPhysRow}, 2)";
                                 }
+                                // S 列写入箱体制作人工动态算式 (长度*宽度*2.95/10000)
+                                if (!string.IsNullOrWhiteSpace(result.ShellLaborFormula))
+                                {
+                                    feeMatrix[r, 19] = result.ShellLaborFormula;
+                                }
                                 matchedShellInFeeArea = true;
                                 feeMatrixModified = true;
                                 result.ShellMatchedInFeeArea = true;
-                                result.ShellTargetLocation = $"计费区域第 {currentPhysRow} 行 (B列: {shellMatchName})";
+                                result.ShellTargetLocation = $"计费区域第 {currentPhysRow} 行 (B列: {bName})";
                             }
 
                             // 1.2 辅材匹配: 优先在计费区查找匹配名称
@@ -1562,11 +1716,11 @@ namespace ExcelAddInDemo
                 }
 
                 // ---------------------------------------------------------
-                // 2. 壳体兜底写入: 若计费区未匹配到，回退写入 Cab_Det 信息行
+                // 2. 壳体兜底写入: 若计费区未匹配到，回退写入 Cab_Det 信息行 (覆盖至 S 列第 19 列)
                 // ---------------------------------------------------------
                 if (!matchedShellInFeeArea)
                 {
-                    Range detRange = ws.Range[$"A{detRow}:E{detRow}"];
+                    Range detRange = ws.Range[$"A{detRow}:S{detRow}"];
                     object[,] detMatrix = detRange.Formula as object[,];
                     // 优先写入拼装型号，兜底尺寸
                     string fallbackModel = !string.IsNullOrWhiteSpace(result.RecommendedShellModel)
@@ -1576,16 +1730,30 @@ namespace ExcelAddInDemo
                     {
                         // B 列写入壳体匹配名称
                         detMatrix[1, 2] = shellMatchName;
-                        // C 列写入推荐壳体型号或三维尺寸
-                        detMatrix[1, 3] = fallbackModel;
+                        // 若原先 C 列无既有尺寸，写入推荐型号或尺寸
+                        if (!scanData.HasExistingShellSize || string.IsNullOrWhiteSpace(detMatrix[1, 3]?.ToString()))
+                        {
+                            detMatrix[1, 3] = fallbackModel;
+                        }
+                        // S 列写入箱体制作人工动态算式
+                        if (!string.IsNullOrWhiteSpace(result.ShellLaborFormula))
+                        {
+                            detMatrix[1, 19] = result.ShellLaborFormula;
+                        }
                         detRange.Formula = detMatrix;
                     }
                     else
                     {
                         // 单元格直接写入名称
                         ws.Range[$"B{detRow}"].Value2 = shellMatchName;
-                        // 单元格直接写入型号
-                        ws.Range[$"C{detRow}"].Value2 = fallbackModel;
+                        if (!scanData.HasExistingShellSize)
+                        {
+                            ws.Range[$"C{detRow}"].Value2 = fallbackModel;
+                        }
+                        if (!string.IsNullOrWhiteSpace(result.ShellLaborFormula))
+                        {
+                            ws.Range[$"S{detRow}"].Formula = result.ShellLaborFormula;
+                        }
                     }
                     result.ShellMatchedInFeeArea = false;
                     result.ShellTargetLocation = $"箱柜信息行 Cab_Det (第 {detRow} 行)";
@@ -1690,10 +1858,13 @@ namespace ExcelAddInDemo
                             // 判断该行是否为命中的二次元件行
                             if (secCompMap.TryGetValue(currentPhysRow, out var targetComp))
                             {
-                                // M列 (相对列 1): 填入方案单套二次价格 (如 8.1)
+                                // M列 (相对列 7): 填入方案单套二次价格 (如 8.1)
                                 secCompMatrix[r, 7] = targetComp.SecondaryPrice;
-                                // S 列 (相对列 13): 填入方案装配工费小计 (如 1280)
-                                secCompMatrix[r, 13] = targetComp.SecondaryLaborCost;
+                                // S 列 (相对列 13): 填入各元件组单套人工单价 (由单总价修改为单套人工单价)
+                                double laborUnitPrice = targetComp.SecondaryLaborUnitPrice > 0
+                                    ? targetComp.SecondaryLaborUnitPrice
+                                    : targetComp.SecondaryLaborCost;
+                                secCompMatrix[r, 13] = laborUnitPrice;
                                 // AA 列 (相对列 21): 填入方案二次排布图名称 (取自方案 groupName)
                                 secCompMatrix[r, 21] = targetComp.SecondaryLayoutName ?? string.Empty;
                                 // AB 列 (相对列 22): 写死为 "二次组" --硬编码--
@@ -1803,14 +1974,14 @@ namespace ExcelAddInDemo
                         copperMatrix[0, 4] = "KG";
                         // F 列 (索引 5): 数量 (数量公式)
                         copperMatrix[0, 5] = result.CopperQtyFormula;
-                        // G 列 (索引 6): 销售单价
-                        copperMatrix[0, 6] = rules.General.CopperPricePerKg;
+                        // G 列 (索引 6): 销售单价标准联动公式 (表价 M * 报出系数 L * 折扣 N)
+                        copperMatrix[0, 6] = $"=IF(AND(B{targetCopperRow}=\"\",C{targetCopperRow}=\"\"),\"\",ROUND(M{targetCopperRow}*L{targetCopperRow}*N{targetCopperRow},2))";
                         // H 列 (索引 7): 销售总价公式
                         copperMatrix[0, 7] = $"=ROUND(F{targetCopperRow}*G{targetCopperRow},2)";
                         // I 列 (索引 8): 备注
                         copperMatrix[0, 8] = string.Empty;
-                        // J 列 (索引 9): 成本单价
-                        copperMatrix[0, 9] = rules.General.CopperPricePerKg;
+                        // J 列 (索引 9): 成本单价标准联动公式 (表价 M * 折扣 N)
+                        copperMatrix[0, 9] = $"=IF(AND(B{targetCopperRow}=\"\",C{targetCopperRow}=\"\"),\"\",ROUND(M{targetCopperRow}*N{targetCopperRow},2))";
                         // K 列 (索引 10): 成本总价公式
                         copperMatrix[0, 10] = $"=ROUND(F{targetCopperRow}*J{targetCopperRow},2)";
                         // L 列 (索引 11): 加价系数
@@ -1826,15 +1997,12 @@ namespace ExcelAddInDemo
                         // Q 列 (索引 16): 类别
                         copperMatrix[0, 16] = "材料";
 
-                        // 一次性写入目标铜排行
+                        // 一次性写入目标铜排行 (规则 7)
                         copperRowRange.Formula = copperMatrix;
                         result.CopperTargetLocation = $"元器件区域第 {targetCopperRow} 行" + (needInsertRow ? " (自动插入行)" : "");
 
-                        // 4.5 若发生了插入行，必须重新刷新小计行、计费区 A 列序号与单台合计
-                        if (needInsertRow)
-                        {
-                            RefreshCabinetFeeAreaFormulas(ws, detRow, compStartRow, subsumRow, tolsumRow);
-                        }
+                        // 4.5 刷新小计行、计费区 A 列序号、总计行与元器件公式自愈 (规则 8)
+                        RefreshCabinetFeeAreaFormulas(ws, detRow, compStartRow, subsumRow, tolsumRow);
                     }
                 }
 
@@ -2092,8 +2260,8 @@ namespace ExcelAddInDemo
 
             try
             {
-                // 扫描目标箱柜的元器件区域与行号信息
-                var scanData = ScanCabinetData(ws, detName);
+                // 扫描目标箱柜的元器件区域与行号信息并透传规则配置
+                var scanData = ScanCabinetData(ws, detName, rules);
                 if (scanData == null)
                 {
                     // 扫描失败返回明确提示信息
@@ -2231,8 +2399,8 @@ namespace ExcelAddInDemo
                     // 触发进度回调通知
                     onProgress?.Invoke(percent, $"正在推导回写箱柜 [{detName}] ({i + 1}/{totalCount})...");
 
-                    // 关键性能优化：直接传入已知 anchor 实体，彻底杜绝在每个箱柜内部重复全量扫描定义名称！
-                    var scanData = ScanCabinetData(ws, kvp.Key, kvp.Value);
+                    // 关键性能优化：直接传入已知 anchor 实体，并透传当前配置中的 rules
+                    var scanData = ScanCabinetData(ws, kvp.Key, kvp.Value, rules);
                     if (scanData == null) continue;
 
                     // 计算推导结果

@@ -1122,7 +1122,8 @@
                 {{ calcResult.recommendedShellSizeFull || (calcResult.recommendedShellSize ? `${calcResult.recommendedShellSize}*${calcResult.recommendedShellDepth || 200}` : '未推导') }}
               </div>
               <div class="result-card-desc">
-                类型: {{ calcResult.isCabinet ? '落地柜体' : '配电箱体' }} | 推荐深度: {{ calcResult.recommendedShellDepth || 200 }} mm (纯高度驱动)
+                <span v-if="calcResult.isUsingExistingShellSize" style="background: #009688; color: #fff; border-radius: 2px; padding: 1px 4px; font-size: 10px; margin-right: 4px; font-weight: 600">已锁定现有尺寸</span>
+                类型: {{ calcResult.isCabinet ? '落地柜体' : '配电箱体' }} | {{ calcResult.isUsingExistingShellSize ? '现有深度' : '推荐深度' }}: {{ calcResult.recommendedShellDepth || 200 }} mm (纯高度驱动)
               </div>
               <div
                 v-if="calcResult.realDimensionsCount > 0"
@@ -3261,7 +3262,7 @@
                       <span class="param-unit">(先计费区后元件区)</span>
                     </div>
                     <div class="param-row-item">
-                      <span class="param-label">面积平铺工价:</span>
+                      <span class="param-label">壳体人工定额:</span>
                       <el-input-number
                         v-model="rules.laborRules.areaBaseRate"
                         :step="0.05"
@@ -6200,7 +6201,7 @@
             },
             laborRules: {
               laborMatchName: "人工费", // 计费区与元件区匹配关键字 --硬编码--
-              areaBaseRate: 2.95, // 壳体平铺面积工价系数(元/分米²) --硬编码--
+              areaBaseRate: 2.95, // 壳体人工定额(元/分米²) --硬编码--
               reservedCircuitDiscount: 0.4, // 预留回路工价折减系数 --硬编码--
               reservedMaxBreakersThreshold: 3, // 预留回路打折断路器台数上限门限(台) --硬编码--
             },

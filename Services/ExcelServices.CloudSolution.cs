@@ -481,8 +481,8 @@ namespace ExcelAddInDemo
                 compEndRow = subsumRow - 1;
             }
 
-            // 3. 构建内存二维数组，准备一次性写入 (遵循规则 7: 标准 A~H 列)
-            object[,] dataMatrix = new object[reqCount, 8];
+            // 3. 构建内存二维数组，准备一次性写入 (遵循规则 7: 标准 A~Q 列，共 17 列)
+            object[,] dataMatrix = new object[reqCount, 17];
             int loopMultiplier = dto.LoopMultiplier > 0 ? dto.LoopMultiplier : 1;
 
             for (int i = 0; i < reqCount; i++)
@@ -499,15 +499,25 @@ namespace ExcelAddInDemo
                 dataMatrix[i, 3] = item.Brand ?? "";             // D 列: 品牌
                 dataMatrix[i, 4] = item.Unit ?? "只";            // E 列: 计量单位
                 dataMatrix[i, 5] = finalQty;                     // F 列: 数量
-                dataMatrix[i, 6] = price;                        // G 列: 单价
-                dataMatrix[i, 7] = $"=ROUND(F{curRow}*G{curRow},2)"; // H 列: 合价公式
+                // G 列 (单价) 采用模板标准公式联动 (由表价 M * 报出系数 L * 折扣 N 计算)
+                dataMatrix[i, 6] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(M{curRow}*L{curRow}*N{curRow},2))";
+                dataMatrix[i, 7] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(F{curRow}*G{curRow},2))"; // H 列: 销售总价公式
+                dataMatrix[i, 8] = "";                           // I 列: 备注
+                dataMatrix[i, 9] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(M{curRow}*N{curRow},2))"; // J 列: 成本单价公式
+                dataMatrix[i, 10] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(J{curRow}*F{curRow},2))"; // K 列: 成本总价公式
+                dataMatrix[i, 11] = 1;                           // L 列: 报出系数 (默认 1)
+                dataMatrix[i, 12] = price;                       // M 列: 表价 (存入方案报价)
+                dataMatrix[i, 13] = 1.0;                         // N 列: 折扣系数 (默认 1)
+                dataMatrix[i, 14] = "";                          // O 列: 取费系数
+                dataMatrix[i, 15] = "";                          // P 列: 成套费
+                dataMatrix[i, 16] = "元件";                      // Q 列: 类别
             }
 
-            // 4. 将构建完毕的二维数组一次性刷入工作表
-            dynamic writeRange = ws.Range[$"A{compStartRow}:H{compStartRow + reqCount - 1}"];
-            writeRange.Value2 = dataMatrix;
+            // 4. 将构建完毕的二维数组通过 Formula 一次性刷入工作表 A 到 Q 列 (规则 7)
+            dynamic writeRange = ws.Range[$"A{compStartRow}:Q{compStartRow + reqCount - 1}"];
+            writeRange.Formula = dataMatrix;
 
-            // 5. 规则 8: 刷新自愈定义名称
+            // 5. 规则 8: 刷新自愈定义名称与公式
             Tool.FixAndFillCabinetNamesForSheet(ws);
 
             return (true, $"已成功新建箱柜【{cabName}】并写入 {reqCount} 项元器件清单！");
@@ -627,8 +637,8 @@ namespace ExcelAddInDemo
             int writeStartRow = lastUsedRow + 1;
             int writeEndRow = writeStartRow + reqCount - 1;
 
-            // 4. 构建内存二维数据矩阵 (A 到 H 列，共 8 列) (遵循规则 7)
-            object[,] dataMatrix = new object[reqCount, 8];
+            // 4. 构建内存二维数据矩阵 (A 到 Q 列，共 17 列) (遵循规则 7)
+            object[,] dataMatrix = new object[reqCount, 17];
             for (int i = 0; i < reqCount; i++)
             {
                 var item = items[i];
@@ -643,16 +653,26 @@ namespace ExcelAddInDemo
                 dataMatrix[i, 3] = item.Brand ?? "";             // D 列: 生产厂家/品牌
                 dataMatrix[i, 4] = item.Unit ?? "只";            // E 列: 计量单位
                 dataMatrix[i, 5] = finalQty;                     // F 列: 数量
-                dataMatrix[i, 6] = price;                        // G 列: 单价
-                dataMatrix[i, 7] = $"=ROUND(F{curRow}*G{curRow},2)"; // H 列: 合价公式
+                // G 列采用标准公式联动 (表价 M * 报出系数 L * 折扣 N)
+                dataMatrix[i, 6] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(M{curRow}*L{curRow}*N{curRow},2))";
+                dataMatrix[i, 7] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(F{curRow}*G{curRow},2))"; // H 列: 销售总价公式
+                dataMatrix[i, 8] = "";                           // I 列: 备注
+                dataMatrix[i, 9] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(M{curRow}*N{curRow},2))"; // J 列: 成本单价公式
+                dataMatrix[i, 10] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(J{curRow}*F{curRow},2))"; // K 列: 成本总价公式
+                dataMatrix[i, 11] = 1;                           // L 列: 报出系数 (默认 1)
+                dataMatrix[i, 12] = price;                       // M 列: 表价 (存入方案报价)
+                dataMatrix[i, 13] = 1.0;                         // N 列: 折扣系数 (默认 1)
+                dataMatrix[i, 14] = "";                          // O 列: 取费系数
+                dataMatrix[i, 15] = "";                          // P 列: 成套费
+                dataMatrix[i, 16] = "元件";                      // Q 列: 类别
             }
 
-            // 5. 将构建完毕的二维数组一次性刷入工作表 (遵循规则 7 极速内存阵列写入)
-            dynamic writeRange = ws.Range[$"A{writeStartRow}:H{writeEndRow}"];
-            writeRange.Value2 = dataMatrix;
+            // 5. 将构建完毕的二维数组通过 Formula 一次性刷入工作表 A 到 Q 列 (遵循规则 7 极速内存阵列写入)
+            dynamic writeRange = ws.Range[$"A{writeStartRow}:Q{writeEndRow}"];
+            writeRange.Formula = dataMatrix;
 
-            // 6. 规则 8: 插行时 Excel 引擎已自动对齐引用，未插行时 0ms 瞬间完成
-            // 绝不触发全量重写与全表扫描，实现极速写入
+            // 6. 规则 8: 刷新当前箱柜的公式联动与自愈 (元器件起始行规则 6: detRow + 2)
+            RefreshCabinetFeeAreaFormulas(ws, detRow, detRow + 2, subsumRow, anc.Tolsum != null ? Convert.ToInt32(anc.Tolsum.Row) : (subsumRow + 5));
 
 
             return (true, $"已成功在箱柜【{targetCabName}】中写入 {reqCount} 项元器件清单！");

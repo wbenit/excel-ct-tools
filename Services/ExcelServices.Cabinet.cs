@@ -1799,7 +1799,7 @@ namespace ExcelAddInDemo
 
             try
             {
-                // 1. 刷新元器件区域 (compStartRow 至 subsumRow - 1) 的 A 列动态自适应序号公式
+                // 1. 刷新元器件区域 (compStartRow 至 subsumRow - 1) 的 A 列动态自适应序号公式及 G/H/J/K 列联动计算公式
                 int compEndRow = subsumRow - 1;
                 // 明细表头行号即 detRow + 1 (例如 det 为 296 时，表头为 297)
                 int headerRow = detRow + 1;
@@ -1807,17 +1807,99 @@ namespace ExcelAddInDemo
                 {
                     // 计算元器件区域总行数
                     int compRowCount = compEndRow - compStartRow + 1;
-                    // 规则 7: 内存构建单列二维矩阵一次性批量写回
-                    object[,] compSeqMatrix = new object[compRowCount, 1];
-                    // 构造自适应序号公式 =ROW()-ROW(A${headerRow}) --硬编码: 序号公式模板--
-                    string compSeqFormula = $"=ROW()-ROW(A${headerRow})";
+                    // 获取元器件区域 A 到 Q 列 (覆盖 17 列标准明细字段)
+                    dynamic compRange = sheet.Range[$"A{compStartRow}:Q{compEndRow}"];
+                    // 规则 7: 内存 2D 数组一次性读取既有公式与既有数值
+                    object[,]? rawFormulas = null;
+                    try { rawFormulas = compRange.Formula as object[,]; } catch { }
+                    object[,]? rawValues = null;
+                    try { rawValues = compRange.Value2 as object[,]; } catch { }
+
+                    // 构建待批量回写的公式矩阵 (行数 compRowCount, 列数 17)
+                    object[,] compMatrix = new object[compRowCount, 17];
+
+                    // 遍历元器件区域的每一行
                     for (int c = 0; c < compRowCount; c++)
                     {
-                        // 为区间内每一行填充自适应公式
-                        compSeqMatrix[c, 0] = compSeqFormula;
+                        // 计算当前元器件在工作表中的实际物理行号
+                        int physRow = compStartRow + c;
+                        // 数组当前行的 1-based 索引
+                        int rIdx = c + 1;
+
+                        // A 列 (索引 0): 始终赋予标准自适应序号公式 =ROW()-ROW(A${headerRow}) --硬编码: 序号公式模板--
+                        compMatrix[c, 0] = $"=ROW()-ROW(A${headerRow})";
+
+                        // 先复制其他所有 16 列的原始公式或原始值，确保非公式字段完全原样保留
+                        for (int col = 2; col <= 17; col++)
+                        {
+                            object? cellF = rawFormulas != null && rIdx <= rawFormulas.GetLength(0) && col <= rawFormulas.GetLength(1) ? rawFormulas[rIdx, col] : null;
+                            object? cellV = rawValues != null && rIdx <= rawValues.GetLength(0) && col <= rawValues.GetLength(1) ? rawValues[rIdx, col] : null;
+                            // 优先保留已有公式，若无公式则保留已有数值
+                            compMatrix[c, col - 1] = (cellF != null && Convert.ToString(cellF)?.Trim()?.StartsWith("=") == true) ? cellF : cellV;
+                        }
+
+                        // 提取当前行 B 列元件名称与 C 列规格型号 (用于判空)
+                        string bName = Convert.ToString(compMatrix[c, 1])?.Trim() ?? "";
+                        string cModel = Convert.ToString(compMatrix[c, 2])?.Trim() ?? "";
+                        // 提取当前行 G 列既有单价公式与数值
+                        string gFormula = Convert.ToString(compMatrix[c, 6])?.Trim() ?? "";
+
+                        // G 列 (索引 6): 校验单价公式是否缺失 (非以 = 开头)
+                        if (!gFormula.StartsWith("="))
+                        {
+                            // 若 G 列存有静态单价数值，且 M 列表价 (索引 12) 为空，则自动将静态单价平移沉淀至 M 列表价
+                            string mVal = Convert.ToString(compMatrix[c, 12])?.Trim() ?? "";
+                            if (!string.IsNullOrWhiteSpace(gFormula) && string.IsNullOrWhiteSpace(mVal))
+                            {
+                                // 平移保存单价值至 M 列表价
+                                compMatrix[c, 12] = gFormula;
+                            }
+
+                            // 补齐 L 列 (报出系数，索引 11) 默认值或公式
+                            string lVal = Convert.ToString(compMatrix[c, 11])?.Trim() ?? "";
+                            if (string.IsNullOrWhiteSpace(lVal))
+                            {
+                                compMatrix[c, 11] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",1)";
+                            }
+
+                            // 补齐 N 列 (折扣系数，索引 13) 默认值或公式
+                            string nVal = Convert.ToString(compMatrix[c, 13])?.Trim() ?? "";
+                            if (string.IsNullOrWhiteSpace(nVal))
+                            {
+                                compMatrix[c, 13] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",1)";
+                            }
+
+                            // 将 G 列强力恢复为模板标准动态联动单价公式 (由 M*L*N 组装) --硬编码: 单价标准公式--
+                            compMatrix[c, 6] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",ROUND(M{physRow}*L{physRow}*N{physRow},2))";
+                        }
+
+                        // H 列 (索引 7): 销售总价公式自愈 =ROUND(F*G, 2)
+                        string hFormula = Convert.ToString(compMatrix[c, 7])?.Trim() ?? "";
+                        if (!hFormula.StartsWith("="))
+                        {
+                            // 恢复标准销售总价联动公式
+                            compMatrix[c, 7] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",ROUND(F{physRow}*G{physRow},2))";
+                        }
+
+                        // J 列 (索引 9): 成本单价公式自愈 =ROUND(M*N, 2)
+                        string jFormula = Convert.ToString(compMatrix[c, 9])?.Trim() ?? "";
+                        if (!jFormula.StartsWith("="))
+                        {
+                            // 恢复标准成本单价联动公式
+                            compMatrix[c, 9] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",ROUND(M{physRow}*N{physRow},2))";
+                        }
+
+                        // K 列 (索引 10): 成本总价公式自愈 =ROUND(J*F, 2)
+                        string kFormula = Convert.ToString(compMatrix[c, 10])?.Trim() ?? "";
+                        if (!kFormula.StartsWith("="))
+                        {
+                            // 恢复标准成本总价联动公式
+                            compMatrix[c, 10] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",ROUND(J{physRow}*F{physRow},2))";
+                        }
                     }
-                    // 一次性批量写回元器件区域 A 列
-                    sheet.Range[$"A{compStartRow}:A{compEndRow}"].Formula = compSeqMatrix;
+
+                    // 规则 7: 内存 2D 公式矩阵单次 COM 批量写回 A~Q 列，毫秒级实现全区域公式自愈
+                    compRange.Formula = compMatrix;
                 }
 
                 // 2. 刷新小计行求和公式 (精准定位真正包含“小计”文本的行，严格保护前置辅材/箱体行公式)

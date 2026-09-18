@@ -595,6 +595,10 @@ namespace ExcelAddInDemo
 
                     // 箱柜处理完成计数递增
                     result.ProcessedCabinets++;
+
+                    // 触发该箱柜元器件自愈与计费联动公式刷新，确保单价等核心公式不丢失 (规则 8)
+                    int tolsumRow = anchor.Tolsum != null ? Convert.ToInt32(anchor.Tolsum.Row) : (subsumRow + 5);
+                    RefreshCabinetFeeAreaFormulas(sheet, detRow, compStartRow, subsumRow, tolsumRow);
                 }
 
                 // 5. 规则 8: 仅当实际产生过物理插行时，才需要执行定义名称自愈刷新；若纯复用空行则 0ms 瞬间跳过！

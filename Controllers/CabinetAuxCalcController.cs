@@ -202,7 +202,8 @@ namespace ExcelAddInDemo.Controllers
                 Worksheet ws = wb.Worksheets[sheetName] as Worksheet;
                 if (ws == null) return null;
 
-                var scanData = ExcelServices.ScanCabinetData(ws, detName);
+                // 扫描箱柜数据并透传前端传入的最新计算规则 rules
+                var scanData = ExcelServices.ScanCabinetData(ws, detName, rules);
                 if (scanData == null) return null;
 
                 var result = ExcelServices.CalculateCabinetAuxAndShell(scanData, rules);

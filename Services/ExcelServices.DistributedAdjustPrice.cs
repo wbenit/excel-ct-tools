@@ -1114,6 +1114,10 @@ namespace ExcelAddInDemo
             public string Manufacturer { get; set; } = string.Empty;
             // 单价
             public decimal UnitPrice { get; set; } = 0;
+            // 表价/面价 (对应分布表 E 列)
+            public decimal ListPrice { get; set; } = 0;
+            // 折扣系数 (对应分布表 F 列)
+            public decimal Discount { get; set; } = 1.0m;
             // 该箱柜在分布表中配置的单台数量
             public decimal Quantity { get; set; } = 0;
             // 是否在分布表单元格中具体填写了有效数量
@@ -1278,6 +1282,9 @@ namespace ExcelAddInDemo
                     // E 列: 表价 (第 5 列)
                     decimal listPrice = 0;
                     decimal.TryParse(Convert.ToString(distrMatrix[r, 5]), out listPrice);
+                    // F 列: 折扣 (第 6 列)
+                    decimal discount = 1.0m;
+                    if (decimal.TryParse(Convert.ToString(distrMatrix[r, 6]), out decimal dc) && dc > 0) discount = dc;
                     // G 列: 报出单价 (第 7 列，核心调价输入列)
                     decimal unitPrice = 0;
                     decimal.TryParse(Convert.ToString(distrMatrix[r, 7]), out unitPrice);
@@ -1299,6 +1306,7 @@ namespace ExcelAddInDemo
                         Manufacturer = mfg,
                         UnitPrice = unitPrice,
                         ListPrice = listPrice,
+                        Discount = discount,
                         Remark = remark
                     });
 
@@ -1331,6 +1339,8 @@ namespace ExcelAddInDemo
                             Unit = string.IsNullOrWhiteSpace(unit) ? "个" : unit,
                             Manufacturer = mfg,
                             UnitPrice = unitPrice,
+                            ListPrice = listPrice,
+                            Discount = discount,
                             Quantity = parsedQty,
                             HasQuantitySpecified = hasQty, // 若单元格为空则为 false，为 0 则为 true 且值为 0
                             SortId = sortId
@@ -1489,9 +1499,9 @@ namespace ExcelAddInDemo
                         int cabRowsCount = compEndRow - compStartRow + 1;
                         // 一次性读取该箱柜的全部 30 列区域 (覆盖 A 列至 AD 列 CAD 句柄，规则 7)
                         dynamic compRange = sheet.Range[$"A{compStartRow}:AD{compEndRow}"];
-                        object[,] compMatrix = (object[,])compRange.Value2;
+                        object[,] compMatrix = (object[,])compRange.Formula;
                         // 克隆修改前的完整 30 列公式矩阵，作为撤销时的底层快照 (包含原序号、原单价公式、原合价公式等)
-                        object[,] origFormulaMatrix = (object[,])((object[,])compRange.Formula).Clone();
+                        object[,] origFormulaMatrix = (object[,])compMatrix.Clone();
                         // 记录更新前的关键行号
                         int origCompEndRow = compEndRow;
                         int origSubsumRow = subsumRow;
@@ -1659,6 +1669,9 @@ namespace ExcelAddInDemo
                                 }
                                 else
                                 {
+                                    // 当前元器件对应的工作表实际物理行号
+                                    int physRow = compStartRow + r - 1;
+
                                     // 回写新规格型号 (若修改了)
                                     if (!string.IsNullOrWhiteSpace(matchedExpected.Model))
                                     {
@@ -1671,9 +1684,6 @@ namespace ExcelAddInDemo
                                         compMatrix[r, 4] = matchedExpected.Manufacturer;
                                     }
 
-                                    // 回写新单价 (取 G 列报出单价)
-                                    compMatrix[r, 7] = matchedExpected.UnitPrice;
-
                                     // 数量更新策略：
                                     // 若允许合并 (shouldMergeSameBom)，主行采用分布表中聚合总数量；
                                     // 若用户勾选了“不合并相同元件”，则保持当前行原有的数量不变，仅调价。
@@ -1683,11 +1693,22 @@ namespace ExcelAddInDemo
                                         compMatrix[r, 6] = matchedExpected.Quantity;
                                     }
 
-                                    // 提取当前最终数量以重新计算合价
-                                    decimal currentQty = 0;
-                                    decimal.TryParse(Convert.ToString(compMatrix[r, 6]), out currentQty);
-                                    // 重新计算合价 (合价 = 数量 * 单价)
-                                    compMatrix[r, 8] = Math.Round(currentQty * matchedExpected.UnitPrice, 2);
+                                    // 核心调价公式回写：将单价沉淀至 M 列表价 (索引 13)，折扣写入 N 列 (索引 14)
+                                    decimal listPrice = matchedExpected.ListPrice > 0 ? matchedExpected.ListPrice : matchedExpected.UnitPrice;
+                                    if (listPrice > 0) compMatrix[r, 13] = (double)listPrice;
+                                    if (matchedExpected.Discount > 0) compMatrix[r, 14] = (double)matchedExpected.Discount;
+                                    // 补齐 L 列 (报出系数，索引 12) 默认值
+                                    string lVal = Convert.ToString(compMatrix[r, 12])?.Trim() ?? "";
+                                    if (string.IsNullOrWhiteSpace(lVal) || lVal == "0") compMatrix[r, 12] = 1;
+
+                                    // G 列 (索引 7): 保持并恢复标准联动单价公式 =ROUND(M*L*N, 2)
+                                    compMatrix[r, 7] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",ROUND(M{physRow}*L{physRow}*N{physRow},2))";
+                                    // H 列 (索引 8): 保持标准销售总价联动公式 =ROUND(F*G, 2)
+                                    compMatrix[r, 8] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",ROUND(F{physRow}*G{physRow},2))";
+                                    // J 列 (索引 10): 保持标准成本单价联动公式 =ROUND(M*N, 2)
+                                    compMatrix[r, 10] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",ROUND(M{physRow}*N{physRow},2))";
+                                    // K 列 (索引 11): 保持标准成本总价联动公式 =ROUND(J*F, 2)
+                                    compMatrix[r, 11] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",ROUND(J{physRow}*F{physRow},2))";
 
                                     cabModified = true;
                                     updatedCompCount++;
@@ -1695,23 +1716,31 @@ namespace ExcelAddInDemo
                             }
                             else if (matchedGlobal != null)
                             {
+                                int physRow = compStartRow + r - 1;
                                 // 仅更新单价、型号、厂家，保持数量不变
                                 if (!string.IsNullOrWhiteSpace(matchedGlobal.Model)) compMatrix[r, 3] = matchedGlobal.Model;
                                 if (!string.IsNullOrWhiteSpace(matchedGlobal.Manufacturer)) compMatrix[r, 4] = matchedGlobal.Manufacturer;
-                                compMatrix[r, 7] = matchedGlobal.UnitPrice;
 
-                                // 计算并刷新合价
-                                decimal qty = 0;
-                                decimal.TryParse(Convert.ToString(compMatrix[r, 6]), out qty);
-                                compMatrix[r, 8] = Math.Round(qty * matchedGlobal.UnitPrice, 2);
+                                // 核心调价公式回写：表价写入 M 列，折扣写入 N 列
+                                decimal listPrice = matchedGlobal.ListPrice > 0 ? matchedGlobal.ListPrice : matchedGlobal.UnitPrice;
+                                if (listPrice > 0) compMatrix[r, 13] = (double)listPrice;
+                                if (matchedGlobal.Discount > 0) compMatrix[r, 14] = (double)matchedGlobal.Discount;
+                                string lVal = Convert.ToString(compMatrix[r, 12])?.Trim() ?? "";
+                                if (string.IsNullOrWhiteSpace(lVal) || lVal == "0") compMatrix[r, 12] = 1;
+
+                                // G 列与关联公式联动赋值
+                                compMatrix[r, 7] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",ROUND(M{physRow}*L{physRow}*N{physRow},2))";
+                                compMatrix[r, 8] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",ROUND(F{physRow}*G{physRow},2))";
+                                compMatrix[r, 10] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",ROUND(M{physRow}*N{physRow},2))";
+                                compMatrix[r, 11] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",ROUND(J{physRow}*F{physRow},2))";
 
                                 cabModified = true;
                                 updatedCompCount++;
                             }
                         }
 
-                        // 将已有行的修改先一次性写回当前 30 列区域 (规则 7)
-                        compRange.Value2 = compMatrix;
+                        // 将已有行的修改通过 Formula 一次性批量写回当前 30 列区域，确保公式 100% 存续 (规则 7)
+                        compRange.Formula = compMatrix;
 
                         // 2. 🌟 核心处理：对于分布表中针对该箱柜有数量 (> 0) 但未在阶段 1 被消费认领的“真正新增器件”
                         if (expectedCompItems != null)
@@ -1770,8 +1799,17 @@ namespace ExcelAddInDemo
                                         sheet.Cells[targetRow, 4].Value = newItem.Manufacturer;
                                         sheet.Cells[targetRow, 5].Value = newItem.Unit;
                                         sheet.Cells[targetRow, 6].Value = newItem.Quantity;
-                                        sheet.Cells[targetRow, 7].Value = newItem.UnitPrice;
-                                        sheet.Cells[targetRow, 8].Formula = $"=ROUND(F{targetRow}*G{targetRow}, 2)";
+                                        // 表价(M列)、报出系数(L列)、折扣系数(N列)规范沉淀
+                                        decimal itemLp = newItem.ListPrice > 0 ? newItem.ListPrice : newItem.UnitPrice;
+                                        sheet.Cells[targetRow, 13].Value = (double)itemLp;
+                                        sheet.Cells[targetRow, 12].Value = 1;
+                                        sheet.Cells[targetRow, 14].Value = (double)(newItem.Discount > 0 ? newItem.Discount : 1.0m);
+                                        // G/H/J/K 列标准联动公式
+                                        sheet.Cells[targetRow, 7].Formula = $"=IF(AND(B{targetRow}=\"\",C{targetRow}=\"\"),\"\",ROUND(M{targetRow}*L{targetRow}*N{targetRow},2))";
+                                        sheet.Cells[targetRow, 8].Formula = $"=IF(AND(B{targetRow}=\"\",C{targetRow}=\"\"),\"\",ROUND(F{targetRow}*G{targetRow},2))";
+                                        sheet.Cells[targetRow, 10].Formula = $"=IF(AND(B{targetRow}=\"\",C{targetRow}=\"\"),\"\",ROUND(M{targetRow}*N{targetRow},2))";
+                                        sheet.Cells[targetRow, 11].Formula = $"=IF(AND(B{targetRow}=\"\",C{targetRow}=\"\"),\"\",ROUND(J{targetRow}*F{targetRow},2))";
+                                        sheet.Cells[targetRow, 17].Value = "元件";
 
                                         cabModified = true;
                                         updatedCompCount++;
@@ -1791,9 +1829,9 @@ namespace ExcelAddInDemo
                                 // 只有当行数大于 1 时才有排版必要 (第一行主开关保持不动，仅对从第 2 行起的元件整理)
                                 if (currentCompRows > 1)
                                 {
-                                    // 一次性读取整整 30 列数据矩阵 (从 A 列至 AD 列 CAD 句柄，规则 7)
+                                    // 一次性读取整整 30 列公式矩阵 (从 A 列至 AD 列 CAD 句柄，规则 7)
                                     dynamic fullCompRange = sheet.Range[$"A{compStartRow}:AD{compEndRow}"];
-                                    object[,] fullMatrix = (object[,])fullCompRange.Value2;
+                                    object[,] fullMatrix = (object[,])fullCompRange.Formula;
 
                                     // 收集从第 2 行起的有效元器件 (第 1 行主器件保留原位，不参与排序)
                                     var validTailRows = new List<(double sortId, object[] rowCells)>();
@@ -1863,36 +1901,51 @@ namespace ExcelAddInDemo
                                         }
                                     }
 
-                                    // 一次性批量写回 30 列大矩阵 (规则 7)
-                                    fullCompRange.Value2 = reorderedMatrix;
+                                    // 一次性批量写回 30 列大公式矩阵，防止单元格公式被降级 (规则 7)
+                                    fullCompRange.Formula = reorderedMatrix;
 
-                                    // 3. 统一批量重新灌入自适应动态序号公式与合价公式 (范围批量赋值，消除数十次 COM 细碎往返)
+                                    // 3. 统一批量重新灌入与校准自适应动态序号、单价公式与合价公式 (范围批量赋值，消除数十次 COM 细碎往返)
                                     object[,] formulasColA = new object[currentCompRows, 1];
+                                    object[,] formulasColG = new object[currentCompRows, 1];
                                     object[,] formulasColH = new object[currentCompRows, 1];
+                                    object[,] formulasColJ = new object[currentCompRows, 1];
+                                    object[,] formulasColK = new object[currentCompRows, 1];
 
-                                    // 刷新第 1 行序号与合价公式
+                                    // 刷新第 1 行序号、单价与合价联动公式
                                     formulasColA[0, 0] = $"=ROW()-ROW(A${headerRow})";
-                                    formulasColH[0, 0] = $"=ROUND(F{compStartRow}*G{compStartRow}, 2)";
+                                    formulasColG[0, 0] = $"=IF(AND(B{compStartRow}=\"\",C{compStartRow}=\"\"),\"\",ROUND(M{compStartRow}*L{compStartRow}*N{compStartRow},2))";
+                                    formulasColH[0, 0] = $"=IF(AND(B{compStartRow}=\"\",C{compStartRow}=\"\"),\"\",ROUND(F{compStartRow}*G{compStartRow}, 2))";
+                                    formulasColJ[0, 0] = $"=IF(AND(B{compStartRow}=\"\",C{compStartRow}=\"\"),\"\",ROUND(M{compStartRow}*N{compStartRow},2))";
+                                    formulasColK[0, 0] = $"=IF(AND(B{compStartRow}=\"\",C{compStartRow}=\"\"),\"\",ROUND(J{compStartRow}*F{compStartRow},2))";
 
-                                    // 刷新第 2 行起有效元器件行的序号与合价公式
+                                    // 刷新第 2 行起有效元器件行的序号与各项核心公式
                                     for (int i = 0; i < sortedTailRows.Count; i++)
                                     {
                                         int relIdx = 1 + i;
                                         int realR = compStartRow + relIdx;
                                         formulasColA[relIdx, 0] = $"=ROW()-ROW(A${headerRow})";
-                                        formulasColH[relIdx, 0] = $"=ROUND(F{realR}*G{realR}, 2)";
+                                        formulasColG[relIdx, 0] = $"=IF(AND(B{realR}=\"\",C{realR}=\"\"),\"\",ROUND(M{realR}*L{realR}*N{realR},2))";
+                                        formulasColH[relIdx, 0] = $"=IF(AND(B{realR}=\"\",C{realR}=\"\"),\"\",ROUND(F{realR}*G{realR}, 2))";
+                                        formulasColJ[relIdx, 0] = $"=IF(AND(B{realR}=\"\",C{realR}=\"\"),\"\",ROUND(M{realR}*N{realR},2))";
+                                        formulasColK[relIdx, 0] = $"=IF(AND(B{realR}=\"\",C{realR}=\"\"),\"\",ROUND(J{realR}*F{realR},2))";
                                     }
 
                                     // 清空多余沉底空行的公式，保持表格纯净
                                     for (int relIdx = 1 + sortedTailRows.Count; relIdx < currentCompRows; relIdx++)
                                     {
                                         formulasColA[relIdx, 0] = "";
+                                        formulasColG[relIdx, 0] = "";
                                         formulasColH[relIdx, 0] = "";
+                                        formulasColJ[relIdx, 0] = "";
+                                        formulasColK[relIdx, 0] = "";
                                     }
 
-                                    // 一次性范围批量写入 A 列序号公式与 H 列合价公式 (规则 7)
+                                    // 一次性范围批量写入 A 列序号公式、G 列单价公式、H 列合价公式、J 列成本单价公式与 K 列成本总价公式 (规则 7)
                                     sheet.Range[$"A{compStartRow}:A{compEndRow}"].Formula = formulasColA;
+                                    sheet.Range[$"G{compStartRow}:G{compEndRow}"].Formula = formulasColG;
                                     sheet.Range[$"H{compStartRow}:H{compEndRow}"].Formula = formulasColH;
+                                    sheet.Range[$"J{compStartRow}:J{compEndRow}"].Formula = formulasColJ;
+                                    sheet.Range[$"K{compStartRow}:K{compEndRow}"].Formula = formulasColK;
                                 }
                             }
                             catch (Exception ex)
@@ -1905,13 +1958,13 @@ namespace ExcelAddInDemo
                         // 若该箱柜有元器件发生更新或新增，重新联动刷新公式 (规则 6 & 8)
                         if (cabModified)
                         {
-                            // 重新刷新小计行求和公式 (规则 6: Cab_Subsum_k)
-                            sheet.Cells[subsumRow, 8].Formula = $"=SUM(H{compStartRow}:H{compEndRow})";
+                            int tolsumRow = anchor.Tolsum != null ? Convert.ToInt32(anchor.Tolsum.Row) : (subsumRow + 5);
+                            // 触发自愈与计费联动公式刷新 (规则 8)
+                            RefreshCabinetFeeAreaFormulas(sheet, detRow, compStartRow, subsumRow, tolsumRow);
 
                             // 重新联动总计行公式 (规则 6: Cab_Tolsum_k)
                             if (anchor.Tolsum != null)
                             {
-                                int tolsumRow = Convert.ToInt32(anchor.Tolsum.Row);
                                 // 若总计行物理位置大于小计行，联动求和
                                 if (tolsumRow > subsumRow)
                                 {

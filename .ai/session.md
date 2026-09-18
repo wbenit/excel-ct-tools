@@ -1,6 +1,24 @@
 # Session State
 
-- **【落地交付】云方案中心二次回路方案排布图绑定全面统一重构为数据库 `group_name` 纯净闭环 (`SecondaryCircuitModels.cs`, `CloudSolutionModels.cs`, `CloudSolutionController.cs`, `cloud_solution.html`)**：
+- **【落地交付】智能辅材与壳体计算中心箱体现有尺寸锁定与 S 列人工单价规范化全链路闭环交付 (`CabinetAuxCalcModels.cs`, `ExcelServices.CabinetAuxCalc.cs`, `cabinet_aux_calc.html`)**：
+  1. **确立“壳体人工定额”参数体系**：
+     - 在 C# 后端模型 `LaborConfig` 与前端规则配置面板中，将原“面积平铺工价”规范确立为“壳体人工定额”（单位：元/分米²，默认值 `2.95`）；
+  2. **智能探测与锁定箱体既有外形尺寸（跳过重新推导尺寸）**：
+     - 在 `ExcelServices.CabinetAuxCalc.cs` 中实现 `TryParseShellDimensions` 高效正则尺寸解析器，原生支持 `1000*2200*1000`、`XM-800*600*200`、`1000*2200`、`1000×2200` 等多种工程表达格式；
+     - **精确匹配不盲猜**：彻底消除对“箱体/柜体/壳体”的枚举盲猜，严格按照配置中确立的 `shellMatchName`（默认“箱体”）在计费区 B 列执行精确同名匹配；
+     - **优先级扫描**：优先扫描计费区域中名称匹配 `shellMatchName` 的行，提取 C 列；若无则兜底扫描 `Cab_Det` 信息行；
+     - **锁定现有尺寸**：若 C 列已有有效尺寸，立即锁定 `shellWidth`、`shellHeight` 和 `shellDepth`，坚决不重新执行推荐尺寸推导；基于该既有尺寸联动核算钣金单价、走线辅材及母排分支铜排（TMY）重量；
+  3. **箱体所在行 S 列回写动态人工算式**：
+     - 生成箱体人工动态算式：`=ROUND(长度*宽度*2.95/10000, 1)`（例如 `=ROUND(1000*2200*2.95/10000, 1)`）；
+     - 扩展计费区域二维矩阵读取范围为 `A..S`（19 列），箱体命中计费区时直接在第 19 列（S 列）写入该算式；若箱体回退至 `Cab_Det` 信息行，同样精准回填至 `S{detRow}`；保护原有 C 列规格型号不被覆盖；
+  4. **二次元件组 S 列由“单总价”调整为“各元件组单套人工单价”**：
+     - 纠正原先 S 列写入 `circuitLaborCost = LaborCost * qty` 的逻辑，直接回填方案自身的单套工价 `matchedScheme.LaborCost`（单价化），与 F 列数量相配合，与 `=ROUND(SUMPRODUCT(F:S), 2)` 形成完整数学与工程闭环；
+     - 计费区“人工费”行维持原样不作变动；
+  5. **多端静态资源同步与工程构建验证**：
+     - 前端页面添加 `[已锁定现有尺寸]` 状态标识；多端同步覆盖至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 执行 `dotnet build ExcelAddInDemo.csproj -t:Compile /p:DebugType=none` 构建成功：**0 错误**。
+
+
   1. **彻底根除保存覆盖与回显错乱根本原因**：
      - 原 `cloud_solution.html` 的 `saveSecondarySchemeForm` 中，错将 `payload.groupName` 赋值为目录名 `folderName`（如“风机”），而将用户输入的排布图放到了非法的 `payload.layoutDwgName` 字段中；
      - 导致数据库中方案所属组 `group_name` 反复被目录名覆盖，而排布图被后端丢弃；
@@ -3207,19 +3225,39 @@
 
 ## [Completed]
 
-- [已验证] `Forms/DistributedAdjustPriceForm.cs` 线程模型已修复为 STA 同步调用。
-- [已验证] `Services/ExcelServices.DistributedAdjustPrice.cs` 表头增加所属分类工作表（行 13），D 列重构为 SUMPRODUCT 动态加权求和公式。
-- [已验证] `Services/ExcelServices.DistributedAdjustPrice.cs` 支持修改横向箱柜单台数量并反向回写（改成 0 设为 0 保留行；原本没有的器件自动插入新行并填入型号、厂家、数量和单价）。
-- [已验证] 级联刷新各箱柜小计行、总计行求和公式，并触发规则 8 定义名称自愈。
-- [已验证] 前端 UI 资源与模板已同步更新。
-- [已验证] 代码编译通过，0 错误。
+- **彻底修复元器件明细行单价公式丢失问题并建立全局自愈机制 (`Services/ExcelServices.Cabinet.cs`, `Services/ExcelServices.DistributedAdjustPrice.cs`, `Services/ExcelServices.CloudSolution.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Services/ExcelServices.ComponentGroup.cs`)**：
+  1. **全局核心公式自愈与保护升级 (`RefreshCabinetFeeAreaFormulas`)**：
+     - 扩展 `RefreshCabinetFeeAreaFormulas`，对元器件区域 A~Q 列采用 2D 内存矩阵（规则 7）批量进行公式自愈；
+     - 自动检测 G 列（单价）、H 列（销售总价）、J 列（成本单价）、K 列（成本总价）公式完整性；
+     - 若 G 列公式缺失但存有静态数值，自动将单价值安全平移至 M 列表价，L 列与 N 列补齐默认 1，并将 G 列恢复为模板标准联动公式 `=IF(AND(B{r}="",C{r}=""),"",ROUND(M{r}*L{r}*N{r},2))`，彻底解决公式被冲死的问题；
+  2. **分布调价反向回写全流程修复 (`UpdateFromComponentDistributionSheet`)**：
+     - 补充 `CabinetUpdateComponentItem` 与数据读取的 `ListPrice` 与 `Discount` 字段；
+     - 阶段 1（已有器件）：调价结果规范沉淀至 M 列表价与 N 列折扣，G/H/J/K 列确保为公式联动，改用 `compRange.Formula = compMatrix;` 批量写回；
+     - 阶段 2（新增器件）：单价写入 M 列，折扣写入 N 列，报出系数 L 设为 1，G/H/J/K 规范灌入标准联动公式；
+     - 阶段 3（紧凑排版与重排序）：改用 `Formula` 模式读写，重排后批量灌入 A 列序号、G 列单价公式、H 列合价公式、J 列成本单价公式与 K 列成本总价公式，箱柜结束前调用 `RefreshCabinetFeeAreaFormulas` 自愈刷新；
+  3. **云方案与铜排计算写入规范**：
+     - 云方案新建与追加元器件升级为标准 17 列矩阵，单价写入 M 列，G 列保持标准公式；
+     - 铜排明细行写入标准 `=ROUND(M*L*N, 2)` 公式，并触发自愈刷新；
+     - 二次元件组生成后调用公式自愈刷新；
+  4. **编译构建校验**：
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
+
+## [Completed]
+
+- [已验证] `Services/ExcelServices.Cabinet.cs` 全局公式自愈与保护层升级落地。
+- [已验证] `Services/ExcelServices.DistributedAdjustPrice.cs` 分布调价回写 3 阶段全面支持公式联动与 Formula 写回。
+- [已验证] `Services/ExcelServices.CloudSolution.cs` 云方案元器件写入 17 列联动公式。
+- [已验证] `Services/ExcelServices.CabinetAuxCalc.cs` 铜排明细单价改为公式联动。
+- [已验证] `Services/ExcelServices.ComponentGroup.cs` 二次元件组生成后触发公式自愈。
+- [已验证] 项目编译通过，0 错误。
 
 ## [In-Progress]
 
-- 提示用户重启 Excel 以使最新插件与功能生效。
+- 提示用户重新加载/重启 Excel 插件以生效最新改动。
 
 ## [Next]
 
-- 验证用户在【材料分布表】中调整单价、型号、厂家以及横向箱柜数量，点击【一键更新到明细】后各箱柜数据与新增行的回写情况。
+- 在 Excel 中验证分布调价调价、云方案导入及公式刷新后，元器件明细行 G 列公式 `=IF(AND(B{r}="",C{r}=""),"",ROUND(M{r}*L{r}*N{r},2))` 的实时联动效果。
+
 
 
