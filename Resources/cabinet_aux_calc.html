@@ -7,15 +7,16 @@
 
     <!-- 引入本地基础样式库 -->
     <link rel="stylesheet" href="theme.css" />
-    <!-- 引入 Element Plus 样式库 -->
+    <!-- 引入 Element Plus 样式库 (优先阿里国内高速镜像，失败自动回退 unpkg) -->
     <link
       rel="stylesheet"
-      href="https://unpkg.com/element-plus@2.4.4/dist/index.css"
+      href="https://registry.npmmirror.com/element-plus/2.4.4/files/dist/index.css"
+      onerror="this.onerror=null;this.href='https://unpkg.com/element-plus@2.4.4/dist/index.css'"
     />
 
-    <!-- 引入 Vue 3 与 Element Plus 核心脚本 -->
-    <script src="https://unpkg.com/vue@3.3.11/dist/vue.global.prod.js"></script>
-    <script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.min.js"></script>
+    <!-- 引入 Vue 3 与 Element Plus 核心脚本 (优先阿里国内高速镜像，失败自动回退 unpkg) -->
+    <script src="https://registry.npmmirror.com/vue/3.3.4/files/dist/vue.global.prod.js" onerror="this.onerror=null;this.src='https://unpkg.com/vue@3.3.4/dist/vue.global.prod.js'"></script>
+    <script src="https://registry.npmmirror.com/element-plus/2.4.4/files/dist/index.full.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/element-plus@2.4.4/dist/index.full.min.js'"></script>
 
     <!-- 引入专业纯前端 CAD 矢量渲染器核心资源 (支持 DWG WebGL 真实矢量解析) -->
     <link rel="stylesheet" href="cad-viewer/style.css" />
@@ -6981,25 +6982,55 @@
             }
           };
 
+          // 箱柜推导分析防抖计时器句柄
+          let analyzeDebounceTimer = null;
+
+          // 自动触发推导分析入口
           const triggerAutoAnalyze = () => {
+            // 当工作表与箱柜有效时触发分析
             if (selectedSheet.value && selectedCabinetDet.value) {
-              onAnalyze();
+              // 自动分析允许短延迟防抖
+              onAnalyze(false);
             }
           };
 
-          const onAnalyze = () => {
+          // 执行箱柜智能推导分析 (带 300ms 防抖，彻底消除连续点击步进器高频轰炸后端 COM 导致界面卡死)
+          const onAnalyze = (immediate = false) => {
+            // 校验选择的合法性
             if (!selectedSheet.value || !selectedCabinetDet.value) {
-              ElementPlus.ElMessage.warning("请先选择有效的工作表和箱柜");
+              // 未选择时不执行分析
               return;
             }
-            isAnalyzing.value = true;
-            if (window.chrome && window.chrome.webview) {
-              window.chrome.webview.postMessage({
-                action: "analyzeCabinet",
-                sheetName: selectedSheet.value,
-                detName: selectedCabinetDet.value,
-                rules: rules,
-              });
+
+            // 若存在正在排队的防抖任务则清除
+            if (analyzeDebounceTimer) {
+              // 清除旧计时器
+              clearTimeout(analyzeDebounceTimer);
+              analyzeDebounceTimer = null;
+            }
+
+            // 实际向 C# 投递分析报文的核心动作
+            const doSendAnalyze = () => {
+              // 激活分析中 loading 状态
+              isAnalyzing.value = true;
+              // 通过 WebView2 发送 analyzeCabinet 消息
+              if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage({
+                  action: "analyzeCabinet",
+                  sheetName: selectedSheet.value,
+                  detName: selectedCabinetDet.value,
+                  rules: rules,
+                });
+              }
+            };
+
+            // 依据 immediate 标志决定立即发送还是延后 300ms 汇总发送
+            if (immediate) {
+              // 立即执行分析
+              doSendAnalyze();
+            } else {
+              // 延迟 300ms 停稳后发送
+              analyzeDebounceTimer = setTimeout(doSendAnalyze, 300);
             }
           };
 

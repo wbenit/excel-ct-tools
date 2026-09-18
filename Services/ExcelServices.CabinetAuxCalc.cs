@@ -22,6 +22,10 @@ namespace ExcelAddInDemo
         // 缓存的计算定额规则实例
         private static QuotationRules? _cachedRules;
 
+        // 缓存 DWG 图纸物理路径是否存在内存字典，避免在百度网盘等同步目录反复触发高延迟磁盘 I/O 阻塞
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _existingDwgFileCache =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
         // JSON 序列化选项 (支持中文美化缩进)
         private static readonly JsonSerializerOptions RuleJsonOptions = new JsonSerializerOptions
         {
@@ -392,8 +396,9 @@ namespace ExcelAddInDemo
                         ? Path.Combine(baseDwgDir, c.DwgDir, fileName)
                         : Path.Combine(baseDwgDir, fileName);
 
-                    // 校验磁盘物理文件真实存在且未被重复记录
-                    if (File.Exists(fullPath) && checkedPaths.Add(fullPath))
+                    // 校验磁盘物理文件真实存在且未被重复记录 (优先从内存字典命中，杜绝网盘同步锁卡顿)
+                    bool isFileExists = _existingDwgFileCache.GetOrAdd(fullPath, p => File.Exists(p));
+                    if (isFileExists && checkedPaths.Add(fullPath))
                     {
                         // 记录待向 AutoCAD 索取尺寸测算的物理路径
                         missingDwgPaths.Add(fullPath);
@@ -401,9 +406,16 @@ namespace ExcelAddInDemo
                 }
             }
 
-            // 若存在未收录且物理存在的图纸，主动向 AutoCAD 命名管道发送静默测算请求
+            // 若存在未收录且物理存在的图纸，主动向 AutoCAD 命名管道发送极速静默测算请求
             if (missingDwgPaths.Count > 0)
             {
+                // 限制单次向 CAD 管道请求的最大图纸数量上限为 5 张，杜绝大规模排队导致界面等待
+                if (missingDwgPaths.Count > 5)
+                {
+                    // 仅提取前 5 项优先处理
+                    missingDwgPaths = missingDwgPaths.Take(5).ToList();
+                }
+
                 // 快速检测本地是否存在 AutoCAD 运行进程，若未运行则 0 毫秒跳过跨进程管道连接 --硬编码: AutoCAD主进程名--
                 bool isCadRunning = false;
                 try
@@ -412,11 +424,11 @@ namespace ExcelAddInDemo
                 }
                 catch { }
 
-                // 仅当 AutoCAD 正在运行时才发起管道跨进程提取
+                // 仅当 AutoCAD 正在运行时才发起管道跨进程提取 (采用 80ms 极速探测，绝不卡死主线程)
                 if (isCadRunning)
                 {
                     // 跨进程调用 CAD 端静默 Database 测算并接收直接回传的尺寸列表（CAD 端同时自动持久化至 SQLite）
-                    var extractedCadDims = CadSyncClient.RequestExtractDwgDimensions(missingDwgPaths, 1500);
+                    var extractedCadDims = CadSyncClient.RequestExtractDwgDimensions(missingDwgPaths, 80);
                     if (extractedCadDims != null && extractedCadDims.Count > 0)
                     {
                         // 将 CAD 实时回传的尺寸直接注入内存字典 dwgDimMap，使当前箱柜计算直接享用真实尺寸

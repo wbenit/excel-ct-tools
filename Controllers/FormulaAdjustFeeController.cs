@@ -169,6 +169,13 @@ namespace ExcelAddInDemo.Controllers
                         // 若反序列化成功且包含有效分组
                         if (config != null && config.Groups != null && config.Groups.Count > 0)
                         {
+                            // 规则安全防线：自动检查并自愈纠偏配置中存在的公式语法疏漏 (如历史遗留的漏闭合右括号)
+                            bool isHealed = SanitizeFormulaGroups(config.Groups);
+                            // 若发生自愈修复，立即将纠偏后的健康配置存盘
+                            if (isHealed)
+                            {
+                                SaveConfigToDisk(config.Groups);
+                            }
                             // 返回加载的公式组集合
                             return config.Groups;
                         }
@@ -587,9 +594,78 @@ namespace ExcelAddInDemo.Controllers
                 new FormulaItemModel { No = "[序号]", Name = "税金", TotalPriceFormula = "=ROUND(SUM(H2:H5)*0.13, 2)", Category = "费用" },
                 // 单台合计
                 new FormulaItemModel { No = "[序号]", Name = "单台合计", TotalPriceFormula = "=ROUND(SUM(H2:H6), 2)", CostTotalPriceFormula = "=ROUND(SUM(K2:K6), 2)" },
-                // 总计行
-                new FormulaItemModel { No = "总计", Name = "", Unit = "台", Quantity = "=ROUND(H7, 2)", Price = "=ROUND(F8*G8, 2)", CostTotalPriceFormula = "=ROUND(K7*F8, 2)" }
+                // 总计行 (F 列数量留空供用户输入台数，G 列单价指向单台合计，H 列总价为数量乘单价)
+                new FormulaItemModel { No = "总计", Name = "", Unit = "台", Quantity = "", Price = "=ROUND(H7, 2)", TotalPriceFormula = "=ROUND(F8*G8, 2)", CostTotalPriceFormula = "=ROUND(K7*F8, 2)" }
             };
+        }
+
+        /// <summary>
+        /// 检查并自动修复公式组中常见的小语法疏漏 (例如末尾漏闭合右括号)
+        /// </summary>
+        /// <param name="groups">公式组集合</param>
+        /// <returns>若发生了修正返回 true，否则返回 false</returns>
+        private static bool SanitizeFormulaGroups(List<FormulaGroupModel> groups)
+        {
+            // 校验分组列表有效性
+            if (groups == null || groups.Count == 0) return false;
+            bool modified = false;
+
+            // 遍历所有公式组
+            foreach (var g in groups)
+            {
+                if (g.Details == null) continue;
+                // 遍历组内所有配置行
+                foreach (var item in g.Details)
+                {
+                    // 检查并修正总价公式
+                    string f1 = item.TotalPriceFormula;
+                    if (FixTrailingParen(ref f1)) { item.TotalPriceFormula = f1; modified = true; }
+                    // 检查并修正成本总价公式
+                    string f2 = item.CostTotalPriceFormula;
+                    if (FixTrailingParen(ref f2)) { item.CostTotalPriceFormula = f2; modified = true; }
+                    // 检查并修正单价公式
+                    string f3 = item.Price;
+                    if (FixTrailingParen(ref f3)) { item.Price = f3; modified = true; }
+                    // 检查并修正数量公式
+                    string f4 = item.Quantity;
+                    if (FixTrailingParen(ref f4)) { item.Quantity = f4; modified = true; }
+                }
+            }
+
+            // 返回是否发生数据修正
+            return modified;
+        }
+
+        /// <summary>
+        /// 若公式以等号开头且左括号多于右括号，自动在末尾补齐缺失的闭合右括号
+        /// </summary>
+        private static bool FixTrailingParen(ref string? formula)
+        {
+            // 排除空值与非等号开头的公式
+            if (string.IsNullOrWhiteSpace(formula) || !formula.Trim().StartsWith("=")) return false;
+            string trimmed = formula.Trim();
+            int left = 0, right = 0;
+            bool inQuote = false;
+
+            // 逐字统计括号
+            for (int i = 0; i < trimmed.Length; i++)
+            {
+                char ch = trimmed[i];
+                if (ch == '"') { inQuote = !inQuote; continue; }
+                if (inQuote) continue;
+                if (ch == '(') left++;
+                else if (ch == ')') right++;
+            }
+
+            // 若不在引号内且左括号数量大于右括号
+            if (!inQuote && left > right)
+            {
+                // 自动追加补全缺失的闭合右括号
+                formula = trimmed + new string(')', left - right);
+                return true;
+            }
+
+            return false;
         }
     }
 }

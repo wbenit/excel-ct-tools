@@ -126,27 +126,28 @@ namespace ExcelAddInDemo.Services
 
         /// <summary>
         /// 同步向 AutoCAD 发送缺失 DWG 图纸尺寸提取请求并等待直接回传结果
-        /// 超时默认 3000ms（连接握手超时 500ms），降级返回空列表，绝不卡死 Excel
+        /// 采用 100ms 极速探测（握手上限 80ms），CAD 未响应时零感降级返回空列表，绝不卡死 Excel
         /// </summary>
         /// <param name="dwgPaths">待测算的 DWG 磁盘物理路径列表</param>
-        /// <param name="timeoutMs">总等待超时毫秒数，默认 3000ms --硬编码--</param>
+        /// <param name="timeoutMs">总等待超时毫秒数，默认 100ms --硬编码: 极速管道探测超时--</param>
         /// <returns>CAD 端返回的尺寸实体列表</returns>
-        public static List<DwgDimensionItem> RequestExtractDwgDimensions(List<string>? dwgPaths, int timeoutMs = 3000)
+        public static List<DwgDimensionItem> RequestExtractDwgDimensions(List<string>? dwgPaths, int timeoutMs = 100)
         {
             // 校验路径集合是否为空
             if (dwgPaths == null || dwgPaths.Count == 0)
             {
+                // 空路径集合直接返回空列表
                 return new List<DwgDimensionItem>();
             }
 
             try
             {
-                // 在后台线程运行异步请求并同步等待结果
+                // 在后台线程运行异步请求并极速等待，超时或未响应立即安全返回
                 return Task.Run(() => RequestExtractDwgDimensionsAsync(dwgPaths, timeoutMs)).GetAwaiter().GetResult();
             }
             catch
             {
-                // 出现任何不可预见异常时降级返回空列表
+                // 出现任何不可预见异常或超时降级返回空列表
                 return new List<DwgDimensionItem>();
             }
         }
@@ -157,7 +158,7 @@ namespace ExcelAddInDemo.Services
         /// <param name="dwgPaths">图纸物理路径列表</param>
         /// <param name="timeoutMs">超时毫秒数</param>
         /// <returns>提取结果集合</returns>
-        public static async Task<List<DwgDimensionItem>> RequestExtractDwgDimensionsAsync(List<string> dwgPaths, int timeoutMs = 3000)
+        public static async Task<List<DwgDimensionItem>> RequestExtractDwgDimensionsAsync(List<string> dwgPaths, int timeoutMs = 100)
         {
             var resultList = new List<DwgDimensionItem>();
             // 校验图纸路径列表是否为空
@@ -170,8 +171,8 @@ namespace ExcelAddInDemo.Services
                     // 构造双向异步命名管道客户端以支持双向收发
                     using (var pipeClient = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous))
                     {
-                        // 尝试连接 CAD 服务端（握手连接超时设为 500ms 或剩余时间，CAD 未打开时极速降级）
-                        int connectTimeout = Math.Min(500, timeoutMs);
+                        // 尝试连接 CAD 服务端（握手连接超时设为 80ms 或剩余时间，CAD 未打开时极速降级）
+                        int connectTimeout = Math.Min(80, timeoutMs);
                         await pipeClient.ConnectAsync(connectTimeout, cts.Token);
 
                         // 创建流写入器并保留流开启状态

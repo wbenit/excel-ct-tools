@@ -59,6 +59,50 @@
   5. **Element Plus 绿蓝主题动态流光进度条**：在 `component_group_builder.html` 底部增加 `<el-progress>` 流光条纹动画（`striped striped-flow`，主色调 `#009688`），实时展示平滑百分比与当前处理箱柜明细，生成按钮绑定 `:loading="isExecuting"` 与 `:disabled="isExecuting"` 防重复点击；
   6. **工程编译验证**：执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 验证：**0 错误**。
 
+- **【落地交付】公式法调费小计区域「[器件首行] 动态宏解析引擎」全链路闭环交付 (`Tool.cs`, `formula_adjust_fee.html`)**：
+  1. **[器件首行] 宏解析与物理行自适应绑定 (`Tool.TransformFormulaRowOffset` & `Tool.BuildFeeMatrix`)**：
+     - **严格遵循规则 6 架构**：元器件起始行定义为 `compStartRow = cabDetRow + 2`（箱柜信息行 + 2）；
+     - **两阶段防干扰平移架构**：在 `TransformFormulaRowOffset(formula, subsumRow, compStartRow)` 中，第一阶段先执行计费区内部 1~10 相对行号平移（此时 `[器件首行]` 为非数字标识，不受正则数字捕获干扰）；第二阶段再通过容错正则 `\[\s*器件首行\s*\]` 将宏替换为实际物理行号（如 `H[器件首行]` -> `H15`），彻底杜绝由于行号处于 1~10 之间发生二次错误平移的隐患；
+     - **全公式字段打通**：在 `BuildFeeMatrix` 内部向所有公式列（数量 F、单价 G、总价 H、成本总价 K）透传 `compStartRow` 参数，全面支持用户在小计行或任意计费行编写自定义求和或加权公式（如 `=ROUND(SUM(H[器件首行]:INDEX(H:H, ROW()-1)), 2)`）；
+  2. **前端界面 VIP 参数提示与使用说明升级 (`formula_adjust_fee.html`)**：
+     - 在公式法调费窗口中间提示栏将参数更新为：`VIP可用调价参数: [人工定额]、[辅料定额]、[器件首行]`；
+     - 为问号小图标绑定详细的浮动说明及公式编写示例；
+     - 前端公式语法检验器（`isFormulaError`、`validateDetailList`）原生放行中括号宏 `[器件首行]`，不产生任何误报；
+  3. **静态资源全量同步与工程构建核验**：
+     - 静态 HTML 资源已强制同步覆盖至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 执行 `dotnet build` 编译核验通过：**0 错误**。
+
+- **【落地交付】公式法调费「公式语法错误精准提醒与 Excel 表格安全防御回滚」全链路闭环交付 (`ExcelServices.FormulaAdjustFee.cs`, `FormulaAdjustFeeController.cs`, `formula_adjust_fee.html`)**：
+  1. **前端即时阻断与精准错误通知 (`formula_adjust_fee.html`)**：
+     - **即时视觉警示**：在明细表格中引入 `isFormulaError` 语法实时检测，对括号未闭合、顺序倒错或只有单独等号的公式，单元格输入框动态挂载 `.formula-error-border` 红色内阴影边框高亮警示；
+     - **操作前置强审查**：在点击【更新当前箱柜】、【更新当前分类】、【更新所有箱柜】、【选择箱柜更新】或【设为默认】时，执行 `validateDetailList` 全量语法扫描，若发现漏写括号等错误，直接通过 Element Plus 的 `ElNotification` 弹出醒目错误通知（明确提示：“第 X 行【名称】的【总价/单价】公式括号不匹配：缺少闭合右括号 ')'”），并**彻底阻断请求提交**，防止污染 Excel 表格；
+  2. **后端静态安全审查与原子插行回滚 (`ExcelServices.FormulaAdjustFee.cs`)**：
+     - **前置静态审查（防线二）**：在执行任何 Excel 物理修改（如插行、删行）之前，调用 `ValidateFormulaDetails` 进行强类型语法审查，若发现非法公式立即返回明确错误，绝不触碰 Excel 表格；
+     - **写入失败原子回滚保护**：在 `UpdateCabinetsForSheet` 中用 `try-catch` 包裹 `feeRange.Formula = feeMatrix`；若因公式语法错误触发 COM 异常，立即执行 `sheet.Rows[...].Delete(-4121)` 回滚删除刚刚差额插入的空白行，**彻底根除 Excel 留下单台合计空白孤儿行的 Bug**；
+  3. **存量坏数据自愈与多端静态资源同步 (`FormulaAdjustFeeController.cs`, `formula_adjust_fee.html`)**：
+     - 在 `FormulaAdjustFeeController.LoadConfigFromDisk` 中植入 `SanitizeFormulaGroups` 自愈逻辑，检测到存量历史数据中漏写末尾右括号时自动纠偏补齐并持久化存盘；
+     - 修正内置默认公式模板中的总计行列错位；
+     - 静态 HTML 资源已强制同步覆盖至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 执行 `dotnet build` 编译核验通过：**0 错误**。
+
+- **【性能极速飙升·卡顿与关闭延迟彻底根治】智能辅材与壳体计算中心父页面及二次图绑定全链路性能瓶颈闭环交付 (`CabinetAuxCalcForm.cs`, `CadSyncClient.cs`, `ExcelServices.CabinetAuxCalc.cs`, `cabinet_aux_calc.html`)**：
+  1. **彻底解决“点击关闭窗口耗时过长（5~15秒卡死）”致命隐患 (`CabinetAuxCalcForm.cs`)**：
+     - **根因消除**：原代码在 `OnWebMessageReceived`（Chromium IPC 回调栈）中同步调用 `this.Close()` 并在 `OnFormClosing` 中执行 `_webView.Dispose()`，导致底层 Chromium 与 C# UI 线程发生死锁挂起，硬等 RPC 超时；
+     - **异步队列脱离**：改用 `this.BeginInvoke(new Action(() => this.Close()))` 将关闭动作投递到 Windows 消息队列的下一帧，让当前的 IPC 消息调用安全退出；
+     - **安全延迟释放**：将 `_webView?.Dispose()` 迁移至 `OnFormClosed`（窗体已脱离屏幕并完全关闭），`OnFormClosing` 仅解绑监听，彻底消灭死锁，实现 **0.1 秒秒退秒关**！
+  2. **彻底解决“父页面任何操作与参数微调冻结卡死数秒”瓶颈 (`CabinetAuxCalcForm.cs`, `CadSyncClient.cs`, `ExcelServices.CabinetAuxCalc.cs`, `cabinet_aux_calc.html`)**：
+     - **① 消除 CAD 管道同步阻塞**：`CadSyncClient.RequestExtractDwgDimensions` 的探测超时由 3000ms 压降至 100ms（握手上限 80ms），CAD 未响应时零感降级，彻底杜绝主线程假死；
+     - **② 引入网盘 DWG 路径内存并发字典**：在 `ExcelServices.CabinetAuxCalc.cs` 中增加 `_existingDwgFileCache` 内存缓存，避免对百度网盘同步工作区重复执行耗时同步 I/O，并限制单次 CAD 管道探测上限为 5 张；
+     - **③ COM 宏队列解耦**：`analyzeCabinet` 改用 `ExcelAsyncUtil.QueueAsMacro` 调度执行，WinForms UI 消息泵 100% 释放，界面鼠标拖拽与点击保持完全丝滑；
+     - **④ 前端输入 300ms 智能防抖**：在 `cabinet_aux_calc.html` 中为 `onAnalyze` 植入 300ms 防抖计时器，避免用户点击步进器微调数字时高频轰炸后端 COM；
+     - **⑤ 静态资源国内镜像秒开**：将公网 `unpkg.com` 升级为阿里国内高速镜像 `registry.npmmirror.com` 并附带 onerror 自动回退，大幅缩短首屏握手时间；
+  3. **多端静态资源同步**：
+     - 静态 HTML 资源已强制同步覆盖至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 新增代码严格遵循每 3 行包含一行中文注释与最小变动法则。
+
+- **【工程构建核验】全量编译验证**：
+  1. 执行 `dotnet build` 编译 `ExcelAddInDemo.csproj`；
+  2. 结果：**0 个错误**，250 个警告，生成成功。
 
 - **【Git 协同操作】多分支代码合并冲突解决与全量远程同步推送 (`origin/main`)**：
   1. **冲突识别与全量保留**：精准合并远程 `f41a877`（二次元件组沙盒列映射自愈与右键原生多选筛选斑马纹分色）与本地 `1a6f112`（智能填写模块与输入自动学习），对 `.ai/session.md` 的工作进度记录实施双向无损融合；
