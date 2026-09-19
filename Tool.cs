@@ -972,10 +972,8 @@ namespace ExcelAddInDemo
             // 若扫描结果为空且允许自动重建且工作表对象有效
             if ((allNames == null || allNames.Count == 0) && autoRebuildIfEmpty && sheet != null)
             {
-                // 获取工作表纯文本名称用于黑名单守门拦截
-                string sName = Convert.ToString(sheet.Name) ?? "";
-                // 仅当工作表不是系统保留表或报表表时，才触发定义名称补齐重建
-                if (!IsReservedOrReportSheet(sName))
+                // 仅当工作表属于【项目信息】白名单受纳管的有效分类明细表时，才允许触发定义名称补齐重建
+                if (IsProjectCategorySheet(sheet))
                 {
                     // 自动触发单表智能识别与定义名称补齐重建
                     FixAndFillCabinetNamesForSheet(sheet);
@@ -1016,18 +1014,18 @@ namespace ExcelAddInDemo
                 try { dWb = dSheet.Parent; } catch { }
             }
 
+            // 核心安全守门：白名单中枢驱动，仅对在【项目信息】中登记的有效分类明细表构建箱柜映射
+            if (!IsProjectCategorySheet(dSheet, dWb))
+            {
+                // 普通外部表或非纳管工作表直接返回空列表，杜绝触发补齐重建与公式篡改
+                return new List<KeyValuePair<int, Models.CabinetAnchorModel>>();
+            }
+
             // 读取全局配置中的 4 个定义名称前缀 (零堆分配)
             var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
 
             // 提取当前工作表纯文本名称
             string sheetName = Convert.ToString(dSheet.Name) ?? "";
-
-            // 核心安全守门：若为系统保留表或报表表，直接返回空列表，杜绝触发补齐重建与公式篡改
-            if (IsReservedOrReportSheet(sheetName))
-            {
-                // 系统保留或报表表不存在箱柜定义名称，直接返回空列表
-                return new List<KeyValuePair<int, Models.CabinetAnchorModel>>();
-            }
 
             // 收集双作用域所有定义名称 (若为空底层自动触发智能重建)
             var allNames = CollectAllDefinedNames(dWb, dSheet, autoRebuildIfEmpty: true);
@@ -1357,6 +1355,262 @@ namespace ExcelAddInDemo
             return false;
         }
 
+        // 缓存各工作簿对应的合法项目分类工作表名称集合，以及最后缓存时间 (带 10 秒轻量有效性与版本自愈)
+        private static readonly Dictionary<string, (DateTime CacheTime, HashSet<string> CategorySheets)> _projectCategorySheetsCache =
+            new Dictionary<string, (DateTime, HashSet<string>)>(StringComparer.OrdinalIgnoreCase);
+
+        // 线程安全互斥锁
+        private static readonly object _categorySheetsCacheLock = new object();
+
+        /// <summary>
+        /// 主动清空项目分类工作表白名单缓存 (当工作簿新建、重命名、删除分类或切换工作簿时调用)
+        /// </summary>
+        public static void InvalidateProjectCategorySheetCache()
+        {
+            lock (_categorySheetsCacheLock)
+            {
+                // 清空全部工作簿分类表白名单缓存
+                _projectCategorySheetsCache.Clear();
+            }
+        }
+
+        /// <summary>
+        /// 判定指定 Excel 工作簿是否属于标准的成套电气报价工程工作簿
+        /// 核心准入标准：工作簿中必须显式包含名为【项目信息】的主表中枢
+        /// </summary>
+        /// <param name="wb">工作簿 COM 对象</param>
+        /// <returns>若包含【项目信息】表返回 true，否则返回 false</returns>
+        public static bool IsProjectWorkbook(object? wb)
+        {
+            // 校验工作簿对象有效性
+            if (wb == null) return false;
+
+            try
+            {
+                dynamic dWb = wb;
+                // 尝试直接通过索引器获取【项目信息】工作表句柄 --硬编码: 项目信息工作表名--
+                dynamic? infoSheet = null;
+                try { infoSheet = dWb.Sheets["项目信息"]; } catch { }
+                if (infoSheet != null) return true;
+
+                // 容错遍历工作簿的所有工作表名称
+                if (dWb.Worksheets != null)
+                {
+                    foreach (dynamic ws in dWb.Worksheets)
+                    {
+                        try
+                        {
+                            string sName = Convert.ToString(ws.Name)?.Trim() ?? "";
+                            // 匹配“项目信息”工作表名
+                            if (string.Equals(sName, "项目信息", StringComparison.OrdinalIgnoreCase))
+                            {
+                                return true;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+
+            // 未找到【项目信息】工作表，判定为普通常规工作簿
+            return false;
+        }
+
+        /// <summary>
+        /// 从当前工作簿的【项目信息】工作表中获取已登记在册的分类明细工作表名称白名单
+        /// 遵循规则 7：采用二维数组单次 COM 读取到内存进行高速解析
+        /// </summary>
+        /// <param name="wb">目标工作簿 COM 对象</param>
+        /// <param name="forceRefresh">是否强制刷新缓存 (默认 false)</param>
+        /// <returns>已登记的有效分类明细工作表名称白名单集合</returns>
+        public static HashSet<string> GetProjectCategorySheetNames(object? wb, bool forceRefresh = false)
+        {
+            // 校验工作簿有效性与是否包含【项目信息】表
+            if (wb == null || !IsProjectWorkbook(wb))
+            {
+                // 非工程工作簿直接返回空集合
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            try
+            {
+                dynamic dWb = wb;
+                // 提取工作簿唯一标识键 (优先使用 FullName 或 Name，若为空则生成哈希键)
+                string wbKey = "";
+                try { wbKey = Convert.ToString(dWb.FullName) ?? Convert.ToString(dWb.Name) ?? ""; } catch { }
+                if (string.IsNullOrEmpty(wbKey)) wbKey = wb.GetHashCode().ToString();
+
+                var now = DateTime.UtcNow;
+
+                // 1. 检查内存缓存 (10秒内有效且非强制刷新)
+                lock (_categorySheetsCacheLock)
+                {
+                    if (!forceRefresh && _projectCategorySheetsCache.TryGetValue(wbKey, out var entry))
+                    {
+                        if ((now - entry.CacheTime).TotalSeconds < 10)
+                        {
+                            // 纯内存命中直出 (0ms 零 COM 调用)
+                            return entry.CategorySheets;
+                        }
+                    }
+                }
+
+                // 2. 收集工作簿中物理存在的全部工作表名称集合，用于交叉验证
+                var existingSheets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    if (dWb.Worksheets != null)
+                    {
+                        foreach (dynamic ws in dWb.Worksheets)
+                        {
+                            try
+                            {
+                                string wName = Convert.ToString(ws.Name)?.Trim() ?? "";
+                                if (!string.IsNullOrEmpty(wName)) existingSheets.Add(wName);
+                            }
+                            catch { }
+                        }
+                    }
+                }
+                catch { }
+
+                var categoryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                // 3. 从【项目信息】工作表中读取分类汇总区域
+                dynamic? infoSheet = null;
+                try { infoSheet = dWb.Sheets["项目信息"]; } catch { }
+
+                if (infoSheet != null)
+                {
+                    // 读取配置中的分类汇总起始物理行号与最大扫描数
+                    var cfg = ConfigManager.Instance.Current.Excel;
+                    int startRow = cfg.ProjectInfoCategorySummaryStartRow; // 默认 29
+                    int maxScan = cfg.ProjectInfoCategorySummaryMaxScanRows; // 默认 50
+                    int endRow = startRow + maxScan - 1;
+
+                    // 规则 7: 一次性读取【项目信息】A 列至 B 列 (序号与分类名) 到内存二维数组
+                    object[,]? matrix = null;
+                    try
+                    {
+                        dynamic rng = infoSheet.Range[$"A{startRow}:B{endRow}"];
+                        matrix = rng?.Value2 as object[,];
+                    }
+                    catch { }
+
+                    if (matrix != null)
+                    {
+                        int rows = matrix.GetLength(0);
+                        for (int i = 1; i <= rows; i++)
+                        {
+                            int physicalRow = startRow + i - 1;
+                            // 提取 B 列内容
+                            string cellB = Convert.ToString(matrix[i, 2])?.Trim() ?? "";
+
+                            // 遇到小计或合计行，说明分类汇总已结束，立即终止扫描
+                            if (cellB.Contains("小计") || cellB.Contains("合计")) break;
+
+                            // 提取可能存在的分类表名
+                            string candidateName = "";
+
+                            // 优先尝试从 A 列超链接中提取目标 SheetName
+                            try
+                            {
+                                dynamic cellA = infoSheet.Cells[physicalRow, 1];
+                                if (cellA.Hyperlinks != null && cellA.Hyperlinks.Count > 0)
+                                {
+                                    string subAddr = Convert.ToString(cellA.Hyperlinks[1].SubAddress)?.Trim() ?? "";
+                                    if (!string.IsNullOrEmpty(subAddr))
+                                    {
+                                        // 提取超链接中的工作表名 (例如 '分类1'!A1 -> 分类1)
+                                        int exclamIdx = subAddr.IndexOf('!');
+                                        if (exclamIdx > 0)
+                                        {
+                                            candidateName = subAddr.Substring(0, exclamIdx).Trim('\'', ' ', '"');
+                                        }
+                                        else
+                                        {
+                                            candidateName = subAddr.Trim('\'', ' ', '"');
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
+
+                            // 若超链接未提取到，且 B 列具有非空非破坏性文本，直接采用 B 列文本
+                            if (string.IsNullOrEmpty(candidateName) && !string.IsNullOrWhiteSpace(cellB) &&
+                                !cellB.Contains("#REF") && !cellB.StartsWith("#"))
+                            {
+                                candidateName = cellB;
+                            }
+
+                            // 若成功解析出候选表名，且该工作表确实物理存在于工作簿中，且非系统保留表
+                            if (!string.IsNullOrEmpty(candidateName) &&
+                                existingSheets.Contains(candidateName) &&
+                                !IsReservedOrReportSheet(candidateName))
+                            {
+                                categoryNames.Add(candidateName);
+                            }
+                        }
+                    }
+                }
+
+                // 4. 将提取结果写入轻量内存缓存
+                lock (_categorySheetsCacheLock)
+                {
+                    _projectCategorySheetsCache[wbKey] = (DateTime.UtcNow, categoryNames);
+                }
+
+                return categoryNames;
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[ProjectCategory] 提取项目分类表白名单异常: {ex.Message}");
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+        }
+
+        /// <summary>
+        /// 综合判定指定工作表是否为属于当前工程中受纳管的标准分类明细工作表
+        /// 遵循白名单中枢驱动原则：只有所属工作簿为工程工作簿，且表名在【项目信息】中登记，才判定为 true
+        /// </summary>
+        /// <param name="sheet">目标工作表 COM 对象</param>
+        /// <param name="wb">所属工作簿 COM 对象 (可选，若为空自动向上追溯)</param>
+        /// <returns>若为受纳管的标准分类明细表返回 true，否则返回 false</returns>
+        public static bool IsProjectCategorySheet(object? sheet, object? wb = null)
+        {
+            // 校验工作表对象有效性
+            if (sheet == null) return false;
+
+            try
+            {
+                dynamic dSheet = sheet;
+                string sheetName = Convert.ToString(dSheet.Name)?.Trim() ?? "";
+                if (string.IsNullOrEmpty(sheetName)) return false;
+
+                // 核心安全守门一：若为系统保留表或报表表，直接返回 false
+                if (IsReservedOrReportSheet(sheetName)) return false;
+
+                // 向上追溯所属工作簿
+                dynamic? dWb = wb;
+                if (dWb == null)
+                {
+                    try { dWb = dSheet.Parent; } catch { }
+                }
+
+                // 核心安全守门二：若工作簿不是合法的成套工程工作簿 (不包含【项目信息】)，直接返回 false
+                if (!IsProjectWorkbook(dWb)) return false;
+
+                // 核心安全守门三：从【项目信息】白名单中检索当前表名
+                var allowedCategories = GetProjectCategorySheetNames(dWb);
+                return allowedCategories.Contains(sheetName);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         /// <summary>
         /// 针对单张工作表，根据顶部汇总与明细区域特征校准补齐 4 个定义名称
         /// 规则 6: Cab_Sum_k (汇总行), Cab_Det_k (信息行), Cab_Subsum_k (小计行), Cab_Tolsum_k (总计行)
@@ -1377,10 +1631,10 @@ namespace ExcelAddInDemo
                 string sheetName = Convert.ToString(sheet.Name) ?? "";
                 if (string.IsNullOrWhiteSpace(sheetName)) return 0;
 
-                // 核心安全守门：若为系统保留表或报表表（如项目信息、封面、屏柜汇总表等），严禁执行箱柜定义名称自愈
-                if (IsReservedOrReportSheet(sheetName))
+                // 核心安全守门：白名单中枢校验，仅允许在【项目信息】中登记的有效分类明细表执行自愈
+                if (!IsProjectCategorySheet(sheet))
                 {
-                    // 报表表不包含箱柜定义名称，直接返回 0，杜绝将报表行误判为箱柜汇总行并篡改 A 列公式与文本
+                    // 普通外部表或系统保留表严禁执行箱柜定义名称自愈，杜绝篡改 A 列公式与注入定义名称
                     return 0;
                 }
 
@@ -1557,8 +1811,27 @@ namespace ExcelAddInDemo
                 }
 
 
+                // 探测前 15 行内是否存在成套开关柜顶部汇总表头 (包含“序号”、“柜号”、“设备名称”等典型特征)
+                bool hasSummaryHeader = false;
+                for (int r = 1; r <= Math.Min(15, usedEndRow); r++)
+                {
+                    // 提取前 3 列文本进行特征探测
+                    string h1 = GetText(r, 1);
+                    string h2 = GetText(r, 2);
+                    string h3 = GetText(r, 3);
+                    // 匹配成套表头关键字
+                    if (h1.Contains("序号") || h2.Contains("序号") || h2.Contains("柜号") || h3.Contains("设备") || h3.Contains("名称") || h3.Contains("型号"))
+                    {
+                        hasSummaryHeader = true;
+                        break;
+                    }
+                }
+
                 // 若明细块与汇总行均未识别出任何箱柜，判定为非标准表，跳过
                 if (detRows.Count == 0 && sumRows.Count == 0) return 0;
+
+                // 核心安全守门：若完全无底表明细块且前置未检测到有效汇总表头，坚决不当做纯汇总箱柜处理，杜绝误伤
+                if (detRows.Count == 0 && !hasSummaryHeader) return 0;
 
                 // 箱柜总数取明细块与汇总行两者的较大值，全面兼容纯汇总无明细箱柜
                 int cabCount = Math.Max(detRows.Count, sumRows.Count);

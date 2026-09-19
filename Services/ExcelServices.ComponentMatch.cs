@@ -73,6 +73,8 @@ namespace ExcelAddInDemo
             {
                 // 清空全簿所有工作表缓存
                 _categoryRangesSheetCache.Clear();
+                // 同步清空项目分类工作表白名单缓存
+                Tool.InvalidateProjectCategorySheetCache();
             }
             else
             {
@@ -126,6 +128,13 @@ namespace ExcelAddInDemo
                 // 快速过滤系统隐藏表、字典表或选择表
                 if (sheetName.StartsWith("_") || string.Equals(sheetName, "选择表", StringComparison.OrdinalIgnoreCase))
                 {
+                    return false;
+                }
+
+                // 核心安全守门：白名单中枢驱动，仅对【项目信息】中登记的有效分类明细表进行元器件行检测
+                if (!Tool.IsProjectCategorySheet(sheet))
+                {
+                    // 非项目分类表秒级旁路返回 false，杜绝误唤起浮窗与额外开销
                     return false;
                 }
 
@@ -228,29 +237,8 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 3. 若轻量扫描未发现任何箱柜（可能是新表或尚未自愈），进行一次容错回退
-                if (newRanges.Count == 0)
-                {
-                    // 仅当确定可能为箱柜表时尝试自愈
-                    var validCabinets = Tool.GetSheetValidCabinets((object)sheet);
-                    if (validCabinets != null && validCabinets.Count > 0)
-                    {
-                        foreach (var kvp in validCabinets)
-                        {
-                            var anc = kvp.Value;
-                            if (anc?.Det == null || anc?.Subsum == null) continue;
-                            int detR = 0, subR = 0;
-                            try
-                            {
-                                detR = Convert.ToInt32(anc.Det.Row);
-                                subR = Convert.ToInt32(anc.Subsum.Row);
-                            }
-                            catch { continue; }
-                            int cStart = detR + 2, cEnd = subR - 1;
-                            if (cEnd >= cStart) newRanges.Add((cStart, cEnd));
-                        }
-                    }
-                }
+                // 3. 严格遵循纯只读原则：若轻量扫描未发现任何有效箱柜定义名称，直接判定为非元器件行
+                // 坚决不在鼠标选区切换或只读判断过程中触发全量定义名称自愈与公式篡改
 
                 // 写入多工作表内存长效缓存 (即便是空列表也缓存，防止非箱柜表反复暴力扫描)
                 _categoryRangesSheetCache[sheetName] = (now, newRanges);

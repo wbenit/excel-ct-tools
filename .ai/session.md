@@ -1,6 +1,19 @@
 # Session State
 
-- **【Bug 修复与闭环交付】导出报表第一页【屏柜汇总表】表头与 A 列公式篡改异常彻底根治 (`Tool.cs`, `ExcelServices.TenderReport.cs`, `ExcelServices.FormulaAdjustFee.cs`)**：
+- **【Bug 修复与闭环交付】常规外部 Excel 表格误现 Cab_Sum 定义名称与 A 列公式篡改异常彻底根治（【项目信息】白名单中枢驱动） (`Tool.cs`, `ExcelServices.ComponentMatch.cs`, `ExcelEventManager.cs`, `ExcelServices.Category.cs`)**：
+  1. **问题根本原因深度透视**：
+     - **黑名单缺陷**：原先采用黑名单排除法（仅排除封面、项目信息等），打开常规外部 Excel 表时无法识别，直接将常规数据当做成套分类表处理；
+     - **只读函数写入副作用**：鼠标选区切换（`OnSheetSelectionChange`）触发 `IsCategoryComponentRow`，未命中时回退调用 `Tool.GetSheetValidCabinets` 导致触发全量定义名称重建与自愈；
+     - **纯汇总箱柜识别过于宽泛**：`FixAndFillCabinetNamesForSheet` 在无明细块时，只要第 7 行以后 A/B/C 列有数据，就收录为汇总行并打上 `Cab_Sum_k`，将 A 列强行改写为 `=ROW()-ROW(A$6)`；
+  2. **采纳用户设计思路：“必须要有项目信息表，项目信息表中可以拿到分类明细表”**：
+     - **工作簿级防线（`Tool.IsProjectWorkbook`）**：严格校验工作簿是否包含【项目信息】表；非成套工程工作簿，全局事件与名称自愈全面 0ms 旁路跳过，彻底实现零干扰；
+     - **工作表级白名单防线（`Tool.GetProjectCategorySheetNames` & `Tool.IsProjectCategorySheet`）**：严格遵循规则 7，从【项目信息】表分类汇总区域（Row 29 起）一次性读取 A..B 列，提取有效分类表名白名单并配合 10 秒轻量内存缓存；
+     - **守门层层设卡**：`FixAndFillCabinetNamesForSheet`、`GetSheetValidCabinets`、`CollectAllDefinedNames` 入口全面接入白名单守门；且在 `detRows.Count == 0` 时要求前 15 行必须存在成套表头关键字；
+     - **只读函数副作用彻底剥离**：在 `IsCategoryComponentRow` 入口接入白名单校验，并彻底移除查询未命中时的回退重建代码，保证查询纯只读；
+     - **分类生命周期联动**：新建分类、删除分类、重命名分类时主动调用 `Tool.InvalidateProjectCategorySheetCache()` 保持白名单实时同步；
+  3. **工程编译核验**：
+     - 严格遵循新增代码每 3 行包含至少一行中文注释、最小变动法则与规则 7；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**。
   1. **现象复现与根因准确定位**：
      - **直接原因**：`Tool.FixAndFillCabinetNamesForSheet` 缺失系统/报表工作表拦截。当它在《屏柜汇总表》上被触发时，从默认第 7 行向下扫描，误将第 8~118 行当成箱柜汇总行，强行在 A 列注入 `=ROW()-ROW(A$6)` 并删改了超链接。
      - 第 9、10 行原为工程自定义文本格式 `"项目名称："@` 和 `"联系人："@`，被篡改后显示为 `项目名称：-ROW()-ROW(A$6)`；第 11 行为分类标题行，计算显示为 `5`；第 13 行起箱柜数据序号显示为 `7, 8, 9...`；

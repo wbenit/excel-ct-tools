@@ -155,6 +155,17 @@ namespace ExcelAddInDemo
                     ExcelServices.UpdateSpotlightPosition(target);
                 }
 
+                // 核心安全守门：若当前工作簿不是成套工程工作簿 (不含【项目信息】表)，直接隐藏浮窗并退出，杜绝干扰常规表格
+                var ws = (shObj as Microsoft.Office.Interop.Excel.Worksheet) ?? target.Worksheet;
+                var wb = ws?.Parent as Microsoft.Office.Interop.Excel.Workbook;
+                if (!Tool.IsProjectWorkbook(wb))
+                {
+                    // 隐藏浮窗并快速放行
+                    ExcelServices.HideSmartInputOverlay();
+                    ExcelServices.HideComponentMatchOverlay();
+                    return;
+                }
+
                 // 1. 判断选区是否包含 C 列 (第 3 列: 规格型号) 或选中了整行
                 int startCol = target.Column;
                 int endCol = startCol + target.Columns.Count - 1;
@@ -165,8 +176,7 @@ namespace ExcelAddInDemo
                 {
                     try
                     {
-                        // 获取当前工作表引用
-                        var ws = (shObj as Microsoft.Office.Interop.Excel.Worksheet) ?? target.Worksheet;
+                        // 复用已声明的工作表引用
                         if (ws != null)
                         {
                             int startRow = target.Row;
@@ -439,6 +449,9 @@ namespace ExcelAddInDemo
                 Microsoft.Office.Interop.Excel.Workbook? wb = sh.Parent as Microsoft.Office.Interop.Excel.Workbook;
                 // 校验 wb 句柄有效性
                 if (wb == null) return;
+
+                // 核心安全守门：若当前工作簿不是成套工程工作簿 (不含【项目信息】表)，直接退出，杜绝常规表格受任何联动干扰
+                if (!Tool.IsProjectWorkbook(wb)) return;
 
                 // 1. 优先尝试处理箱柜关键行（Sum 汇总行、Det 明细行、Tolsum 总计行）之间的 8 组双向数据绑定联动
                 if (TryHandleCabinetBiDirectionalSync(wb, sh, target))

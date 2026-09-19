@@ -792,6 +792,9 @@ namespace ExcelAddInDemo
                     }
                     catch { }
 
+                    // 同步清空项目分类工作表白名单缓存
+                    Tool.InvalidateProjectCategorySheetCache();
+
                     return new CategoryOperationResult
                     {
                         Success = true,
@@ -1211,6 +1214,9 @@ namespace ExcelAddInDemo
                         ? $"已成功彻底删除 {validCatNames.Count} 个分类工作表及其在【项目信息】中的对应汇总！"
                         : $"已成功彻底清理【项目信息】表中的失效分类残留行！";
 
+                    // 同步清空项目分类工作表白名单缓存
+                    Tool.InvalidateProjectCategorySheetCache();
+
                     return new CategoryOperationResult
                     {
                         Success = true,
@@ -1478,6 +1484,9 @@ namespace ExcelAddInDemo
 
                 // 8. 写入 H 列分类属性公式: 智能判定箱变/欧变/美变/常规类型
                 infoSheet.Cells[targetInfoRow, 8].Formula = $"=IF(OR(ISNUMBER(FIND(\"箱变\",B{targetInfoRow}))=TRUE,ISNUMBER(FIND(\"欧变\",B{targetInfoRow}))=TRUE,ISNUMBER(FIND(\"美变\",B{targetInfoRow}))=TRUE,ISNUMBER(FIND(\"KVA\",UPPER(B{targetInfoRow})))=TRUE,ISNUMBER(FIND(\"箱式变电\",B{targetInfoRow}))=TRUE),\"箱变\",\"常规\")";
+
+                // 同步清空项目分类工作表白名单缓存
+                Tool.InvalidateProjectCategorySheetCache();
             }
             catch (Exception ex)
             {
@@ -1568,6 +1577,9 @@ namespace ExcelAddInDemo
 
                         // 选项 A: 同步更新重命名后的新分类表 A5 反向超链接指向当前汇总行 r
                         SetCategorySheetBackHyperlink(targetWb, newName, r);
+
+                        // 同步清空项目分类工作表白名单缓存
+                        Tool.InvalidateProjectCategorySheetCache();
                         break;
                     }
                 }
@@ -1611,6 +1623,9 @@ namespace ExcelAddInDemo
                         infoSheet.Rows[r].EntireRow.Delete();
                         // 重新全量校准剩余分类汇总行正反向超链接，避免删行引发物理行错位
                         NormalizeCategorySummaryLinks(targetWb);
+
+                        // 同步清空项目分类工作表白名单缓存
+                        Tool.InvalidateProjectCategorySheetCache();
                         break;
                     }
                 }
