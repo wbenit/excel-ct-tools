@@ -1,5 +1,21 @@
-# Session State
-
+- **【Bug 修复与闭环交付】批量导出 Excel 箱柜明细表头序号写死 Cab_Sum_1 缺陷彻底根治 (`ExcelServices.Cabinet.cs`)**：
+  1. **问题根因**：`ExportSingleCabinetOptimized` 在直接克隆纯净母版（34行）后，漏写了明细表头行（`detRow + 1`）A 列公式更新，导致所有克隆箱柜照搬继承了母版的公式 `="序号" & Cab_Sum_1`；
+  2. **彻底修复**：在步骤 8 写入明细属性后，追加 `sheet.Cells[detRow + 1, 1].Formula = $"=\"序号\" & {sumNameTag}";`，使每一个克隆箱柜动态自适应绑定当前箱柜专属汇总行定义名称（`Cab_Sum_{cabinetK}`）；
+  3. **编译核验**：`ExcelAddInDemo.csproj` 与 `TuFan.csproj` 均已 0 错误编译通过。
+- **【架构精简与统一存取】彻底剔除模板寻址冗余后备，统一置于全局配置自定义数据目录 (`ProjectController.cs`)**：
+  1. **用户指示落地**：彻底移除 `baseDir`、`GetCurrentDirectory`、向上探测 5 级目录等冗余后备代码；
+  2. **统一存取核心**：统一通过 `Tool.GetCustomDataDirectoryFromGlobalConfig()` 获取配置目录（若未配置回退 `Tool.GetAppDataDirectory()`），在统一数据根目录下或其 `Resources` 子目录下存取 `CabinetTemplate.xlsx`；
+  3. **数据同步与落地**：已将 `CabinetTemplate.xlsx` 部署至用户的全局数据目录 `E:\BaiduNetdiskWorkspace\BaseData\报价设置`，所有插件与宿主进程统一读写同一物理模板；
+  4. **编译核验**：`dotnet build` 编译 0 错误。
+- **【Bug 修复与闭环交付】三箱工具导出 Excel 提示 0 台箱柜且残留空行缺陷彻底修复 (`ProjectController.cs`, `ExcelServices.Cabinet.cs`, `TuFan.csproj`)**：
+  1. **问题根因**：
+     - 在已有数据的旧分类表中追加导出箱柜时，`EnsureCabinetTemplate` 无法在 CAD 插件目录下定位到 `CabinetTemplate.xlsx`，回退时试图向 `AppDomain.CurrentDomain.BaseDirectory`（AutoCAD 安装目录）创建文件夹，触发 Windows UAC 拒绝访问异常（`UnauthorizedAccessException`）；
+     - `InitCategorySheetContext` 提前对汇总区插入了 11 行空行，随后的异常导致导出打断，空行未回滚且成功计数为 0；
+  2. **彻底根治方案**：
+     - **安全回退与多级探测 (`ProjectController.cs`)**：为 `EnsureCabinetTemplate` 补充 `%AppData%\ExcelAddInDemo\Resources` 与跨工程父级目录检索；回退创建目录改为安全的用户目录 `%AppData%`，彻底根除对 Program Files 的越权访问；
+     - **时序优化与本地自愈降级 (`ExcelServices.Cabinet.cs`)**：母版成功就绪后才对汇总区插行，杜绝半途报错产生脏数据；增加通道 B 本地自愈容灾，若外部模板打不开，直接克隆当前表第 1 台已有箱柜结构并清空元器件行作为临时母版；
+     - **构建自动复制 (`TuFan.csproj`)**：在 `TuFan.csproj` 中配置 `CabinetTemplate.xlsx` 自动复制输出，并已在当前调试目录补齐该文件；
+  3. **编译状态**：两端项目均构建通过，0 错误。
 - **【Bug 修复与闭环交付】常规外部 Excel 表格误现 Cab_Sum 定义名称与 A 列公式篡改异常彻底根治（【项目信息】白名单中枢驱动） (`Tool.cs`, `ExcelServices.ComponentMatch.cs`, `ExcelEventManager.cs`, `ExcelServices.Category.cs`)**：
   1. **问题根本原因深度透视**：
      - **黑名单缺陷**：原先采用黑名单排除法（仅排除封面、项目信息等），打开常规外部 Excel 表时无法识别，直接将常规数据当做成套分类表处理；

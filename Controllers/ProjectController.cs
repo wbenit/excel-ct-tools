@@ -205,109 +205,116 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
-        /// 检索 CabinetTemplate.xlsx 模板文件路径，若磁盘不存在则动态构建标准模板
+        /// 检索 CabinetTemplate.xlsx 模板文件路径，统一存取于全局配置指定的数据目录下
         /// </summary>
         /// <param name="app">Excel Application 实例</param>
         /// <returns>模板文件绝对路径</returns>
         public static string EnsureCabinetTemplate(dynamic app)
         {
-            // 获取基准运行目录
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            // 获取插件实际安装/运行物理目录
-            string appDir = Tool.GetAppDirectory();
-            // 配置多重备选路径列表
-            string[] candidates = new string[]
+            // 1. 获取全局引导配置指定的用户自定义数据目录 (若未指定则统一回退至 Tool.GetAppDataDirectory)
+            string dataDir = Tool.GetCustomDataDirectoryFromGlobalConfig();
+            if (string.IsNullOrWhiteSpace(dataDir))
             {
-                // 优先从插件真实物理目录下的 Resources 寻找
-                Path.Combine(appDir, "Resources", "CabinetTemplate.xlsx"),
-                // 优先从插件真实物理目录根目录寻找
-                Path.Combine(appDir, "CabinetTemplate.xlsx"),
-                // 从 AppDomain 基目录下的 Resources 寻找
-                Path.Combine(baseDir, "Resources", "CabinetTemplate.xlsx"),
-                // 从 AppDomain 基目录根寻找
-                Path.Combine(baseDir, "CabinetTemplate.xlsx"),
-                // 从当前工作目录下的 Resources 寻找
-                Path.Combine(Directory.GetCurrentDirectory(), "Resources", "CabinetTemplate.xlsx"),
-                // 从当前工作目录根寻找
-                Path.Combine(Directory.GetCurrentDirectory(), "CabinetTemplate.xlsx")
-            };
-
-            // 循环检索是否存在模板物理文件
-            foreach (string candidate in candidates)
-            {
-                // 若命中了存在的模板文件
-                if (File.Exists(candidate))
-                {
-                    // 立即返回存在的模板文件路径
-                    return candidate;
-                }
+                // 若用户未自定义配置，统一回退到标准 AppData 数据目录
+                dataDir = Tool.GetAppDataDirectory();
             }
 
-            // 若均不存在，自动在 baseDir/Resources/ 下生成默认 CabinetTemplate.xlsx
-            string targetDir = Path.Combine(baseDir, "Resources");
-            // 校验目录是否存在
-            Directory.CreateDirectory(targetDir);
-            // 拼接目标模板路径
-            string newTemplatePath = Path.Combine(targetDir, "CabinetTemplate.xlsx");
+            // 2. 目标模板文件首选路径：直接存取在全局数据根目录或其 Resources 子目录下
+            string templateInRoot = Path.Combine(dataDir, "CabinetTemplate.xlsx");
+            if (File.Exists(templateInRoot))
+            {
+                // 命中全局自定义数据根目录下的模板文件
+                return templateInRoot;
+            }
 
-            // 动态新建模板工作簿
+            string templateInResources = Path.Combine(dataDir, "Resources", "CabinetTemplate.xlsx");
+            if (File.Exists(templateInResources))
+            {
+                // 命中全局自定义数据目录 Resources 子目录下的模板文件
+                return templateInResources;
+            }
+
+            // 3. 若统一数据目录下尚不存在模板文件，尝试从程序运行目录同步初始母版至该目录
+            try
+            {
+                // 确保数据目录已创建
+                if (!Directory.Exists(dataDir))
+                {
+                    Directory.CreateDirectory(dataDir);
+                }
+
+                // 探测安装包或程序集自带的种子母版
+                string seedTemplate = Path.Combine(Tool.GetAppDirectory(), "Resources", "CabinetTemplate.xlsx");
+                if (File.Exists(seedTemplate))
+                {
+                    // 自动将种子母版复制到统一自定义数据目录下
+                    File.Copy(seedTemplate, templateInRoot, true);
+                    return templateInRoot;
+                }
+            }
+            catch { }
+
+            // 4. 若无预置母版，直接在统一数据目录下动态生成标准初始模板
             dynamic wb = app.Workbooks.Add();
+            try
+            {
+                // 重命名第一个工作表为 "项目信息"
+                dynamic sheet1 = wb.Sheets[1];
+                sheet1.Name = "项目信息";
 
-            // 重命名第一个工作表为 "项目信息"
-            dynamic sheet1 = wb.Sheets[1];
-            sheet1.Name = "项目信息";
+                // 新增第二个工作表并重命名为 "分类1"
+                dynamic sheet2 = wb.Sheets.Add(After: sheet1);
+                sheet2.Name = "分类1";
 
-            // 新增第二个工作表并重命名为 "分类1"
-            dynamic sheet2 = wb.Sheets.Add(After: sheet1);
-            sheet2.Name = "分类1";
+                // 初始化 "项目信息" 模版样式与行标题
+                sheet1.Range["B1"].Value = "扬州华科智能科技有限公司";
 
-            // 初始化 "项目信息" 模版样式与行标题
-            sheet1.Range["B1"].Value = "扬州华科智能科技有限公司";
+                // 写入【工程信息】各行 Label
+                sheet1.Range["A4"].Value = "工程信息";
+                sheet1.Range["A5"].Value = "项目名称";
+                sheet1.Range["A6"].Value = "描述";
+                sheet1.Range["A7"].Value = "报价单号";
+                sheet1.Range["A8"].Value = "报价人";
+                sheet1.Range["A9"].Value = "创建日期";
+                sheet1.Range["A10"].Value = "报价审核人";
+                sheet1.Range["A11"].Value = "项目负责人";
+                sheet1.Range["A12"].Value = "项目备注";
 
-            // 写入【工程信息】各行 Label
-            sheet1.Range["A4"].Value = "工程信息";
-            sheet1.Range["A5"].Value = "项目名称";
-            sheet1.Range["A6"].Value = "描述";
-            sheet1.Range["A7"].Value = "报价单号";
-            sheet1.Range["A8"].Value = "报价人";
-            sheet1.Range["A9"].Value = "创建日期";
-            sheet1.Range["A10"].Value = "报价审核人";
-            sheet1.Range["A11"].Value = "项目负责人";
-            sheet1.Range["A12"].Value = "项目备注";
+                // 写入【客户信息】各行 Label
+                sheet1.Range["A13"].Value = "客户信息";
+                sheet1.Range["A14"].Value = "客户名称";
+                sheet1.Range["A15"].Value = "联系人";
+                sheet1.Range["A16"].Value = "联系电话";
+                sheet1.Range["A17"].Value = "客户地址";
+                sheet1.Range["A18"].Value = "客户邮编";
+                sheet1.Range["A19"].Value = "客户网址";
+                sheet1.Range["A20"].Value = "客户email";
 
-            // 写入【客户信息】各行 Label
-            sheet1.Range["A13"].Value = "客户信息";
-            sheet1.Range["A14"].Value = "客户名称";
-            sheet1.Range["A15"].Value = "联系人";
-            sheet1.Range["A16"].Value = "联系电话";
-            sheet1.Range["A17"].Value = "客户地址";
-            sheet1.Range["A18"].Value = "客户邮编";
-            sheet1.Range["A19"].Value = "客户网址";
-            sheet1.Range["A20"].Value = "客户email";
+                // 写入【本企业信息】各行 Label
+                sheet1.Range["A21"].Value = "本企业信息";
+                sheet1.Range["A22"].Value = "单位名称";
+                sheet1.Range["A23"].Value = "英文名称";
+                sheet1.Range["A24"].Value = "联系人";
+                sheet1.Range["A25"].Value = "联系电话";
+                sheet1.Range["A26"].Value = "销售地区";
 
-            // 写入【本企业信息】各行 Label
-            sheet1.Range["A21"].Value = "本企业信息";
-            sheet1.Range["A22"].Value = "单位名称";
-            sheet1.Range["A23"].Value = "英文名称";
-            sheet1.Range["A24"].Value = "联系人";
-            sheet1.Range["A25"].Value = "联系电话";
-            sheet1.Range["A26"].Value = "销售地区";
+                // 写入【分类汇总】各行 Header
+                sheet1.Range["A27"].Value = "分类汇总";
+                sheet1.Range["C27"].Value = "金额单位：人民币元";
+                sheet1.Range["A28"].Value = "序号";
+                sheet1.Range["B28"].Value = "分类名称";
+                sheet1.Range["C28"].Value = "箱柜数量";
+                sheet1.Range["D28"].Value = "总价";
 
-            // 写入【分类汇总】各行 Header
-            sheet1.Range["A27"].Value = "分类汇总";
-            sheet1.Range["C27"].Value = "金额单位：人民币元";
-            sheet1.Range["A28"].Value = "序号";
-            sheet1.Range["B28"].Value = "分类名称";
-            sheet1.Range["C28"].Value = "箱柜数量";
-            sheet1.Range["D28"].Value = "总价";
-
-            // 保存生成的模板工作簿
-            wb.SaveAs(newTemplatePath);
-            // 关闭工作簿句柄
-            wb.Close(false);
-
-            // 返回生成的新模板文件路径
-            return newTemplatePath;
+                // 保存生成的模板工作簿到统一数据目录
+                wb.SaveAs(templateInRoot);
+                return templateInRoot;
+            }
+            finally
+            {
+                // 关闭工作簿句柄
+                wb.Close(false);
+            }
         }
     }
 }

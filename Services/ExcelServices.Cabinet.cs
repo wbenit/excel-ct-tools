@@ -1541,8 +1541,73 @@ namespace ExcelAddInDemo
                 int lastSumRow = lastIndexes.cabSumRow;
                 int lastTolsumRow = lastIndexes.cabTolsumRow > 0 ? lastIndexes.cabTolsumRow : 71;
 
+                // 核心防御：必须先在表尾成功准备好临时纯净母版，然后再扩容汇总区，杜绝异常时在 Excel 遗留空行脏数据
+                // 当前未扩容状态下表尾明细预备位置 (总计行 + 3行签名 + 1)
+                int preTemplatePos = lastTolsumRow + 4; // --硬编码--
+                bool templateReady = false;
+
+                // 通道 A：优先从外部 CabinetTemplate.xlsx 标准模板复制 34 行标准明细块
+                try
+                {
+                    // 获取或探测模板物理路径
+                    string templatePath = Controllers.ProjectController.EnsureCabinetTemplate(app);
+                    if (!string.IsNullOrWhiteSpace(templatePath) && File.Exists(templatePath))
+                    {
+                        // 以只读模式打开模板工作簿
+                        dynamic templateWb = app.Workbooks.Open(templatePath, ReadOnly: true);
+                        try
+                        {
+                            // 默认选取分类模板表
+                            dynamic templateSheet = templateWb.Sheets.Count >= 2 ? templateWb.Sheets[2] : templateWb.Sheets[1];
+                            // 复制模板第 41:74 行 (34行纯净明细块) --硬编码--
+                            dynamic srcTmplRange = templateSheet.Rows["41:74"];
+                            dynamic dstTmplRange = sheet.Rows[$"{preTemplatePos}:{preTemplatePos + 34 - 1}"];
+                            srcTmplRange.Copy(dstTmplRange);
+                            templateReady = true;
+                        }
+                        finally
+                        {
+                            // 立即关闭模板工作簿句柄
+                            templateWb.Close(false);
+                        }
+                    }
+                }
+                catch (Exception exTmpl)
+                {
+                    // 记录通道 A 异常日志
+                    LogHelper.WriteLog($"[InitCategorySheetContext] 外部模板克隆异常: {exTmpl.Message}，尝试启动通道 B 本地自愈克隆");
+                }
+
+                // 通道 B：本地容灾自愈降级 (若外部模板不可用，直接克隆当前表首台已有箱柜结构并清空元器件行)
+                if (!templateReady)
+                {
+                    try
+                    {
+                        // 获取当前工作表首台箱柜基准行号
+                        int firstDetRow = baseDetRow > 0 ? baseDetRow : 44;
+                        // 首台箱柜明细块起始行 (detRow - 3)
+                        int firstDetBlockStart = firstDetRow - 3;
+                        // 复制 34 行已有结构至表尾临时母版位置 --硬编码--
+                        dynamic srcExistingRange = sheet.Rows[$"{firstDetBlockStart}:{firstDetBlockStart + 34 - 1}"];
+                        dynamic dstExistingRange = sheet.Rows[$"{preTemplatePos}:{preTemplatePos + 34 - 1}"];
+                        srcExistingRange.Copy(dstExistingRange);
+
+                        // 纯净化临时母版：清空元器件区域内容，保留表头和底部计费公式
+                        int compCleanStart = preTemplatePos + 5; // 即 detRow + 2
+                        int compCleanEnd = preTemplatePos + 24;  // 即 subsumRow - 1
+                        sheet.Range[$"A{compCleanStart}:U{compCleanEnd}"].ClearContents();
+                        sheet.Range[$"AD{compCleanStart}:AD{compCleanEnd}"].ClearContents();
+                        templateReady = true;
+                        LogHelper.WriteLog($"[InitCategorySheetContext] 通道 B 本地自愈克隆成功，母版放置在 Row {preTemplatePos}");
+                    }
+                    catch (Exception exLocal)
+                    {
+                        LogHelper.WriteLog($"[InitCategorySheetContext] 通道 B 本地自愈克隆失败: {exLocal.Message}");
+                    }
+                }
+
+                // 只有母版成功放置后，才对顶部汇总区执行一次性预扩容插行 (防脏数据核心守门)
                 int insertSumStart = lastSumRow + 1;
-                // 汇总区一次性批量预扩容 N 行
                 if (cabCountInGroup > 0)
                 {
                     sheet.Rows[$"{insertSumStart}:{insertSumStart + cabCountInGroup - 1}"].Insert(-4121);
@@ -1551,29 +1616,11 @@ namespace ExcelAddInDemo
                 ctx.NextSumRow = insertSumStart;
                 ctx.TemplateSumRow = 0; // 旧表无需删除母版汇总行
 
-                // 计算表尾明细插入点 (受汇总扩容平移 cabCountInGroup 行)
-                int templatePos = lastTolsumRow + 4 + cabCountInGroup; // --硬编码--
-
-                // 从 CabinetTemplate.xlsx 外部模板只读复制 1 次 34 行标准明细块到表尾作为临时纯净母版
-                string templatePath = Controllers.ProjectController.EnsureCabinetTemplate(app);
-                dynamic templateWb = app.Workbooks.Open(templatePath, ReadOnly: true);
-                try
-                {
-                    // 默认模板工作表 --硬编码--
-                    dynamic templateSheet = templateWb.Sheets.Count >= 2 ? templateWb.Sheets[2] : templateWb.Sheets[1];
-                    dynamic srcTmplRange = templateSheet.Rows["41:74"]; // --硬编码--
-                    dynamic dstTmplRange = sheet.Rows[$"{templatePos}:{templatePos + 34 - 1}"]; // --硬编码--
-                    srcTmplRange.Copy(dstTmplRange);
-                }
-                finally
-                {
-                    // 立即关闭模板工作簿
-                    templateWb.Close(false);
-                }
-
-                ctx.HasTemplateToClean = true;
-                ctx.TemplateDetailBlockStartRow = templatePos;
-                ctx.NextDetailStartRow = templatePos + 34; // --硬编码--
+                // 汇总区扩容后，表尾母版位置顺移 cabCountInGroup 行
+                int finalTemplatePos = preTemplatePos + cabCountInGroup;
+                ctx.HasTemplateToClean = templateReady;
+                ctx.TemplateDetailBlockStartRow = finalTemplatePos;
+                ctx.NextDetailStartRow = finalTemplatePos + 34; // --硬编码--
                 ctx.NextCabinetK = GetNextCabinetIndex(activeWb, sheet);
             }
 
@@ -1763,6 +1810,10 @@ namespace ExcelAddInDemo
                     // 记录图纸范围坐标至 AD 列 (第 30 列)
                     sheet.Cells[detRow, 30].Value2 = string.Join("-", cab.Header.MinMaxPoints);
                 }
+
+                // 规则：明细表头行 (detRow + 1) A 列动态自适应绑定当前箱柜汇总行序号动态公式
+                // 确保新克隆箱柜明细表头绑定 Cab_Sum_{cabinetK} 而非母版的 Cab_Sum_1
+                sheet.Cells[detRow + 1, 1].Formula = $"=\"序号\" & {sumNameTag}"; // --硬编码: 明细表头序号公式--
 
                 // 9. 刷新小计行自适应求和公式与计费区域 A 列序号公式 (抽取独立方法，契合规则 6 & 规则 7)
                 RefreshCabinetFeeAreaFormulas(sheet, detRow, compStartRow, subsumRow, tolsumRow);
