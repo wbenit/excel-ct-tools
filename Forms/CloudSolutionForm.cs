@@ -453,6 +453,115 @@ namespace ExcelAddInDemo.Forms
                             PostMessageSafe("dwgBinaryLoaded", binData);
                         }
                         break;
+
+                    // 21. 获取当前已保存的一次方案图纸根目录
+                    case "getPrimaryCircuitConfig":
+                        string currentPrimDir = _controller.GetPrimaryCircuitDwgDir();
+                        PostMessageSafe("getPrimaryCircuitConfigResult", new { rootDir = currentPrimDir });
+                        break;
+
+                    // 22. 弹窗选择一次方案图纸根目录 (独立后台 STA 线程解耦，杜绝 Chromium IPC 模态死锁)
+                    case "selectPrimaryCircuitDir":
+                        string lastPrimDir = _controller.GetPrimaryCircuitDwgDir();
+                        var primDialogThread = new System.Threading.Thread(() =>
+                        {
+                            try
+                            {
+                                using var dialog = new FolderBrowserDialog
+                                {
+                                    Description = "请选择一次方案 DWG 图纸所在根目录",
+                                    ShowNewFolderButton = true
+                                };
+
+                                if (!string.IsNullOrWhiteSpace(lastPrimDir) && Directory.Exists(lastPrimDir))
+                                {
+                                    dialog.SelectedPath = lastPrimDir;
+                                }
+
+                                if (dialog.ShowDialog() == DialogResult.OK && !string.IsNullOrWhiteSpace(dialog.SelectedPath))
+                                {
+                                    string chosenDir = dialog.SelectedPath;
+                                    _controller.SetPrimaryCircuitDwgDir(chosenDir);
+                                    PostMessageSafe("selectPrimaryCircuitDirResult", new { success = true, path = chosenDir });
+                                }
+                            }
+                            catch (Exception exDialog)
+                            {
+                                LogHelper.WriteLog($"[CloudSolutionForm] selectPrimaryCircuitDir 线程异常: {exDialog.Message}");
+                            }
+                        });
+                        primDialogThread.SetApartmentState(System.Threading.ApartmentState.STA);
+                        primDialogThread.IsBackground = true;
+                        primDialogThread.Start();
+                        break;
+
+                    // 23. 手动粘贴或输入一次方案图纸根目录
+                    case "setPrimaryCircuitDirManual":
+                        string manualPrimPath = GetStringProp("path");
+                        if (!string.IsNullOrWhiteSpace(manualPrimPath) && Directory.Exists(manualPrimPath))
+                        {
+                            _controller.SetPrimaryCircuitDwgDir(manualPrimPath);
+                            PostMessageSafe("selectPrimaryCircuitDirResult", new { success = true, path = manualPrimPath });
+                        }
+                        else
+                        {
+                            PostMessageSafe("selectPrimaryCircuitDirResult", new { success = false, message = "指定的一次图纸目录在本地不存在，请检查后重试！" });
+                        }
+                        break;
+
+                    // 24. 扫描一次方案根目录下的子文件夹列表
+                    case "scanPrimaryFolders":
+                        string scanPrimRootDir = GetStringProp("rootDir");
+                        var primFolders = _controller.ScanPrimaryFolders(string.IsNullOrEmpty(scanPrimRootDir) ? null : scanPrimRootDir);
+                        PostMessageSafe("scanPrimaryFoldersResult", primFolders);
+                        break;
+
+                    // 25. 获取指定子文件夹下的一次 DWG 卡片列表
+                    case "getPrimaryFolderDwgCards":
+                        string pPath = GetStringProp("folderPath");
+                        string pName = GetStringProp("folderName");
+                        string pKw = GetStringProp("keyword");
+                        string pModel = GetStringProp("cabinetModel");
+                        bool pForceRefresh = false;
+                        if (dataEl.TryGetProperty("forceRefresh", out var pfrEl) ||
+                            (dataEl.TryGetProperty("data", out var pdInner) && pdInner.TryGetProperty("forceRefresh", out pfrEl)))
+                        {
+                            try { pForceRefresh = pfrEl.GetBoolean(); } catch { }
+                        }
+                        var primCards = _controller.GetPrimaryFolderDwgCards(pPath, pName, string.IsNullOrEmpty(pKw) ? null : pKw, string.IsNullOrEmpty(pModel) ? null : pModel, pForceRefresh);
+                        PostMessageSafe("getPrimaryFolderDwgCardsResult", primCards);
+                        break;
+
+                    // 26. 保存/更新一次成套方案
+                    case "savePrimaryScheme":
+                        string primSchemePayload = "{}";
+                        if (dataEl.TryGetProperty("data", out var innerPrimPayload))
+                        {
+                            primSchemePayload = innerPrimPayload.GetRawText();
+                        }
+                        else if (root.TryGetProperty("data", out var rootPrimPayload))
+                        {
+                            primSchemePayload = rootPrimPayload.GetRawText();
+                        }
+                        var (primOk, primId, primMsg) = _controller.SavePrimaryScheme(primSchemePayload);
+                        PostMessageSafe("savePrimarySchemeResult", new { success = primOk, schemeId = primId, message = primMsg });
+                        break;
+
+                    // 27. 获取所有一次方案列表 (供“复制其他方案”选择使用)
+                    case "getPrimarySchemesForCopy":
+                        string pCopyKw = GetStringProp("keyword");
+                        var primSchemesForCopy = _controller.GetPrimarySchemesForCopy(pCopyKw);
+                        PostMessageSafe("getPrimarySchemesForCopyResult", primSchemesForCopy);
+                        break;
+
+                    // 28. 抓取活动 Excel 当前光标箱柜为一次企业方案
+                    case "captureActiveCabinetToPrimaryScheme":
+                        string capFolder = GetStringProp("folderName");
+                        string capSchemeName = GetStringProp("schemeName");
+                        string capCabModel = GetStringProp("cabinetModel");
+                        var (capOk, capMsg, capScheme) = _controller.CaptureActiveCabinetToPrimaryScheme(capFolder, capSchemeName, capCabModel);
+                        PostMessageSafe("captureActiveCabinetToPrimarySchemeResult", new { success = capOk, message = capMsg, scheme = capScheme });
+                        break;
                 }
             }
             catch (Exception ex)

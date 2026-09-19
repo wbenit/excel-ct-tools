@@ -1461,9 +1461,9 @@ namespace ExcelAddInDemo
                     string aText = GetText(r, 1);
                     string nextAText = GetText(r + 1, 1);
 
-                    // 匹配明细大标题与表头特征 (容错序号、项次、NO等)
+                    // 匹配明细大标题与表头特征 (容错序号、项次、NO或下行为首个器件1)
                     if ((aText.Contains("柜号") || aText.Contains("箱柜")) &&
-                        (nextAText.Contains("序号") || nextAText.Contains("项次") || nextAText.Contains("NO") || nextAText.Contains("No")))
+                        (nextAText.Contains("序号") || nextAText.Contains("项次") || nextAText.Contains("NO") || nextAText.Contains("No") || GetText(r + 2, 1) == "1"))
                     {
                         // 记录识别到的箱柜信息行行号
                         detRows.Add(r);
@@ -1908,6 +1908,16 @@ namespace ExcelAddInDemo
                             try
                             {
                                 detAnchor.Font.Underline = -4142;  // --硬编码: xlUnderlineStyleNone 去除下划线--
+                            }
+                            catch { }
+
+                            // 规则：明细表头行 (detRow + 1) A 列自适应绑定汇总行序号动态公式
+                            try
+                            {
+                                // 提取明细表头行 A 列单元格句柄 (curDetRow + 1)
+                                dynamic detHeaderAnchor = sheet.Cells[curDetRow + 1, 1];
+                                // 写入动态绑定公式，保留“序号”关键字以支持特征识别 --硬编码: 明细表头序号公式--
+                                detHeaderAnchor.Formula = $"=\"序号\" & {sumPrefix}{k}";
                             }
                             catch { }
                         }

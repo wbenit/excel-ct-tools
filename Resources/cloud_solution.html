@@ -1457,6 +1457,424 @@
         border-color: var(--primary-hover);
       }
 
+      /* ========================================================
+         一次成套方案专属样式：DWG卡片、主接线图、参数网格与弹窗
+         ======================================================== */
+      /* 一次成套 DWG 专属卡片 (对齐二次方案规范，主色调 #009688) */
+      .primary-card {
+        background: #ffffff;
+        /* 青绿工业主色微边框 */
+        border: 1.5px solid #009688;
+        border-radius: 10px;
+        overflow: hidden;
+        /* 采用纵向弹性盒模型 */
+        display: flex;
+        flex-direction: column;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        /* 绿蓝相间工业微阴影 */
+        box-shadow: 0 2px 8px rgba(0, 150, 136, 0.08);
+        position: relative;
+        min-width: 0;
+        width: 100%;
+        /* 锁定卡片基准最小高度为 340px */
+        min-height: 340px;
+        flex-shrink: 0;
+        cursor: pointer;
+      }
+      .primary-card:hover {
+        transform: translateY(-3px);
+        box-shadow:
+          0 10px 20px -5px rgba(0, 150, 136, 0.2),
+          0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      }
+
+      /* 一次卡片头部：标题 + 分类 + 柜型 + 描述 */
+      .prim-card-header {
+        padding: 10px 12px 6px;
+        background: #ffffff;
+        border-top-left-radius: 9px;
+        border-top-right-radius: 9px;
+        display: flex;
+        /* 纵向排列标题与描述 */
+        flex-direction: column;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+      /* 顶行水平排布：左侧方案名+分类，右侧柜型 */
+      .prim-header-main-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding-right: 12px;
+      }
+      /* 左侧标题与分类徽标容器 */
+      .prim-title-and-folder {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        /* 占据主空间 */
+        flex: 1;
+      }
+      /* 一次方案主标题 (加粗深色) */
+      .prim-scheme-title {
+        font-size: 15px;
+        font-weight: 700;
+        color: #0f172a;
+        line-height: 1.25;
+        /* 超长省略 */
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex-shrink: 1;
+      }
+      /* 方案目录/分类标签 (浅绿胶囊) */
+      .prim-tag-folder {
+        font-size: 11.5px;
+        font-weight: 600;
+        color: #00796b;
+        /* 绿蓝相间浅底 */
+        background: #d1fae5;
+        border: 1px solid #a7f3d0;
+        padding: 1px 7px;
+        border-radius: 5px;
+        flex-shrink: 0;
+      }
+      /* 柜型标签 (深青蓝徽标，如: GGD) */
+      .prim-tag-model {
+        font-size: 11.5px;
+        font-weight: 600;
+        color: #004d40;
+        /* 浅青蓝背景 */
+        background: #e0f2f1;
+        border: 1px solid #80cbc4;
+        padding: 1px 8px;
+        border-radius: 5px;
+        flex-shrink: 0;
+      }
+      /* 工艺与主回路描述文本 */
+      .prim-desc-text {
+        font-size: 12px;
+        color: #475569;
+        line-height: 1.45;
+        /* 限制最多显示两行 */
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-height: 34px;
+        margin-top: 2px;
+      }
+
+      /* 一次图纸略缩图视口 (145px 高度) */
+      .prim-dwg-viewport {
+        height: 145px;
+        min-height: 145px;
+        max-height: 145px;
+        flex-shrink: 0;
+        /* 深夜工业墨黑背景 */
+        background: #0b1120;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        border-top: 1px solid #f1f5f9;
+        border-bottom: 1px solid #f1f5f9;
+      }
+      .prim-preview-img {
+        width: 100%;
+        height: 100%;
+        /* 保持纵横比最大化呈现 */
+        object-fit: contain;
+        object-position: center;
+        transition: transform 0.3s;
+      }
+      .primary-card:hover .prim-preview-img {
+        transform: scale(1.03);
+      }
+      .prim-preview-placeholder {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #090d16;
+      }
+      .prim-badge-format {
+        position: absolute;
+        bottom: 6px;
+        right: 8px;
+        font-family: monospace;
+        font-size: 10px;
+        color: #94a3b8;
+        background: rgba(15, 23, 42, 0.85);
+        padding: 2px 7px;
+        border-radius: 3px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        pointer-events: none;
+      }
+
+      /* 一次方案参数网格区 */
+      .prim-params-body {
+        padding: 8px 12px 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        background: #ffffff;
+        flex-shrink: 0;
+      }
+      .prim-params-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        align-items: center;
+      }
+      .prim-param-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 11.5px;
+      }
+      .prim-p-label {
+        color: #475569;
+        font-weight: 500;
+      }
+      .prim-p-val {
+        font-family: monospace;
+        font-weight: 600;
+        color: #0f172a;
+      }
+      .prim-p-val.price {
+        /* 主色调单价格式 */
+        color: #008477;
+        font-weight: 700;
+      }
+      .prim-spec-badge {
+        font-family: monospace;
+        font-weight: 700;
+        color: #334155;
+        background: #f1f5f9;
+        padding: 1px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        border: 1px solid #e2e8f0;
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* 一次卡片底栏 */
+      .prim-card-footer {
+        padding: 6px 12px 8px;
+        border-top: 1px solid #f1f5f9;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: auto;
+        background: #ffffff;
+        border-bottom-left-radius: 9px;
+        border-bottom-right-radius: 9px;
+        flex-shrink: 0;
+      }
+      .prim-update-time {
+        font-size: 10.5px;
+        color: #94a3b8;
+      }
+      .prim-action-buttons {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .prim-btn-cad {
+        padding: 3px 8px;
+        font-size: 11.5px;
+        color: #475569;
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .prim-btn-cad:hover {
+        color: var(--primary-color);
+        border-color: var(--primary-color);
+        background: #f0fdf9;
+      }
+      .prim-btn-edit {
+        padding: 3px 10px;
+        font-size: 11.5px;
+        font-weight: 500;
+        color: #ffffff;
+        background: var(--primary-color);
+        border: 1px solid var(--primary-color);
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .prim-btn-edit:hover {
+        background: var(--primary-hover);
+        border-color: var(--primary-hover);
+      }
+
+      /* ===== 一次成套方案编辑弹窗现代纯弹性布局 (彻底消除水平与垂直滚动条) ===== */
+      /* 弹窗外层蒙层与包裹容器全局禁用滚动条溢出 */
+      .el-overlay:has(.prim-edit-dialog),
+      .el-overlay-dialog:has(.prim-edit-dialog) {
+        /* 严禁弹窗外层遮罩产生滚动条 */
+        overflow: hidden !important;
+      }
+      /* 弹窗整体采用弹性伸缩模型，严格限制高度在视口内 */
+      .prim-edit-dialog {
+        /* 自适应视口高度，最大 92vh 且高度弹性分配 */
+        max-height: 92vh;
+        /* 标准高度 630px 自适应缩放 */
+        height: min(630px, 90vh);
+        /* 采用纵向弹性盒模型排布各区域 */
+        display: flex;
+        /* 子元素沿垂直方向排列 */
+        flex-direction: column;
+        /* 弹窗自身严禁任何外溢滚动条 */
+        overflow: hidden !important;
+        /* 优雅圆角 */
+        border-radius: 10px;
+        /* 精致立体阴影 */
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+      }
+      /* 弹窗标题栏 */
+      .prim-edit-dialog .el-dialog__header {
+        /* 紧凑内边距 */
+        padding: 12px 20px;
+        /* 底部极细分割线 */
+        border-bottom: 1px solid #e2e8f0;
+        /* 消除右侧多余间距 */
+        margin-right: 0;
+        /* 标题栏禁止挤压收缩 */
+        flex-shrink: 0;
+      }
+      /* 弹窗主体内容区域：纯弹性布局，绝不产生纵向或横向滚动条 */
+      .prim-edit-dialog .el-dialog__body {
+        /* 紧凑内边距 */
+        padding: 12px 18px;
+        /* 弹性占满剩余高度 */
+        flex: 1;
+        /* 允许内部元素在 flex 容器中自由收缩 */
+        min-height: 0;
+        /* 主体采用垂直弹性排布 */
+        display: flex;
+        /* 垂直列向排列 */
+        flex-direction: column;
+        /* 各功能模块之间的弹性间隔 */
+        gap: 8px;
+        /* 严禁主体区域出现任何滚动条 */
+        overflow: hidden !important;
+      }
+      /* 弹窗底部操作栏 */
+      .prim-edit-dialog .el-dialog__footer {
+        /* 紧凑内边距 */
+        padding: 10px 20px;
+        /* 顶部边框 */
+        border-top: 1px solid #e2e8f0;
+        /* 浅灰底色 */
+        background: #f8fafc;
+        /* 底部操作区禁止挤压收缩 */
+        flex-shrink: 0;
+      }
+      /* 一次方案参数 2 行 4 列响应式弹性网格 */
+      .prim-meta-grid {
+        /* 采用网格布局 */
+        display: grid;
+        /* 4 列等分自适应分配 */
+        grid-template-columns: repeat(4, 1fr);
+        /* 行列间距 */
+        gap: 6px 12px;
+        /* 禁止弹性挤压 */
+        flex-shrink: 0;
+        /* 白色背景 */
+        background: #ffffff;
+      }
+      /* 一次参数字段标签 */
+      .prim-meta-grid .sec-field-label {
+        /* 字体大小 */
+        font-size: 11.5px;
+        /* 标签颜色 */
+        color: #475569;
+        /* 下间距 */
+        margin-bottom: 2px;
+        /* 字体粗细 */
+        font-weight: 500;
+        /* 禁止折行 */
+        white-space: nowrap;
+        /* 超出省略 */
+        overflow: hidden;
+        /* 文本省略号 */
+        text-overflow: ellipsis;
+      }
+      /* 一次参数输入控件撑满对应列 */
+      .prim-meta-grid .el-input,
+      .prim-meta-grid .el-select,
+      .prim-meta-grid .el-input-number {
+        /* 宽度 100% 贴合所在列 */
+        width: 100% !important;
+      }
+      /* 一次成套 BOM 容器盒子 */
+      .prim-bom-box {
+        /* 弹性填充整个弹窗剩余的所有纵向空间 */
+        flex: 1;
+        /* 关键：重置最小高度，确保弹性自由收缩 */
+        min-height: 0;
+        /* 采用纵向弹性盒排布 */
+        display: flex;
+        /* 垂直列向排列 */
+        flex-direction: column;
+        /* 边框 */
+        border: 1px solid #cbd5e1;
+        /* 圆角 */
+        border-radius: 8px;
+        /* 内边距 */
+        padding: 8px 12px;
+        /* 背景色 */
+        background: #f8fafc;
+        /* 容器本身严禁溢出 */
+        overflow: hidden;
+      }
+      /* BOM 工具栏 */
+      .prim-bom-box .sec-bom-header-bar {
+        /* 禁止压缩高度 */
+        flex-shrink: 0;
+        /* 下边距 */
+        margin-bottom: 6px;
+      }
+      /* BOM 表格内部滚动区域 (只在需要时内部出现细滚动条，绝不影响弹窗) */
+      .prim-bom-table-scroll {
+        /* 弹性填满剩余空间 */
+        flex: 1;
+        /* 允许自由收缩 */
+        min-height: 0;
+        /* 纵向超出时在表格内部滚动 */
+        overflow-y: auto;
+        /* 严禁任何横向水平滚动条 */
+        overflow-x: hidden;
+        /* 边框 */
+        border: 1px solid #cbd5e1;
+        /* 圆角 */
+        border-radius: 6px;
+        /* 背景白底 */
+        background: #ffffff;
+      }
+      /* BOM 费用汇总条 */
+      .prim-bom-box .sec-bom-summary-bar {
+        /* 禁止压缩高度 */
+        flex-shrink: 0;
+        /* 顶部内边距 */
+        padding-top: 6px;
+        /* 字体大小 */
+        font-size: 12px;
+      }
+
       /* ===== 二次回路编辑弹窗与 BOM 专属样式 (绿蓝主色调 #009688) ===== */
       /* 弹窗整体设置 700px 高度并开启纵向 Flex 弹性伸缩 */
       .sec-edit-dialog {
@@ -1748,7 +2166,7 @@
           <div class="category-header">
             <span
               ><i class="fa-regular fa-folder-open"></i> {{ currentSchemeType
-              === 'secondary' ? '方案目录树' : '分类目录' }}</span
+              === 'secondary' ? '二次方案目录树' : (currentSchemeType === 'primary' ? '一次方案目录树' : '分类目录') }}</span
             >
             <!-- 当处于二次方案时：显示目录设置齿轮按钮 -->
             <button
@@ -1759,7 +2177,16 @@
             >
               <i class="fa-solid fa-gear"></i>
             </button>
-            <!-- 当处于一次方案时：保留原有一键新建分类按钮 -->
+            <!-- 当处于一次方案时：显示一次方案目录设置齿轮按钮 -->
+            <button
+              v-else-if="currentSchemeType === 'primary'"
+              class="btn-gear-setting"
+              title="设置一次方案 DWG 图纸根目录"
+              @click="openPrimDirSettingDialog"
+            >
+              <i class="fa-solid fa-gear"></i>
+            </button>
+            <!-- 其他类型：保留原有一键新建分类按钮 -->
             <el-button
               v-else
               link
@@ -1771,7 +2198,7 @@
             </el-button>
           </div>
 
-          <!-- ① 二次方案模式：展示 DWG 图纸子文件夹树 -->
+          <!-- ① 二次方案模式：展示二次 DWG 图纸子文件夹树 -->
           <div class="category-list" v-if="currentSchemeType === 'secondary'">
             <!-- 全部方案分类选项 (汇总全量子目录 DWG 文件总数) -->
             <div
@@ -1863,7 +2290,99 @@
             </div>
           </div>
 
-          <!-- ② 一次方案模式：保留原有的一次配电柜分类树 -->
+          <!-- ② 一次方案模式：展示一次 DWG 图纸子文件夹树 (对齐二次方案做法) -->
+          <div class="category-list" v-else-if="currentSchemeType === 'primary'">
+            <!-- 全部方案分类选项 (汇总全量子目录 DWG 文件总数) -->
+            <div
+              class="category-item"
+              :class="{ active: selectedPrimaryFolder === null }"
+              @click="onSelectPrimaryFolder(null)"
+            >
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 8px;
+                  flex: 1;
+                  min-width: 0;
+                "
+              >
+                <i class="fa-solid fa-layer-group" style="color: #009688"></i>
+                <span
+                  style="
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                  "
+                  >全部方案分类</span
+                >
+              </div>
+              <span class="category-badge">{{ totalPrimaryDwgCount }}</span>
+            </div>
+
+            <!-- 遍历展示扫描到的一次方案各子文件夹 (如: 低压进线方案、电容补偿柜方案、出线方案等) -->
+            <div
+              v-for="folder in primaryFolders"
+              :key="folder.fullPath"
+              class="category-item"
+              :class="{ active: selectedPrimaryFolder && selectedPrimaryFolder.fullPath === folder.fullPath }"
+              @click="onSelectPrimaryFolder(folder)"
+            >
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 8px;
+                  flex: 1;
+                  min-width: 0;
+                "
+              >
+                <i class="fa-regular fa-folder" style="color: #009688"></i>
+                <span
+                  style="
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                  "
+                  >{{ folder.name }}</span
+                >
+              </div>
+              <span class="category-badge">{{ folder.dwgCount }}</span>
+            </div>
+
+            <!-- 尚未设置目录引导提示条 -->
+            <div
+              v-if="!primaryDwgRootDir"
+              style="
+                padding: 24px 12px;
+                text-align: center;
+                color: #94a3b8;
+                font-size: 12px;
+              "
+            >
+              <i
+                class="fa-regular fa-folder-open"
+                style="
+                  font-size: 30px;
+                  margin-bottom: 8px;
+                  display: block;
+                  color: #cbd5e1;
+                "
+              ></i>
+              <span>尚未配置一次图纸根目录</span>
+              <div style="margin-top: 10px">
+                <el-button
+                  type="primary"
+                  size="small"
+                  @click="openPrimDirSettingDialog"
+                >
+                  <i class="fa-solid fa-gear"></i> 立即设置目录
+                </el-button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ③ 其他模式：保留原有分类树 -->
           <div class="category-list" v-else>
             <div
               class="category-item"
@@ -1933,7 +2452,70 @@
               </div>
             </template>
 
-            <!-- ② 一次方案与通用工具栏 -->
+            <!-- ② 企业一次方案工具栏 -->
+            <template v-else-if="currentScope === 'enterprise' && currentSchemeType === 'primary'">
+              <div class="filter-left">
+                <el-tag type="primary" effect="light" size="small">
+                  <i class="fa-regular fa-folder-open"></i> 当前子目录: {{
+                  selectedPrimaryFolder ? selectedPrimaryFolder.name :
+                  '全部方案分类' }}
+                </el-tag>
+
+                <el-select
+                  v-model="primaryCabinetModel"
+                  placeholder="柜型过滤"
+                  size="small"
+                  style="width: 130px"
+                  clearable
+                  @change="onPrimarySearch"
+                >
+                  <el-option label="全部柜型" value=""></el-option>
+                  <el-option label="KYN28-12" value="KYN28-12"></el-option>
+                  <el-option label="MNS" value="MNS"></el-option>
+                  <el-option label="GGD" value="GGD"></el-option>
+                  <el-option label="GCK" value="GCK"></el-option>
+                  <el-option label="PZ30" value="PZ30"></el-option>
+                  <el-option label="XL-21" value="XL-21"></el-option>
+                  <el-option label="箱变" value="箱变"></el-option>
+                </el-select>
+
+                <el-input
+                  v-model="primarySearchKw"
+                  placeholder="搜索一次图名、方案名、柜型、母排或描述..."
+                  size="small"
+                  style="width: 260px"
+                  clearable
+                  @keyup.enter="onPrimarySearch"
+                  @clear="onPrimarySearch"
+                >
+                  <template #prefix>
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                  </template>
+                </el-input>
+
+                <el-button type="primary" size="small" @click="onPrimarySearch">
+                  搜索
+                </el-button>
+              </div>
+
+              <div class="filter-right">
+                <el-button size="small" plain @click="refreshPrimaryCards">
+                  <i class="fa-solid fa-arrows-rotate"></i> 刷新图纸
+                </el-button>
+
+                <!-- 一键将当前 Excel 柜体抓取另存为一次方案 -->
+                <el-button
+                  type="success"
+                  size="small"
+                  plain
+                  @click="openCaptureCabinetDialog"
+                >
+                  <i class="fa-solid fa-file-import"></i> 存当前柜为方案
+                </el-button>
+              </div>
+            </template>
+
+            <!-- ③ 行业方案与通用工具栏 -->
             <template v-else>
               <div class="filter-left">
                 <el-select
@@ -2333,7 +2915,195 @@
               ></el-empty>
             </template>
 
-            <!-- 【板块 B：一次方案标准卡片】 -->
+            <!-- 【板块 B：企业一次成套方案 DWG 图纸与参数卡片 (对齐二次方案做法)】 -->
+            <template v-else-if="currentScope === 'enterprise' && currentSchemeType === 'primary'">
+              <div
+                v-for="card in primaryDwgCards"
+                :key="card.fullPath"
+                class="primary-card"
+                @click="openPrimaryDetail(card)"
+              >
+                <!-- 略缩图上方：方案标题 + 分类标签 + 柜型 + 工艺描述 -->
+                <div class="prim-card-header">
+                  <!-- 首行容器：左侧放置方案标题与分类药丸，右侧放置柜型标签 -->
+                  <div class="prim-header-main-row">
+                    <!-- 左侧区域：粗体标题紧挨着分类药丸徽章 -->
+                    <div class="prim-title-and-folder">
+                      <!-- 方案主标题 (优先显示方案名，无方案名显示图纸名) -->
+                      <span
+                        class="prim-scheme-title"
+                        :title="card.schemeName || card.dwgName"
+                      >
+                        {{ card.schemeName || card.dwgName }}
+                      </span>
+                      <!-- 分类药丸标签 (如: 进线柜、电容柜) -->
+                      <span
+                        class="prim-tag-folder"
+                        :title="'方案分类: ' + (card.folderName)"
+                      >
+                        {{ card.folderName || '一次方案' }}
+                      </span>
+                    </div>
+                    <!-- 右侧柜型标签 (如: GGD, KYN28-12) -->
+                    <span
+                      class="prim-tag-model"
+                      :title="'柜型: ' + (card.cabinetModel || '通用柜型')"
+                    >
+                      {{ card.cabinetModel || '通用柜型' }}
+                    </span>
+                  </div>
+                  <!-- 工艺描述说明 (两行紧凑自适应带提示) -->
+                  <div
+                    class="prim-desc-text"
+                    :title="card.description || '暂无主接线工艺描述说明'"
+                  >
+                    {{ card.description || '一次成套方案主接线回路，配置断路器、母排及保护测控元器件。' }}
+                  </div>
+                </div>
+
+                <!-- 中间略缩图视口 (高度严格锁定 145px，支持真实 DWG 与一次主接线矢量降级) -->
+                <div class="prim-dwg-viewport">
+                  <!-- 真实 DWG 缩略图 -->
+                  <img
+                    v-if="card.previewBase64"
+                    :src="card.previewBase64"
+                    class="prim-preview-img"
+                    alt="一次成套CAD图纸缩略图"
+                  />
+                  <!-- 一次成套高质感电气主回路 SVG 矢量降级 -->
+                  <div v-else class="prim-preview-placeholder">
+                    <svg
+                      width="100%"
+                      height="100%"
+                      viewBox="0 0 320 180"
+                      xmlns="http://www.w3.org/2000/svg"
+                      style="background: #090d16"
+                    >
+                      <defs>
+                        <!-- 点阵网格底衬 -->
+                        <pattern
+                          id="primGrid"
+                          width="20"
+                          height="20"
+                          patternUnits="userSpaceOnUse"
+                        >
+                          <circle cx="1" cy="1" r="0.8" fill="#1e293b" />
+                        </pattern>
+                      </defs>
+                      <rect width="100%" height="100%" fill="url(#primGrid)" />
+
+                      <!-- 顶部进线母排标示 L1/L2/L3 (黄/绿/红三相) -->
+                      <line x1="40" y1="26" x2="280" y2="26" stroke="#eab308" stroke-width="2.5" />
+                      <line x1="40" y1="32" x2="280" y2="32" stroke="#10b981" stroke-width="2.5" />
+                      <line x1="40" y1="38" x2="280" y2="38" stroke="#ef4444" stroke-width="2.5" />
+                      <text x="295" y="34" fill="#94a3b8" font-size="9" font-family="monospace" font-weight="700">TMY</text>
+
+                      <!-- QS 隔离开关符号 -->
+                      <line x1="160" y1="38" x2="160" y2="52" stroke="#009688" stroke-width="2" />
+                      <circle cx="160" cy="52" r="3" fill="#009688" />
+                      <line x1="160" y1="52" x2="172" y2="68" stroke="#009688" stroke-width="2" />
+                      <circle cx="160" cy="72" r="3" fill="#009688" />
+                      <text x="180" y="64" fill="#009688" font-size="10" font-family="monospace" font-weight="700">QS</text>
+
+                      <!-- QF 万能式/塑壳主断路器框体 -->
+                      <line x1="160" y1="75" x2="160" y2="88" stroke="#009688" stroke-width="2" />
+                      <rect x="142" y="88" width="36" height="34" rx="3" fill="#064e3b" stroke="#10b981" stroke-width="1.5" />
+                      <text x="160" y="103" fill="#a7f3d0" font-size="10" font-family="monospace" font-weight="700" text-anchor="middle">QF</text>
+                      <text x="160" y="116" fill="#34d399" font-size="8.5" font-family="monospace" text-anchor="middle">{{ card.ratedCurrent ? card.ratedCurrent + 'A' : '630A' }}</text>
+
+                      <!-- TA 电流互感器圆环 -->
+                      <line x1="160" y1="122" x2="160" y2="135" stroke="#009688" stroke-width="2" />
+                      <circle cx="160" cy="138" r="6" fill="none" stroke="#06b6d4" stroke-width="1.8" />
+                      <text x="175" y="142" fill="#06b6d4" font-size="9" font-family="monospace">TA</text>
+
+                      <!-- 底部引出线与负载端 -->
+                      <line x1="160" y1="144" x2="160" y2="160" stroke="#009688" stroke-width="2" />
+                      <circle cx="160" cy="162" r="3.5" fill="#eab308" />
+                      <text x="160" y="174" fill="#10b981" font-size="9.5" font-family="sans-serif" font-weight="700" text-anchor="middle">出线/馈电回路</text>
+                    </svg>
+                  </div>
+                  <!-- 右下角格式徽标 -->
+                  <span class="prim-badge-format">DWG / 一次图</span>
+                </div>
+
+                <!-- 略缩图下方参数网格 (双列参数规范排版) -->
+                <div class="prim-params-body">
+                  <div class="prim-params-row">
+                    <div class="prim-param-item">
+                      <span class="prim-p-label">额定电流:</span>
+                      <span class="prim-p-val">
+                        <b style="font-size: 13px">{{ card.ratedCurrent > 0 ? card.ratedCurrent : '-' }}</b> A
+                      </span>
+                    </div>
+                    <div class="prim-param-item">
+                      <span class="prim-p-label">柜体尺寸:</span>
+                      <span class="prim-p-val" :title="card.dimensions || '-'">
+                        {{ card.dimensions || '标准尺寸' }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="prim-params-row">
+                    <div class="prim-param-item">
+                      <span class="prim-p-label">材料费用:</span>
+                      <span class="prim-p-val price">
+                        ¥{{ formatMoney(card.materialCost > 0 ? card.materialCost : 0) }}
+                      </span>
+                    </div>
+                    <div class="prim-param-item">
+                      <span class="prim-p-label">装配工费:</span>
+                      <span class="prim-p-val price">
+                        ¥{{ formatMoney(card.laborCost > 0 ? card.laborCost : 0) }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="prim-params-row" style="border-top: 1px dashed #f1f5f9; padding-top: 6px">
+                    <div
+                      class="prim-param-item"
+                      style="grid-column: span 2; display: flex; align-items: center; justify-content: space-between"
+                    >
+                      <span class="prim-p-label">主母排规格:</span>
+                      <span class="prim-spec-badge" :title="card.busbarSpec || 'TMY铜排'">
+                        {{ card.busbarSpec || 'TMY' }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 底部操作与更新时间 -->
+                <div class="prim-card-footer">
+                  <span class="prim-update-time">
+                    更新于 {{ card.updateTime ? card.updateTime.substring(0, 10) : '2025-01-14' }}
+                  </span>
+                  <div class="prim-action-buttons">
+                    <button
+                      class="prim-btn-cad"
+                      type="button"
+                      title="使用外部 CAD 软件打开当前 DWG 图纸"
+                      @click.stop="openCadDrawing(card)"
+                    >
+                      打开图纸
+                    </button>
+                    <button
+                      class="prim-btn-edit"
+                      type="button"
+                      title="编辑一次成套方案与 BOM"
+                      @click.stop="openPrimaryEditModal(card)"
+                    >
+                      编辑
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 一次方案空状态提示 -->
+              <el-empty
+                v-if="!loading && primaryDwgCards.length === 0"
+                description="当前文件夹下暂未检索到一次方案 DWG 图纸，请点击左侧子文件夹或检查目录设置"
+                style="grid-column: span 4; margin: 40px auto"
+              ></el-empty>
+            </template>
+
+            <!-- 【板块 C：行业与公共方案标准卡片】 -->
             <template v-else>
               <div
                 v-for="scheme in schemeList"
@@ -2445,7 +3215,33 @@
               </div>
             </template>
 
-            <!-- 一次方案底栏 -->
+            <!-- 企业一次方案底栏 -->
+            <template v-else-if="currentScope === 'enterprise' && currentSchemeType === 'primary'">
+              <div style="display: flex; align-items: center; gap: 8px">
+                <span style="font-size: 13px; color: #475569">
+                  当前子分类:
+                  <b style="color: #009688"
+                    >{{ selectedPrimaryFolder ? selectedPrimaryFolder.name : '全部方案分类' }}</b
+                  >，共检索到
+                  <b
+                    style="
+                      color: #009688;
+                      font-family: monospace;
+                      font-size: 14px;
+                    "
+                    >{{ primaryDwgCards.length }}</b
+                  >
+                  个一次成套图纸方案
+                </span>
+              </div>
+              <div
+                style="font-size: 12px; color: #94a3b8; font-family: monospace"
+              >
+                目录: {{ primaryDwgRootDir || '未设置' }}
+              </div>
+            </template>
+
+            <!-- 行业与公共方案底栏 -->
             <template v-else>
               <div>
                 <el-button
@@ -2507,6 +3303,16 @@
               size="small"
               plain
               @click="openSecondaryEditModal(currentSecondaryCard)"
+            >
+              <i class="fa-regular fa-pen-to-square" style="margin-right: 4px"></i> 编辑方案与BOM
+            </el-button>
+            <!-- 一次方案下可直接呼出编辑弹窗 -->
+            <el-button
+              v-else-if="isPrimaryDetail"
+              type="primary"
+              size="small"
+              plain
+              @click="openPrimaryEditModal(currentPrimaryCard)"
             >
               <i class="fa-regular fa-pen-to-square" style="margin-right: 4px"></i> 编辑方案与BOM
             </el-button>
@@ -2647,8 +3453,8 @@
               <!-- 右上角悬浮操作胶囊：在外部 AutoCAD 中打开原 DWG -->
               <div
                 class="drawing-cad-floating-btn"
-                v-if="currentSecondaryCard?.fullPath || currentDetail?.fullPath || (currentDetail?.drawingUrls && currentDetail.drawingUrls[activeDrawingIndex]?.endsWith('.dwg')) || currentDetail?.cadDrawingName"
-                @click="openCadDrawing(currentSecondaryCard || currentDetail)"
+                v-if="currentSecondaryCard?.fullPath || currentPrimaryCard?.fullPath || currentDetail?.fullPath || (currentDetail?.drawingUrls && currentDetail.drawingUrls[activeDrawingIndex]?.endsWith('.dwg')) || currentDetail?.cadDrawingName"
+                @click="openCadDrawing(currentSecondaryCard || currentPrimaryCard || currentDetail)"
                 title="呼出本机 AutoCAD 软件直接打开并编辑该 DWG 文件"
               >
                 <i class="fa-solid fa-arrow-up-right-from-square"></i> 在 AutoCAD 中打开原图
@@ -2806,12 +3612,52 @@
                 <span>方案工艺控制与设计说明</span>
               </div>
               <p style="font-size: 13.5px; color: #334155; line-height: 1.8; margin: 0">
-                {{ currentDetail?.description || '适用于重要负荷二次回路控制系统，具备完善的二次测控与闭锁联动保护机制。' }}
+                {{ currentDetail?.description || (isPrimaryDetail ? `一次成套电气主接线回路，开关柜型: ${currentPrimaryCard?.cabinetModel || 'GGD'}，额定电流: ${(currentPrimaryCard?.ratedCurrent !== undefined && currentPrimaryCard?.ratedCurrent !== null) ? currentPrimaryCard.ratedCurrent : 630}A，母排规格: ${currentPrimaryCard?.busbarSpec || 'TMY'}。` : '适用于重要负荷二次回路控制系统，具备完善的二次测控与闭锁联动保护机制。') }}
               </p>
             </div>
 
             <!-- 技术参数与备注信息 -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px">
+            <!-- 【板块 A：一次成套方案专属技术与工费参数 (100% 完整展示 6 大核心参数)】 -->
+            <div v-if="isPrimaryDetail" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px">
+              <!-- 左侧面板：适用柜型与回路参数 -->
+              <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; background: #ffffff">
+                <!-- 面板小标题 -->
+                <div style="font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 8px">适用柜型与回路参数</div>
+                <!-- 参数条目列表 -->
+                <div style="font-size: 12.5px; color: #64748b; line-height: 2">
+                  <!-- 所属分类目录 -->
+                  <div>• 所属分类: <b style="color: #0f172a">{{ currentPrimaryCard?.folderName || currentDetail?.cabinetModel || '通用' }}</b></div>
+                  <!-- 1. 开关柜型 -->
+                  <div>• 开关柜型: <b style="color: #009688; font-weight: 600">{{ currentPrimaryCard?.cabinetModel || 'GGD' }}</b></div>
+                  <!-- 2. 柜体外形尺寸 -->
+                  <div>• 柜体尺寸: <b style="color: #0f172a">{{ currentPrimaryCard?.dimensions || '800*1000*2200' }}</b></div>
+                  <!-- 3. 额定工作电流 -->
+                  <div>• 额定电流: <b style="color: #0f172a">{{ (currentPrimaryCard?.ratedCurrent !== undefined && currentPrimaryCard?.ratedCurrent !== null) ? currentPrimaryCard.ratedCurrent : 630 }} A</b></div>
+                  <!-- 元器件品牌 -->
+                  <div>• 元器件品牌: <b style="color: #0f172a">{{ currentDetail?.brand || '通用柜型' }}</b></div>
+                </div>
+              </div>
+
+              <!-- 右侧面板：图纸关联与工费信息 -->
+              <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; background: #ffffff">
+                <!-- 面板小标题 -->
+                <div style="font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 8px">图纸关联与工费信息</div>
+                <!-- 工费与图纸条目列表 -->
+                <div style="font-size: 12.5px; color: #64748b; line-height: 2">
+                  <!-- DWG 图纸文件名 -->
+                  <div>• DWG 原图: <b style="color: #009688; font-family: monospace">{{ currentPrimaryCard?.dwgName || currentDetail?.schemeName || 'DWG' }}.dwg</b></div>
+                  <!-- 4. 主母排规格 -->
+                  <div>• 主母排规格: <b style="color: #0f172a">{{ currentPrimaryCard?.busbarSpec || 'TMY' }}</b></div>
+                  <!-- 5. 制作人工工费 (装配人工) -->
+                  <div>• 制作人工: <b style="color: #059669; font-weight: 600">¥{{ formatMoney(currentPrimaryCard?.laborCost ?? 0) }}</b></div>
+                  <!-- 6. 元件材料费 (一次材料成本) -->
+                  <div>• 元件材料费: <b style="color: #059669; font-weight: 600">¥{{ formatMoney(currentPrimaryCard?.materialCost ?? 0) }}</b></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 【板块 B：二次方案及其他方案常规展示】 -->
+            <div v-else style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px">
               <!-- 左侧面板：分类与回路参数 -->
               <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; background: #ffffff">
                 <div style="font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 8px">适用柜型与回路参数</div>
@@ -3501,6 +4347,550 @@
           </span>
         </template>
       </el-dialog>
+
+      <!-- ⑤ 一次成套 DWG 图纸目录设置弹窗 -->
+      <el-dialog
+        v-model="primDirSettingDialogVisible"
+        title="设置一次成套图纸目录"
+        width="620px"
+        :close-on-click-modal="false"
+        append-to-body
+      >
+        <div
+          style="
+            font-size: 13px;
+            color: #475569;
+            margin-bottom: 14px;
+            line-height: 1.6;
+          "
+        >
+          请选择或输入一次方案 DWG
+          图纸所在的主文件夹路径。系统会自动扫描其下的子文件夹并展示在左侧分类导航树中：
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-bottom: 12px">
+          <el-input
+            v-model="inputPrimaryDir"
+            placeholder="例如: D:\CAD_Drawings\PrimaryCircuits"
+            clearable
+          ></el-input>
+          <el-button type="primary" @click="onBrowsePrimaryDir">
+            <i class="fa-regular fa-folder-open" style="margin-right: 4px"></i>
+            浏览目录
+          </el-button>
+        </div>
+
+        <div
+          style="
+            font-size: 12px;
+            color: #64748b;
+            background: #f0fdf9;
+            border: 1px dashed #99f6e4;
+            border-radius: 4px;
+            padding: 10px 12px;
+          "
+        >
+          <i
+            class="fa-solid fa-circle-info"
+            style="color: #009688; margin-right: 4px"
+          ></i>
+          <strong>配置存储：</strong
+          >目录将持久化保存至配置文件（PrimaryCircuit.CircuitDwgDirectory），下次启动自动生效。
+        </div>
+
+        <template #footer>
+          <span class="dialog-footer">
+            <el-button @click="primDirSettingDialogVisible = false">取消</el-button>
+            <el-button type="primary" @click="onApplyManualPrimaryDir"
+              >保存并扫描</el-button
+            >
+          </span>
+        </template>
+      </el-dialog>
+
+      <!-- ⑥ 编辑一次成套方案与 BOM 弹窗 (采用现代化纯弹性布局，绝不出现外层与横向滚动条) -->
+      <el-dialog
+        v-model="primEditDialogOpen"
+        width="min(94vw, 1000px)"
+        :close-on-click-modal="false"
+        append-to-body
+        top="2.5vh"
+        class="prim-edit-dialog"
+        custom-class="prim-edit-dialog"
+      >
+        <!-- 标题栏：支持“复制其他方案”操作 -->
+        <template #header>
+          <!-- 标题容器 -->
+          <div class="sec-edit-dialog-header">
+            <!-- 弹窗主标题 -->
+            <span class="sec-edit-dialog-title">编辑一次成套方案与 BOM</span>
+            <!-- 复制方案按钮 -->
+            <el-button
+              type="success"
+              size="small"
+              plain
+              @click="openCopyPrimModal"
+              style="margin-right: 28px; font-weight: 500"
+            >
+              <i class="fa-solid fa-copy" style="margin-right: 4px"></i>
+              复制其他方案
+            </el-button>
+          </div>
+        </template>
+
+        <!-- 一次方案核心参数与描述弹性区块 -->
+        <div style="flex-shrink: 0">
+          <!-- 2 行 4 列响应式弹性网格：彻底根除单行 8 列拥挤导致的横向滚动条 -->
+          <div class="prim-meta-grid">
+            <!-- 第 1 行第 1 列: 方案目录 (只读) -->
+            <div>
+              <div class="sec-field-label" title="方案所属子目录">方案目录:</div>
+              <el-input
+                v-model="editingPrimScheme.folderName"
+                readonly
+                disabled
+                size="default"
+              ></el-input>
+            </div>
+            <!-- 第 1 行第 2 列: 当前DWG (只读) -->
+            <div>
+              <div class="sec-field-label" title="当前DWG图纸文件名">当前DWG:</div>
+              <el-input
+                v-model="editingPrimScheme.dwgName"
+                readonly
+                disabled
+                size="default"
+              ></el-input>
+            </div>
+            <!-- 第 1 行第 3 列: 方案名称 -->
+            <div>
+              <div class="sec-field-label" title="方案名称">方案名称:</div>
+              <el-input
+                v-model="editingPrimScheme.schemeName"
+                placeholder="例如: 进线隔离柜方案"
+                size="default"
+              ></el-input>
+            </div>
+            <!-- 第 1 行第 4 列: 开关柜型 -->
+            <div>
+              <div class="sec-field-label" title="适用开关柜柜型">开关柜型:</div>
+              <el-select
+                v-model="editingPrimScheme.cabinetModel"
+                placeholder="选择或输入"
+                filterable
+                allow-create
+                default-first-option
+                size="default"
+                style="width: 100%"
+              >
+                <el-option label="KYN28-12" value="KYN28-12"></el-option>
+                <el-option label="MNS" value="MNS"></el-option>
+                <el-option label="GGD" value="GGD"></el-option>
+                <el-option label="GCK" value="GCK"></el-option>
+                <el-option label="PZ30" value="PZ30"></el-option>
+                <el-option label="XL-21" value="XL-21"></el-option>
+                <el-option label="箱变" value="箱变"></el-option>
+              </el-select>
+            </div>
+
+            <!-- 第 2 行第 1 列: 额定电流 (A) -->
+            <div>
+              <div class="sec-field-label" title="额定工作电流 (A)">额定电流(A):</div>
+              <el-input-number
+                v-model="editingPrimScheme.ratedCurrent"
+                :min="0"
+                :step="100"
+                controls-position="right"
+                size="default"
+                style="width: 100%"
+              ></el-input-number>
+            </div>
+            <!-- 第 2 行第 2 列: 柜体尺寸 -->
+            <div>
+              <div class="sec-field-label" title="外形尺寸 (宽*深*高)">柜体尺寸:</div>
+              <el-input
+                v-model="editingPrimScheme.dimensions"
+                placeholder="如: 800*1000*2200"
+                size="default"
+              ></el-input>
+            </div>
+            <!-- 第 2 行第 3 列: 母排规格 -->
+            <div>
+              <div class="sec-field-label" title="主母线/分支排材质与规格">母排规格:</div>
+              <el-input
+                v-model="editingPrimScheme.busbarSpec"
+                placeholder="如: TMY-3(100*10)+1(80*8)"
+                size="default"
+              ></el-input>
+            </div>
+            <!-- 第 2 行第 4 列: 装配工费 (元) -->
+            <div>
+              <div class="sec-field-label" title="单台成套柜装配人工工费">装配工费(元):</div>
+              <el-input-number
+                v-model="editingPrimScheme.laborCost"
+                :min="0"
+                :precision="2"
+                :step="50"
+                controls-position="right"
+                size="default"
+                style="width: 100%"
+              ></el-input-number>
+            </div>
+          </div>
+
+          <!-- 主回路功能与接线说明 (Description) 单行自适应排布 -->
+          <div style="margin-top: 6px; margin-bottom: 6px">
+            <!-- 字段标签 -->
+            <div class="sec-field-label" style="margin-bottom: 2px">主回路功能与接线说明 (Description):</div>
+            <!-- 输入框 -->
+            <el-input
+              v-model="editingPrimScheme.description"
+              placeholder="进出线方式、断路器分断能力、保护配置说明等"
+              size="default"
+            ></el-input>
+          </div>
+        </div>
+
+        <!-- 一次 BOM 清单弹性容器盒子 (高度自适应伸缩填充，绝不产生外层垂直滚动条) -->
+        <div class="prim-bom-box">
+          <!-- 顶部工具栏 -->
+          <div class="sec-bom-header-bar">
+            <!-- 左侧标题 -->
+            <div class="sec-bom-title">
+              <span style="font-size: 16px">⚡</span>
+              <span>一次成套 BOM 物料清单:</span>
+            </div>
+            <!-- 右侧选型与临时项按键 -->
+            <div style="display: flex; gap: 8px">
+              <el-button
+                type="primary"
+                size="small"
+                @click="openMaterialSelectorForPrim"
+              >
+                <i
+                  class="fa-solid fa-magnifying-glass"
+                  style="margin-right: 4px"
+                ></i>
+                从本地物料库选型添加
+              </el-button>
+              <el-button size="small" @click="addCustomPrimBomRow">
+                + 自定义临时项
+              </el-button>
+            </div>
+          </div>
+
+          <!-- BOM 表格自适应容器 (table-layout: fixed 且百分比列宽，彻底掐断横向滚动) -->
+          <div class="prim-bom-table-scroll">
+            <table class="sec-bom-data-table" style="table-layout: fixed; width: 100%">
+              <thead>
+                <tr>
+                  <th style="width: 42px; text-align: center">序</th>
+                  <th style="width: 22%">元件名称</th>
+                  <th style="width: 28%">型号规格</th>
+                  <th style="width: 72px; text-align: center">数量</th>
+                  <th style="width: 52px; text-align: center">单位</th>
+                  <th style="width: 95px; text-align: right">物料库单价</th>
+                  <th style="width: 95px; text-align: right">材料费合价</th>
+                  <th style="width: 48px; text-align: center">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(item, idx) in primBomList" :key="item.id || idx">
+                  <td style="text-align: center; color: #64748b">
+                    {{ idx + 1 }}
+                  </td>
+                  <td>
+                    <el-input
+                      v-model="item.name"
+                      size="small"
+                      placeholder="元件名称"
+                    ></el-input>
+                  </td>
+                  <td>
+                    <el-input
+                      v-model="item.model"
+                      size="small"
+                      placeholder="型号规格"
+                    ></el-input>
+                  </td>
+                  <td>
+                    <el-input-number
+                      v-model="item.quantity"
+                      :min="1"
+                      size="small"
+                      :controls="false"
+                      style="width: 100%; text-align: center"
+                    ></el-input-number>
+                  </td>
+                  <td>
+                    <el-input
+                      v-model="item.unit"
+                      size="small"
+                      placeholder="单位"
+                      style="text-align: center"
+                    ></el-input>
+                  </td>
+                  <td>
+                    <el-input-number
+                      v-model="item.quotePrice"
+                      :min="0"
+                      :precision="2"
+                      size="small"
+                      :controls="false"
+                      style="width: 100%; text-align: right"
+                    ></el-input-number>
+                  </td>
+                  <td
+                    style="
+                      text-align: right;
+                      font-family: monospace;
+                      font-weight: 600;
+                      color: #d97706;
+                    "
+                  >
+                    ¥{{ ((Number(item.quantity) || 0) * (Number(item.quotePrice) || 0)).toFixed(2) }}
+                  </td>
+                  <td style="text-align: center">
+                    <button
+                      class="sec-btn-del"
+                      type="button"
+                      @click="deletePrimBomRow(idx)"
+                    >
+                      删除
+                    </button>
+                  </td>
+                </tr>
+                <tr v-if="primBomList.length === 0">
+                  <td
+                    colspan="8"
+                    style="text-align: center; padding: 24px; color: #94a3b8"
+                  >
+                    暂无一次成套 BOM 元件明细，可从本地物料库选型或点击上方添加自定义项
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 底部费用合计栏 -->
+          <div class="sec-bom-summary-bar">
+            <!-- 材料费小计 -->
+            <div class="sec-summary-item">
+              <span style="color: #64748b">一次材料费小计:</span>
+              <span class="sec-summary-val" style="color: #008477"
+                >¥ {{ primBomMaterialSubtotal.toFixed(2) }}</span
+              >
+            </div>
+            <!-- 装配人工费 -->
+            <div class="sec-summary-item">
+              <span style="color: #64748b">装配人工费:</span>
+              <span class="sec-summary-val" style="color: #1e293b"
+                >¥ {{ (Number(editingPrimScheme.laborCost) || 0).toFixed(2) }}</span
+              >
+            </div>
+            <!-- 一次成套总成本 -->
+            <div class="sec-summary-item">
+              <span style="color: #64748b">一次成套总成本:</span>
+              <span
+                class="sec-summary-val"
+                style="color: #e11d48; font-size: 14px"
+                >¥ {{ primComprehensiveTotalCost.toFixed(2) }}</span
+              >
+            </div>
+          </div>
+        </div>
+
+        <!-- 弹窗底部操作按钮 -->
+        <template #footer>
+          <span class="dialog-footer">
+            <el-button @click="primEditDialogOpen = false">取消</el-button>
+            <el-button type="primary" @click="savePrimarySchemeForm"
+              >保存方案</el-button
+            >
+          </span>
+        </template>
+      </el-dialog>
+
+      <!-- ⑦ 从已有一次方案复制参数与 BOM 弹窗 -->
+      <el-dialog
+        v-model="copyPrimModalVisible"
+        title="选择要复制的一次方案"
+        width="880px"
+        :close-on-click-modal="false"
+        append-to-body
+        top="6vh"
+        custom-class="copy-scheme-dialog"
+      >
+        <div style="padding: 0 4px">
+          <!-- 搜索过滤栏 -->
+          <div style="display: flex; gap: 8px; margin-bottom: 12px">
+            <el-input
+              v-model="copyPrimSearchKw"
+              placeholder="按方案名称、柜型、母排规格或工艺描述检索..."
+              clearable
+              size="default"
+              style="flex: 1"
+              @keyup.enter="refreshCopyPrimSchemes"
+            >
+              <template #prefix>
+                <i class="fa-solid fa-magnifying-glass"></i>
+              </template>
+            </el-input>
+            <el-button type="primary" @click="refreshCopyPrimSchemes">
+              搜索方案
+            </el-button>
+          </div>
+
+          <!-- 方案清单表格 -->
+          <div
+            v-loading="copyPrimLoading"
+            style="
+              max-height: 400px;
+              overflow-y: auto;
+              border: 1px solid #e2e8f0;
+              border-radius: 6px;
+            "
+          >
+            <table class="sec-bom-data-table">
+              <thead>
+                <tr>
+                  <th style="min-width: 140px">方案名称</th>
+                  <th style="width: 100px">柜型</th>
+                  <th style="width: 90px; text-align: right">额定电流</th>
+                  <th style="min-width: 120px">柜体尺寸</th>
+                  <th style="min-width: 140px">母排规格</th>
+                  <th style="width: 70px; text-align: center">BOM项数</th>
+                  <th style="width: 90px; text-align: right">人工工价</th>
+                  <th style="width: 80px; text-align: center">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="scheme in filteredCopyPrimSchemes"
+                  :key="scheme.id"
+                  style="cursor: pointer"
+                  @dblclick="applyCopiedPrimScheme(scheme)"
+                >
+                  <td style="font-weight: 600; color: #1e293b">
+                    {{ scheme.schemeName }}
+                  </td>
+                  <td>
+                    <el-tag size="small" effect="plain">{{ scheme.cabinetModel || '通用' }}</el-tag>
+                  </td>
+                  <td style="text-align: right; font-family: monospace">
+                    {{ scheme.ratedCurrent ? scheme.ratedCurrent + 'A' : '-' }}
+                  </td>
+                  <td style="color: #475569; font-size: 11.5px">
+                    {{ scheme.dimensions || '-' }}
+                  </td>
+                  <td style="color: #475569; font-size: 11.5px; font-family: monospace">
+                    {{ scheme.busbarSpec || '-' }}
+                  </td>
+                  <td style="text-align: center">
+                    <el-tag size="small" type="info">{{ getBomItemCount(scheme) }} 项</el-tag>
+                  </td>
+                  <td style="text-align: right; font-family: monospace; color: #008477">
+                    ¥{{ (Number(scheme.laborCost) || 0).toFixed(0) }}
+                  </td>
+                  <td style="text-align: center">
+                    <el-button
+                      type="success"
+                      link
+                      size="small"
+                      @click="applyCopiedPrimScheme(scheme)"
+                    >
+                      载入复制
+                    </el-button>
+                  </td>
+                </tr>
+                <tr v-if="!copyPrimLoading && filteredCopyPrimSchemes.length === 0">
+                  <td colspan="8" style="text-align: center; padding: 30px; color: #94a3b8">
+                    未查找到可复制的一次方案
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <template #footer>
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%">
+            <span style="font-size: 12px; color: #64748b">
+              共查找到 {{ filteredCopyPrimSchemes.length }} 个方案，双击行或点击【载入复制】即可继承
+            </span>
+            <el-button @click="copyPrimModalVisible = false">关闭</el-button>
+          </div>
+        </template>
+      </el-dialog>
+
+      <!-- ⑧ 存当前活动 Excel 柜体为一次方案弹窗 -->
+      <el-dialog
+        v-model="captureCabinetDialogVisible"
+        title="存当前活动箱柜为一次企业方案"
+        width="560px"
+        :close-on-click-modal="false"
+        append-to-body
+      >
+        <div style="padding: 4px 8px">
+          <div style="font-size: 13px; color: #475569; margin-bottom: 14px; line-height: 1.6">
+            系统将直接读取当前活动 Excel 表格中光标所在箱柜的名称、柜型、外形尺寸以及完整的元器件 BOM 明细，一键入库为一次成套方案：
+          </div>
+
+          <el-form label-width="90px" size="default">
+            <el-form-item label="归属子目录:">
+              <el-select
+                v-model="captureCabinetForm.folderName"
+                placeholder="选择或输入子目录名称"
+                filterable
+                allow-create
+                default-first-option
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="f in primaryFolders"
+                  :key="f.name"
+                  :label="f.name"
+                  :value="f.name"
+                ></el-option>
+              </el-select>
+            </el-form-item>
+
+            <el-form-item label="方案名称:">
+              <el-input
+                v-model="captureCabinetForm.schemeName"
+                placeholder="留空则自动取当前箱柜名称"
+                clearable
+              ></el-input>
+            </el-form-item>
+
+            <el-form-item label="开关柜型:">
+              <el-select
+                v-model="captureCabinetForm.cabinetModel"
+                placeholder="选择开关柜型"
+                filterable
+                allow-create
+                default-first-option
+                style="width: 100%"
+              >
+                <el-option label="KYN28-12" value="KYN28-12"></el-option>
+                <el-option label="MNS" value="MNS"></el-option>
+                <el-option label="GGD" value="GGD"></el-option>
+                <el-option label="GCK" value="GCK"></el-option>
+                <el-option label="PZ30" value="PZ30"></el-option>
+                <el-option label="XL-21" value="XL-21"></el-option>
+                <el-option label="箱变" value="箱变"></el-option>
+              </el-select>
+            </el-form-item>
+          </el-form>
+        </div>
+
+        <template #footer>
+          <span class="dialog-footer">
+            <el-button @click="captureCabinetDialogVisible = false">取消</el-button>
+            <el-button type="primary" @click="confirmCaptureCabinet">立即提取保存</el-button>
+          </span>
+        </template>
+      </el-dialog>
     </div>
 
     <!-- 核心逻辑脚本 -->
@@ -3641,6 +5031,98 @@
             return secBomMaterialSubtotal.value + labor;
           });
 
+          // ===== 一次方案专属状态定义 =====
+          // 一次成套图纸根目录
+          const primaryDwgRootDir = ref("");
+          // 一次根目录下的子文件夹列表
+          const primaryFolders = ref([]);
+          // 当前选中的一次子文件夹
+          const selectedPrimaryFolder = ref(null);
+          // 当前一次子文件夹下的 DWG 卡片列表
+          const primaryDwgCards = ref([]);
+          // 一次方案关键字过滤输入
+          const primarySearchKw = ref("");
+          // 一次方案开关柜型过滤
+          const primaryCabinetModel = ref("");
+          // 一次目录配置弹窗可见性
+          const primDirSettingDialogVisible = ref(false);
+          // 一次目录弹窗中手动输入的路径
+          const inputPrimaryDir = ref("");
+          // 一次方案与 BOM 编辑弹窗可见性
+          const primEditDialogOpen = ref(false);
+          // 一次方案编辑表单数据实体
+          const editingPrimScheme = ref({
+            id: 0,
+            folderName: "",
+            dwgName: "",
+            cadDrawingName: "",
+            schemeName: "",
+            cabinetModel: "GGD",
+            ratedCurrent: 630,
+            dimensions: "800*1000*2200",
+            busbarSpec: "TMY",
+            laborCost: 200.0,
+            description: "",
+          });
+          // 当前编辑一次方案的 BOM 列表
+          const primBomList = ref([]);
+          // 复制其他一次方案选择弹窗可见性
+          const copyPrimModalVisible = ref(false);
+          // 复制一次方案加载状态
+          const copyPrimLoading = ref(false);
+          // 复制一次方案检索关键字
+          const copyPrimSearchKw = ref("");
+          // 所有可供复制的一次方案集合
+          const allCopyPrimSchemes = ref([]);
+          // 存当前活动 Excel 柜体为一次方案弹窗可见性
+          const captureCabinetDialogVisible = ref(false);
+          // 存当前柜表单
+          const captureCabinetForm = ref({
+            folderName: "",
+            schemeName: "",
+            cabinetModel: "GGD",
+          });
+          // 物料选型目标区分 ('sec' | 'prim')
+          const currentMaterialTarget = ref("sec");
+
+          // 一次方案全量子目录 DWG 图纸数量汇总计算属性
+          const totalPrimaryDwgCount = computed(() => {
+            return primaryFolders.value.reduce(
+              (sum, f) => sum + (f.dwgCount || 0),
+              0,
+            );
+          });
+
+          // 一次方案当前编辑 BOM 材料费小计
+          const primBomMaterialSubtotal = computed(() => {
+            return primBomList.value.reduce((sum, item) => {
+              const q = Number(item.quantity) || 0;
+              const p = Number(item.price ?? item.unitPrice ?? item.quotePrice ?? 0);
+              return sum + q * p;
+            }, 0);
+          });
+
+          // 一次方案综合总成本 (材料费 + 人工工费)
+          const primComprehensiveTotalCost = computed(() => {
+            const labor = Number(editingPrimScheme.value.laborCost) || 0;
+            return primBomMaterialSubtotal.value + labor;
+          });
+
+          // 复制一次方案模糊检索过滤计算属性
+          const filteredCopyPrimSchemes = computed(() => {
+            if (!copyPrimSearchKw.value || !copyPrimSearchKw.value.trim()) {
+              return allCopyPrimSchemes.value;
+            }
+            const kw = copyPrimSearchKw.value.trim().toLowerCase();
+            return allCopyPrimSchemes.value.filter((s) => {
+              const name = (s.schemeName || "").toLowerCase();
+              const model = (s.cabinetModel || "").toLowerCase();
+              const bus = (s.busbarSpec || "").toLowerCase();
+              const desc = (s.description || "").toLowerCase();
+              return name.includes(kw) || model.includes(kw) || bus.includes(kw) || desc.includes(kw);
+            });
+          });
+
           // 金额格式化通用工具函数
           const formatMoney = (val) => {
             const n = Number(val);
@@ -3654,12 +5136,18 @@
           const currentSecondaryCard = ref(null);
           // 标识当前打开的详情大视口是否为二次回路方案
           const isSecondaryDetail = ref(false);
+          // 当前选中的一次成套卡片实体数据
+          const currentPrimaryCard = ref(null);
+          // 标识当前打开的详情大视口是否为一次成套方案
+          const isPrimaryDetail = ref(false);
           // 详情子 Tab 聚焦索引 (默认聚焦至图纸浏览视口)
           const detailActiveTab = ref("drawing"); // 'drawing' | 'bom' | 'description'
-          // 判断当前是否处于 DWG 图纸真实矢量浏览模式 (全面兼容二次方案与关联 DWG 图纸的通用企业方案)
+          // 判断当前是否处于 DWG 图纸真实矢量浏览模式 (全面兼容一次方案、二次方案与关联 DWG 图纸的企业方案)
           const isDwgMode = computed(() => {
             // 若为二次回路方案卡片，直接进入 DWG 矢量模式
             if (isSecondaryDetail.value && !!currentSecondaryCard.value) return true;
+            // 若为一次成套方案卡片，直接进入 DWG 矢量模式
+            if (isPrimaryDetail.value && !!currentPrimaryCard.value) return true;
             // 若为普通方案，检查当前激活的图纸或关联 CAD 图纸是否为 DWG 文件
             if (currentDetail.value) {
               // 提取当前图纸路径
@@ -3777,7 +5265,23 @@
             currentScope.value = scope;
             selectedCategoryId.value = "";
             pageIndex.value = 1;
-            fetchSchemes();
+            if (scope === "enterprise" && currentSchemeType.value === "primary") {
+              // 切换到企业方案且为一次方案时自动拉取
+              if (!primaryDwgRootDir.value) {
+                loadPrimaryCircuitConfig();
+              } else {
+                loadPrimaryFolderDwgCards();
+              }
+            } else if (scope === "enterprise" && currentSchemeType.value === "secondary") {
+              // 切换到企业方案且为二次方案时拉取
+              if (!secondaryDwgRootDir.value) {
+                loadSecondaryCircuitConfig();
+              } else {
+                loadFolderDwgCards();
+              }
+            } else {
+              fetchSchemes();
+            }
           };
 
           // 切换二级 Tab
@@ -3790,6 +5294,13 @@
                 loadSecondaryCircuitConfig();
               } else {
                 loadFolderDwgCards();
+              }
+            } else if (type === "primary" && currentScope.value === "enterprise") {
+              // 切换到企业一次方案时自动初始化
+              if (!primaryDwgRootDir.value) {
+                loadPrimaryCircuitConfig();
+              } else {
+                loadPrimaryFolderDwgCards();
               }
             } else {
               fetchSchemes();
@@ -4076,8 +5587,9 @@
             postToHost("saveSecondaryScheme", { data: payload });
           };
 
-          // 打开物料库选型对话框
+          // 打开物料库选型对话框 (用于二次方案)
           const openMaterialSelector = () => {
+            currentMaterialTarget.value = "sec";
             materialSearchKw.value = "";
             materialSearchResults.value = [];
             materialSelectorVisible.value = true;
@@ -4092,7 +5604,7 @@
             });
           };
 
-          // 选用物料添加到 BOM (严格使用 name 与 model)
+          // 选用物料添加到 BOM (严格使用 name 与 model，自动分流至二次或一次 BOM)
           const selectMaterialToBom = (item) => {
             // 提取型号规格 (严格统一使用 model 字段)
             const m = item.model || "";
@@ -4100,14 +5612,16 @@
             const n = item.name || "元件";
             // 提取参考价格
             const p = Number(item.price ?? item.unitPrice ?? 0) || 0.0;
-            // 将选中的物料推入当前编辑 BOM 列表中
-            secBomList.value.push({
+            // 判定当前选型目标列表 (一次方案或二次方案)
+            const targetList = currentMaterialTarget.value === "prim" ? primBomList : secBomList;
+            // 将选中的物料推入目标 BOM 清单中
+            targetList.value.push({
               id: Date.now(),
               name: n,
               model: m,
               brand: item.brand || "",
               quantity: 1,
-              unit: item.unit || "只",
+              unit: item.unit || (currentMaterialTarget.value === "prim" ? "台" : "只"),
               price: p,
               unitPrice: p,
               quotePrice: p,
@@ -4249,6 +5763,515 @@
               console.error("[applyCopiedScheme] 载入异常:", err);
               ElementPlus.ElMessage.error("复制方案内容失败，请查看控制台日志！");
             }
+          };
+
+          // ===== 一次方案相关交互方法 =====
+          // 拉取当前已保存的一次方案图纸根目录
+          const loadPrimaryCircuitConfig = () => {
+            // 向 C# 宿主发送拉取配置请求
+            postToHost("getPrimaryCircuitConfig");
+          };
+
+          // 打开一次方案目录设置对话框
+          const openPrimDirSettingDialog = () => {
+            // 将当前生效的目录同步反显至弹窗输入框中
+            inputPrimaryDir.value = primaryDwgRootDir.value;
+            // 展现弹窗视口
+            primDirSettingDialogVisible.value = true;
+          };
+
+          // 一次图纸目录选择轻量主动探测定时器
+          let primBrowsePollTimer = null;
+
+          // 点击浏览选择一次图纸根目录
+          const onBrowsePrimaryDir = () => {
+            // 清理可能遗留的旧轮询定时器
+            if (primBrowsePollTimer) {
+              clearInterval(primBrowsePollTimer);
+              primBrowsePollTimer = null;
+            }
+            // 向 C# 宿主发送弹出原生文件夹选择框请求 (独立后台 STA 线程解耦)
+            postToHost("selectPrimaryCircuitDir");
+
+            // 启动轻量防御性主动轮询探测配置更新
+            let pollCount = 0;
+            primBrowsePollTimer = setInterval(() => {
+              pollCount++;
+              // 若超过探测次数或弹窗已关闭则停止轮询
+              if (pollCount > 15 || !primDirSettingDialogVisible.value) {
+                clearInterval(primBrowsePollTimer);
+                primBrowsePollTimer = null;
+                return;
+              }
+              // 主动向宿主查询最新保存的一次图纸根目录
+              loadPrimaryCircuitConfig();
+            }, 800);
+          };
+
+          // 手动应用输入的一次方案图纸目录
+          const onApplyManualPrimaryDir = () => {
+            // 校验输入框内容是否为空
+            if (!inputPrimaryDir.value || !inputPrimaryDir.value.trim()) {
+              ElementPlus.ElMessage.warning("请输入有效的一次图纸文件夹路径！");
+              return;
+            }
+            // 停止探测轮询定时器
+            if (primBrowsePollTimer) {
+              clearInterval(primBrowsePollTimer);
+              primBrowsePollTimer = null;
+            }
+            // 向 C# 宿主发送持久化保存指令
+            postToHost("setPrimaryCircuitDirManual", {
+              path: inputPrimaryDir.value.trim(),
+            });
+            // 关闭目录配置弹窗
+            primDirSettingDialogVisible.value = false;
+          };
+
+          // 扫描一次方案根目录下的子文件夹列表
+          const scanPrimaryFolders = () => {
+            // 呼叫后端扫描子文件夹
+            postToHost("scanPrimaryFolders", {
+              rootDir: primaryDwgRootDir.value,
+            });
+          };
+
+          // 切换选中的一次方案子文件夹
+          const onSelectPrimaryFolder = (folder) => {
+            // 记录当前选中的子文件夹对象
+            selectedPrimaryFolder.value = folder;
+            // 清空搜索输入框
+            primarySearchKw.value = "";
+            // 加载当前子文件夹下的一次 DWG 卡片
+            loadPrimaryFolderDwgCards();
+          };
+
+          // 加载选定子文件夹下的一次成套 DWG 卡片
+          const loadPrimaryFolderDwgCards = (forceRefresh = false) => {
+            // 激活加载中状态
+            loading.value = true;
+            // 提取文件夹路径与名称
+            const folderPath = selectedPrimaryFolder.value
+              ? selectedPrimaryFolder.value.fullPath
+              : "";
+            const folderName = selectedPrimaryFolder.value
+              ? selectedPrimaryFolder.value.name
+              : "";
+            // 发送 IPC 请求拉取一次卡片列表
+            postToHost("getPrimaryFolderDwgCards", {
+              folderPath: folderPath,
+              folderName: folderName,
+              keyword: primarySearchKw.value,
+              cabinetModel: primaryCabinetModel.value,
+              forceRefresh: forceRefresh,
+            });
+          };
+
+          // 一次方案条件检索
+          const onPrimarySearch = () => {
+            // 调度加载卡片
+            loadPrimaryFolderDwgCards(false);
+          };
+
+          // 刷新一次卡片数据
+          const refreshPrimaryCards = () => {
+            // 强制清空缓存并重新读取
+            loadPrimaryFolderDwgCards(true);
+          };
+
+          // 打开一次成套方案详情大视口 (全面对齐二次方案大视口，支持 CAD 真实矢量开图与 BOM 联动)
+          const openPrimaryDetail = (card) => {
+            // 防御性校验目标卡片有效性
+            if (!card) return;
+            // 记录当前选中的一次方案卡片实体
+            currentPrimaryCard.value = card;
+            // 标记当前详情为一次方案模式
+            isPrimaryDetail.value = true;
+            isSecondaryDetail.value = false;
+            // 默认聚焦图纸浏览 Tab
+            detailActiveTab.value = "drawing";
+
+            // 解析卡片的 BOM 明细列表 (优先读取 schemeData，次之读取 bomJson 与 bomItems)
+            let parsedBom = [];
+            if (card.schemeData && Array.isArray(card.schemeData.bomItems) && card.schemeData.bomItems.length > 0) {
+              parsedBom = card.schemeData.bomItems.map((b, idx) => ({
+                id: Date.now() + idx,
+                selected: true,
+                sortOrder: idx + 1,
+                name: b.name || "一次元件",
+                model: b.model || "",
+                brand: b.brand || "通用",
+                unit: b.unit || "台",
+                quantity: Number(b.quantity) || 1,
+                isWlDoubled: false,
+                catalogPrice: Number(b.price ?? b.unitPrice ?? b.quotePrice ?? 0),
+                discount: 1.0,
+                quoteDiscount: 1.0,
+                quotePrice: Number(b.price ?? b.unitPrice ?? b.quotePrice ?? 0),
+                materialCode: "",
+                origin: "",
+                category: "一次成套",
+              }));
+            } else if (card.bomJson) {
+              try {
+                const list = JSON.parse(card.bomJson);
+                if (Array.isArray(list)) {
+                  parsedBom = list.map((b, idx) => ({
+                    id: Date.now() + idx,
+                    selected: true,
+                    sortOrder: idx + 1,
+                    name: b.name || "一次元件",
+                    model: b.model || "",
+                    brand: b.brand || "通用",
+                    unit: b.unit || "台",
+                    quantity: Number(b.quantity) || 1,
+                    isWlDoubled: false,
+                    catalogPrice: Number(b.price ?? b.unitPrice ?? b.quotePrice ?? 0),
+                    discount: 1.0,
+                    quoteDiscount: 1.0,
+                    quotePrice: Number(b.price ?? b.unitPrice ?? b.quotePrice ?? 0),
+                    materialCode: "",
+                    origin: "",
+                    category: "一次成套",
+                  }));
+                }
+              } catch (e) {
+                parsedBom = [];
+              }
+            } else if (Array.isArray(card.bomItems)) {
+              parsedBom = card.bomItems.map((b, idx) => ({
+                id: Date.now() + idx,
+                selected: true,
+                sortOrder: idx + 1,
+                name: b.name || "一次元件",
+                model: b.model || "",
+                brand: b.brand || "通用",
+                unit: b.unit || "台",
+                quantity: Number(b.quantity) || 1,
+                isWlDoubled: false,
+                catalogPrice: Number(b.price ?? b.unitPrice ?? b.quotePrice ?? 0),
+                discount: 1.0,
+                quoteDiscount: 1.0,
+                quotePrice: Number(b.price ?? b.unitPrice ?? b.quotePrice ?? 0),
+                materialCode: "",
+                origin: "",
+                category: "一次成套",
+              }));
+            }
+
+            // 6. 一次成套方案 6 项核心关键参数规范化自适应兜底 (确保工程技术描述 100% 完整呈现)
+            // 6.1 柜型：优先读取卡片柜型，次之提取下挂数据库实体，最后兜底 GGD
+            const safeModel = card.cabinetModel || (card.schemeData ? card.schemeData.cabinetModel : "") || "GGD";
+            // 6.2 尺寸：优先读取卡片尺寸，次之读取数据库实体，最后兜底标准尺寸
+            const safeDim = card.dimensions || (card.schemeData ? card.schemeData.dimensions : "") || "800*1000*2200";
+            // 6.3 额定电流：支持 0 值的有效提取，若未定义则自适应兜底 630A
+            const safeCurrent = (card.ratedCurrent !== undefined && card.ratedCurrent !== null && card.ratedCurrent !== "") ? Number(card.ratedCurrent) : ((card.schemeData && card.schemeData.ratedCurrent !== undefined) ? Number(card.schemeData.ratedCurrent) : 630);
+            // 6.4 主母排规格：优先读取母排规格，兜底标准 TMY 铜排
+            const safeBusbar = card.busbarSpec || (card.schemeData ? card.schemeData.busbarSpec : "") || "TMY";
+            // 6.5 制作人工：支持 0 值的有效提取，默认兜底 0
+            const safeLabor = (card.laborCost !== undefined && card.laborCost !== null && card.laborCost !== "") ? Number(card.laborCost) : ((card.schemeData && card.schemeData.laborCost !== undefined) ? Number(card.schemeData.laborCost) : 0);
+            // 6.6 元件材料费：优先根据解析出来的 BOM 清单实时求和核算，若无 BOM 则提取原有材料费
+            const bomSumCost = parsedBom.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.quotePrice) || 0), 0);
+            const safeMaterial = bomSumCost > 0 ? bomSumCost : ((card.materialCost !== undefined && card.materialCost !== null && card.materialCost !== "") ? Number(card.materialCost) : ((card.schemeData && card.schemeData.totalMaterialCost !== undefined) ? Number(card.schemeData.totalMaterialCost) : 0));
+
+            // 回填规范化后的参数至当前选中的卡片实体，确保响应式视图 100% 具备有效属性
+            card.cabinetModel = safeModel;
+            card.dimensions = safeDim;
+            card.ratedCurrent = safeCurrent;
+            card.busbarSpec = safeBusbar;
+            card.laborCost = safeLabor;
+            card.materialCost = safeMaterial;
+
+            // 构造 currentDetail 对象供详情三大 Tab 渲染
+            currentDetail.value = {
+              id: String(card.schemeId || (card.schemeData ? card.schemeData.id : 0) || Date.now()),
+              schemeName: card.schemeName || card.dwgName || "一次成套方案",
+              cabinetModel: safeModel,
+              dimensions: safeDim,
+              creatorName: "企业私有资产",
+              updateTime: card.updateTime ? card.updateTime.substring(0, 10) : "2025-01-14",
+              brand: card.folderName || "通用柜型",
+              description: card.description || (card.schemeData ? card.schemeData.description : "") || `一次成套电气主接线回路，开关柜型: ${safeModel}，额定电流: ${safeCurrent}A，母排规格: ${safeBusbar}。`,
+              drawingUrls: card.previewBase64 ? [card.previewBase64] : [],
+              thumbnailUrl: card.previewBase64 || "",
+              bomItems: parsedBom,
+              isFavorite: false,
+              fullPath: card.fullPath || "",
+              cadDrawingName: card.dwgName ? card.dwgName + ".dwg" : "",
+            };
+
+            // 重置视口交互状态：居中且 100% 缩放
+            activeDrawingIndex.value = 0;
+            imgScale.value = 1;
+            imgRotation.value = 0;
+            imgTranslateX.value = 0;
+            imgTranslateY.value = 0;
+            loopMultiplier.value = 1;
+
+            // 打开详情大视口
+            detailVisible.value = true;
+
+            // 异步调度纯前端 cad-view 真实矢量引擎加载该方案关联的 DWG 图纸
+            const targetDwgPath = card.fullPath || card.dwgName || "";
+            if (targetDwgPath) {
+              loadVectorDwg(targetDwgPath);
+            }
+          };
+
+          // 打开编辑一次成套方案与 BOM 弹窗
+          const openPrimaryEditModal = (card) => {
+            // 校验目标卡片有效性
+            if (!card) return;
+            // 提取方案数字 ID
+            const schemeIdNum = Number(card.schemeId) || (card.schemeData ? Number(card.schemeData.id) : 0) || 0;
+            // 提取所属子目录名称
+            const folderNameStr = card.folderName || (selectedPrimaryFolder.value ? selectedPrimaryFolder.value.name : "一次方案");
+            // 提取当前图纸名称
+            const dwgNameStr = card.dwgName || "";
+
+            // 初始化编辑表单响应式状态
+            editingPrimScheme.value = {
+              id: schemeIdNum,
+              folderName: folderNameStr,
+              dwgName: dwgNameStr,
+              schemeName: card.schemeName || dwgNameStr || "一次成套方案",
+              cadDrawingName: card.cadDrawingName || (card.schemeData ? card.schemeData.cadDrawingName : "") || (dwgNameStr ? dwgNameStr + ".dwg" : ""),
+              cabinetModel: card.cabinetModel || (card.schemeData ? card.schemeData.cabinetModel : "") || "GGD",
+              ratedCurrent: typeof card.ratedCurrent === "number" ? card.ratedCurrent : (card.schemeData ? Number(card.schemeData.ratedCurrent) || 630 : 630),
+              dimensions: card.dimensions || (card.schemeData ? card.schemeData.dimensions : "") || "800*1000*2200",
+              busbarSpec: card.busbarSpec || (card.schemeData ? card.schemeData.busbarSpec : "") || "TMY",
+              laborCost: typeof card.laborCost === "number" ? card.laborCost : (card.schemeData ? Number(card.schemeData.laborCost) || 200 : 200),
+              description: card.description || (card.schemeData ? card.schemeData.description : "") || "",
+            };
+
+            // 解析一次方案 BOM 清单
+            let parsedBom = [];
+            // 标准化一次 BOM 记录对象
+            const normalizePrimBomItem = (b, idx) => {
+              // 提取元件名称
+              const name = b.name || "一次元件";
+              // 提取规格型号
+              const model = b.model || "";
+              // 提取单价
+              const price = Number(b.price ?? b.unitPrice ?? b.quotePrice ?? 0);
+              return {
+                id: b.id || (Date.now() + idx),
+                name: name,
+                model: model,
+                brand: b.brand || "",
+                quantity: Number(b.quantity) || 1,
+                unit: b.unit || "台",
+                price: price,
+                unitPrice: price,
+                quotePrice: price,
+              };
+            };
+
+            // 优先从 schemeData.bomItems 提取
+            if (card.schemeData && Array.isArray(card.schemeData.bomItems) && card.schemeData.bomItems.length > 0) {
+              parsedBom = card.schemeData.bomItems.map(normalizePrimBomItem);
+            } else if (card.bomJson) {
+              try {
+                // 反序列化 BOM 文本
+                const rawList = typeof card.bomJson === "string" ? JSON.parse(card.bomJson) : card.bomJson;
+                parsedBom = (Array.isArray(rawList) ? rawList : []).map(normalizePrimBomItem);
+              } catch (e) {
+                parsedBom = [];
+              }
+            } else if (Array.isArray(card.bomItems)) {
+              // 兼容直接绑定的 bomItems
+              parsedBom = card.bomItems.map(normalizePrimBomItem);
+            }
+
+            // 赋值给当前一次 BOM 列表
+            primBomList.value = parsedBom;
+            // 打开一次编辑弹窗
+            primEditDialogOpen.value = true;
+          };
+
+          // 一次 BOM 清单自定义新增临时行
+          const addCustomPrimBomRow = () => {
+            // 追加一行默认元器件
+            primBomList.value.push({
+              id: Date.now(),
+              name: "新元件",
+              model: "",
+              quantity: 1,
+              unit: "台",
+              price: 0.0,
+              unitPrice: 0.0,
+              quotePrice: 0.0,
+            });
+          };
+
+          // 一次 BOM 清单删除指定行
+          const deletePrimBomRow = (index) => {
+            // 移除指定索引项
+            primBomList.value.splice(index, 1);
+          };
+
+          // 打开物料库选型对话框 (用于一次方案)
+          const openMaterialSelectorForPrim = () => {
+            // 切换物料库选型目标为一次方案
+            currentMaterialTarget.value = "prim";
+            materialSearchKw.value = "";
+            materialSearchResults.value = [];
+            materialSelectorVisible.value = true;
+            onSearchMaterials();
+          };
+
+          // 保存一次成套方案表单
+          const savePrimarySchemeForm = () => {
+            // 格式化 BOM 明细清单
+            const bomArray = (primBomList.value || []).map((item) => ({
+              name: item.name || "一次元件",
+              model: item.model || "",
+              brand: item.brand || "",
+              quantity: Number(item.quantity) || 1,
+              unit: item.unit || "台",
+              unitPrice: Number(item.price ?? item.unitPrice ?? item.quotePrice ?? 0),
+            }));
+
+            // 组装标准一次方案数据负载
+            const payload = {
+              id: Number(editingPrimScheme.value.id) || 0,
+              folderName: editingPrimScheme.value.folderName || (selectedPrimaryFolder.value ? selectedPrimaryFolder.value.name : "一次方案"),
+              schemeName: editingPrimScheme.value.schemeName || editingPrimScheme.value.dwgName || "一次成套方案",
+              cadDrawingName: editingPrimScheme.value.cadDrawingName || (editingPrimScheme.value.dwgName ? editingPrimScheme.value.dwgName + ".dwg" : ""),
+              cabinetModel: editingPrimScheme.value.cabinetModel || "GGD",
+              ratedCurrent: Number(editingPrimScheme.value.ratedCurrent) || 0,
+              dimensions: editingPrimScheme.value.dimensions || "",
+              busbarSpec: editingPrimScheme.value.busbarSpec || "",
+              laborCost: Number(editingPrimScheme.value.laborCost) || 0,
+              description: editingPrimScheme.value.description || "",
+              bomItems: bomArray,
+              bomJson: JSON.stringify(bomArray),
+            };
+
+            // 发送 IPC 指令给后台保存至 SQLite
+            postToHost("savePrimaryScheme", { data: payload });
+          };
+
+          // 打开从已有一次方案复制参数与 BOM 弹窗
+          const openCopyPrimModal = () => {
+            // 清空检索框并打开弹窗
+            copyPrimSearchKw.value = "";
+            copyPrimModalVisible.value = true;
+            refreshCopyPrimSchemes();
+          };
+
+          // 刷新/查询所有可供复制的一次方案
+          const refreshCopyPrimSchemes = () => {
+            // 开启加载中状态
+            copyPrimLoading.value = true;
+            // 发送请求拉取方案数据
+            postToHost("getPrimarySchemesForCopy", {
+              keyword: copyPrimSearchKw.value || "",
+            });
+          };
+
+          // 确认复制并载入选中的一次方案参数与 BOM
+          const applyCopiedPrimScheme = (sourceScheme) => {
+            // 校验源对象
+            if (!sourceScheme) return;
+            try {
+              // 1. 继承开关柜型
+              if (sourceScheme.cabinetModel || sourceScheme.CabinetModel) {
+                editingPrimScheme.value.cabinetModel = sourceScheme.cabinetModel || sourceScheme.CabinetModel;
+              }
+              // 2. 继承额定电流
+              const ratedVal = sourceScheme.ratedCurrent ?? sourceScheme.RatedCurrent;
+              if (ratedVal !== undefined && ratedVal !== null) {
+                editingPrimScheme.value.ratedCurrent = Number(ratedVal) || 0;
+              }
+              // 3. 继承柜体尺寸
+              if (sourceScheme.dimensions || sourceScheme.Dimensions) {
+                editingPrimScheme.value.dimensions = sourceScheme.dimensions || sourceScheme.Dimensions;
+              }
+              // 4. 继承主母排规格
+              if (sourceScheme.busbarSpec || sourceScheme.BusbarSpec) {
+                editingPrimScheme.value.busbarSpec = sourceScheme.busbarSpec || sourceScheme.BusbarSpec;
+              }
+              // 5. 继承装配人工工价
+              const laborVal = sourceScheme.laborCost ?? sourceScheme.LaborCost;
+              if (laborVal !== undefined && laborVal !== null) {
+                editingPrimScheme.value.laborCost = Number(laborVal) || 0;
+              }
+              // 6. 继承方案描述说明
+              if (sourceScheme.description || sourceScheme.Description) {
+                editingPrimScheme.value.description = sourceScheme.description || sourceScheme.Description;
+              }
+
+              // 7. 提取源 BOM 清单
+              let sourceBom = [];
+              if (Array.isArray(sourceScheme.bomItems)) {
+                sourceBom = sourceScheme.bomItems;
+              } else if (Array.isArray(sourceScheme.bom)) {
+                sourceBom = sourceScheme.bom;
+              } else if (typeof sourceScheme.bomJson === "string" && sourceScheme.bomJson.trim()) {
+                try {
+                  const parsed = JSON.parse(sourceScheme.bomJson);
+                  if (Array.isArray(parsed)) sourceBom = parsed;
+                } catch (e) { }
+              }
+
+              // 8. 映射为当前编辑 BOM 列表
+              if (Array.isArray(sourceBom) && sourceBom.length > 0) {
+                primBomList.value = sourceBom.map((item, idx) => ({
+                  id: Date.now() + idx,
+                  name: item.name || item.Name || "元件",
+                  model: item.model || item.Model || "",
+                  brand: item.brand || item.Brand || "",
+                  unit: item.unit || item.Unit || "台",
+                  quantity: Number(item.quantity ?? item.Quantity ?? 1) || 1,
+                  price: Number(item.price ?? item.unitPrice ?? item.UnitPrice ?? item.quotePrice ?? 0),
+                  unitPrice: Number(item.price ?? item.unitPrice ?? item.UnitPrice ?? item.quotePrice ?? 0),
+                  quotePrice: Number(item.price ?? item.unitPrice ?? item.UnitPrice ?? item.quotePrice ?? 0),
+                }));
+              } else {
+                primBomList.value = [];
+              }
+
+              // 9. 关闭复制弹窗并提示成功
+              copyPrimModalVisible.value = false;
+              ElementPlus.ElMessage.success(
+                `已成功载入方案【${sourceScheme.schemeName || '目标方案'}】的参数与 ${primBomList.value.length} 项 BOM 清单！`
+              );
+            } catch (err) {
+              console.error("[applyCopiedPrimScheme] 复制异常:", err);
+              ElementPlus.ElMessage.error("复制方案内容失败，请查看控制台日志！");
+            }
+          };
+
+          // 打开“存当前柜为方案”对话框
+          const openCaptureCabinetDialog = () => {
+            // 提取当前默认归属子目录名称
+            const currentFolderName = selectedPrimaryFolder.value ? selectedPrimaryFolder.value.name : (primaryFolders.value[0]?.name || "一次进线柜");
+            // 初始化提取表单
+            captureCabinetForm.value = {
+              folderName: currentFolderName,
+              schemeName: "",
+              cabinetModel: primaryCabinetModel.value || "GGD",
+            };
+            // 展现弹窗
+            captureCabinetDialogVisible.value = true;
+          };
+
+          // 确认存当前活动 Excel 箱柜为一次方案
+          const confirmCaptureCabinet = () => {
+            // 校验目录有效性
+            if (!captureCabinetForm.value.folderName) {
+              ElementPlus.ElMessage.warning("请选择或输入归属子目录！");
+              return;
+            }
+            // 发送 IPC 指令给后台 ExcelServices 执行提取入库
+            postToHost("captureActiveCabinetToPrimaryScheme", {
+              folderName: captureCabinetForm.value.folderName,
+              schemeName: captureCabinetForm.value.schemeName,
+              cabinetModel: captureCabinetForm.value.cabinetModel,
+            });
+            // 关闭提取弹窗
+            captureCabinetDialogVisible.value = false;
           };
 
           // 切换分类
@@ -4407,6 +6430,10 @@
           // 关闭方案详情大视口并重置 loading 状态
           const closeDetail = () => {
             detailVisible.value = false;
+            isSecondaryDetail.value = false;
+            isPrimaryDetail.value = false;
+            currentSecondaryCard.value = null;
+            currentPrimaryCard.value = null;
             vectorCadLoading.value = false;
           };
 
@@ -5055,6 +7082,146 @@
                   copySchemeLoading.value = false;
                   allCopySchemes.value = data || [];
                 }
+                // 13.1 一次方案图纸根目录配置回传
+                else if (action === "getPrimaryCircuitConfigResult") {
+                  const rDir = (data?.rootDir || data?.RootDir || "").trim();
+                  if (rDir) {
+                    primaryDwgRootDir.value = rDir;
+                    inputPrimaryDir.value = rDir;
+                    scanPrimaryFolders();
+                  }
+                }
+                // 13.2 弹窗或手动设置一次图纸目录结果
+                else if (action === "selectPrimaryCircuitDirResult") {
+                  const isSuccess = Boolean(data?.success ?? data?.Success);
+                  const chosenPath = (data?.path || data?.Path || "").trim();
+                  if (isSuccess && chosenPath) {
+                    primaryDwgRootDir.value = chosenPath;
+                    inputPrimaryDir.value = chosenPath;
+                    ElementPlus.ElMessage.success("已成功选择并设置一次方案图纸目录！");
+                    scanPrimaryFolders();
+                  } else if (data && !isSuccess && (data.message || data.Message)) {
+                    ElementPlus.ElMessage.warning(data.message || data.Message);
+                  }
+                }
+                // 13.3 扫描一次方案子文件夹列表回传
+                else if (action === "scanPrimaryFoldersResult") {
+                  primaryFolders.value = data || [];
+                  loadPrimaryFolderDwgCards();
+                }
+                // 13.4 获取一次子文件夹 DWG 卡片列表回传
+                else if (action === "getPrimaryFolderDwgCardsResult") {
+                  loading.value = false;
+                  primaryDwgCards.value = data || [];
+                }
+                // 13.5 一次方案保存入库结果
+                else if (action === "savePrimarySchemeResult") {
+                  // 判定后端返回的操作结果是否成功
+                  if (data.success) {
+                    // 弹出保存成功的 ElementPlus 提示通知
+                    ElementPlus.ElMessage.success("一次成套方案与 BOM 保存成功！");
+                    // 关闭一次方案编辑弹窗
+                    primEditDialogOpen.value = false;
+                    // 重新从本地数据库和文件夹读取卡片列表
+                    loadPrimaryFolderDwgCards();
+                    // 若当前处于详情大视口模式且为一次方案，即刻同步更新当前详情的元数据与 BOM 明细
+                    if (detailVisible.value && isPrimaryDetail.value && currentPrimaryCard.value) {
+                      // 提取当前编辑表单的数据引用
+                      const primForm = editingPrimScheme.value;
+                      // 校验当前正在查看的卡片是否与本次保存的方案一致
+                      if (primForm && (primForm.fullPath === currentPrimaryCard.value.fullPath || primForm.dwgName === currentPrimaryCard.value.dwgName)) {
+                        // 同步当前卡片的方案名称
+                        currentPrimaryCard.value.schemeName = primForm.schemeName;
+                        // 同步当前卡片的柜型
+                        currentPrimaryCard.value.cabinetModel = primForm.cabinetModel;
+                        // 同步当前卡片的方案工艺描述
+                        currentPrimaryCard.value.description = primForm.description;
+                        // 同步当前卡片的额定工作电流 (支持 0 值的有效保留)
+                        currentPrimaryCard.value.ratedCurrent = (primForm.ratedCurrent !== undefined && primForm.ratedCurrent !== null && primForm.ratedCurrent !== "") ? Number(primForm.ratedCurrent) : 630;
+                        // 同步当前卡片的主母排规格
+                        currentPrimaryCard.value.busbarSpec = primForm.busbarSpec || "TMY";
+                        // 同步当前卡片的外形尺寸
+                        currentPrimaryCard.value.dimensions = primForm.dimensions || "800*1000*2200";
+                        // 同步当前卡片的装配人工工费
+                        currentPrimaryCard.value.laborCost = Number(primForm.laborCost) || 0;
+                        // 同步当前卡片的一次材料成本合计
+                        currentPrimaryCard.value.materialCost = primBomMaterialSubtotal.value;
+                        // 若卡片下挂了 schemeData 实体则一并同步
+                        if (currentPrimaryCard.value.schemeData) {
+                          // 同步下挂实体的方案名称
+                          currentPrimaryCard.value.schemeData.schemeName = primForm.schemeName;
+                          // 同步下挂实体的柜型与额定电流
+                          currentPrimaryCard.value.schemeData.cabinetModel = primForm.cabinetModel;
+                          // 同步下挂实体的额定电流 (支持 0 值)
+                          currentPrimaryCard.value.schemeData.ratedCurrent = (primForm.ratedCurrent !== undefined && primForm.ratedCurrent !== null && primForm.ratedCurrent !== "") ? Number(primForm.ratedCurrent) : 630;
+                        }
+                        // 同步当前详情大视口的标题与属性
+                        if (currentDetail.value) {
+                          // 同步大视口方案主标题
+                          currentDetail.value.schemeName = primForm.schemeName || currentDetail.value.schemeName;
+                          // 同步大视口柜型
+                          currentDetail.value.cabinetModel = primForm.cabinetModel || currentDetail.value.cabinetModel;
+                          // 同步大视口外形尺寸
+                          currentDetail.value.dimensions = primForm.dimensions || currentDetail.value.dimensions;
+                          // 同步大视口方案描述
+                          currentDetail.value.description = primForm.description || currentDetail.value.description;
+                          // 映射最新的 BOM 清单至详情大视口
+                          currentDetail.value.bomItems = (primBomList.value || []).map((item, idx) => ({
+                            // 保持唯一 ID
+                            id: item.id || Date.now() + idx,
+                            // 默认处于勾选状态
+                            selected: true,
+                            // 序号自增
+                            sortOrder: idx + 1,
+                            // 元件名称
+                            name: item.name || "一次元件",
+                            // 规格型号
+                            model: item.model || "",
+                            // 元器件品牌
+                            brand: item.brand || "通用",
+                            // 计量单位
+                            unit: item.unit || "台",
+                            // 用量数量
+                            quantity: Number(item.quantity) || 1,
+                            // 物料倍增标志
+                            isWlDoubled: false,
+                            // 目录面价
+                            catalogPrice: Number(item.unitPrice ?? item.price ?? 0),
+                            // 采购折扣
+                            discount: 1.0,
+                            // 销售折扣
+                            quoteDiscount: 1.0,
+                            // 销售单价
+                            quotePrice: Number(item.unitPrice ?? item.price ?? 0),
+                            // 物料编码
+                            materialCode: "",
+                            // 产地
+                            origin: "",
+                            // 元件大类
+                            category: "一次成套",
+                          }));
+                        }
+                      }
+                    }
+                  } else {
+                    // 保存失败时给出 ElementPlus 错误提示
+                    ElementPlus.ElMessage.error(data.message || "保存一次方案失败！");
+                  }
+                }
+                // 13.6 获取可供复制的一次方案列表回传
+                else if (action === "getPrimarySchemesForCopyResult") {
+                  copyPrimLoading.value = false;
+                  allCopyPrimSchemes.value = data || [];
+                }
+                // 13.7 抓取活动 Excel 当前箱柜为一次方案结果
+                else if (action === "captureActiveCabinetToPrimarySchemeResult") {
+                  if (data.success) {
+                    ElementPlus.ElMessage.success(data.message || "已成功抓取当前活动箱柜为一次成套方案！");
+                    loadPrimaryFolderDwgCards();
+                  } else {
+                    ElementPlus.ElMessage.error(data.message || "抓取箱柜失败！");
+                  }
+                }
                 // 14. 接收 DWG 原始二进制 Base64 数据并交给纯前端 cad-view 矢量视口渲染
                 else if (action === "dwgBinaryLoaded") {
                   if (data && data.success && data.base64Data) {
@@ -5131,11 +7298,16 @@
             fetchSchemes();
             // 读取已持久化的二次方案本地图纸根目录
             loadSecondaryCircuitConfig();
+            // 读取已持久化的一次方案本地图纸根目录
+            loadPrimaryCircuitConfig();
             // 监听窗口获焦事件，当用户从系统文件夹选择窗口切回时主动同步一次配置
             window.addEventListener("focus", () => {
               // 仅当目录设置弹窗处于展示状态时执行探测同步
               if (dirSettingDialogVisible.value) {
                 loadSecondaryCircuitConfig();
+              }
+              if (primDirSettingDialogVisible.value) {
+                loadPrimaryCircuitConfig();
               }
             });
           });
@@ -5261,6 +7433,51 @@
             loadVectorDwg,
             initCadViewerInstance,
             closeDetail,
+            // 一次成套方案相关导出项
+            primaryDwgRootDir,
+            primaryFolders,
+            selectedPrimaryFolder,
+            primaryDwgCards,
+            primarySearchKw,
+            primaryCabinetModel,
+            primDirSettingDialogVisible,
+            inputPrimaryDir,
+            primEditDialogOpen,
+            editingPrimScheme,
+            primBomList,
+            copyPrimModalVisible,
+            copyPrimLoading,
+            copyPrimSearchKw,
+            allCopyPrimSchemes,
+            filteredCopyPrimSchemes,
+            captureCabinetDialogVisible,
+            captureCabinetForm,
+            totalPrimaryDwgCount,
+            primBomMaterialSubtotal,
+            primComprehensiveTotalCost,
+            loadPrimaryCircuitConfig,
+            openPrimDirSettingDialog,
+            onBrowsePrimaryDir,
+            onApplyManualPrimaryDir,
+            scanPrimaryFolders,
+            onSelectPrimaryFolder,
+            loadPrimaryFolderDwgCards,
+            onPrimarySearch,
+            refreshPrimaryCards,
+            // 一次成套方案大视口卡片与模式状态导出
+            currentPrimaryCard,
+            isPrimaryDetail,
+            openPrimaryDetail,
+            openPrimaryEditModal,
+            addCustomPrimBomRow,
+            deletePrimBomRow,
+            openMaterialSelectorForPrim,
+            savePrimarySchemeForm,
+            openCopyPrimModal,
+            refreshCopyPrimSchemes,
+            applyCopiedPrimScheme,
+            openCaptureCabinetDialog,
+            confirmCaptureCabinet,
           };
         },
       });

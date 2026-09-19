@@ -282,6 +282,9 @@ namespace ExcelAddInDemo
                             SubAddress: $"'{curSheetName}'!{sumNameTag}",
                             ScreenTip: "返回汇总行"
                         );
+
+                        // 明细表头行 (detRow + 1) A 列动态引用汇总行序号动态公式
+                        activeSheet.Cells[newDetRow + 1, 1].Formula = $"=\"序号\" & {sumNameTag}"; // --硬编码: 明细表头序号公式--
                     }
                     catch { }
 
@@ -1004,6 +1007,9 @@ namespace ExcelAddInDemo
                             SubAddress: $"'{curSheetName}'!{sumNameTag}",
                             ScreenTip: "返回汇总行"
                         );
+
+                        // 明细表头行 (detRow + 1) A 列动态引用汇总行序号动态公式
+                        activeSheet.Cells[newDetRow + 1, 1].Formula = $"=\"序号\" & {sumNameTag}"; // --硬编码: 明细表头序号公式--
                     }
                     catch { }
 

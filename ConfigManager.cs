@@ -225,6 +225,31 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 更新并持久化一次方案本地 DWG 图纸目录配置
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+        /// </summary>
+        /// <param name="circuitDir">一次方案 DWG 图纸本地根物理目录路径</param>
+        public void UpdatePrimaryDwgDirectory(string? circuitDir)
+        {
+            // 读取当前全局配置
+            var cfg = Current ?? new AppConfig();
+            // 确保配置节已被初始化
+            if (cfg.PrimaryCircuit == null)
+            {
+                cfg.PrimaryCircuit = new PrimaryCircuitSettings();
+            }
+
+            // 更新一次图纸目录
+            if (circuitDir != null)
+            {
+                cfg.PrimaryCircuit.CircuitDwgDirectory = circuitDir;
+            }
+
+            // 持久化保存至磁盘配置文件
+            SaveConfig(cfg);
+        }
+
+        /// <summary>
         /// 更新并持久化元器件图纸参数匹配窗口 (200x800) 的图纸库根物理目录配置
         /// </summary>
         /// <param name="baseDir">图纸库根物理目录绝对路径</param>

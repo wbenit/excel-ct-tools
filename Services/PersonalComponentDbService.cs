@@ -137,6 +137,29 @@ namespace ExcelAddInDemo.Services
                         CREATE INDEX IF NOT EXISTS idx_sec_group ON secondary_circuit_schemes(group_name);
                         CREATE INDEX IF NOT EXISTS idx_sec_cad_drawing ON secondary_circuit_schemes(cad_drawing_name);
 
+                        CREATE TABLE IF NOT EXISTS primary_circuit_schemes (
+                            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                            group_name          TEXT DEFAULT '',
+                            scheme_name         TEXT NOT NULL,
+                            applicable_codes    TEXT NOT NULL DEFAULT '',
+                            cad_drawing_name    TEXT DEFAULT '',
+                            cabinet_model       TEXT DEFAULT '',
+                            dimensions          TEXT DEFAULT '',
+                            rated_current       REAL DEFAULT 0.0,
+                            busbar_spec         TEXT DEFAULT '',
+                            labor_cost          REAL DEFAULT 0.0,
+                            copper_cost         REAL DEFAULT 0.0,
+                            brand               TEXT DEFAULT '',
+                            description         TEXT DEFAULT '',
+                            bom_json            TEXT NOT NULL DEFAULT '[]',
+                            created_at          TEXT,
+                            updated_at          TEXT
+                        );
+                        CREATE INDEX IF NOT EXISTS idx_prim_scheme_name ON primary_circuit_schemes(scheme_name);
+                        CREATE INDEX IF NOT EXISTS idx_prim_group ON primary_circuit_schemes(group_name);
+                        CREATE INDEX IF NOT EXISTS idx_prim_cabinet_model ON primary_circuit_schemes(cabinet_model);
+                        CREATE INDEX IF NOT EXISTS idx_prim_cad_drawing ON primary_circuit_schemes(cad_drawing_name);
+
                         CREATE TABLE IF NOT EXISTS dwg_component_dimensions (
                             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
                             dir_name            TEXT NOT NULL DEFAULT '',
@@ -162,6 +185,8 @@ namespace ExcelAddInDemo.Services
 
                     // 执行二次回路方案表的增量列热迁移升级与冗余列清理
                     MigrateSecondarySchemeColumns(conn);
+                    // 执行一次成套方案表的增量列热迁移升级
+                    MigratePrimarySchemeColumns(conn);
                 }
                 catch (Exception ex)
                 {
@@ -215,6 +240,43 @@ namespace ExcelAddInDemo.Services
             {
                 // 记录迁移异常日志
                 LogHelper.WriteLog($"[PersonalDb] MigrateSecondarySchemeColumns 异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 自动检测并平滑升级 primary_circuit_schemes 表结构，保障旧数据零丢失
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+        /// </summary>
+        private static void MigratePrimarySchemeColumns(SQLiteConnection conn)
+        {
+            try
+            {
+                // 维护已有列名集合
+                var existingCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                // 查询表元数据信息
+                using (var infoCmd = new SQLiteCommand("PRAGMA table_info(primary_circuit_schemes);", conn)) // --硬编码: PRAGMA 嗅探--
+                using (var reader = infoCmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        // 提取当前列名称
+                        string colName = reader.GetString(1);
+                        existingCols.Add(colName);
+                    }
+                }
+
+                // 校验基础列是否存在，若缺少则热迁移追加
+                if (!existingCols.Contains("copper_cost"))
+                {
+                    using var alterCmd = new SQLiteCommand("ALTER TABLE primary_circuit_schemes ADD COLUMN copper_cost REAL DEFAULT 0.0;", conn); // --硬编码: 迁移DDL--
+                    alterCmd.ExecuteNonQuery();
+                    LogHelper.WriteLog("[PersonalDb] 成功为 primary_circuit_schemes 表追加 copper_cost 列");
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录迁移异常日志
+                LogHelper.WriteLog($"[PersonalDb] MigratePrimarySchemeColumns 异常: {ex.Message}");
             }
         }
 

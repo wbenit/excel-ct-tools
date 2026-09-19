@@ -18,6 +18,10 @@ namespace ExcelAddInDemo
         [JsonPropertyName("SecondaryCircuitSettings")]
         public SecondaryCircuitSettings SecondaryCircuit { get; set; } = new SecondaryCircuitSettings();
 
+        // 一次成套方案与 DWG 图纸本地目录配置选项分节
+        [JsonPropertyName("PrimaryCircuitSettings")]
+        public PrimaryCircuitSettings PrimaryCircuit { get; set; } = new PrimaryCircuitSettings();
+
         // 投标报表导出高级偏好配置选项分节 (自动持久化至 appsettings.json)
         [JsonPropertyName("TenderReportSettings")]
         public TenderReportSettings TenderReport { get; set; } = new TenderReportSettings();
@@ -134,6 +138,16 @@ namespace ExcelAddInDemo
         public string LayoutDwgDirectory { get; set; } = string.Empty;
 
         // 回路代号原理图 DWG 本地图纸目录绝对路径
+        public string CircuitDwgDirectory { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// 一次图成套方案管理与 DWG 本地图纸目录配置实体
+    /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+    /// </summary>
+    public class PrimaryCircuitSettings
+    {
+        // 一次成套方案 DWG 本地图纸目录绝对路径
         public string CircuitDwgDirectory { get; set; } = string.Empty;
     }
 

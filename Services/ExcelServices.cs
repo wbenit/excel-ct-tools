@@ -347,5 +347,125 @@ namespace ExcelAddInDemo
         /// 下一个可还原操作的显示名称
         /// </summary>
         public static string? CurrentRedoName => Services.UndoRedoManager.Instance.CurrentRedoName;
+
+        /// <summary>
+        /// 执行 Excel 系统原生隐藏操作：依据当前选区智能隐藏整行或整列
+        /// </summary>
+        public static void ExecuteNativeHide()
+        {
+            try
+            {
+                // 获取 Excel 宿主 COM Application 动态句柄
+                dynamic? app = ExcelDnaUtil.Application;
+                // 校验宿主实例有效性
+                if (app == null) return;
+
+                // 获取当前活动工作表对象
+                dynamic? activeSheet = app.ActiveSheet;
+                // 获取当前工作簿选区 Range 对象
+                dynamic? selection = app.Selection;
+                // 校验工作表与选区是否有效
+                if (activeSheet == null || selection == null) return;
+
+                // 读取当前工作表实际总物理行数
+                int totalRows = activeSheet.Rows.Count;
+                // 读取当前工作表实际总物理列数
+                int totalCols = activeSheet.Columns.Count;
+
+                // 全选整个工作表校验：禁止全表隐藏以防 Excel 抛出 COM 异常
+                if (selection.Rows.Count >= totalRows && selection.Columns.Count >= totalCols)
+                {
+                    return;
+                }
+
+                // 遍历选区包含的每一个独立 Area 区域（兼容 Ctrl 离散多选）
+                foreach (dynamic area in selection.Areas)
+                {
+                    // 判断当前区域是否为完整整列选区
+                    bool isEntireColumn = (area.Rows.Count >= totalRows);
+                    // 判断当前区域是否为完整整行选区
+                    bool isEntireRow = (area.Columns.Count >= totalCols);
+
+                    // 场景 1: 用户明确框选了整列 (且未全选整行)
+                    if (isEntireColumn && !isEntireRow)
+                    {
+                        // 执行原生整列隐藏
+                        area.EntireColumn.Hidden = true;
+                    }
+                    // 场景 2: 用户框选了整行或处于普通单元格内部
+                    else
+                    {
+                        // 统一对涉及的物理行执行整行隐藏
+                        area.EntireRow.Hidden = true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录原生隐藏执行异常日志
+                LogHelper.WriteLog($"执行 Excel 原生隐藏异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 执行 Excel 系统原生取消隐藏操作：恢复当前选区范围内被隐藏的整行或整列
+        /// </summary>
+        public static void ExecuteNativeUnhide()
+        {
+            try
+            {
+                // 获取 Excel 宿主 COM Application 动态句柄
+                dynamic? app = ExcelDnaUtil.Application;
+                // 校验宿主实例有效性
+                if (app == null) return;
+
+                // 获取当前活动工作表对象
+                dynamic? activeSheet = app.ActiveSheet;
+                // 获取当前工作簿选区 Range 对象
+                dynamic? selection = app.Selection;
+                // 校验工作表与选区是否有效
+                if (activeSheet == null || selection == null) return;
+
+                // 读取当前工作表实际总物理行数
+                int totalRows = activeSheet.Rows.Count;
+                // 读取当前工作表实际总物理列数
+                int totalCols = activeSheet.Columns.Count;
+
+                // 遍历选区包含的每一个独立 Area 区域（兼容 Ctrl 离散多选）
+                foreach (dynamic area in selection.Areas)
+                {
+                    // 判断当前区域是否为完整整列选区
+                    bool isEntireColumn = (area.Rows.Count >= totalRows);
+                    // 判断当前区域是否为完整整行选区
+                    bool isEntireRow = (area.Columns.Count >= totalCols);
+
+                    // 场景 1: 若当前区域为整列选区 (且未全选整行)
+                    if (isEntireColumn && !isEntireRow)
+                    {
+                        // 仅恢复当前选区范围内的隐藏列
+                        area.EntireColumn.Hidden = false;
+                    }
+                    // 场景 2: 若当前区域为整行选区 (且未全选整列)
+                    else if (isEntireRow && !isEntireColumn)
+                    {
+                        // 仅恢复当前选区范围内的隐藏行
+                        area.EntireRow.Hidden = false;
+                    }
+                    // 场景 3: 常规单元格选区或全选整个工作表
+                    else
+                    {
+                        // 尝试恢复选区所跨行的隐藏状态
+                        try { area.EntireRow.Hidden = false; } catch { }
+                        // 尝试恢复选区所跨列的隐藏状态
+                        try { area.EntireColumn.Hidden = false; } catch { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录原生取消隐藏执行异常日志
+                LogHelper.WriteLog($"执行 Excel 原生取消隐藏异常: {ex.Message}");
+            }
+        }
     }
 }

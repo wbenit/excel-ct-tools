@@ -557,5 +557,311 @@ namespace ExcelAddInDemo.Controllers
                 errorMessage = err
             };
         }
+
+        #region 一次成套方案专属控制器接口
+
+        /// <summary>
+        /// 获取当前配置的一次成套方案图纸根目录
+        /// </summary>
+        public string GetPrimaryCircuitDwgDir()
+        {
+            // 从配置管理器中读取一次图纸目录
+            return ConfigManager.Instance.Current?.PrimaryCircuit?.CircuitDwgDirectory ?? string.Empty;
+        }
+
+        /// <summary>
+        /// 更新并持久化保存一次成套方案图纸根目录
+        /// </summary>
+        public bool SetPrimaryCircuitDwgDir(string path)
+        {
+            try
+            {
+                // 使用 ConfigManager 专属的一次回路目录持久化接口
+                ConfigManager.Instance.UpdatePrimaryDwgDirectory(path?.Trim() ?? string.Empty);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // 记录保存异常日志
+                LogHelper.WriteLog($"[CloudSolutionController] SetPrimaryCircuitDwgDir 异常: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 扫描指定一次方案图纸根目录下的所有子文件夹及各自的 DWG 数量
+        /// </summary>
+        public List<PrimaryFolderItemDto> ScanPrimaryFolders(string? rootDir = null)
+        {
+            var result = new List<PrimaryFolderItemDto>();
+            string targetDir = string.IsNullOrWhiteSpace(rootDir) ? GetPrimaryCircuitDwgDir() : rootDir.Trim();
+            if (string.IsNullOrWhiteSpace(targetDir) || !System.IO.Directory.Exists(targetDir))
+            {
+                return result;
+            }
+
+            try
+            {
+                // 枚举根目录下所有直接子目录
+                var subDirs = System.IO.Directory.GetDirectories(targetDir);
+                Array.Sort(subDirs, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var dir in subDirs)
+                {
+                    try
+                    {
+                        var di = new System.IO.DirectoryInfo(dir);
+                        if ((di.Attributes & System.IO.FileAttributes.Hidden) != 0) continue;
+
+                        // 统计子目录下的 .dwg 数量
+                        int dwgCount = System.IO.Directory.GetFiles(dir, "*.dwg", System.IO.SearchOption.TopDirectoryOnly).Length;
+
+                        result.Add(new PrimaryFolderItemDto
+                        {
+                            Name = di.Name,
+                            FullPath = di.FullName,
+                            DwgCount = dwgCount
+                        });
+                    }
+                    catch (Exception exSub)
+                    {
+                        LogHelper.WriteLog($"[CloudSolutionController] ScanPrimaryFolders 读取子目录 {dir} 异常: {exSub.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[CloudSolutionController] ScanPrimaryFolders 异常: {ex.Message}");
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// 扫描指定子文件夹内的所有 DWG 文件并到 personal_components 数据库匹配一次方案参数组装卡片列表
+        /// </summary>
+        public List<PrimaryFolderDwgCardDto> GetPrimaryFolderDwgCards(string folderPath, string folderName, string? keyword = null, string? cabinetModel = null, bool forceRefresh = false)
+        {
+            var cards = new List<PrimaryFolderDwgCardDto>();
+            string cleanKw = keyword?.Trim() ?? string.Empty;
+            string cleanModel = cabinetModel?.Trim() ?? string.Empty;
+
+            try
+            {
+                // 1. 若明确指定了子文件夹路径且物理存在，扫描该指定子文件夹
+                if (!string.IsNullOrWhiteSpace(folderPath) && System.IO.Directory.Exists(folderPath))
+                {
+                    ScanAndAppendPrimaryCards(folderPath, folderName, cleanKw, cleanModel, cards, forceRefresh);
+                }
+                // 2. 若未指定子文件夹 (即前端处于"全部方案分类")，遍历根目录下所有子目录聚合展示
+                else
+                {
+                    string rootDir = GetPrimaryCircuitDwgDir();
+                    if (!string.IsNullOrWhiteSpace(rootDir) && System.IO.Directory.Exists(rootDir))
+                    {
+                        var subDirs = System.IO.Directory.GetDirectories(rootDir);
+                        Array.Sort(subDirs, StringComparer.OrdinalIgnoreCase);
+
+                        foreach (var subDir in subDirs)
+                        {
+                            try
+                            {
+                                var di = new System.IO.DirectoryInfo(subDir);
+                                if ((di.Attributes & System.IO.FileAttributes.Hidden) != 0) continue;
+                                ScanAndAppendPrimaryCards(subDir, di.Name, cleanKw, cleanModel, cards, forceRefresh);
+                            }
+                            catch (Exception exSub)
+                            {
+                                LogHelper.WriteLog($"[CloudSolutionController] 遍历一次子目录 {subDir} 异常: {exSub.Message}");
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[CloudSolutionController] GetPrimaryFolderDwgCards 异常: {ex.Message}");
+            }
+
+            return cards;
+        }
+
+        /// <summary>
+        /// 扫描单目录下的 DWG 文件并匹配数据库一次方案填充至卡片列表
+        /// </summary>
+        private void ScanAndAppendPrimaryCards(string targetDir, string curFolderName, string cleanKw, string cleanModel, List<PrimaryFolderDwgCardDto> cardList, bool forceRefresh = false)
+        {
+            var dwgFiles = Services.DwgPreviewService.ScanDwgFiles(targetDir);
+
+            foreach (var file in dwgFiles)
+            {
+                string dwgName = file.NameWithoutExt;
+                // 到 SQLite 数据库按照 applicable_codes / 图名匹配一次方案
+                var matchedScheme = Services.PersonalComponentDbService.FindPrimarySchemeByDwgName(dwgName);
+
+                // 柜型过滤
+                if (!string.IsNullOrEmpty(cleanModel) && !string.Equals(cleanModel, "全部", StringComparison.OrdinalIgnoreCase))
+                {
+                    string cabModel = matchedScheme?.CabinetModel ?? string.Empty;
+                    if (cabModel.IndexOf(cleanModel, StringComparison.OrdinalIgnoreCase) < 0 &&
+                        dwgName.IndexOf(cleanModel, StringComparison.OrdinalIgnoreCase) < 0)
+                    {
+                        continue;
+                    }
+                }
+
+                // 关键字模糊过滤
+                if (!string.IsNullOrEmpty(cleanKw))
+                {
+                    bool hitKw = dwgName.IndexOf(cleanKw, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 curFolderName.IndexOf(cleanKw, StringComparison.OrdinalIgnoreCase) >= 0;
+
+                    if (matchedScheme != null)
+                    {
+                        hitKw = hitKw ||
+                                (!string.IsNullOrEmpty(matchedScheme.Brand) && matchedScheme.Brand.IndexOf(cleanKw, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                                (!string.IsNullOrEmpty(matchedScheme.CabinetModel) && matchedScheme.CabinetModel.IndexOf(cleanKw, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                                (!string.IsNullOrEmpty(matchedScheme.BusbarSpec) && matchedScheme.BusbarSpec.IndexOf(cleanKw, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                                (!string.IsNullOrEmpty(matchedScheme.Description) && matchedScheme.Description.IndexOf(cleanKw, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                                (!string.IsNullOrEmpty(matchedScheme.SchemeName) && matchedScheme.SchemeName.IndexOf(cleanKw, StringComparison.OrdinalIgnoreCase) >= 0);
+                    }
+
+                    if (!hitKw) continue;
+                }
+
+                // 提取 DWG 缩略图
+                var preview = Services.DwgPreviewService.GetDwgPreview(file.FullPath, forceRefresh);
+
+                var card = new PrimaryFolderDwgCardDto
+                {
+                    FileName = file.FileName,
+                    DwgName = dwgName,
+                    FolderName = curFolderName,
+                    FolderPath = targetDir,
+                    FullPath = file.FullPath,
+                    PreviewBase64 = preview?.Base64Image ?? string.Empty,
+                    UpdateTime = file.LastModified
+                };
+
+                // 若命中数据库方案，填充一次主参数
+                if (matchedScheme != null)
+                {
+                    card.IsMatched = true;
+                    card.SchemeId = matchedScheme.Id;
+                    card.SchemeName = !string.IsNullOrWhiteSpace(matchedScheme.SchemeName) ? matchedScheme.SchemeName : dwgName;
+                    card.CabinetModel = matchedScheme.CabinetModel ?? string.Empty;
+                    card.Dimensions = matchedScheme.Dimensions ?? string.Empty;
+                    card.RatedCurrent = matchedScheme.RatedCurrent;
+                    card.BusbarSpec = matchedScheme.BusbarSpec ?? string.Empty;
+                    card.Brand = matchedScheme.Brand ?? string.Empty;
+                    card.Description = matchedScheme.Description ?? string.Empty;
+                    card.LaborCost = matchedScheme.LaborCost;
+                    card.CopperCost = matchedScheme.CopperCost;
+                    card.MaterialCost = matchedScheme.TotalMaterialCost;
+                    card.TotalCost = matchedScheme.TotalCost;
+                    card.SchemeData = matchedScheme;
+                    if (!string.IsNullOrWhiteSpace(matchedScheme.UpdatedAt))
+                    {
+                        card.UpdateTime = matchedScheme.UpdatedAt;
+                    }
+                }
+                else
+                {
+                    // 未在数据库中匹配到时，提供默认模型供编辑入库
+                    card.IsMatched = false;
+                    card.SchemeId = 0;
+                    card.SchemeName = dwgName;
+                    card.CabinetModel = string.Empty;
+                    card.Dimensions = string.Empty;
+                    card.RatedCurrent = 0.0;
+                    card.BusbarSpec = string.Empty;
+                    card.Brand = string.Empty;
+                    card.Description = string.Empty;
+                    card.LaborCost = 0.0;
+                    card.CopperCost = 0.0;
+                    card.MaterialCost = 0.0;
+                    card.TotalCost = 0.0;
+                    card.SchemeData = new PrimarySchemeEntity
+                    {
+                        SchemeName = dwgName,
+                        GroupName = curFolderName,
+                        ApplicableCodes = new List<string> { dwgName },
+                        CadDrawingName = dwgName
+                    };
+                }
+
+                cardList.Add(card);
+            }
+        }
+
+        /// <summary>
+        /// 保存或更新一次成套方案至 SQLite 数据库
+        /// </summary>
+        public (bool Success, int SchemeId, string Message) SavePrimaryScheme(string schemeJson)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(schemeJson))
+                {
+                    return (false, 0, "一次方案数据为空！");
+                }
+
+                var scheme = JsonSerializer.Deserialize<PrimarySchemeEntity>(schemeJson, JsonOptions);
+                if (scheme == null)
+                {
+                    return (false, 0, "方案数据反序列化失败！");
+                }
+
+                if (string.IsNullOrWhiteSpace(scheme.SchemeName))
+                {
+                    return (false, 0, "方案名称不能为空！");
+                }
+
+                if (scheme.ApplicableCodes == null || scheme.ApplicableCodes.Count == 0)
+                {
+                    scheme.ApplicableCodes = new List<string> { scheme.SchemeName.Trim() };
+                }
+
+                int id = Services.PersonalComponentDbService.SavePrimaryScheme(scheme);
+                if (id > 0)
+                {
+                    return (true, id, "一次方案保存成功！");
+                }
+                return (false, 0, "保存到 SQLite 数据库失败，请检查日志！");
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[CloudSolutionController] SavePrimaryScheme 异常: {ex.Message}");
+                return (false, 0, $"保存异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 获取所有已存在的一次成套方案列表，供编辑弹窗中的“复制其他方案”选择使用
+        /// </summary>
+        public List<PrimarySchemeEntity> GetPrimarySchemesForCopy(string? keyword = null)
+        {
+            try
+            {
+                var list = Services.PersonalComponentDbService.GetAllPrimarySchemes(keyword, null, null);
+                return list ?? new List<PrimarySchemeEntity>();
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[CloudSolutionController] GetPrimarySchemesForCopy 异常: {ex.Message}");
+                return new List<PrimarySchemeEntity>();
+            }
+        }
+
+        /// <summary>
+        /// 从活动 Excel 当前光标所在的箱柜中提取一次方案数据并保存为企业一次方案 (遵循规则 3: 委托 ExcelServices 执行)
+        /// </summary>
+        public (bool Success, string Message, PrimarySchemeEntity? Scheme) CaptureActiveCabinetToPrimaryScheme(string targetFolder, string customSchemeName, string? cabinetModel)
+        {
+            return ExcelServices.CaptureActiveCabinetToPrimaryScheme(targetFolder, customSchemeName, cabinetModel);
+        }
+
+        #endregion
     }
 }
+

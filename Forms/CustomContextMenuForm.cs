@@ -68,8 +68,8 @@ namespace ExcelAddInDemo.Forms
             this.ShowInTaskbar = false;
             // 窗体始终保持最前端置顶显示
             this.TopMost = true;
-            // 设定符合 Office 原生菜单规格的标准尺寸 (宽 250px，高 535px，容纳全部 20 项业务与原生菜单)
-            this.Size = new Size(250, 535);
+            // 设定符合 Office 原生菜单规格的标准尺寸 (宽 250px，高 585px，容纳全部 22 项业务与原生菜单) --硬编码: 菜单初始规格--
+            this.Size = new Size(250, 585);
             // 启用手动绝对坐标定位
             this.StartPosition = FormStartPosition.Manual;
             // 设置白色背景
@@ -197,6 +197,9 @@ namespace ExcelAddInDemo.Forms
                     case "excelPaste":
                     case "excelInsert":
                     case "excelDelete":
+                    // Excel 原生隐藏与取消隐藏动作
+                    case "excelHide":
+                    case "excelUnhide":
                     // Excel 原生系统自动筛选动作
                     case "excelFilterByValueNative":
                     // 成套多选与同柜查件动作
@@ -361,6 +364,16 @@ namespace ExcelAddInDemo.Forms
                     case "deleteCategory":
                         // 调度执行删除分类业务 (在项目信息表中智能弹出批量删除，在分类表中执行当前删除)
                         ExcelServices.DeleteCurrentCategory();
+                        break;
+
+                    case "excelHide":
+                        // 调度业务服务层执行 Excel 原生隐藏 (严格遵守规则 3：Excel 操作统一收敛于 ExcelServices)
+                        ExcelServices.ExecuteNativeHide();
+                        break;
+
+                    case "excelUnhide":
+                        // 调度业务服务层执行 Excel 原生取消隐藏 (严格遵守规则 3：Excel 操作统一收敛于 ExcelServices)
+                        ExcelServices.ExecuteNativeUnhide();
                         break;
 
                     case "excelFilterByValueNative":
@@ -535,7 +548,7 @@ namespace ExcelAddInDemo.Forms
                 Rectangle workArea = currentScreen.WorkingArea;
 
                 // 每次显示前重置为标准尺寸，杜绝历史状态残留与 DPI 缩放萎缩
-                int standardHeight = 560; // --硬编码: 右键菜单标准高度--
+                int standardHeight = 610; // --硬编码: 右键菜单标准高度--
                 // 若工作区高度受限 (如低分辨率笔记本屏幕)，自适应贴合可用工作区
                 int targetHeight = Math.Min(standardHeight, workArea.Height - 10);
                 _instance.Size = new Size(250, targetHeight);

@@ -7,6 +7,7 @@ using System.Threading;
 using System.Windows.Forms;
 using ExcelAddInDemo.Forms;
 using ExcelAddInDemo.Models;
+using ExcelAddInDemo.Services;
 using ExcelDna.Integration;
 using static ExcelAddInDemo.Tool;
 
@@ -837,6 +838,134 @@ namespace ExcelAddInDemo
             });
 
             return list;
+        }
+
+        /// <summary>
+        /// 从活动 Excel 当前光标所在的箱柜中提取一次方案数据并保存为企业一次方案 (遵循规则 3: 所有对 Excel 内容操作统一写入公共文件 ExcelServices)
+        /// 遵循规则 6: 从 Cab_Det + 2 到 Cab_Subsum - 1 提取元器件
+        /// 遵循规则 7: 采用内存数组一次性批量读入
+        /// </summary>
+        public static (bool Success, string Message, PrimarySchemeEntity? Scheme) CaptureActiveCabinetToPrimaryScheme(string targetFolder, string customSchemeName, string? cabinetModel)
+        {
+            try
+            {
+                // 获取当前活动 Excel 环境上下文
+                var context = Tool.GetActiveExcelContext(null, null);
+                if (context == null)
+                {
+                    return (false, "未能连接到活动 Excel 工作簿，请确保 Excel 已打开！", null);
+                }
+
+                dynamic app = context.App;
+                dynamic wb = context.Wb;
+                dynamic ws = context.Sheet;
+
+                // 检索当前工作表有效箱柜
+                var validCabinets = Tool.GetSheetValidCabinets(ws, wb);
+                if (validCabinets == null || validCabinets.Count == 0)
+                {
+                    return (false, "当前工作表中未找到任何有效箱柜定义名称！", null);
+                }
+
+                // 定位当前活动箱柜
+                KeyValuePair<int, Models.CabinetAnchorModel>? activeCab = Tool.GetActiveCabinet((object)app, validCabinets, fallbackSingle: true);
+                if (!activeCab.HasValue)
+                {
+                    return (false, "未能定位到当前光标所在的箱柜！", null);
+                }
+
+                int k = activeCab.Value.Key;
+                var anc = activeCab.Value.Value;
+                int sumRow = anc.Sum != null ? Convert.ToInt32(anc.Sum.Row) : 0;
+                int detRow = anc.Det != null ? Convert.ToInt32(anc.Det.Row) : 0;
+                int subsumRow = anc.Subsum != null ? Convert.ToInt32(anc.Subsum.Row) : 0;
+
+                if (detRow <= 0 || subsumRow <= 0)
+                {
+                    return (false, "当前箱柜明细结构不完整！", null);
+                }
+
+                // 提取箱柜基本信息
+                string excelCabName = ws.Range[$"B{detRow}"].Text?.ToString()?.Trim() ?? $"箱柜{k}";
+                string excelCabModel = ws.Range[$"C{detRow}"].Text?.ToString()?.Trim() ?? string.Empty;
+                string finalSchemeName = !string.IsNullOrWhiteSpace(customSchemeName) ? customSchemeName.Trim() : excelCabName;
+                string finalModel = !string.IsNullOrWhiteSpace(cabinetModel) ? cabinetModel.Trim() : excelCabModel;
+
+                // 扫描元器件区域 (规则 6: detRow + 2 至 subsumRow - 1)
+                int compStartRow = detRow + 2;
+                int compEndRow = subsumRow - 1;
+                var bomItems = new List<CloudSchemeBomItem>();
+
+                if (compEndRow >= compStartRow)
+                {
+                    int totalCompRows = compEndRow - compStartRow + 1;
+                    // 一次性读取 A 到 Q 列 (17 列) 内存数组 (遵循规则 7)
+                    dynamic compRange = ws.Range[$"A{compStartRow}:Q{compEndRow}"];
+                    object[,] matrix = ConvertTo2DArray(compRange.Value2, totalCompRows, 17);
+
+                    for (int r = 1; r <= totalCompRows; r++)
+                    {
+                        string name = matrix[r, 2]?.ToString()?.Trim() ?? "";   // B 列: 名称
+                        string model = matrix[r, 3]?.ToString()?.Trim() ?? "";  // C 列: 型号
+                        if (string.IsNullOrEmpty(name) && string.IsNullOrEmpty(model)) continue;
+
+                        string brand = matrix[r, 4]?.ToString()?.Trim() ?? "";  // D 列: 品牌
+                        string unit = matrix[r, 5]?.ToString()?.Trim() ?? "只"; // E 列: 单位
+                        double qty = 1.0;
+                        try { qty = Convert.ToDouble(matrix[r, 6]); } catch { } // F 列: 数量
+                        decimal price = 0m;
+                        try { price = Convert.ToDecimal(matrix[r, 7]); } catch { } // G 列: 单价
+                        decimal total = 0m;
+                        try { total = Convert.ToDecimal(matrix[r, 8]); } catch { } // H 列: 总价
+                        string remark = matrix[r, 9]?.ToString()?.Trim() ?? ""; // I 列: 备注
+                        string category = matrix[r, 17]?.ToString()?.Trim() ?? "元件"; // Q 列: 类别
+
+                        bomItems.Add(new CloudSchemeBomItem
+                        {
+                            SortOrder = bomItems.Count + 1,
+                            Name = name,
+                            Model = model,
+                            Brand = brand,
+                            Unit = unit,
+                            Quantity = qty,
+                            QuotePrice = price,
+                            TotalPrice = total > 0 ? total : (decimal)qty * price,
+                            Category = category,
+                            Remark = remark,
+                            Selected = true
+                        });
+                    }
+                }
+
+                // 组装新一次方案实体
+                var newScheme = new PrimarySchemeEntity
+                {
+                    GroupName = !string.IsNullOrWhiteSpace(targetFolder) ? targetFolder.Trim() : "自建方案",
+                    SchemeName = finalSchemeName,
+                    CabinetModel = finalModel,
+                    ApplicableCodes = new List<string> { finalSchemeName },
+                    CadDrawingName = finalSchemeName,
+                    BomItems = bomItems,
+                    Description = $"由活动 Excel 工作表 [{ws.Name}] 箱柜【{excelCabName}】一键抓取存入"
+                };
+
+                // 保存入库
+                int savedId = PersonalComponentDbService.SavePrimaryScheme(newScheme);
+                if (savedId > 0)
+                {
+                    newScheme.Id = savedId;
+                    return (true, $"成功抓取箱柜【{excelCabName}】并存为一次方案【{finalSchemeName}】(含 {bomItems.Count} 项元器件)！", newScheme);
+                }
+                else
+                {
+                    return (false, "存入 SQLite 数据库失败，请检查日志！", null);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[CloudSolution] CaptureActiveCabinetToPrimaryScheme 异常: {ex.Message}");
+                return (false, $"抓取异常: {ex.Message}", null);
+            }
         }
     }
 }

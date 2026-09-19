@@ -1672,6 +1672,13 @@ namespace ExcelAddInDemo
                                     // 当前元器件对应的工作表实际物理行号
                                     int physRow = compStartRow + r - 1;
 
+                                    // 回写元件名称 (若分布表中填写或修改了有效名称，B列第2列)
+                                    if (!string.IsNullOrWhiteSpace(matchedExpected.Name))
+                                    {
+                                        // 赋值回写至明细矩阵第2列(B列)
+                                        compMatrix[r, 2] = matchedExpected.Name;
+                                    }
+
                                     // 回写新规格型号 (若修改了)
                                     if (!string.IsNullOrWhiteSpace(matchedExpected.Model))
                                     {
@@ -1717,6 +1724,12 @@ namespace ExcelAddInDemo
                             else if (matchedGlobal != null)
                             {
                                 int physRow = compStartRow + r - 1;
+                                // 回写元件名称 (若全局规则中包含有效名称，B列第2列)
+                                if (!string.IsNullOrWhiteSpace(matchedGlobal.Name))
+                                {
+                                    // 赋值回写至明细矩阵第2列(B列)
+                                    compMatrix[r, 2] = matchedGlobal.Name;
+                                }
                                 // 仅更新单价、型号、厂家，保持数量不变
                                 if (!string.IsNullOrWhiteSpace(matchedGlobal.Model)) compMatrix[r, 3] = matchedGlobal.Model;
                                 if (!string.IsNullOrWhiteSpace(matchedGlobal.Manufacturer)) compMatrix[r, 4] = matchedGlobal.Manufacturer;
