@@ -1,6 +1,19 @@
 # Session State
 
-- **【落地交付】一次方案编辑弹窗现代化纯弹性布局（彻底消除滚动条）与工程技术描述 6 大参数无条件完整呈现闭环交付 (`cloud_solution.html`)**：
+- **【Bug 修复与闭环交付】导出报表第一页【屏柜汇总表】表头与 A 列公式篡改异常彻底根治 (`Tool.cs`, `ExcelServices.TenderReport.cs`, `ExcelServices.FormulaAdjustFee.cs`)**：
+  1. **现象复现与根因准确定位**：
+     - **直接原因**：`Tool.FixAndFillCabinetNamesForSheet` 缺失系统/报表工作表拦截。当它在《屏柜汇总表》上被触发时，从默认第 7 行向下扫描，误将第 8~118 行当成箱柜汇总行，强行在 A 列注入 `=ROW()-ROW(A$6)` 并删改了超链接。
+     - 第 9、10 行原为工程自定义文本格式 `"项目名称："@` 和 `"联系人："@`，被篡改后显示为 `项目名称：-ROW()-ROW(A$6)`；第 11 行为分类标题行，计算显示为 `5`；第 13 行起箱柜数据序号显示为 `7, 8, 9...`；
+     - 第 119 行为第一个分类的“合计”行，包含“合计”触发了扫描中断 `break`，因此第 120 行起的第二个分类（消防）幸免于难、完全正常；
+     - **触发机制**：`Tool.GetSheetValidCabinets` 与 `CollectAllDefinedNames` 在未识别到定义名称时会自动调用 `FixAndFillCabinetNamesForSheet` 补齐；且 `ExcelServices.TenderReport.cs:359` 调用了 `reportWb.Calculate()`，因 COM 下 Workbook 无 Calculate 方法抛出 `RuntimeBinderException` 造成导出流程异常未正常收尾；
+  2. **核心代码修复与系统安全守门**：
+     - **`Tool.cs` 守门机制**：新增公共静态方法 `IsReservedOrReportSheet(sheetName)`，精确过滤“项目信息”、“封面”、“元件汇总表”、“材料分布表”、“元件汇总分布表”、“元件汇总调价清单”、“屏柜汇总表”、“屏柜分项表”、“元器件数据管理”、“汇总调价表”以及以“分项表”结尾的报表表；在 `CollectAllDefinedNames`、`GetSheetValidCabinets` 以及 `FixAndFillCabinetNamesForSheet` 入口处设立严密安全守门，杜绝在系统表和报表表上执行定义名称自愈与 A 列公式覆盖；
+     - **`ExcelServices.TenderReport.cs` 异常防护**：在导出主干中增加 `app.EnableEvents = false`并在 `finally` 块中确保 `app.EnableEvents = true`；将 `reportWb.Calculate()` 修正为安全的 `try { app.Calculate(); } catch { }`；在提取分类明细方法中增加系统保留表排除；
+     - **`ExcelServices.FormulaAdjustFee.cs` 排除完善**：在 `UpdateAllCategories` 遍历工作表调费时接入 `Tool.IsReservedOrReportSheet` 拦截，杜绝遍历到报表工作表；
+  3. **工程构建核验**：
+     - 新增代码严格遵循每 3 行至少包含 1 行中文注释规范；
+     - 执行 `dotnet build` 验证：**0 错误**，构建成功。
+
   1. **图一：编辑弹窗纯弹性布局重构（彻底根除外层与水平滚动条）**：
      - **弹性视口限制**：`.prim-edit-dialog` 采用 `height: min(630px, 90vh); max-height: 92vh; overflow: hidden !important;`，外层 overlay 拦截溢出；
      - **2 行 4 列网格排布**：将原挤在单行的 8 个字段解耦为 `.prim-meta-grid`（第 1 行：目录、DWG、名称、柜型；第 2 行：额定电流、尺寸、母排、工费），彻底杜绝横向挤压与横向滚动条；

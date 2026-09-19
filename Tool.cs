@@ -972,12 +972,18 @@ namespace ExcelAddInDemo
             // 若扫描结果为空且允许自动重建且工作表对象有效
             if ((allNames == null || allNames.Count == 0) && autoRebuildIfEmpty && sheet != null)
             {
-                // 自动触发单表智能识别与定义名称补齐重建
-                FixAndFillCabinetNamesForSheet(sheet);
+                // 获取工作表纯文本名称用于黑名单守门拦截
+                string sName = Convert.ToString(sheet.Name) ?? "";
+                // 仅当工作表不是系统保留表或报表表时，才触发定义名称补齐重建
+                if (!IsReservedOrReportSheet(sName))
+                {
+                    // 自动触发单表智能识别与定义名称补齐重建
+                    FixAndFillCabinetNamesForSheet(sheet);
 
-                // 清空后重新执行名称扫描
-                allNames?.Clear();
-                ScanNames();
+                    // 清空后重新执行名称扫描
+                    allNames?.Clear();
+                    ScanNames();
+                }
             }
 
             // 返回最终合并收集的所有定义名称集合 (保障非空)
@@ -1015,6 +1021,13 @@ namespace ExcelAddInDemo
 
             // 提取当前工作表纯文本名称
             string sheetName = Convert.ToString(dSheet.Name) ?? "";
+
+            // 核心安全守门：若为系统保留表或报表表，直接返回空列表，杜绝触发补齐重建与公式篡改
+            if (IsReservedOrReportSheet(sheetName))
+            {
+                // 系统保留或报表表不存在箱柜定义名称，直接返回空列表
+                return new List<KeyValuePair<int, Models.CabinetAnchorModel>>();
+            }
 
             // 收集双作用域所有定义名称 (若为空底层自动触发智能重建)
             var allNames = CollectAllDefinedNames(dWb, dSheet, autoRebuildIfEmpty: true);
@@ -1319,6 +1332,32 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 检查指定工作表名称是否为非箱柜分类表的保留/报表工作表（如项目信息、封面、屏柜汇总表等）
+        /// 避免被误当做箱柜明细表执行定义名称自愈导致篡改报表内容与公式
+        /// </summary>
+        /// <param name="sheetName">工作表名称</param>
+        /// <returns>若为系统保留表或报表表返回 true，否则返回 false</returns>
+        public static bool IsReservedOrReportSheet(string sheetName)
+        {
+            // 判空安全处理
+            if (string.IsNullOrWhiteSpace(sheetName)) return false;
+            // 去除首尾空白字符
+            string trimmed = sheetName.Trim();
+            // 系统保留与报表工作表黑名单 --硬编码: 系统保留表名--
+            var reservedSheets = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "项目信息", "封面", "元件汇总表", "材料分布表",
+                "元件汇总分布表", "元件汇总调价清单", "屏柜汇总表", "屏柜分项表", "元器件数据管理", "汇总调价表"
+            };
+            // 匹配黑名单中的保留表名
+            if (reservedSheets.Contains(trimmed)) return true;
+            // 容错匹配以“分项表”结尾的独立工作表
+            if (trimmed.EndsWith("分项表", StringComparison.OrdinalIgnoreCase)) return true;
+            // 默认非保留表
+            return false;
+        }
+
+        /// <summary>
         /// 针对单张工作表，根据顶部汇总与明细区域特征校准补齐 4 个定义名称
         /// 规则 6: Cab_Sum_k (汇总行), Cab_Det_k (信息行), Cab_Subsum_k (小计行), Cab_Tolsum_k (总计行)
         /// 规则 7: 采用数组一次性读到内存
@@ -1337,6 +1376,13 @@ namespace ExcelAddInDemo
                 // 获取工作表名称
                 string sheetName = Convert.ToString(sheet.Name) ?? "";
                 if (string.IsNullOrWhiteSpace(sheetName)) return 0;
+
+                // 核心安全守门：若为系统保留表或报表表（如项目信息、封面、屏柜汇总表等），严禁执行箱柜定义名称自愈
+                if (IsReservedOrReportSheet(sheetName))
+                {
+                    // 报表表不包含箱柜定义名称，直接返回 0，杜绝将报表行误判为箱柜汇总行并篡改 A 列公式与文本
+                    return 0;
+                }
 
                 // 读取 4 种定义名称前缀配置项 (零堆分配)
                 var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;

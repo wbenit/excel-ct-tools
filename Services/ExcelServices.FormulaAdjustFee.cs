@@ -111,8 +111,8 @@ namespace ExcelAddInDemo
                                 string wsName = Convert.ToString(ws.Name) ?? "";
                                 string trimmed = wsName.Trim();
 
-                                // 排除明确的系统非分类辅助表 (如 项目信息、元件汇总表) --硬编码--
-                                if (string.Equals(trimmed, "项目信息", StringComparison.OrdinalIgnoreCase) ||
+                                // 排除明确的系统非分类辅助表与报表 (如 项目信息、元件汇总表、屏柜汇总表、封面等)
+                                if (Tool.IsReservedOrReportSheet(trimmed) ||
                                     string.Equals(trimmed, Models.ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase))
                                 {
                                     continue;

@@ -336,8 +336,9 @@ namespace ExcelAddInDemo
                     return result;
                 }
 
-                // 临时挂起屏幕刷新与自动计算提升填充性能
+                // 临时挂起屏幕刷新、事件响应与自动计算提升填充性能
                 app.ScreenUpdating = false;
+                app.EnableEvents = false;
                 app.Calculation = -4135; // xlCalculationManual 手动重算
 
                 try
@@ -354,9 +355,9 @@ namespace ExcelAddInDemo
                     // 6. 填充《屏柜分项表》工作表 (支持按分类独立分 Sheet 与单表输出两种模式)
                     PopulateDetailWorksheets(reportWb, config.ProjectInfo, exportCategories, config.IncludeDetail, settings, cabSumRowMap);
 
-                    // 恢复自动计算并执行一次全局重算
+                    // 恢复自动计算并执行一次全局重算（调用 Application.Calculate 避免 COM 动态调度异常）
                     app.Calculation = -4105; // xlCalculationAutomatic
-                    reportWb.Calculate();
+                    try { app.Calculate(); } catch { }
 
                     // 激活首选可见工作表
                     ActivateFirstVisibleSheet(reportWb);
@@ -385,8 +386,10 @@ namespace ExcelAddInDemo
                 }
                 finally
                 {
+                    // 恢复 Excel 全局事件响应机制
+                    try { app.EnableEvents = true; } catch { }
                     // 恢复屏幕刷新
-                    app.ScreenUpdating = true;
+                    try { app.ScreenUpdating = true; } catch { }
                 }
             }
             catch (Exception ex)
@@ -410,6 +413,11 @@ namespace ExcelAddInDemo
             foreach (dynamic sheet in activeWb.Worksheets)
             {
                 string sName = Convert.ToString(sheet.Name) ?? "";
+                // 排除系统保留表与报表表，严禁作为分类提取
+                if (Tool.IsReservedOrReportSheet(sName))
+                {
+                    continue;
+                }
                 if (targetNameSet.Count > 0 && !targetNameSet.Contains(sName))
                 {
                     continue;
