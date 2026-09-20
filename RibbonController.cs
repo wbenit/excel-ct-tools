@@ -174,23 +174,27 @@ namespace ExcelAddInDemo
             <button id='btnFilterAdjustPrice' label='筛选调价' imageMso='Filter' onAction='OnMenuAction' />
             <!-- 4. 一键匹配价格按钮 -->
             <button id='btnAutoMatchPrice' label='一键匹配价格' imageMso='Pointer' onAction='OnMenuAction' />
-            <!-- 5. 母排用量一键预估按钮 -->
+            <!-- 5. 在线查价按钮 (电气天下/天工矩阵) -->
+            <button id='btnOnlinePriceSearch' label='在线查价 (电气天下/天工)' imageMso='WebPagePreview' screentip='在线查价与静默回写' supertip='从电气天下或天工矩阵实时拉取元器件单价，支持框选一键静默批量回写与自主选择回填列' onAction='OnMenuAction' />
+            <!-- 6. 母排用量一键预估按钮 -->
             <button id='btnEstimateBusbarUsage' label='母排用量一键预估' imageMso='ChartInsert' onAction='OnMenuAction' />
-            <!-- 6. 箱体尺寸一键预估级联菜单 -->
+            <!-- 7. 箱体尺寸一键预估级联菜单 -->
             <menu id='menuEstimateCabinetSize' label='箱体尺寸一键预估' imageMso='FlashFill'>
               <!-- 箱体尺寸一键预估子项 -->
               <button id='btnEstimateCabinetSizeSub' label='箱体尺寸一键预估' onAction='OnMenuAction' />
             </menu>
-            <!-- 7. 母排一键改价按钮 -->
+            <!-- 8. 母排一键改价按钮 -->
             <button id='btnBusbarBatchPrice' label='母排一键改价' imageMso='TableInsertRowsAbove' onAction='OnMenuAction' />
-            <!-- 8. 箱体一键改价按钮 -->
+            <!-- 9. 箱体一键改价按钮 -->
             <button id='btnCabinetBatchPrice' label='箱体一键改价' imageMso='ShapeCube' onAction='OnMenuAction' />
-            <!-- 9. 多方案报价级联菜单 -->
+            <!-- 10. 多方案报价级联菜单 -->
             <menu id='menuMultiPlanQuote' label='多方案报价' imageMso='FileNew'>
               <!-- 多方案报价子项 -->
               <button id='btnMultiPlanQuoteSub' label='多方案报价' onAction='OnMenuAction' />
             </menu>
           </menu>
+          <!-- 在线查价大图标直达按钮 -->
+          <button id='btnOnlinePriceSearchBig' label='在线查价' imageMso='WebPagePreview' size='large' screentip='在线查价与静默回写' supertip='从电气天下或天工矩阵实时拉取元器件单价，支持框选一键静默批量回写与自主选择回填列' onAction='OnMenuAction' />
           <!-- 智能算料/辅材壳体计算 按钮 (大图标直达) -->
           <button id='btnCabinetAuxCalc' label='辅材壳体计算' imageMso='CalculateNow' size='large' screentip='辅材壳体与配电智能计算' supertip='智能推导匹配壳体尺寸、计算铜排母线用量、一次及二次接线辅材与装配人工费，支持全参数动态配置' onAction='OnMenuAction' />
           <!-- 费用设定下拉菜单 -->
@@ -583,6 +587,12 @@ namespace ExcelAddInDemo
             {
                 // 弹出基于 WebView2 + Vue 3 的“智能辅材与壳体计算”工作台
                 ExcelServices.ShowCabinetAuxCalcDialog();
+            }
+            // 响应“在线查价 (电气天下/天工)”按钮指令
+            else if (controlId == "btnOnlinePriceSearch" || controlId == "btnOnlinePriceSearchBig")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“在线查价与静默回写”工作台
+                ExcelServices.ShowOnlinePriceSearchDialog();
             }
             // 响应“切换右键菜单模式”按钮指令
             else if (controlId == "btnToggleContextMenuMode")

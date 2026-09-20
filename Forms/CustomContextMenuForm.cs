@@ -214,6 +214,7 @@ namespace ExcelAddInDemo.Forms
                     case "openComponentManage":
                     case "openCabinetAuxCalc":
                     case "openComponentParamMatch":
+                    case "openOnlinePriceSearch":
                     case "switchToNativeMenu":
                         // 收到菜单点击指令：先隐藏菜单并关闭浮窗，后通过 ExcelAsyncUtil.QueueAsMacro 异步执行
                         SafeInvoke(() =>
@@ -443,6 +444,11 @@ namespace ExcelAddInDemo.Forms
                     case "openComponentParamMatch":
                         // 打开“元器件图纸参数匹配 (200x800)”侧边浮窗
                         ExcelServices.ShowComponentParamMatchDialog();
+                        break;
+
+                    case "openOnlinePriceSearch":
+                        // 打开“在线查价与静默回写 (电气天下/天工)”窗口
+                        ExcelServices.ShowOnlinePriceSearchDialog();
                         break;
 
                     case "switchToNativeMenu":

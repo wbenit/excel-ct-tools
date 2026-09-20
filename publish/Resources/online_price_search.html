@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>在线查价与一键静默回写</title>
+  
+  <!-- 引入项目全局绿蓝相间主题规范 (主色调 #009688) -->
+  <link rel="stylesheet" href="theme.css">
+  
+  <!-- 引入 Element Plus CSS 样式库 (优先阿里高速国内镜像，自动回退 unpkg) -->
+  <link rel="stylesheet" href="https://registry.npmmirror.com/element-plus/2.4.4/files/dist/index.css" onerror="this.onerror=null;this.href='https://unpkg.com/element-plus@2.4.4/dist/index.css';">
+  <!-- 引入 FontAwesome 图标库 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- 引入 Vue 3 与 Element Plus 核心库 (优先阿里高速国内镜像，自动回退 unpkg) -->
+  <script src="https://registry.npmmirror.com/vue/3.3.4/files/dist/vue.global.prod.js" onerror="this.onerror=null;this.src='https://unpkg.com/vue@3.3.4/dist/vue.global.prod.js'"></script>
+  <script src="https://registry.npmmirror.com/element-plus/2.4.4/files/dist/index.full.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/element-plus@2.4.4/dist/index.full.min.js'"></script>
+  <!-- 引入天工矩阵 sign 算法核心脚本 -->
+  <script src="JavaScript1.js"></script>
+
+  <style>
+    /* 全局防溢出与弹性盒盒模型 (严格杜绝水平滚动条) */
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      max-width: 100vw;
+      overflow: hidden !important;
+      overflow-x: hidden !important;
+      background-color: #f4f7f6;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      user-select: none;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      max-width: 100%;
+      height: 100vh;
+      overflow: hidden !important;
+      overflow-x: hidden !important;
+      border: 1px solid #b2dfdb;
+    }
+
+    /* 顶部无边框置顶标题栏 (绿蓝双色渐变，主色调 #009688) */
+    .title-bar {
+      height: 36px;
+      background: linear-gradient(135deg, #009688 0%, #00796b 100%);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      cursor: move;
+      flex-shrink: 0;
+      width: 100%;
+      overflow: hidden;
+    }
+
+    .title-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+
+    .title-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .win-btn {
+      width: 28px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: transparent;
+      color: #ffffff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.15s ease;
+    }
+
+    .win-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .win-btn.btn-close:hover {
+      background: #e53935;
+    }
+
+    /* 主体内容纯弹性滚动容器 (严格隐藏水平滚动条) */
+    .main-body {
+      flex: 1;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+      overflow-x: hidden !important;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+    }
+
+    /* 配置卡片通用弹性容器 */
+    .config-card {
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid #e0f2f1;
+      box-shadow: 0 2px 6px rgba(0, 150, 136, 0.06);
+      padding: 10px 14px;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      overflow-x: hidden !important;
+      flex-shrink: 0;
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #00796b;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* 纯弹性伸缩行 (Flexbox自适应，绝不横向溢出) */
+    .param-flex-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      align-items: center;
+      width: 100%;
+      min-width: 0;
+    }
+
+    /* 弹性子项: 默认25%四列，支持自适应收缩 */
+    .param-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1 1 calc(25% - 14px);
+      min-width: 160px;
+    }
+
+    /* 弹性子项: 50%半宽项 */
+    .param-item.col-half {
+      flex: 1 1 calc(50% - 14px);
+      min-width: 260px;
+    }
+
+    .param-label {
+      font-size: 11px;
+      color: #555555;
+      font-weight: 600;
+    }
+
+    /* 选区与操作看板 (弹性自适应布局，决无横向滚动条) */
+    .action-board {
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid #b2dfdb;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(0, 150, 136, 0.08);
+      gap: 12px;
+      flex-wrap: wrap;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      overflow-x: hidden !important;
+      flex-shrink: 0;
+    }
+
+    .selection-info-box {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      flex: 1 1 340px;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .sel-tag {
+      font-weight: 700;
+      color: #009688;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sel-subtext {
+      font-size: 11px;
+      color: #777777;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .action-btn-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    /* 主题操作大按钮 */
+    .btn-batch-run {
+      background: linear-gradient(135deg, #009688 0%, #00796b 100%) !important;
+      border-color: #00796b !important;
+      color: #ffffff !important;
+      font-weight: 700 !important;
+      height: 38px !important;
+      padding: 0 18px !important;
+      font-size: 13px !important;
+      box-shadow: 0 3px 8px rgba(0, 150, 136, 0.3) !important;
+      transition: all 0.2s ease !important;
+    }
+
+    .btn-batch-run:hover {
+      opacity: 0.92;
+      transform: translateY(-1px);
+    }
+
+    /* 进度条弹性容器 */
+    .progress-box {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      width: 100%;
+      min-width: 0;
+      flex-shrink: 0;
+    }
+
+    /* 底部多功能选项卡卡片 (弹性扩展铺满剩余视口) */
+    .tabs-card {
+      flex: 1;
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid #e0f2f1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden !important;
+      overflow-x: hidden !important;
+      min-height: 200px;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+    }
+
+    .tabs-card :deep(.el-tabs__header) {
+      margin: 0;
+      background: #f8faf9;
+      border-bottom: 1px solid #e0f2f1;
+      padding: 0 10px;
+      flex-shrink: 0;
+    }
+
+    .tabs-card :deep(.el-tabs__item.is-active) {
+      color: #009688;
+      font-weight: 700;
+    }
+
+    .tabs-card :deep(.el-tabs__active-bar) {
+      background-color: #009688;
+    }
+
+    .tabs-card :deep(.el-tabs__content) {
+      flex: 1;
+      padding: 10px;
+      overflow: hidden !important;
+      overflow-x: hidden !important;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      min-width: 0;
+    }
+
+    .tab-pane-full {
+      flex: 1;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden !important;
+      overflow-x: hidden !important;
+      width: 100%;
+      min-width: 0;
+    }
+
+    /* 终端黑色日志框 (单向纵向微滚，绝无水平横向滚动条) */
+    .console-logger {
+      flex: 1;
+      background: #1e292b;
+      color: #80cbc4;
+      font-family: "Consolas", "Courier New", monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      padding: 10px 12px;
+      border-radius: 4px;
+      overflow-y: auto;
+      overflow-x: hidden !important;
+      white-space: pre-wrap;
+      word-break: break-all;
+      border: 1px solid #2e3d40;
+      width: 100%;
+      min-width: 0;
+    }
+
+    .log-success { color: #81c784; }
+    .log-warn { color: #ffb74d; }
+    .log-error { color: #e57373; }
+
+    /* Element Plus 表格彻底消灭水平滚动条 */
+    .el-table {
+      width: 100% !important;
+      max-width: 100% !important;
+      overflow-x: hidden !important;
+    }
+
+    .el-table .el-table__inner-wrapper {
+      overflow-x: hidden !important;
+    }
+
+    .el-table__body-wrapper, .el-table__header-wrapper {
+      overflow-x: hidden !important;
+    }
+
+    .el-table__body {
+      width: 100% !important;
+      table-layout: fixed !important;
+    }
+
+    /* 单件测试弹性面板 */
+    .single-test-box {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 6px 4px;
+      width: 100%;
+      min-width: 0;
+      overflow-x: hidden !important;
+    }
+
+    .single-test-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      width: 100%;
+    }
+
+    /* 全局滚动条微调: 彻底消除水平滚动条 --硬编码: 隐藏水平滚动条-- */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 0px !important;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #b2dfdb;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #009688;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部无边框置顶拖拽标题栏 -->
+    <div class="title-bar" @mousedown="onTitleMouseDown">
+      <div class="title-left">
+        <i class="fa-solid fa-bolt-lightning" style="color: #80cbc4;"></i>
+        <span>在线查价与一键静默回写</span>
+        <span style="background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-left: 6px;">
+          电气天下 / 天工矩阵
+        </span>
+      </div>
+      <div class="title-actions" @mousedown.stop>
+        <button class="win-btn" title="最小化" @click="minimizeWindow">
+          <i class="fa-solid fa-minus"></i>
+        </button>
+        <button class="win-btn btn-close" title="关闭" @click="closeWindow">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 主体内容卡片区 -->
+    <div class="main-body">
+      <!-- 1. 数据源与厂商配置卡片 -->
+      <div class="config-card">
+        <div class="section-title">
+          <i class="fa-solid fa-sliders"></i>
+          <span>查价数据源与厂商设定</span>
+        </div>
+        <div class="param-flex-row">
+          <!-- 平台选择 -->
+          <div class="param-item col-half">
+            <span class="param-label">查询平台</span>
+            <el-radio-group v-model="config.platform" size="default" @change="saveConfig">
+              <el-radio-button :label="0">
+                <i class="fa-solid fa-globe" style="margin-right: 4px;"></i>电气天下 (dq123.com)
+              </el-radio-button>
+              <el-radio-button :label="1">
+                <i class="fa-solid fa-network-wired" style="margin-right: 4px;"></i>天工矩阵 (TitanMatrix)
+              </el-radio-button>
+            </el-radio-group>
+          </div>
+
+          <!-- 厂商品牌选择 -->
+          <div class="param-item col-half">
+            <span class="param-label">指定厂商品牌</span>
+            <el-select v-model="config.brand" placeholder="选择或过滤品牌" filterable @change="saveConfig" style="width: 100%;">
+              <el-option label="全部 (不限品牌·自动识别)" value="全部"></el-option>
+              <el-option label="正泰 (CHINT)" value="正泰"></el-option>
+              <el-option label="德力西 (DELIXI)" value="德力西"></el-option>
+              <el-option label="常熟开关 (CAEN)" value="常熟开关"></el-option>
+              <el-option label="施耐德 (Schneider)" value="施耐德"></el-option>
+              <el-option label="良信电器 (Nader)" value="良信"></el-option>
+              <el-option label="ABB" value="ABB"></el-option>
+              <el-option label="西门子 (SIEMENS)" value="西门子"></el-option>
+              <el-option label="天正电气 (TENGEN)" value="天正"></el-option>
+              <el-option label="人民电器 (PEOPLE)" value="人民电器"></el-option>
+            </el-select>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 用户自主选择回填列设置 (核心需求: 可选可填 + 品牌列) -->
+      <div class="config-card">
+        <div class="section-title">
+          <i class="fa-solid fa-table-columns"></i>
+          <span>自主选择回填列与写入模式 (支持下拉选择或直接键入任意列字母)</span>
+        </div>
+        <div class="param-flex-row">
+          <!-- 型号回填列 (可选手填) -->
+          <div class="param-item">
+            <span class="param-label">型号回填目标列</span>
+            <el-select
+              v-model="config.modelTargetCol"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择或输入列(如C)"
+              @change="onColChange('modelTargetCol')"
+              style="width: 100%;"
+            >
+              <el-option label="C 列 (规格型号)" value="C"></el-option>
+              <el-option label="B 列 (元器件名称)" value="B"></el-option>
+              <el-option label="不回填 (保持原型号)" value="NONE"></el-option>
+            </el-select>
+          </div>
+
+          <!-- 价格回填列 (可选手填) -->
+          <div class="param-item">
+            <span class="param-label">价格回填目标列</span>
+            <el-select
+              v-model="config.priceTargetCol"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择或输入列(如M)"
+              @change="onColChange('priceTargetCol')"
+              style="width: 100%;"
+            >
+              <el-option label="M 列 (面价/表价·推荐联动)" value="M"></el-option>
+              <el-option label="G 列 (单价·直接写入)" value="G"></el-option>
+              <el-option label="K 列 (成本单价)" value="K"></el-option>
+            </el-select>
+          </div>
+
+          <!-- 品牌厂商回填列 (新增！可选手填) -->
+          <div class="param-item">
+            <span class="param-label">品牌回填目标列</span>
+            <el-select
+              v-model="config.brandTargetCol"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择或输入列(如D)"
+              @change="onColChange('brandTargetCol')"
+              style="width: 100%;"
+            >
+              <el-option label="D 列 (品牌/厂家·推荐)" value="D"></el-option>
+              <el-option label="E 列 (参数描述)" value="E"></el-option>
+              <el-option label="不回填 (保持原品牌)" value="NONE"></el-option>
+            </el-select>
+          </div>
+
+          <!-- 仅更新价格开关 -->
+          <div class="param-item check-item">
+            <span class="param-label">型号覆盖策略</span>
+            <el-checkbox v-model="config.onlyUpdatePrice" @change="saveConfig" style="margin-top: 4px;">
+              仅更新价格 (不改原型号)
+            </el-checkbox>
+          </div>
+
+          <!-- 括号剥离开关 -->
+          <div class="param-item check-item">
+            <span class="param-label">型号智能清洗</span>
+            <el-checkbox v-model="config.trimParentheses" @change="saveConfig" style="margin-top: 4px;">
+              自动剥离括号参数 (如 100A)
+            </el-checkbox>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. 选区状态与一键静默回写看板 -->
+      <div class="action-board">
+        <div class="selection-info-box">
+          <div class="sel-tag">
+            <i class="fa-regular fa-file-excel" style="margin-right: 4px;"></i>
+            <span>工作表：{{ selection.sheetName || '未检测到选区' }}</span>
+            <span style="color: #00796b; margin-left: 10px;">
+              已检测到 <strong style="font-size: 15px; color: #d32f2f;">{{ selection.validRowCount || 0 }}</strong> 个待查元器件
+            </span>
+          </div>
+          <div class="sel-subtext">
+            <span>选区范围: {{ selection.hasSelection ? `第 ${selection.startRow} 行 ~ 第 ${selection.endRow} 行` : '请先在 Excel 中框选需要查价的元器件行或列' }}</span>
+            <span v-if="selection.previewModels && selection.previewModels.length > 0" style="margin-left: 12px; color: #00796b;">
+              首项: {{ selection.previewModels[0] }}
+            </span>
+          </div>
+        </div>
+
+        <div class="action-btn-group">
+          <!-- 刷新选区按钮 -->
+          <el-button size="default" @click="refreshSelection" :disabled="isRunning">
+            <i class="fa-solid fa-arrows-rotate" style="margin-right: 4px;"></i> 重新检测选区
+          </el-button>
+
+          <!-- 核心操作大按钮: 框选一键批量查价回写 -->
+          <el-button
+            type="primary"
+            class="btn-batch-run"
+            :loading="isRunning"
+            :disabled="!selection.hasSelection || selection.validRowCount === 0"
+            @click="startBatchSearch"
+          >
+            <i class="fa-solid fa-bolt" style="margin-right: 6px;"></i>
+            ⚡ 框选一键批量查价并回写
+          </el-button>
+
+          <!-- 中止按钮 -->
+          <el-button v-if="isRunning" type="danger" size="default" @click="cancelBatchSearch">
+            中止
+          </el-button>
+        </div>
+      </div>
+
+      <!-- 流光动态进度条 -->
+      <div v-if="isRunning || progress.total > 0" class="progress-box">
+        <el-progress
+          :percentage="progress.percent"
+          :striped="isRunning"
+          :striped-flow="isRunning"
+          :duration="12"
+          :color="progressColors"
+          :stroke-width="14"
+          style="width: 100%;"
+        ></el-progress>
+        <div style="display: flex; justify-content: space-between; font-size: 11px; color: #555555; padding: 0 2px;">
+          <span>{{ progress.logText || '就绪' }}</span>
+          <span><strong>{{ progress.current }}</strong> / {{ progress.total }} 项 ({{ progress.percent }}%)</span>
+        </div>
+      </div>
+
+      <!-- 4. 底部多功能展示选项卡 (实时日志 / 结果明细 / 单件试查) -->
+      <div class="tabs-card">
+        <el-tabs v-model="activeTab" style="height: 100%; display: flex; flex-direction: column;">
+          <!-- 实时日志 Tab -->
+          <el-tab-pane label="实时执行日志" name="logs" class="tab-pane-full">
+            <div class="console-logger" ref="loggerRef">
+              <div v-for="(line, idx) in logLines" :key="idx" :class="getLogClass(line)">
+                {{ line }}
+              </div>
+              <div v-if="logLines.length === 0" style="color: #526e72;">
+                暂无日志输出，在 Excel 中框选元器件并点击【⚡ 框选一键批量查价并回写】开始执行...
+              </div>
+            </div>
+          </el-tab-pane>
+
+          <!-- 查价明细表格 Tab (弹性铺满，彻底消除水平滚动条) -->
+          <el-tab-pane label="查价明细表格" name="table" class="tab-pane-full">
+            <el-table :data="resultItems" size="small" border stripe height="100%" style="width: 100%;">
+              <el-table-column prop="row" label="Excel行" width="70" align="center"></el-table-column>
+              <el-table-column prop="searchModel" label="检索型号" min-width="130" show-overflow-tooltip></el-table-column>
+              <el-table-column prop="matchedModel" label="匹配官方型号" min-width="150" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span :style="{ color: row.matchedModel ? '#00796b' : '#999999', fontWeight: row.matchedModel ? '600' : 'normal' }">
+                    {{ row.matchedModel || '-' }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="price" label="查得单价(面价)" width="115" align="right">
+                <template #default="{ row }">
+                  <span v-if="row.price > 0" style="color: #d32f2f; font-weight: 700;">
+                    ¥ {{ row.price.toFixed(2) }}
+                  </span>
+                  <span v-else style="color: #999999;">-</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="vendor" label="品牌厂商" min-width="110" show-overflow-tooltip></el-table-column>
+              <el-table-column prop="status" label="状态" width="85" align="center">
+                <template #default="{ row }">
+                  <el-tag v-if="row.status === 'Success'" type="success" size="small">成功</el-tag>
+                  <el-tag v-else-if="row.status === 'NotFound'" type="warning" size="small">未查得</el-tag>
+                  <el-tag v-else-if="row.status === 'Pending'" type="info" size="small">待查</el-tag>
+                  <el-tag v-else type="danger" size="small">异常</el-tag>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+
+          <!-- 单件搜价测试 Tab -->
+          <el-tab-pane label="单件精确测试" name="single" class="tab-pane-full">
+            <div class="single-test-box">
+              <div class="single-test-bar">
+                <el-input v-model="singleTestModel" placeholder="输入测试规格型号，例如: NM1-125S/3300" clearable style="width: 320px;"></el-input>
+                <el-button type="primary" :loading="isSingleTesting" @click="testSingleSearch" style="background-color: #009688; border-color: #009688;">
+                  <i class="fa-solid fa-magnifying-glass" style="margin-right: 4px;"></i> 精确试查
+                </el-button>
+              </div>
+              <el-descriptions v-if="singleResult" :column="2" border size="small" style="margin-top: 10px;">
+                <el-descriptions-item label="检索型号">{{ singleResult.searchModel }}</el-descriptions-item>
+                <el-descriptions-item label="查询状态">
+                  <el-tag :type="singleResult.status === 'Success' ? 'success' : 'danger'" size="small">
+                    {{ singleResult.status === 'Success' ? '成功查得' : '未查得' }}
+                  </el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="匹配官方型号">{{ singleResult.matchedModel || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="官方单价(面价)">
+                  <span style="color: #d32f2f; font-weight: 700; font-size: 14px;">
+                    {{ singleResult.price > 0 ? `¥ ${singleResult.price.toFixed(2)}` : '-' }}
+                  </span>
+                </el-descriptions-item>
+                <el-descriptions-item label="厂商品牌" :span="2">{{ singleResult.vendor || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="详细说明" :span="2">{{ singleResult.message || '-' }}</el-descriptions-item>
+              </el-descriptions>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 从 Vue 全局对象中解构 Composition API 函数 (纯原生标准UMD方式，杜绝ESM加载问题)
+    const { createApp, ref, reactive, nextTick, onMounted } = Vue;
+
+    // 创建 Vue 应用实例
+    const app = createApp({
+      setup() {
+        // 查价与回填配置数据模型 (响应式)
+        const config = reactive({
+          platform: 0,              // 0: 电气天下, 1: 天工矩阵
+          brand: '全部',            // 默认厂商
+          modelTargetCol: 'C',     // 型号回填列 (可选可填)
+          priceTargetCol: 'M',     // 价格回填列 (可选可填)
+          brandTargetCol: 'D',     // 品牌回填列 (可选可填，新增！)
+          maxConcurrency: 6,       // 并发数
+          onlyUpdatePrice: false,  // 仅更新价格
+          trimParentheses: true    // 剥离括号参数
+        });
+
+        // 选区概况数据
+        const selection = reactive({
+          hasSelection: false,
+          sheetName: '',
+          validRowCount: 0,
+          startRow: 0,
+          endRow: 0,
+          previewModels: []
+        });
+
+        // 运行中状态标识
+        const isRunning = ref(false);
+        // 当前激活 Tab
+        const activeTab = ref('logs');
+        // 日志行数组
+        const logLines = ref([]);
+        // 结果明细数据列表
+        const resultItems = ref([]);
+        // 日志容器 DOM
+        const loggerRef = ref(null);
+
+        // 进度数据包
+        const progress = reactive({
+          current: 0,
+          total: 0,
+          percent: 0,
+          logText: ''
+        });
+
+        // 进度条主题渐变色
+        const progressColors = [
+          { color: '#80cbc4', percentage: 20 },
+          { color: '#4db6ac', percentage: 40 },
+          { color: '#26a69a', percentage: 60 },
+          { color: '#009688', percentage: 80 },
+          { color: '#00796b', percentage: 100 },
+        ];
+
+        // 单件测试相关
+        const singleTestModel = ref('NM1-125S/3300');
+        const isSingleTesting = ref(false);
+        const singleResult = ref(null);
+
+        // 向 C# 宿主发送 WebMessage 消息
+        const postToHost = (action, payload = {}) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ action, ...payload }));
+          }
+        };
+
+        // 标题栏按下拖拽窗体
+        const onTitleMouseDown = (e) => {
+          if (e.button === 0) {
+            postToHost('dragWindow');
+          }
+        };
+
+        // 最小化窗口
+        const minimizeWindow = () => {
+          postToHost('minimizeWindow');
+        };
+
+        // 关闭窗口
+        const closeWindow = () => {
+          postToHost('closeWindow');
+        };
+
+        // 保存配置至 C# 后台
+        const saveConfig = () => {
+          postToHost('saveConfig', { config: { ...config } });
+        };
+
+        // 对应列选择或手填变化时规范化大写并持久化
+        const onColChange = (key) => {
+          if (config[key]) {
+            const rawVal = String(config[key]).trim().toUpperCase();
+            if (rawVal === 'NONE' || rawVal.includes('不回填')) {
+              config[key] = 'NONE';
+            } else {
+              // 自动提取英文字母串（如输入 "d" 或 "d列" 自动转为 "D"）
+              const matched = rawVal.match(/[A-Z]+/);
+              if (matched) {
+                config[key] = matched[0];
+              }
+            }
+          }
+          saveConfig();
+        };
+
+        // 重新检测当前 Excel 选区
+        const refreshSelection = () => {
+          postToHost('refreshSelection');
+        };
+
+        // 追加日志并自动滚屏
+        const appendLog = (text) => {
+          const time = new Date().toLocaleTimeString();
+          logLines.value.push(`[${time}] ${text}`);
+          nextTick(() => {
+            if (loggerRef.value) {
+              loggerRef.value.scrollTop = loggerRef.value.scrollHeight;
+            }
+          });
+        };
+
+        // 日志分色
+        const getLogClass = (line) => {
+          if (line.includes('成功') || line.includes('¥') || line.includes('元')) return 'log-success';
+          if (line.includes('未查得') || line.includes('警告')) return 'log-warn';
+          if (line.includes('异常') || line.includes('失败') || line.includes('错误')) return 'log-error';
+          return '';
+        };
+
+        // 触发框选一键批量查价回写
+        const startBatchSearch = () => {
+          if (!selection.hasSelection || selection.validRowCount === 0) {
+            ElementPlus.ElMessage.warning('当前选区内未识别到有效元器件，请在 Excel 中框选数据');
+            return;
+          }
+
+          isRunning.value = true;
+          activeTab.value = 'logs';
+          logLines.value = [];
+          resultItems.value = [];
+          progress.current = 0;
+          progress.total = selection.validRowCount;
+          progress.percent = 0;
+          progress.logText = '任务启动中...';
+
+          appendLog(`开始执行批量查价，数据源: ${config.platform === 1 ? '天工矩阵' : '电气天下'}，指定品牌: ${config.brand}`);
+          const brandColDesc = (!config.brandTargetCol || config.brandTargetCol === 'NONE') ? '不回填' : `${config.brandTargetCol} 列`;
+          const modelColDesc = (!config.modelTargetCol || config.modelTargetCol === 'NONE') ? '不回填' : `${config.modelTargetCol} 列`;
+          appendLog(`回填列设置: 型号 -> ${modelColDesc}，价格 -> ${config.priceTargetCol} 列，品牌 -> ${brandColDesc}`);
+
+          // 发送指令给 C# 后台
+          postToHost('startBatchSearch', { config: { ...config } });
+        };
+
+        // 中止批量查价
+        const cancelBatchSearch = () => {
+          postToHost('cancelBatchSearch');
+          appendLog('已发送中止请求...');
+        };
+
+        // 单件精确测试
+        const testSingleSearch = () => {
+          if (!singleTestModel.value) {
+            ElementPlus.ElMessage.warning('请输入要测试的型号');
+            return;
+          }
+          isSingleTesting.value = true;
+          singleResult.value = null;
+          postToHost('searchSingle', {
+            model: singleTestModel.value.trim(),
+            platform: config.platform,
+            brand: config.brand
+          });
+        };
+
+        // 监听 C# 宿主消息推送
+        const initHostListener = () => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (event) => {
+              try {
+                const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                const action = data.action;
+
+                switch (action) {
+                  // 1. 初始化配置与选区回显
+                  case 'renderInitData':
+                    if (data.config) Object.assign(config, data.config);
+                    if (data.selection) Object.assign(selection, data.selection);
+                    appendLog(`已载入配置，当前活动工作表: ${selection.sheetName || '无'} (检测到 ${selection.validRowCount} 项)`);
+                    break;
+
+                  // 2. 选区刷新回显
+                  case 'renderSelection':
+                    if (data.selection) {
+                      Object.assign(selection, data.selection);
+                      ElementPlus.ElMessage.success(`已刷新选区: 检测到 ${selection.validRowCount} 个有效元器件`);
+                      appendLog(`选区已刷新: ${selection.sheetName} 第 ${selection.startRow} ~ ${selection.endRow} 行 (${selection.validRowCount} 项)`);
+                    }
+                    break;
+
+                  // 3. 查价进度更新推送
+                  case 'progressUpdate':
+                    if (data.progress) {
+                      const p = data.progress;
+                      progress.current = p.current;
+                      progress.total = p.total;
+                      progress.percent = p.percent;
+                      progress.logText = p.logText;
+                      if (p.logText) appendLog(p.logText);
+                      if (p.item) resultItems.value.push(p.item);
+                    }
+                    break;
+
+                  // 4. 批量查价回写完成
+                  case 'batchComplete':
+                    isRunning.value = false;
+                    progress.percent = 100;
+                    if (data.items) resultItems.value = data.items;
+                    if (data.success) {
+                      ElementPlus.ElNotification({
+                        title: '批量查价回写成功',
+                        message: data.message,
+                        type: 'success',
+                        duration: 4000
+                      });
+                      appendLog(`🎉 ${data.message}`);
+                    } else {
+                      ElementPlus.ElNotification({
+                        title: '查价提示',
+                        message: data.message,
+                        type: 'warning',
+                        duration: 5000
+                      });
+                      appendLog(`⚠️ ${data.message}`);
+                    }
+                    break;
+
+                  // 5. 任务中止
+                  case 'batchCancelled':
+                    isRunning.value = false;
+                    appendLog('🚫 用户已手动中止操作');
+                    ElementPlus.ElMessage.info('查价任务已中止');
+                    break;
+
+                  // 6. 单件测试结果
+                  case 'singleSearchResult':
+                    isSingleTesting.value = false;
+                    singleResult.value = data.result;
+                    if (data.result && data.result.status === 'Success') {
+                      ElementPlus.ElMessage.success(`查得单价: ¥ ${data.result.price.toFixed(2)}`);
+                    } else {
+                      ElementPlus.ElMessage.warning(data.result?.message || '未查得价格');
+                    }
+                    break;
+                }
+              } catch (e) {
+                console.error('解析宿主消息失败', e);
+              }
+            });
+          }
+        };
+
+        // 挂载生命周期
+        onMounted(() => {
+          initHostListener();
+          // 请求 C# 初始化数据
+          postToHost('initData');
+        });
+
+        return {
+          config,
+          selection,
+          isRunning,
+          activeTab,
+          logLines,
+          resultItems,
+          loggerRef,
+          progress,
+          progressColors,
+          singleTestModel,
+          isSingleTesting,
+          singleResult,
+          onTitleMouseDown,
+          minimizeWindow,
+          closeWindow,
+          saveConfig,
+          onColChange,
+          refreshSelection,
+          startBatchSearch,
+          cancelBatchSearch,
+          testSingleSearch,
+          getLogClass
+        };
+      }
+    });
+
+    // 挂载 Element Plus 与 Vue
+    app.use(ElementPlus);
+    app.mount('#app');
+  </script>
+</body>
+</html>

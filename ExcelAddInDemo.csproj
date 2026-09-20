@@ -118,6 +118,14 @@
     <None Include="Resources\cloud_solution.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将在线查价与一键静默回写前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\online_price_search.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- 自动将天工矩阵 sign 签名算法 JavaScript 文件复制至构建输出路径中 -->
+    <None Include="Resources\JavaScript1.js">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将聚光灯个性化设置前端 Vue 3 页面复制至构建输出路径中 -->
     <None Include="Resources\spotlight_setting.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

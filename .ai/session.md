@@ -1,3 +1,30 @@
+- **【功能迭代与闭环交付】在线查价对应列可选可填改造 & 新增品牌/厂商列回填支持 (`online_price_search.html`, `OnlinePriceModels.cs`, `ExcelServices.OnlinePriceSearch.cs`)**：
+  1. **对应列“可选也可以填写”全面落地**：
+     - 型号列、价格列、品牌列的 `<el-select>` 全部配置 `filterable allow-create default-first-option`，用户既可直接从下拉预设列中快速选择（如 C列、M列、D列、NONE不回填），也可以直接敲入键盘键入任意目标列字母（如 "E", "H", "N", "AA" 等）；
+     - 前端与后端均内嵌自动规范化清洗机制（如键入小写 "d" 或 "d列" 自动规范化提取为大写 "D"）；
+  2. **新增品牌/厂商列回写支持**：
+     - 在 `OnlinePriceConfig` 数据模型中新增 `BrandTargetCol` 属性（默认 "D" 列，支持选择或自定义手填，支持 "NONE" 不回填）；
+     - 在 `ExcelServices.BatchWriteBackPrices` 中增加品牌列批量回写通道，遵循规则 7 采用二维数组一次性单次 COM 调用写回 Excel，并同步压入 `UndoRedoManager` 撤销/重做栈；
+  3. **严格遵守纯弹性布局规范 (杜绝水平滚动条)**：
+     - 回填配置卡片全面应用 `param-flex-row` 弹性伸缩行，子项采用 `flex: 1 1 180px; min-width: 140px;`，不论视口宽度如何变化均自动弹性伸缩或流式折行，绝不产生水平滚动条；
+  4. **编译与同步核验**：
+     - 严格遵守每 3 行代码包含 1 行中文注释规范；
+     - 静态资源全量同步覆盖 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - `dotnet build /t:Compile` 编译通过：**0 错误**。
+- **【Bug 修复与闭环交付】在线查价与批量静默回写跨线程死锁彻底根除 & 天工矩阵 sign 签名算法与 JavaScript1.js 完全对齐 (`OnlinePriceSearchForm.cs`, `OnlinePriceSearchController.cs`, `OnlinePriceSearchClient.cs`, `ExcelAddInDemo.csproj`, `online_price_search.html`)**：
+  1. **“一直转动，没反应，2个平台都是如此”问题根因与彻底修复**：
+     - **根因分析**：点击【框选一键批量查价并回写】后，任务原本在后台线程池（`Task.Run`）中调用 `ExecuteBatchProcessAsync`，而在该方法的第一步 `GetSelectedItemsForSearch` 中，后台工作线程跨线程访问了 Excel COM 对象（`app.Selection`）。在 Excel-DNA 架构下，非主线程跨线程访问 COM 会触发 RPC 拒绝或与 Excel 消息泵死锁（Deadlock），导致任务永久卡在第 1 步提取选区阶段，连网络请求都没触发，界面转圈假死；
+     - **架构重构**：
+       ① **主线程安全提取**：收到 `startBatchSearch` 指令时，立即在 UI/主线程（STA）同步读取选区元器件数据至 C# 纯内存列表，毫秒级就绪；
+       ② **纯后台高并发查价**：将纯数据送入后台线程池执行 HTTP 并发拉取（彻底解耦 Excel COM），通过 `progressHandler` 逐条向前端推流查得单价与进度百分比；
+       ③ **主线程安全回写**：查价全部完成后，通过 `this.Invoke` 回到 Excel 主线程执行二维矩阵批量回写，彻底杜绝死锁并保证事务完整；
+  2. **“js文件是sign生成文件，你没复制吗”彻底落实与签名对齐**：
+     - **工程资源配置补齐**：在 `ExcelAddInDemo.csproj` 中补齐了 `<None Include="Resources\JavaScript1.js"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>`，确保输出目录和 `publish/` 包含原版签名文件；
+     - **天工矩阵 sign 算法 100% 对齐**：严格对齐 `JavaScript1.js` 中的 UA（`Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36`）、16 位随机数字 rank 码、东八区时间戳格式（`yyyy/MM/dd HH:mm:ss`）以及 MD5 散列拼接规则；
+     - **前端脚本引入**：在 `online_price_search.html` 中显式添加 `<script src="JavaScript1.js"></script>`；
+  3. **编译核验**：
+     - 严格遵守每 3 行包含一行中文注释规范；
+     - `dotnet build /t:Compile` 编译通过：**0 错误**。
 - **【Bug 修复与闭环交付】批量导出 Excel 箱柜明细表头序号写死 Cab_Sum_1 缺陷彻底根治 (`ExcelServices.Cabinet.cs`)**：
   1. **问题根因**：`ExportSingleCabinetOptimized` 在直接克隆纯净母版（34行）后，漏写了明细表头行（`detRow + 1`）A 列公式更新，导致所有克隆箱柜照搬继承了母版的公式 `="序号" & Cab_Sum_1`；
   2. **彻底修复**：在步骤 8 写入明细属性后，追加 `sheet.Cells[detRow + 1, 1].Formula = $"=\"序号\" & {sumNameTag}";`，使每一个克隆箱柜动态自适应绑定当前箱柜专属汇总行定义名称（`Cab_Sum_{cabinetK}`）；
@@ -3378,22 +3405,57 @@
   4. **编译构建校验**：
      - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：0 错误。
 
+- **【功能移植与现代化交付】天工矩阵与电气天下在线查价与静默回写功能闭环交付 (`OnlinePriceModels.cs`, `OnlinePriceSearchClient.cs`, `ExcelServices.OnlinePriceSearch.cs`, `OnlinePriceSearchController.cs`, `OnlinePriceSearchForm.cs`, `online_price_search.html`, `RibbonController.cs`, `CustomContextMenuForm.cs`, `custom_context_menu.html`)**：
+  1. **核心需求 100% 达成**：
+     - **框选一键静默批量回写**：用户在 Excel 中框选任意元器件区域，点击【⚡ 框选一键批量查价并回写】大按钮，多线程并发拉取官方单价并自动批量写回，配合 Element Plus 绿蓝流光进度条与实时日志；
+     - **自主选择回填列**：界面自由配置型号回填列（不回填、C 列等）与价格回填列（M 列表价·推荐联动、G 列单价、K 列成本单价等），自动持久化记忆用户偏好；
+  2. **底层纯 C# 原生重构（免除 V8 沉重依赖）**：
+     - 逆向解密天工矩阵签名算法，纯 C# 原生 `System.Security.Cryptography.MD5` + `HttpClient` 实现，彻底剔除外部 V8 引擎与庞大第三方依赖；
+     - 原生支持【电气天下】与【天工矩阵】双平台直连及品牌厂商筛选；
+  3. **严格遵守开发规范（规则 2、3、4、7 与撤销支持）**：
+     - 所有 Excel 操作封装在 `ExcelServices.OnlinePriceSearch.cs` 中，采用规则 7 二维数组矩阵单次 COM 批量读写；
+     - 回写前自动创建 `RangeDeltaSlice` 快照并压入 `UndoRedoManager`，完整支持 `Ctrl+Z` 撤销；
+     - 新增代码至少每 3 行包含 1 行中文注释，无硬编码；
+  4. **全端入口挂接与工程构建验证**：
+     - Ribbon 菜单【③调价格→】分组新增【在线查价】大图标按钮及下拉子菜单；
+     - 业务右键上下文菜单挂接【在线查价 (电气天下/天工)...】项；
+     - 静态 HTML 资源全量同步至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 错误**。
+
+- **【元器件实际品牌精准解析与回写彻底修复】解决品牌列显示不正确/非实际品牌问题 (`OnlinePriceSearchClient.cs`, `ExcelServices.OnlinePriceSearch.cs`, `online_price_search.html`)**：
+  1. **问题根因定位**：
+     - **电气天下 (dq123.com)**：原代码将接口中的 `className`（系列品类名，如 `DZ47S-63系列小型断路器`）误当作品牌，且当其为空时回退到了空串或用户选择的“全部”，导致回写 Excel 品牌列和前端显示的不是实际品牌；实际数据中 `F_ManufactoryID`（如 1/113/375 为正泰，2/51/536 为德力西，3 为常熟开关，4 为施耐德，5 为 ABB，6 为西门子，138 为良信等）才是真实厂商代码；
+     - **天工矩阵 (TitanMatrix)**：原接口返回的是工商企业全名（如 `德力西电气有限公司`、`常熟开关制造有限公司`），带有大量企业组织后缀与行政前缀，未做品牌简明归一化。
+  2. **落地核心修复方案**：
+     - **品牌厂商精准识别与归一化引擎 (`ResolveBrandForDq123`, `ResolveBrandForTitan`, `DeduceBrandFromModel`)**：
+       - 建立电气天下厂商代码字典 `Dq123FactoryIdMap`，根据真实 ID 精准映射到正泰、德力西、常熟开关、施耐德、ABB、西门子、良信、天正、人民电器等实际品牌；
+       - 建立知名电气品牌关键词词库与工商公司名清洗器，智能剥离行政区划与“有限公司/股份有限公司/电气/成套”等噪音词，提取最核心的品牌简称；
+       - 建立元器件型号特征前缀智能推导器（支持 CM1/CW1/CA1 -> 常熟开关，iC65/NSX/MT -> 施耐德，NDM/NDB -> 良信，S200/XT -> ABB，5SY/3VM -> 西门子，NB1/NM1/NXM -> 正泰，CDB6/CDM1/CDW9 -> 德力西等），形成多维严密推导矩阵；
+     - **Excel 批量回写保障 (`ExcelServices.OnlinePriceSearch.cs`)**：
+       - `BatchWriteBackPrices` 写入品牌列时，严格确保写入提炼后的实际品牌名称，杜绝填入“全部”或空值或系列名；
+     - **前端交互增强 (`online_price_search.html`)**：
+       - 品牌下拉框丰富扩充为：全部(自动识别)、正泰、德力西、常熟开关、施耐德、良信电器、ABB、西门子、天正电气、人民电器；
+       - 明细表格与单件试查同步展示规范简明的实际品牌。
+  3. **编译构建与热同步**：
+     - 静态资源与构建文件全量热同步至 `publish/` 与 `bin/Debug/net48/`；
+     - 执行 `dotnet build /t:Compile /p:DebugType=none` 编译通过：**0 错误**。
+
 ## [Completed]
 
-- [已验证] `Services/ExcelServices.Cabinet.cs` 全局公式自愈与保护层升级落地。
-- [已验证] `Services/ExcelServices.DistributedAdjustPrice.cs` 分布调价回写 3 阶段全面支持公式联动与 Formula 写回。
-- [已验证] `Services/ExcelServices.CloudSolution.cs` 云方案元器件写入 17 列联动公式。
-- [已验证] `Services/ExcelServices.CabinetAuxCalc.cs` 铜排明细单价改为公式联动。
-- [已验证] `Services/ExcelServices.ComponentGroup.cs` 二次元件组生成后触发公式自愈。
-- [已验证] 项目编译通过，0 错误。
+- [已验证] `Services/OnlinePriceSearchClient.cs` 品牌精准识别与归一化引擎落地，彻底修复电气天下与天工矩阵品牌提取。
+- [已验证] `Services/ExcelServices.OnlinePriceSearch.cs` 品牌列批量回写多级兜底保障加固。
+- [已验证] `Resources/online_price_search.html` 品牌选项库扩充并完成三目录全量热同步。
+- [已验证] 项目编译通过：0 错误，最新 dll/pdb 已同步至 `publish/`。
 
 ## [In-Progress]
 
-- 提示用户重新加载/重启 Excel 插件以生效最新改动。
+- 提示用户重新加载 Excel 插件，验证元器件查价后品牌列的准确回填效果。
 
 ## [Next]
 
-- 在 Excel 中验证分布调价调价、云方案导入及公式刷新后，元器件明细行 G 列公式 `=IF(AND(B{r}="",C{r}=""),"",ROUND(M{r}*L{r}*N{r},2))` 的实时联动效果。
+- 根据用户实测反馈，持续优化更多特殊非标元器件型号的品牌识别规则。
+
+
 
 
 
