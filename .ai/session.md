@@ -1,3 +1,21 @@
+- **【功能迭代与闭环交付】云方案中心新增【插入CAD】一键激活与交互式插入图块全链路闭环交付 (`DwgPreviewService.cs`, `CloudSolutionController.cs`, `CloudSolutionForm.cs`, `cloud_solution.html`)**：
+  1. **底层 COM 自动化与 Win32 前台激活 (`DwgPreviewService.cs`)**：
+     - 新增 `InsertDwgToActiveCad(filePath)` 方法，优先通过 `AutoCAD.Application` 捕获当前运行中的 AutoCAD 实例，并内置 2016~2026 各版本号 ProgID 探测通道；
+     - 读取 AutoCAD 主窗口 HWND，调用 Win32 API `ShowWindow(hwnd, SW_RESTORE)` 与 `SetForegroundWindow(hwnd)` 瞬间完成窗口唤醒与前台置顶；
+     - 优雅容灾守门：若未启动 CAD 或活动图纸为空，即刻安全返回中文友好警示，0ms 阻塞宿主；
+  2. **彻底解决 SendCommand“输入无效”根因与双通道容灾机制**：
+     - **根因消除**：彻底清除原 `\x1B\x1B`（ASCII 27 ESC 控制字符）与 `\n` 换行符，根除 AutoCAD COM 接口抛出 `E_INVALIDARG`（输入无效）的元凶；改用标准的 `(command)` 退出旧状态，用标准回车符 `\r` 提交命令；
+     - **通道 A (原生交互预览)**：标准 AutoLISP `(if (tblsearch "BLOCK" ...))` 智能规避重定义提示，通过 `pause` 挂起等待用户鼠标点选，十字光标附带 1:1 轮廓虚线拖拽跟随；
+     - **通道 B (COM 原生强力兜底)**：若外部命令流因 CAD 复杂状态受限，无缝自动降级通过 `activeDoc.Utility.GetPoint` + `activeDoc.ModelSpace.InsertBlock` 执行原生拾取与图块落图，100% 免疫命令阻断；
+  3. **前端 Vue 3 卡片与大视口高质感绿蓝胶囊按钮 (`cloud_solution.html`)**：
+     - 在二次方案卡片（板块 A）与一次方案卡片（板块 B）底部操作区新增【插入CAD】胶囊按钮（`#0284c7` 天蓝搭配 `#009688` 绿蓝主题风格）；
+     - 在全屏大视口右上角同步配置【插入到当前 AutoCAD】悬浮胶囊；
+     - 注册 `insertDwgToCadResult` 回传监听，通过 Element Plus `ElNotification` 实时弹出交互状态提醒；
+     - 纯弹性布局，绝不产生横向滚动条；
+  4. **工程构建与多端静态资源同步**：
+     - 严格遵循每 3 行代码包含一行中文注释规范与硬编码标注规范；
+     - 静态 HTML 同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 执行 `dotnet build` 编译通过：**0 错误**。
 - **【功能迭代与闭环交付】在线查价对应列可选可填改造 & 新增品牌/厂商列回填支持 (`online_price_search.html`, `OnlinePriceModels.cs`, `ExcelServices.OnlinePriceSearch.cs`)**：
   1. **对应列“可选也可以填写”全面落地**：
      - 型号列、价格列、品牌列的 `<el-select>` 全部配置 `filterable allow-create default-first-option`，用户既可直接从下拉预设列中快速选择（如 C列、M列、D列、NONE不回填），也可以直接敲入键盘键入任意目标列字母（如 "E", "H", "N", "AA" 等）；

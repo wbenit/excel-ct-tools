@@ -841,11 +841,17 @@
         transform-origin: center center;
         pointer-events: none;
       }
-      /* 右上角在外部 AutoCAD 中打开图纸悬浮胶囊 */
-      .drawing-cad-floating-btn {
+      /* 右上角在外部 AutoCAD 中打开图纸与插入CAD悬浮胶囊组 */
+      .drawing-cad-floating-group {
         position: absolute;
         top: 14px;
         right: 18px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        z-index: 10;
+      }
+      .drawing-cad-floating-btn {
         /* 内联居中排布图标与文案 */
         display: inline-flex;
         align-items: center;
@@ -864,12 +870,22 @@
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
         backdrop-filter: blur(4px);
         transition: all 0.2s ease;
-        z-index: 10;
       }
       .drawing-cad-floating-btn:hover {
         background: #009688;
         color: #ffffff;
         box-shadow: 0 4px 16px rgba(0, 150, 136, 0.5);
+        transform: translateY(-1px);
+      }
+      /* 插入到当前 AutoCAD 胶囊强调样式 (绿蓝相间亮蓝强调) */
+      .drawing-cad-insert-btn {
+        border-color: #0284c7;
+        color: #38bdf8;
+      }
+      .drawing-cad-insert-btn:hover {
+        background: #0284c7;
+        color: #ffffff;
+        box-shadow: 0 4px 16px rgba(2, 132, 199, 0.5);
         transform: translateY(-1px);
       }
       /* 画布底部居中悬浮工具条 */
@@ -1441,6 +1457,26 @@
         border-color: var(--primary-color);
         background: #f0fdf9;
       }
+      .sec-btn-insert-cad {
+        padding: 3px 8px;
+        font-size: 11.5px;
+        font-weight: 500;
+        color: #0284c7;
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+      }
+      .sec-btn-insert-cad:hover {
+        color: #ffffff;
+        background: #0284c7;
+        border-color: #0284c7;
+        box-shadow: 0 2px 5px rgba(2, 132, 199, 0.3);
+      }
       .sec-btn-edit {
         padding: 3px 10px;
         font-size: 11.5px;
@@ -1703,6 +1739,26 @@
         color: var(--primary-color);
         border-color: var(--primary-color);
         background: #f0fdf9;
+      }
+      .prim-btn-insert-cad {
+        padding: 3px 8px;
+        font-size: 11.5px;
+        font-weight: 500;
+        color: #0284c7;
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+      }
+      .prim-btn-insert-cad:hover {
+        color: #ffffff;
+        background: #0284c7;
+        border-color: #0284c7;
+        box-shadow: 0 2px 5px rgba(2, 132, 199, 0.3);
       }
       .prim-btn-edit {
         padding: 3px 10px;
@@ -2896,6 +2952,17 @@
                       打开图纸
                     </button>
                     <button
+                      class="sec-btn-insert-cad"
+                      type="button"
+                      title="激活当前打开的 AutoCAD 并指定位置按 1:1 比例插入图块"
+                      @click.stop="insertDwgToCad(card)"
+                    >
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align: -1.5px; margin-right: 2px;">
+                        <path d="M12 3v11m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                      </svg>
+                      插入CAD
+                    </button>
+                    <button
                       class="sec-btn-edit"
                       type="button"
                       title="编辑二次回路方案与 BOM"
@@ -3082,6 +3149,17 @@
                       @click.stop="openCadDrawing(card)"
                     >
                       打开图纸
+                    </button>
+                    <button
+                      class="prim-btn-insert-cad"
+                      type="button"
+                      title="激活当前打开的 AutoCAD 并指定位置按 1:1 比例插入图块"
+                      @click.stop="insertDwgToCad(card)"
+                    >
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align: -1.5px; margin-right: 2px;">
+                        <path d="M12 3v11m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                      </svg>
+                      插入CAD
                     </button>
                     <button
                       class="prim-btn-edit"
@@ -3450,14 +3528,28 @@
                 </svg>
               </div>
 
-              <!-- 右上角悬浮操作胶囊：在外部 AutoCAD 中打开原 DWG -->
+              <!-- 右上角悬浮操作胶囊组：插入到当前 AutoCAD + 在 AutoCAD 中打开原图 -->
               <div
-                class="drawing-cad-floating-btn"
+                class="drawing-cad-floating-group"
                 v-if="currentSecondaryCard?.fullPath || currentPrimaryCard?.fullPath || currentDetail?.fullPath || (currentDetail?.drawingUrls && currentDetail.drawingUrls[activeDrawingIndex]?.endsWith('.dwg')) || currentDetail?.cadDrawingName"
-                @click="openCadDrawing(currentSecondaryCard || currentPrimaryCard || currentDetail)"
-                title="呼出本机 AutoCAD 软件直接打开并编辑该 DWG 文件"
               >
-                <i class="fa-solid fa-arrow-up-right-from-square"></i> 在 AutoCAD 中打开原图
+                <div
+                  class="drawing-cad-floating-btn drawing-cad-insert-btn"
+                  @click="insertDwgToCad(currentSecondaryCard || currentPrimaryCard || currentDetail)"
+                  title="激活当前打开的 AutoCAD 并指定位置按 1:1 比例插入图块"
+                >
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align: -1px; margin-right: 3px;">
+                    <path d="M12 3v11m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                  </svg>
+                  插入到当前 AutoCAD
+                </div>
+                <div
+                  class="drawing-cad-floating-btn"
+                  @click="openCadDrawing(currentSecondaryCard || currentPrimaryCard || currentDetail)"
+                  title="呼出本机 AutoCAD 软件直接打开并编辑该 DWG 文件"
+                >
+                  <i class="fa-solid fa-arrow-up-right-from-square"></i> 在 AutoCAD 中打开原图
+                </div>
               </div>
 
             </div>
@@ -5432,6 +5524,29 @@
             postToHost("openDwgInCad", { fullPath: fullPath });
           };
 
+          // 激活当前已打开的 AutoCAD 并交互提示指定位置以 1:1 比例插入图块
+          const insertDwgToCad = (card) => {
+            // 综合提取当前图纸对象 (优先取传入卡片，回退取详情视口当前卡片或方案详情)
+            const target = card || currentSecondaryCard.value || currentPrimaryCard.value || currentDetail.value;
+            // 提取目标物理路径 (支持 fullPath、dwgFilePath、或当前选中的 DWG 路径)
+            let fullPath = target?.fullPath || target?.dwgFilePath || "";
+            if (!fullPath && currentDetail.value) {
+              const curUrl = (currentDetail.value.drawingUrls && currentDetail.value.drawingUrls[activeDrawingIndex.value]) || "";
+              if (curUrl && typeof curUrl === "string" && curUrl.toLowerCase().endsWith(".dwg")) {
+                fullPath = curUrl;
+              } else if (currentDetail.value.cadDrawingName) {
+                fullPath = currentDetail.value.cadDrawingName;
+              }
+            }
+            // 物理路径有效性前置校验
+            if (!fullPath) {
+              ElementPlus.ElMessage.warning("未找到关联的 DWG 图纸物理文件！");
+              return;
+            }
+            // 呼叫 C# 宿主激活当前运行的 AutoCAD 并执行交互式 1:1 图块插入
+            postToHost("insertDwgToCad", { fullPath: fullPath });
+          };
+
           // 打开编辑二次回路方案与 BOM 弹窗 (支持从卡片或详情大视口顶栏触发)
           const openSecondaryEditModal = (card) => {
             const target = card || currentSecondaryCard.value;
@@ -7023,6 +7138,26 @@
                     );
                   }
                 }
+                // 10.1 CAD 交互插入整体图块结果
+                else if (action === "insertDwgToCadResult") {
+                  if (data && data.success) {
+                    ElementPlus.ElNotification({
+                      title: "AutoCAD 插入提示",
+                      message: data.message || "已成功激活 AutoCAD！请在 CAD 视口中鼠标点击指定插入位置（1:1 整体图块）。",
+                      type: "success",
+                      duration: 4500,
+                      position: "top-right"
+                    });
+                  } else {
+                    ElementPlus.ElNotification({
+                      title: "无法插入到 AutoCAD",
+                      message: (data && data.message) || "未检测到正在运行的 AutoCAD 或活动图纸，请先打开 CAD。",
+                      type: "warning",
+                      duration: 5500,
+                      position: "top-right"
+                    });
+                  }
+                }
                 // 11. 二次方案保存结果
                 else if (action === "saveSecondarySchemeResult") {
                   if (data.success) {
@@ -7393,6 +7528,7 @@
             onSecondarySearch,
             refreshSecondaryCards,
             openCadDrawing,
+            insertDwgToCad,
             openSecondaryEditModal,
             addCustomBomRow,
             deleteSecBomRow,

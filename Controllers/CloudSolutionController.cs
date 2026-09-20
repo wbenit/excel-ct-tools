@@ -397,6 +397,17 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
+        /// 激活当前正在运行的 AutoCAD 并在活动图纸中提示指定位置按 1:1 比例插入该 DWG 整体图块
+        /// </summary>
+        /// <param name="fullPath">DWG 物理文件全路径</param>
+        /// <returns>操作成功与否及用户提示信息</returns>
+        public (bool Success, string Message) InsertDwgToActiveCad(string fullPath)
+        {
+            // 调用底层 DwgPreviewService 执行 AutoCAD 激活与命令发送
+            return Services.DwgPreviewService.InsertDwgToActiveCad(fullPath);
+        }
+
+        /// <summary>
         /// 保存或更新二次回路方案至 personal_components.db
         /// </summary>
         public (bool Success, int SchemeId, string Message) SaveSecondaryScheme(string schemeJson)

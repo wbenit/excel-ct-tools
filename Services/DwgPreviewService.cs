@@ -1261,17 +1261,60 @@ namespace ExcelAddInDemo.Services
                 // 提取纯文件名作为块名称
                 string blockName = Path.GetFileNameWithoutExtension(filePath);
 
-                // 构造安全的 AutoLISP 交互插入指令：
-                // 1. \x1B\x1B (两次 ESC 键) 强制取消 AutoCAD 当前正在执行的其他任何命令；
-                // 2. 检查图纸中是否已有同名块，若已有则直接插入已有块，若无则从外部 DWG 路径读取定义；
-                // 3. pause 表示挂起并等待用户鼠标在 CAD 视口中点选插入位置（同时显示图块跟随预览）；
-                // 4. 1 1 0 分别指定 X 比例 1、Y 比例 1、旋转角度 0度，点选后直接落位无需回车 --硬编码: 1:1比例与0度角--
-                string lispCommand = $"\x1B\x1B(if (tblsearch \"block\" \"{blockName}\") (command \"_.-insert\" \"{blockName}\" pause 1 1 0) (command \"_.-insert\" \"{safePath}\" pause 1 1 0))\n";
+                // 通道 A：尝试通过标准 SendCommand 发送纯净 AutoLISP 交互插入流 (带鼠标轮廓跟随拖拽预览)
+                // 彻底移除 \x1B 等非打印控制字符，使用 (command) 取消旧命令，使用 \r 作为标准回车确认符
+                bool commandSucceeded = false;
+                try
+                {
+                    // 构造纯净标准的 AutoLISP 交互命令流：
+                    // 1. (command) 安全退出可能卡住的上一命令；
+                    // 2. 判断块表中是否已存在同名块：若存在以块名插入，若不存在以外部 DWG 物理全路径插入；
+                    // 3. pause 触发 CAD 原生点拾取交互（附带十字光标图块轮廓虚线拖拽跟随）；
+                    // 4. 1.0 1.0 0.0 分别指定 X比例1、Y比例1、旋转角度0度 --硬编码: 1:1比例与0度角--
+                    string lispCommand = $"(progn (command) (if (tblsearch \"BLOCK\" \"{blockName}\") (command \"._-insert\" \"{blockName}\" pause 1.0 1.0 0.0) (command \"._-insert\" \"{safePath}\" pause 1.0 1.0 0.0)) (princ))\r";
 
-                // 向 AutoCAD 活动文档发送命令流
-                activeDoc.SendCommand(lispCommand);
+                    // 向活动图纸发送交互命令流
+                    activeDoc.SendCommand(lispCommand);
+                    commandSucceeded = true;
+                }
+                catch (Exception exCmd)
+                {
+                    // 若 SendCommand 遇到 COM 拦截或输入拒绝，记录日志并安全切换至通道 B
+                    LogHelper.WriteLog($"[DwgPreviewService] SendCommand 交互通道异常: {exCmd.Message}，启动 COM 原生兜底通道");
+                }
 
-                // 返回成功消息
+                // 若通道 A 发送成功，立即返回友好提示
+                if (commandSucceeded)
+                {
+                    return (true, $"已成功激活 AutoCAD！请在 CAD 视口中鼠标点击指定插入位置（1:1 整体图块）。");
+                }
+
+                // 通道 B (COM 原生强力兜底)：调用 AutoCAD COM API 原生 Utility.GetPoint 与 ModelSpace.InsertBlock
+                // 放在后台异步线程执行，杜绝阻塞主 UI 线程与 WebView2 事件循环
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        // 尝试调用 (command) 清空 CAD 命令行状态
+                        try { activeDoc.SendCommand("(command)\r"); } catch { }
+
+                        // 在 CAD 视口中提示用户点击拾取插入点 (阻塞等待鼠标点选)
+                        object ptObj = activeDoc.Utility.GetPoint(Type.Missing, "\n请在 AutoCAD 视口中鼠标点击指定图纸插入位置: ");
+
+                        // 将外部 DWG 图纸作为整体图块以 1:1 比例插入到模型空间
+                        activeDoc.ModelSpace.InsertBlock(ptObj, safePath, 1.0, 1.0, 1.0, 0.0);
+
+                        // 在 CAD 命令行回显插入成功信息
+                        try { activeDoc.Utility.Prompt($"\n[云方案中心] 方案图纸 [{blockName}] 已成功插入当前图纸！\n"); } catch { }
+                    }
+                    catch (Exception exPt)
+                    {
+                        // 用户在 CAD 视口中按 ESC 取消点选或窗口切换
+                        LogHelper.WriteLog($"[DwgPreviewService] COM 原生插入通道取消或异常: {exPt.Message}");
+                    }
+                });
+
+                // 返回成功激活提示
                 return (true, $"已成功激活 AutoCAD！请在 CAD 视口中鼠标点击指定插入位置（1:1 整体图块）。");
             }
             catch (Exception exSend)

@@ -413,6 +413,18 @@ namespace ExcelAddInDemo.Forms
                         PostMessageSafe("openDwgInCadResult", new { success = cadOk, message = cadMsg });
                         break;
 
+                    // 16.1 激活当前运行的 AutoCAD 并提示指定位置以 1:1 比例插入图块
+                    case "insertDwgToCad":
+                        {
+                            // 获取前端传入的 DWG 物理图纸全路径
+                            string insertDwgPath = GetStringProp("fullPath");
+                            // 调用控制器执行激活 CAD 并调度插入
+                            var (insertCadOk, insertCadMsg) = _controller.InsertDwgToActiveCad(insertDwgPath);
+                            // 向前端回传处理结果与提示消息
+                            PostMessageSafe("insertDwgToCadResult", new { success = insertCadOk, message = insertCadMsg });
+                            break;
+                        }
+
                     // 17. 保存/更新二次回路方案
                     case "saveSecondaryScheme":
                         string secSchemePayload = "{}";
