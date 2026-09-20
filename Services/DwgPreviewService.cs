@@ -1142,5 +1142,144 @@ namespace ExcelAddInDemo.Services
                 return (false, $"打开资源管理器失败: {ex.Message}");
             }
         }
+
+        // Win32 API：将指定窗口拉到前台并激活
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        // Win32 API：设置窗口显示状态（如还原最小化窗口）
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        // 还原并激活窗口的命令常量 --硬编码: Win32 SW_RESTORE 常量--
+        private const int SW_RESTORE = 9;
+
+        /// <summary>
+        /// 激活当前已打开的 AutoCAD 窗口，并交互提示用户在视口中点击位置以 1:1 比例插入该 DWG 整体图块
+        /// </summary>
+        /// <param name="filePath">DWG 物理图纸全路径</param>
+        /// <returns>执行成功与否及提示信息</returns>
+        public static (bool Success, string Message) InsertDwgToActiveCad(string filePath)
+        {
+            // 校验待插入图纸路径是否有效
+            if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+            {
+                // 若文件不存在，直接返回警告信息
+                return (false, "指定的 DWG 文件路径不存在，无法执行插入！");
+            }
+
+            dynamic acadApp = null;
+            try
+            {
+                // 优先通过标准 COM ProgID 获取当前已打开的 AutoCAD 实例
+                acadApp = Marshal.GetActiveObject("AutoCAD.Application");
+            }
+            catch
+            {
+                // 若标准 ProgID 未命中，降级尝试多版本号 ProgID 探测 (兼容 2016~2026 各版本)
+                // 常见各版本 ProgID 清单 --硬编码: AutoCAD 各版本探测 ProgID--
+                string[] progIds = new string[]
+                {
+                    "AutoCAD.Application.25",   // AutoCAD 2025
+                    "AutoCAD.Application.24.3", // AutoCAD 2024
+                    "AutoCAD.Application.24.2", // AutoCAD 2023
+                    "AutoCAD.Application.24.1", // AutoCAD 2022
+                    "AutoCAD.Application.24",   // AutoCAD 2021
+                    "AutoCAD.Application.23.1", // AutoCAD 2020
+                    "AutoCAD.Application.23",   // AutoCAD 2019
+                    "AutoCAD.Application.22",   // AutoCAD 2018
+                    "AutoCAD.Application.21",   // AutoCAD 2017
+                    "AutoCAD.Application.20"    // AutoCAD 2016
+                };
+
+                // 循环探测已打开的对应版本 AutoCAD 实例
+                foreach (string pid in progIds)
+                {
+                    try
+                    {
+                        // 尝试以指定版本 ProgID 获取正在运行的实例
+                        acadApp = Marshal.GetActiveObject(pid);
+                        if (acadApp != null) break;
+                    }
+                    catch
+                    {
+                        // 单个版本探测失败继续尝试下一个
+                    }
+                }
+            }
+
+            // 若仍未能获取到任何正在运行的 AutoCAD 进程
+            if (acadApp == null)
+            {
+                // 提示用户必须先启动 CAD
+                return (false, "未检测到正在运行的 AutoCAD！请先启动 AutoCAD 并打开目标工程图纸。");
+            }
+
+            dynamic activeDoc = null;
+            try
+            {
+                // 获取 AutoCAD 当前处于活动编辑状态的文档
+                activeDoc = acadApp.ActiveDocument;
+            }
+            catch (Exception exDoc)
+            {
+                // 记录读取活动文档异常日志
+                LogHelper.WriteLog($"[DwgPreviewService] 获取 AutoCAD 活动文档异常: {exDoc.Message}");
+            }
+
+            // 检查活动文档是否存在
+            if (activeDoc == null)
+            {
+                // 若无活动图纸，提示用户先打开图纸
+                return (false, "AutoCAD 中当前暂无打开的活动图纸文档！请在 AutoCAD 中打开或新建图纸。");
+            }
+
+            try
+            {
+                // 确保 AutoCAD 窗口处于可见状态
+                acadApp.Visible = true;
+                // 读取 AutoCAD 主窗口的 Win32 句柄
+                IntPtr cadHwnd = (IntPtr)acadApp.HWND;
+                if (cadHwnd != IntPtr.Zero)
+                {
+                    // 若处于最小化状态，还原窗口
+                    ShowWindow(cadHwnd, SW_RESTORE);
+                    // 强制将 AutoCAD 窗口拉到最前端并赋予输入焦点
+                    SetForegroundWindow(cadHwnd);
+                }
+            }
+            catch (Exception exWin)
+            {
+                // 激活窗口轻微异常不阻断后续发送命令
+                LogHelper.WriteLog($"[DwgPreviewService] 激活 AutoCAD 主窗口提示: {exWin.Message}");
+            }
+
+            try
+            {
+                // 将 Windows 反斜杠转换为正斜杠，防止 AutoCAD 命令行转义异常
+                string safePath = filePath.Replace("\\", "/");
+                // 提取纯文件名作为块名称
+                string blockName = Path.GetFileNameWithoutExtension(filePath);
+
+                // 构造安全的 AutoLISP 交互插入指令：
+                // 1. \x1B\x1B (两次 ESC 键) 强制取消 AutoCAD 当前正在执行的其他任何命令；
+                // 2. 检查图纸中是否已有同名块，若已有则直接插入已有块，若无则从外部 DWG 路径读取定义；
+                // 3. pause 表示挂起并等待用户鼠标在 CAD 视口中点选插入位置（同时显示图块跟随预览）；
+                // 4. 1 1 0 分别指定 X 比例 1、Y 比例 1、旋转角度 0度，点选后直接落位无需回车 --硬编码: 1:1比例与0度角--
+                string lispCommand = $"\x1B\x1B(if (tblsearch \"block\" \"{blockName}\") (command \"_.-insert\" \"{blockName}\" pause 1 1 0) (command \"_.-insert\" \"{safePath}\" pause 1 1 0))\n";
+
+                // 向 AutoCAD 活动文档发送命令流
+                activeDoc.SendCommand(lispCommand);
+
+                // 返回成功消息
+                return (true, $"已成功激活 AutoCAD！请在 CAD 视口中鼠标点击指定插入位置（1:1 整体图块）。");
+            }
+            catch (Exception exSend)
+            {
+                // 记录发送命令异常
+                LogHelper.WriteLog($"[DwgPreviewService] 向 AutoCAD 发送插入命令失败: {exSend.Message}");
+                return (false, $"向 AutoCAD 发送插入指令失败: {exSend.Message}");
+            }
+        }
     }
 }
