@@ -192,6 +192,10 @@ namespace ExcelAddInDemo.Forms
                     // 核心业务与原生菜单动作集合
                     case "undoAction":
                     case "redoAction":
+                    case "cutComponent":
+                    case "copyComponent":
+                    case "insertCopiedComponent":
+                    case "deleteComponent":
                     case "excelCut":
                     case "excelCopy":
                     case "excelPaste":
@@ -280,6 +284,26 @@ namespace ExcelAddInDemo.Forms
                     case "redoAction":
                         // 调度执行重做/还原
                         ExcelServices.Redo();
+                        break;
+
+                    case "cutComponent":
+                        // 调度执行成套专属剪切元件
+                        ExcelServices.CutComponentRow();
+                        break;
+
+                    case "copyComponent":
+                        // 调度执行成套专属复制元件 (含完整参数与Handle)
+                        ExcelServices.CopyComponentRow();
+                        break;
+
+                    case "insertCopiedComponent":
+                        // 调度执行成套专属插入复制/剪切的元件 (跨柜自动置空CadHandle)
+                        ExcelServices.InsertCopiedOrCutComponentRow();
+                        break;
+
+                    case "deleteComponent":
+                        // 调度执行成套专属删除元件 (防#REF!损坏并自动重排序号)
+                        ExcelServices.DeleteComponentRow();
                         break;
 
                     case "excelCut":

@@ -72,6 +72,12 @@ namespace ExcelAddInDemo
                 {
                     _excelApp.OnKey("^z", "MacroUndoAction");
                     _excelApp.OnKey("^y", "MacroRedoAction");
+
+                    // 挂接成套元器件专属全局快捷键 (Ctrl+Shift+C 复制, Ctrl+Shift+V 插入, Ctrl+Shift+D 删除, Ctrl+Shift+X 剪切)
+                    _excelApp.OnKey("^+c", "MacroCopyComponentAction");
+                    _excelApp.OnKey("^+v", "MacroInsertCopiedComponentAction");
+                    _excelApp.OnKey("^+d", "MacroDeleteComponentAction");
+                    _excelApp.OnKey("^+x", "MacroCutComponentAction");
                 }
                 catch { }
 
@@ -121,6 +127,12 @@ namespace ExcelAddInDemo
                     {
                         _excelApp.OnKey("^z");
                         _excelApp.OnKey("^y");
+
+                        // 释放成套元器件专属快捷键
+                        _excelApp.OnKey("^+c");
+                        _excelApp.OnKey("^+v");
+                        _excelApp.OnKey("^+d");
+                        _excelApp.OnKey("^+x");
                     }
                     catch { }
                 }
@@ -1524,6 +1536,78 @@ namespace ExcelAddInDemo
             {
                 // 记录宏执行异常
                 LogHelper.WriteLog($"MacroRedoAction 执行异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Excel-DNA 宏入口：复制元件 (响应快捷键 Ctrl+Shift+C)
+        /// </summary>
+        [ExcelCommand]
+        public static void MacroCopyComponentAction()
+        {
+            try
+            {
+                // 调度执行成套元件复制
+                ExcelServices.CopyComponentRow();
+            }
+            catch (Exception ex)
+            {
+                // 记录宏执行异常
+                LogHelper.WriteLog($"MacroCopyComponentAction 执行异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Excel-DNA 宏入口：插入复制/剪切的元件 (响应快捷键 Ctrl+Shift+V)
+        /// </summary>
+        [ExcelCommand]
+        public static void MacroInsertCopiedComponentAction()
+        {
+            try
+            {
+                // 调度执行成套元件插入
+                ExcelServices.InsertCopiedOrCutComponentRow();
+            }
+            catch (Exception ex)
+            {
+                // 记录宏执行异常
+                LogHelper.WriteLog($"MacroInsertCopiedComponentAction 执行异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Excel-DNA 宏入口：删除元件 (响应快捷键 Ctrl+Shift+D)
+        /// </summary>
+        [ExcelCommand]
+        public static void MacroDeleteComponentAction()
+        {
+            try
+            {
+                // 调度执行成套元件删除
+                ExcelServices.DeleteComponentRow();
+            }
+            catch (Exception ex)
+            {
+                // 记录宏执行异常
+                LogHelper.WriteLog($"MacroDeleteComponentAction 执行异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Excel-DNA 宏入口：剪切元件 (响应快捷键 Ctrl+Shift+X)
+        /// </summary>
+        [ExcelCommand]
+        public static void MacroCutComponentAction()
+        {
+            try
+            {
+                // 调度执行成套元件剪切
+                ExcelServices.CutComponentRow();
+            }
+            catch (Exception ex)
+            {
+                // 记录宏执行异常
+                LogHelper.WriteLog($"MacroCutComponentAction 执行异常: {ex.Message}");
             }
         }
     }

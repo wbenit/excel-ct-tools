@@ -1,3 +1,34 @@
+- **【功能实现与闭环交付】成套元器件行列操作（剪切/复制/插入/删除）与跨箱柜 CadHandle 过滤闭环落地 (`ComponentRowExchangeModels.cs`, `ExcelServices.ComponentRowOperations.cs`, `CustomContextMenuForm.cs`, `custom_context_menu.html`, `ExcelEventManager.cs`)**：
+  1. **元器件业务交换模型与内存剪贴板 (`ComponentRowExchangeModels.cs`)**：
+     - 新增 `ComponentRowExchangeDto` 实体模型，包含 `IsCutMode`、`SourceWorkbookName`、`SourceSheetName`、`SourceCabinetK`、`SourceRowIndex`、`FullRowValues`、`CadHandle` 与 `CellFormulas`；
+     - 新增全局静态线程安全单例 `ComponentClipboardManager`，管理跨箱柜、跨表的元器件深拷贝生命周期；
+  2. **核心业务分部类实现与三大完整性保障 (`ExcelServices.ComponentRowOperations.cs`)**：
+     - **复制元件 (`CopyComponentRow`)** 与 **剪切元件 (`CutComponentRow`)**：严格校验 `Cab_Det_k.Row + 2` 到 `Cab_Subsum_k.Row - 1` 元件区间，遵循规则 7 采用二维数组一次性提取包含 A~T 前台列与 U~AF 隐藏列在内的完整业务对象；
+     - **插入复制/剪切的元件 (`InsertCopiedOrCutComponentRow`)**：
+       ① **跨箱柜 CadHandle 智能过滤（核心指示）**：在目标行下推插入前，自动比对目标箱柜与源箱柜，若目标柜不同，**强制将第 30 列 (AD 列 CadHandle) 与第 31 列 (AE 列 HandleB) 置空**，仅同柜剪切调整位置时保留；
+       ② **公式与序号动态自愈**：回填数据后自动重排 A 列连续序号（1, 2, 3...），自适应重写小计行 SUM 求和公式范围，并自动注入总价公式 `=F*G` 与成本总价公式 `=F*J`；
+       ③ **剪切原行清理与定义名称维护**：剪切模式下安全计算偏移并物理删除原行，操作完成后强制调用 `Tool.FixAndFillCabinetNamesForSheet(sheet, forceRebuild: true)` 自愈规则 6 定义名称（规则 8）；
+     - **删除元件 (`DeleteComponentRow`)**：箱柜仅剩 1 行元件时清空内容保留规范空行（规则 6），多行时物理整行删除，自动重排序号并缩缩小计求和区间，彻底杜绝 `#REF!` 缺陷；
+  3. **右键菜单与全局热键挂载**：
+     - `custom_context_menu.html`：全面升级为电小二专属的【剪切元件】、【复制元件】(Ctrl+Shift+C)、【插入复制/剪切的元件】(Ctrl+Shift+V)、【删除元件】(Ctrl+Shift+D)，同步覆盖 `publish/` 与 `bin/` 静态目录；
+     - `CustomContextMenuForm.cs`：完成 `cutComponent`、`copyComponent`、`insertCopiedComponent`、`deleteComponent` 的主线程路由分发；
+     - `ExcelEventManager.cs`：通过 `Application.OnKey` 注册全局热键 `^+c`, `^+v`, `^+d`, `^+x`，并提供 4 个 `[ExcelCommand]` 宏方法；
+  4. **工程构建核验**：
+     - 严格遵循每 3 行代码包含一行中文注释与硬编码标注规范；
+     - 执行 `dotnet build` 编译通过：**0 错误**。
+- **【电小二程序集底层逆向分析】ExWinner (D:\Program Files\ExWinner) 核心类库与右键功能确切实现 (`session.md`)**：
+  1. **软件安装与程序集路径确认**：
+     - 桌面快捷方式：`C:\Users\Public\Desktop\ExWinner成套报价软件(DHub).lnk`；
+     - 主程序目标：`D:\Program Files\ExWinner\leadsoft.ExWinner.exe`；
+     - 核心插件与业务逻辑库：`ExWinner.xll`/`ExWinner.dna` (Excel-DNA入口)、`leadsoft.superwinner.BLL.dll` (核心成套业务库)、`ExcelAddIn4Scm.dll` (事件与界面宿主)、`BusCalculate.dll`；
+  2. **红框功能底层类与确切机制完全对应**：
+     - **剪切/复制/插入/删除元件**：对应底层枚举 `leadsoft.superwinner.BLL.HotKeyOperation`（剪切元件、复制元件、插入复制的元件、删除元件）与数据模型 `leadsoft.dhub.DataModel.ElementExchangeMode`，以业务实体对象深拷贝/移动，安全维护 Excel 小计行 SUM 边界与定义名称下推；
+     - **编辑附件**：对应底层专属窗体 `leadsoft.superwinner.BLL.frmAppendixDiscount`（资源位于 `附件设置.frmAppendixDiscount.resources`），包含 `_marked_Price`、`_discountString`、`_model`、`_bomString` 等字段，交互式配置附件后执行型号规格拼接（`+附件规格`）与价格/成本自动累加回写。
+- **【需求与架构分析】电小二右键功能体系与 Excel 文件底层结构深度解析 (`session.md`)**：
+  1. **文件底层结构解析**：通过对电小二导出的标准化成套报价工作簿（如 `WB202609151454-新建项目-吴磊(2).xlsx`）底层 XML（OpenXML `workbook.xml`, `sheet2.xml`, `customProperty3.bin`）的逆向与结构比对，明确了箱柜 4 个核心定义名称锚点体系（`Cab_Sum_k` 汇总行、`Cab_Det_k` 明细信息行、`Cab_Subsum_k` 小计行、`Cab_Tolsum_k` 总计行），以及元器件明细区域（前台 A~T 列，后台 U~AF 列存储电气参数及 CAD 图元 Handle `AD` 列）；
+  2. **红框核心功能定位与作用**：
+     - **剪切/复制/插入/删除元件**：以成套业务对象实体为最小颗粒度，进行整行数据、公式与图元 Handle 关联的移动、克隆、安全插入与删除，自动维护 A 列序号连续性、自适应动态延伸/收缩小计行 `SUM` 公式边界（杜绝 `#REF!` 缺陷），并联动维护箱柜各定义名称行号；
+     - **编辑附件**：针对主元器件（如避雷器配浪涌后备保护器 SCB、断路器配分励/辅助触头等）进行选配件的交互式配置，实现 C 列型号文本标准格式拼接（如 `+分励辅助 AC220V`）、价格自动叠加上浮与隐藏列选配状态持久化存储。
 - **【Bug 修复与闭环交付】二次元件组批量生成提示成功但 Excel 单元格全空缺陷彻底根治 (`ExcelServices.ComponentGroup.cs`)**：
   1. **问题根因**：`ExecuteBatchComponentGroup` 中，构建写入矩阵时将 `batchValues` 和 `formulaA` 声明为 `[reqCount + 1, batchWriteCols + 1]` 并在循环中从 `r = 1`（1-based）开始赋值，且列相对偏移多加了 1；但 C# 数组实质为 0-based，当单箱柜生成 1 行（`reqCount = 1`）赋给 1 行的 Range 时，Excel COM 仅从下标 `[0, 0]` 提取数据，导致第 0 行全为 null 的数据被写入，真正有数据的第 1 行直接被 Excel 截断抛弃；A 列公式同样因赋在第 1 列被截断全空；
   2. **彻底修复**：严格改用标准 0-based 矩阵 `object[,] batchValues = new object[reqCount, batchWriteCols]` 与公式向量 `object[,] formulaA = new object[reqCount, 1]`；循环中基于 `mIdx`（0 到 `reqCount - 1`）索引行，列相对偏移改为 `map.Col - colStart`；
