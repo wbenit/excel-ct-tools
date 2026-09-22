@@ -1924,31 +1924,33 @@ namespace ExcelAddInDemo
                                     continue;
                                 }
 
-                                // U 列 (索引 21): 原始型号
-                                string cRawU = string.Empty;
-                                if (valMatrix.GetLength(1) >= 21)
+                                // 校验当前明细行型号是否有效；型号是唯一匹配主键，无型号行跳过不处理
+                                if (string.IsNullOrWhiteSpace(cModel))
                                 {
-                                    cRawU = Convert.ToString(valMatrix[r, 21])?.Trim() ?? string.Empty;
+                                    continue;
                                 }
 
-                                // 匹配汇总调价规则项：按原型号或 U列原始型号匹配
+                                // 匹配汇总调价规则项：严格按型号完全相等进行唯一匹配
                                 // D 列 (索引 4): 生产厂家
                                 string cMfr = Convert.ToString(valMatrix[r, 4])?.Trim() ?? string.Empty;
                                 // I 列 (索引 9): 备注
                                 string cRemark = Convert.ToString(valMatrix[r, 9])?.Trim() ?? string.Empty;
 
-                                // 根据汇总时的合并条件进行精准多维度匹配
+                                // 获取汇总持久化的合并条件配置
                                 var mergeCond = buildConfig.MergeConditions ?? new Controllers.MergeConditionsDto();
+                                // 在调价列表中查找与当前明细行型号完全相等的唯一匹配项
                                 var matchedItem = adjustItems.FirstOrDefault(item =>
                                 {
-                                    // 1. 型号基准比对 (支持原型号匹配或 U 列原始型号匹配)
-                                    bool modelMatched = string.Equals(item.OriginalModel, cModel, StringComparison.OrdinalIgnoreCase) ||
-                                        (!string.IsNullOrEmpty(cRawU) && !string.IsNullOrEmpty(item.RawModelFromU) && item.RawModelFromU.Contains(cRawU));
-                                    if (!modelMatched) return false;
+                                    // 1. 型号基准比对：型号必须完全严格相等 (忽略大小写)，坚决杜绝任何模糊包含比对
+                                    if (!string.Equals(item.OriginalModel, cModel, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        return false;
+                                    }
 
-                                    // 2. 若汇总时勾选了【按名称合并】：要求名称必须一致
+                                    // 2. 若汇总时勾选了【按名称合并】：要求元件名称必须完全一致
                                     if (mergeCond.ByName)
                                     {
+                                        // 校验名称相等性
                                         if (!string.Equals(item.Name, cName, StringComparison.OrdinalIgnoreCase))
                                         {
                                             return false;
@@ -1958,48 +1960,42 @@ namespace ExcelAddInDemo
                                     // 3. 若汇总时勾选了【按厂家合并】：要求厂家必须一致
                                     if (mergeCond.ByManufacturer)
                                     {
+                                        // 双方均为空厂家时视为匹配一致
                                         if (mergeCond.IncludeNoManufacturer && string.IsNullOrWhiteSpace(item.Manufacturer) && string.IsNullOrWhiteSpace(cMfr))
                                         {
-                                            // 均为空厂家时视为匹配
+                                            // 均为空厂家放行
                                         }
+                                        // 厂家非空时不相等则不匹配
                                         else if (!string.Equals(item.Manufacturer, cMfr, StringComparison.OrdinalIgnoreCase))
                                         {
                                             return false;
                                         }
                                     }
 
-                                    // 4. 若汇总时勾选了【按备注合并】：要求备注一致
+                                    // 4. 若汇总时勾选了【按备注合并】：要求备注内容一致
                                     if (mergeCond.ByRemark)
                                     {
+                                        // 校验备注相等性
                                         if (!string.Equals(item.Remark, cRemark, StringComparison.OrdinalIgnoreCase))
                                         {
                                             return false;
                                         }
                                     }
 
-                                    // 5. 若汇总时勾选了【按原图型号合并】：要求 U 列原始型号匹配
-                                    if (mergeCond.ByOriginalModel)
-                                    {
-                                        if (!string.IsNullOrEmpty(cRawU) && !string.IsNullOrEmpty(item.RawModelFromU))
-                                        {
-                                            if (!item.RawModelFromU.Contains(cRawU))
-                                            {
-                                                return false;
-                                            }
-                                        }
-                                    }
-
+                                    // 型号完全匹配且满足勾选条件，判定为命中
                                     return true;
                                 });
+
+                                // 只有按型号成功命中匹配项后，才执行名称及相关属性的反向同步与替换
                                 if (matchedItem != null)
                                 {
-                                    // 0. 若合并条件不包含名称（取消名称勾选），连同名称一起覆盖更新至 B 列 (索引 2)
-                                    if (!mergeCond.ByName && !string.IsNullOrWhiteSpace(matchedItem.Name))
+                                    // 0. 按型号匹配成功后，若汇总表名称非空，安全同步/替换名称至分类表 B 列 (索引 2)
+                                    if (!string.IsNullOrWhiteSpace(matchedItem.Name))
                                     {
                                         formulaMatrix[r, 2] = matchedItem.Name;
                                     }
 
-                                    // 1. 若汇总表 D 列指定了新型号，则更新分类表 C 列 (索引 3)
+                                    // 1. 仅当汇总表 D 列明确输入了替代型号时，才替换分类表 C 列 (索引 3)；未输替代型号时保持原型号不变
                                     if (!string.IsNullOrWhiteSpace(matchedItem.NewModel))
                                     {
                                         formulaMatrix[r, 3] = matchedItem.NewModel;

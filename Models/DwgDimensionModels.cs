@@ -33,7 +33,7 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("height")]
         public double Height { get; set; } = 0.0;
 
-        // 从图纸文字中解析出的元器件安装进深/厚度/高度 Depth (单位: mm)
+        // 从图纸文字中解析出的元器件安装进深/厚度/高度/深度 Depth (单位: mm)
         [JsonPropertyName("depth")]
         public double Depth { get; set; } = 0.0;
 
@@ -41,7 +41,7 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("hasTextDepth")]
         public bool HasTextDepth { get; set; } = false;
 
-        // 匹配到的原始文字片段内容 (如 "高度: 85mm")
+        // 匹配到的原始文字片段内容 (如 "高度: 85mm"、"深: 85mm"、"深63")
         [JsonPropertyName("matchedText")]
         public string MatchedText { get; set; } = string.Empty;
 

@@ -1,3 +1,7 @@
+- **【Bug 修复与闭环交付】二次元件组批量生成提示成功但 Excel 单元格全空缺陷彻底根治 (`ExcelServices.ComponentGroup.cs`)**：
+  1. **问题根因**：`ExecuteBatchComponentGroup` 中，构建写入矩阵时将 `batchValues` 和 `formulaA` 声明为 `[reqCount + 1, batchWriteCols + 1]` 并在循环中从 `r = 1`（1-based）开始赋值，且列相对偏移多加了 1；但 C# 数组实质为 0-based，当单箱柜生成 1 行（`reqCount = 1`）赋给 1 行的 Range 时，Excel COM 仅从下标 `[0, 0]` 提取数据，导致第 0 行全为 null 的数据被写入，真正有数据的第 1 行直接被 Excel 截断抛弃；A 列公式同样因赋在第 1 列被截断全空；
+  2. **彻底修复**：严格改用标准 0-based 矩阵 `object[,] batchValues = new object[reqCount, batchWriteCols]` 与公式向量 `object[,] formulaA = new object[reqCount, 1]`；循环中基于 `mIdx`（0 到 `reqCount - 1`）索引行，列相对偏移改为 `map.Col - colStart`；
+  3. **规范遵循与编译核验**：每 3 行包含至少一行中文注释；执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**。
 - **【功能迭代与闭环交付】云方案中心新增【插入CAD】一键激活与交互式插入图块全链路闭环交付 (`DwgPreviewService.cs`, `CloudSolutionController.cs`, `CloudSolutionForm.cs`, `cloud_solution.html`)**：
   1. **底层 COM 自动化与 Win32 前台激活 (`DwgPreviewService.cs`)**：
      - 新增 `InsertDwgToActiveCad(filePath)` 方法，优先通过 `AutoCAD.Application` 捕获当前运行中的 AutoCAD 实例，并内置 2016~2026 各版本号 ProgID 探测通道；

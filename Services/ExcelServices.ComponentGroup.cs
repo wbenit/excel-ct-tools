@@ -544,38 +544,36 @@ namespace ExcelAddInDemo
 
                     // 计算待写入二维矩阵的总列数 (从 B 列到 AE 列)
                     int batchWriteCols = colEnd - colStart + 1;
-                    // 构造数据二维数组 (1-based, 行数 reqCount, 列数 batchWriteCols)
-                    object[,] batchValues = new object[reqCount + 1, batchWriteCols + 1];
-                    // 构造 A 列动态公式二维数组 (1-based, 行数 reqCount, 列数 1)
-                    object[,] formulaA = new object[reqCount + 1, 2];
+                    // 构造数据二维数组 (采用标准 0-based 矩阵，行数 reqCount，列数 batchWriteCols)
+                    object[,] batchValues = new object[reqCount, batchWriteCols];
+                    // 构造 A 列动态公式二维数组 (采用标准 0-based 向量，行数 reqCount，列数 1)
+                    object[,] formulaA = new object[reqCount, 1];
 
-                    // 在内存中高速组装全部数据矩阵
+                    // 在内存中高速组装全部数据矩阵 (0-based 索引)
                     for (int mIdx = 0; mIdx < reqCount; mIdx++)
                     {
                         // 提取当前项
                         var match = matchedList[mIdx];
-                        // 数组行号 (1-based)
-                        int r = mIdx + 1;
 
-                        // A 列自适应动态序号公式 =ROW()-ROW(A${detRow+1}) (detRow+1 为表头行)
-                        formulaA[r, 1] = $"=ROW()-ROW(A${detRow + 1})"; // --硬编码: 动态序号公式表达式--
+                        // A 列自适应动态序号公式 =ROW()-ROW(A${detRow+1}) (detRow+1 为表头行，第 0 列)
+                        formulaA[mIdx, 0] = $"=ROW()-ROW(A${detRow + 1})"; // --硬编码: 动态序号公式表达式--
 
-                        // B 列写入类别 (默认 "元件组")
-                        batchValues[r, map.CategoryCol - colStart + 1] = config.DefaultCategoryText;
+                        // B 列写入类别 (默认 "元件组"，列相对偏移从 0 开始)
+                        batchValues[mIdx, map.CategoryCol - colStart] = config.DefaultCategoryText;
 
-                        // C 列写入二次元件组名称 (如 *多功能表)
-                        batchValues[r, map.NormsCol - colStart + 1] = match.TargetGroup;
+                        // C 列写入二次元件组名称 (如 *消防电源监控3v)
+                        batchValues[mIdx, map.NormsCol - colStart] = match.TargetGroup;
 
                         // E 列写入计量单位 "套"
-                        batchValues[r, map.UnitCol - colStart + 1] = config.DefaultUnitText;
+                        batchValues[mIdx, map.UnitCol - colStart] = config.DefaultUnitText;
 
                         // F 列写入计算得到的套数
-                        batchValues[r, map.QuantityCol - colStart + 1] = match.Quantity;
+                        batchValues[mIdx, map.QuantityCol - colStart] = match.Quantity;
 
-                        // 继承 CAD 图元句柄 (AD 列 = 30, AE 列 = 31)
-                        if (!string.IsNullOrEmpty(handleA)) batchValues[r, 30 - colStart + 1] = handleA;
-                        // 赋值次要句柄
-                        if (!string.IsNullOrEmpty(handleB)) batchValues[r, 31 - colStart + 1] = handleB;
+                        // 继承 CAD 图元句柄 (AD 列 = 30，相对偏移 28)
+                        if (!string.IsNullOrEmpty(handleA)) batchValues[mIdx, 30 - colStart] = handleA;
+                        // 赋值次要句柄 (AE 列 = 31，相对偏移 29)
+                        if (!string.IsNullOrEmpty(handleB)) batchValues[mIdx, 31 - colStart] = handleB;
 
                         // 统计生成行数
                         result.InsertedGroupsCount++;
