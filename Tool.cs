@@ -1778,15 +1778,17 @@ namespace ExcelAddInDemo
                 // 遍历扫描顶部汇总行
                 for (int r = cabSumStartRow; r < firstDetRow; r++)
                 {
-                    // 提取当前行 A、B、C 列文本 (分别对应序号、柜号、设备名称/型号)
+                    // 提取当前行 A、B、C、D 列文本 (分别对应序号、柜号、设备名称/型号)
                     string aVal = GetText(r, 1);
                     string bVal = GetText(r, 2);
                     string cVal = GetText(r, 3);
+                    string dVal = GetText(r, 4);
 
-                    // 关键截断：若遇到汇总表底部的“合计”、“总计”、“小计”或签字说明落款，说明箱柜列表已结束，立即中断扫描
-                    if (aVal.Contains("合计") || bVal.Contains("合计") || cVal.Contains("合计") ||
-                        aVal.Contains("总计") || bVal.Contains("总计") || cVal.Contains("总计") ||
-                        aVal.Contains("小计") || bVal.Contains("小计") || cVal.Contains("小计") ||
+                    // 关键截断：若遇到汇总表底部的“合计”、“总计”、“小计”或计费费用项落款，说明箱柜列表已结束，立即中断扫描
+                    if (aVal.Contains("合计") || bVal.Contains("合计") || cVal.Contains("合计") || dVal.Contains("合计") ||
+                        aVal.Contains("总计") || bVal.Contains("总计") || cVal.Contains("总计") || dVal.Contains("总计") ||
+                        aVal.Contains("小计") || bVal.Contains("小计") || cVal.Contains("小计") || dVal.Contains("小计") ||
+                        bVal.Contains("包装费") || cVal.Contains("包装费") || bVal.Contains("运费") || cVal.Contains("运费") ||
                         aVal.Contains("大写") || bVal.Contains("大写") || aVal.Contains("说明") || bVal.Contains("说明") ||
                         aVal.Contains("审核") || bVal.Contains("审核") || aVal.Contains("批准") || bVal.Contains("批准") ||
                         aVal.Contains("制表") || bVal.Contains("制表") || aVal.Contains("编制") || bVal.Contains("编制"))
@@ -1802,12 +1804,16 @@ namespace ExcelAddInDemo
                         continue;
                     }
 
-                    // 若 B 列(柜号)或 C 列(设备名)或 A 列(序号)存在非空箱柜有效特征内容
-                    if (!string.IsNullOrWhiteSpace(bVal) || !string.IsNullOrWhiteSpace(cVal) || !string.IsNullOrWhiteSpace(aVal))
+                    // 核心过滤：箱柜必须具备实质特征内容，B 列(柜号)与 C 列(设备/箱柜名称)不能同时为空！
+                    // 预留的空白行（仅 A 列有公式计算出的序号如 13、14，但无实际柜号与设备名），坚决跳过，绝不添加定义名称
+                    if (string.IsNullOrWhiteSpace(bVal) && string.IsNullOrWhiteSpace(cVal))
                     {
-                        // 记录识别到的有效汇总行物理行号
-                        sumRows.Add(r);
+                        // 跳过未录入箱柜内容的预留空行
+                        continue;
                     }
+
+                    // 记录识别到的有效汇总行物理行号
+                    sumRows.Add(r);
                 }
 
 
@@ -2021,10 +2027,18 @@ namespace ExcelAddInDemo
                     // 箱柜序号从 1 开始递增
                     int k = i + 1;
 
-                    // 确定当前箱柜对应的汇总行（若汇总行充足则对应取，否则按默认顺序排列）
-                    int curSumRow = (i < sumRows.Count) ? sumRows[i] : (cabSumStartRow + i);
-                    // 只要存在有效汇总行，无论是否有明细，均全量校准绑定 Cab_Sum_k
-                    SafeSetSheetName(sheet, sheetName, $"{sumPrefix}{k}", curSumRow);
+                    // 确定当前箱柜对应的汇总行（只有真正存在有效汇总行时才获取，严禁越界盲目向下推算）
+                    int curSumRow = (i < sumRows.Count) ? sumRows[i] : 0;
+                    if (curSumRow > 0)
+                    {
+                        // 只要存在真正有效的汇总行，才校准绑定 Cab_Sum_k
+                        SafeSetSheetName(sheet, sheetName, $"{sumPrefix}{k}", curSumRow);
+                    }
+                    else
+                    {
+                        // 若该箱柜在顶部无对应汇总行，安全清理可能遗留的旧 Cab_Sum_k，杜绝越界挂载至小计/费用行
+                        SafeDeleteName(sheet, sheet.Parent, $"{sumPrefix}{k}");
+                    }
 
                     // 获取当前箱柜精准匹配到的明细行行号 (为 0 说明当前箱柜为纯汇总无明细箱柜)
                     int curDetRow = (i < matchedDetRows.Length) ? matchedDetRows[i] : 0;
@@ -2175,52 +2189,64 @@ namespace ExcelAddInDemo
                         // 4. 建立/自愈汇总行与明细行双向超链接并保护居中与虚线框样式 (规则 6 架构规范)
                         try
                         {
-                            // 汇总行 A 列单元格句柄
-                            dynamic sumAnchor = sheet.Cells[curSumRow, 1];
-                            string detTarget = $"'{sheetName}'!{detPrefix}{k}";
-
-                            // 若已有超链接，就地更新目标地址，杜绝调用 Delete/Add 导致单元格边框与居中格式被 Excel 抹除
-                            if (sumAnchor.Hyperlinks.Count > 0)
+                            // 仅当存在有效汇总行时，才挂载汇总行超链接
+                            if (curSumRow > 0)
                             {
-                                // 直接就地更新超链接跳转子地址与屏幕提示
-                                dynamic hl = sumAnchor.Hyperlinks[1];
-                                hl.SubAddress = detTarget;
-                                hl.ScreenTip = "点击进入本箱柜明细表"; // --硬编码: 屏幕提示文本--
-                            }
-                            else
-                            {
-                                // 仅当单元格无超链接时才挂载新超链接
-                                sheet.Hyperlinks.Add(
-                                    Anchor: sumAnchor,
-                                    Address: "",
-                                    SubAddress: detTarget,
-                                    ScreenTip: "点击进入本箱柜明细表" // --硬编码: 屏幕提示文本--
-                                );
-                            }
+                                // 汇总行 A 列单元格句柄
+                                dynamic sumAnchor = sheet.Cells[curSumRow, 1];
+                                string detTarget = $"'{sheetName}'!{detPrefix}{k}";
 
-                            // 恢复汇总行 A 列自适应动态序号公式
-                            sumAnchor.Formula = "=ROW()-ROW(A$6)"; // --硬编码: 公式表达式--
+                                // 若已有超链接，就地更新目标地址，杜绝调用 Delete/Add 导致单元格边框与居中格式被 Excel 抹除
+                                if (sumAnchor.Hyperlinks.Count > 0)
+                                {
+                                    // 直接就地更新超链接跳转子地址与屏幕提示
+                                    dynamic hl = sumAnchor.Hyperlinks[1];
+                                    hl.SubAddress = detTarget;
+                                    hl.ScreenTip = "点击进入本箱柜明细表"; // --硬编码: 屏幕提示文本--
+                                }
+                                else
+                                {
+                                    // 仅当单元格无超链接时才挂载新超链接
+                                    sheet.Hyperlinks.Add(
+                                        Anchor: sumAnchor,
+                                        Address: "",
+                                        SubAddress: detTarget,
+                                        ScreenTip: "点击进入本箱柜明细表" // --硬编码: 屏幕提示文本--
+                                    );
+                                }
+
+                                // 恢复汇总行 A 列自适应动态序号公式
+                                sumAnchor.Formula = "=ROW()-ROW(A$6)"; // --硬编码: 公式表达式--
+                            }
 
                             // 明细行 A 列单元格句柄
                             dynamic detAnchor = sheet.Cells[curDetRow, 1];
                             string sumTarget = $"'{sheetName}'!{sumPrefix}{k}";
 
-                            // 就地更新明细行超链接目标
-                            if (detAnchor.Hyperlinks.Count > 0)
+                            // 就地更新明细行超链接目标 (仅当有汇总行时才挂载跳转，无汇总行则清除)
+                            if (curSumRow > 0)
                             {
-                                dynamic hl = detAnchor.Hyperlinks[1];
-                                hl.SubAddress = sumTarget;
-                                hl.ScreenTip = "返回汇总行"; // --硬编码: 屏幕提示文本--
+                                if (detAnchor.Hyperlinks.Count > 0)
+                                {
+                                    dynamic hl = detAnchor.Hyperlinks[1];
+                                    hl.SubAddress = sumTarget;
+                                    hl.ScreenTip = "返回汇总行"; // --硬编码: 屏幕提示文本--
+                                }
+                                else
+                                {
+                                    // 挂载明细行返回顶部超链接
+                                    sheet.Hyperlinks.Add(
+                                        Anchor: detAnchor,
+                                        Address: "",
+                                        SubAddress: sumTarget,
+                                        ScreenTip: "返回汇总行" // --硬编码: 屏幕提示文本--
+                                    );
+                                }
                             }
                             else
                             {
-                                // 挂载明细行返回顶部超链接
-                                sheet.Hyperlinks.Add(
-                                    Anchor: detAnchor,
-                                    Address: "",
-                                    SubAddress: sumTarget,
-                                    ScreenTip: "返回汇总行" // --硬编码: 屏幕提示文本--
-                                );
+                                // 无对应汇总行时安全移除明细行超链接
+                                try { if (detAnchor.Hyperlinks.Count > 0) detAnchor.Hyperlinks.Delete(); } catch { }
                             }
 
                             // 明细行 A 列格式保护：去除下划线与恢复自动黑色
@@ -2243,10 +2269,13 @@ namespace ExcelAddInDemo
                         catch { }
 
                         // 确保汇总行 B 列与明细行 B 列无任何超链接 (严格遵守规则 6 规范，仅当存在时安全删除)
-                        try { if (sheet.Cells[curSumRow, 2].Hyperlinks.Count > 0) sheet.Cells[curSumRow, 2].Hyperlinks.Delete(); } catch { }
+                        if (curSumRow > 0)
+                        {
+                            try { if (sheet.Cells[curSumRow, 2].Hyperlinks.Count > 0) sheet.Cells[curSumRow, 2].Hyperlinks.Delete(); } catch { }
+                        }
                         try { if (sheet.Cells[curDetRow, 2].Hyperlinks.Count > 0) sheet.Cells[curDetRow, 2].Hyperlinks.Delete(); } catch { }
                     }
-                    else
+                    else if (curSumRow > 0)
                     {
                         // 针对纯汇总无明细箱柜：安全清理可能残留的明细定义名称，保证定义名称纯净
                         SafeDeleteSheetName(sheet, $"{detPrefix}{k}");
@@ -2291,7 +2320,7 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 5. 【清理大于 cabCount 的多余旧箱柜定义名称，防止幽灵定义名称残留】
+                // 5. 【清理大于 cabCount 的多余旧箱柜定义名称与 #REF! 损坏失效名称，防止幽灵定义名称残留】
                 // 采用双作用域（工作表级与工作簿级）现存集合倒序遍历精准清理，彻底杜绝盲目大循环引发数百次 COM 异常
                 try
                 {
@@ -2307,16 +2336,18 @@ namespace ExcelAddInDemo
                             string nStr = ExtractCleanNameStr(Convert.ToString(singleName.Name) ?? "");
                             // 提取箱柜序号
                             int nK = ExtractIndexFromName(nStr, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
-                            // 若属于箱柜定义名称且序号大于当前实际箱柜总数，坚决删除
-                            if (nK > cabCount)
+                            // 提取定义名称当前引用字符串
+                            string sRef = Convert.ToString(singleName.RefersTo) ?? "";
+                            // 若属于箱柜定义名称且引用已损坏为 #REF! 或序号大于当前实际箱柜总数，坚决删除
+                            if (nK > 0 && (sRef.Contains("#REF") || nK > cabCount))
                             {
-                                // 安全删除多余旧定义名称
+                                // 安全删除多余或损坏的旧定义名称
                                 singleName.Delete();
                             }
                         }
                     }
 
-                    // 检查并清理工作簿级别属于当前工作表的超额箱柜定义名称
+                    // 检查并清理工作簿级别属于当前工作表的超额箱柜定义名称及损坏名称
                     dynamic wbParent = sheet.Parent;
                     if (wbParent != null && wbParent.Names != null)
                     {
@@ -2327,14 +2358,14 @@ namespace ExcelAddInDemo
                             dynamic wbName = wbParent.Names.Item(wIdx);
                             string wnStr = ExtractCleanNameStr(Convert.ToString(wbName.Name) ?? "");
                             int wK = ExtractIndexFromName(wnStr, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
-                            // 仅针对序号大于当前箱柜总数的箱柜定义名称进行处理
-                            if (wK > cabCount)
+                            string refers = Convert.ToString(wbName.RefersTo) ?? "";
+                            // 针对属于箱柜定义名称且（序号超额 或 引用损坏）的情况进行处理
+                            if (wK > 0 && (wK > cabCount || refers.Contains("#REF")))
                             {
                                 // 判定该名称是否属于当前工作表
-                                string refers = Convert.ToString(wbName.RefersTo) ?? "";
-                                if (refers.Contains($"'{sheetName}'!") || refers.Contains($"{sheetName}!"))
+                                if (refers.Contains($"'{sheetName}'!") || refers.Contains($"{sheetName}!") || refers.Contains("#REF"))
                                 {
-                                    // 安全删除多余的工作簿级定义名称
+                                    // 安全删除多余或损坏的工作簿级定义名称
                                     wbName.Delete();
                                 }
                             }
@@ -2364,14 +2395,8 @@ namespace ExcelAddInDemo
         {
             // 校验入参工作表与标签有效性
             if (sheet == null || string.IsNullOrWhiteSpace(tagName)) return;
-            try
-            {
-                // 尝试从工作表定义名称集合提取
-                dynamic? existing = SafeGetSheetName(sheet, tagName);
-                // 若存在则安全执行物理删除
-                if (existing != null) existing.Delete();
-            }
-            catch { }
+            // 统一委托至全功能双通道安全删除方法
+            SafeDeleteName(sheet, null, tagName);
         }
 
         /// <summary>
@@ -2432,7 +2457,7 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 安全从工作表与工作簿中删除指定的定义名称
+        /// 安全从工作表与工作簿中删除指定的定义名称 (支持前缀容错与倒序遍历，彻底根治 #REF! 残留)
         /// </summary>
         /// <param name="sheet">目标工作表 COM 对象</param>
         /// <param name="wb">目标工作簿 COM 对象 (可选)</param>
@@ -2443,30 +2468,66 @@ namespace ExcelAddInDemo
             if (string.IsNullOrWhiteSpace(tagName)) return;
             try
             {
-                // 1. 尝试从工作表级定义名称集合中删除
+                // 1. 尝试从工作表级定义名称集合中安全删除
                 if (sheet != null && sheet.Names != null)
                 {
-                    // 查找工作表同名定义名称
+                    // 通道 A: 优先尝试直接按名称提取删除
                     try
                     {
-                        // 获取工作表级名称项
                         dynamic existingSheetName = sheet.Names.Item(tagName);
-                        // 若存在则执行删除
                         if (existingSheetName != null) existingSheetName.Delete();
+                    }
+                    catch { }
+
+                    // 通道 B: 倒序遍历工作表定义名称集合进行纯标识精准匹配删除 (彻底免疫工作表前缀与损坏引用异常)
+                    try
+                    {
+                        for (int i = sheet.Names.Count; i >= 1; i--)
+                        {
+                            // 提取工作表级定义名称对象
+                            dynamic singleName = sheet.Names.Item(i);
+                            string clean = ExtractCleanNameStr(Convert.ToString(singleName.Name) ?? "");
+                            // 若名称标识一致，执行物理删除
+                            if (string.Equals(clean, tagName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                singleName.Delete();
+                            }
+                        }
                     }
                     catch { }
                 }
 
-                // 2. 尝试从工作簿级定义名称集合中删除
+                // 2. 尝试从工作簿级定义名称集合中安全删除
                 if (wb != null && wb.Names != null)
                 {
-                    // 查找工作簿同名定义名称
+                    // 通道 A: 优先尝试直接按名称提取删除
                     try
                     {
-                        // 获取工作簿级名称项
                         dynamic existingWbName = wb.Names.Item(tagName);
-                        // 若存在则执行删除
                         if (existingWbName != null) existingWbName.Delete();
+                    }
+                    catch { }
+
+                    // 通道 B: 倒序遍历工作簿级定义名称集合进行精准匹配删除 (仅清理属于当前工作表或指向损坏的同名标签)
+                    try
+                    {
+                        string curSheetName = Convert.ToString(sheet?.Name) ?? "";
+                        for (int i = wb.Names.Count; i >= 1; i--)
+                        {
+                            // 提取工作簿级定义名称对象
+                            dynamic singleWbName = wb.Names.Item(i);
+                            string clean = ExtractCleanNameStr(Convert.ToString(singleWbName.Name) ?? "");
+                            // 校验名称是否匹配
+                            if (string.Equals(clean, tagName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                string refers = Convert.ToString(singleWbName.RefersTo) ?? "";
+                                // 若当前工作表为空，或引用指向当前表，或已损坏为 #REF，坚决删除
+                                if (string.IsNullOrEmpty(curSheetName) || refers.Contains($"'{curSheetName}'!") || refers.Contains($"{curSheetName}!") || refers.Contains("#REF"))
+                                {
+                                    singleWbName.Delete();
+                                }
+                            }
+                        }
                     }
                     catch { }
                 }
