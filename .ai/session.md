@@ -1,3 +1,21 @@
+- **【全链路闭环交付】利驰 ExWinner 自动组价数据上云与 Excel 插件选方案报价系统落地 (`DrawMall WebAPI`, `SchemeExtractor`, `ExcelServices.CloudSolution.cs`, `AutoPricingDataService.cs`, `CloudSolutionController.cs`, `CloudSolutionForm.cs`, `cloud_solution.html`)**：
+  1. **云端后端与 MySQL 数据工程全量落地 (`d:\code\draw-mall`, 175.24.131.73:33106 `drawmall`)**：
+     - **实体模型与 EF Core 映射**：创建了 `SchemeCategory` (95条)、`Scheme` (698条)、`SchemeBomItem` (10,967条)，并在 `MallDbContext` 中配置联合索引；
+     - **业务能力与控制器**：创建了 `ISchemeServicer`、`SchemeServicer` 与 `SchemeController`，提供 `GetCategoryTree`、`GetPagedSchemes`、`GetSchemeDetail` 等标准 RESTful 接口；
+     - **高速数据迁移验证**：通过迁移引擎将本地 SQLite 数据 100% 完整灌入云服务器 MySQL，抽样核验方案物料与金额完全吻合；
+  2. **Excel 插件后端批处理与价格分布公式联动 (`ExcelServices.CloudSolution.cs`, `AutoPricingDataService.cs`)**：
+     - **方案 A 价格分布公式落地**：严格将官方表价写入 M 列、采购折扣写入 N 列、报出系数写入 L 列；销售单价 G 列联动公式 `=ROUND(M*L*N, 2)`、成本单价 J 列联动公式 `=ROUND(M*N, 2)`、销售总价 H 列联动公式 `=ROUND(F*G, 2)`；
+     - **分类表规则完整遵循**：遵循规则 6、7、8，空行智能复用、不足插行、二维数组单次 COM 批量写入，并自动调用 `FixAndFillCabinetNamesForSheet` 自愈定义名称；
+     - **双通道容灾架构**：`AutoPricingDataService` 优先请求云端 WebAPI，网络异常或未开服务时 0 延迟秒切本地 SQLite 离线库，100% 防白屏假死；
+  3. **前端工业级绿蓝界面与交互实现 (`cloud_solution.html`)**：
+     - **二级 Tab 无缝扩展**：新增【自动组价 (利驰方案)】专属 Tab；
+     - **高质感工业排版**：主题主色调 `#009688` 绿蓝相间，纯弹性布局，绝不产生外层及表格横向滚动条；
+     - **260px 左侧分类树**：集成关键字模糊检索、微徽标数量统计、节点展开与选中；
+     - **方案看板与 BOM 工作台**：顶部展示柜型、方案编号、参考总价大字徽标；BOM 清单表格展示表价/折扣/报出系数/销售单价，支持回路倍增 (WL) 开关与批量全选；
+     - **底部控制台**：回路倍增器与一键【追加到当前箱柜】或【插入为全新箱柜】；
+  4. **工程构建与多端静态资源同步**：
+     - `ExcelAddInDemo.csproj` 与 `DrawMall.sln` 均编译通过：**0 警告，0 错误**；
+     - 静态 HTML 同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`。
 - **【功能实现与闭环交付】成套元器件行列操作（剪切/复制/插入/删除）与跨箱柜 CadHandle 过滤闭环落地 (`ComponentRowExchangeModels.cs`, `ExcelServices.ComponentRowOperations.cs`, `CustomContextMenuForm.cs`, `custom_context_menu.html`, `ExcelEventManager.cs`)**：
   1. **元器件业务交换模型与内存剪贴板 (`ComponentRowExchangeModels.cs`)**：
      - 新增 `ComponentRowExchangeDto` 实体模型，包含 `IsCutMode`、`SourceWorkbookName`、`SourceSheetName`、`SourceCabinetK`、`SourceRowIndex`、`FullRowValues`、`CadHandle` 与 `CellFormulas`；

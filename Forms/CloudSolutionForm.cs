@@ -322,6 +322,35 @@ namespace ExcelAddInDemo.Forms
                         PostMessageSafe("insertSchemeToExcelResult", new { success = insertOk, message = insertMsg });
                         break;
 
+                    // 10.1 获取自动组价方案分类树
+                    case "getAutoPricingCategoryTree":
+                        var catTree = _controller.GetAutoPricingCategoryTree();
+                        PostMessageSafe("getAutoPricingCategoryTreeResult", catTree);
+                        break;
+
+                    // 10.2 检索自动组价方案列表
+                    case "getAutoPricingSchemes":
+                        {
+                            string apCatId = GetStringProp("categoryId");
+                            string apKw = GetStringProp("keyword");
+                            string apCabMdl = GetStringProp("cabModel");
+                            string apSit = GetStringProp("situation");
+                            var schemes = _controller.GetAutoPricingSchemes(apCatId, apKw, apCabMdl, apSit);
+                            PostMessageSafe("getAutoPricingSchemesResult", schemes);
+                            break;
+                        }
+
+                    // 10.3 获取单个自动组价方案详情与 BOM 清单
+                    case "getAutoPricingSchemeDetail":
+                        string targetSchemeId = GetStringProp("schemeId");
+                        if (string.IsNullOrWhiteSpace(targetSchemeId))
+                        {
+                            targetSchemeId = root.TryGetProperty("id", out var sidProp) ? sidProp.GetString() ?? "" : "";
+                        }
+                        var schDetail = _controller.GetAutoPricingSchemeDetail(targetSchemeId);
+                        PostMessageSafe("getAutoPricingSchemeDetailResult", schDetail);
+                        break;
+
                     // 11. 获取当前已保存的二次方案图纸根目录
                     case "getSecondaryCircuitConfig":
                         string currentSecDir = _controller.GetSecondaryCircuitDwgDir();

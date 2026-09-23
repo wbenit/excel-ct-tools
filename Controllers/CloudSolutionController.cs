@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using ExcelAddInDemo.Models;
+using ExcelAddInDemo.Services;
 
 namespace ExcelAddInDemo.Controllers
 {
@@ -870,6 +871,64 @@ namespace ExcelAddInDemo.Controllers
         public (bool Success, string Message, PrimarySchemeEntity? Scheme) CaptureActiveCabinetToPrimaryScheme(string targetFolder, string customSchemeName, string? cabinetModel)
         {
             return ExcelServices.CaptureActiveCabinetToPrimaryScheme(targetFolder, customSchemeName, cabinetModel);
+        }
+
+        #endregion
+
+        #region 自动组价方案管理 (利驰方案库)
+
+        /// <summary>
+        /// 获取利驰自动组价完整方案多级分类树
+        /// </summary>
+        public List<AutoPricingCategoryDto> GetAutoPricingCategoryTree()
+        {
+            try
+            {
+                // 调度双通道数据服务获取分类树
+                return AutoPricingDataService.GetCategoryTree();
+            }
+            catch (Exception ex)
+            {
+                // 记录分类树获取异常
+                LogHelper.WriteLog($"[CloudSolutionController] GetAutoPricingCategoryTree 异常: {ex.Message}");
+                return new List<AutoPricingCategoryDto>();
+            }
+        }
+
+        /// <summary>
+        /// 根据分类、柜型、场景或关键字检索箱柜方案列表
+        /// </summary>
+        public List<AutoPricingSchemeDto> GetAutoPricingSchemes(string? categoryId, string? keyword, string? cabModel, string? situation)
+        {
+            try
+            {
+                // 调度双通道数据服务获取方案列表
+                return AutoPricingDataService.GetSchemes(categoryId, keyword, cabModel, situation);
+            }
+            catch (Exception ex)
+            {
+                // 记录检索异常
+                LogHelper.WriteLog($"[CloudSolutionController] GetAutoPricingSchemes 异常: {ex.Message}");
+                return new List<AutoPricingSchemeDto>();
+            }
+        }
+
+        /// <summary>
+        /// 获取单个方案详情及其全部 BOM 元器件清单
+        /// </summary>
+        public AutoPricingSchemeDetailDto? GetAutoPricingSchemeDetail(string schemeId)
+        {
+            try
+            {
+                // 调度双通道数据服务获取方案完整详情与 BOM
+                return AutoPricingDataService.GetSchemeDetail(schemeId);
+            }
+            catch (Exception ex)
+            {
+                // 记录详情获取异常
+                LogHelper.WriteLog($"[CloudSolutionController] GetAutoPricingSchemeDetail 异常: {ex.Message}");
+                return null;
+            }
         }
 
         #endregion

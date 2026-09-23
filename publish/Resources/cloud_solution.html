@@ -289,6 +289,301 @@
       .sub-tab-item.active i.icon-favorite {
         color: #f59e0b;
       }
+      .sub-tab-item.active i.icon-autopricing {
+        color: #009688;
+      }
+
+      /* ==================== 自动组价 (利驰方案) 专属工程级样式规范 ==================== */
+      .auto-pricing-container {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+        min-height: 0;
+        width: 100%;
+        background: #f8fafc;
+      }
+
+      /* 左侧分类树侧边栏 (固定260px，超长纵滚无横滚) */
+      .ap-sidebar {
+        width: 260px;
+        background: #ffffff;
+        border-right: 1px solid #e2e8f0;
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+        overflow: hidden;
+      }
+      .ap-search-box {
+        padding: 10px 12px;
+        border-bottom: 1px solid #e2e8f0;
+        background: #f8fafc;
+      }
+      .ap-tree-wrap {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 6px;
+      }
+      .ap-tree-node {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        padding-right: 8px;
+        font-size: 13px;
+        color: #334155;
+      }
+      .ap-node-title {
+        display: flex;
+        align-items: center;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ap-node-count {
+        background: #e0f2f1;
+        color: #00796b;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 1px 6px;
+        border-radius: 10px;
+        margin-left: 6px;
+      }
+
+      /* 右侧方案主工作区 (纯弹性排版) */
+      .ap-workspace {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        min-width: 0;
+        background: #ffffff;
+      }
+
+      /* 方案药丸选择器栏 */
+      .ap-scheme-selector-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+      .ap-bar-label {
+        font-size: 12px;
+        color: #64748b;
+        font-weight: 600;
+      }
+      .ap-scheme-pill-list {
+        display: flex;
+        gap: 6px;
+      }
+      .ap-scheme-pill {
+        padding: 3px 10px;
+        border-radius: 14px;
+        font-size: 12px;
+        color: #475569;
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .ap-scheme-pill:hover {
+        border-color: #009688;
+        color: #009688;
+      }
+      .ap-scheme-pill.active {
+        background: #009688;
+        border-color: #009688;
+        color: #ffffff;
+        font-weight: 600;
+      }
+
+      /* 方案顶部元信息看板 */
+      .ap-scheme-header-card {
+        padding: 14px 20px 0;
+        background: #ffffff;
+        border-bottom: 1px solid #e2e8f0;
+        flex-shrink: 0;
+      }
+      .ap-header-top-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 12px;
+      }
+      .ap-scheme-title-box {
+        flex: 1;
+        min-width: 0;
+      }
+      .ap-scheme-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: #0f172a;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .ap-scheme-meta-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .ap-meta-tag {
+        font-size: 12px;
+        color: #64748b;
+        background: #f1f5f9;
+        padding: 3px 8px;
+        border-radius: 4px;
+      }
+      .ap-meta-tag b {
+        color: #1e293b;
+        margin-left: 2px;
+      }
+
+      /* 总计金额徽标 */
+      .ap-total-price-box {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        padding: 6px 14px;
+        border-radius: 8px;
+        flex-shrink: 0;
+      }
+      .ap-total-label {
+        font-size: 13px;
+        font-weight: 600;
+        color: #166534;
+      }
+      .ap-total-amount {
+        font-size: 20px;
+        font-weight: 800;
+        color: #e11d48;
+        font-family: Consolas, monospace;
+      }
+
+      /* 卡片下 BOM/描述 Tabs */
+      .ap-card-tabs {
+        display: flex;
+        gap: 24px;
+      }
+      .ap-card-tab {
+        padding: 8px 4px;
+        font-size: 13.5px;
+        font-weight: 600;
+        color: #64748b;
+        cursor: pointer;
+        position: relative;
+        transition: color 0.2s;
+      }
+      .ap-card-tab:hover {
+        color: #009688;
+      }
+      .ap-card-tab.active {
+        color: #009688;
+      }
+      .ap-card-tab.active::after {
+        content: "";
+        position: absolute;
+        bottom: -1px;
+        left: 0;
+        right: 0;
+        height: 2.5px;
+        background: #009688;
+        border-radius: 2px;
+      }
+
+      /* BOM 表格区域 (弹性滚动，列自适应，无横向滚动条) */
+      .ap-bom-table-wrap {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        min-height: 0;
+      }
+      .ap-bom-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+        table-layout: fixed;
+      }
+      .ap-bom-table thead th {
+        position: sticky;
+        top: 0;
+        background: #f8fafc;
+        color: #475569;
+        font-weight: 600;
+        padding: 8px 10px;
+        border-bottom: 1px solid #cbd5e1;
+        border-right: 1px solid #f1f5f9;
+        z-index: 2;
+        white-space: nowrap;
+      }
+      .ap-bom-table tbody td {
+        padding: 6px 10px;
+        border-bottom: 1px solid #f1f5f9;
+        border-right: 1px solid #f8fafc;
+        vertical-align: middle;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ap-bom-table tbody tr:hover {
+        background: #f0fdfa;
+      }
+      .ap-bom-table tbody tr.row-selected {
+        background: #fcfcfc;
+      }
+
+      /* 描述 Tab 区域 */
+      .ap-desc-wrap {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+      }
+      .ap-desc-content p {
+        margin-bottom: 10px;
+        font-size: 13px;
+        color: #334155;
+        line-height: 1.6;
+      }
+
+      /* 底部操作底栏 */
+      .ap-action-footer {
+        padding: 10px 18px;
+        background: #f8fafc;
+        border-top: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-shrink: 0;
+      }
+      .ap-footer-left {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .ap-footer-tip {
+        font-size: 12px;
+        color: #64748b;
+      }
+      .ap-loop-multiplier {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: #475569;
+        font-weight: 500;
+      }
+      .ap-footer-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
 
       /* 全局滚动条高品质美化规范 */
       /* 自定义纵向与横向滚动条轨道与滑块，保证滚动视觉轻盈 */
@@ -2203,7 +2498,7 @@
         </div>
       </div>
 
-      <!-- 3. 二级业务 Tab 栏 (一次方案 / 二次方案 / 我的收藏 - 高级浅灰微浮雕药丸) -->
+      <!-- 3. 二级业务 Tab 栏 (一次方案 / 二次方案 / 我的收藏 / 自动组价 - 高级浅灰微浮雕药丸) -->
       <div class="sub-tabs-bar">
         <div class="sub-tabs-pills">
           <div
@@ -2230,13 +2525,325 @@
             <i class="fa-solid fa-star icon-favorite"></i>
             <span>我的收藏</span>
           </div>
+          <!-- 新增利驰自动组价专属 Tab -->
+          <div
+            class="sub-tab-item"
+            :class="{ active: currentSchemeType === 'auto_pricing' }"
+            @click="switchSchemeType('auto_pricing')"
+          >
+            <i class="fa-solid fa-calculator icon-autopricing"></i>
+            <span>自动组价 (利驰方案)</span>
+          </div>
         </div>
       </div>
 
       <!-- 4. 主内容视口区 -->
       <div class="main-body">
-        <!-- 企业方案专属：左侧分类文件夹树 -->
-        <div class="left-category-sidebar" v-if="currentScope === 'enterprise'">
+        <!-- 【自动组价 (利驰方案)】专属工作台 (v-if="currentSchemeType === 'auto_pricing'") -->
+        <div class="auto-pricing-container" v-if="currentSchemeType === 'auto_pricing'">
+          <!-- 左侧分类树侧边栏 (260px，超长纵滚无横滚) -->
+          <div class="ap-sidebar">
+            <!-- 分类树关键字搜索框 -->
+            <div class="ap-search-box">
+              <!-- 支持快速输入过滤左侧分类节点 -->
+              <el-input
+                v-model="apSearchKeyword"
+                placeholder="搜索方案或元器件..."
+                size="small"
+                clearable
+                @input="onApSearchInput"
+                @clear="onApSearchInput"
+              >
+                <!-- 搜索框前缀放大镜图标 -->
+                <template #prefix>
+                  <i class="fa-solid fa-magnifying-glass" style="color: #94a3b8"></i>
+                </template>
+              </el-input>
+            </div>
+            <!-- 分类树展示区 -->
+            <div class="ap-tree-wrap">
+              <!-- Element-Plus 树形控件 -->
+              <el-tree
+                ref="apCategoryTreeRef"
+                :data="apFilteredCategoryTree"
+                :props="{ label: 'categoryName', children: 'children' }"
+                node-key="id"
+                highlight-current
+                :expand-on-click-node="false"
+                default-expand-all
+                @node-click="onApCategoryNodeClick"
+              >
+                <!-- 自定义树节点渲染插槽 -->
+                <template #default="{ node, data }">
+                  <div class="ap-tree-node">
+                    <!-- 节点标题与文件夹/文件图标 -->
+                    <span class="ap-node-title" :title="data.categoryName">
+                      <i
+                        :class="data.children && data.children.length > 0 ? 'fa-regular fa-folder-open' : 'fa-regular fa-file-lines'"
+                        style="margin-right: 6px; color: #009688;"
+                      ></i>
+                      {{ data.categoryName }}
+                    </span>
+                    <!-- 方案数量小药丸徽标 -->
+                    <span class="ap-node-count" v-if="data.schemeCount > 0">{{ data.schemeCount }}</span>
+                  </div>
+                </template>
+              </el-tree>
+            </div>
+          </div>
+
+          <!-- 右侧方案主工作区 (纯弹性排版) -->
+          <div class="ap-workspace">
+            <!-- 方案药丸选择器栏 -->
+            <div class="ap-scheme-selector-bar" v-if="apCurrentSchemes && apCurrentSchemes.length > 0">
+              <!-- 方案栏引导提示标签 -->
+              <span class="ap-bar-label"><i class="fa-solid fa-cubes-stacked" style="color: #009688; margin-right: 4px;"></i>相关方案:</span>
+              <div class="ap-scheme-pill-list">
+                <!-- 遍历展示当前分类下的所有箱柜方案药丸 -->
+                <div
+                  v-for="s in apCurrentSchemes"
+                  :key="s.id"
+                  class="ap-scheme-pill"
+                  :class="{ active: apActiveScheme && apActiveScheme.id === s.id }"
+                  @click="selectApScheme(s)"
+                  :title="s.schemeName"
+                >
+                  <!-- 方案名称 -->
+                  <span>{{ s.schemeName }}</span>
+                  <!-- 参考总价简要标注 -->
+                  <span style="font-size: 11px; opacity: 0.85; margin-left: 4px;">(¥{{ Number(s.totalPrice || 0).toFixed(0) }})</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 空状态提示 (当无方案或未选中时) -->
+            <div
+              v-if="!apActiveScheme && !apLoading"
+              style="flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column;"
+            >
+              <!-- 友好空状态引导插画与文案 -->
+              <el-empty description="请在左侧选择方案分类以加载方案明细与 BOM" />
+            </div>
+
+            <!-- 加载中遮罩 -->
+            <div
+              v-else-if="apLoading"
+              style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 10px; color: #009688;"
+            >
+              <!-- 动态加载转圈图标 -->
+              <i class="fa-solid fa-spinner fa-spin" style="font-size: 24px;"></i>
+              <span style="font-size: 14px; font-weight: 500;">正在加载利驰方案与 BOM 物料清单...</span>
+            </div>
+
+            <!-- 选中的方案明细与工作台 -->
+            <template v-else-if="apActiveScheme">
+              <!-- 顶部方案元信息看板 -->
+              <div class="ap-scheme-header-card">
+                <div class="ap-header-top-row">
+                  <div class="ap-scheme-title-box">
+                    <div class="ap-scheme-title">
+                      <!-- 方案主标题 -->
+                      <span>{{ apActiveScheme.schemeName }}</span>
+                      <!-- 柜型微徽标 -->
+                      <el-tag size="small" type="success" effect="plain" v-if="apActiveScheme.cabinetModel">
+                        {{ apActiveScheme.cabinetModel }}
+                      </el-tag>
+                    </div>
+                    <!-- 方案元数据微标签组 -->
+                    <div class="ap-scheme-meta-tags">
+                      <div class="ap-meta-tag">方案编号: <b>{{ apActiveScheme.schemeCode || '-' }}</b></div>
+                      <div class="ap-meta-tag">开关柜型: <b>{{ apActiveScheme.cabinetModel || '-' }}</b></div>
+                      <div class="ap-meta-tag">额定电流: <b>{{ apActiveScheme.ratedCurrent ? apActiveScheme.ratedCurrent + 'A' : '-' }}</b></div>
+                      <div class="ap-meta-tag">元器件项数: <b>{{ apActiveBomList.length }} 种</b></div>
+                      <div class="ap-meta-tag">已勾选总价: <b style="color: #e11d48">¥{{ apCalculatedTotal.toFixed(2) }}</b></div>
+                    </div>
+                  </div>
+                  <!-- 右侧方案参考总价大字徽标 -->
+                  <div class="ap-total-price-box">
+                    <span class="ap-total-label">方案参考总价</span>
+                    <span class="ap-total-amount">¥{{ apCalculatedTotal.toFixed(2) }}</span>
+                  </div>
+                </div>
+
+                <!-- 卡片内部 Tabs (BOM 清单 vs 方案描述) -->
+                <div class="ap-card-tabs">
+                  <!-- BOM 清单标签页项 -->
+                  <div
+                    class="ap-card-tab"
+                    :class="{ active: apActiveTab === 'bom' }"
+                    @click="apActiveTab = 'bom'"
+                  >
+                    <i class="fa-solid fa-list-check" style="margin-right: 4px;"></i>
+                    BOM 物料清单 ({{ apActiveBomList.length }})
+                  </div>
+                  <!-- 方案技术说明标签页项 -->
+                  <div
+                    class="ap-card-tab"
+                    :class="{ active: apActiveTab === 'desc' }"
+                    @click="apActiveTab = 'desc'"
+                  >
+                    <i class="fa-solid fa-file-lines" style="margin-right: 4px;"></i>
+                    方案技术说明
+                  </div>
+                </div>
+              </div>
+
+              <!-- BOM 表格区 (弹性纵向滚动，列自适应，无水平滚动条) -->
+              <div class="ap-bom-table-wrap" v-if="apActiveTab === 'bom'">
+                <table class="ap-bom-table">
+                  <thead>
+                    <tr>
+                      <!-- 全选复选框 -->
+                      <th style="width: 38px; text-align: center;">
+                        <input
+                          type="checkbox"
+                          :checked="apIsAllSelected"
+                          @change="toggleApSelectAll"
+                          style="cursor: pointer;"
+                        />
+                      </th>
+                      <!-- 序号列 -->
+                      <th style="width: 42px; text-align: center;">序号</th>
+                      <!-- 元器件名称列 -->
+                      <th style="width: 140px; text-align: left;">元器件名称</th>
+                      <!-- 规格型号列 -->
+                      <th style="text-align: left;">型号规格</th>
+                      <!-- 数量列 -->
+                      <th style="width: 58px; text-align: right;">数量</th>
+                      <!-- 单位列 -->
+                      <th style="width: 44px; text-align: center;">单位</th>
+                      <!-- 品牌列 -->
+                      <th style="width: 85px; text-align: left;">品牌</th>
+                      <!-- 报出系数对应 L 列 -->
+                      <th style="width: 70px; text-align: right;" title="写入 L 列 (报出系数)">报出系数</th>
+                      <!-- 官方表价对应 M 列 -->
+                      <th style="width: 78px; text-align: right;" title="写入 M 列 (官方表价)">官方表价</th>
+                      <!-- 采购折扣对应 N 列 -->
+                      <th style="width: 70px; text-align: right;" title="写入 N 列 (采购折扣)">采购折扣</th>
+                      <!-- 销售单价对应 G 列公式 =ROUND(M*L*N, 2) -->
+                      <th style="width: 78px; text-align: right;" title="G列公式 =ROUND(M*L*N, 2)">销售单价</th>
+                      <!-- 小计金额对应 H 列公式 =ROUND(F*G, 2) -->
+                      <th style="width: 86px; text-align: right;" title="H列公式 =ROUND(F*G, 2)">小计金额</th>
+                      <!-- 随回路数倍增开关 -->
+                      <th style="width: 72px; text-align: center;" title="随回路数倍增开关">倍增(WL)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <!-- 遍历呈现物料明细行 -->
+                    <tr
+                      v-for="(item, index) in apActiveBomList"
+                      :key="item.id || index"
+                      :class="{ 'row-selected': item.selected }"
+                    >
+                      <!-- 单项勾选复选框 -->
+                      <td style="text-align: center;">
+                        <input
+                          type="checkbox"
+                          v-model="item.selected"
+                          style="cursor: pointer;"
+                        />
+                      </td>
+                      <!-- 行序号 -->
+                      <td style="text-align: center; color: #94a3b8; font-family: monospace;">{{ index + 1 }}</td>
+                      <!-- 元器件名称 -->
+                      <td :title="item.itemName" style="font-weight: 500; color: #1e293b;">{{ item.itemName }}</td>
+                      <!-- 规格型号 -->
+                      <td :title="item.itemSpec" style="color: #475569; font-family: Consolas, monospace;">{{ item.itemSpec }}</td>
+                      <!-- 基准用量数量 -->
+                      <td style="text-align: right; font-weight: 600; color: #0f172a;">{{ item.quantity }}</td>
+                      <!-- 计量单位 -->
+                      <td style="text-align: center; color: #64748b;">{{ item.unit || '只' }}</td>
+                      <!-- 品牌厂家 -->
+                      <td :title="item.brand" style="color: #64748b;">{{ item.brand || '通用' }}</td>
+                      <!-- 报出系数 (L列数值) -->
+                      <td style="text-align: right; color: #0284c7; font-family: monospace;">{{ Number(item.quotationFactor ?? 1.0).toFixed(2) }}</td>
+                      <!-- 官方表价 (M列数值) -->
+                      <td style="text-align: right; font-family: monospace;">{{ Number(item.markedPrice ?? 0).toFixed(2) }}</td>
+                      <!-- 采购折扣 (N列数值) -->
+                      <td style="text-align: right; color: #059669; font-family: monospace;">{{ Number(item.discount ?? 1.0).toFixed(2) }}</td>
+                      <!-- 销售单价 (公式计算联动展示) -->
+                      <td style="text-align: right; font-weight: 600; color: #009688; font-family: monospace;">
+                        {{ (Number(item.markedPrice ?? 0) * Number(item.discount ?? 1.0) * Number(item.quotationFactor ?? 1.0)).toFixed(2) }}
+                      </td>
+                      <!-- 小计金额 (综合倍增系数计算) -->
+                      <td style="text-align: right; font-weight: 700; color: #e11d48; font-family: monospace;">
+                        {{ ((Number(item.markedPrice ?? 0) * Number(item.discount ?? 1.0) * Number(item.quotationFactor ?? 1.0)) * (item.isWlDoubled ? Number(item.quantity || 1) * Number(apLoopMultiplier || 1) : Number(item.quantity || 1))).toFixed(2) }}
+                      </td>
+                      <!-- 回路倍增开关 -->
+                      <td style="text-align: center;">
+                        <el-switch v-model="item.isWlDoubled" size="small" active-color="#009688" />
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- 方案技术说明区 -->
+              <div class="ap-desc-wrap" v-else-if="apActiveTab === 'desc'">
+                <div class="ap-desc-content">
+                  <!-- 方案名称与属性明细 -->
+                  <p><strong>方案名称:</strong> {{ apActiveScheme.schemeName }}</p>
+                  <p><strong>开关柜型:</strong> {{ apActiveScheme.cabinetModel || '通用柜型' }}</p>
+                  <p><strong>方案编码:</strong> {{ apActiveScheme.schemeCode || '-' }}</p>
+                  <p><strong>参考总价:</strong> ¥{{ Number(apActiveScheme.totalPrice || 0).toFixed(2) }} 元</p>
+                  <!-- 详细技术描述 -->
+                  <p><strong>技术描述:</strong> {{ apActiveScheme.description || '暂无详细描述，此方案来自于利驰 ExWinner 自动组价库标准母版配置。' }}</p>
+                </div>
+              </div>
+
+              <!-- 底部操作底栏 -->
+              <div class="ap-action-footer">
+                <div class="ap-footer-left">
+                  <!-- 勾选统计提示条 -->
+                  <div class="ap-footer-tip">
+                    <i class="fa-solid fa-circle-check" style="color: #009688;"></i>
+                    已勾选 <b>{{ apSelectedCount }}</b> 项 / 共 {{ apActiveBomList.length }} 项
+                  </div>
+                  <!-- 回路倍增器输入控件 -->
+                  <div class="ap-loop-multiplier">
+                    <span>回路倍增:</span>
+                    <el-input-number
+                      v-model="apLoopMultiplier"
+                      :min="1"
+                      :max="99"
+                      size="small"
+                      style="width: 88px"
+                    />
+                    <span>倍</span>
+                  </div>
+                </div>
+
+                <div class="ap-footer-right">
+                  <!-- 追加写入按钮 -->
+                  <el-button
+                    size="small"
+                    @click="insertApSchemeToExcel('append')"
+                    :loading="isInsertingBom"
+                    title="将勾选的物料追加写入当前选中的活动箱柜元器件区"
+                  >
+                    <i class="fa-solid fa-plus" style="margin-right: 4px;"></i> 追加到当前箱柜
+                  </el-button>
+                  <!-- 插入全新箱柜按钮 -->
+                  <el-button
+                    type="primary"
+                    size="small"
+                    @click="insertApSchemeToExcel('new')"
+                    :loading="isInsertingBom"
+                    style="background: #009688; border-color: #009688;"
+                    title="在当前工作表末尾新建并追加此箱柜及其明细"
+                  >
+                    <i class="fa-solid fa-file-import" style="margin-right: 4px;"></i> 插入为全新箱柜
+                  </el-button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- 现有一二方案容器包裹在 v-else 中 -->
+        <template v-else>
+          <!-- 企业方案专属：左侧分类文件夹树 -->
+          <div class="left-category-sidebar" v-if="currentScope === 'enterprise'">
           <!-- 侧边栏标题栏 -->
           <div class="category-header">
             <span
@@ -3357,6 +3964,7 @@
             </template>
           </div>
         </div>
+        </template>
       </div>
 
       <!-- ========================================================
@@ -5389,11 +5997,205 @@
             }
           };
 
+          // ===== 自动组价 (利驰方案) 专属状态与逻辑 =====
+          // 分类树原始数据
+          const apCategoryTreeData = ref([]);
+          // 分类搜索关键字
+          const apSearchKeyword = ref("");
+          // 分类树 DOM 引用
+          const apCategoryTreeRef = ref(null);
+          // 当前分类下的方案列表
+          const apCurrentSchemes = ref([]);
+          // 当前激活展示的方案
+          const apActiveScheme = ref(null);
+          // 当前方案的 BOM 清单
+          const apActiveBomList = ref([]);
+          // 方案工作台激活 Tab ('bom' | 'desc')
+          const apActiveTab = ref("bom");
+          // 利驰方案回路倍增系数
+          const apLoopMultiplier = ref(1);
+          // 方案与 BOM 加载中状态
+          const apLoading = ref(false);
+
+          // 递归过滤分类树节点
+          const filterTreeNodes = (nodes, kw) => {
+            // 防御性校验空节点
+            if (!nodes || nodes.length === 0) return [];
+            const result = [];
+            // 循环遍历树节点
+            for (const node of nodes) {
+              // 匹配分类名称关键字
+              const matches = node.categoryName && node.categoryName.toLowerCase().includes(kw);
+              // 递归过滤子节点
+              const filteredChildren = node.children ? filterTreeNodes(node.children, kw) : [];
+              // 若本身匹配或子节点匹配则保留
+              if (matches || filteredChildren.length > 0) {
+                result.push({
+                  ...node,
+                  children: filteredChildren,
+                });
+              }
+            }
+            return result;
+          };
+
+          // 过滤后的分类树计算属性
+          const apFilteredCategoryTree = computed(() => {
+            // 搜索框为空直接返回原树
+            if (!apSearchKeyword.value || !apSearchKeyword.value.trim()) {
+              return apCategoryTreeData.value;
+            }
+            const kw = apSearchKeyword.value.trim().toLowerCase();
+            // 执行递归过滤匹配
+            return filterTreeNodes(apCategoryTreeData.value, kw);
+          });
+
+          // 选中的 BOM 项数
+          const apSelectedCount = computed(() => {
+            // 过滤提取选中的物料总数
+            return (apActiveBomList.value || []).filter((item) => item.selected).length;
+          });
+
+          // 是否全选 BOM 计算属性
+          const apIsAllSelected = computed(() => {
+            // 无条目时默认为非全选
+            if (!apActiveBomList.value || apActiveBomList.value.length === 0) return false;
+            // 检查是否所有物料都被勾选
+            return apActiveBomList.value.every((item) => item.selected);
+          });
+
+          // 动态计算勾选 BOM 的参考销售总价
+          const apCalculatedTotal = computed(() => {
+            // 无物料时返回 0
+            if (!apActiveBomList.value || apActiveBomList.value.length === 0) return 0;
+            // 累加所有已选物料的销售金额
+            return apActiveBomList.value.reduce((sum, item) => {
+              if (!item.selected) return sum;
+              // 提取表价、折扣、报出系数
+              const p = Number(item.markedPrice ?? 0);
+              const d = Number(item.discount ?? 1.0);
+              const qf = Number(item.quotationFactor ?? 1.0);
+              // 计算单价: 表价 * 折扣 * 报出系数
+              const unitPrice = p * d * qf;
+              // 判断是否受回路倍增系数影响
+              const qty = item.isWlDoubled
+                ? Number(item.quantity || 1) * Number(apLoopMultiplier.value || 1)
+                : Number(item.quantity || 1);
+              // 累加行金额
+              return sum + unitPrice * qty;
+            }, 0);
+          });
+
+          // 加载自动组价分类树
+          const loadAutoPricingCategoryTree = () => {
+            // 开启加载遮罩
+            apLoading.value = true;
+            // 向 C# 宿主请求分类树
+            postToHost("getAutoPricingCategoryTree");
+          };
+
+          // 搜索框输入事件处理
+          const onApSearchInput = () => {
+            // 响应式计算属性自动联动
+          };
+
+          // 点击分类树节点处理
+          const onApCategoryNodeClick = (data) => {
+            // 校验节点有效性
+            if (!data) return;
+            // 激活加载中状态
+            apLoading.value = true;
+            // 向 C# 宿主拉取该分类下的方案列表
+            postToHost("getAutoPricingSchemes", { categoryId: data.id });
+          };
+
+          // 选中具体方案并请求详情与 BOM
+          const selectApScheme = (scheme) => {
+            // 校验方案有效性
+            if (!scheme) return;
+            // 记录当前活动方案
+            apActiveScheme.value = scheme;
+            apLoading.value = true;
+            // 向 C# 宿主请求方案详情与物料
+            postToHost("getAutoPricingSchemeDetail", { schemeId: scheme.id });
+          };
+
+          // 全选/全不选 BOM 条目
+          const toggleApSelectAll = (e) => {
+            // 提取目标勾选布尔值
+            const checked = e.target.checked;
+            // 批量同步所有条目的选中状态
+            (apActiveBomList.value || []).forEach((item) => {
+              item.selected = checked;
+            });
+          };
+
+          // 将勾选的利驰方案 BOM 插入到当前 Excel 工作表
+          const insertApSchemeToExcel = (mode) => {
+            // 方案空校验
+            if (!apActiveScheme.value) {
+              ElementPlus.ElMessage.warning("请先选择方案！");
+              return;
+            }
+            // 提取被勾选的物料
+            const selectedItems = (apActiveBomList.value || []).filter((item) => item.selected);
+            if (selectedItems.length === 0) {
+              ElementPlus.ElMessage.warning("请至少勾选一项 BOM 元器件！");
+              return;
+            }
+
+            // 规范化 BOM 数据，严格对齐 C# SchemeInsertToExcelDto 与 CloudSchemeBomItem
+            const normalizedItems = selectedItems.map((item, idx) => ({
+              id: String(item.id || (Date.now() + idx)),
+              schemeId: String(apActiveScheme.value.id || ""),
+              sortOrder: Number(item.sortOrder) || (idx + 1),
+              name: String(item.itemName || "元器件"),
+              model: String(item.itemSpec || ""),
+              brand: String(item.brand || "通用"),
+              unit: String(item.unit || "只"),
+              quantity: Number(item.quantity) || 1,
+              isWlDoubled: Boolean(item.isWlDoubled),
+              markedPrice: Number(item.markedPrice ?? 0),
+              catalogPrice: Number(item.markedPrice ?? 0),
+              discount: Number(item.discount ?? 1.0),
+              quotationFactor: Number(item.quotationFactor ?? 1.0),
+              quoteDiscount: Number(item.quotationFactor ?? 1.0),
+              costPrice: Number(item.costPrice ?? (item.markedPrice * item.discount)),
+              quotePrice: Number((item.markedPrice ?? 0) * (item.discount ?? 1.0) * (item.quotationFactor ?? 1.0)),
+              totalPrice: Number((item.markedPrice ?? 0) * (item.discount ?? 1.0) * (item.quotationFactor ?? 1.0) * (item.quantity ?? 1)),
+              subtotal: Number((item.markedPrice ?? 0) * (item.discount ?? 1.0) * (item.quotationFactor ?? 1.0) * (item.quantity ?? 1)),
+            }));
+
+            // 组装插入 DTO
+            const dto = {
+              schemeId: String(apActiveScheme.value.id || ""),
+              schemeName: String(apActiveScheme.value.schemeName || "利驰方案"),
+              loopMultiplier: Number(apLoopMultiplier.value) || 1,
+              insertMode: mode === "append" ? "currentCabinet" : "newCabinet",
+              selectedBomItems: normalizedItems,
+            };
+
+            // 设置写入加载动画并防止二次连击
+            isInsertingBom.value = true;
+            // 8 秒超时保护
+            setTimeout(() => {
+              if (isInsertingBom.value) isInsertingBom.value = false;
+            }, 8000);
+
+            // 发送给 C# 后端写入 Excel
+            postToHost("insertSchemeToExcel", dto);
+          };
+
           // 切换二级 Tab
           const switchSchemeType = (type) => {
             currentSchemeType.value = type;
             pageIndex.value = 1;
-            if (type === "secondary") {
+            if (type === "auto_pricing") {
+              // 切换到利驰自动组价方案时自动拉取分类树
+              if (!apCategoryTreeData.value || apCategoryTreeData.value.length === 0) {
+                loadAutoPricingCategoryTree();
+              }
+            } else if (type === "secondary") {
               // 切换到二次回路方案时自动初始化
               if (!secondaryDwgRootDir.value) {
                 loadSecondaryCircuitConfig();
@@ -7425,6 +8227,70 @@
                     vectorCadLoading.value = false;
                   }
                 }
+                // 15. 自动组价分类树结果回传
+                else if (action === "getAutoPricingCategoryTreeResult") {
+                  // 解除加载中遮罩
+                  apLoading.value = false;
+                  // 保存分类树数据
+                  apCategoryTreeData.value = data || [];
+                  // 若当前没有选中的分类，自动递归选中首个包含方案的节点
+                  if ((!apCurrentSchemes.value || apCurrentSchemes.value.length === 0) && apCategoryTreeData.value.length > 0) {
+                    // 递归查找首个有方案的分类节点
+                    const findFirstWithSchemes = (nodes) => {
+                      for (const n of nodes) {
+                        if (n.schemeCount > 0) return n;
+                        if (n.children && n.children.length > 0) {
+                          const found = findFirstWithSchemes(n.children);
+                          if (found) return found;
+                        }
+                      }
+                      return nodes[0];
+                    };
+                    const firstNode = findFirstWithSchemes(apCategoryTreeData.value);
+                    if (firstNode) {
+                      // 自动触发点击加载该分类方案
+                      onApCategoryNodeClick(firstNode);
+                    }
+                  }
+                }
+                // 16. 自动组价方案列表结果回传
+                else if (action === "getAutoPricingSchemesResult") {
+                  // 解除加载中状态
+                  apLoading.value = false;
+                  // 记录当前分类方案列表
+                  apCurrentSchemes.value = data || [];
+                  // 自动选中首个方案
+                  if (apCurrentSchemes.value.length > 0) {
+                    selectApScheme(apCurrentSchemes.value[0]);
+                  } else {
+                    // 清空当前方案
+                    apActiveScheme.value = null;
+                    apActiveBomList.value = [];
+                  }
+                }
+                // 17. 自动组价方案详情与 BOM 结果回传
+                else if (action === "getAutoPricingSchemeDetailResult") {
+                  // 解除加载状态
+                  apLoading.value = false;
+                  if (data) {
+                    // 记录方案详情对象
+                    apActiveScheme.value = data;
+                    // 初始化物料勾选与倍增状态
+                    const items = data.bomItems || [];
+                    items.forEach((item) => {
+                      // 默认处于已勾选状态
+                      if (typeof item.selected === "undefined") {
+                        item.selected = true;
+                      }
+                      // 默认不随回路倍增
+                      if (typeof item.isWlDoubled === "undefined") {
+                        item.isWlDoubled = false;
+                      }
+                    });
+                    // 保存当前活动 BOM 清单
+                    apActiveBomList.value = items;
+                  }
+                }
               } catch (msgErr) {
                 // 记录接收处理异常
                 console.error("[WebMessage] 处理异常:", msgErr);
@@ -7627,6 +8493,26 @@
             applyCopiedPrimScheme,
             openCaptureCabinetDialog,
             confirmCaptureCabinet,
+            // 自动组价 (利驰方案) 专属状态与方法导出
+            apCategoryTreeData,
+            apSearchKeyword,
+            apCategoryTreeRef,
+            apCurrentSchemes,
+            apActiveScheme,
+            apActiveBomList,
+            apActiveTab,
+            apLoopMultiplier,
+            apLoading,
+            apFilteredCategoryTree,
+            apSelectedCount,
+            apIsAllSelected,
+            apCalculatedTotal,
+            loadAutoPricingCategoryTree,
+            onApSearchInput,
+            onApCategoryNodeClick,
+            selectApScheme,
+            toggleApSelectAll,
+            insertApSchemeToExcel,
           };
         },
       });

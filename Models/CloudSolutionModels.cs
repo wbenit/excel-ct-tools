@@ -175,17 +175,50 @@ namespace ExcelAddInDemo.Models
         // 目录官方表价 (元)
         public decimal CatalogPrice { get; set; } = 0m;
 
+        // 别名：表价 (与利驰接口 markedPrice 对齐)
+        [JsonPropertyName("markedPrice")]
+        public decimal MarkedPrice
+        {
+            get => CatalogPrice > 0 ? CatalogPrice : _markedPrice;
+            set { _markedPrice = value; if (CatalogPrice == 0) CatalogPrice = value; }
+        }
+        private decimal _markedPrice = 0m;
+
         // 进货/成本折扣率 (默认 1.0)
+        [JsonPropertyName("discount")]
         public decimal Discount { get; set; } = 1.0m;
 
         // 报出折扣率 (默认 1.0)
         public decimal QuoteDiscount { get; set; } = 1.0m;
 
+        // 别名：报出系数 (与利驰接口 quotationFactor 对齐)
+        [JsonPropertyName("quotationFactor")]
+        public decimal QuotationFactor
+        {
+            get => QuoteDiscount > 0 ? QuoteDiscount : _quotationFactor;
+            set { _quotationFactor = value; if (QuoteDiscount == 1.0m && value != 1.0m) QuoteDiscount = value; }
+        }
+        private decimal _quotationFactor = 1.0m;
+
+        // 成本单价 (元)
+        [JsonPropertyName("costPrice")]
+        public decimal CostPrice { get; set; } = 0m;
+
         // 最终报价单价 (元)
+        [JsonPropertyName("quotePrice")]
         public decimal QuotePrice { get; set; } = 0m;
 
         // 该行元器件总价 (数量 * 单价)
         public decimal TotalPrice { get; set; } = 0m;
+
+        // 别名：小计金额 (与利驰接口 subtotal 对齐)
+        [JsonPropertyName("subtotal")]
+        public decimal Subtotal
+        {
+            get => TotalPrice > 0 ? TotalPrice : _subtotal;
+            set { _subtotal = value; if (TotalPrice == 0) TotalPrice = value; }
+        }
+        private decimal _subtotal = 0m;
 
         // 备注说明文本
         public string Remark { get; set; } = string.Empty;

@@ -489,10 +489,16 @@ namespace ExcelAddInDemo
             for (int i = 0; i < reqCount; i++)
             {
                 var item = items[i];
+                // 当前写入物理行号
                 int curRow = compStartRow + i;
                 // 计算乘算后的数量 (WL 勾选则回路数倍增)
                 double finalQty = item.IsWlDoubled ? (item.Quantity * loopMultiplier) : item.Quantity;
-                double price = (double)item.QuotePrice;
+                // 提炼表价、采购折扣与报出系数 (严格按用户要求分布沉淀至 M、N、L 列)
+                double markedPrice = (double)(item.MarkedPrice > 0 ? item.MarkedPrice : (item.CatalogPrice > 0 ? item.CatalogPrice : item.QuotePrice));
+                // 采购折扣系数 (默认 1.0)
+                double discount = (double)(item.Discount > 0 ? item.Discount : 1.0m);
+                // 报出系数 (默认 1.0)
+                double quotationFactor = (double)(item.QuotationFactor > 0 ? item.QuotationFactor : (item.QuoteDiscount > 0 ? item.QuoteDiscount : 1.0m));
 
                 dataMatrix[i, 0] = $"=ROW()-ROW(A${detRow + 1})"; // A 列: 序号动态公式
                 dataMatrix[i, 1] = item.Name ?? "";              // B 列: 元件名称
@@ -503,12 +509,12 @@ namespace ExcelAddInDemo
                 // G 列 (单价) 采用模板标准公式联动 (由表价 M * 报出系数 L * 折扣 N 计算)
                 dataMatrix[i, 6] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(M{curRow}*L{curRow}*N{curRow},2))";
                 dataMatrix[i, 7] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(F{curRow}*G{curRow},2))"; // H 列: 销售总价公式
-                dataMatrix[i, 8] = "";                           // I 列: 备注
+                dataMatrix[i, 8] = item.Remark ?? "";            // I 列: 备注说明
                 dataMatrix[i, 9] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(M{curRow}*N{curRow},2))"; // J 列: 成本单价公式
                 dataMatrix[i, 10] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(J{curRow}*F{curRow},2))"; // K 列: 成本总价公式
-                dataMatrix[i, 11] = 1;                           // L 列: 报出系数 (默认 1)
-                dataMatrix[i, 12] = price;                       // M 列: 表价 (存入方案报价)
-                dataMatrix[i, 13] = 1.0;                         // N 列: 折扣系数 (默认 1)
+                dataMatrix[i, 11] = quotationFactor;             // L 列: 报出系数 (按要求分布在 L 列)
+                dataMatrix[i, 12] = markedPrice;                 // M 列: 表价 (按要求分布在 M 列)
+                dataMatrix[i, 13] = discount;                    // N 列: 折扣系数 (按要求分布在 N 列)
                 dataMatrix[i, 14] = "";                          // O 列: 取费系数
                 dataMatrix[i, 15] = "";                          // P 列: 成套费
                 dataMatrix[i, 16] = "元件";                      // Q 列: 类别
@@ -643,10 +649,16 @@ namespace ExcelAddInDemo
             for (int i = 0; i < reqCount; i++)
             {
                 var item = items[i];
+                // 当前写入物理行号
                 int curRow = writeStartRow + i;
                 // 计算乘算后的数量 (WL 勾选则翻倍)
                 double finalQty = item.IsWlDoubled ? (item.Quantity * loopMultiplier) : item.Quantity;
-                double price = (double)item.QuotePrice;
+                // 提炼表价、采购折扣与报出系数 (严格按用户要求分布沉淀至 M、N、L 列)
+                double markedPrice = (double)(item.MarkedPrice > 0 ? item.MarkedPrice : (item.CatalogPrice > 0 ? item.CatalogPrice : item.QuotePrice));
+                // 采购折扣系数 (默认 1.0)
+                double discount = (double)(item.Discount > 0 ? item.Discount : 1.0m);
+                // 报出系数 (默认 1.0)
+                double quotationFactor = (double)(item.QuotationFactor > 0 ? item.QuotationFactor : (item.QuoteDiscount > 0 ? item.QuoteDiscount : 1.0m));
 
                 dataMatrix[i, 0] = $"=ROW()-ROW(A${detRow + 1})"; // A 列: 序号公式
                 dataMatrix[i, 1] = item.Name ?? "";              // B 列: 元件名称
@@ -657,12 +669,12 @@ namespace ExcelAddInDemo
                 // G 列采用标准公式联动 (表价 M * 报出系数 L * 折扣 N)
                 dataMatrix[i, 6] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(M{curRow}*L{curRow}*N{curRow},2))";
                 dataMatrix[i, 7] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(F{curRow}*G{curRow},2))"; // H 列: 销售总价公式
-                dataMatrix[i, 8] = "";                           // I 列: 备注
+                dataMatrix[i, 8] = item.Remark ?? "";            // I 列: 备注
                 dataMatrix[i, 9] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(M{curRow}*N{curRow},2))"; // J 列: 成本单价公式
                 dataMatrix[i, 10] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(J{curRow}*F{curRow},2))"; // K 列: 成本总价公式
-                dataMatrix[i, 11] = 1;                           // L 列: 报出系数 (默认 1)
-                dataMatrix[i, 12] = price;                       // M 列: 表价 (存入方案报价)
-                dataMatrix[i, 13] = 1.0;                         // N 列: 折扣系数 (默认 1)
+                dataMatrix[i, 11] = quotationFactor;             // L 列: 报出系数 (按要求分布在 L 列)
+                dataMatrix[i, 12] = markedPrice;                 // M 列: 表价 (按要求分布在 M 列)
+                dataMatrix[i, 13] = discount;                    // N 列: 折扣系数 (按要求分布在 N 列)
                 dataMatrix[i, 14] = "";                          // O 列: 取费系数
                 dataMatrix[i, 15] = "";                          // P 列: 成套费
                 dataMatrix[i, 16] = "元件";                      // Q 列: 类别
