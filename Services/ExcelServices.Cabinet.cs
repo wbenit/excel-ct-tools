@@ -670,11 +670,29 @@ namespace ExcelAddInDemo
                     }
 
 
-                    // 4. 执行物理删除第一阶段：按明细块起始行号降序（自底向上，从大到小）删除所有明细区块
+                    // 4. 执行第一阶段：在物理整行删除前，安全清理所有被删除箱柜的 4 个定义名称 (方案 A)
+                    // 此时物理单元格完好存在，RefersTo 引用健康有效，先注销定义名称可彻底杜绝产生 #REF! 残留
+                    foreach (var block in deleteBlocks)
+                    {
+                        // 组装待删除箱柜的 4 个标准定义名称标签
+                        string sumNameTag = $"{sumPrefix}{block.CabinetK}";
+                        string detNameTag = $"{detPrefix}{block.CabinetK}";
+                        string subsumNameTag = $"{subsumPrefix}{block.CabinetK}";
+                        string tolsumNameTag = $"{tolsumPrefix}{block.CabinetK}";
+
+                        // 依次精准注销工作表与工作簿中的定义名称
+                        Tool.SafeDeleteName(activeSheet, wb, sumNameTag);
+                        Tool.SafeDeleteName(activeSheet, wb, detNameTag);
+                        Tool.SafeDeleteName(activeSheet, wb, subsumNameTag);
+                        Tool.SafeDeleteName(activeSheet, wb, tolsumNameTag);
+                    }
+
+                    // 5. 执行物理删除第二阶段：按明细块起始行号降序（自底向上，从大到小）删除所有明细区块
                     // 由于明细行全部位于汇总行下方，从下往上删除明细块不会改变上方任何明细行与汇总行的物理行号
                     deleteBlocks.Sort((a, b) => b.DetailStartRow.CompareTo(a.DetailStartRow));
                     foreach (var block in deleteBlocks)
                     {
+                        // 校验明细块有效性并执行整行删除
                         if (block.DetailStartRow > 0 && block.DetailEndRow >= block.DetailStartRow)
                         {
                             // 删除底部明细行 (-4162 对应 xlShiftUp 向上移)
@@ -682,11 +700,12 @@ namespace ExcelAddInDemo
                         }
                     }
 
-                    // 5. 执行物理删除第二阶段：按汇总行行号降序（自底向上，从大到小）删除所有顶部汇总行
+                    // 6. 执行物理删除第三阶段：按汇总行行号降序（自底向上，从大到小）删除所有顶部汇总行
                     // 明细块删除完毕后汇总行原始行号完好无损，从下往上删除汇总行不会改变上方汇总行的行号
                     deleteBlocks.Sort((a, b) => b.SumRow.CompareTo(a.SumRow));
                     foreach (var block in deleteBlocks)
                     {
+                        // 校验汇总行有效性并执行整行删除
                         if (block.SumRow > 0)
                         {
                             // 删除顶部汇总行 (-4162 对应 xlShiftUp)
@@ -694,21 +713,7 @@ namespace ExcelAddInDemo
                         }
                     }
 
-                    // 6. 安全清理所有被删除箱柜的 4 个定义名称 (方案 A)
-                    foreach (var block in deleteBlocks)
-                    {
-                        string sumNameTag = $"{sumPrefix}{block.CabinetK}";
-                        string detNameTag = $"{detPrefix}{block.CabinetK}";
-                        string subsumNameTag = $"{subsumPrefix}{block.CabinetK}";
-                        string tolsumNameTag = $"{tolsumPrefix}{block.CabinetK}";
-
-                        Tool.SafeDeleteName(activeSheet, wb, sumNameTag);
-                        Tool.SafeDeleteName(activeSheet, wb, detNameTag);
-                        Tool.SafeDeleteName(activeSheet, wb, subsumNameTag);
-                        Tool.SafeDeleteName(activeSheet, wb, tolsumNameTag);
-                    }
-
-                    // 7. 激活当前工作表并聚焦光标至合理的汇总区域
+                    // 7. 激活当前工作表并聚焦光标至合理的汇总区域 (无需执行全表自愈，保障毫秒级极速响应)
                     activeSheet.Activate();
                     try
                     {

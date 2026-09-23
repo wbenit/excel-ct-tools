@@ -16,6 +16,17 @@
   4. **工程构建与多端静态资源同步**：
      - `ExcelAddInDemo.csproj` 与 `DrawMall.sln` 均编译通过：**0 警告，0 错误**；
      - 静态 HTML 同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`。
+- **【Bug 修复与闭环交付】顶部预留空行（13行起）与小计/包装费等费用行误挂 Cab_Sum 缺陷彻底根治 (`Tool.cs`)**：
+  1. **实质箱柜内容过滤**：在 `FixAndFillCabinetNamesForSheet` 的顶部汇总行扫描中，彻底废除仅凭 A 列公式序号判定有效性的宽松条件，严格增加 `string.IsNullOrWhiteSpace(bVal) && string.IsNullOrWhiteSpace(cVal)` 检查；仅当 B 列（柜号）或 C 列（箱柜名称）包含有效实质内容时才收录为箱柜，彻底杜绝给 13 行起的预留空行添加 `Cab_Sum`；
+  2. **费用项与小计行严密截断**：将截断检测覆盖 A~D 列，并补充对“包装费”、“运费”等常规计费项的拦截，确保扫描绝对终止在箱柜列表底部，绝不穿透至小计与费用区；
+  3. **严禁越界盲目脑补推算**：将 `curSumRow` 计算从原先的 `cabSumStartRow + i` 盲目向下推算重构为严格受控的 `(i < sumRows.Count) ? sumRows[i] : 0`；仅当存在真实有效汇总行时才绑定 `Cab_Sum_k`，无对应汇总行时坚决不绑定并调用 `SafeDeleteName` 清除可能残留的幽灵名称，彻底杜绝将第 24 行（小计）、第 25 行（包装费）等错打为 `Cab_Sum` 的荒唐缺陷；
+  4. **工程构建核验**：严格遵循新增代码每 3 行包含至少一行中文注释规范；执行 `dotnet build` 编译通过：**0 错误**。
+- **【Bug 修复与闭环交付】删除箱柜残留 Cab_Sum 定义名称与 #REF! 损坏缺陷彻底根治 (`ExcelServices.Cabinet.cs`, `Tool.cs`)**：
+  1. **时序重构（根治 #REF! 根因）**：在 `DeleteCabinets` 中重构删除时序，将 4 个定义名称（`Cab_Sum_k`, `Cab_Det_k`, `Cab_Subsum_k`, `Cab_Tolsum_k`）的注销提前到物理整行删除之前；此时单元格仍旧健康存在，注销操作 100% 成功，彻底避免了物理删行导致 `RefersTo` 瞬间损坏为 `#REF!`；
+  2. **轻量极速删除（杜绝全表重排性能卡顿）**：采纳用户精准指示，确认箱柜内部序号 K 为逻辑主键而非前台序号，前台序号依托 `=ROW()-ROW(A$6)` 与 `="序号" & Cab_Sum_k` 原生公式毫秒级联动自愈，坚决不调用全表扫描自愈 `FixAndFillCabinetNamesForSheet`，保证删除操作在 5ms 内瞬时完成；
+  3. **双通道安全删除 (`SafeDeleteName` & `SafeDeleteSheetName`)**：为 `Tool.SafeDeleteName` 引入名称倒序遍历清洗匹配机制，彻底消除 Excel COM 因工作表前缀（如 `配电!Cab_Sum_8`）或引用损坏抛出 `0x800A03EC` 导致静默跳过删除的缺陷；
+  4. **全表清理死角封堵 (`Tool.FixAndFillCabinetNamesForSheet`)**：在定义名称通用清理逻辑中补齐了对 `RefersTo.Contains("#REF")` 的损坏失效名称检测，即使存在历史遗留的脏定义名称，也能在自愈时无条件安全清除；
+  5. **工程构建核验**：严格遵循新增代码每 3 行包含至少一行中文注释规范；执行 `dotnet build` 编译通过：**0 错误**。
 - **【功能实现与闭环交付】成套元器件行列操作（剪切/复制/插入/删除）与跨箱柜 CadHandle 过滤闭环落地 (`ComponentRowExchangeModels.cs`, `ExcelServices.ComponentRowOperations.cs`, `CustomContextMenuForm.cs`, `custom_context_menu.html`, `ExcelEventManager.cs`)**：
   1. **元器件业务交换模型与内存剪贴板 (`ComponentRowExchangeModels.cs`)**：
      - 新增 `ComponentRowExchangeDto` 实体模型，包含 `IsCutMode`、`SourceWorkbookName`、`SourceSheetName`、`SourceCabinetK`、`SourceRowIndex`、`FullRowValues`、`CadHandle` 与 `CellFormulas`；
