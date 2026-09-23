@@ -131,11 +131,16 @@ namespace ExcelAddInDemo
                     return false;
                 }
 
-                // 核心安全守门：白名单中枢驱动，仅对【项目信息】中登记的有效分类明细表进行元器件行检测
-                if (!Tool.IsProjectCategorySheet(sheet))
+                // 核心安全守门：优先白名单校验，若非白名单则做系统保留表安全过滤
+                bool isCategory = Tool.IsProjectCategorySheet(sheet);
+                if (!isCategory)
                 {
-                    // 非项目分类表秒级旁路返回 false，杜绝误唤起浮窗与额外开销
-                    return false;
+                    // 若白名单未命中，进一步做保留表安全排除：排除系统保留表 (封面/项目信息/元件汇总表等)
+                    if (Tool.IsReservedOrReportSheet(sheetName))
+                    {
+                        return false;
+                    }
+                    // 非系统保留表且未在白名单登记时，允许进入下方箱柜定义名称或结构嗅探，防止独立工作簿被误杀
                 }
 
                 var now = DateTime.UtcNow;
@@ -161,7 +166,8 @@ namespace ExcelAddInDemo
                 var subsumDict = new Dictionary<int, int>();
 
                 // 内部辅助方法：快速解析名称集合中的 Det 和 Subsum
-                void QuickScanNames(dynamic? namesCollection)
+                // 参数 isSheetScope 标明是否为工作表级局部定义名称
+                void QuickScanNames(dynamic? namesCollection, bool isSheetScope)
                 {
                     if (namesCollection == null) return;
                     try
@@ -183,12 +189,17 @@ namespace ExcelAddInDemo
                                 int k = Tool.ExtractIndexFromName(clean, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
                                 if (k <= 0) continue;
 
-                                // 检查是否属于当前工作表
-                                string refersTo = Convert.ToString(n.RefersTo) ?? string.Empty;
-                                if (!string.IsNullOrEmpty(refersTo) && !refersTo.Contains(sheetName))
+                                // 检查是否属于当前工作表:
+                                // 工作簿级全局名称 (isSheetScope == false) 其 RefersTo 必须包含本工作表名
+                                // 工作表级局部名称 (isSheetScope == true) 其 RefersTo 常常仅为 =$A$5，天然归属于本表
+                                if (!isSheetScope)
                                 {
-                                    // 公式明确属于其他工作表，跳过
-                                    continue;
+                                    string refersTo = Convert.ToString(n.RefersTo) ?? string.Empty;
+                                    if (!string.IsNullOrEmpty(refersTo) && !refersTo.Contains(sheetName))
+                                    {
+                                        // 公式明确属于其他工作表，跳过
+                                        continue;
+                                    }
                                 }
 
                                 // 仅针对命中的箱柜锚点安全读取行号
@@ -209,14 +220,14 @@ namespace ExcelAddInDemo
                     catch { }
                 }
 
-                // 优先从工作表级定义名称集合快速扫描
-                try { QuickScanNames(sheet.Names); } catch { }
+                // 优先从工作表级定义名称集合快速扫描 (标记为工作表级局部作用域)
+                try { QuickScanNames(sheet.Names, true); } catch { }
 
-                // 再次从工作簿级定义名称集合快速扫描
+                // 再次从工作簿级定义名称集合快速扫描 (标记为工作簿级全局作用域)
                 try
                 {
                     dynamic? wb = sheet.Parent;
-                    if (wb != null) QuickScanNames(wb.Names);
+                    if (wb != null) QuickScanNames(wb.Names, false);
                 }
                 catch { }
 
@@ -237,8 +248,28 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 3. 严格遵循纯只读原则：若轻量扫描未发现任何有效箱柜定义名称，直接判定为非元器件行
-                // 坚决不在鼠标选区切换或只读判断过程中触发全量定义名称自愈与公式篡改
+                // 3. 容错回退检查：若轻量快速名称扫描未发现有效箱柜，调用只读箱柜嗅探兜底
+                if (newRanges.Count == 0)
+                {
+                    var validCabinets = Tool.GetSheetValidCabinets((object)sheet);
+                    if (validCabinets != null && validCabinets.Count > 0)
+                    {
+                        foreach (var kvp in validCabinets)
+                        {
+                            var anc = kvp.Value;
+                            if (anc?.Det == null || anc?.Subsum == null) continue;
+                            int detR = 0, subR = 0;
+                            try
+                            {
+                                detR = Convert.ToInt32(anc.Det.Row);
+                                subR = Convert.ToInt32(anc.Subsum.Row);
+                            }
+                            catch { continue; }
+                            int cStart = detR + 2, cEnd = subR - 1;
+                            if (cEnd >= cStart) newRanges.Add((cStart, cEnd));
+                        }
+                    }
+                }
 
                 // 写入多工作表内存长效缓存 (即便是空列表也缓存，防止非箱柜表反复暴力扫描)
                 _categoryRangesSheetCache[sheetName] = (now, newRanges);
@@ -312,6 +343,30 @@ namespace ExcelAddInDemo
             catch (Exception ex)
             {
                 LogHelper.WriteLog($"保存物料匹配配置异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 热重载物料匹配浮窗配置缓存
+        /// </summary>
+        /// <param name="config">最新的物料匹配配置对象</param>
+        public static void ReloadComponentMatchOverlayConfig(ComponentMatchFilterConfig config)
+        {
+            // 更新服务层静态内存配置缓存
+            _cachedFilterConfig = config;
+            try
+            {
+                // 若浮窗已实例化且未释放，记录配置更新日志
+                if (_matchOverlayForm != null && !_matchOverlayForm.IsDisposed)
+                {
+                    // 记录配置已成功热重载日志
+                    LogHelper.WriteLog("物料匹配浮窗配置已成功热重载");
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录热重载浮窗配置异常
+                LogHelper.WriteLog($"ReloadComponentMatchOverlayConfig 异常: {ex.Message}");
             }
         }
 

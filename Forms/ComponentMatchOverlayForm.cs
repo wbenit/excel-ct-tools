@@ -478,6 +478,11 @@ namespace ExcelAddInDemo.Forms
                 .Select(r => r.Keyword.Trim())
                 .ToList();
 
+            // 提取生效的多选品牌列表 (若当前行已有指定品牌则优先继承，否则使用规则配置的多选品牌)
+            var effectiveInitBrands = (_cellParams.Brands != null && _cellParams.Brands.Count > 0)
+                ? _cellParams.Brands
+                : _filterConfig.GetEffectiveBrands();
+
             // 若已有初始数据直接推送到前端
             if (_pendingInitialItems != null && _pendingInitialItems.Count > 0)
             {
@@ -486,8 +491,8 @@ namespace ExcelAddInDemo.Forms
                     action = "initCandidates",
                     items = _pendingInitialItems,
                     cellParams = _cellParams,
-                    filterBrand = _filterConfig.GetEffectiveBrands().FirstOrDefault() ?? string.Empty,
-                    filterBrands = _filterConfig.GetEffectiveBrands(),
+                    filterBrand = effectiveInitBrands.FirstOrDefault() ?? string.Empty,
+                    filterBrands = effectiveInitBrands,
                     activeMustRules,
                     dataSource = _filterConfig.DataSource ?? "cloud",
                     loading = false
@@ -501,8 +506,8 @@ namespace ExcelAddInDemo.Forms
                 action = "initCandidates",
                 items = new List<ComponentApiDto>(),
                 cellParams = _cellParams,
-                filterBrand = _filterConfig.GetEffectiveBrands().FirstOrDefault() ?? string.Empty,
-                filterBrands = _filterConfig.GetEffectiveBrands(),
+                filterBrand = effectiveInitBrands.FirstOrDefault() ?? string.Empty,
+                filterBrands = effectiveInitBrands,
                 activeMustRules,
                 dataSource = _filterConfig.DataSource ?? "cloud",
                 loading = true
@@ -521,11 +526,11 @@ namespace ExcelAddInDemo.Forms
                 {
                     List<ComponentApiDto> items;
                     bool isPersonal = string.Equals(fc.DataSource, "personal", StringComparison.OrdinalIgnoreCase);
-                    // 提取配置中生效的多选品牌列表
-                    var effectiveBrands = fc.GetEffectiveBrands();
+                    // 提取生效的多选品牌列表
+                    var effectiveBrands = effectiveInitBrands;
                     if (isPersonal)
                     {
-                        // 从本地 SQLite 个人物料库高速检索 (支持多选品牌)
+                        // 从本地 SQLite 个人物料库高速检索 (支持多选品牌并发/并集检索)
                         items = PersonalComponentDbService.SearchComponents(
                             null,
                             cp.Name,
@@ -613,9 +618,10 @@ namespace ExcelAddInDemo.Forms
                         var searchCp = _cellParams;
                         var searchFc = _filterConfig;
 
-                        // 提取动态生效的检索多品牌条件默认值
-                        var effectiveBrands = searchFc.GetEffectiveBrands();
-                        string effectiveBrand = effectiveBrands.Count > 0 ? effectiveBrands[0] : string.Empty;
+                        // 提取动态生效的检索多品牌条件默认值 (优先继承上下文，否则使用规则配置)
+                        var effectiveBrands = new List<string>(searchCp.Brands != null && searchCp.Brands.Count > 0 
+                            ? searchCp.Brands 
+                            : searchFc.GetEffectiveBrands());
                         // 初始元器件名称条件
                         string effectiveName = searchCp.Name;
                         // 初始额定电流条件
@@ -628,10 +634,30 @@ namespace ExcelAddInDemo.Forms
                         // 解析前端动态过滤参数对象 (支持用户在界面上点击 ✕ 移除某项后放宽查询)
                         if (root.TryGetProperty("filters", out var filtersProp) && filtersProp.ValueKind == JsonValueKind.Object)
                         {
-                            // 动态覆盖品牌筛选 (前端关闭品牌后传入空字符串，实现不限品牌检索)
-                            if (filtersProp.TryGetProperty("brand", out var bProp))
+                            // 动态覆盖多品牌筛选 (支持前端传入 brands 数组，实现多选品牌并集检索与单个移除放宽)
+                            if (filtersProp.TryGetProperty("brands", out var bsProp) && bsProp.ValueKind == JsonValueKind.Array)
                             {
-                                effectiveBrand = bProp.GetString() ?? string.Empty;
+                                effectiveBrands.Clear();
+                                foreach (var bElem in bsProp.EnumerateArray())
+                                {
+                                    string bStr = bElem.GetString() ?? string.Empty;
+                                    if (!string.IsNullOrWhiteSpace(bStr))
+                                    {
+                                        effectiveBrands.Add(bStr.Trim());
+                                    }
+                                }
+                            }
+                            else if (filtersProp.TryGetProperty("brand", out var bProp))
+                            {
+                                string singleBrand = bProp.GetString() ?? string.Empty;
+                                if (!string.IsNullOrWhiteSpace(singleBrand))
+                                {
+                                    effectiveBrands = new List<string> { singleBrand.Trim() };
+                                }
+                                else
+                                {
+                                    effectiveBrands.Clear();
+                                }
                             }
 
                             // 动态覆盖名称筛选 (前端关闭名称后传入空字符串，放宽名称约束)
@@ -686,27 +712,27 @@ namespace ExcelAddInDemo.Forms
                                 bool isPersonal = string.Equals(searchFc.DataSource, "personal", StringComparison.OrdinalIgnoreCase);
                                 if (isPersonal)
                                 {
-                                    // 路由到本地 SQLite 个人物料库执行模糊查询 (支持动态放宽多维参数)
+                                    // 路由到本地 SQLite 个人物料库执行模糊查询 (支持多选品牌并发/并集检索)
                                     searchResults = PersonalComponentDbService.SearchComponents(
                                         kw,
                                         effectiveName,
                                         effectiveCurrent,
                                         effectivePole,
                                         effectiveTrip,
-                                        effectiveBrand,
+                                        effectiveBrands,
                                         effectiveMustRules
                                     );
                                 }
                                 else
                                 {
-                                    // 异步调用云端商城 WebAPI 执行动态放宽参数与必含规则约束检索
+                                    // 异步调用云端商城 WebAPI 执行动态放宽参数与多选品牌并集检索
                                     searchResults = await ComponentApiClient.SearchComponentsAsync(
                                         kw,
                                         effectiveName,
                                         effectiveCurrent,
                                         effectivePole,
                                         effectiveTrip,
-                                        effectiveBrand,
+                                        effectiveBrands,
                                         effectiveMustRules
                                     ).ConfigureAwait(false);
                                 }
