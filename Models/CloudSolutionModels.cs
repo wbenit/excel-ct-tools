@@ -156,9 +156,17 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("name")]
         public string Name { get; set; } = string.Empty;
 
+        // 别名：元器件名称 (对齐利驰 itemName 属性)
+        [JsonPropertyName("itemName")]
+        public string ItemName { get => Name; set { if (!string.IsNullOrEmpty(value)) Name = value; } }
+
         // 元器件规格型号 (统一标准属性 model)
         [JsonPropertyName("model")]
         public string Model { get; set; } = string.Empty;
+
+        // 别名：规格型号 (对齐利驰 itemSpec 属性)
+        [JsonPropertyName("itemSpec")]
+        public string ItemSpec { get => Model; set { if (!string.IsNullOrEmpty(value)) Model = value; } }
 
         // 品牌厂家 (如: "大连第一互感器", "上海一开")
         public string Brand { get; set; } = string.Empty;

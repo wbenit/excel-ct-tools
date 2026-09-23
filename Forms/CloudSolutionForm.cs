@@ -74,16 +74,22 @@ namespace ExcelAddInDemo.Forms
             // 设置窗体标题
             this.Text = "鑫壬云方案中心";
 
-            // 尺寸设置为 1180x820 像素，支持 4 列卡片舒展显示
-            this.ClientSize = new Size(1180, 820);
+            // 获取用户当前主显示器的工作区有效尺寸 (去除任务栏)
+            var workArea = Screen.PrimaryScreen.WorkingArea;
+            // 默认加宽至 1460 像素，若屏幕较小则自适应取工作区 92% 宽度 --硬编码--
+            int targetWidth = Math.Max(1200, Math.Min(1460, (int)(workArea.Width * 0.92)));
+            // 高度适配为 880 像素，不超过工作区 90% 高度 --硬编码--
+            int targetHeight = Math.Max(780, Math.Min(880, (int)(workArea.Height * 0.90)));
+            // 应用加宽后的宽屏视口尺寸
+            this.ClientSize = new Size(targetWidth, targetHeight);
 
-            // 居中弹出
+            // 屏幕居中弹出展示
             this.StartPosition = FormStartPosition.CenterScreen;
 
             // 无边框工业现代样式
             this.FormBorderStyle = FormBorderStyle.None;
 
-            // 禁用系统原生最大/最小化按钮
+            // 禁用系统原生最大/最小化按钮 (由前端自定义胶囊控制)
             this.MaximizeBox = false;
             this.MinimizeBox = false;
 
@@ -188,8 +194,8 @@ namespace ExcelAddInDemo.Forms
                         resDir,
                         Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
 
-                    // 导航至虚拟主机安全页面，彻底解决 file:// 协议下 Web Worker 与 WASM 的 CORS / fetch 跨域拦截
-                    _webView.Source = new Uri("https://appassets.local/cloud_solution.html");
+                    // 导航至虚拟主机安全页面 (附加动态时间戳防缓存，确保每次打开均加载最新前端代码)
+                    _webView.Source = new Uri($"https://appassets.local/cloud_solution.html?_t={DateTime.UtcNow.Ticks}");
                 }
                 else
                 {
@@ -326,6 +332,16 @@ namespace ExcelAddInDemo.Forms
                     case "getAutoPricingCategoryTree":
                         var catTree = _controller.GetAutoPricingCategoryTree();
                         PostMessageSafe("getAutoPricingCategoryTreeResult", catTree);
+                        break;
+
+                    // 10.1.1 按需懒加载获取方案分类树子节点 (首屏省流，支持 el-tree lazy)
+                    case "getAutoPricingCategoryNodes":
+                        // 提取前端请求传递的父级节点 ID (0 为根目录)
+                        string pId = GetStringProp("parentId");
+                        // 调度控制器按需拉取当前层级的子分类或末级方案
+                        var catNodes = _controller.GetAutoPricingCategoryNodes(pId);
+                        // 将结果附带 parentId 回传给前端 WebView2 页面
+                        PostMessageSafe("getAutoPricingCategoryNodesResult", new { parentId = pId, nodes = catNodes });
                         break;
 
                     // 10.2 检索自动组价方案列表

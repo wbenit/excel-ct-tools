@@ -896,6 +896,25 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
+        /// 按需懒加载获取方案分类树子节点 (支持 el-tree lazy 模式，仅拉取当前层级，节省流量)
+        /// </summary>
+        public List<AutoPricingCategoryDto> GetAutoPricingCategoryNodes(string? parentId)
+        {
+            try
+            {
+                // 调度双通道数据服务按需获取子节点
+                return AutoPricingDataService.GetCategoryNodes(parentId);
+            }
+            catch (Exception ex)
+            {
+                // 记录按需加载异常日志
+                LogHelper.WriteLog($"[CloudSolutionController] GetAutoPricingCategoryNodes 异常: {ex.Message}");
+                // 异常兜底返回空列表
+                return new List<AutoPricingCategoryDto>();
+            }
+        }
+
+        /// <summary>
         /// 根据分类、柜型、场景或关键字检索箱柜方案列表
         /// </summary>
         public List<AutoPricingSchemeDto> GetAutoPricingSchemes(string? categoryId, string? keyword, string? cabModel, string? situation)

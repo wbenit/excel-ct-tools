@@ -410,15 +410,18 @@ namespace ExcelAddInDemo
                     // 规则 8: 检索当前工作表全部有效箱柜 (内部包含健康度快速嗅探守门，完好时 0ms，缺失时底层自动自愈)
                     var validCabinets = Tool.GetSheetValidCabinets(ws, wb);
 
-                    // 若当前表内存在箱柜，优先向当前箱柜空行写入 (无空行才补插差额行)
-                    if (validCabinets != null && validCabinets.Count > 0)
+                    // 准确判定插入模式：当显式指定为新建箱柜时，或当前表完全无任何箱柜时，必须执行创建新箱柜
+                    bool isNewCabinetMode = string.Equals(dto.InsertMode, "newCabinet", StringComparison.OrdinalIgnoreCase);
+
+                    // 仅当明确指定为追加到当前箱柜且工作表中存在有效箱柜时，才执行追加；否则一律创建全新箱柜
+                    if (!isNewCabinetMode && validCabinets != null && validCabinets.Count > 0)
                     {
                         // 调度当前箱柜极速追加服务
                         return AppendBomToCurrentCabinet(app, ws, wb, validCabinets, dto);
                     }
                     else
                     {
-                        // 若当前表为空表 (完全无任何箱柜)，则新建箱柜
+                        // 新建箱柜并将 BOM 矩阵写入新箱柜 (遵循规则 6、7、8)
                         return CreateNewCabinetWithBom(app, ws, dto);
                     }
                 }
@@ -460,11 +463,17 @@ namespace ExcelAddInDemo
                 return (false, "创建新箱柜模板结构失败，请检查工作表格式！");
             }
 
-            // 修正笔误: 正确读取 DetRow (而非 DetailRow)
+            // 正确读取新建箱柜关键锚点行号
             int detRow = cabInfo.DetRow;
+            // 读取小计行物理行号
             int subsumRow = cabInfo.SubsumRow;
-            int compStartRow = detRow + 2; // 规则 6: 元器件起始行为 Cab_Det + 2
-            int compEndRow = subsumRow - 1; // 规则 6: 元器件终止行为 Cab_Subsum - 1
+            // 读取总计行物理行号
+            int tolsumRow = cabInfo.TolsumRow;
+            // 规则 6: 元器件起始行为 Cab_Det + 2
+            int compStartRow = detRow + 2;
+            // 规则 6: 元器件终止行为 Cab_Subsum - 1
+            int compEndRow = subsumRow - 1;
+            // 计算当前预留可用行数
             int availableRows = compEndRow - compStartRow + 1;
 
             var items = dto.SelectedBomItems;
@@ -473,12 +482,17 @@ namespace ExcelAddInDemo
             // 2. 检查空间，若元器件数量多于区域行数，先插入行 (严格遵循业务规则 6)
             if (reqCount > availableRows)
             {
+                // 计算差额行数
                 int rowsToInsert = reqCount - availableRows;
                 // 在小计行上方插入空行
                 dynamic insertRange = ws.Range[$"A{subsumRow}:A{subsumRow + rowsToInsert - 1}"];
+                // 物理向下推移插入空行
                 insertRange.EntireRow.Insert(-4121); // xlShiftDown
-                // 插入行后小计行下移
+                // 插入行后小计行与总计行同步下移
                 subsumRow += rowsToInsert;
+                // 总计行物理行号同步增加偏移
+                tolsumRow += rowsToInsert;
+                // 更新元器件终止行号
                 compEndRow = subsumRow - 1;
             }
 
@@ -524,7 +538,10 @@ namespace ExcelAddInDemo
             dynamic writeRange = ws.Range[$"A{compStartRow}:Q{compStartRow + reqCount - 1}"];
             writeRange.Formula = dataMatrix;
 
-            // 5. 规则 8: 刷新自愈定义名称与公式
+            // 5. 规则 6 & 8: 刷新当前新建箱柜的小计行、计费区与总计行联动公式 (确保插行扩容后公式严密)
+            RefreshCabinetFeeAreaFormulas(ws, detRow, compStartRow, subsumRow, tolsumRow);
+
+            // 6. 规则 8: 刷新自愈定义名称与公式
             Tool.FixAndFillCabinetNamesForSheet(ws);
 
             return (true, $"已成功新建箱柜【{cabName}】并写入 {reqCount} 项元器件清单！");

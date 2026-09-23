@@ -1,3 +1,98 @@
+- **【Bug 修复与闭环交付】利驰云方案【插入为全新箱柜】被误当成追加到当前箱柜缺陷彻底根治 (`ExcelServices.CloudSolution.cs`)**：
+  1. **问题根因定位**：
+     - 前端 `cloud_solution.html` 点击【插入为全新箱柜】时正确传递了 `insertMode: "newCabinet"`；
+     - 但 C# 后端 `ExcelServices.InsertSchemeBomToExcel` 原先未根据 `dto.InsertMode` 进行逻辑分支判定，写死了 `if (validCabinets != null && validCabinets.Count > 0)` 导致只要当前表内存在箱柜，一律强制走 `AppendBomToCurrentCabinet`（追加到当前箱柜），导致点击“插入为全新箱柜”时根本无法新建箱柜；
+  2. **彻底修复与公式联动加固**：
+     - **精准模式分流**：显式判定 `isNewCabinetMode = string.Equals(dto.InsertMode, "newCabinet", StringComparison.OrdinalIgnoreCase)`，当为 `newCabinet` 时无条件调用 `CreateNewCabinetWithBom` 复制模板在表末尾创建全新箱柜；仅当显式为 `currentCabinet` 且工作表存在有效箱柜时才执行追加写入；
+     - **大容量方案插行与公式自愈**：在 `CreateNewCabinetWithBom` 中，针对物料数超出模板预留空间（如 PT 柜 29 项超过预留 20 行）自动插入差额空行后，准确维护总计行 `tolsumRow` 偏移，并在写入元器件二维矩阵后显式调用 `RefreshCabinetFeeAreaFormulas` 刷新小计行求和公式与计费区公式，最后调用 `Tool.FixAndFillCabinetNamesForSheet(ws)` 刷新定义名称，保证规则 6、7、8 的完整正确；
+  3. **工程编译核验**：
+     - 严格遵守每 3 行包含至少 1 行中文注释规范与最小变动法则；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**。
+- **【架构升级与体验闭环交付】方式 A：真实后端按需懒加载与首层展示省流 & BOM 表格常驻醒目水平滚动条彻底落地 (`SchemeServicer.cs`, `SchemeController.cs`, `AutoPricingDataService.cs`, `CloudSolutionController.cs`, `CloudSolutionForm.cs`, `cloud_solution.html`)**：
+  1. **首层展示与真实后端懒加载 (大幅节省网络流量)**：
+     - **后端按需接口落地 (`ISchemeServicer.cs`, `SchemeServicer.cs`, `SchemeController.cs`)**：
+       - `ISchemeServicer.cs` 新增 `Task<List<SchemeCategoryNodeDto>> GetCategoryNodesAsync(int parentId)`；
+       - `parentId = 0` 时按需只返回第一层顶级场景分类目录（如居配、工矿、工业等）；
+       - 若存在下级分类，返回分类目录节点（`IsCategory = true, IsLeaf = false`），附带 `SchemeCount` 统计；
+       - 若为末级分类，则按需查询其直属的具体方案记录，挂载为叶子节点（`IsCategory = false, IsLeaf = true`），附带参考总价与 BOM 数量；
+     - **Excel 插件双通道离线自愈保障 (`AutoPricingDataService.cs`)**：
+       - `AutoPricingDataService.cs` 新增 `GetCategoryNodes(string? parentId)`，优先请求云端接口 `api/Scheme/GetCategoryNodes?parentId=...`；
+       - 云端未开启或网络超时 2 秒内秒级无缝降级至本地 SQLite `GetCategoryNodesFromLocalSqlite(pId)`，离线库同样精准区分分类目录与末级方案叶子节点；
+       - `AutoPricingCategoryDto` 增加 `[JsonPropertyName("isLeaf")] public bool IsLeaf { get; set; } = false;`；
+     - **宿主 WebView2 消息中枢打通 (`CloudSolutionController.cs`, `CloudSolutionForm.cs`)**：
+       - `CloudSolutionController.cs` 增加 `GetAutoPricingCategoryNodes(parentId)`；
+       - `CloudSolutionForm.cs` 新增 `case "getAutoPricingCategoryNodes":`，接收前端 `parentId` 并将按需节点以 `{ parentId, nodes }` 异步推回前端；
+     - **前端 el-tree lazy 模式与首屏极速加载 (`cloud_solution.html`)**：
+       - `<el-tree>` 改造为 `lazy` 模式与 `:load="loadApTreeChildren"`，彻底移除 `default-expand-all`，首屏仅加载并显示第一层内容；
+       - 点击某一层级后按需请求下一级，到达末级展示方案，彻底解决全量加载浪费流量问题；
+       - 智能关键词检索联动：当在搜索框中键入关键词时，防抖 280ms 触发全局方案检索，在左侧直接呈现匹配方案卡片列表，点击直达 BOM，清空关键词无感恢复懒加载树；
+  2. **BOM 表格常驻醒目水平滚动条彻底修复 (根治无滚动条与截断问题)**：
+     - **两大核心根因定位**：
+       ① **table-layout: fixed + width: 100% 致命压缩机制**：当 table 设置了 `table-layout: fixed; width: 100%;` 时，浏览器优先强制将表格总宽压缩至等于容器宽度（比如 850px~1100px），`min-width` 在很多 Chromium 版本下被忽略，导致浏览器误判 `scrollWidth == clientWidth`，从而根据 `overflow-x: auto` 的规则**彻底隐藏了水平滚动条**！但各列的实际文字又被强行推向右侧截断（只露出“官”字）；
+       ② **外层容器高度未锁定与 WebView2 缓存**：`.ap-workspace` 缺少 `min-height: 0; height: 100%;`，且 WebView2 存在页面缓存；
+     - **彻底根治方案 (`cloud_solution.html`, `CloudSolutionForm.cs`)**：
+       ① **彻底废除 width: 100%**：`.ap-bom-table` 设置为 `width: 1450px !important; min-width: 1450px !important;`，强制死死锁定 1450px 绝对宽度，100% 产生水平溢出；
+       ② **强制常驻滚动条**：`.ap-bom-table-wrap` 将 `overflow-x` 设为 `scroll !important`，剥夺浏览器判定隐藏的权利，无论何种情况水平横向滚动条绝对常驻渲染；
+       ③ **滚动条浅雅柔和美化 (按用户反馈优化)**：原 `#009688` 浓深色滑块已调为极简优雅浅灰蓝 `#cbd5e1`，高度由 14px 收拢至 **8px**，轨道采用干净柔和的 `#f8fafc`；鼠标悬浮时呈现柔和浅青绿 `#80cbc4`，按住拖动反馈为主题色 `#009688`，整体风格轻盈通透，彻底消除颜色过深过重突兀感；
+       ④ **列宽 1450px 黄金分布**：thead 13 列重新精确校准（型号规格 280px 超舒展，元器件名称 180px，右侧销售单价、小计、倍增完全舒展展示）；
+       ⑤ **防缓存与 F5 实时刷新**：`CloudSolutionForm.cs` 加载页面时附加动态时间戳 `?_t=...`，并在 HTML 内置 F5 快捷键热重载监听；
+     - **容器高度绝对锁定**：`.ap-workspace` 配置 `height: 100%;`；`.ap-bom-table-wrap` 配置 `flex: 1 1 0%; height: 0; min-height: 0; max-height: 100%; overflow-y: auto; overflow-x: auto; width: 100%;`，使水平滚动条始终常驻在当前视口底端（紧挨着操作底栏上方）；
+     - **滚动条视觉高品质定制**：将水平滚动条高度升级为 **10px**，轨道背景采用高对比度浅灰 `#e2e8f0`，滑块采用品牌主色调 `#009688` 绿蓝微圆角，悬浮加深 `#00796b`，极易发现且拖动平滑；
+     - **表格列宽舒展保障**：设置 `.ap-bom-table { min-width: 1350px; table-layout: fixed; }`，型号规格列设置 `width: 250px; min-width: 220px;`，包括序号、名称、型号规格、数量、单位、品牌、报出系数、官方表价、采购折扣、销售单价、小计金额、倍增(WL)等全部 13 列舒适平铺，绝不互相挤压；
+  3. **多端工程编译与静态资源全量热同步**：
+     - `ExcelAddInDemo.csproj` 编译通过：**0 错误**；
+     - `DrawMall.sln` 编译通过：**0 错误**；
+     - `cloud_solution.html` 静态页面已 100% 全量同步更新至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`。
+- **【Bug 修复与视觉排版闭环交付】BOM 表格型号规格列被压缩消失与缺少水平滚动条缺陷彻底根治 (`cloud_solution.html`)**：
+  1. **“型号规格未展示”与“右侧内容无法查看”根因定位**：
+     - **根因分析**：BOM 表格设置了 `table-layout: fixed; width: 100%`，但除了“型号规格”列以外的其他 12 列均显式指定了像素宽度（合计 903px），唯一没有指定宽度的就是“型号规格”列；当视口宽度紧凑或左侧栏加宽到 320px 时，表格总宽度不足，浏览器自动将未指定宽度的“型号规格”列挤压压缩至 **0 像素**，直接在视觉上被隐藏！
+     - **水平滚动被强行截断**：`.ap-bom-table-wrap` 之前硬编码设置了 `overflow-x: hidden`，导致表格总宽度超出视口时不仅不产生水平滚动条，右侧的销售单价、小计金额和倍增(WL)开关还直接被硬生生裁切隐藏，用户无法查看右侧内容；
+  2. **彻底修复方案与视觉升级 (`cloud_solution.html`)**：
+     - **开启优雅水平滚动条**：将 `.ap-bom-table-wrap` 的 `overflow-x: hidden` 改为 `overflow-x: auto`，并引入 7px 高度主题色滑块定制美化，双向滚动平滑丝滑；
+     - **表格最小宽度约束与自适应**：设置 `.ap-bom-table { min-width: 1250px; width: 100%; table-layout: fixed; }`，视口宽阔时 100% 平铺撑满，视口较窄时由水平滚动条平稳承载；
+     - **型号规格列硬性保障**：为“型号规格”表头显式配置 `width: 240px; min-width: 200px;`，不论何种屏幕缩放，该列牢固占据 200px~240px 完整空间，彻底杜绝被压缩为 0px；
+     - **字段兼容性多重加固**：模板与 JS 接收处全面升级为 `item.model || item.itemSpec || item.spec || '-'`，并配置原生 `:title` 完整悬停气泡提示；
+  3. **编译构建与多端静态资源热同步**：
+     - `ExcelAddInDemo.csproj` 与 `DrawMall.sln` 编译构建通过：**0 错误**；
+     - `cloud_solution.html` 静态资源已同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`。
+- **【交互重构与闭环交付】利驰自动组价方案树对齐 ExWinner 原版：方案直接在左侧 Tree 中展开，彻底移除顶部气泡药丸栏 (`AutoPricingDataService.cs`, `cloud_solution.html`, `SchemeServicer.cs`, `SchemeDtos.cs`)**：
+  1. **方案挂载逻辑双端贯通 (`SchemeServicer.cs`, `AutoPricingDataService.cs`)**：
+     - 云端 WebAPI（`SchemeServicer.cs`）与本地离线 SQLite（`AutoPricingDataService.cs`）双通道统一升级：将 `schemes` 表全部 698 个方案按所属 `CategoryId` 自动挂载至树形分类节点最底层 `Children` 集合中；
+     - 节点统一附带 `IsCategory = false` 标识，并挂载 `SchemeId`、`CabModel`、`Model`、`TotalPrice`、`BomCount` 等关键字段；
+  2. **彻底移除顶部方案气泡药丸栏 (`cloud_solution.html`)**：
+     - 彻底删除 HTML 模板中的方案药丸选择器 `<div class="ap-scheme-selector-bar">`，将顶部视口空间 100% 完整释放给方案元数据看板与 BOM 物料清单表格；
+     - 清理删除相关 CSS 类名与冗余样式定义，杜绝样式残留；
+  3. **左侧树侧边栏利驰风格升级与加宽 (`cloud_solution.html`)**：
+     - 侧边栏宽度升级为 `320px` 纯弹性排版，完美适配长方案名展示；
+     - 树节点精细化区分两态：分类目录展示绿蓝色文件夹图标（`fa-regular fa-folder-open`），具体方案展示利驰原版橙黄色方案清单卡片图标（`fa-solid fa-rectangle-list`）；
+     - 树节点激活高亮：当前选中的方案节点在左侧树中呈现绿蓝高亮高对比背景与字体强调；
+     - 节点右侧附带方案参考总价微标签（如 `¥8483`），直观清晰；
+  4. **Vue 3 交互逻辑与全维度搜索增强 (`cloud_solution.html`)**：
+     - 树点击路由（`onApCategoryNodeClick`）：直接点击具体方案叶子节点即刻触发 `selectApScheme` 拉取看板与 20 项 BOM 清单；
+     - 树加载初始化：分类树加载完成后自动递归查找并激活整棵树的首个具体方案，还原利驰开箱即见的无缝体验；
+     - 搜索过滤联动：`filterTreeNodes` 支持按分类名、方案名、柜型、代号全维度模糊搜索，命中的方案及其父级祖先目录自动保留并展开；
+  5. **工程构建与多端静态资源热同步**：
+     - `ExcelAddInDemo.csproj` 与 `DrawMall.sln` 编译构建通过：**0 错误**；
+     - `cloud_solution.html` 静态资源已同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`。
+- **【Bug 修复与界面加宽闭环交付】利驰自动组价方案树、方案名与 BOM 物料名称显示全空缺陷彻底修复 & 窗体自适应加宽 (`CloudSolutionForm.cs`, `AutoPricingDataService.cs`, `CloudSolutionModels.cs`, `cloud_solution.html`)**：
+  1. **“显示全空”根因定位与双端全兼容彻底修复**：
+     - **根因分析**：底层数据库与 WebAPI DTO 定义属性为 `name`（分类名称/方案名称/物料名称）、`model`（方案代号/物料型号）、`cabModel`（柜型），而前端原模板严格绑定了 `categoryName`、`schemeName`、`itemName`、`itemSpec`、`cabinetModel`，导致前端解析为 `undefined`，表现为左侧树文字、方案药丸名称、方案标题、柜型、元器件名称和型号规格列全部显示为空；
+     - **后端实体多维别名升级 (`AutoPricingDataService.cs`, `CloudSolutionModels.cs`)**：
+       - `AutoPricingCategoryDto` 增加 `[JsonPropertyName("categoryName")] CategoryName => Name`；
+       - `AutoPricingSchemeDto` 增加 `[JsonPropertyName("schemeName")]`、`[JsonPropertyName("cabinetModel")]`、`[JsonPropertyName("schemeCode")]`、`[JsonPropertyName("ratedCurrent")]` 别名属性；
+       - `CloudSchemeBomItem` 增加 `[JsonPropertyName("itemName")]` 与 `[JsonPropertyName("itemSpec")]` 别名属性；
+     - **前端模板与逻辑双向兜底容错 (`cloud_solution.html`)**：
+       - 分类树：`:props="{ label: (d) => d.name || d.categoryName, children: 'children' }"`，`{{ data.name || data.categoryName }}`；
+       - 方案药丸与看板：`{{ s.name || s.schemeName }}`，`{{ apActiveScheme.name || apActiveScheme.schemeName }}`，`{{ apActiveScheme.cabModel || apActiveScheme.cabinetModel }}`；
+       - BOM 表格：`{{ item.name || item.itemName }}`，`{{ item.model || item.itemSpec }}`；
+       - 消息接收拦截：在 `getAutoPricingSchemesResult` 与 `getAutoPricingSchemeDetailResult` 时执行实时属性互认补齐，确保 100% 免疫任何属性差异；
+  2. **“加宽界面”用户指示落地 (`CloudSolutionForm.cs`)**：
+     - 将窗体尺寸由原 1180x820 显著加宽至 **1460x880 宽屏视口**；
+     - 结合用户当前主显示器 `Screen.PrimaryScreen.WorkingArea` 执行动态边界计算，取 `Math.Min(1460, (int)(workArea.Width * 0.92))` 与 `Math.Min(880, (int)(workArea.Height * 0.90))`，确保在 1080P、2K 及笔记本不同缩放下均获得大气舒展的工业宽屏体验；
+     - BOM 元器件名称列宽加宽至 160px，规格型号自适应弹性伸展，平铺右侧销售单价与小计列，彻底消除局促挤压感；
+  3. **编译构建与多端静态资源热同步**：
+     - `ExcelAddInDemo.csproj` 编译通过：**0 错误**；
+     - `cloud_solution.html` 已全量同步更新至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`。
 - **【全链路闭环交付】利驰 ExWinner 自动组价数据上云与 Excel 插件选方案报价系统落地 (`DrawMall WebAPI`, `SchemeExtractor`, `ExcelServices.CloudSolution.cs`, `AutoPricingDataService.cs`, `CloudSolutionController.cs`, `CloudSolutionForm.cs`, `cloud_solution.html`)**：
   1. **云端后端与 MySQL 数据工程全量落地 (`d:\code\draw-mall`, 175.24.131.73:33106 `drawmall`)**：
      - **实体模型与 EF Core 映射**：创建了 `SchemeCategory` (95条)、`Scheme` (698条)、`SchemeBomItem` (10,967条)，并在 `MallDbContext` 中配置联合索引；

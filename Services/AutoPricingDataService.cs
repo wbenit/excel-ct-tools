@@ -70,6 +70,36 @@ namespace ExcelAddInDemo.Services
         }
 
         /// <summary>
+        /// 1.1 按需懒加载获取子节点 (支持 el-tree lazy 模式，仅拉取当前层级，节省网络流量)
+        /// </summary>
+        public static List<AutoPricingCategoryDto> GetCategoryNodes(string? parentId)
+        {
+            string pId = string.IsNullOrWhiteSpace(parentId) ? "0" : parentId.Trim();
+            try
+            {
+                // 通道 A: 优先尝试从云端 WebAPI 按需拉取
+                string url = $"{GetApiBaseUrl()}/api/Scheme/GetCategoryNodes?parentId={pId}";
+                var task = _httpClient.GetStringAsync(url);
+                if (task.Wait(1500))
+                {
+                    string json = task.Result;
+                    var nodes = JsonSerializer.Deserialize<List<AutoPricingCategoryDto>>(json, JsonOptions);
+                    if (nodes != null && nodes.Count > 0)
+                    {
+                        return nodes;
+                    }
+                }
+            }
+            catch
+            {
+                // 云端超时或未连接，转入本地 SQLite 离线通道
+            }
+
+            // 通道 B: 从本地 SQLite 离线查询按需节点
+            return GetCategoryNodesFromLocalSqlite(pId);
+        }
+
+        /// <summary>
         /// 2. 分页或按条件查询方案列表 (双通道保障)
         /// </summary>
         public static List<AutoPricingSchemeDto> GetSchemes(string? categoryId, string? keyword, string? cabModel, string? situation)
@@ -180,34 +210,241 @@ namespace ExcelAddInDemo.Services
                                 Level = lvl,
                                 FullPath = path,
                                 SchemeCount = cnt,
+                                IsCategory = true,
                                 Children = new List<AutoPricingCategoryDto>()
                             });
                         }
                     }
-                }
 
-                // 构建父子树
-                var dict = new Dictionary<string, AutoPricingCategoryDto>();
-                foreach (var c in allCats) dict[c.Id] = c;
+                    // 构建父子树
+                    var dict = new Dictionary<string, AutoPricingCategoryDto>();
+                    // 索引分类 ID 映射
+                    foreach (var c in allCats) dict[c.Id] = c;
 
-                foreach (var c in allCats)
-                {
-                    if (string.IsNullOrEmpty(c.ParentId) || c.ParentId == "0" || !dict.ContainsKey(c.ParentId))
+                    // 组织树级目录结构
+                    foreach (var c in allCats)
                     {
-                        result.Add(c);
+                        // 根节点处理
+                        if (string.IsNullOrEmpty(c.ParentId) || c.ParentId == "0" || !dict.ContainsKey(c.ParentId))
+                        {
+                            result.Add(c);
+                        }
+                        else
+                        {
+                            // 挂入父级节点子集
+                            dict[c.ParentId].Children.Add(c);
+                        }
                     }
-                    else
+
+                    // 递归累计方案总数
+                    CalculateTreeCounts(result);
+
+                    // 像利驰一样将具体方案挂载为最末级叶子节点
+                    using (var cmdScheme = conn.CreateCommand())
                     {
-                        dict[c.ParentId].Children.Add(c);
+                        // 查询 schemes 表所有方案概要信息
+                        cmdScheme.CommandText = "SELECT scheme_id, category_id, name, cab_model, model, total_price, bom_count FROM schemes ORDER BY name ASC;";
+                        // 执行 SQLite 查询
+                        using var sReader = cmdScheme.ExecuteReader();
+                        // 循环读取方案记录
+                        while (sReader.Read())
+                        {
+                            // 方案主键 ID
+                            string sid = sReader.GetString(0);
+                            // 所属分类 ID
+                            string scid = sReader.GetString(1);
+                            // 方案显示名称
+                            string sname = sReader.GetString(2);
+                            // 开关柜型
+                            string cabModel = sReader.IsDBNull(3) ? "" : sReader.GetString(3);
+                            // 方案代号
+                            string model = sReader.IsDBNull(4) ? "" : sReader.GetString(4);
+                            // 参考总价
+                            decimal totalPrice = Convert.ToDecimal(sReader.GetDouble(5));
+                            // BOM 项数
+                            int bCount = sReader.GetInt32(6);
+
+                            // 如果字典中存在该分类节点
+                            if (dict.TryGetValue(scid, out var catNode))
+                            {
+                                // 挂载方案叶子节点
+                                catNode.Children.Add(new AutoPricingCategoryDto
+                                {
+                                    // 节点唯一标识
+                                    Id = sid,
+                                    // 父级分类标识
+                                    ParentId = scid,
+                                    // 方案名称
+                                    Name = sname,
+                                    // 标识该节点为具体方案节点 (非分类目录)
+                                    IsCategory = false,
+                                    // 方案业务标识
+                                    SchemeId = sid,
+                                    // 柜型型号
+                                    CabModel = cabModel,
+                                    // 方案代号
+                                    Model = model,
+                                    // 参考总价
+                                    TotalPrice = totalPrice,
+                                    // BOM 元器件项数
+                                    BomCount = bCount,
+                                    // 叶子节点无子级
+                                    Children = new List<AutoPricingCategoryDto>()
+                                });
+                            }
+                        }
                     }
                 }
-
-                // 递归累计方案总数
-                CalculateTreeCounts(result);
             }
             catch (Exception ex)
             {
                 LogHelper.WriteLog($"[AutoPricingDataService] 读取本地分类树异常: {ex.Message}");
+            }
+
+            return result;
+        }
+
+        // 本地 SQLite 离线按需获取分类节点或末级方案 (支持 lazy 懒加载省流)
+        private static List<AutoPricingCategoryDto> GetCategoryNodesFromLocalSqlite(string parentId)
+        {
+            // 初始化返回集合
+            var result = new List<AutoPricingCategoryDto>();
+            // 获取本地数据库文件路径
+            string dbPath = GetLocalDbPath();
+            // 文件不存在则安全返回空列表
+            if (!File.Exists(dbPath)) return result;
+
+            try
+            {
+                // 打开 SQLite 离线连接
+                using (var conn = new SQLiteConnection($"Data Source={dbPath};Version=3;"))
+                {
+                    conn.Open();
+
+                    // 1. 先检索当前 parentId 下是否含有直接子分类
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        // 若 parentId 为 0 或空，表示获取顶层根分类 --硬编码: 根节点标记--
+                        if (string.IsNullOrEmpty(parentId) || parentId == "0")
+                        {
+                            // 查询无父级或父级为 0 的顶层分类
+                            cmd.CommandText = "SELECT category_id, parent_id, name, level, full_path, sort_order FROM categories WHERE parent_id IS NULL OR parent_id = '' OR parent_id = '0' ORDER BY sort_order ASC;";
+                        }
+                        else
+                        {
+                            // 查询指定父分类下的直接子分类
+                            cmd.CommandText = "SELECT category_id, parent_id, name, level, full_path, sort_order FROM categories WHERE parent_id = @pid ORDER BY sort_order ASC;";
+                            // 绑定参数
+                            cmd.Parameters.AddWithValue("@pid", parentId);
+                        }
+
+                        // 执行查询
+                        using var reader = cmd.ExecuteReader();
+                        // 循环读取数据
+                        while (reader.Read())
+                        {
+                            // 读取分类 ID
+                            string cid = reader.GetString(0);
+                            // 读取父分类 ID
+                            string pid = reader.IsDBNull(1) ? "" : reader.GetString(1);
+                            // 读取名称
+                            string name = reader.GetString(2);
+                            // 读取层级
+                            int lvl = reader.GetInt32(3);
+                            // 读取路径
+                            string path = reader.IsDBNull(4) ? "" : reader.GetString(4);
+
+                            // 装配分类节点
+                            result.Add(new AutoPricingCategoryDto
+                            {
+                                Id = cid,
+                                ParentId = pid,
+                                Name = name,
+                                Level = lvl,
+                                FullPath = path,
+                                IsCategory = true,
+                                IsLeaf = false, // 分类目录节点允许继续展开
+                                Children = new List<AutoPricingCategoryDto>()
+                            });
+                        }
+                    }
+
+                    // 2. 如果存在子分类，统计各子分类方案数量并直接返回
+                    if (result.Count > 0)
+                    {
+                        // 统计各自分类的方案总数
+                        using (var cmdCount = conn.CreateCommand())
+                        {
+                            // 分组统计命令
+                            cmdCount.CommandText = "SELECT category_id, COUNT(*) FROM schemes GROUP BY category_id;";
+                            // 执行统计查询
+                            using var cReader = cmdCount.ExecuteReader();
+                            // 计数映射表
+                            var countMap = new Dictionary<string, int>();
+                            // 循环填充映射表
+                            while (cReader.Read())
+                            {
+                                countMap[cReader.GetString(0)] = cReader.GetInt32(1);
+                            }
+                            // 赋值方案统计数字
+                            foreach (var item in result)
+                            {
+                                if (countMap.TryGetValue(item.Id, out int cnt))
+                                {
+                                    item.SchemeCount = cnt;
+                                }
+                            }
+                        }
+                        // 返回当前目录节点列表
+                        return result;
+                    }
+
+                    // 3. 若不存在子分类，说明当前分类为末级分类，按需查询 schemes 挂载方案叶子
+                    if (!string.IsNullOrEmpty(parentId) && parentId != "0")
+                    {
+                        using (var cmdScheme = conn.CreateCommand())
+                        {
+                            // 查询直属方案记录
+                            cmdScheme.CommandText = "SELECT scheme_id, category_id, name, cab_model, model, total_price, bom_count FROM schemes WHERE category_id = @pid ORDER BY name ASC;";
+                            // 绑定当前末级分类 ID
+                            cmdScheme.Parameters.AddWithValue("@pid", parentId);
+                            // 执行查询
+                            using var sReader = cmdScheme.ExecuteReader();
+                            // 循环构建方案叶子
+                            while (sReader.Read())
+                            {
+                                string sid = sReader.GetString(0);
+                                string scid = sReader.GetString(1);
+                                string sname = sReader.GetString(2);
+                                string cabModel = sReader.IsDBNull(3) ? "" : sReader.GetString(3);
+                                string model = sReader.IsDBNull(4) ? "" : sReader.GetString(4);
+                                decimal totalPrice = Convert.ToDecimal(sReader.GetDouble(5));
+                                int bCount = sReader.GetInt32(6);
+
+                                // 组装方案叶子节点
+                                result.Add(new AutoPricingCategoryDto
+                                {
+                                    Id = sid,
+                                    ParentId = scid,
+                                    Name = sname,
+                                    IsCategory = false,
+                                    IsLeaf = true, // 方案节点标记为末级叶子，不可再展开
+                                    SchemeId = sid,
+                                    CabModel = cabModel,
+                                    Model = model,
+                                    TotalPrice = totalPrice,
+                                    BomCount = bCount,
+                                    Children = new List<AutoPricingCategoryDto>()
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 异常日志记录
+                LogHelper.WriteLog($"[AutoPricingDataService] 读取本地按需节点异常: {ex.Message}");
             }
 
             return result;
@@ -422,9 +659,30 @@ namespace ExcelAddInDemo.Services
         public string Id { get; set; } = string.Empty;
         public string ParentId { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
+        // 别名：分类名称 (兼容前端 categoryName 取值)
+        [System.Text.Json.Serialization.JsonPropertyName("categoryName")]
+        public string CategoryName => Name;
+
         public int Level { get; set; }
         public string FullPath { get; set; } = string.Empty;
         public int SchemeCount { get; set; }
+
+        // 节点类型标识 (true: 分类目录, false: 方案叶子节点)
+        public bool IsCategory { get; set; } = true;
+        // 节点是否为叶子节点 (用于前端 el-tree lazy 懒加载标识，方案为 true，目录为 false)
+        [System.Text.Json.Serialization.JsonPropertyName("isLeaf")]
+        public bool IsLeaf { get; set; } = false;
+        // 方案 ID
+        public string SchemeId { get; set; } = string.Empty;
+        // 方案柜型
+        public string CabModel { get; set; } = string.Empty;
+        // 方案代号
+        public string Model { get; set; } = string.Empty;
+        // 参考总价
+        public decimal TotalPrice { get; set; }
+        // BOM 数量
+        public int BomCount { get; set; }
+
         public List<AutoPricingCategoryDto> Children { get; set; } = new List<AutoPricingCategoryDto>();
     }
 
@@ -437,11 +695,27 @@ namespace ExcelAddInDemo.Services
         public string CategoryId { get; set; } = string.Empty;
         public string CategoryPath { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
+        // 别名：方案名称 (兼容前端 schemeName 取值)
+        [System.Text.Json.Serialization.JsonPropertyName("schemeName")]
+        public string SchemeName => Name;
+
         public string CabModel { get; set; } = string.Empty;
+        // 别名：开关柜型 (兼容前端 cabinetModel 取值)
+        [System.Text.Json.Serialization.JsonPropertyName("cabinetModel")]
+        public string CabinetModel => CabModel;
+
         public string Model { get; set; } = string.Empty;
+        // 别名：方案代号/编号 (兼容前端 schemeCode 取值)
+        [System.Text.Json.Serialization.JsonPropertyName("schemeCode")]
+        public string SchemeCode => Model;
+
         public string Dimensions { get; set; } = string.Empty;
         public string Situation { get; set; } = string.Empty;
         public string MainSpec { get; set; } = string.Empty;
+        // 别名：额定电流规格 (兼容前端 ratedCurrent 取值)
+        [System.Text.Json.Serialization.JsonPropertyName("ratedCurrent")]
+        public string RatedCurrent => MainSpec;
+
         public string Modifier { get; set; } = string.Empty;
         public string ModifyTime { get; set; } = string.Empty;
         public decimal TotalPrice { get; set; }
