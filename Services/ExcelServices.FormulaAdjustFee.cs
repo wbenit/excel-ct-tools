@@ -377,6 +377,44 @@ namespace ExcelAddInDemo
 
                 // 计算元器件起始行 (依据规则 6: Cab_Det + 2)
                 int compStartRow = cabDetRow + 2;
+                // 提取箱柜顶部汇总行行号
+                int cabSumRow = cab.Value.Sum != null ? Convert.ToInt32(cab.Value.Sum.Row) : 0;
+
+                // 方案 3: 提取与保护原总计行 F 列数量 (在插行/删行前读取真实旧单元格，防调费覆盖丢失台数)
+                object? preservedTolQty = null;
+                try
+                {
+                    // 若旧总计行有效
+                    if (oldTolsumRow > 0)
+                    {
+                        // 访问旧总计行 F 列 (第 6 列)
+                        dynamic oldTolCell = sheet.Cells[oldTolsumRow, 6];
+                        string oldFormula = Convert.ToString(oldTolCell.Formula) ?? "";
+                        object oldVal = oldTolCell.Value2;
+
+                        // 优先级 1: 原总计行手填了公式或有效数值，严格保留原内容
+                        if (!string.IsNullOrWhiteSpace(oldFormula) && oldFormula.Trim() != "=")
+                        {
+                            preservedTolQty = oldFormula;
+                        }
+                        else if (oldVal != null && !string.IsNullOrWhiteSpace(oldVal.ToString()) && Convert.ToString(oldVal) != "0")
+                        {
+                            preservedTolQty = oldVal;
+                        }
+                    }
+
+                    // 优先级 2: 若原总计行未填写数量，但顶部汇总行存在，自动生成与汇总行 F 列联动的公式
+                    if (preservedTolQty == null && cabSumRow > 0)
+                    {
+                        preservedTolQty = $"=F{cabSumRow}";
+                    }
+                }
+                catch (Exception exReadTol)
+                {
+                    // 记录读取异常
+                    LogHelper.WriteLog($"读取箱柜 [{k}] 原总计行数量异常: {exReadTol.Message}");
+                }
+
                 // 计算原旧计费区间的总行数
                 int oldM = oldTolsumRow - oldSubsumRow + 1;
 
@@ -431,8 +469,8 @@ namespace ExcelAddInDemo
                 // 元器件终止行 (依据规则 6: Cab_Subsum - 1)
                 int compEndRow = newSubsumRow - 1;
 
-                // 构建 17 列完整二维计费公式矩阵 (规则 7: 内存一次性生成)
-                object[,] feeMatrix = Tool.BuildFeeMatrix(items, cabDetRow, newSubsumRow, compStartRow, compEndRow, 17);
+                // 构建 17 列完整二维计费公式矩阵 (规则 7: 内存一次性生成，透传 cabSumRow 与 preservedTolQty 确保总计行数量不丢失)
+                object[,] feeMatrix = Tool.BuildFeeMatrix(items, cabDetRow, newSubsumRow, compStartRow, compEndRow, 17, cabSumRow, preservedTolQty);
 
                 // 批量一次性覆盖写入 Excel 计费区域 (彻底替换旧计费区域)
                 try
@@ -484,9 +522,9 @@ namespace ExcelAddInDemo
                 {
                     // 读取顶部汇总行行号
                     int sumRow = Convert.ToInt32(cab.Value.Sum.Row);
-                    // G 列销售单价公式指向明细总计行的销售总价 H 列
-                    sheet.Cells[sumRow, 7].Formula = $"=H{newTolsumRow}";
-                    // J 列成本单价公式指向明细总计行的成本总价 K 列
+                    // G 列销售单价公式指向明细总计行的单台单价 G 列 (方式 B 稳健绑定，避免数量二次相乘)
+                    sheet.Cells[sumRow, 7].Formula = $"=G{newTolsumRow}";
+                    // J 列成本总价公式指向明细总计行的成本总价 K 列
                     sheet.Cells[sumRow, 10].Formula = $"=K{newTolsumRow}";
                 }
 
@@ -632,8 +670,8 @@ namespace ExcelAddInDemo
                 // 计算元器件终止行
                 int compEndRow = newSubsumRow - 1;
 
-                // 9. 构建计费矩阵并批量一次性写入模板计费区域 (覆盖 A 列至 Q 列)
-                object[,] feeMatrix = Tool.BuildFeeMatrix(items, cabDetRow, newSubsumRow, compStartRow, compEndRow, 17);
+                // 9. 构建计费矩阵并批量一次性写入模板计费区域 (覆盖 A 列至 Q 列，绑定汇总行行号实现总计行联动)
+                object[,] feeMatrix = Tool.BuildFeeMatrix(items, cabDetRow, newSubsumRow, compStartRow, compEndRow, 17, cabSumRow: cabSumRow);
                 // 覆盖写入新计费区域
                 dynamic feeRange = catSheet.Range[$"A{newSubsumRow}:Q{newTolsumRow}"];
                 feeRange.Formula = feeMatrix;
@@ -655,7 +693,8 @@ namespace ExcelAddInDemo
                 Tool.SafeSetSheetName(catSheet, sheetName, $"{tolsumPrefix}1", newTolsumRow);
 
                 // 12. 采用汇总行对齐的方式: 重新对齐绑定顶部汇总行 (cabSumRow, Row 7) 引用公式与超链接
-                catSheet.Cells[cabSumRow, 7].Formula = $"=H{newTolsumRow}";
+                // G 列单价公式指向明细总计行的单台单价 G 列 (方式 B 稳健绑定，避免数量二次相乘)
+                catSheet.Cells[cabSumRow, 7].Formula = $"=G{newTolsumRow}";
                 catSheet.Cells[cabSumRow, 8].Formula = $"=F{cabSumRow}*G{cabSumRow}";
                 catSheet.Cells[cabSumRow, 10].Formula = $"=K{newTolsumRow}";
                 catSheet.Cells[cabSumRow, 11].Formula = $"=H{cabSumRow}-J{cabSumRow}";
@@ -760,7 +799,9 @@ namespace ExcelAddInDemo
                     ("总价", item.TotalPriceFormula),
                     ("成本总价", item.CostTotalPriceFormula),
                     ("单价", item.Price),
-                    ("数量", item.Quantity)
+                    ("数量", item.Quantity),
+                    ("系数", item.Coefficient),
+                    ("表价", item.MarkedPrice)
                 };
 
                 // 遍历检查每个公式字段

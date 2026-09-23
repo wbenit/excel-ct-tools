@@ -577,7 +577,8 @@ namespace ExcelAddInDemo
                         int compStartRow = newDetRow + 2;
                         // 刷新明细块元器件 A 列序号(=ROW()-ROW(A${detRow+1}))、小计行公式与计费区域公式
                         RefreshCabinetFeeAreaFormulas(activeSheet, newDetRow, compStartRow, newSubsumRow, newTolsumRow);
-                        activeSheet.Cells[insertSumRow, 7].Formula = $"=H{newTolsumRow}";
+                        // 汇总行 G 列单价指向明细总计行单台单价 G 列 (方式 B 稳健绑定，避免数量二次相乘)
+                        activeSheet.Cells[insertSumRow, 7].Formula = $"=G{newTolsumRow}";
                         activeSheet.Cells[insertSumRow, 8].Formula = $"=F{insertSumRow}*G{insertSumRow}";
                         activeSheet.Cells[insertSumRow, 10].Formula = $"=K{newTolsumRow}";
                         activeSheet.Cells[insertSumRow, 11].Formula = $"=H{insertSumRow}-J{insertSumRow}";
@@ -1170,8 +1171,8 @@ namespace ExcelAddInDemo
                             // 2. 普通有明细箱柜联动公式与超链接校准
                             if (dRow > 0 && tolRow > 0)
                             {
-                                // 汇总行 G 列单价指向明细总计行销售总价 H 列
-                                activeSheet.Cells[sRow, 7].Formula = $"=H{tolRow}";
+                                // 汇总行 G 列单价指向明细总计行单台单价 G 列 (方式 B 稳健绑定，避免数量二次相乘)
+                                activeSheet.Cells[sRow, 7].Formula = $"=G{tolRow}";
                                 // 汇总行 H 列销售合价 = 数量 * 单价
                                 activeSheet.Cells[sRow, 8].Formula = $"=F{sRow}*G{sRow}";
                                 // 汇总行 J 列成本单价指向明细总计行成本总价 K 列

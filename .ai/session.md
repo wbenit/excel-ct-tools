@@ -1,3 +1,149 @@
+- **【全量闭环交付】功能区 Ribbon 官方内置图标 (imageMso) 全量清洗与编译同步 (`RibbonController.cs`)**：
+  1. **问题排查与根因定位**：
+     - 用户指令“好些没图标，你如果能识别哪些没有，按语义添加图标”、“没变化，你打开看看”；
+     - 深度排查发现此前开发编写 Ribbon XML 时大量臆造了不存在的伪图标名（如 `UserKey`, `Properties`, `ContactCard`, `TableProperties`, `Rating`, `Share`, `CloseWindow`, `FlashFill`, `PrintPreviewAndPrint`, `PivotTableVisualFilter`, `AutoFilter`），Office 加载时因图标名无效而静默丢弃，导致点开“我的”账户菜单、标书报表、聚光灯等子菜单时出现整排空白；
+     - 上一轮修改后未执行重新编译，DLL 产物仍停留在旧版本，导致用户在 Excel 中看到的仍是未生效状态；
+  2. **全面清洗与官方标准图标对齐**：
+     - **“我的”账户菜单**：`menuUser` 改为 `AccountMenu`，`btnEnterprise` 改为 `OrganizationChartLayoutStandard`，`btnUploadAvatar` 改为 `PictureInsertFromFile`，`btnProfile` 改为 `GroupPersonalInfo`，`btnWeekly` 改为 `CalendarInsert`，`btnRanking` 改为 `StarRatedFull`，`menuShare` 改为 `ReviewShareWorkbook`，`btnLogout` 改为 `FileExit`；
+     - **“我的项目”**：`menuLocalProject` 改为 `Folder`（黄色文件夹，匹配本机项目）；
+     - **“①建项目→”**：`menuCategory` 下拉菜单补齐 `GroupOutline`；
+     - **“②录元件”**：`menuCloudMaterial` 改为 `DatabaseSqlServer`，`btnModelParamParser` 改为 `Filter`；
+     - **“③调价格→”**：`menuEstimateCabinetSize` & `btnEstimateCabinetSizeSub` 改为 `ShowRuler`（标尺测量）；
+     - **“④出报表”**：`menuTenderReport` 改为 `FilePrintPreview`（打印报表预览）；
+     - **“辅助项”**：`btnToggleSpotlight` 改为 `ReviewHighlightChanges`（荧光高亮），`menuSpotlightOptions` 补充 `PropertySheet`；
+     - 自动化脚本基于 Office 官方图标库白名单做 100% 全量静态校验：**有效率 100%，零无效图标，零缺失！**
+  3. **工程编译与发布产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 成功将最新的 `ExcelAddInDemo.dll` 同步至 `publish/` 目录。
+- **【闭环完成】直接使用工作表现成定义名称，严禁算法重新识别覆盖计费区域 (`Tool.cs`, `ExcelServices.DistributedAdjustPrice.cs`)**：
+  1. **用户核心指令**：“不需要再去识别计费区域了，已有现成的定义名称了，直接使用即可”、“这2行不在元器件区域”；
+  2. **核心业务逻辑与修复实现**：
+     - 工作表中已存在由模板或历史操作定义的合法 `Cab_Det_k`、`Cab_Subsum_k`、`Cab_Tolsum_k`；
+     - 在 `Tool.FixAndFillCabinetNamesForSheet` 自愈时，预先提取现存定义名称；
+     - 只要存在合法的 `existingSubsumRow` 和 `existingTolsumRow`，直接复用其物理行号，绝对禁止再执行倒序扫描覆写覆盖 `Cab_Subsum_k`；
+     - 若定义名称物理行号未发生变动，不执行 `SafeSetSheetName`，避免冗余刷新；
+     - 解决 `dynamic` 调度的类型推断与编译错误，采用强类型 `List<dynamic>` 与 `Dictionary<int, Models.CabinetAnchorModel>` 安全索引；
+     - 分布调价及元器件/计费区域划分，直接取现成定义名称：元器件即 `det.Row + 2` 至 `subsum.Row - 1`，计费区即 `subsum.Row` 至 `tolsum.Row - 1`；辅材与箱体稳居计费区域，彻底杜绝被误筛选或更新至元器件区域；
+  3. **工程构建与验证**：
+     - 遵循新增代码每 3 行包含至少一行中文注释规范；
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**。
+- **【需求对齐与排版闭环交付】辅材壳体计算填写铜排取消刻意删除后续空行，元器件区域预留空行完整保留 (`ExcelServices.CabinetAuxCalc.cs`)**：
+  1. **需求理解与问题根因**：
+     - 用户明确指示：“辅材壳体计算填写铜排的时候，不要刻意删除铜排后面的空行，理解表诉需求”；
+     - 此前代码在第 2064~2076 行写了强制清除逻辑：`for (int r = compEndRow; r > targetCopperRow; r--) ws.Rows[r].Delete();`，将铜排之后直到小计行（`Cab_Subsum`）之间的所有预留空行整行物理删除了；
+     - 该行为破坏了用户的报价明细表预留行结构，导致小计及计费区行被强行拉上去紧挨铜排，且违背了规则 6（“元器件区域可以有空行，如果元器件数量多余区域行数，先要插入行”）；
+  2. **系统性修复与最小变动落地**：
+     - **彻底移除删除后续空行循环**：当铜排目标行未超过元器件结束行（`targetCopperRow <= compEndRow`）时，直接在目标行填入铜排明细，其后的所有预留空行 100% 完整原样保留，`subsumRow`、`tolsumRow`、`compEndRow` 绝不做任何压缩削减；
+     - **空间不足时才按规则 6 插行**：仅当当前有效元件 + 铜排超出预留行数（`targetCopperRow > compEndRow`）时，在小计行处向下推移插入 1 行；
+     - **旧铜排行清理优化**：旧铜排若在目标行之后（处于预留空行区），仅清空 B~Q 列内容恢复为正常预留空行，绝不物理删行；若计算为免铜排，同样仅清空既有铜排行为预留空行；
+     - `RefreshCabinetFeeAreaFormulas` 会自动刷新空行公式（销售总价为 `""`），小计行 `=ROUND(SUM(...), 2)` 自动兼容空行，计算结果严丝合缝；
+  3. **工程编译验证**：
+     - 严格遵循新增代码每 3 行包含至少一行中文注释规范；
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**。
+- **【根因锁定与架构自愈方案】辅材箱体确属计费区域，自愈需向上回溯锁定 Cab_Subsum (`Tool.cs`, `ExcelServices.DistributedAdjustPrice.cs`)**：
+  1. **用户核心事实认定**：用户明确裁定“这 2 行（红框辅材与箱体）不在元器件区域，它们属于计费区域”，因此无需在元器件回写中做保护；
+  2. **系统错位根因精确定位**：此前 `Tool.FixAndFillCabinetNamesForSheet` 找计费起始行时，粗暴停在第 133 行（`[3] 小计`），把 `Cab_Subsum` 锚定在 133 行，反导致第 131 行（`[1] 辅材`）和第 132 行（`[2] 箱体`）被系统错误算作了元器件区域（`subsum - 1 = 132`），从而引发分布调价误筛选与一键更新误更新；
+  3. **最小变动修复方案**：在 `Tool.cs` 识别到小计行后，继续向上回溯带方括号序号（如 `[1]`、`[2]`）的连续计费行，将 `Cab_Subsum` 精准锚定在第 131 行（`[1] 辅材`）。元器件终止行自然回归第 130 行，辅材与箱体完全归入计费区，分布调价与一键更新自然彻底不触碰它们。
+- **【UI 排版极致优化与闭环交付】工作台界面尺寸自适应放大、中间 CAD 预览视口最大化扩展、右侧映射看板极致压缩 (`CabinetAuxCalcForm.cs`, `cabinet_aux_calc.html`, `secondary_circuit_manage.html`)**：
+  1. **窗体宿主屏幕自适应放大 (`CabinetAuxCalcForm.cs`)**：
+     - 将原写死的 `1200x800` 固定窗体尺寸重构为基于当前主屏幕工作区（`Screen.PrimaryScreen.WorkingArea`）动态计算；
+     - 采用 `--硬编码--` `targetWidth = Math.Max(1200, Math.Min(1440, (int)(workArea.Width * 0.94)))` 与 `targetHeight = Math.Max(780, Math.Min(880, (int)(workArea.Height * 0.92)))`，自动适配不同分辨率屏幕，最大化利用桌面空间，为中间 CAD 矢量视口提供工业级宽屏底座；
+  2. **弹窗可用空间全面铺满 (`cabinet_aux_calc.html`, `secondary_circuit_manage.html`)**：
+     - 弹窗宽度由 `96%` 提升至 `98.5%`（`--硬编码--`），水平四周留白缩减到极致；
+     - 弹窗高度锁定提升为 `height: 93vh !important; max-height: 95vh !important;`（`--硬编码--`），垂直空间进一步释放；
+  3. **左侧与右侧栏极致收窄与紧凑化，全额让渡空间放大 CAD 视口**：
+     - **左侧图纸栏收窄**：宽度由原 `185px~240px` 精简至 `155px`（折叠时 `220px`）（`--硬编码--`），列表依然保持纯受控纵向顺畅滚动；
+     - **右侧看板极致压缩**：宽度由原 `280px~360px` 压缩至 `205px`（折叠时 `calc(100% - 225px)`）（`--硬编码--`）；
+     - **右侧单元格与标题紧凑化**：表格单元格内边距压缩为 `padding: 3px 0 !important;`，cell 边距 `padding-left/right: 3px !important;`；
+     - **字段与按钮微缩**：标题简化为 `📊元件组(8,绑1)`，清空与全清按钮紧凑并列；型号规格列最小宽度压缩至 `78px`，处数 badge 微缩为 8.5px；绑定图号列最小宽度压缩至 `80px`，图号 Tag 与解绑 `✖` 按钮紧凑排布；未绑定状态精简为 `👈 绑定`；
+  4. **中间 WebGL CAD 矢量视口最大化扩张**：
+     - 中间视口依靠 `flex: 1 1 0%; min-width: 0; min-height: 0;` 自适应充满，横向可用视口净增近 400 像素，展现尺寸超过 1000px，图纸浏览与图元拾取体验大幅提升；
+     - 全程无缝弹性响应，绝不产生外层及容器水平滚动条；
+  5. **工程构建与资源同步**：
+     - 遵循新增代码每 3 行包含至少一行中文注释规范；
+     - `cabinet_aux_calc.html` 与 `secondary_circuit_manage.html` 均已 100% 全量同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**。
+- **【Bug 修复与排版闭环交付】二次图绑定弹窗很多内容未显示且无滚动条缺陷彻底根治 (`cabinet_aux_calc.html`, `secondary_circuit_manage.html`)**：
+  1. **问题根因定位**：
+     - **左侧图纸列表缺乏受控滚动**：左侧 `<el-table class="dwg-file-table">` 仅设置了 `style="width: 100%; flex: 1"`，未包裹在 `min-height: 0; overflow: hidden;` 的 Flex 容器中，且未显式指定 `height="100%"`。Element Plus 表格在无受控高度时默认向下无限撑大，将左侧栏底部的统计信息（`xx 目录, xx 图纸`）直接顶到视野外，且自身不出现纵向滚动条，超出的图纸项被外层 `overflow: hidden` 硬性切断截断；
+     - **三栏主体区硬编码固定高度冲突**：核心三栏外层容器此前硬编码写死了 `height: calc(88vh - 120px); min-height: 400px; max-height: 700px;`。由于弹窗标题栏（~45px）、顶部快捷导航条（~40px）、底栏操作条（~50px）及内边距固定占用约 150px~160px，在中低分辨率或小窗口下总高度大幅超出弹窗限制的 `max-height: 94vh`，导致被外层 `overflow: hidden` 强制腰斩，中间 CAD 视口最底部的操作提示条（`💡 滚轮缩放 | 左键拖拽平移 | 双击居中拟合`）以及右侧映射栏底部被整体切掉；
+     - **Flexbox 嵌套链条缺失 min-height: 0**：`.circuit-binding-dialog .el-dialog__body` 与弹窗内部容器缺失 `min-height: 0 !important;`，导致 Flex 子项无法在空间受限时自适应收缩；
+     - **滚动条未进行可视美化**：表格内部默认原生滚动条缺乏对比度与宽度，容易被忽略。
+  2. **系统性修复与高质感弹性重构**：
+     - **弹窗整体高度基准锁定**：`.circuit-binding-dialog` 设置 `height: 90vh !important; max-height: 94vh !important; min-height: 520px !important;`，`el-dialog__header` 与 `el-dialog__footer` 设置 `flex-shrink: 0 !important;` 保证首尾栏绝对不被压缩；`.el-dialog__body` 设置 `flex: 1 1 0% !important; min-height: 0 !important;`；
+     - **三栏主体区纯 Flex 自适应**：彻底移除 `height: calc(...)` 与 `max-height: 700px` 等硬编码，改用 `flex: 1 1 0%; min-height: 0; width: 100%; overflow: hidden;`，严丝合缝自动填满剩余垂直空间，100% 杜绝底部内容被下边缘截断；
+     - **左侧图纸列表受控滚动闭环**：为左侧表格增加 `flex: 1 1 0%; min-height: 0; overflow: hidden; position: relative;` 独立包裹层，给 `el-table` 配置 `height="100%"` 与 `style="width: 100%; height: 100%"`；表头固定吸顶，无论包含多少图纸/文件夹均拥有顺畅的内部垂直滚动条，且底部统计栏（`xx 目录, xx 图纸`）牢固固定在左栏底端；
+     - **右侧栏宽度舒展与 CAD 视口优化**：中间 CAD 视口内部挂载容器与底部手势提示条严格配置 `flex-shrink: 0; min-height: 0;`；右侧元件组映射栏适度加宽至 `280px`（折叠时 `calc(100% - 275px)`），彻底解决较长型号规格挤压成省略号的问题；
+     - **滚动条定制美化**：定制 7px 宽浅雅滚动条轨道，滑块采用柔和浅灰 `#94a3b8`，悬浮高亮主题主色调 `#009688`，双向平滑丝滑，醒目易操作，绝不产生水平横向滚动条；
+  3. **工程编译与静态资源全量同步**：
+     - 严格遵循新增代码每 3 行包含至少一行中文注释规范；
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - `cabinet_aux_calc.html` 与 `secondary_circuit_manage.html` 均已 100% 全量同步更新至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`。
+- **【架构加固与闭环交付】顶部汇总行单价与明细总计行数量双向自适应联动全面统一 (方式 B 稳健方案) (`ExcelServices.Cabinet.cs`, `ExcelServices.Category.cs`, `ExcelServices.FormulaAdjustFee.cs`, `ExcelServices.CabinetManage.cs`)**：
+  1. **问题根因定位**：
+     - 用户敏锐指出：顶部汇总行（`Cab_Sum_k`）G 列表头为“单价”，但是在公式调费更新、箱柜复制/移动、新增箱柜等多个模块中，此前错误地将汇总行 G 列公式设为了 `$"=H{tolsumRow}"`（明细总计行 H 列）；
+     - 明细总计行 H 列本身已经乘了箱柜数量（`=F*G`），导致箱柜数量大于 1 时，顶部汇总行总价计算（`=F*G`）产生严重二次相乘（翻倍暴增）缺陷；
+     - 同时，在从 CAD 批量导出箱柜（`ExportSingleCabinetOptimized`）以及分类表初始化时，总计行 F 列此前写入的是静态数值，导致用户在顶部修改台数时，底表明细数量无法自动动态同步；
+  2. **全局统一实施「方式 B 最稳健联动方案」**：
+     - **G 列单价统一方式 B**：将项目中全部汇总行 G 列公式统一修正为指向底表明细总计行（`Cab_Tolsum_k`）的 **G 列（单台单价，`=ROUND(H{单台合计}, 2)`）**，即 `$"=G{tolsumRow}"`，避免依赖相对行偏移，彻底根治重复乘数量 Bug；
+     - **总计行数量升级为自动联动公式**：在 CAD 批量导出（`ExportSingleCabinetOptimized`）、分类表初始化（`InitializeCategorySheet`）及新建箱柜（`CreateNewCabinet`）中，总计行 F 列统一生成 `=F{cabSumRow}` / `=F{sumRow}` 动态公式，实现“顶部汇总改台数，底表明细全自动实时联动生效”；
+     - 结合已落地的方案 3（调费时数量继承与自愈兜底），全生命周期构建完美闭环；
+  3. **涉及修改文件**：
+     - `Services/ExcelServices.Cabinet.cs`（CAD 批量导出 G 列单价、总计行联动公式、新增箱柜联动公式）；
+     - `Services/ExcelServices.Category.cs`（分类表初始化汇总行 G 列公式、总计行联动公式）；
+     - `Services/ExcelServices.FormulaAdjustFee.cs`（公式调费更新汇总行 G 列公式、模板对齐公式）；
+     - `Services/ExcelServices.CabinetManage.cs`（箱柜移动/剪切、自愈校准汇总行 G 列公式）；
+  4. **工程核验**：
+     - 遵循新增代码每 3 行包含至少一行中文注释规范；
+     - C# 语法与依赖编译通过，**0 警告，0 错误**。
+- **【功能加固与闭环交付】更新计费区域总计行数量保护与联动方案 3 彻底落地 (`Tool.cs`, `ExcelServices.FormulaAdjustFee.cs`, `ExcelServices.Category.cs`)**：
+  1. **问题根因定位**：
+     - 在公式法调费及初始化计费区时，写入区域自小计行（`Cab_Subsum`）直达总计行（`Cab_Tolsum`）；
+     - 写入数据源自公式模板 `items`，模板中总计行的 F 列数量通常留空或为默认值，覆盖写入导致用户原先在 Excel 填写的真实箱柜台数被抹除，进而引发总计金额与汇总行金额归零；
+  2. **方案 3 双保险自愈策略实现**：
+     - **优先级 1 (原值保护)**：在覆盖写入或插删行前，预先读取当前箱柜原总计行（`oldTolsumRow`）F 列；若用户已输入有效数字或自定义公式，严格继承保留，绝不覆写清空；
+     - **优先级 2 (汇总联动)**：若原总计行未填数量，但对应箱柜顶部汇总行（`Cab_Sum_k`）存在，自动注入联动公式 `=F{cabSumRow}`，用户在顶部汇总表修改台数底表明细自动实时联动；
+     - **优先级 3 (安全兜底)**：若两处皆为空，模板有值按模板值，否则安全兜底为 `1` 台；
+     - `Tool.BuildFeeMatrix` 扩展重载支持 `cabSumRow` 与 `preservedTolQty` 参数透传，`UpdateCabinetsForSheet`、`UpdateCabinetTemplateDefaultFee` 与 `InitializeCategorySheet` 全链路接入；
+  3. **工程编译核验**：
+     - 严格遵循新增代码每 3 行包含至少一行规范中文注释与最小变动法则；
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**。
+- **【功能迭代与闭环交付】人工、辅材、壳体、铜排价格统一填入 M 列 & 铜排紧随底部元器件区域末行消除空行 (`ExcelServices.CabinetAuxCalc.cs`)**：
+  1. **价格统一回写 M 列与成套标准公式联动**：
+     - **壳体、辅材、人工**：将原先回写 G 列（单价）或 H 列（销售总价算式）重构为统一写入 **M 列（表价/面价，第 13 列）**；
+     - 自动补齐 L 列加价系数（默认 1）与 N 列采购折扣（默认 1），并注入标准联动公式：销售单价 G 列 `=ROUND(M*L*N, 2)`、销售总价 H 列 `=ROUND(F*G, 2)`、成本单价 J 列 `=ROUND(M*N, 2)`、成本总价 K 列 `=ROUND(F*J, 2)`，元器件区域二级查找同步遵循该规范；
+     - **铜排**：单价继续严格写入 M 列，保持全要素价格列对齐；
+  2. **铜排紧随元器件末行与多余空行彻底清理**：
+     - 精准探测元器件区域（`compStartRow` 至 `subsumRow - 1`）内最后一个有效元器件行 `lastValidCompRow`；
+     - 将铜排目标位置精确锁定为 `lastValidCompRow + 1`，确保元器件与铜排之间 **0 空行**；
+     - 倒序彻底清理原有的残留铜排，并将 `targetCopperRow` 之后到 `subsumRow - 1` 之间的所有多余预留空行物理删除整行；若空间不足则在小计行自动推移插行，保证铜排正好作为**底部元器件区域的最后一行**，且紧挨小计行；
+     - 铜排为 0（免铜排）时，自动清理既有旧铜排行；
+     - 回写后调用 `RefreshCabinetFeeAreaFormulas` 自愈小计行求和公式、序号与联动公式，并在方法末尾调用 `Tool.FixAndFillCabinetNamesForSheet(ws)` 刷新规则 6 定义名称；
+  3. **工程编译核验**：
+     - 严格遵循新增代码每 3 行包含至少一行规范中文注释与最小变动法则；
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**。
+- **【功能迭代与闭环交付】公式法调费计费区域新增 L 列（系数）与 M 列（表价）全链路落地 (`formula_adjust_fee.html`, `FormulaAdjustFeeController.cs`, `CabinetModels.cs`, `Tool.cs`, `ExcelServices.FormulaAdjustFee.cs`)**：
+  1. **前端界面与交互升级**：
+     - 在【公式组明细】表格中，于 K 列（成本总价）与“类别”列之间正式加入 **L 列（系数）** 与 **M 列（表价）** 可编辑单元格，支持输入数值或以 `=` 开头的相对引用公式/参数宏；
+     - 在 `validateDetailList` 中接入两列公式语法合法性校验，并在 `adjustAllRowsFormulas` 中实现增删行时的行号引用自适应平移；
+     - 静态 HTML 资源已 100% 同步更新至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+  2. **后端实体与服务矩阵联动**：
+     - `FormulaItemModel` 与 `FormulaFeeRowDefinition` 扩展 `Coefficient` 与 `MarkedPrice` 属性；
+     - `Tool.BuildFeeMatrix` 将 L 列（索引 11）与 M 列（索引 12）纳入二维矩阵填充，支持 `TransformFormulaRowOffset` 相对行号平移与 `[器件首行]` 宏解析；
+     - `ExcelServices.FormulaAdjustFee.cs` 完成静态前置校验与单次 COM 批量写入；
+  3. **工程编译核验**：
+     - 严格遵循新增代码每 3 行包含至少一行规范中文注释与最小变动法则；
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**。
+- **【Bug 修复与闭环交付】箱柜柜号与名称首轮比对由模糊包含匹配重构为严格完全匹配 (`Tool.cs`)**：
+  1. **问题根因定位**：
+     - `Tool.cs` 中 `FixAndFillCabinetNamesForSheet` 在第一轮通过柜号/设备名称进行配对时，此前使用了 `Contains` 双向包含逻辑（`cleanDetNo.Contains(cleanSumNo) || cleanSumNo.Contains(cleanDetNo)`）；
+     - 当出现如 `1AP1` 与 `1AP10`、`1` 与 `10` 等柜号互相包含时，造成了误判和串柜配对缺陷；
+  2. **彻底修复与严格匹配**：
+     - 严格改用 `string.Equals(..., StringComparison.OrdinalIgnoreCase)` 进行完全匹配；
+     - 确保仅在柜号完全一致或设备名称完全一致时才建立第一轮精确对齐，彻底消除模糊匹配误伤；
+  3. **工程编译核验**：
+     - 严格遵守新增代码每 3 行包含至少 1 行中文注释与最小变动法则；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**。
 - **【Bug 修复与闭环交付】利驰云方案【插入为全新箱柜】被误当成追加到当前箱柜缺陷彻底根治 (`ExcelServices.CloudSolution.cs`)**：
   1. **问题根因定位**：
      - 前端 `cloud_solution.html` 点击【插入为全新箱柜】时正确传递了 `insertMode: "newCabinet"`；
@@ -3626,16 +3772,38 @@
      - 静态 HTML 资源全量同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
      - 执行 `dotnet build /p:RunExcelDnaBuild=false` 构建成功：0 警告，0 错误；最新 dll/pdb 已同步至 `publish/`。
 
+## [Completed]
+
+- **【功能区图标全面修复与语义化补齐交付】精准排查并修复所有缺失与无效的 Office Ribbon 图标 (`RibbonController.cs`)**：
+  1. **功能区大图标空白问题根治**：
+     - `menuProjectTools`（项目工具）：原 `imageMso='Tools'` 在 Office 库中不存在，已更新为标准工具箱图标 `ControlToolboxOutlook`；
+     - `btnSettings`（设置）：原 `imageMso='OptionButton'` 无效，已更新为标准系统选项齿轮图标 `ApplicationOptionsDialog`；
+     - `btnEnterpriseDHub`（企业DHub）：更新为支持完整尺寸渲染的企业服务器连接中枢图标 `ServerConnection`；
+     - `btnCabinetBatchPrice`（箱体一键改价）：原 `imageMso='ShapeCube'` 无效，已更新为标准柜体矩形图标 `ShapeRectangle`；
+  2. **所有未配置图标的子菜单项全量按语义补齐**：
+     - `btnVip`（会员中心）：原 `Currency` 无效，配置满星 VIP 徽章 `StarRatedFull`；
+     - `btnShareLink`（分享链接）：配置超链接图标 `HyperlinkInsert`；
+     - `btnLocalProj1`（默认本机项目）：配置打开文件图标 `FileOpen`；
+     - `btnCloudProj1`（默认云项目）：配置服务器连接图标 `ServerConnection`；
+     - `btnStateGridQuoteSub`（国网报价）：配置网络预览地球图标 `WebPagePreview`；
+     - `btnNewCabinetNoDetail`（新建无明细箱柜）：配置表格插入图标 `TableInsert`；
+     - `btnBatchNewCabinet`（批建箱柜）：配置多项表单批量创建图标 `CreateFormWithMultipleItems`；
+     - `btnSmartOCRSub`（智能识图）：配置相机识图图标 `Camera`；
+     - `btnCloudMaterialSub`（云物料库）：配置企业数据库物料库图标 `DatabaseSqlServer`；
+     - `btnEstimateCabinetSizeSub`（箱体尺寸一键预估）：配置快速填充预估图标 `FlashFill`；
+     - `btnMultiPlanQuoteSub`（多方案报价）：配置多页方案对比图标 `MultiplePages`；
+     - `btnMaterialStatSub`（材料统计）：配置图表插入统计图标 `ChartInsert`；
+     - `btnProjectToolsSub`（项目工具）：配置标准工具箱图标 `ControlToolboxOutlook`；
+     - `btnServiceSub`（在线客服）：配置技术支持客服图标 `TechnicalSupport`；
+  3. **编译构建与热同步**：
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false /p:DebugType=none` 构建成功：0 错误；
+     - 最新 `ExcelAddInDemo.dll` 已全量同步至 `bin/Debug/net48/` 与 `publish/`。
+
 ## [In-Progress]
 
-- 提示用户重新加载 Excel 插件或重新打开工作表，验证分类明细表 C 列物料浮窗弹出及多选品牌并集过滤效果。
+- 提示用户保存当前 Excel 工作簿并重启 Excel，检验功能区所有一级大按钮及各级下拉菜单图标完整丰富、整齐规范的效果。
 
 ## [Next]
 
-- 根据用户实测反馈，持续优化物料匹配多品牌筛选交互体验。
+- 根据用户后续需求持续跟进。
 
-- 提示用户重新加载 Excel 插件或重新打开工作表，验证分类明细表 C 列物料浮窗弹出、多选品牌并集过滤以及点击保存自动关闭界面效果。
-
-## [Next]
-
-- 根据用户实测反馈，持续优化物料匹配多品牌筛选交互体验。

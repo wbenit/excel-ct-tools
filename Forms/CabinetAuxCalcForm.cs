@@ -64,9 +64,14 @@ namespace ExcelAddInDemo.Forms
             // 设置窗体标题
             this.Text = "智能辅材与壳体计算";
 
-            // 依据方案 A 宽屏架构设定尺寸为 1200x800 像素
-            // 确保二次回路绑定工作台具有超 1150px 的展开宽度与 700px+ 的矢量看图视口
-            this.ClientSize = new Size(1200, 800);
+            // 获取用户当前主显示器的工作区有效尺寸 (剔除任务栏干扰)
+            var workArea = Screen.PrimaryScreen.WorkingArea;
+            // 放大界面尺寸：宽度自适应提升至 1440 像素 (不超过屏幕工作区 94% 宽度) --硬编码--
+            int targetWidth = Math.Max(1200, Math.Min(1440, (int)(workArea.Width * 0.94)));
+            // 高度自适应提升至 880 像素 (不超过屏幕工作区 92% 高度) --硬编码--
+            int targetHeight = Math.Max(780, Math.Min(880, (int)(workArea.Height * 0.92)));
+            // 应用放大后的工业宽屏视口尺寸，彻底释放中间 CAD 矢量预览与两侧工作台空间
+            this.ClientSize = new Size(targetWidth, targetHeight);
 
             // 设置屏幕中央弹出
             this.StartPosition = FormStartPosition.CenterScreen;

@@ -68,13 +68,13 @@
         width: 5px !important;
       }
 
-      /* 紧凑型 Excel 元件组映射表格专用样式：收缩边距与单行截断 */
+      /* 紧凑型 Excel 元件组映射表格专用样式：极致收缩边距与单行截断，适配窄屏紧凑排布 */
       .excel-bind-table .el-table__cell {
-        padding: 4px 0 !important;
+        padding: 3px 0 !important;
       }
       .excel-bind-table .cell {
-        padding-left: 6px !important;
-        padding-right: 6px !important;
+        padding-left: 3px !important;
+        padding-right: 3px !important;
         white-space: nowrap !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
@@ -99,30 +99,75 @@
 
       /* 二次图纸对齐绑定工作台专属弹窗：纯净弹性伸缩盒子结构并实现绝对垂直居中 */
       .circuit-binding-dialog {
+        /* 弹窗水平垂直居中 */
         margin: auto !important;
+        /* 开启纵向弹性布局 */
         display: flex !important;
         flex-direction: column !important;
-        max-height: 94vh !important;
+        /* 显式锁定弹窗占据视口高度 93vh，充分放大工作台可用垂直空间 */
+        height: 93vh !important;
+        max-height: 95vh !important;
+        /* 保障最小可用高度，防止极端屏幕塌陷 */
+        min-height: 520px !important;
         overflow: hidden !important;
       }
+      /* 弹窗头部标题栏：固定自然高度，禁止收缩 */
       .circuit-binding-dialog .el-dialog__header {
         padding: 10px 16px !important;
         margin-right: 0 !important;
         border-bottom: 1px solid #e2e8f0;
-        flex-shrink: 0;
+        /* 禁止头部被弹性挤压 */
+        flex-shrink: 0 !important;
       }
+      /* 弹窗主体容器：充满剩余高度并允许内部自适应收缩 */
       .circuit-binding-dialog .el-dialog__body {
         padding: 8px 14px !important;
-        flex: 1 !important;
+        /* 弹性填满视口且基准尺寸为0 */
+        flex: 1 1 0% !important;
+        /* 核心关键：消除默认 min-height: auto 限制，允许内部完全弹性收缩 */
+        min-height: 0 !important;
         overflow: hidden !important;
         display: flex !important;
         flex-direction: column !important;
         box-sizing: border-box !important;
       }
+      /* 弹窗底部操作栏：固定自然高度，禁止收缩 */
       .circuit-binding-dialog .el-dialog__footer {
         padding: 8px 16px !important;
         border-top: 1px solid #e2e8f0;
-        flex-shrink: 0;
+        /* 禁止底部操作栏被挤出视野 */
+        flex-shrink: 0 !important;
+      }
+
+      /* 二次图绑定弹窗内表格滚动条定制美化：醒目柔和滑块，杜绝隐形不可见 */
+      .circuit-binding-dialog .el-table__body-wrapper::-webkit-scrollbar {
+        width: 7px;
+        height: 7px;
+      }
+      /* 滚动条轨道：浅雅底色 */
+      .circuit-binding-dialog .el-table__body-wrapper::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 4px;
+      }
+      /* 滚动条滑块：柔和灰色，悬停呈现品牌主题色 #009688 */
+      .circuit-binding-dialog .el-table__body-wrapper::-webkit-scrollbar-thumb {
+        background: #94a3b8;
+        border-radius: 4px;
+      }
+      .circuit-binding-dialog .el-table__body-wrapper::-webkit-scrollbar-thumb:hover {
+        background: #009688;
+      }
+      /* Element Plus 虚拟滚动条组件强化可见性 */
+      .circuit-binding-dialog .el-scrollbar__bar.is-vertical {
+        width: 7px !important;
+        opacity: 0.85 !important;
+      }
+      .circuit-binding-dialog .el-scrollbar__thumb {
+        background-color: #94a3b8 !important;
+        border-radius: 4px !important;
+      }
+      .circuit-binding-dialog .el-scrollbar__thumb:hover {
+        background-color: #009688 !important;
       }
 
       /* ===== 二次回路方案与 BOM 专属编辑弹窗样式 ===== */
@@ -3414,16 +3459,25 @@
       <el-dialog
         v-model="circuitDwgDialogVisible"
         title="📂 二次图绑定"
-        width="96%"
+        width="98.5%"
         :close-on-click-modal="false"
         align-center
         @close="onCircuitDwgDialogClose"
         class="circuit-binding-dialog"
       >
+        <!-- 弹窗内部根容器：纯纵向弹性布局，通过 flex: 1 1 0% 与 min-height: 0 严丝合缝撑满弹窗 body -->
         <div
-          style="display: flex; flex-direction: column; gap: 8px; height: 100%"
+          style="
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex: 1 1 0%;
+            min-height: 0;
+            height: 100%;
+            box-sizing: border-box;
+          "
         >
-          <!-- 顶部信息与快捷路径导航条 -->
+          <!-- 顶部信息与快捷路径导航条 (固定自然高度，禁止被挤压) -->
           <div
             style="
               display: flex;
@@ -3495,24 +3549,24 @@
             </div>
           </div>
 
-          <!-- 核心主体区：三栏/折叠弹性布局 (弹性自适应高度，消除垂直与水平滚动条) -->
+          <!-- 核心主体区：三栏/折叠弹性布局 (使用纯 flex: 1 1 0% 与 min-height: 0 动态占满剩余高度，彻底消除写死高度与溢出截断) -->
           <div
             style="
               display: flex;
-              gap: 10px;
-              height: calc(88vh - 120px);
-              min-height: 400px;
-              max-height: 700px;
-              flex: 1;
+              gap: 8px;
+              flex: 1 1 0%;
+              min-height: 0;
+              width: 100%;
               overflow: hidden;
+              box-sizing: border-box;
             "
           >
-            <!-- 1. 左侧：文件夹与图纸单列展示看板 (宽度收窄至 168px，将 62px 空间全额让渡给中间 CAD 视口) -->
+            <!-- 1. 左侧：文件夹与图纸单列展示看板 (紧凑精简至 155px，全额让渡空间给中间 CAD 视口) -->
             <div
-              :style="{ width: previewCollapsed ? '240px' : '168px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid #e2e8f0', borderRadius: '4px', padding: '6px', background: '#ffffff', transition: 'width 0.2s' }"
+              :style="{ width: previewCollapsed ? '220px' : '155px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid #e2e8f0', borderRadius: '4px', padding: '6px', background: '#ffffff', transition: 'width 0.2s', minHeight: '0', overflow: 'hidden', boxSizing: 'border-box' }"
             >
-              <!-- 过滤搜索框 (100% 占满顶栏，去除多余的全选/清空按钮) -->
-              <div style="display: flex; align-items: center">
+              <!-- 过滤搜索框 (固定自然高度，禁止挤压) -->
+              <div style="display: flex; align-items: center; flex-shrink: 0;">
                 <!-- 模糊检索输入框 -->
                 <el-input
                   v-model="circuitDwgSearchKw"
@@ -3528,94 +3582,105 @@
                 </el-input>
               </div>
 
-              <!-- 列表展示：支持双击文件夹下钻，双击图纸文件即刻完成绑定；自适应容器高 -->
-              <el-table
-                class="dwg-file-table"
-                :data="filteredDirItems"
-                size="small"
-                border
-                style="width: 100%; flex: 1"
-                @row-dblclick="handleDwgRowDblClick"
-                @row-click="handleRowClick"
-                ref="circuitDwgTableRef"
-                highlight-current-row
+              <!-- 核心图纸文件表格包裹层：启用 flex: 1 1 0% 与 min-height: 0 限制在容器可用空间内，触发表格内置垂直滚动条 -->
+              <div
+                style="
+                  flex: 1 1 0%;
+                  min-height: 0;
+                  overflow: hidden;
+                  position: relative;
+                "
               >
-                <!-- 单列纯净名称列：自适应填满表格宽度，双击文件夹进目录，双击图纸即刻绑定 -->
-                <el-table-column
-                  prop="name"
-                  label="名称 (双击绑定/下钻)"
-                  min-width="120"
+                <!-- 列表展示：启用 height='100%' 虚拟受控滚动，表头固定吸顶且支持顺畅纵向滚动 -->
+                <el-table
+                  class="dwg-file-table"
+                  :data="filteredDirItems"
+                  size="small"
+                  border
+                  height="100%"
+                  style="width: 100%; height: 100%"
+                  @row-dblclick="handleDwgRowDblClick"
+                  @row-click="handleRowClick"
+                  ref="circuitDwgTableRef"
+                  highlight-current-row
                 >
-                  <!-- 自定义行模板 -->
-                  <template #default="{ row }">
-                    <!-- 文件夹项渲染 (带文件夹图标与下钻样式) -->
-                    <div
-                      v-if="row.isDir"
-                      style="
-                        cursor: pointer;
-                        display: flex;
-                        align-items: center;
-                        gap: 3px;
-                        font-weight: 600;
-                        color: #0284c7;
-                      "
-                    >
-                      <!-- 文件夹图标 -->
-                      <span>📁</span>
-                      <!-- 文件夹名称文本 -->
-                      <span
+                  <!-- 单列纯净名称列：自适应填满表格宽度，双击文件夹进目录，双击图纸即刻绑定 -->
+                  <el-table-column
+                    prop="name"
+                    label="名称 (双击绑定/下钻)"
+                    min-width="120"
+                  >
+                    <!-- 自定义行模板 -->
+                    <template #default="{ row }">
+                      <!-- 文件夹项渲染 (带文件夹图标与下钻样式) -->
+                      <div
+                        v-if="row.isDir"
                         style="
-                          overflow: hidden;
-                          text-overflow: ellipsis;
-                          white-space: nowrap;
+                          cursor: pointer;
+                          display: flex;
+                          align-items: center;
+                          gap: 3px;
+                          font-weight: 600;
+                          color: #0284c7;
                         "
-                        >{{ row.name }}</span
                       >
-                    </div>
-                    <!-- DWG 图纸项渲染 (双击即刻触发绑定) -->
-                    <div
-                      v-else
-                      style="
-                        cursor: pointer;
-                        display: flex;
-                        align-items: center;
-                        gap: 3px;
-                      "
-                      :title="`双击即可将【${row.nameWithoutExt}】绑定给右侧选中的元件组`"
-                    >
-                      <!-- 图纸图标 -->
-                      <span>📐</span>
-                      <!-- 去除后缀的图纸代码文本 -->
-                      <span
+                        <!-- 文件夹图标 -->
+                        <span>📁</span>
+                        <!-- 文件夹名称文本 -->
+                        <span
+                          style="
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            white-space: nowrap;
+                          "
+                          >{{ row.name }}</span
+                        >
+                      </div>
+                      <!-- DWG 图纸项渲染 (双击即刻触发绑定) -->
+                      <div
+                        v-else
                         style="
-                          font-weight: 500;
-                          color: #00796b;
-                          overflow: hidden;
-                          text-overflow: ellipsis;
-                          white-space: nowrap;
+                          cursor: pointer;
+                          display: flex;
+                          align-items: center;
+                          gap: 3px;
                         "
-                        >{{ row.nameWithoutExt }}</span
+                        :title="`双击即可将【${row.nameWithoutExt}】绑定给右侧选中的元件组`"
                       >
-                      <!-- 正在视口中预览的高亮指示胶囊 -->
-                      <span
-                        v-if="currentVectorDwg && currentVectorDwg.fullPath === row.fullPath"
-                        style="
-                          font-size: 9px;
-                          background: #ccfbf1;
-                          color: #0f766e;
-                          padding: 1px 3px;
-                          border-radius: 2px;
-                          margin-left: auto;
-                          flex-shrink: 0;
-                        "
-                        >视口中</span
-                      >
-                    </div>
-                  </template>
-                </el-table-column>
-              </el-table>
+                        <!-- 图纸图标 -->
+                        <span>📐</span>
+                        <!-- 去除后缀的图纸代码文本 -->
+                        <span
+                          style="
+                            font-weight: 500;
+                            color: #00796b;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            white-space: nowrap;
+                          "
+                          >{{ row.nameWithoutExt }}</span
+                        >
+                        <!-- 正在视口中预览的高亮指示胶囊 -->
+                        <span
+                          v-if="currentVectorDwg && currentVectorDwg.fullPath === row.fullPath"
+                          style="
+                            font-size: 9px;
+                            background: #ccfbf1;
+                            color: #0f766e;
+                            padding: 1px 3px;
+                            border-radius: 2px;
+                            margin-left: auto;
+                            flex-shrink: 0;
+                          "
+                          >视口中</span
+                        >
+                      </div>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
 
-              <!-- 底部左侧信息提示 (精简纯净统计布局) -->
+              <!-- 底部左侧信息提示 (牢固吸附在左栏底端，绝不溢出) -->
               <div
                 style="
                   font-size: 11px;
@@ -3623,7 +3688,8 @@
                   display: flex;
                   justify-content: space-between;
                   align-items: center;
-                  margin-top: auto;
+                  flex-shrink: 0;
+                  padding-top: 2px;
                 "
               >
                 <!-- 统计当前目录下的子文件夹与DWG图纸数量 -->
@@ -3638,14 +3704,16 @@
             <div
               v-show="!previewCollapsed"
               style="
-                flex: 1;
+                flex: 1 1 0%;
                 min-width: 0;
+                min-height: 0;
                 display: flex;
                 flex-direction: column;
                 border: 1px solid #1e293b;
                 border-radius: 4px;
                 background: #05070d;
                 overflow: hidden;
+                box-sizing: border-box;
               "
             >
               <!-- 视口顶部极简信息与操作条 (带图2核心参数快速胶囊预览) -->
@@ -3660,6 +3728,7 @@
                   color: #e2e8f0;
                   font-size: 12px;
                   gap: 6px;
+                  flex-shrink: 0;
                 "
               >
                 <!-- 正在预览的文件名提示：限制最大宽度并允许弹性缩进，杜绝挤占右侧胶囊 -->
@@ -3826,9 +3895,10 @@
                 ref="cadViewportDomRef"
                 class="pure-cad-container"
                 style="
-                  flex: 1;
+                  flex: 1 1 0%;
                   width: 100%;
                   height: 100%;
+                  min-height: 0;
                   position: relative;
                   overflow: hidden;
                 "
@@ -3857,7 +3927,7 @@
                 </div>
               </div>
 
-              <!-- 视口底部纯净手势操作提示 -->
+              <!-- 视口底部纯净手势操作提示 (固定自然高度，常驻视口底端) -->
               <div
                 style="
                   display: flex;
@@ -3868,6 +3938,7 @@
                   border-top: 1px solid #1e293b;
                   color: #64748b;
                   font-size: 11px;
+                  flex-shrink: 0;
                 "
               >
                 <span>💡 滚轮缩放 | 左键拖拽平移 | 双击居中拟合</span>
@@ -3875,92 +3946,91 @@
               </div>
             </div>
 
-            <!-- 3. 右侧：当前 Excel 工作表二次元件组与回路图号映射看板 (收窄至 240px，为中间 DWG 视口释放 120px 宽度) -->
+            <!-- 3. 右侧：当前 Excel 工作表二次元件组与回路图号映射看板 (极致压缩至 205px，全额让渡空间放大中间 CAD 视口) -->
             <div
-              :style="{ width: previewCollapsed ? 'calc(100% - 250px)' : '240px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', background: '#ffffff', transition: 'width 0.2s', minHeight: '0', overflow: 'hidden', boxSizing: 'border-box' }"
+              :style="{ width: previewCollapsed ? 'calc(100% - 225px)' : '205px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '4px', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '4px', background: '#ffffff', transition: 'width 0.2s', minHeight: '0', overflow: 'hidden', boxSizing: 'border-box' }"
             >
-              <!-- 顶部统计与快捷操作栏 (紧凑单行清爽排布) -->
+              <!-- 顶部统计与快捷操作栏 (超紧凑排布) -->
               <div
                 style="
                   display: flex;
                   justify-content: space-between;
                   align-items: center;
                   background: #f8fafc;
-                  padding: 4px 6px;
+                  padding: 3px 4px;
                   border-radius: 4px;
                   border: 1px solid #e2e8f0;
                   flex-shrink: 0;
                 "
               >
-                <!-- 数量统计状态容器 -->
+                <!-- 数量统计状态容器 (微缩紧凑文字) -->
                 <div
                   style="
-                    font-size: 11.5px;
+                    font-size: 11px;
                     color: #334155;
                     font-weight: 600;
                     display: flex;
                     align-items: center;
-                    gap: 2px;
+                    gap: 1px;
                     overflow: hidden;
                     white-space: nowrap;
                   "
                 >
-                  <!-- 图标与主标题 -->
+                  <!-- 紧凑小图标 -->
                   <span>📊元件组</span>
-                  <!-- 统计唯一型号总数与已绑定数量 -->
+                  <!-- 极简型号总数与绑定数徽标 -->
                   <span
-                    style="font-size: 10px; color: #64748b; font-weight: normal"
-                    >(<b>{{ excelComponentGroups.length }}</b>种,已绑<b
+                    style="font-size: 9.5px; color: #64748b; font-weight: normal"
+                    >(<b>{{ excelComponentGroups.length }}</b>,绑<b
                       style="color: #009688"
                       >{{ boundGroupsCount }}</b
                     >)</span
                   >
                 </div>
-                <!-- 右侧清空与重置操作按钮组 -->
+                <!-- 右侧极简清空操作按钮组 -->
                 <div
                   style="
                     display: flex;
-                    gap: 4px;
+                    gap: 3px;
                     align-items: center;
                     flex-shrink: 0;
                   "
                 >
-                  <!-- 清空当前选中行绑定按钮 -->
+                  <!-- 单项清空 -->
                   <el-button
                     size="small"
                     type="danger"
                     link
                     @click="clearCurrentSelectedBinding"
                     :disabled="!selectedExcelGroupRow"
-                    style="font-size: 11px; padding: 0"
+                    style="font-size: 10px; padding: 0"
                   >
-                    清空此项
+                    清空
                   </el-button>
-                  <!-- 按钮间垂直分隔竖线 -->
-                  <span style="color: #cbd5e1; font-size: 10px">|</span>
-                  <!-- 一键清空所有元件组绑定按钮 -->
+                  <span style="color: #cbd5e1; font-size: 9px">|</span>
+                  <!-- 全清绑定 -->
                   <el-button
                     size="small"
                     type="warning"
                     link
                     @click="clearAllGroupBindings"
-                    style="font-size: 11px; padding: 0"
+                    style="font-size: 10px; padding: 0"
                   >
                     全清
                   </el-button>
                 </div>
               </div>
 
-              <!-- 核心映射表格包裹层：填满右侧全部可用高度，内部受控虚拟滚动，视野开阔 -->
+              <!-- 核心映射表格包裹层：受控滚动 -->
               <div
                 style="
-                  flex: 1;
+                  flex: 1 1 0%;
                   min-height: 0;
                   overflow: hidden;
                   position: relative;
                 "
               >
-                <!-- 核心映射表格：启用 height="100%" 虚拟受控滚动，表头固定吸顶 -->
+                <!-- 核心映射表格：启用 height='100%' 虚拟受控滚动，表头固定吸顶 -->
                 <el-table
                   class="excel-bind-table"
                   :data="excelComponentGroups"
@@ -3977,33 +4047,34 @@
                     <!-- 未检测到元件组时的友好引导 -->
                     <div
                       style="
-                        padding: 20px 0;
+                        padding: 16px 0;
                         color: #94a3b8;
-                        font-size: 11.5px;
+                        font-size: 11px;
                         text-align: center;
                       "
                     >
                       <!-- 空提示文字 -->
-                      <span>当前工作表中未检测到 B列='元件组' 行</span>
+                      <span>无元件组行</span>
                       <!-- 引导按钮容器 -->
-                      <div style="margin-top: 4px">
-                        <!-- 引导用户重新抓取按钮 -->
+                      <div style="margin-top: 3px">
+                        <!-- 重新抓取按钮 -->
                         <el-button
                           size="small"
                           type="primary"
                           link
                           @click="loadExcelComponentGroups"
-                          >点击重新抓取</el-button
+                          style="font-size: 10.5px"
+                          >重新抓取</el-button
                         >
                       </div>
                     </div>
                   </template>
 
-                  <!-- 第 1 列：Excel 元件组型号规格 (自适应 95px，超出省略并带气泡提示) -->
+                  <!-- 第 1 列：型号规格 (压缩宽度至 78px，气泡展示详情) -->
                   <el-table-column
                     prop="groupModel"
                     label="型号规格"
-                    min-width="95"
+                    min-width="78"
                   >
                     <!-- 自定义单元格内容 -->
                     <template #default="{ row }">
@@ -4013,17 +4084,17 @@
                           display: flex;
                           align-items: center;
                           justify-content: space-between;
-                          gap: 2px;
+                          gap: 1px;
                           overflow: hidden;
                         "
                         :title="`元件组型号: ${row.groupModel}\n涵盖箱柜: ${(row.cabinets || []).join(', ')}\n覆盖行号: ${(row.rowIndexes || []).join(', ')} (全表共 ${row.occurrenceCount} 处)`"
                       >
-                        <!-- 元件组型号粗体字 (如 *KM变频器) -->
+                        <!-- 型号文字 (精简字号，超出省略) -->
                         <span
                           style="
                             font-weight: 600;
                             color: #0f766e;
-                            font-size: 11px;
+                            font-size: 10.5px;
                             overflow: hidden;
                             text-overflow: ellipsis;
                             white-space: nowrap;
@@ -4031,30 +4102,30 @@
                           "
                           >{{ row.groupModel }}</span
                         >
-                        <!-- 统计全表出现处数徽章 -->
+                        <!-- 极小紧凑出现次数微徽标 -->
                         <el-tag
                           size="small"
                           type="info"
                           effect="plain"
                           style="
-                            font-size: 9px;
+                            font-size: 8.5px;
                             flex-shrink: 0;
-                            padding: 0 2px;
-                            height: 16px;
-                            line-height: 14px;
+                            padding: 0 1px;
+                            height: 15px;
+                            line-height: 13px;
                           "
                         >
-                          {{ row.occurrenceCount }}处
+                          {{ row.occurrenceCount }}
                         </el-tag>
                       </div>
                     </template>
                   </el-table-column>
 
-                  <!-- 第 2 列：绑定的回路图号 (用户双击左侧DWG实时绑定显示在此) -->
+                  <!-- 第 2 列：绑定的回路图号 (压缩宽度至 80px) -->
                   <el-table-column
                     prop="boundDwgCode"
                     label="绑定图号"
-                    min-width="95"
+                    min-width="80"
                   >
                     <template #default="{ row }">
                       <!-- 已经绑定了图号时渲染 Tag 并支持一键点击 ✖ 解绑 -->
@@ -4064,26 +4135,26 @@
                           display: flex;
                           align-items: center;
                           justify-content: space-between;
-                          gap: 2px;
+                          gap: 1px;
                         "
                       >
-                        <!-- 图号标签 -->
+                        <!-- 图号标签 (紧凑边距) -->
                         <span
                           style="
                             font-weight: 600;
                             color: #059669;
                             background: #ecfdf5;
                             border: 1px solid #a7f3d0;
-                            padding: 1px 5px;
-                            border-radius: 3px;
-                            font-size: 11px;
+                            padding: 1px 3px;
+                            border-radius: 2px;
+                            font-size: 10px;
                             overflow: hidden;
                             text-overflow: ellipsis;
                             white-space: nowrap;
                           "
                           :title="`已绑定图号: ${row.boundDwgCode} (点击联动看图并展示参数)`"
                         >
-                          📐 {{ row.boundDwgCode }}
+                          {{ row.boundDwgCode }}
                         </span>
                         <!-- 单项解绑按钮 -->
                         <el-button
@@ -4092,25 +4163,24 @@
                           link
                           @click.stop="clearSingleGroupBinding(row)"
                           title="解除此型号绑定的图号"
-                          style="padding: 0 2px; height: 16px; font-size: 10px"
+                          style="padding: 0 1px; height: 15px; font-size: 9px"
                         >
                           ✖
                         </el-button>
                       </div>
-                      <!-- 未绑定状态提示 -->
+                      <!-- 未绑定状态提示 (紧凑排布) -->
                       <div v-else style="display: flex; align-items: center">
-                        <!-- 引导双击左侧DWG绑定 -->
                         <span
                           style="
                             color: #94a3b8;
-                            font-size: 10.5px;
+                            font-size: 10px;
                             border: 1px dashed #cbd5e1;
-                            border-radius: 3px;
-                            padding: 1px 5px;
+                            border-radius: 2px;
+                            padding: 1px 3px;
                             background: #f8fafc;
                           "
                         >
-                          👈 双击绑定
+                          👈 绑定
                         </span>
                       </div>
                     </template>

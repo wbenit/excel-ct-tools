@@ -43,68 +43,63 @@ namespace ExcelAddInDemo
       <tab id='tabDemo' label='鑫壬'>
         <!-- 账户控件分组 -->
         <group id='grpAccount' label='账户'>
-          <!-- “我的” 下拉菜单控件 -->
-          <menu id='menuUser' label='我的' imageMso='UserKey' size='large'>
-            <!-- 企业设置按钮 -->
-            <button id='btnEnterprise' label='企业设置' imageMso='Properties' onAction='OnMenuAction' />
-            <!-- 上传头像按钮 -->
-            <button id='btnUploadAvatar' label='上传头像' imageMso='ContactCard' onAction='OnMenuAction' />
-            <!-- 我的资料按钮 -->
-            <button id='btnProfile' label='我的资料' imageMso='ContactCard' onAction='OnMenuAction' />
-            <!-- 一周小结按钮 -->
-            <button id='btnWeekly' label='一周小结' imageMso='TableProperties' onAction='OnMenuAction' />
-            <!-- 查看排行榜按钮 -->
-            <button id='btnRanking' label='查看排行榜' imageMso='Rating' onAction='OnMenuAction' />
-            <!-- 会员中心(订单发票) 按钮 -->
-            <button id='btnVip' label='会员中心(订单发票)' imageMso='Currency' onAction='OnMenuAction' />
+          <!-- “我的” 下拉菜单控件 (使用 Office 标准账户菜单图标 AccountMenu) -->
+          <menu id='menuUser' label='我的' imageMso='AccountMenu' size='large'>
+            <!-- 企业设置按钮 (使用标准企业组织架构图标) -->
+            <button id='btnEnterprise' label='企业设置' imageMso='OrganizationChartLayoutStandard' onAction='OnMenuAction' />
+            <!-- 上传头像按钮 (使用标准本地插入图片图标) -->
+            <button id='btnUploadAvatar' label='上传头像' imageMso='PictureInsertFromFile' onAction='OnMenuAction' />
+            <!-- 我的资料按钮 (使用标准个人资料名片图标) -->
+            <button id='btnProfile' label='我的资料' imageMso='GroupPersonalInfo' onAction='OnMenuAction' />
+            <!-- 一周小结按钮 (使用标准日历周程图标) -->
+            <button id='btnWeekly' label='一周小结' imageMso='CalendarInsert' onAction='OnMenuAction' />
+            <!-- 查看排行榜按钮 (使用金色星级徽章图标) -->
+            <button id='btnRanking' label='查看排行榜' imageMso='StarRatedFull' onAction='OnMenuAction' />
+            <!-- 会员中心(订单发票) 按钮 (使用金色星级徽章图标，精准匹配VIP会员语义) -->
+            <button id='btnVip' label='会员中心(订单发票)' imageMso='StarRatedFull' onAction='OnMenuAction' />
             <!-- ExWinner官网 按钮 -->
             <button id='btnOfficialSite' label='ExWinner官网' imageMso='WebPagePreview' onAction='OnMenuAction' />
-            <!-- 分享 菜单项 -->
-            <menu id='menuShare' label='分享' imageMso='Share'>
-              <!-- 分享链接按钮 -->
-              <button id='btnShareLink' label='分享链接' onAction='OnMenuAction' />
+            <!-- 分享 菜单项 (使用标准共享工作簿协作图标) -->
+            <menu id='menuShare' label='分享' imageMso='ReviewShareWorkbook'>
+              <!-- 分享链接按钮 (使用标准插入超链接图标) -->
+              <button id='btnShareLink' label='分享链接' imageMso='HyperlinkInsert' onAction='OnMenuAction' />
             </menu>
-            <!-- 退出登录按钮 -->
-            <button id='btnLogout' label='退出' imageMso='CloseWindow' onAction='OnMenuAction' />
+            <!-- 退出登录按钮 (使用标准退出系统程序图标) -->
+            <button id='btnLogout' label='退出' imageMso='FileExit' onAction='OnMenuAction' />
           </menu>
         </group>
         <!-- “我的项目” 功能分组 -->
         <group id='grpProjects' label='我的项目'>
-          <!-- 本机项目下拉菜单 -->
-          <menu id='menuLocalProject' label='本机项目' imageMso='TableProperties' size='large'>
-            <!-- 本机项目列表项 -->
-            <button id='btnLocalProj1' label='默认本机项目' onAction='OnMenuAction' />
+          <!-- 本机项目下拉菜单 (使用标准本地项目文件夹图标) -->
+          <menu id='menuLocalProject' label='本机项目' imageMso='Folder' size='large'>
+            <!-- 本机项目列表项 (配置打开本地文件标准图标) -->
+            <button id='btnLocalProj1' label='默认本机项目' imageMso='FileOpen' onAction='OnMenuAction' />
           </menu>
           <!-- 云项目下拉菜单 -->
           <menu id='menuCloudProject' label='云项目' imageMso='ServerProperties' size='large'>
-            <!-- 云项目列表项 -->
-            <button id='btnCloudProj1' label='默认云项目' onAction='OnMenuAction' />
+            <!-- 云项目列表项 (配置服务器网络连接标准图标) -->
+            <button id='btnCloudProj1' label='默认云项目' imageMso='ServerConnection' onAction='OnMenuAction' />
           </menu>
         </group>
         <!-- ①建项目→ 功能分组 -->
         <group id='grpBuildProject' label='①建项目→'>
           <!-- 新建项目按钮 -->
           <button id='btnNewProject' label='新建项目' imageMso='FileNew' size='large' onAction='OnMenuAction' />
-          <!-- 自动组价下拉菜单 -->
-          <menu id='menuAutoPrice' label='自动组价' imageMso='TableStyles' size='large'>
-            <!-- 自动组价项 -->
-            <button id='btnAutoPriceSub' label='自动组价' onAction='OnMenuAction' />
-          </menu>
           <!-- 国网报价下拉菜单 -->
           <menu id='menuStateGridQuote' label='国网报价' imageMso='WebPagePreview' size='large'>
-            <!-- 国网报价项 -->
-            <button id='btnStateGridQuoteSub' label='国网报价' onAction='OnMenuAction' />
+            <!-- 国网报价项 (配置地球网页预览标准图标) -->
+            <button id='btnStateGridQuoteSub' label='国网报价' imageMso='WebPagePreview' onAction='OnMenuAction' />
           </menu>
           <!-- 分类功能按钮 (SplitButton 支持大图标与下拉菜单，完整对齐 ExWinner 布局) -->
           <splitButton id='splitCategory' size='large'>
             <!-- 顶部大图标一键直接触发新建分类 -->
             <button id='btnCategorySub' label='分类' imageMso='GroupOutline' onAction='OnMenuAction' />
-            <!-- 下拉菜单列表 -->
-            <menu id='menuCategory' label='分类'>
+            <!-- 下拉菜单列表 (配置分组大纲图标) -->
+            <menu id='menuCategory' label='分类' imageMso='GroupOutline'>
               <!-- 1. 新建分类 -->
               <button id='btnNewCategory' label='新建分类' imageMso='GroupOutline' onAction='OnMenuAction' />
-              <!-- 2. 编辑分类 -->
-              <button id='btnEditCategory' label='编辑分类' imageMso='EditPage' onAction='OnMenuAction' />
+              <!-- 2. 编辑分类 (使用标准设计编辑图标) -->
+              <button id='btnEditCategory' label='编辑分类' imageMso='DesignMode' onAction='OnMenuAction' />
               <!-- 3. 复制分类 -->
               <button id='btnCopyCategory' label='复制分类' imageMso='Copy' onAction='OnMenuAction' />
               <!-- 4. 插入复制的分类 -->
@@ -117,12 +112,12 @@ namespace ExcelAddInDemo
           <menu id='menuCabinet' label='箱柜' imageMso='CreateForm' size='large'>
             <!-- 1. 新建箱柜按钮 -->
             <button id='btnNewCabinet' label='新建箱柜' imageMso='CreateForm' onAction='OnMenuAction' />
-            <!-- 2. 新建无明细箱柜按钮 -->
-            <button id='btnNewCabinetNoDetail' label='新建无明细箱柜' onAction='OnMenuAction' />
-            <!-- 3. 批建箱柜按钮 -->
-            <button id='btnBatchNewCabinet' label='批建箱柜' onAction='OnMenuAction' />
-            <!-- 4. 编辑箱柜信息按钮 -->
-            <button id='btnEditCabinet' label='编辑箱柜信息' imageMso='EditPage' onAction='OnMenuAction' />
+            <!-- 2. 新建无明细箱柜按钮 (配置单行表格插入图标) -->
+            <button id='btnNewCabinetNoDetail' label='新建无明细箱柜' imageMso='TableInsert' onAction='OnMenuAction' />
+            <!-- 3. 批建箱柜按钮 (配置多项表单批量创建图标) -->
+            <button id='btnBatchNewCabinet' label='批建箱柜' imageMso='CreateFormWithMultipleItems' onAction='OnMenuAction' />
+            <!-- 4. 编辑箱柜信息按钮 (使用标准设计编辑图标) -->
+            <button id='btnEditCabinet' label='编辑箱柜信息' imageMso='DesignMode' onAction='OnMenuAction' />
             <!-- 5. 剪切箱柜按钮 -->
             <button id='btnCutCabinet' label='剪切箱柜' imageMso='Cut' onAction='OnMenuAction' />
             <!-- 6. 复制箱柜按钮 -->
@@ -131,30 +126,30 @@ namespace ExcelAddInDemo
             <button id='btnInsertCopiedCabinet' label='插入复制的箱柜' imageMso='Paste' onAction='OnMenuAction' />
             <!-- 8. 删除箱柜按钮 -->
             <button id='btnDeleteCabinet' label='删除箱柜' imageMso='Delete' onAction='OnMenuAction' />
-            <!-- 9. 箱柜调序按钮 -->
-            <button id='btnReorderCabinet' label='箱柜调序' imageMso='SortAscending' onAction='OnMenuAction' />
+            <!-- 9. 箱柜调序按钮 (使用标准升序排序图标) -->
+            <button id='btnReorderCabinet' label='箱柜调序' imageMso='SortUp' onAction='OnMenuAction' />
             <!-- 10. 导入箱柜BOM按钮 -->
             <button id='btnImportCabinetBOM' label='导入箱柜BOM' imageMso='ImportTextFile' onAction='OnMenuAction' />
-            <!-- 11. 智能导入箱柜BOM按钮 -->
-            <button id='btnSmartImportCabinetBOM' label='智能导入箱柜BOM' imageMso='ImportXml' onAction='OnMenuAction' />
+            <!-- 11. 智能导入箱柜BOM按钮 (使用标准XML导入图标) -->
+            <button id='btnSmartImportCabinetBOM' label='智能导入箱柜BOM' imageMso='XmlImport' onAction='OnMenuAction' />
           </menu>
         </group>
         <!-- ②录元件 功能分组 -->
         <group id='grpInputComponents' label='②录元件'>
           <!-- 智能识图下拉菜单 -->
           <menu id='menuSmartOCR' label='智能识图' imageMso='FindDialog' size='large'>
-            <!-- 智能识图项 -->
-            <button id='btnSmartOCRSub' label='智能识图' onAction='OnMenuAction' />
+            <!-- 智能识图项 (配置照相机识图图标) -->
+            <button id='btnSmartOCRSub' label='智能识图' imageMso='Camera' onAction='OnMenuAction' />
           </menu>
           <!-- 云方案按钮 -->
           <button id='btnCloudSolution' label='云方案' imageMso='ServerProperties' size='large' onAction='OnMenuAction' />
-          <!-- 云物料下拉菜单 -->
-          <menu id='menuCloudMaterial' label='云物料' imageMso='TableProperties' size='large'>
-            <!-- 云物料库项 -->
-            <button id='btnCloudMaterialSub' label='云物料库' onAction='OnMenuAction' />
+          <!-- 云物料下拉菜单 (使用标准SQL企业物料数据库图标) -->
+          <menu id='menuCloudMaterial' label='云物料' imageMso='DatabaseSqlServer' size='large'>
+            <!-- 云物料库项 (配置SQL企业物料数据库图标) -->
+            <button id='btnCloudMaterialSub' label='云物料库' imageMso='DatabaseSqlServer' onAction='OnMenuAction' />
           </menu>
-          <!-- 型号识别(提取极数与电流) 按钮 -->
-          <button id='btnModelParamParser' label='识别极数电流' imageMso='AutoFilter' size='large' screentip='型号识别极数电流' supertip='自动从型号中识别并提取电流和极数，支持双通道顺位流水线与白名单过滤' onAction='OnMenuAction' />
+          <!-- 型号识别(提取极数与电流) 按钮 (使用标准筛选过滤漏斗图标) -->
+          <button id='btnModelParamParser' label='识别极数电流' imageMso='Filter' size='large' screentip='型号识别极数电流' supertip='自动从型号中识别并提取电流和极数，支持双通道顺位流水线与白名单过滤' onAction='OnMenuAction' />
           <!-- 元器件数据管理按钮 (支持在 Excel 中直接查看、批量筛选、选中行更新/新增/删除) -->
           <button id='btnComponentManage' label='元器件管理' imageMso='TableInsertRowsAbove' size='large' screentip='元器件数据管理' supertip='在 Excel 中按品牌和名称筛选元器件数据，支持对选中行进行精准更新、新增和删除' onAction='OnMenuAction' />
           <!-- 二次元件组规则管道(生成二次) 按钮 -->
@@ -172,47 +167,47 @@ namespace ExcelAddInDemo
             <button id='btnDistributedAdjustPrice' label='分布调价' imageMso='PivotTableInsert' onAction='OnMenuAction' />
             <!-- 3. 筛选调价按钮 -->
             <button id='btnFilterAdjustPrice' label='筛选调价' imageMso='Filter' onAction='OnMenuAction' />
-            <!-- 4. 一键匹配价格按钮 -->
-            <button id='btnAutoMatchPrice' label='一键匹配价格' imageMso='Pointer' onAction='OnMenuAction' />
+            <!-- 4. 一键匹配价格按钮 (使用官方标准箭头选择指针图标) -->
+            <button id='btnAutoMatchPrice' label='一键匹配价格' imageMso='ObjectsSelect' onAction='OnMenuAction' />
             <!-- 5. 在线查价按钮 (电气天下/天工矩阵) -->
             <button id='btnOnlinePriceSearch' label='在线查价 (电气天下/天工)' imageMso='WebPagePreview' screentip='在线查价与静默回写' supertip='从电气天下或天工矩阵实时拉取元器件单价，支持框选一键静默批量回写与自主选择回填列' onAction='OnMenuAction' />
             <!-- 6. 母排用量一键预估按钮 -->
             <button id='btnEstimateBusbarUsage' label='母排用量一键预估' imageMso='ChartInsert' onAction='OnMenuAction' />
-            <!-- 7. 箱体尺寸一键预估级联菜单 -->
-            <menu id='menuEstimateCabinetSize' label='箱体尺寸一键预估' imageMso='FlashFill'>
-              <!-- 箱体尺寸一键预估子项 -->
-              <button id='btnEstimateCabinetSizeSub' label='箱体尺寸一键预估' onAction='OnMenuAction' />
+            <!-- 7. 箱体尺寸一键预估级联菜单 (使用官方标准标尺测量图标) -->
+            <menu id='menuEstimateCabinetSize' label='箱体尺寸一键预估' imageMso='ShowRuler'>
+              <!-- 箱体尺寸一键预估子项 (配置标尺测量标准图标) -->
+              <button id='btnEstimateCabinetSizeSub' label='箱体尺寸一键预估' imageMso='ShowRuler' onAction='OnMenuAction' />
             </menu>
             <!-- 8. 母排一键改价按钮 -->
             <button id='btnBusbarBatchPrice' label='母排一键改价' imageMso='TableInsertRowsAbove' onAction='OnMenuAction' />
-            <!-- 9. 箱体一键改价按钮 -->
-            <button id='btnCabinetBatchPrice' label='箱体一键改价' imageMso='ShapeCube' onAction='OnMenuAction' />
+            <!-- 9. 箱体一键改价按钮 (使用标准矩形柜体图标) -->
+            <button id='btnCabinetBatchPrice' label='箱体一键改价' imageMso='ShapeRectangle' onAction='OnMenuAction' />
             <!-- 10. 多方案报价级联菜单 -->
             <menu id='menuMultiPlanQuote' label='多方案报价' imageMso='FileNew'>
-              <!-- 多方案报价子项 -->
-              <button id='btnMultiPlanQuoteSub' label='多方案报价' onAction='OnMenuAction' />
+              <!-- 多方案报价子项 (配置多页方案对比标准图标) -->
+              <button id='btnMultiPlanQuoteSub' label='多方案报价' imageMso='MultiplePages' onAction='OnMenuAction' />
             </menu>
           </menu>
           <!-- 在线查价大图标直达按钮 -->
           <button id='btnOnlinePriceSearchBig' label='在线查价' imageMso='WebPagePreview' size='large' screentip='在线查价与静默回写' supertip='从电气天下或天工矩阵实时拉取元器件单价，支持框选一键静默批量回写与自主选择回填列' onAction='OnMenuAction' />
           <!-- 智能算料/辅材壳体计算 按钮 (大图标直达) -->
           <button id='btnCabinetAuxCalc' label='辅材壳体计算' imageMso='CalculateNow' size='large' screentip='辅材壳体与配电智能计算' supertip='智能推导匹配壳体尺寸、计算铜排母线用量、一次及二次接线辅材与装配人工费，支持全参数动态配置' onAction='OnMenuAction' />
-          <!-- 费用设定下拉菜单 -->
-          <menu id='menuFeeSetting' label='费用设定' imageMso='Currency' size='large'>
+          <!-- 费用设定下拉菜单 (使用 Office 经典会计货币标准图标 AccountingFormat，确保各版本大图标均能正常显现) -->
+          <menu id='menuFeeSetting' label='费用设定' imageMso='AccountingFormat' size='large'>
             <!-- 1. 公式法调费按钮 (对应图二样式与提示) -->
             <button id='btnFormulaAdjustFee' label='公式法调费' imageMso='Calculator' screentip='公式法调费' supertip='按明细总价，套用公式算成套费(管理费、利润等)。' onAction='OnMenuAction' />
-            <!-- 2. 系数法调费按钮 -->
-            <button id='btnCoefficientAdjustFee' label='系数法调费' imageMso='PercentSymbol' onAction='OnMenuAction' />
+            <!-- 2. 系数法调费按钮 (使用官方标准百分比符号图标) -->
+            <button id='btnCoefficientAdjustFee' label='系数法调费' imageMso='PercentStyle' onAction='OnMenuAction' />
             <!-- 3. 智能算料按钮 -->
             <button id='btnSmartMaterial' label='智能算料' imageMso='AutoSum' onAction='OnMenuAction' />
-            <!-- 4. 费用公式转值按钮 -->
-            <button id='btnFormulaToValue' label='费用公式转值' imageMso='PasteValues' onAction='OnMenuAction' />
-            <!-- 5. 总价一键调整按钮 -->
-            <button id='btnOneKeyAdjustTotal' label='总价一键调整' imageMso='Gauge' onAction='OnMenuAction' />
-            <!-- 6. 总价高级调整按钮 -->
-            <button id='btnAdvancedAdjustTotal' label='总价高级调整' imageMso='Diamond' onAction='OnMenuAction' />
-            <!-- 默认费用设定子菜单选项 -->
-            <button id='btnFeeSettingSub' label='费用设定' onAction='OnMenuAction' />
+            <!-- 4. 费用公式转值按钮 (使用官方标准数值与选择性粘贴图标) -->
+            <button id='btnFormulaToValue' label='费用公式转值' imageMso='PasteSpecialDialog' onAction='OnMenuAction' />
+            <!-- 5. 总价一键调整按钮 (使用官方标准计算器即时重算图标) -->
+            <button id='btnOneKeyAdjustTotal' label='总价一键调整' imageMso='CalculateNow' onAction='OnMenuAction' />
+            <!-- 6. 总价高级调整按钮 (使用官方高级筛选与调控图标) -->
+            <button id='btnAdvancedAdjustTotal' label='总价高级调整' imageMso='SortAndFilterAdvanced' onAction='OnMenuAction' />
+            <!-- 默认费用设定子菜单选项 (同样配置 AccountingFormat 图标) -->
+            <button id='btnFeeSettingSub' label='费用设定' imageMso='AccountingFormat' onAction='OnMenuAction' />
           </menu>
           <!-- 撤销/还原下拉菜单 -->
           <menu id='menuUndoRedo' label='撤销/还原' imageMso='Undo' size='large'>
@@ -228,12 +223,12 @@ namespace ExcelAddInDemo
         </group>
         <!-- ④出报表 功能分组 -->
         <group id='grpExportReports' label='④出报表'>
-          <!-- 标书报表下拉菜单 (支持多级级联导出) -->
-          <menu id='menuTenderReport' label='标书报表' imageMso='PrintPreviewAndPrint' size='large'>
+          <!-- 标书报表下拉菜单 (使用官方标准报表与打印预览图标，支持多级级联导出) -->
+          <menu id='menuTenderReport' label='标书报表' imageMso='FilePrintPreview' size='large'>
             <!-- 甲方投标报表 级联子菜单 -->
             <menu id='menuPartyAReport' label='甲方投标报表' imageMso='FileSaveAsExcelXlsx'>
-              <!-- 常规样式报表 (核心实施项) -->
-              <button id='btnReportRegular' label='常规样式报表' imageMso='TableStyles' onAction='OnMenuAction' screentip='常规样式报表' supertip='生成标准甲方商务投标报表，包含《封面》、《屏柜汇总表》及《屏柜分项表》' />
+              <!-- 常规样式报表 (核心实施项，使用官方标准电子表格图标) -->
+              <button id='btnReportRegular' label='常规样式报表' imageMso='TableExcelSpreadsheetInsert' onAction='OnMenuAction' screentip='常规样式报表' supertip='生成标准甲方商务投标报表，包含《封面》、《屏柜汇总表》及《屏柜分项表》' />
               <!-- 高级样式报表 -->
               <button id='btnReportAdvanced' label='高级样式报表' imageMso='ChartInsert' onAction='OnMenuAction' screentip='高级样式报表' supertip='包含外形尺寸、CAD图号等高级工程技术规格的分栏投标报表' />
               <!-- 国网报表 -->
@@ -250,21 +245,23 @@ namespace ExcelAddInDemo
           </menu>
           <!-- 材料统计下拉菜单 -->
           <menu id='menuMaterialStat' label='材料统计' imageMso='ChartInsert' size='large'>
-            <!-- 材料统计项 -->
-            <button id='btnMaterialStatSub' label='材料统计' onAction='OnMenuAction' />
+            <!-- 材料统计项 (配置图表插入统计图标) -->
+            <button id='btnMaterialStatSub' label='材料统计' imageMso='ChartInsert' onAction='OnMenuAction' />
           </menu>
         </group>
         <!-- 辅助项 功能分组 -->
         <group id='grpAuxiliary' label='辅助项'>
           <!-- 聚光灯复合分割按钮 (快速开关 + 样式设置与模式选择菜单) -->
           <splitButton id='splitSpotlight' size='large'>
-            <!-- 上半部主按钮：快速开启/关闭聚光灯 -->
-            <toggleButton id='btnToggleSpotlight' label='聚光灯' imageMso='PivotTableVisualFilter' getPressed='GetSpotlightPressed' onAction='OnSpotlightAction' screentip='行列聚光灯 (Ctrl+Alt+L)' supertip='点击快速开启/关闭聚光灯。以半透明柔和色彩高亮选中单元格所在行与列，无损Excel撤销重做(Ctrl+Z)且零文件修改' />
-            <!-- 下半部下拉菜单：模式切换与个性化外观设置 -->
-            <menu id='menuSpotlightOptions' itemSize='normal'>
+            <!-- 上半部主按钮：快速开启/关闭聚光灯 (使用官方标准荧光高亮图标) -->
+            <toggleButton id='btnToggleSpotlight' label='聚光灯' imageMso='ReviewHighlightChanges' getPressed='GetSpotlightPressed' onAction='OnSpotlightAction' screentip='行列聚光灯 (Ctrl+Alt+L)' supertip='点击快速开启/关闭聚光灯。以半透明柔和色彩高亮选中单元格所在行与列，无损Excel撤销重做(Ctrl+Z)且零文件修改' />
+            <!-- 下半部下拉菜单：模式切换与个性化外观设置 (配置属性设置图标) -->
+            <menu id='menuSpotlightOptions' itemSize='normal' imageMso='PropertySheet'>
               <button id='btnSpotlightSettings' label='⚙️ 聚光灯设置...' imageMso='PropertySheet' onAction='OnMenuAction' screentip='聚光灯外观设置' supertip='打开聚光灯设置面板，自定义颜色、透明度、模式及活动单元格镂空效果' />
+              <!-- 高亮模式分割线 -->
               <menuSeparator id='sepSpotlightModes' title='高亮模式' />
-              <button id='btnSpotlightModeCross' label='十字高亮 (行+列)' imageMso='ShapeCross' onAction='OnMenuAction' />
+              <!-- 十字高亮模式 (使用官方标准交叉表交叉十字图标) -->
+              <button id='btnSpotlightModeCross' label='十字高亮 (行+列)' imageMso='QueryCrosstab' onAction='OnMenuAction' />
               <button id='btnSpotlightModeRow' label='仅高亮当前行' imageMso='TableRowSelect' onAction='OnMenuAction' />
               <button id='btnSpotlightModeCol' label='仅高亮当前列' imageMso='TableColumnSelect' onAction='OnMenuAction' />
             </menu>
@@ -273,24 +270,24 @@ namespace ExcelAddInDemo
           <toggleButton id='btnToggleCadSync' label='联动CAD' imageMso='SelectionPane' size='large' getPressed='GetCadSyncPressed' onAction='OnCadSyncAction' screentip='联动AutoCAD夹点' supertip='选中行时自动读取AA列句柄，在AutoCAD中即时高亮并激活夹点显示' />
           <!-- 右键菜单模式切换按钮 -->
           <button id='btnToggleContextMenuMode' label='右键菜单模式' imageMso='ControlsGallery' size='large' screentip='切换右键菜单模式' supertip='在【业务专属菜单】与【Excel 原生右键菜单】之间彻底二选一切换' onAction='OnMenuAction' />
-          <!-- 项目工具下拉菜单 -->
-          <menu id='menuProjectTools' label='项目工具' imageMso='Tools' size='large'>
+          <!-- 项目工具下拉菜单 (使用标准工具箱图标 ControlToolboxOutlook，解决大图标空白问题) -->
+          <menu id='menuProjectTools' label='项目工具' imageMso='ControlToolboxOutlook' size='large'>
             <!-- 智能输入按钮 -->
             <button id='btnSmartInput' label='智能输入' imageMso='SmartArtInsert' screentip='智能输入' supertip='配置元器件去重词库与C列输入智能联动选项' onAction='OnMenuAction' />
-            <!-- 项目工具项 -->
-            <button id='btnProjectToolsSub' label='项目工具' onAction='OnMenuAction' />
+            <!-- 项目工具项 (配置标准工具箱图标) -->
+            <button id='btnProjectToolsSub' label='项目工具' imageMso='ControlToolboxOutlook' onAction='OnMenuAction' />
           </menu>
-          <!-- 企业DHub按钮 -->
-          <button id='btnEnterpriseDHub' label='企业DHub' imageMso='ServerProperties' size='large' onAction='OnMenuAction' />
-          <!-- 设置按钮 -->
-          <button id='btnSettings' label='设置' imageMso='OptionButton' size='large' onAction='OnMenuAction' />
+          <!-- 企业DHub按钮 (使用服务器连接中枢图标 ServerConnection，支持清晰大图标渲染) -->
+          <button id='btnEnterpriseDHub' label='企业DHub' imageMso='ServerConnection' size='large' onAction='OnMenuAction' />
+          <!-- 设置按钮 (使用标准应用程序选项齿轮图标 ApplicationOptionsDialog，彻底解决大图标空白) -->
+          <button id='btnSettings' label='设置' imageMso='ApplicationOptionsDialog' size='large' onAction='OnMenuAction' />
         </group>
         <!-- 服务 功能分组 -->
         <group id='grpService' label='服务'>
           <!-- 服务下拉菜单 -->
           <menu id='menuService' label='服务中心' imageMso='Help' size='large'>
-            <!-- 在线客服按钮 -->
-            <button id='btnServiceSub' label='在线客服' onAction='OnMenuAction' />
+            <!-- 在线客服按钮 (配置技术支持/在线客服标准图标) -->
+            <button id='btnServiceSub' label='在线客服' imageMso='TechnicalSupport' onAction='OnMenuAction' />
           </menu>
         </group>
       </tab>

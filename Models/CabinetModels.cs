@@ -243,6 +243,12 @@ namespace ExcelAddInDemo.Models
 
         // 成本总价公式 (对应K列，如: "[成本总价]")
         public string CostTotalPriceFormula { get; set; } = string.Empty;
+
+        // 加价/报出系数公式或数值 (对应L列，如: "1.15" 或 "=ROUND(L2*1.05, 2)")
+        public string CoefficientFormula { get; set; } = string.Empty;
+
+        // 官方表价/面价公式或数值 (对应M列，如: "280" 或 "=ROUND(H1*0.8, 2)")
+        public string MarkedPriceFormula { get; set; } = string.Empty;
     }
 
     /// <summary>

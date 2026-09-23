@@ -306,11 +306,11 @@ namespace ExcelAddInDemo
                     activeSheet.Cells[insertSumRow, 5].Formula = $"台";
                     // 写入汇总行数量 (F 列即第 6 列) --硬编码: 第 6 列为 F 列 (数量列)--
                     activeSheet.Cells[insertSumRow, 6].Value = 1;
-                    // 在 tolsum 总计行 F 列填写数量 --硬编码: 第 6 列为 F 列 (数量列)--
-                    activeSheet.Cells[newTolsumRow, 6].Value = 1;
+                    // 在 tolsum 总计行 F 列自动绑定联动公式指向汇总行 F 列 (避免静态值丢失联动)
+                    activeSheet.Cells[newTolsumRow, 6].Formula = $"=F{insertSumRow}";
                     // 汇总行公式绑定至明细总计行
-                    // G 列单价公式指向明细总计行的销售总价 (H 列)
-                    activeSheet.Cells[insertSumRow, 7].Formula = $"=H{newTolsumRow}";
+                    // G 列单价公式指向明细总计行的单台单价 G 列 (方式 B 稳健绑定，避免数量二次相乘)
+                    activeSheet.Cells[insertSumRow, 7].Formula = $"=G{newTolsumRow}";
                     // H 列总价公式 = 数量(F列) * 单价(G列)
                     activeSheet.Cells[insertSumRow, 8].Formula = $"=F{insertSumRow}*G{insertSumRow}";
                     // J 列成本总价公式指向明细总计行的成本总价 (K 列)
@@ -1032,8 +1032,8 @@ namespace ExcelAddInDemo
                     activeSheet.Cells[newDetRow, 9].Value = string.Empty;
 
                     // 汇总行公式绑定至明细总计行
-                    // G 列单价公式指向明细总计行的销售总价 (H 列)
-                    activeSheet.Cells[insertRow, 7].Formula = $"=H{newTolsumRow}";
+                    // G 列单价公式指向明细总计行的单台单价 G 列 (方式 B 稳健绑定，避免数量二次相乘)
+                    activeSheet.Cells[insertRow, 7].Formula = $"=G{newTolsumRow}";
                     // H 列总价公式 = 数量(F列) * 单价(G列)
                     activeSheet.Cells[insertRow, 8].Formula = $"=F{insertRow}*G{insertRow}";
                     // J 列成本总价公式指向明细总计行的成本总价 (K 列)
@@ -1737,7 +1737,8 @@ namespace ExcelAddInDemo
                 sumRowMatrix[0, 3] = string.Empty; // D 列: 箱柜型号/尺寸
                 sumRowMatrix[0, 4] = cabUnit; // E 列: 单位 (顶部箱柜默认写入"台") --硬编码: 单位名称--
                 sumRowMatrix[0, 5] = cabQty; // F 列: 数量 (使用提取的有效数量)
-                sumRowMatrix[0, 6] = $"=H{tolsumRow - 1}"; // G 列: 单价公式 (指向单台合计行)
+                // G 列: 单价公式指向明细总计行单台单价 G 列 (方式 B 稳健绑定，避免数量二次相乘)
+                sumRowMatrix[0, 6] = $"=G{tolsumRow}";
                 sumRowMatrix[0, 7] = $"=F{sumRow}*G{sumRow}"; // H 列: 总价公式
                 sumRowMatrix[0, 8] = string.Empty; // I 列
                 sumRowMatrix[0, 9] = $"=K{tolsumRow}"; // J 列: 成本总价公式 (指向总计行)
@@ -1823,9 +1824,9 @@ namespace ExcelAddInDemo
                 // 9. 刷新小计行自适应求和公式与计费区域 A 列序号公式 (抽取独立方法，契合规则 6 & 规则 7)
                 RefreshCabinetFeeAreaFormulas(sheet, detRow, compStartRow, subsumRow, tolsumRow);
 
-                // 10. 用户需求：在 tolsum 行 (总计行) 的 F 列 (第 6 列) 填写箱柜数量 --硬编码: 第 6 列为 F 列--
-                // 保证底表明细总计行数量与顶部汇总行 F 列保持严格一致
-                sheet.Cells[tolsumRow, 6].Value2 = cabQty;
+                // 10. 用户需求：在 tolsum 行 (总计行) 的 F 列 (第 6 列) 自动绑定动态联动公式指向顶部汇总行
+                // 保证底表明细总计行数量与顶部汇总行 F 列双向自适应联动，修改顶部台数时底表明细自动生效
+                sheet.Cells[tolsumRow, 6].Formula = $"=F{sumRow}";
 
                 return true;
             }

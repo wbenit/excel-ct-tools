@@ -783,6 +783,40 @@
               </template>
             </el-table-column>
 
+            <!-- L 列：系数 (加价/报出系数，支持修饰算式或数值) -->
+            <el-table-column label="L" width="80" align="right">
+              <template #header>
+                <div>L</div>
+                <div>系数</div>
+              </template>
+              <template #default="scope">
+                <el-input
+                  v-model="scope.row.coefficient"
+                  class="table-cell-input"
+                  :class="{'formula-error-border': isFormulaError(scope.row.coefficient)}"
+                  size="small"
+                  @change="saveAllToHost"
+                ></el-input>
+              </template>
+            </el-table-column>
+
+            <!-- M 列：表价 (官方表价/面价，支持修饰算式或数值) -->
+            <el-table-column label="M" width="90" align="right">
+              <template #header>
+                <div>M</div>
+                <div>表价</div>
+              </template>
+              <template #default="scope">
+                <el-input
+                  v-model="scope.row.markedPrice"
+                  class="table-cell-input"
+                  :class="{'formula-error-border': isFormulaError(scope.row.markedPrice)}"
+                  size="small"
+                  @change="saveAllToHost"
+                ></el-input>
+              </template>
+            </el-table-column>
+
             <!-- 类别列：项目分类标记 -->
             <el-table-column label="类别" width="60" align="center">
               <template #header>
@@ -922,7 +956,9 @@
               { key: "totalPriceFormula", label: "总价" },
               { key: "costTotalPriceFormula", label: "成本总价" },
               { key: "price", label: "单价" },
-              { key: "quantity", label: "数量" }
+              { key: "quantity", label: "数量" },
+              { key: "coefficient", label: "系数" },
+              { key: "markedPrice", label: "表价" }
             ];
 
             const errors = [];
@@ -1289,6 +1325,8 @@
               "totalPriceFormula",
               "costPrice",
               "costTotalPriceFormula",
+              "coefficient",
+              "markedPrice",
             ];
 
             // 循环遍历表格中每一行数据对象
@@ -1338,6 +1376,8 @@
                 pivotRow === 1 ? "=ROUND(H2*0.05, 2)" : "=ROUND(H1*0.05, 2)",
               costPrice: "",
               costTotalPriceFormula: "",
+              coefficient: "",
+              markedPrice: "",
               category: "费用",
             };
 
@@ -1380,6 +1420,8 @@
               totalPriceFormula: "=ROUND(H1*0.05, 2)",
               costPrice: "",
               costTotalPriceFormula: "",
+              coefficient: "",
+              markedPrice: "",
               category: "费用",
             };
 

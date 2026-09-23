@@ -494,8 +494,33 @@ namespace ExcelAddInDemo
                         // 元器件区域终止物理行号: 元器件终止行 = 小计行 - 1
                         compEndRow = subsumRow - 1;
 
-                        // 调用公共服务方法构建 N 行 17 列的计费二维矩阵 (覆盖 A 列至 Q 列)
-                        object[,] feeMatrix = Tool.BuildFeeMatrix(items, cabDetRow, subsumRow, compStartRow, compEndRow, 17);
+                        // 方案 3: 提取与保护原总计行 F 列数量 (在覆盖前读取旧单元格，防清空台数)
+                        object? preservedTolQty = null;
+                        try
+                        {
+                            if (cabTolsumRow > 0)
+                            {
+                                dynamic oldTolCell = catSheet.Cells[cabTolsumRow, 6];
+                                string oldFormula = Convert.ToString(oldTolCell.Formula) ?? "";
+                                object oldVal = oldTolCell.Value2;
+                                if (!string.IsNullOrWhiteSpace(oldFormula) && oldFormula.Trim() != "=")
+                                    preservedTolQty = oldFormula;
+                                else if (oldVal != null && !string.IsNullOrWhiteSpace(oldVal.ToString()) && Convert.ToString(oldVal) != "0")
+                                    preservedTolQty = oldVal;
+                            }
+                            // 若原单元格为空且存在汇总行，自动联动汇总行 =F{cabSumRow}
+                            if (preservedTolQty == null && cabSumRow > 0)
+                            {
+                                preservedTolQty = $"=F{cabSumRow}";
+                            }
+                        }
+                        catch (Exception exReadTol)
+                        {
+                            LogHelper.WriteLog($"InitializeCategorySheet 读取原总计行数量异常: {exReadTol.Message}");
+                        }
+
+                        // 调用公共服务方法构建 N 行 17 列的计费二维矩阵 (覆盖 A 列至 Q 列，透传 cabSumRow 与 preservedTolQty)
+                        object[,] feeMatrix = Tool.BuildFeeMatrix(items, cabDetRow, subsumRow, compStartRow, compEndRow, 17, cabSumRow, preservedTolQty);
 
                         // 将构建完成的计费二维矩阵一次性批量覆盖写入 Excel 计费区域 (规则 7)
                         dynamic feeRange = catSheet.Range[$"A{subsumRow}:Q{cabTolsumRow}"];
@@ -549,10 +574,10 @@ namespace ExcelAddInDemo
                     catSheet.Cells[cabSumRow, 5].Value = "台";
                     // 写入汇总行数量 (F 列即第 6 列，默认 1) --硬编码: 第 6 列为 F 列 (数量列)--
                     catSheet.Cells[cabSumRow, 6].Value = 1;
-                    // 在 tolsum 总计行 F 列填写数量 (默认 1) --硬编码: 第 6 列为 F 列 (数量列)--
-                    catSheet.Cells[cabTolsumRow, 6].Value = 1;
-                    // G 列单价公式指向明细总计行的销售总价 (H 列)
-                    catSheet.Cells[cabSumRow, 7].Formula = $"=H{cabTolsumRow - 1}";
+                    // 在 tolsum 总计行 F 列自动绑定联动公式指向顶部汇总行 F 列 (双向自适应联动)
+                    catSheet.Cells[cabTolsumRow, 6].Formula = $"=F{cabSumRow}";
+                    // G 列单价公式指向明细总计行的单台单价 G 列 (方式 B 稳健绑定，避免数量二次相乘)
+                    catSheet.Cells[cabSumRow, 7].Formula = $"=G{cabTolsumRow}";
                     // H 列总价公式 = 数量(F列) * 单价(G列)
                     catSheet.Cells[cabSumRow, 8].Formula = $"=F{cabSumRow}*G{cabSumRow}";
                     // J 列成本总价公式指向明细总计行的成本总价 (K 列)

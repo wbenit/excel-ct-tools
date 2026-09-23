@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 namespace ExcelAddInDemo.Controllers
@@ -63,6 +64,14 @@ namespace ExcelAddInDemo.Controllers
 
         // 成本总价公式 (例如 =ROUND(SUM(K2:K5), 2))
         public string CostTotalPriceFormula { get; set; } = string.Empty;
+
+        // 加价/报出系数公式或数值 (对应L列)
+        [JsonPropertyName("coefficient")]
+        public string Coefficient { get; set; } = string.Empty;
+
+        // 官方表价/面价公式或数值 (对应M列)
+        [JsonPropertyName("markedPrice")]
+        public string MarkedPrice { get; set; } = string.Empty;
 
         // 项目类别 (如 费用)
         public string Category { get; set; } = string.Empty;
