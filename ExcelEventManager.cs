@@ -244,24 +244,39 @@ namespace ExcelAddInDemo
                             int targetRow = target.Row;
                             if (ExcelServices.IsCategoryComponentRow(curSheet, targetRow))
                             {
-                                // 读取智能输入配置，判断是否开启了覆盖式智能输入功能 (内存直出 0ms)
-                                var smartCtrl = new Controllers.SmartInputController();
-                                var smartCfg = smartCtrl.GetConfig();
+                                // 优先读取元器件物料匹配与品牌规则配置 (包含“搜索”开关状态)
+                                var matchCfg = ExcelServices.LoadComponentMatchFilterConfig();
 
-                                // 依据用户在【智能填写模式配置】中的总开关状态执行智能路由分流
-                                if (smartCfg != null && smartCfg.AutoPopupFloatWindow)
+                                // 依据业务优先级执行智能分流：
+                                // 若用户在【元器件物料匹配与品牌规则设置】中明确勾选了“搜索”功能 (默认开启)
+                                // 则绝对优先弹出全新的云端/本地物料模糊联想下拉悬浮框 (贴合 C 列下方)
+                                if (matchCfg != null && matchCfg.EnableSearchOverlay)
                                 {
-                                    // 模式 1: 用户开启了智能输入，隐藏云端浮窗，唤起和单元格等大的原生 TextBox+ListBox 覆盖输入窗体
-                                    ExcelServices.HideComponentMatchOverlay();
-                                    // 激活原生覆盖输入框 (传入已校验标志跳过二次计算)
-                                    ExcelServices.ShuRu(target, isCategoryRowValidated: true);
+                                    // 平滑隐藏原生覆盖输入框
+                                    ExcelServices.HideSmartInputOverlay();
+                                    // 弹出物料智能联想下拉悬浮框 (贴合 C 列下方，标记已校验跳过二次计算)
+                                    ExcelServices.ShowComponentMatchOverlay(target, isCategoryRowValidated: true);
                                 }
                                 else
                                 {
-                                    // 模式 2: 用户关闭了智能输入，隐藏原生覆盖框，唤起云端/本地物料匹配下拉悬浮框
-                                    ExcelServices.HideSmartInputOverlay();
-                                    // 弹出全新的云端/本地物料智能联想下拉悬浮框 (贴合 C 列下方)
-                                    ExcelServices.ShowComponentMatchOverlay(target, isCategoryRowValidated: true);
+                                    // 用户未开启物料匹配搜索时，再回退读取智能输入配置 (内存直出 0ms)
+                                    var smartCtrl = new Controllers.SmartInputController();
+                                    var smartCfg = smartCtrl.GetConfig();
+
+                                    // 仅当开启了覆盖式智能输入且未开启物料匹配时，才唤起原生覆盖输入窗体
+                                    if (smartCfg != null && smartCfg.AutoPopupFloatWindow)
+                                    {
+                                        // 隐藏物料匹配下拉悬浮框
+                                        ExcelServices.HideComponentMatchOverlay();
+                                        // 激活原生覆盖输入框 (传入已校验标志跳过二次计算)
+                                        ExcelServices.ShuRu(target, isCategoryRowValidated: true);
+                                    }
+                                    else
+                                    {
+                                        // 两者均未开启时静默隐藏全部浮窗
+                                        ExcelServices.HideSmartInputOverlay();
+                                        ExcelServices.HideComponentMatchOverlay();
+                                    }
                                 }
                             }
                             else

@@ -974,6 +974,7 @@
         // 动态过滤参数状态 (品牌、名称、额定电流、极数、脱扣方式)
         const activeFilters = ref({
           brand: '',
+          brands: [], // 支持多选品牌列表
           name: '',
           current: '',
           pole: '',
@@ -983,6 +984,7 @@
         // 初始过滤参数快照 (用于一键重置与对比变动)
         const initialFilters = ref({
           brand: '',
+          brands: [], // 多选品牌初始快照
           name: '',
           current: '',
           pole: '',
@@ -992,16 +994,24 @@
         // 纯值紧凑过滤标签列表 (严格去除品牌、电流、极数、名称等前缀，纯值极简展示，支持悬浮查看完整提示与点击 ✕ 快速移除放宽)
         const filterChips = computed(() => {
           const list = [];
-          // 1. 品牌过滤项 (纯值)
-          const b = (activeFilters.value.brand || '').trim();
-          if (b && b !== '全部' && b !== '全部品牌' && b.toLowerCase() !== 'all') {
-            list.push({
-              key: 'brand',
-              category: 'brand',
-              text: b,
-              tooltip: `品牌: ${b}`
-            });
-          }
+          // 1. 品牌过滤项 (支持多品牌独立展示药丸标签)
+          const bList = Array.isArray(activeFilters.value.brands) && activeFilters.value.brands.length > 0
+            ? activeFilters.value.brands
+            : (activeFilters.value.brand && activeFilters.value.brand !== '全部' && activeFilters.value.brand !== '全部品牌' && activeFilters.value.brand.toLowerCase() !== 'all' ? [activeFilters.value.brand] : []);
+
+          bList.forEach((b) => {
+            const trimmed = (b || '').trim();
+            if (trimmed && trimmed !== '全部' && trimmed !== '全部品牌' && trimmed.toLowerCase() !== 'all') {
+              list.push({
+                key: 'brand-' + trimmed,
+                category: 'brand',
+                text: trimmed,
+                tooltip: `品牌: ${trimmed}`,
+                brandValue: trimmed
+              });
+            }
+          });
+
           // 2. 元件名称过滤项 (纯值)
           const n = (activeFilters.value.name || '').trim();
           if (n) {
@@ -1049,6 +1059,9 @@
 
         // 判定当前过滤条件是否已被关闭或修改
         const hasFiltersChanged = computed(() => {
+          const curBrands = (activeFilters.value.brands || []).join(',');
+          const initBrands = (initialFilters.value.brands || []).join(',');
+          if (curBrands !== initBrands) return true;
           if ((activeFilters.value.brand || '') !== (initialFilters.value.brand || '')) return true;
           if ((activeFilters.value.name || '') !== (initialFilters.value.name || '')) return true;
           if ((activeFilters.value.current || '') !== (initialFilters.value.current || '')) return true;
@@ -1096,7 +1109,10 @@
           postToHost('searchKeyword', {
             keyword: searchKeyword.value,
             cellParams: cellParams.value,
-            filters: activeFilters.value,
+            filters: {
+              ...activeFilters.value,
+              brands: activeFilters.value.brands || []
+            },
             overrideMustRules: activeMustRules.value
           });
         };
@@ -1114,9 +1130,19 @@
 
         // 直接移除某项过滤条件并即时重搜
         const removeFilterChip = (chip) => {
-          if (!chip || !chip.key) return;
-          if (chip.key === 'brand') activeFilters.value.brand = '';
-          else if (chip.key === 'name') activeFilters.value.name = '';
+          if (!chip) return;
+          // 支持独立移除特定品牌项并动态放宽检索
+          if (chip.category === 'brand') {
+            if (Array.isArray(activeFilters.value.brands)) {
+              activeFilters.value.brands = activeFilters.value.brands.filter(b => b !== chip.brandValue);
+            }
+            if (activeFilters.value.brand === chip.brandValue) {
+              activeFilters.value.brand = '';
+            }
+            triggerSearchWithFilters();
+            return;
+          }
+          if (chip.key === 'name') activeFilters.value.name = '';
           else if (chip.key === 'current') activeFilters.value.current = '';
           else if (chip.key === 'pole') activeFilters.value.pole = '';
           else if (chip.key === 'tripMode') activeFilters.value.tripMode = '';
@@ -1125,7 +1151,10 @@
 
         // 一键恢复初始全部过滤条件
         const resetAllFilters = () => {
-          activeFilters.value = { ...initialFilters.value };
+          activeFilters.value = {
+            ...initialFilters.value,
+            brands: [...(initialFilters.value.brands || [])]
+          };
           activeMustRules.value = [...originalMustRules.value];
           editingRuleIndex.value = -1;
           isAddingRule.value = false;
@@ -1330,15 +1359,27 @@
               if (msg.cellParams) cellParams.value = msg.cellParams;
               if (msg.filterBrand !== undefined) filterBrand.value = msg.filterBrand;
 
+              // 提取生效的多选品牌列表 (优先使用数组，兼顾单品牌字符串)
+              let effectiveBrands = [];
+              if (Array.isArray(msg.filterBrands) && msg.filterBrands.length > 0) {
+                effectiveBrands = [...msg.filterBrands];
+              } else if (msg.filterBrand) {
+                effectiveBrands = [msg.filterBrand];
+              }
+
               // 初始化动态过滤参数对象与快照 (用于纯值标签展示与放宽检索)
               activeFilters.value = {
-                brand: msg.filterBrand || '',
+                brand: effectiveBrands.length === 1 ? effectiveBrands[0] : '',
+                brands: effectiveBrands,
                 name: msg.cellParams?.name || '',
                 current: msg.cellParams?.current || '',
                 pole: msg.cellParams?.pole || '',
                 tripMode: msg.cellParams?.tripMode || ''
               };
-              initialFilters.value = { ...activeFilters.value };
+              initialFilters.value = {
+                ...activeFilters.value,
+                brands: [...effectiveBrands]
+              };
 
               if (msg.activeMustRules) {
                 activeMustRules.value = [...msg.activeMustRules];
@@ -1417,7 +1458,10 @@
             postToHost('searchKeyword', {
               keyword: searchKeyword.value,
               cellParams: cellParams.value,
-              filters: activeFilters.value,
+              filters: {
+                ...activeFilters.value,
+                brands: activeFilters.value.brands || []
+              },
               overrideMustRules: activeMustRules.value
             });
           }, 120);

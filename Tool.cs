@@ -1271,8 +1271,8 @@ namespace ExcelAddInDemo
                     // 遍历工作簿中的每一个工作表
                     foreach (dynamic sheet in targetWb.Worksheets)
                     {
-                        // 针对单张工作表执行定义名称补齐与校准
-                        totalFixedCabinets += FixAndFillCabinetNamesForSheet(sheet);
+                        // 针对单张工作表强制执行全量定义名称补齐与校准自愈 (forceRebuild: true 杜绝嗅探误判跳过)
+                        totalFixedCabinets += FixAndFillCabinetNamesForSheet(sheet, forceRebuild: true);
                     }
                 }
                 finally
@@ -1663,14 +1663,30 @@ namespace ExcelAddInDemo
                         if (existingMap != null && existingMap.Count > 0)
                         {
                             bool isHealthy = true;
-                            // 逐个箱柜校验锚点有效性
-                            foreach (var cab in existingMap)
+                            // 统计包含明细行 Det 的箱柜数量 (避免 LINQ 动态调度 CS1977 异常)
+                            int hasDetCount = 0;
+                            foreach (var kv in existingMap)
                             {
-                                var anchor = cab.Value;
-                                // 必须具有汇总行锚点，且物理行号合法
-                                if (anchor.Sum == null) { isHealthy = false; break; }
-                                int sRow = Convert.ToInt32(anchor.Sum.Row);
-                                if (sRow < cabSumStartRow) { isHealthy = false; break; }
+                                // 若包含明细行锚点则累加
+                                if (kv.Value?.Det != null) hasDetCount++;
+                            }
+
+                            // 检查明细块完整性：若已存在具有明细块的箱柜，但同时存在缺失 Det 的箱柜，判定为残缺，强制自愈
+                            if (hasDetCount > 0 && hasDetCount < existingMap.Count)
+                            {
+                                // 存在明细行缺失漏绑，不健康
+                                isHealthy = false;
+                            }
+                            else
+                            {
+                                // 逐个箱柜校验锚点有效性
+                                foreach (var cab in existingMap)
+                                {
+                                    var anchor = cab.Value;
+                                    // 必须具有汇总行锚点，且物理行号合法
+                                    if (anchor.Sum == null) { isHealthy = false; break; }
+                                    int sRow = Convert.ToInt32(anchor.Sum.Row);
+                                    if (sRow < cabSumStartRow) { isHealthy = false; break; }
 
                                 // 若具有明细行锚点，明细行物理行必须严格位于汇总行下方
                                 if (anchor.Det != null)
@@ -1692,6 +1708,7 @@ namespace ExcelAddInDemo
                                         }
                                     }
                                 }
+                            }
                             }
 
                             // 若现有定义名称全部健康完好，耗时 0ms 直接返回现有箱柜数量，跳过后续所有 UsedRange 遍历与正则推导
@@ -1755,15 +1772,40 @@ namespace ExcelAddInDemo
                 // 1. 【扫描明细区域中的所有箱柜信息行 Cab_Det】
                 // 特征条件：A 列包含“柜号”或“箱柜”，且下一行 A 列包含“序号”或“项次”等表头标记
                 var detRows = new List<int>();
-                for (int r = cabSumStartRow + 1; r < usedEndRow; r++)
+                // 遍历已用区域扫描所有箱柜明细行 (<= usedEndRow 确保覆盖末尾箱柜)
+                for (int r = cabSumStartRow + 1; r <= usedEndRow; r++)
                 {
-                    // 提取当前行与下一行的 A 列文本
+                    // 提取当前行 A 列与 B 列文本
                     string aText = GetText(r, 1);
-                    string nextAText = GetText(r + 1, 1);
+                    string bText = GetText(r, 2);
 
-                    // 匹配明细大标题与表头特征 (容错序号、项次、NO或下行为首个器件1)
-                    if ((aText.Contains("柜号") || aText.Contains("箱柜")) &&
-                        (nextAText.Contains("序号") || nextAText.Contains("项次") || nextAText.Contains("NO") || nextAText.Contains("No") || GetText(r + 2, 1) == "1"))
+                    // 核心过滤：排除大标题行 (包含“报价明细表”、“明细表”、“公司”等抬头)
+                    if (aText.Contains("明细表") || aText.Contains("报价表") || aText.Contains("公司") ||
+                        bText.Contains("明细表") || bText.Contains("报价表") || bText.Contains("公司"))
+                    {
+                        // 跳过公司抬头与总表大标题
+                        continue;
+                    }
+
+                    // 判定当前行是否具备箱柜标识特征 (支持柜号、箱柜、图号，同时容错检测整行属性)
+                    bool isCabInfo = aText.Contains("柜号") || aText.Contains("箱柜") || aText.Contains("图号") ||
+                                    bText.Contains("柜号") || bText.Contains("箱柜") || bText.Contains("图号") ||
+                                    GetText(r, 3).Contains("型号") || GetText(r, 10).Contains("箱体尺寸");
+
+                    // 提取下一行 A、B、C 列文本 (用于强力识别元器件明细表头)
+                    string nextAText = GetText(r + 1, 1);
+                    string nextBText = GetText(r + 1, 2);
+                    string nextCText = GetText(r + 1, 3);
+
+                    // 判定下一行是否具备元件明细表头特征：
+                    // 容错 A 列因删除定义名称公式断链呈现 -2146826259 (#REF!/#NAME?) 错误，关键增加 B 列“元件/名称”与 C 列“型号/规格”纯文本特征探测
+                    bool isNextHeader = nextAText.Contains("序号") || nextAText.Contains("项次") || nextAText.Contains("NO") || nextAText.Contains("No") ||
+                                        nextBText.Contains("元件") || nextBText.Contains("名称") ||
+                                        nextCText.Contains("型号") || nextCText.Contains("规格") ||
+                                        GetText(r + 2, 1) == "1";
+
+                    // 当且仅当当前行为箱柜行且下一行为元件明细表头时，精准录入明细行号
+                    if (isCabInfo && isNextHeader)
                     {
                         // 记录识别到的箱柜信息行行号
                         detRows.Add(r);
@@ -1858,8 +1900,15 @@ namespace ExcelAddInDemo
                         // 提取汇总行柜号文本 (优先 B 列，若 B 列为空则取 A 列)
                         string sumCabNo = GetText(sumRows[i], 2);
                         if (string.IsNullOrEmpty(sumCabNo)) sumCabNo = GetText(sumRows[i], 1);
-                        // 若汇总行未填写柜号则跳过本轮匹配
-                        if (string.IsNullOrEmpty(sumCabNo)) continue;
+                        // 提取汇总行 C 列设备/箱柜名称 (容错柜号写在名称列或与名称一致的场景)
+                        string sumCabName = GetText(sumRows[i], 3);
+                        // 若汇总行未填写柜号且未填写设备名称则跳过本轮匹配
+                        if (string.IsNullOrEmpty(sumCabNo) && string.IsNullOrEmpty(sumCabName)) continue;
+
+                        // 内部辅助规范化函数：去除常见前缀与标点空格以支持高容错双向比对
+                        string CleanCabStr(string s) => s.Replace("柜号", "").Replace("箱柜", "").Replace("设备", "").Replace("名称", "").Replace(":", "").Replace("：", "").Replace(" ", "").Trim();
+                        string cleanSumNo = CleanCabStr(sumCabNo);
+                        string cleanSumName = CleanCabStr(sumCabName);
 
                         // 遍历底表所有未使用的明细块寻找对应箱柜
                         for (int j = 0; j < detRows.Count; j++)
@@ -1871,9 +1920,19 @@ namespace ExcelAddInDemo
                             if (string.IsNullOrEmpty(detCabNo)) detCabNo = GetText(detRows[j], 1);
                             string detTextA = GetText(detRows[j], 1);
 
-                            // 只要柜号完全一致，或明细信息行 A 列明确包含汇总柜号，立即建立 1 对 1 精准绑定
-                            if ((!string.IsNullOrEmpty(detCabNo) && string.Equals(sumCabNo, detCabNo, StringComparison.OrdinalIgnoreCase)) ||
-                                (!string.IsNullOrEmpty(detTextA) && detTextA.Contains(sumCabNo)))
+                            string cleanDetNo = CleanCabStr(detCabNo);
+                            string cleanDetA = CleanCabStr(detTextA);
+
+                            // 判定柜号或箱柜名称是否吻合 (多维双向包含匹配)
+                            bool isMatchNo = (!string.IsNullOrEmpty(cleanDetNo) && !string.IsNullOrEmpty(cleanSumNo) && (cleanDetNo.Contains(cleanSumNo) || cleanSumNo.Contains(cleanDetNo))) ||
+                                             (!string.IsNullOrEmpty(cleanDetA) && !string.IsNullOrEmpty(cleanSumNo) && (cleanDetA.Contains(cleanSumNo) || cleanSumNo.Contains(cleanDetA)));
+                            // 容错汇总行 C 列设备名称比对
+                            bool isMatchName = !string.IsNullOrEmpty(cleanSumName) && (
+                                               (!string.IsNullOrEmpty(cleanDetNo) && (cleanDetNo.Contains(cleanSumName) || cleanSumName.Contains(cleanDetNo))) ||
+                                               (!string.IsNullOrEmpty(cleanDetA) && (cleanDetA.Contains(cleanSumName) || cleanSumName.Contains(cleanDetA))));
+
+                            // 只要柜号或设备名称吻合，立即建立 1 对 1 精准绑定
+                            if (isMatchNo || isMatchName)
                             {
                                 // 记录当前汇总行精准绑定的明细行行号
                                 matchedDetRows[i] = detRows[j];
@@ -1941,6 +2000,25 @@ namespace ExcelAddInDemo
                             matchedDetRows[i] = detRows[nextDetIdx];
                             detUsed[nextDetIdx] = true;
                             nextDetIdx++;
+                        }
+                    }
+
+                    // 第四轮：兜底回填，将所有真实存在但未被顶部汇总行占用的底表明细块 (如 431 行)，
+                    // 自动按顺序回填至尚未分配明细的箱柜槽位中，确保底表每个箱柜必定能绑定 Cab_Det 定义名称
+                    for (int j = 0; j < detRows.Count; j++)
+                    {
+                        // 跳过已被配对的明细行
+                        if (detUsed[j]) continue;
+                        // 寻找 matchedDetRows 中首个尚未分配明细的槽位 (值为 0)
+                        for (int i = 0; i < cabCount; i++)
+                        {
+                            if (matchedDetRows[i] == 0)
+                            {
+                                // 回填底表明细行
+                                matchedDetRows[i] = detRows[j];
+                                detUsed[j] = true;
+                                break;
+                            }
                         }
                     }
                 }

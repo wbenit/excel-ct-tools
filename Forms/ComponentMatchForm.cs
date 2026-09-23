@@ -165,15 +165,21 @@ namespace ExcelAddInDemo.Forms
                         });
                         break;
 
-                    // 4. 保存配置
+                    // 4. 保存配置并关闭界面 (响应用户点击保存关闭该界面需求)
                     case "saveConfig":
                         if (root.TryGetProperty("config", out var saveCfgProp))
                         {
                             var saveCfg = JsonSerializer.Deserialize<ComponentMatchFilterConfig>(saveCfgProp.GetRawText(), JsonOptions);
                             if (saveCfg != null)
                             {
+                                // 持久化保存配置至本地磁盘
                                 _controller.SaveConfig(saveCfg);
+                                // 同步热刷新物料匹配浮窗配置 (使多品牌与搜索设置即时生效)
+                                ExcelServices.ReloadComponentMatchOverlayConfig(saveCfg);
+                                // 通知前端保存成功 (兼顾未及时关闭时的状态)
                                 PostMessageToWeb(new { action = "saveSuccess" });
+                                // 满足用户指令：点击保存后立即平滑关闭当前设置窗口
+                                SafeInvoke(this.Close);
                             }
                         }
                         break;
