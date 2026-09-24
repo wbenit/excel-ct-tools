@@ -14,30 +14,41 @@ namespace ExcelAddInDemo.Services
     /// </summary>
     public static class AutoPricingDataService
     {
-        // 远程云端 WebAPI 基础地址 (可外部配置，默认本地或云端测试地址 --硬编码--)
-        private const string DefaultApiBaseUrl = "http://localhost:5219"; // --硬编码-- 云端服务备用地址
+        // 远程云端 WebAPI 默认基础地址 (优先读取配置，默认生产公网服务 --硬编码--)
+        private const string DefaultProductionApiBaseUrl = "https://mall.xingren.online";
 
         // 本地离线 SQLite 数据库文件相对或绝对路径 --硬编码--
-        private const string LocalSqlitePath = @"d:\code\cad-net_1\ExWinner_Schemes.db"; // --硬编码-- 本地方案缓存库
+        private const string LocalSqlitePath = @"d:\code\cad-net_1\ExWinner_Schemes.db";
 
         // 通用 HttpClient 实例
         private static readonly HttpClient _httpClient = CreateHttpClient();
 
-        // 通用 JSON 反序列化设置
-        private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            PropertyNameCaseInsensitive = true,
-            WriteIndented = false
-        };
+        // 挂载宽松反序列化转换器的 JSON 序列化选项实例
+        private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
         // 创建带超时控制的 HTTP 客户端
         private static HttpClient CreateHttpClient()
         {
+            // 实例化原生 HttpClient
             var client = new HttpClient();
-            // 设置超时时间为 2 秒，超时即快速降级至本地 SQLite，杜绝界面假死
-            client.Timeout = TimeSpan.FromSeconds(2);
+            // 设置网络请求超时等待时间为 5 秒，平衡公网网络波动与离线快速降级
+            client.Timeout = TimeSpan.FromSeconds(5);
             return client;
+        }
+
+        // 构建通用 JSON 序列化选项并挂载宽容字符串转换器
+        private static JsonSerializerOptions CreateJsonOptions()
+        {
+            // 实例化基础序列化配置
+            var opt = new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                PropertyNameCaseInsensitive = true,
+                WriteIndented = false
+            };
+            // 挂载宽容字符串转换器，彻底解决后端整型 ID 与前端字符串 DTO 反序列化冲突
+            opt.Converters.Add(new FlexibleStringConverter());
+            return opt;
         }
 
         /// <summary>
@@ -48,11 +59,13 @@ namespace ExcelAddInDemo.Services
             try
             {
                 // 通道 A: 优先尝试从云端 WebAPI 拉取最新树形数据
-                string url = $"{GetApiBaseUrl()}/api/Scheme/GetCategoryTree";
+                string url = BuildSchemeApiUrl("/api/Scheme/GetCategoryTree");
                 var task = _httpClient.GetStringAsync(url);
-                if (task.Wait(1500))
+                // 等待 4 秒超时判定
+                if (task.Wait(4000))
                 {
                     string json = task.Result;
+                    // 使用挂载了 FlexibleStringConverter 的 JSON 选项解析
                     var tree = JsonSerializer.Deserialize<List<AutoPricingCategoryDto>>(json, JsonOptions);
                     if (tree != null && tree.Count > 0)
                     {
@@ -60,9 +73,10 @@ namespace ExcelAddInDemo.Services
                     }
                 }
             }
-            catch
+            catch (Exception exTree)
             {
-                // 网络或服务未就绪，安全转入通道 B
+                // 网络或服务未就绪，记录日志后安全转入通道 B
+                LogHelper.WriteLog($"[AutoPricingDataService] 云端 GetCategoryTree 异常: {exTree.Message}，转入本地 SQLite 通道");
             }
 
             // 通道 B: 自动降级从本地 SQLite 数据库读取离线分类树
@@ -74,15 +88,18 @@ namespace ExcelAddInDemo.Services
         /// </summary>
         public static List<AutoPricingCategoryDto> GetCategoryNodes(string? parentId)
         {
+            // 根节点为空或 0 时规范化为 "0"
             string pId = string.IsNullOrWhiteSpace(parentId) ? "0" : parentId.Trim();
             try
             {
-                // 通道 A: 优先尝试从云端 WebAPI 按需拉取
-                string url = $"{GetApiBaseUrl()}/api/Scheme/GetCategoryNodes?parentId={pId}";
+                // 通道 A: 优先尝试从云端 WebAPI 按需拉取当前层级子节点
+                string url = BuildSchemeApiUrl($"/api/Scheme/GetCategoryNodes?parentId={Uri.EscapeDataString(pId)}");
                 var task = _httpClient.GetStringAsync(url);
-                if (task.Wait(1500))
+                // 等待 4 秒超时判定
+                if (task.Wait(4000))
                 {
                     string json = task.Result;
+                    // 使用宽松配置反序列化子节点集合
                     var nodes = JsonSerializer.Deserialize<List<AutoPricingCategoryDto>>(json, JsonOptions);
                     if (nodes != null && nodes.Count > 0)
                     {
@@ -90,9 +107,10 @@ namespace ExcelAddInDemo.Services
                     }
                 }
             }
-            catch
+            catch (Exception exNodes)
             {
-                // 云端超时或未连接，转入本地 SQLite 离线通道
+                // 云端超时或未连接，记录日志并转入本地 SQLite 离线通道
+                LogHelper.WriteLog($"[AutoPricingDataService] 云端 GetCategoryNodes 异常: {exNodes.Message}，转入本地 SQLite 通道");
             }
 
             // 通道 B: 从本地 SQLite 离线查询按需节点
@@ -106,24 +124,34 @@ namespace ExcelAddInDemo.Services
         {
             try
             {
-                // 通道 A: 优先请求云端接口
-                string qs = $"categoryId={categoryId}&keyword={keyword}&cabModel={cabModel}&situation={situation}&pageSize=100";
-                string url = $"{GetApiBaseUrl()}/api/Scheme/GetPagedSchemes?{qs}";
+                // 通道 A: 优先请求云端接口，组装 URL 参数并执行合法编码
+                var queryParams = new List<string>();
+                if (!string.IsNullOrWhiteSpace(categoryId)) queryParams.Add($"categoryId={Uri.EscapeDataString(categoryId.Trim())}");
+                if (!string.IsNullOrWhiteSpace(keyword)) queryParams.Add($"keyword={Uri.EscapeDataString(keyword.Trim())}");
+                if (!string.IsNullOrWhiteSpace(cabModel)) queryParams.Add($"cabModel={Uri.EscapeDataString(cabModel.Trim())}");
+                if (!string.IsNullOrWhiteSpace(situation)) queryParams.Add($"situation={Uri.EscapeDataString(situation.Trim())}");
+                queryParams.Add("pageSize=100");
+                // 拼接查询字符串
+                string qs = string.Join("&", queryParams);
+                string url = BuildSchemeApiUrl($"/api/Scheme/GetPagedSchemes?{qs}");
                 var task = _httpClient.GetStringAsync(url);
-                if (task.Wait(1500))
+                // 等待 4 秒判定
+                if (task.Wait(4000))
                 {
                     string json = task.Result;
                     using var doc = JsonDocument.Parse(json);
                     if (doc.RootElement.TryGetProperty("items", out var itemsEl))
                     {
+                        // 提取方案列表数据
                         var list = JsonSerializer.Deserialize<List<AutoPricingSchemeDto>>(itemsEl.GetRawText(), JsonOptions);
                         if (list != null) return list;
                     }
                 }
             }
-            catch
+            catch (Exception exSchemes)
             {
-                // 网络超时转本地
+                // 网络异常转本地离线
+                LogHelper.WriteLog($"[AutoPricingDataService] 云端 GetSchemes 异常: {exSchemes.Message}，转入本地 SQLite 通道");
             }
 
             // 通道 B: 从本地 SQLite 数据库查询方案
@@ -137,22 +165,29 @@ namespace ExcelAddInDemo.Services
         {
             try
             {
-                // 通道 A: 优先云端查询
-                string url = $"{GetApiBaseUrl()}/api/Scheme/GetSchemeDetail?schemeId={schemeId}";
-                var task = _httpClient.GetStringAsync(url);
-                if (task.Wait(1500))
+                // 校验待查询的方案 ID
+                if (!string.IsNullOrWhiteSpace(schemeId))
                 {
-                    string json = task.Result;
-                    var detail = JsonSerializer.Deserialize<AutoPricingSchemeDetailDto>(json, JsonOptions);
-                    if (detail != null && detail.BomItems != null && detail.BomItems.Count > 0)
+                    // 通道 A: 优先云端查询方案与 BOM 明细
+                    string url = BuildSchemeApiUrl($"/api/Scheme/GetSchemeDetail?schemeId={Uri.EscapeDataString(schemeId.Trim())}");
+                    var task = _httpClient.GetStringAsync(url);
+                    // 等待 4 秒判定
+                    if (task.Wait(4000))
                     {
-                        return detail;
+                        string json = task.Result;
+                        // 宽松反序列化方案详情及关联 BOM
+                        var detail = JsonSerializer.Deserialize<AutoPricingSchemeDetailDto>(json, JsonOptions);
+                        if (detail != null && detail.BomItems != null && detail.BomItems.Count > 0)
+                        {
+                            return detail;
+                        }
                     }
                 }
             }
-            catch
+            catch (Exception exDetail)
             {
-                // 云端未取到则降级
+                // 云端未取到则降级记录日志
+                LogHelper.WriteLog($"[AutoPricingDataService] 云端 GetSchemeDetail 异常: {exDetail.Message}，转入本地 SQLite 通道");
             }
 
             // 通道 B: 本地 SQLite 加载
@@ -632,19 +667,63 @@ namespace ExcelAddInDemo.Services
 
         #endregion
 
-        // 获取云端 API 地址
-        private static string GetApiBaseUrl()
+        /// <summary>
+        /// 统一组装方案中心远程 WebAPI 请求完整绝对 URL
+        /// 优先读取 ConfigManager 全局配置 BaseUrl，并自动适配公网 /api/api/Scheme 网关路由
+        /// </summary>
+        private static string BuildSchemeApiUrl(string relativePath)
         {
-            return DefaultApiBaseUrl;
+            // 从全局配置管理器获取基础服务地址，默认回退至生产环境商城域名 --硬编码--
+            string baseUrl = ConfigManager.Instance.Current?.Api?.BaseUrl?.TrimEnd('/')
+                             ?? DefaultProductionApiBaseUrl;
+
+            // 规范化相对接口路径，统一剔除前导斜杠
+            string path = (relativePath ?? string.Empty).TrimStart('/');
+
+            // 若基础地址为公网生产环境 (包含 mall.xingren.online)，统一补齐网关必需的 /api 前缀
+            if (baseUrl.IndexOf("mall.xingren.online", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                // 确保对齐网关路径为 /api/api/Scheme/...
+                if (path.StartsWith("api/Scheme", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 补齐第一层网关 api 路由
+                    path = "api/" + path;
+                }
+            }
+
+            // 拼接返回完整可用的网络请求 URL
+            return $"{baseUrl}/{path}";
         }
 
-        // 获取本地 SQLite 物理文件路径
+        /// <summary>
+        /// 获取本地 SQLite 物理文件路径 (多路径智能自愈探测，杜绝非 d:\\code 电脑失效)
+        /// </summary>
         private static string GetLocalDbPath()
         {
-            if (File.Exists(LocalSqlitePath)) return LocalSqlitePath;
+            // 1. 优先检测插件专属 data 数据目录 (Tool.GetAppDataDirectory())
             string appData = Tool.GetAppDataDirectory();
-            string candidate = Path.Combine(appData, "ExWinner_Schemes.db");
-            if (File.Exists(candidate)) return candidate;
+            string candidateAppData = Path.Combine(appData, "ExWinner_Schemes.db");
+            if (File.Exists(candidateAppData)) return candidateAppData;
+
+            // 2. 检测默认开发目录是否真实存在
+            if (File.Exists(LocalSqlitePath)) return LocalSqlitePath;
+
+            // 3. 动态探测当前工程同级工作区的 cad-net_1 根目录
+            try
+            {
+                // 获取当前程序集或应用所在根物理目录
+                string curAppDir = Tool.GetAppDirectory();
+                // 拼接相对三级父目录到 cad-net_1 路径
+                string candidateCadNet1 = Path.GetFullPath(Path.Combine(curAppDir, "..", "..", "..", "cad-net_1", "ExWinner_Schemes.db"));
+                // 存在则返回该自愈探测路径
+                if (File.Exists(candidateCadNet1)) return candidateCadNet1;
+            }
+            catch
+            {
+                // 路径解析异常安全忽略
+            }
+
+            // 4. 最终回退至默认开发路径
             return LocalSqlitePath;
         }
     }
@@ -654,33 +733,54 @@ namespace ExcelAddInDemo.Services
     /// </summary>
     public class AutoPricingCategoryDto
     {
+        // 节点唯一标识 ID (挂载宽容转换器兼容后端整型 ID)
+        [System.Text.Json.Serialization.JsonConverter(typeof(FlexibleStringConverter))]
         public string Id { get; set; } = string.Empty;
+
+        // 父级分类标识 ID (挂载宽容转换器兼容数字 0 与整型 ID)
+        [System.Text.Json.Serialization.JsonConverter(typeof(FlexibleStringConverter))]
         public string ParentId { get; set; } = string.Empty;
+
+        // 节点显示名称
         public string Name { get; set; } = string.Empty;
+
         // 别名：分类名称 (兼容前端 categoryName 取值)
         [System.Text.Json.Serialization.JsonPropertyName("categoryName")]
         public string CategoryName => Name;
 
+        // 目录层级级别
         public int Level { get; set; }
+
+        // 分类面包屑完整层级路径
         public string FullPath { get; set; } = string.Empty;
+
+        // 当前分类下方案总数统计
         public int SchemeCount { get; set; }
 
         // 节点类型标识 (true: 分类目录, false: 方案叶子节点)
         public bool IsCategory { get; set; } = true;
+
         // 节点是否为叶子节点 (用于前端 el-tree lazy 懒加载标识，方案为 true，目录为 false)
         [System.Text.Json.Serialization.JsonPropertyName("isLeaf")]
         public bool IsLeaf { get; set; } = false;
-        // 方案 ID
+
+        // 方案 ID (挂载宽容转换器兼容数字与空字符串)
+        [System.Text.Json.Serialization.JsonConverter(typeof(FlexibleStringConverter))]
         public string SchemeId { get; set; } = string.Empty;
-        // 方案柜型
+
+        // 方案对应柜型型号
         public string CabModel { get; set; } = string.Empty;
-        // 方案代号
+
+        // 方案图号代号
         public string Model { get; set; } = string.Empty;
-        // 参考总价
+
+        // 参考方案总价
         public decimal TotalPrice { get; set; }
-        // BOM 数量
+
+        // BOM 元器件条目数
         public int BomCount { get; set; }
 
+        // 下级子节点集合
         public List<AutoPricingCategoryDto> Children { get; set; } = new List<AutoPricingCategoryDto>();
     }
 
@@ -689,34 +789,61 @@ namespace ExcelAddInDemo.Services
     /// </summary>
     public class AutoPricingSchemeDto
     {
+        // 方案唯一主键 ID (挂载宽容转换器兼容后端自增整型)
+        [System.Text.Json.Serialization.JsonConverter(typeof(FlexibleStringConverter))]
         public string Id { get; set; } = string.Empty;
+
+        // 所属分类主键 ID (挂载宽容转换器)
+        [System.Text.Json.Serialization.JsonConverter(typeof(FlexibleStringConverter))]
         public string CategoryId { get; set; } = string.Empty;
+
+        // 所属分类全路径
         public string CategoryPath { get; set; } = string.Empty;
+
+        // 方案显示名称
         public string Name { get; set; } = string.Empty;
+
         // 别名：方案名称 (兼容前端 schemeName 取值)
         [System.Text.Json.Serialization.JsonPropertyName("schemeName")]
         public string SchemeName => Name;
 
+        // 开关柜型型号
         public string CabModel { get; set; } = string.Empty;
+
         // 别名：开关柜型 (兼容前端 cabinetModel 取值)
         [System.Text.Json.Serialization.JsonPropertyName("cabinetModel")]
         public string CabinetModel => CabModel;
 
+        // 方案代号编号
         public string Model { get; set; } = string.Empty;
+
         // 别名：方案代号/编号 (兼容前端 schemeCode 取值)
         [System.Text.Json.Serialization.JsonPropertyName("schemeCode")]
         public string SchemeCode => Model;
 
+        // 柜体外形尺寸
         public string Dimensions { get; set; } = string.Empty;
+
+        // 使用应用场景
         public string Situation { get; set; } = string.Empty;
+
+        // 主回路额定规格参数
         public string MainSpec { get; set; } = string.Empty;
+
         // 别名：额定电流规格 (兼容前端 ratedCurrent 取值)
         [System.Text.Json.Serialization.JsonPropertyName("ratedCurrent")]
         public string RatedCurrent => MainSpec;
 
+        // 修改人
         public string Modifier { get; set; } = string.Empty;
+
+        // 修改时间
         public string ModifyTime { get; set; } = string.Empty;
+
+        // 方案考量参考总价
         public decimal TotalPrice { get; set; }
+
+        // BOM 元器件条目数
         public int BomCount { get; set; }
     }
 
@@ -725,6 +852,7 @@ namespace ExcelAddInDemo.Services
     /// </summary>
     public class AutoPricingSchemeDetailDto : AutoPricingSchemeDto
     {
+        // 关联的全部 BOM 元器件明细清单
         public List<CloudSchemeBomItem> BomItems { get; set; } = new List<CloudSchemeBomItem>();
     }
 }

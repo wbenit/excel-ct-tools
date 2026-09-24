@@ -1,3 +1,31 @@
+- **【全量闭环交付】支持点击【本机项目】直接自动筛选定位到当前 Excel 活动工程项目 (`LocalProjectForm.cs`, `ExcelServices.Project.cs`, `fileCtrol.vue`)**：
+  1. **用户核心指令**：“不需要第三策略（智能排除年份与日期特征）：，先第二策略优先，第一策略兜底，你看可行吗”；
+  2. **双策略极简闭环实现**：
+     - **Excel 插件宿主端 (`LocalProjectForm.cs`, `ExcelServices.Project.cs`)**：
+       - `GetActiveWorkbookInfo()` 自动提取当前活动工作簿的物理绝对路径 `activeWb.FullName`；
+       - 打开 Web 控制台时将 `&filePath={Uri.EscapeDataString(path)}` 注入 URL 参数；多工作簿切换时通过 WebView2 postMessage 携带 `filePath` 实时通知；
+     - **前端控制台页面 (`fileCtrol.vue`)**：
+       - **优先策略（剥离根目录 + 提取指定层级）**：调用 `getProjectNameFromPath(cleanPath, extractLevel.value, baseDirectory.value)`，剥离基准目录（如 `x项目文件`）后直接提取第 2 层的工程目录名（如 `GZ366`），透明可控且新老项目通吃；
+       - **兜底策略（已有工程列表比对）**：若未成功按层级提取出结果，遍历路径各级文件夹与已收录的工程库 `allProjectsData` 做交集精确比对；
+       - 彻底剔除复杂猜测黑盒，页面 `onMounted` 与宿主 `SELECT_PROJECT` 消息均统一调用 `resolveProjectFromFilePath(filePath)` 实现秒级精准定位；
+  3. **编译构建与规范检查**：
+     - `dotnet build` 编译：**0 警告，0 错误**；产物同步至 `publish/ExcelAddInDemo.dll`；
+     - `npx eslint src/views/project/fileCtrol.vue` 检查：**0 错误，0 警告**；
+     - 严格遵循每 3 行包含至少 1 行中文注释规范。
+- **【全量闭环交付】自动组价 (利驰方案) 打通线上真实 WebAPI 与双通道容灾升级 (`AutoPricingDataService.cs`)**：
+  1. **问题排查与根因定位**：
+     - 用户反馈：“左边tree为什么没有内容，在其他电脑是有tree列表”；
+     - 深度排查发现：客户端此前硬编码请求 `http://localhost:5219`，在未启动本地开发服务的电脑上必然超时；降级读取本地 SQLite 时，又因硬编码开发机路径 `d:\code\cad-net_1\ExWinner_Schemes.db` 且当前电脑未拷入该文件，导致两级通道均未命中，返回空列表并在前端呈现 `No Data`；
+     - 线上服务器（`https://mall.xingren.online`）事实上早已部署了 `SchemeController` 相关接口，但因代码写死本地地址、缺失 `/api/api` 网关前缀、以及缺少数字到字符串宽容反序列化（`FlexibleStringConverter`）而未能连通；
+  2. **系统性修复与全面打通**：
+     - **动态 URL 构造器**：新增 `BuildSchemeApiUrl` 方法，优先从 `ConfigManager.Instance.Current.Api.BaseUrl` 读取地址（默认 `https://mall.xingren.online`），自动匹配公网网关必需的 `/api/api/Scheme/...` 前缀；
+     - **宽容反序列化**：挂载 `FlexibleStringConverter` 转换器，并在 `AutoPricingCategoryDto`、`AutoPricingSchemeDto` 的主外键上标记，彻底打通整型 ID 与字符串属性的自动转换；
+     - **智能多级离线探测**：升级 `GetLocalDbPath`，支持自动探测插件 `data` 目录、当前工程相对工作区目录等多种候选路径，断网时仍可无缝离线读取；
+     - **超时与中文安全**：HttpClient 超时设为 5 秒并给 query string 参数全量添加 `Uri.EscapeDataString` URL 编码；
+  3. **编译构建与功能实测验证**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 同步编译产物 `ExcelAddInDemo.dll` 至 `publish/` 目录；
+     - 通过真实反射脚本验证 `GetCategoryNodes("0")`、`GetCategoryNodes("1")`、`GetSchemeDetail("221")` 均 100% 成功拉取云端数据，多级分类与 BOM 元器件清单完整加载。
 - **【全量闭环交付】天正全系塑壳断路器选型联动逻辑与官方目录表价清单导出 (`天正塑壳断路器全系选型与表价清单.xlsx`)**：
   1. **用户核心指令**：“帮我获取天正匹配的所有塑壳断路器的型号和表价，能做到吗”、“导出为 Excel 清单，每条数据携带壳架电流、极数、分断能力、额定电流、脱扣器类型等联动逻辑”；
   2. **逆向认证与数据解密攻克**：

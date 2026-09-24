@@ -34,6 +34,38 @@ namespace ExcelAddInDemo
             }
         }
 
+        // 本地文件管理控制台窗口静态单例引用 (可空)
+        private static Forms.LocalProjectForm? _localProjectForm;
+
+        /// <summary>
+        /// 启动并弹出基于 WebView2 + Vue 3 的“本地文件管理控制台”窗口 (非模态，可与 Excel 并行操作)
+        /// </summary>
+        public static void ShowLocalProjectDialog()
+        {
+            try
+            {
+                // 1. 获取当前活动 Excel 工作簿的物理路径与项目名称
+                var (currentPath, currentProj) = Forms.LocalProjectForm.GetActiveWorkbookInfo();
+
+                // 2. 若窗体已存在且未释放，向其通知切换聚焦到当前最新工作簿与项目
+                if (_localProjectForm != null && !_localProjectForm.IsDisposed)
+                {
+                    // 通知 WebView2 页面切换项目
+                    _localProjectForm.SwitchToProject(currentPath, currentProj);
+                }
+
+                // 3. 以非模态方式展示本地文件管理控制台窗口，保持 Excel 处于可交互编辑状态
+                ShowModelessForm(ref _localProjectForm, () => new Forms.LocalProjectForm());
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志信息
+                LogHelper.WriteLog($"[ExcelServices] 弹出本地文件管理窗口失败: {ex.Message}");
+                // 弹出异常提示对话框
+                System.Windows.Forms.MessageBox.Show($"弹出本地文件管理窗口失败: {ex.Message}", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+            }
+        }
+
         /// <summary>
         /// 新建项目初始化工作簿：完整回填【项目信息】与【分类1】工作表的数据、公式联动与定义名称锚点
         /// </summary>
