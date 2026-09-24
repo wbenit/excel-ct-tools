@@ -1,3 +1,53 @@
+- **【全量闭环交付】修复蚂蚁线文字遮挡、颜色不纯与取消后再复制动效失效问题 (`MarchingAntsOverlayForm.cs`)**：
+  1. **用户核心指令**：“动态显示非透明挡住了表格文字，而且颜色不正确，取消后，再复制就没流动效果了。需要的是一圈很细的流动虚线”；
+  2. **深度排查与根因定位**：
+     - **文字遮挡与颜色异常根因**：原实现使用了 `TransparencyKey = Magenta`，但在内部执行了 `FillRectangle` 弱橙色底色填充并开启了 `AntiAlias`（抗锯齿）；在 Windows 分层窗口下，任何半透明/混合像素均不匹配纯色色键，导致被 DWM 视为 100% 不透明实体，遮挡表格文字且与品红底色混合出灰紫杂色；
+     - **取消后再复制无动效根因**：原实现采用静态缓存 Form 并仅设置 `Visible = false`，WinForms 分层窗口在隐藏后再显示会导致 DWM 表面丢弃无法重绘；且旧定时器每 50ms 在高频 Tick 中重复调用 Excel COM，容易引发 COM 冲突异常导致浮窗静默隐匿；
+  3. **系统性重构与彻底根治**：
+     - **100% 纯透明零遮挡**：彻底移除所有内部填充代码，中间区域完全镂空穿透，所有表格文字、数字与网格线 100% 毫无遮挡、清晰透出；
+     - **纯正鲜艳活力橙色**：主色调调整为纯正亮橙色 `#FF7800`（`Color.FromArgb(255, 120, 0)`，`--硬编码--`），关闭抗锯齿平滑混色（`SmoothingMode.None`），彻底杜绝品红边缘杂色毛刺；
+     - **一圈极细流动虚线**：线宽严格设定为 `1.0px`（`--硬编码--`），分段样式为 `[3.0f, 3.0f]`（`--硬编码--`），只在选区四周绘制一圈极细流动边框；
+     - **随用随建生命周期重构**：`Hide()` 时彻底 `Close()`、`Dispose()` 销毁旧窗口；每次 `Show()` 时均 new 全新 Form 实例；
+     - **动效与 COM 解耦**：动画定时器（40ms 刷新率，约 25FPS）纯在内存推进 `_dashOffset`，Tick 中不碰 Excel COM，动效丝滑流畅且 0 冲突；低频每 400ms 安全校准一次位置，ESC 键检测保持高效灵敏；
+  4. **工程编译与规范核验**：
+     - 严格遵循新增代码每 3 行包含至少 1 行中文注释规范；
+     - 对颜色、线宽、定时器等硬编码常数显式注明 `--硬编码--`；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 同步更新产物程序集至 `publish/ExcelAddInDemo.dll`。
+- **【全量闭环交付】元器件支持选中连续多行进行复制、剪切、插入与删除 (`ComponentRowExchangeModels.cs`, `ExcelServices.ComponentRowOperations.cs`)**：
+  1. **用户核心指令**：“可否选中连续多行进行剪切复制”；
+  2. **系统性方案设计与架构落地**：
+     - **智能多行选区解析与安全边界防御**：`ExtractActiveComponentRowToClipboard` 优先识别当前活动选区（`app.Selection`），支持单单元格、多单元格及跨多行区域，提取出物理起始行 `startRow` 与结束行 `endRow`（总行数 `rowCount`）。自动探测防御离散多块选区（按住 Ctrl 多选），强制校验所有行必须属于**同一箱柜内的有效元器件数据行**（严禁跨箱柜选区、严禁触碰箱柜信息行、表头行、小计行或计费区域）；
+     - **规则 7 一次性二维矩阵读写**：采用 `M 行 × N 列` 的 `object[,]` 二维数组单次 COM 批量读入内存，`ComponentRowExchangeDto` 新增 `RowCount` 属性携带连续行数，首行名称型号用于摘要显示；
+     - **全域多行流光动效 (Marching Ants)**：动态流动虚线边框自适应覆盖全部选中的连续多行（`A~T 列 × M 行`），视觉冲击感强且清晰表达多行选区整体捕获；
+     - **批量原子下推插入与公式自适应**：`InsertCopiedOrCutComponentRow` 一次性整块下推插入 M 行，二维矩阵单次批量写入，批量注入每行的 `=F*G` 和 `=F*J` 公式，跨柜时批量遍历清空所有行的 CadHandle 与 HandleB；
+     - **剪切与删除模式全闭环**：剪切模式下根据行号偏移量一次性整块删除原 M 行；删除元件（`DeleteComponentRow`）同步升级支持连续多行批量删除，并严格遵循规则 6 保护箱柜至少保留 1 行空行骨架；
+  3. **工程编译与规范核验**：
+     - 严格遵循新增代码每 3 行包含至少 1 行中文注释规范；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 同步更新产物 `ExcelAddInDemo.dll` 至 `publish/` 目录。
+- **【功能升级与闭环交付】元器件复制/剪切激活 Excel 原生动态流动虚线框 (Marching Ants) 并在插入粘贴后自动消失 (`ExcelServices.ComponentRowOperations.cs`)**：
+  1. **用户核心指令**：“复制和剪切的单元格可否呈现动态效果，插入粘贴后消失”；
+  2. **方案设计与技术落地**：
+     - **无损原生动效 (Marching Ants 动态流光蚂蚁线)**：在 `ExtractActiveComponentRowToClipboard` 成功暂存数据后，自动圈定当前元器件行前台核心业务数据列（A~T 列，第 1 列至第 20 列），调用 `visualRange.Copy()` 激活 Excel 官方原生硬件加速的流动虚线边框动画。整行元器件被流光虚线环绕，提供直观、丝滑且 100% 零侵入（不改变单元格格式、不破坏 Undo 撤销栈）的视觉反馈；
+     - **自动闭环消退**：在 `InsertCopiedOrCutComponentRow` 完成插入写入、小计公式重算与序号重排后，调用 `app.CutCopyMode = (XlCutCopyMode)0;`，流动虚线边框立刻平滑消失；在 `DeleteComponentRow` 删行后同样重置 `CutCopyMode`，全生命周期视觉状态闭环；
+  3. **工程编译与规范检查**：
+     - 严格遵循新增代码每 3 行包含至少 1 行规范中文注释与最小变动法则；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 同步更新产物 `ExcelAddInDemo.dll` 至 `publish/` 目录。
+- **【Bug 修复与闭环交付】修复右键【复制元件】因 DLR 动态比较结构体异常导致剪贴板为空缺陷 (`ExcelServices.ComponentRowOperations.cs`)**：
+  1. **问题排查与根因精确定位**：
+     - 用户指令反馈：“右键复制元器件，插入元器件提示如图（剪贴板中暂无元器件数据，请先使用【复制元件】或【剪切元件】！）”；
+     - 查阅实时日志 `debug.log` 发现真实底层异常：`[ComponentRowOperations] 提取元件数据异常: 运算符“!=”无法应用于“ExcelAddInDemo.ExcelServices.CabinetRowContext”和“<null>”类型的操作数`；
+     - 根本原因：`FindCabinetByRow(dynamic sheet, int row)` 入参包含 `dynamic sheet`，导致整个调用被 C# 编译器转化为 DLR 动态分发调用，返回的装箱 `CabinetRowContext` 在运行时被 DLR 识别为裸 `struct`（值类型）；当紧接着执行 `if (cabInfo == null || ...)` 时，DLR 因 struct 未实现比较操作符且无法与 null 比较而直接抛出 `Microsoft.CSharp.RuntimeBinder.RuntimeBinderException`；该异常被静默 catch 吞掉，导致未能将数据写入 `ComponentClipboardManager`，用户后续点击【插入复制/剪切的元件】时判定剪贴板无数据并弹窗提示；
+  2. **系统性修复与最小变动落地**：
+     - **重构为引用类型模型**：将内部 `CabinetRowContext` 由 `private struct` 改为 `private class`，引用类型天然支持引用判空 `== null` 与 `!= null`，彻底根除 DLR 动态操作符绑定失败异常；
+     - **强类型调用声明**：将 `cabInfo` 与 `targetCab` 的接收变量显式声明为 `CabinetRowContext?` 强类型，消除 dynamic 污染，直接通过强类型属性安全访问；
+     - **异常可见性与防御增强**：在 `ExtractActiveComponentRowToClipboard` 的 catch 块中增加用户友好错误弹窗（`MessageBox.Show`），杜绝因静默异常造成后续操作扑空；
+  3. **工程编译与产物验证**：
+     - 严格遵循新增代码每 3 行包含至少 1 行规范中文注释与最小变动法则；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 同步更新产物 `ExcelAddInDemo.dll` 至 `publish/` 目录。
 - **【全量闭环交付】支持点击【本机项目】直接自动筛选定位到当前 Excel 活动工程项目 (`LocalProjectForm.cs`, `ExcelServices.Project.cs`, `fileCtrol.vue`)**：
   1. **用户核心指令**：“不需要第三策略（智能排除年份与日期特征）：，先第二策略优先，第一策略兜底，你看可行吗”；
   2. **双策略极简闭环实现**：
