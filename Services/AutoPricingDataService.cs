@@ -369,7 +369,7 @@ namespace ExcelAddInDemo.Services
                         }
                     }
 
-                    // 2. 如果存在子分类，统计各子分类方案数量并直接返回
+                    // 2. 如果存在子分类，统计各子分类方案数量
                     if (result.Count > 0)
                     {
                         // 统计各自分类的方案总数
@@ -395,11 +395,9 @@ namespace ExcelAddInDemo.Services
                                 }
                             }
                         }
-                        // 返回当前目录节点列表
-                        return result;
                     }
 
-                    // 3. 若不存在子分类，说明当前分类为末级分类，按需查询 schemes 挂载方案叶子
+                    // 3. 同时查询直属于当前分类的方案（解决 MNS-GCS-GCK 既有子分类又有直属抽屉方案的展示问题）
                     if (!string.IsNullOrEmpty(parentId) && parentId != "0")
                     {
                         using (var cmdScheme = conn.CreateCommand())
