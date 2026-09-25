@@ -8451,6 +8451,19 @@
                     apTreeResolvers[pId](nodes);
                     // 清理已执行的回调映射
                     delete apTreeResolvers[pId];
+                    // 首屏加载根节点时仅自动展开第 1 个一级分类 (--硬编码: 根节点键 "0"--)
+                    if (pId === "0") {
+                      // 等待 DOM 与树节点模型挂载完成
+                      nextTick(() => {
+                        // 获取树根节点的第一个子节点
+                        const firstChild = apCategoryTreeRef.value?.store?.root?.childNodes?.[0];
+                        // 确保节点存在且为目录类型再触发展开
+                        if (firstChild && !firstChild.isLeaf) {
+                          // 展开首个分类节点并触发其子级懒加载
+                          firstChild.expand();
+                        }
+                      });
+                    }
                   }
                 }
                 // 16. 自动组价方案列表结果回传 (用于全局关键字搜索)
