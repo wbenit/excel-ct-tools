@@ -6,6 +6,84 @@
      - 检查确保其非叶子方案后，自动调用其 `expand()` 方法触发首个一级分类的展开与按需子级加载；
      - 同步更新了 `Resources/cloud_solution.html` 与 `publish/Resources/cloud_solution.html`；
   3. **代码规范**：新增代码中文注释率满足每 3 行至少 1 行注释要求，保持最小改动。
+- **【全量闭环交付】修复蚂蚁线文字遮挡、颜色不纯与取消后再复制动效失效问题 (`MarchingAntsOverlayForm.cs`)**：
+  1. **用户核心指令**：“动态显示非透明挡住了表格文字，而且颜色不正确，取消后，再复制就没流动效果了。需要的是一圈很细的流动虚线”；
+  2. **深度排查与根因定位**：
+     - **文字遮挡与颜色异常根因**：原实现使用了 `TransparencyKey = Magenta`，但在内部执行了 `FillRectangle` 弱橙色底色填充并开启了 `AntiAlias`（抗锯齿）；在 Windows 分层窗口下，任何半透明/混合像素均不匹配纯色色键，导致被 DWM 视为 100% 不透明实体，遮挡表格文字且与品红底色混合出灰紫杂色；
+     - **取消后再复制无动效根因**：原实现采用静态缓存 Form 并仅设置 `Visible = false`，WinForms 分层窗口在隐藏后再显示会导致 DWM 表面丢弃无法重绘；且旧定时器每 50ms 在高频 Tick 中重复调用 Excel COM，容易引发 COM 冲突异常导致浮窗静默隐匿；
+  3. **系统性重构与彻底根治**：
+     - **100% 纯透明零遮挡**：彻底移除所有内部填充代码，中间区域完全镂空穿透，所有表格文字、数字与网格线 100% 毫无遮挡、清晰透出；
+     - **纯正鲜艳活力橙色**：主色调调整为纯正亮橙色 `#FF7800`（`Color.FromArgb(255, 120, 0)`，`--硬编码--`），关闭抗锯齿平滑混色（`SmoothingMode.None`），彻底杜绝品红边缘杂色毛刺；
+     - **一圈极细流动虚线**：线宽严格设定为 `1.0px`（`--硬编码--`），分段样式为 `[3.0f, 3.0f]`（`--硬编码--`），只在选区四周绘制一圈极细流动边框；
+     - **随用随建生命周期重构**：`Hide()` 时彻底 `Close()`、`Dispose()` 销毁旧窗口；每次 `Show()` 时均 new 全新 Form 实例；
+     - **动效与 COM 解耦**：动画定时器（40ms 刷新率，约 25FPS）纯在内存推进 `_dashOffset`，Tick 中不碰 Excel COM，动效丝滑流畅且 0 冲突；低频每 400ms 安全校准一次位置，ESC 键检测保持高效灵敏；
+  4. **工程编译与规范核验**：
+     - 严格遵循新增代码每 3 行包含至少 1 行中文注释规范；
+     - 对颜色、线宽、定时器等硬编码常数显式注明 `--硬编码--`；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 同步更新产物程序集至 `publish/ExcelAddInDemo.dll`。
+- **【全量闭环交付】元器件支持选中连续多行进行复制、剪切、插入与删除 (`ComponentRowExchangeModels.cs`, `ExcelServices.ComponentRowOperations.cs`)**：
+  1. **用户核心指令**：“可否选中连续多行进行剪切复制”；
+  2. **系统性方案设计与架构落地**：
+     - **智能多行选区解析与安全边界防御**：`ExtractActiveComponentRowToClipboard` 优先识别当前活动选区（`app.Selection`），支持单单元格、多单元格及跨多行区域，提取出物理起始行 `startRow` 与结束行 `endRow`（总行数 `rowCount`）。自动探测防御离散多块选区（按住 Ctrl 多选），强制校验所有行必须属于**同一箱柜内的有效元器件数据行**（严禁跨箱柜选区、严禁触碰箱柜信息行、表头行、小计行或计费区域）；
+     - **规则 7 一次性二维矩阵读写**：采用 `M 行 × N 列` 的 `object[,]` 二维数组单次 COM 批量读入内存，`ComponentRowExchangeDto` 新增 `RowCount` 属性携带连续行数，首行名称型号用于摘要显示；
+     - **全域多行流光动效 (Marching Ants)**：动态流动虚线边框自适应覆盖全部选中的连续多行（`A~T 列 × M 行`），视觉冲击感强且清晰表达多行选区整体捕获；
+     - **批量原子下推插入与公式自适应**：`InsertCopiedOrCutComponentRow` 一次性整块下推插入 M 行，二维矩阵单次批量写入，批量注入每行的 `=F*G` 和 `=F*J` 公式，跨柜时批量遍历清空所有行的 CadHandle 与 HandleB；
+     - **剪切与删除模式全闭环**：剪切模式下根据行号偏移量一次性整块删除原 M 行；删除元件（`DeleteComponentRow`）同步升级支持连续多行批量删除，并严格遵循规则 6 保护箱柜至少保留 1 行空行骨架；
+  3. **工程编译与规范核验**：
+     - 严格遵循新增代码每 3 行包含至少 1 行中文注释规范；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 同步更新产物 `ExcelAddInDemo.dll` 至 `publish/` 目录。
+- **【功能升级与闭环交付】元器件复制/剪切激活 Excel 原生动态流动虚线框 (Marching Ants) 并在插入粘贴后自动消失 (`ExcelServices.ComponentRowOperations.cs`)**：
+  1. **用户核心指令**：“复制和剪切的单元格可否呈现动态效果，插入粘贴后消失”；
+  2. **方案设计与技术落地**：
+     - **无损原生动效 (Marching Ants 动态流光蚂蚁线)**：在 `ExtractActiveComponentRowToClipboard` 成功暂存数据后，自动圈定当前元器件行前台核心业务数据列（A~T 列，第 1 列至第 20 列），调用 `visualRange.Copy()` 激活 Excel 官方原生硬件加速的流动虚线边框动画。整行元器件被流光虚线环绕，提供直观、丝滑且 100% 零侵入（不改变单元格格式、不破坏 Undo 撤销栈）的视觉反馈；
+     - **自动闭环消退**：在 `InsertCopiedOrCutComponentRow` 完成插入写入、小计公式重算与序号重排后，调用 `app.CutCopyMode = (XlCutCopyMode)0;`，流动虚线边框立刻平滑消失；在 `DeleteComponentRow` 删行后同样重置 `CutCopyMode`，全生命周期视觉状态闭环；
+  3. **工程编译与规范检查**：
+     - 严格遵循新增代码每 3 行包含至少 1 行规范中文注释与最小变动法则；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 同步更新产物 `ExcelAddInDemo.dll` 至 `publish/` 目录。
+- **【Bug 修复与闭环交付】修复右键【复制元件】因 DLR 动态比较结构体异常导致剪贴板为空缺陷 (`ExcelServices.ComponentRowOperations.cs`)**：
+  1. **问题排查与根因精确定位**：
+     - 用户指令反馈：“右键复制元器件，插入元器件提示如图（剪贴板中暂无元器件数据，请先使用【复制元件】或【剪切元件】！）”；
+     - 查阅实时日志 `debug.log` 发现真实底层异常：`[ComponentRowOperations] 提取元件数据异常: 运算符“!=”无法应用于“ExcelAddInDemo.ExcelServices.CabinetRowContext”和“<null>”类型的操作数`；
+     - 根本原因：`FindCabinetByRow(dynamic sheet, int row)` 入参包含 `dynamic sheet`，导致整个调用被 C# 编译器转化为 DLR 动态分发调用，返回的装箱 `CabinetRowContext` 在运行时被 DLR 识别为裸 `struct`（值类型）；当紧接着执行 `if (cabInfo == null || ...)` 时，DLR 因 struct 未实现比较操作符且无法与 null 比较而直接抛出 `Microsoft.CSharp.RuntimeBinder.RuntimeBinderException`；该异常被静默 catch 吞掉，导致未能将数据写入 `ComponentClipboardManager`，用户后续点击【插入复制/剪切的元件】时判定剪贴板无数据并弹窗提示；
+  2. **系统性修复与最小变动落地**：
+     - **重构为引用类型模型**：将内部 `CabinetRowContext` 由 `private struct` 改为 `private class`，引用类型天然支持引用判空 `== null` 与 `!= null`，彻底根除 DLR 动态操作符绑定失败异常；
+     - **强类型调用声明**：将 `cabInfo` 与 `targetCab` 的接收变量显式声明为 `CabinetRowContext?` 强类型，消除 dynamic 污染，直接通过强类型属性安全访问；
+     - **异常可见性与防御增强**：在 `ExtractActiveComponentRowToClipboard` 的 catch 块中增加用户友好错误弹窗（`MessageBox.Show`），杜绝因静默异常造成后续操作扑空；
+  3. **工程编译与产物验证**：
+     - 严格遵循新增代码每 3 行包含至少 1 行规范中文注释与最小变动法则；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 同步更新产物 `ExcelAddInDemo.dll` 至 `publish/` 目录。
+- **【全量闭环交付】支持点击【本机项目】直接自动筛选定位到当前 Excel 活动工程项目 (`LocalProjectForm.cs`, `ExcelServices.Project.cs`, `fileCtrol.vue`)**：
+  1. **用户核心指令**：“不需要第三策略（智能排除年份与日期特征）：，先第二策略优先，第一策略兜底，你看可行吗”；
+  2. **双策略极简闭环实现**：
+     - **Excel 插件宿主端 (`LocalProjectForm.cs`, `ExcelServices.Project.cs`)**：
+       - `GetActiveWorkbookInfo()` 自动提取当前活动工作簿的物理绝对路径 `activeWb.FullName`；
+       - 打开 Web 控制台时将 `&filePath={Uri.EscapeDataString(path)}` 注入 URL 参数；多工作簿切换时通过 WebView2 postMessage 携带 `filePath` 实时通知；
+     - **前端控制台页面 (`fileCtrol.vue`)**：
+       - **优先策略（剥离根目录 + 提取指定层级）**：调用 `getProjectNameFromPath(cleanPath, extractLevel.value, baseDirectory.value)`，剥离基准目录（如 `x项目文件`）后直接提取第 2 层的工程目录名（如 `GZ366`），透明可控且新老项目通吃；
+       - **兜底策略（已有工程列表比对）**：若未成功按层级提取出结果，遍历路径各级文件夹与已收录的工程库 `allProjectsData` 做交集精确比对；
+       - 彻底剔除复杂猜测黑盒，页面 `onMounted` 与宿主 `SELECT_PROJECT` 消息均统一调用 `resolveProjectFromFilePath(filePath)` 实现秒级精准定位；
+  3. **编译构建与规范检查**：
+     - `dotnet build` 编译：**0 警告，0 错误**；产物同步至 `publish/ExcelAddInDemo.dll`；
+     - `npx eslint src/views/project/fileCtrol.vue` 检查：**0 错误，0 警告**；
+     - 严格遵循每 3 行包含至少 1 行中文注释规范。
+- **【全量闭环交付】自动组价 (利驰方案) 打通线上真实 WebAPI 与双通道容灾升级 (`AutoPricingDataService.cs`)**：
+  1. **问题排查与根因定位**：
+     - 用户反馈：“左边tree为什么没有内容，在其他电脑是有tree列表”；
+     - 深度排查发现：客户端此前硬编码请求 `http://localhost:5219`，在未启动本地开发服务的电脑上必然超时；降级读取本地 SQLite 时，又因硬编码开发机路径 `d:\code\cad-net_1\ExWinner_Schemes.db` 且当前电脑未拷入该文件，导致两级通道均未命中，返回空列表并在前端呈现 `No Data`；
+     - 线上服务器（`https://mall.xingren.online`）事实上早已部署了 `SchemeController` 相关接口，但因代码写死本地地址、缺失 `/api/api` 网关前缀、以及缺少数字到字符串宽容反序列化（`FlexibleStringConverter`）而未能连通；
+  2. **系统性修复与全面打通**：
+     - **动态 URL 构造器**：新增 `BuildSchemeApiUrl` 方法，优先从 `ConfigManager.Instance.Current.Api.BaseUrl` 读取地址（默认 `https://mall.xingren.online`），自动匹配公网网关必需的 `/api/api/Scheme/...` 前缀；
+     - **宽容反序列化**：挂载 `FlexibleStringConverter` 转换器，并在 `AutoPricingCategoryDto`、`AutoPricingSchemeDto` 的主外键上标记，彻底打通整型 ID 与字符串属性的自动转换；
+     - **智能多级离线探测**：升级 `GetLocalDbPath`，支持自动探测插件 `data` 目录、当前工程相对工作区目录等多种候选路径，断网时仍可无缝离线读取；
+     - **超时与中文安全**：HttpClient 超时设为 5 秒并给 query string 参数全量添加 `Uri.EscapeDataString` URL 编码；
+  3. **编译构建与功能实测验证**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 同步编译产物 `ExcelAddInDemo.dll` 至 `publish/` 目录；
+     - 通过真实反射脚本验证 `GetCategoryNodes("0")`、`GetCategoryNodes("1")`、`GetSchemeDetail("221")` 均 100% 成功拉取云端数据，多级分类与 BOM 元器件清单完整加载。
 - **【全量闭环交付】天正全系塑壳断路器选型联动逻辑与官方目录表价清单导出 (`天正塑壳断路器全系选型与表价清单.xlsx`)**：
   1. **用户核心指令**：“帮我获取天正匹配的所有塑壳断路器的型号和表价，能做到吗”、“导出为 Excel 清单，每条数据携带壳架电流、极数、分断能力、额定电流、脱扣器类型等联动逻辑”；
   2. **逆向认证与数据解密攻克**：

@@ -21,8 +21,11 @@ namespace ExcelAddInDemo.Models
         // 来源箱柜序号 K (例如 Cab_Det_1 中的 1，用于判断是否跨箱柜)
         public int SourceCabinetK { get; set; } = 0;
 
-        // 来源所在物理行号 (从 1 开始的 Excel 绝对行号，剪切模式删除原行时使用)
+        // 来源所在物理行号 (从 1 开始的 Excel 绝对起始行号，剪切模式删除原行时使用)
         public int SourceRowIndex { get; set; } = 0;
+
+        // 复制/剪切的元器件连续行数 (默认为 1 行，支持连续多行批量操作)
+        public int RowCount { get; set; } = 1;
 
         // 整行读取的总列数 (默认覆盖前台可见列与后台隐藏列)
         public int ColumnCount { get; set; } = 0;

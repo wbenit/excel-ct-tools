@@ -70,11 +70,16 @@ namespace ExcelAddInDemo
         </group>
         <!-- “我的项目” 功能分组 -->
         <group id='grpProjects' label='我的项目'>
-          <!-- 本机项目下拉菜单 (使用标准本地项目文件夹图标) -->
-          <menu id='menuLocalProject' label='本机项目' imageMso='Folder' size='large'>
-            <!-- 本机项目列表项 (配置打开本地文件标准图标) -->
-            <button id='btnLocalProj1' label='默认本机项目' imageMso='FileOpen' onAction='OnMenuAction' />
-          </menu>
+          <!-- 本机项目 (SplitButton 支持一键大图标直达与下拉菜单) -->
+          <splitButton id='splitLocalProject' size='large'>
+            <!-- 顶部大图标一键直接唤起本地文件管理控制台 -->
+            <button id='btnLocalProjectMain' label='本机项目' imageMso='Folder' onAction='OnMenuAction' />
+            <!-- 下拉菜单列表 (保留原生下拉选项) -->
+            <menu id='menuLocalProject' label='本机项目'>
+              <!-- 打开本地文件管理控制台子项 -->
+              <button id='btnLocalProj1' label='本地文件管理控制台' imageMso='FileOpen' onAction='OnMenuAction' />
+            </menu>
+          </splitButton>
           <!-- 云项目下拉菜单 -->
           <menu id='menuCloudProject' label='云项目' imageMso='ServerProperties' size='large'>
             <!-- 云项目列表项 (配置服务器网络连接标准图标) -->
@@ -476,6 +481,12 @@ namespace ExcelAddInDemo
             {
                 // 弹出基于 WebView2 + Vue 3 的“箱柜调序”窗口
                 ExcelServices.ShowCabinetReorderDialog();
+            }
+            // 响应“本机项目”主按钮及下拉菜单指令
+            else if (controlId == "btnLocalProjectMain" || controlId == "btnLocalProj1" || controlId == "menuLocalProject")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“本地文件管理控制台”窗口
+                ExcelServices.ShowLocalProjectDialog();
             }
             // 响应“企业设置”按钮指令
             else if (controlId == "btnEnterprise")
