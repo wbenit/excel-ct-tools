@@ -31,6 +31,61 @@ namespace ExcelAddInDemo
         private static readonly Dictionary<string, List<CellColorSnapshot>> _filterOriginalColorSnapshots 
             = new Dictionary<string, List<CellColorSnapshot>>(StringComparer.OrdinalIgnoreCase);
 
+        // 虚拟表头备份快照数据模型，用于在取消筛选时 100% 还原第 1 行原本的行高、单元格内容与排版格式 (方案 A)
+        private class VirtualHeaderSnapshot
+        {
+            // 工作表名称
+            public string SheetName { get; set; } = string.Empty;
+            // 第 1 行原始行高数值
+            public object? OriginalRowHeight { get; set; }
+            // 第 1 行原始单元格数据二维数组 (object[,])
+            public object[,]? OriginalValues { get; set; }
+            // 第 1 行原始单元格公式二维数组 (object[,])
+            public object[,]? OriginalFormulas { get; set; }
+            // 第 1 行原始背景色 OLE 数值
+            public object? OriginalInteriorColor { get; set; }
+            // 第 1 行原始背景色索引 (如 xlNone 等)
+            public object? OriginalInteriorColorIndex { get; set; }
+            // 第 1 行原始字体加粗属性
+            public object? OriginalFontBold { get; set; }
+            // 第 1 行原始字体字号
+            public object? OriginalFontSize { get; set; }
+            // 第 1 行原始水平对齐方式
+            public object? OriginalHorizontalAlignment { get; set; }
+            // 第 1 行原始垂直对齐方式
+            public object? OriginalVerticalAlignment { get; set; }
+            // 原始是否开启了窗口冻结窗格
+            public bool? OriginalFreezePanes { get; set; }
+            // 原始冻结窗口拆分行数
+            public int OriginalSplitRow { get; set; }
+            // 原始冻结窗口拆分列数
+            public int OriginalSplitColumn { get; set; }
+            // 原始第 1 行是否存在单元格合并
+            public bool OriginalMergeCells { get; set; }
+            // 快照记录的有效列数
+            public int ColumnCount { get; set; }
+        }
+
+        // 缓存工作表在筛选前第 1 行原始状态快照字典 (Key: 工作表名称，确保跨表独立)
+        private static readonly Dictionary<string, VirtualHeaderSnapshot> _virtualHeaderSnapshots 
+            = new Dictionary<string, VirtualHeaderSnapshot>(StringComparer.OrdinalIgnoreCase);
+
+        // 分类明细表标准默认列名数组 (用于在未能从箱柜明细行提取到时的强壮兜底)
+        // --硬编码: 分类明细表默认标准列名--
+        private static readonly string[] DefaultCategoryDetailHeaders = new string[]
+        {
+            "序号", "元件名称", "型号规格", "生产厂家", "单位", "数量", "单   价", "总   价", "备注",
+            "成本单价", "成本总价", "报出系数", "表价", "折扣系数", "取费系数", "成套费", "类别", "加工费"
+        };
+
+        // 虚拟表头标准显示行高 (24.0pt，充裕包容文字与筛选箭头)
+        // --硬编码: 虚拟表头标准行高 24.0--
+        private const double VirtualHeaderStandardRowHeight = 24.0;
+
+        // 虚拟表头背景底色 Hex #E8F4F2 (淡青微灰，完美呼应成套 #009688 主题色调)
+        // --硬编码: 虚拟表头背景色 RGB--
+        private static readonly Color VirtualHeaderBgColor = Color.FromArgb(232, 244, 242);
+
         // 相邻箱柜区分：白底 (第一台/奇数台)
         // --硬编码: 第一台/奇数台白底色--
         private static readonly Color AlternateWhiteColor = Color.White;
@@ -88,38 +143,64 @@ namespace ExcelAddInDemo
                 // 标记原生自动筛选是否成功应用
                 bool isFilterApplied = false;
 
+                // 核心业务升级 (方案 A)：智能判定工作表是否需要挂载虚拟表头 (零依赖项目信息白名单，基于排版与内容特征自适应)
+                bool needsVirtualHeader = NeedsVirtualHeader(activeSheet);
+                if (needsVirtualHeader)
+                {
+                    // 挂载虚拟表头并调整行高样式与冻结首行
+                    EnsureVirtualHeaderForCategorySheet(activeSheet, app);
+                }
+
                 // 场景 A: 当前工作表已经处于 AutoFilter 开启状态
                 if (activeSheet.AutoFilterMode == true && activeSheet.AutoFilter != null)
                 {
+                    // 若需要虚拟表头，确保第 1 行行高被强制恢复为 24pt 且处于非隐藏状态
+                    if (needsVirtualHeader)
+                    {
+                        try
+                        {
+                            activeSheet.Rows[1].Hidden = false;
+                            activeSheet.Rows[1].RowHeight = VirtualHeaderStandardRowHeight;
+                        }
+                        catch { }
+                    }
+
                     // 提取现有的筛选区域 Range
                     dynamic filterRange = activeSheet.AutoFilter.Range;
-                    // 提取筛选区域起始列
-                    int startCol = (int)filterRange.Column;
-                    // 计算筛选区域结束列
-                    int endCol = startCol + (int)filterRange.Columns.Count - 1;
+                    int filterStartRow = (int)filterRange.Row;
 
-                    // 若活动单元格列落在该筛选列范围内
-                    if (activeCol >= startCol && activeCol <= endCol)
+                    // 关键防御：若需要虚拟表头但旧筛选未从第 1 行开始（如在第 6 行或中间某行），重置旧 AutoFilter 重新以第 1 行开启
+                    if (needsVirtualHeader && filterStartRow != 1)
                     {
-                        // 计算列在筛选区域内部的相对列索引 (1-based)
-                        int fieldIndex = activeCol - startCol + 1;
-                        // 调用多值原生 AutoFilter 执行筛选
-                        ApplyNativeAutoFilter(filterRange, fieldIndex, filterKeywords);
-                        // 标记已成功应用筛选
-                        isFilterApplied = true;
+                        try { activeSheet.AutoFilterMode = false; } catch { }
+                    }
+                    else
+                    {
+                        // 提取筛选区域起始列
+                        int startCol = (int)filterRange.Column;
+                        // 计算筛选区域结束列
+                        int endCol = startCol + (int)filterRange.Columns.Count - 1;
+
+                        // 若活动单元格列落在该筛选列范围内
+                        if (activeCol >= startCol && activeCol <= endCol)
+                        {
+                            // 计算列在筛选区域内部的相对列索引 (1-based)
+                            int fieldIndex = activeCol - startCol + 1;
+                            // 调用多值原生 AutoFilter 执行筛选
+                            ApplyNativeAutoFilter(filterRange, fieldIndex, filterKeywords);
+                            // 标记已成功应用筛选
+                            isFilterApplied = true;
+                        }
+                        else if (needsVirtualHeader)
+                        {
+                            // 若活动列超出原筛选列范围，重置旧 AutoFilter 并以整表重新开启
+                            try { activeSheet.AutoFilterMode = false; } catch { }
+                        }
                     }
                 }
 
-                // 场景 B: 若为多箱柜分类表，优先使用包含所有箱柜的已用区域 UsedRange 开启全局 AutoFilter；若为普通平铺表，优先定位 CurrentRegion
-                dynamic? targetWb = null;
-                try { targetWb = activeSheet.Parent; } catch { }
-                // 提取工作表合规箱柜列表
-                var validCabinets = Tool.GetSheetValidCabinets((object)activeSheet, (object?)targetWb);
-                // 判定是否为包含多台箱柜的成套分类表
-                bool isMultiCabinetSheet = (validCabinets != null && validCabinets.Count > 1);
-
-                // 若非多箱柜表且尚未应用筛选，智能定位当前单元格所在的连续数据块 CurrentRegion
-                if (!isFilterApplied && !isMultiCabinetSheet)
+                // 场景 B: 若为普通平铺表且未应用筛选，智能定位当前单元格所在的连续数据块 CurrentRegion
+                if (!isFilterApplied && !needsVirtualHeader)
                 {
                     dynamic? targetRegion = null;
                     try
@@ -150,26 +231,61 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 场景 C: 多箱柜成套明细表或兜底：使用整表已用区域 UsedRange 开启全局原生自动筛选
+                // 场景 C: 多箱柜成套明细表 (方案 A 核心承载) 或普通表兜底：以第 1 行为表头开启全局原生自动筛选
                 if (!isFilterApplied)
                 {
+                    // 获取包含虚拟表头的整表已用区域 UsedRange
                     dynamic usedRange = activeSheet.UsedRange;
-                    // 校验已用区域行数
-                    if (usedRange != null && (int)usedRange.Rows.Count >= 2)
+                    dynamic targetFilterRange = usedRange;
+
+                    // 若挂载了虚拟表头，显式构建以 A1 为顶点的标准连续矩形区域，确保 100% 将第 1 行作为表头行挂载漏斗箭头
+                    if (needsVirtualHeader)
+                    {
+                        int maxCols = 25;
+                        int maxRows = 100;
+                        try
+                        {
+                            if (usedRange != null)
+                            {
+                                maxCols = Math.Max(maxCols, (int)usedRange.Column + (int)usedRange.Columns.Count - 1);
+                                maxRows = Math.Max(maxRows, (int)usedRange.Row + (int)usedRange.Rows.Count - 1);
+                            }
+                        }
+                        catch { }
+                        targetFilterRange = activeSheet.Range[activeSheet.Cells[1, 1], activeSheet.Cells[maxRows, maxCols]];
+                    }
+
+                    // 校验目标筛选区域行数
+                    if (targetFilterRange != null && (int)targetFilterRange.Rows.Count >= 2)
                     {
                         // 提取起始列
-                        int startCol = (int)usedRange.Column;
+                        int startCol = (int)targetFilterRange.Column;
                         // 计算相对列号
                         int fieldIndex = activeCol - startCol + 1;
                         // 校验列索引范围
-                        if (fieldIndex >= 1 && fieldIndex <= (int)usedRange.Columns.Count)
+                        if (fieldIndex >= 1 && fieldIndex <= (int)targetFilterRange.Columns.Count)
                         {
-                            // 对整表执行自动筛选
-                            ApplyNativeAutoFilter(usedRange, fieldIndex, filterKeywords);
+                            // 对整表执行自动筛选 (第 1 行作为具有 24pt 行高与清晰列名的表头挂载漏斗箭头)
+                            ApplyNativeAutoFilter(targetFilterRange, fieldIndex, filterKeywords);
                             // 标记已成功应用筛选
                             isFilterApplied = true;
                         }
                     }
+                }
+
+                // 核心视口与吸顶保障：筛选完成后，强制将视口垂直滚动到第 1 行，确保虚拟表头第一眼清晰可见
+                if (isFilterApplied && needsVirtualHeader)
+                {
+                    try
+                    {
+                        if (app.ActiveWindow != null)
+                        {
+                            // 视口置顶滚动至第 1 行
+                            app.ActiveWindow.ScrollRow = 1;
+                            app.ActiveWindow.ScrollColumn = 1;
+                        }
+                    }
+                    catch { }
                 }
 
                 // 若未能成功应用筛选，友好弹窗提示
@@ -749,14 +865,28 @@ namespace ExcelAddInDemo
 
             try
             {
+                // 步骤 0：成套查件智能挂载虚拟表头，无论点击哪个筛选均统一呈现吸顶表头
+                bool needsVirtualHeader = NeedsVirtualHeader(activeSheet);
+                if (needsVirtualHeader)
+                {
+                    // 挂载第 1 行虚拟明细表头并开启 24pt 行高与首行吸顶冻结
+                    EnsureVirtualHeaderForCategorySheet(activeSheet, app);
+                }
+
                 // 步骤 1：若本工作表先前已有快照未还原（如多次连续筛选），先还原旧快照，杜绝用户原色丢失
                 RestoreColorSnapshotsForSheet(activeSheet);
 
                 // 步骤 2：对本次命中的所有元器件行 A~M 列执行原始背景色快照备份（100% 保护用户自定义标记色）
                 BackupColorSnapshotsForRows(activeSheet, allHitRows);
 
-                // 步骤 3：汇总需要保留显示的物理行集合 (包含命中元器件行与所属箱柜的标题行、表头行)
+                // 步骤 3：汇总需要保留显示的物理行集合 (包含第 1 行表头、命中元器件行与所属箱柜的标题行、表头行)
                 HashSet<int> keepVisibleRows = new HashSet<int>(allHitRows);
+                // 关键点：若挂载了虚拟表头，第 1 行必须加入保留可见集合，杜绝被批量隐藏
+                if (needsVirtualHeader)
+                {
+                    keepVisibleRows.Add(1);
+                }
+
                 // 遍历各个命中的箱柜
                 foreach (var cabItem in hitCabinetsOrdered)
                 {
@@ -775,6 +905,22 @@ namespace ExcelAddInDemo
                 // 执行“隐藏非保留行，只留下命中元器件及其所属箱柜标题行”
                 // 将 1 到 maxRow 中所有不属于 keepVisibleRows 的行批量设置 Hidden = true
                 ApplyBatchRowVisibility(activeSheet, 1, maxRow, keepVisibleRows);
+
+                // 核心保障：若挂载了虚拟表头，强制恢复第 1 行行高并解除隐藏且置顶视口
+                if (needsVirtualHeader)
+                {
+                    try
+                    {
+                        activeSheet.Rows[1].Hidden = false;
+                        activeSheet.Rows[1].RowHeight = VirtualHeaderStandardRowHeight;
+                        if (app.ActiveWindow != null)
+                        {
+                            app.ActiveWindow.ScrollRow = 1;
+                            app.ActiveWindow.ScrollColumn = 1;
+                        }
+                    }
+                    catch { }
+                }
 
                 // 步骤 4：相邻箱柜斑马纹交替上色（第一台淡青底，第二台白底，第三台淡青底...）
                 int cyanOle = ColorTranslator.ToOle(AlternateCyanColor);
@@ -997,13 +1143,21 @@ namespace ExcelAddInDemo
                     // 暂停事件处理
                     app.EnableEvents = false;
 
-                    // 1. 双轨联动：若当前工作表处于 Excel 系统原生 AutoFilter 筛选状态，优先一键清除系统筛选条件 (显示全部数据)
+                    // 1. 核心业务升级 (方案 A)：若存在第 1 行虚拟表头快照，无损还原原始行高、内容、样式与窗口冻结
+                    bool headerRestored = RestoreVirtualHeaderForSheet(targetSheet, app);
+
+                    // 2. 双轨联动：若当前工作表处于 Excel 系统原生 AutoFilter 筛选状态
                     try
                     {
-                        // 检查工作表是否处于系统原生自动筛选过滤状态
-                        if (targetSheet.FilterMode == true)
+                        // 若成功还原了虚拟表头，彻底退出原生 AutoFilter 筛选模式，消除残留箭头并让表格回到未筛选原貌
+                        if (headerRestored)
                         {
-                            // 清除系统筛选条件，显示全部数据并恢复漏斗箭头
+                            // 彻底关闭自动筛选模式
+                            targetSheet.AutoFilterMode = false;
+                        }
+                        else if (targetSheet.FilterMode == true)
+                        {
+                            // 若为普通平铺表，清除系统筛选条件，显示全部数据并恢复漏斗箭头
                             targetSheet.ShowAllData();
                         }
                     }
@@ -1248,6 +1402,425 @@ namespace ExcelAddInDemo
                 }
                 catch { }
             }
+        }
+
+        /// <summary>
+        /// 判定当前工作表是否需要挂载第 1 行虚拟明细表头 (零依赖白名单，直接基于排版与内容特征嗅探)
+        /// </summary>
+        private static bool NeedsVirtualHeader(dynamic sheet)
+        {
+            try
+            {
+                // 1. 若第 1 行行高小于 18.0pt (典型如 0~6pt 压扁留白行)，必然需要展开表头
+                double r1Height = 0;
+                try { r1Height = Convert.ToDouble(sheet.Rows[1].RowHeight); } catch { }
+                if (r1Height < 18.0) return true;
+
+                // 2. 检查第 1 行 A~C 列内容是否为常规数据/空白而不是表头
+                string a1 = Convert.ToString(sheet.Cells[1, 1].Value2)?.Trim() ?? "";
+                string b1 = Convert.ToString(sheet.Cells[1, 2].Value2)?.Trim() ?? "";
+                string c1 = Convert.ToString(sheet.Cells[1, 3].Value2)?.Trim() ?? "";
+
+                // 若第 1 行 A、B 列为空，显然是空白行，需要挂载表头
+                if (string.IsNullOrWhiteSpace(a1) && string.IsNullOrWhiteSpace(b1)) return true;
+
+                // 若第 1 行 A 列不是“序号/NO”且 B 列不是“名称/元件”，判定为非表头行
+                bool isStandardHeaderRow1 = (a1.Contains("序号") || a1.Contains("NO") || a1.Contains("No")) &&
+                                            (b1.Contains("名称") || b1.Contains("元件") || c1.Contains("型号") || c1.Contains("规格"));
+                if (!isStandardHeaderRow1) return true;
+            }
+            catch { }
+            return false;
+        }
+
+        /// <summary>
+        /// 从工作表内部动态扫描嗅探真实的元器件明细表头所在物理行号 (零依赖白名单)
+        /// </summary>
+        private static int FindDetailHeaderRowInSheet(dynamic sheet, int maxScanRows = 120)
+        {
+            try
+            {
+                // 限制最大扫描行数
+                int endRow = Math.Min(maxScanRows, 150);
+                // 选取前 endRow 行的 A:E 列区域
+                dynamic scanRange = sheet.Range[sheet.Cells[1, 1], sheet.Cells[endRow, 5]];
+                // 规则 7: 一次性读取到二维数组
+                object[,] scanVals = scanRange.Value2 as object[,];
+                if (scanVals == null) return 0;
+
+                int rowCount = scanVals.GetLength(0);
+                // 从第 2 行开始往下逐行扫描特征
+                for (int r = 2; r <= rowCount; r++)
+                {
+                    string colA = Convert.ToString(scanVals[r, 1])?.Trim() ?? "";
+                    string colB = Convert.ToString(scanVals[r, 2])?.Trim() ?? "";
+                    string colC = Convert.ToString(scanVals[r, 3])?.Trim() ?? "";
+                    string colD = Convert.ToString(scanVals[r, 4])?.Trim() ?? "";
+
+                    // 特征匹配：A 列含“序号/项次/NO”且 B 列含“名称/元件”或 C 列含“型号/规格”
+                    bool isHeader = (colA.Contains("序号") || colA.Contains("项次") || colA.Contains("NO") || colA.Contains("No")) &&
+                                    (colB.Contains("名称") || colB.Contains("元件") || colC.Contains("型号") || colC.Contains("规格") || colD.Contains("厂家"));
+
+                    // 容错特征：某行直接包含“元件名称”与“型号规格”
+                    if (!isHeader && (colB.Contains("元件") || colB.Contains("名称")) && (colC.Contains("型号") || colC.Contains("规格")))
+                    {
+                        isHeader = true;
+                    }
+
+                    // 若匹配成功，返回在工作表中的真实物理行号
+                    if (isHeader)
+                    {
+                        return r;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"嗅探明细表头行异常: {ex.Message}");
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// 为成套分类表构建并呈现第 1 行虚拟明细表头，并设置自适应 24pt 行高与吸顶冻结窗格 (方案 A 核心承载，零依赖白名单)
+        /// </summary>
+        /// <param name="activeSheet">当前活动工作表 COM 实例</param>
+        /// <param name="app">Excel Application COM 实例</param>
+        private static void EnsureVirtualHeaderForCategorySheet(dynamic activeSheet, dynamic app)
+        {
+            try
+            {
+                // 获取当前工作表名称
+                string sheetKey = Convert.ToString(activeSheet.Name) ?? "DefaultSheet";
+                LogHelper.WriteLog($"[虚拟表头] 触发 EnsureVirtualHeaderForCategorySheet，目标表: [{sheetKey}]");
+
+                // 计算整表需要覆盖的最大列数 (至少 25 列，优先探测已用区域列数)
+                int maxCols = 25;
+                try
+                {
+                    // 获取已用区域
+                    dynamic used = activeSheet.UsedRange;
+                    // 校验已用区域列边界
+                    if (used != null)
+                    {
+                        // 计算已用区域最大物理列号
+                        int usedEndCol = (int)used.Column + (int)used.Columns.Count - 1;
+                        // 取较大值确保整表各列全覆盖
+                        maxCols = Math.Max(maxCols, usedEndCol);
+                    }
+                }
+                catch { }
+
+                // 选取第 1 行 A 列至 maxCols 列对应的单元格区域 Range
+                dynamic row1Range = activeSheet.Range[activeSheet.Cells[1, 1], activeSheet.Cells[1, maxCols]];
+
+                // 若尚未记录该表的快照，执行完整备份
+                if (!_virtualHeaderSnapshots.ContainsKey(sheetKey))
+                {
+                    // 检查原始第 1 行是否存在单元格合并
+                    bool isMerged = false;
+                    try { isMerged = Convert.ToBoolean(row1Range.MergeCells); } catch { }
+
+                    // 构建快照对象并完整记录第 1 行原本的全部状态与排版属性
+                    var snapshot = new VirtualHeaderSnapshot
+                    {
+                        // 记录工作表名
+                        SheetName = sheetKey,
+                        // 记录原始行高
+                        OriginalRowHeight = activeSheet.Rows[1].RowHeight,
+                        // 规则 7: 一次性批量读入第 1 行原始值
+                        OriginalValues = row1Range.Value2 as object[,],
+                        // 规则 7: 一次性批量读入第 1 行原始公式
+                        OriginalFormulas = row1Range.Formula as object[,],
+                        // 记录原始背景色
+                        OriginalInteriorColor = row1Range.Interior.Color,
+                        // 记录原始背景色索引
+                        OriginalInteriorColorIndex = row1Range.Interior.ColorIndex,
+                        // 记录原始字体粗细
+                        OriginalFontBold = row1Range.Font.Bold,
+                        // 记录原始字体大小
+                        OriginalFontSize = row1Range.Font.Size,
+                        // 记录原始水平对齐
+                        OriginalHorizontalAlignment = row1Range.HorizontalAlignment,
+                        // 记录原始垂直对齐
+                        OriginalVerticalAlignment = row1Range.VerticalAlignment,
+                        // 记录原始是否合并
+                        OriginalMergeCells = isMerged,
+                        // 记录最大列数
+                        ColumnCount = maxCols
+                    };
+
+                    // 备份当前的窗口冻结窗格配置
+                    try
+                    {
+                        // 获取当前活动窗口句柄
+                        dynamic win = app.ActiveWindow;
+                        // 校验活动窗口句柄有效性
+                        if (win != null)
+                        {
+                            // 记录原始冻结状态
+                            snapshot.OriginalFreezePanes = win.FreezePanes;
+                            // 记录原始拆分行
+                            snapshot.OriginalSplitRow = win.SplitRow;
+                            // 记录原始拆分列
+                            snapshot.OriginalSplitColumn = win.SplitColumn;
+                        }
+                    }
+                    catch { }
+
+                    // 保存快照至全局字典
+                    _virtualHeaderSnapshots[sheetKey] = snapshot;
+                }
+
+                // 核心安全保障：若第 1 行存在合并单元格，先取消合并以允许向各列填入独立列名
+                try
+                {
+                    if (Convert.ToBoolean(row1Range.MergeCells))
+                    {
+                        row1Range.UnMerge();
+                    }
+                }
+                catch { }
+
+                // 动态探测当前表中真实的元器件明细表头所在物理行 (零依赖白名单)
+                int detectedHeaderRow = FindDetailHeaderRowInSheet(activeSheet, 120);
+                object[,] newHeaders = new object[1, maxCols];
+                bool extractedFromDetail = false;
+
+                // 若成功探测到明细表头物理行
+                if (detectedHeaderRow > 0)
+                {
+                    try
+                    {
+                        // 选取探测到的明细表头 Range
+                        dynamic srcHeaderRange = activeSheet.Range[activeSheet.Cells[detectedHeaderRow, 1], activeSheet.Cells[detectedHeaderRow, maxCols]];
+                        // 规则 7: 一次性读取真实表头文本到内存
+                        object[,] srcVals = srcHeaderRange.Value2 as object[,];
+
+                        // 校验表头数组有效性
+                        if (srcVals != null)
+                        {
+                            // 遍历各列提取真实列名
+                            for (int c = 1; c <= maxCols; c++)
+                            {
+                                // 转换为纯文本并去除首尾空白
+                                string colText = Convert.ToString(srcVals[1, c])?.Trim() ?? "";
+                                // 若 A 列带有动态序号公式结果(如 "序号1" 或 "序号Cab_Sum_1")，规整为标准纯文字“序号”
+                                if (c == 1 && colText.Contains("序号"))
+                                {
+                                    colText = "序号";
+                                }
+                                // 回填至新表头二维数组
+                                newHeaders[0, c - 1] = colText;
+                            }
+                            // 标记提取成功
+                            extractedFromDetail = true;
+                            LogHelper.WriteLog($"[虚拟表头] 成功从第 {detectedHeaderRow} 行动态抓取真实明细表头！");
+                        }
+                    }
+                    catch (Exception extractEx)
+                    {
+                        // 记录提取异常日志
+                        LogHelper.WriteLog($"从检测行 {detectedHeaderRow} 提取表头异常: {extractEx.Message}");
+                    }
+                }
+
+                // 容错兜底：若未能成功提取，使用成套标准默认列名数组填充
+                if (!extractedFromDetail)
+                {
+                    // 遍历填充标准列名
+                    for (int c = 0; c < maxCols; c++)
+                    {
+                        // 优先填充标准预设列名
+                        newHeaders[0, c] = (c < DefaultCategoryDetailHeaders.Length) ? DefaultCategoryDetailHeaders[c] : "";
+                    }
+                    LogHelper.WriteLog($"[虚拟表头] 未嗅探到明细表头行，采用成套标准默认列名回填。");
+                }
+
+                // 规则 7: 一次性将虚拟表头二维数组批量写入第 1 行单元格
+                row1Range.Value2 = newHeaders;
+
+                // 强制解除第 1 行隐藏状态
+                activeSheet.Rows[1].Hidden = false;
+                // 强制调整第 1 行行高为标准 24pt (充裕容纳文字与下拉箭头)
+                activeSheet.Rows[1].RowHeight = VirtualHeaderStandardRowHeight;
+
+                // 赋予第 1 行浅灰青底色，与成套主题色 #009688 深度协调
+                row1Range.Interior.Color = ColorTranslator.ToOle(VirtualHeaderBgColor);
+
+                // 设置字体加粗
+                row1Range.Font.Bold = true;
+                // 设置字体大小为 10pt
+                row1Range.Font.Size = 10;
+                // 设置水平居中 (-4108: xlCenter)
+                // --硬编码: Excel xlCenter 常数--
+                row1Range.HorizontalAlignment = -4108;
+                // 设置垂直居中 (-4108: xlCenter)
+                // --硬编码: Excel xlCenter 常数--
+                row1Range.VerticalAlignment = -4108;
+
+                // 视觉增强：开启首行冻结 (Freeze Top Row)，向下滚动查阅数据时表头始终吸顶固定
+                try
+                {
+                    // 确保活动工作表被激活
+                    activeSheet.Activate();
+                    // 获取当前窗口
+                    dynamic win = app.ActiveWindow;
+                    // 校验窗口有效性
+                    if (win != null)
+                    {
+                        // 先解除可能存在的旧冻结
+                        win.FreezePanes = false;
+                        // 核心保障：必须先将视口滚动到第 1 行第 1 列，让第 1 行稳稳处于可视区域最顶端！
+                        win.ScrollRow = 1;
+                        win.ScrollColumn = 1;
+                        // 设置拆分行为第 1 行
+                        win.SplitRow = 1;
+                        // 拆分列设为 0
+                        win.SplitColumn = 0;
+                        // 开启窗口冻结
+                        win.FreezePanes = true;
+                    }
+                }
+                catch (Exception freezeEx)
+                {
+                    // 记录冻结异常日志
+                    LogHelper.WriteLog($"开启首行冻结窗格异常: {freezeEx.Message}");
+                }
+
+                LogHelper.WriteLog($"[虚拟表头] 第 1 行虚拟表头挂载完成！行高: {activeSheet.Rows[1].RowHeight}pt");
+            }
+            catch (Exception ex)
+            {
+                // 记录构建虚拟表头全局异常日志
+                LogHelper.WriteLog($"构建虚拟表头全局异常: {ex.Message}\r\n{ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// 从快照中无损精准还原工作表第 1 行原始状态（行高、内容、公式、样式与冻结窗格）
+        /// </summary>
+        /// <param name="sheet">目标工作表 COM 实例</param>
+        /// <param name="app">Excel Application COM 实例</param>
+        /// <returns>若成功执行还原返回 true，否则返回 false</returns>
+        private static bool RestoreVirtualHeaderForSheet(dynamic sheet, dynamic? app = null)
+        {
+            try
+            {
+                // 获取工作表名称
+                string sheetKey = Convert.ToString(sheet.Name) ?? "DefaultSheet";
+
+                // 检查是否存在该工作表的虚拟表头快照
+                if (_virtualHeaderSnapshots.TryGetValue(sheetKey, out var snapshot) && snapshot != null)
+                {
+                    // 获取记录的最大列数
+                    int cols = snapshot.ColumnCount > 0 ? snapshot.ColumnCount : 25;
+                    // 选取第 1 行对应区域 Range
+                    dynamic row1Range = sheet.Range[sheet.Cells[1, 1], sheet.Cells[1, cols]];
+
+                    // 1. 还原公式或原始数值
+                    if (snapshot.OriginalFormulas != null)
+                    {
+                        // 规则 7: 批量还原原始公式
+                        row1Range.Formula = snapshot.OriginalFormulas;
+                    }
+                    else if (snapshot.OriginalValues != null)
+                    {
+                        // 规则 7: 批量还原原始值
+                        row1Range.Value2 = snapshot.OriginalValues;
+                    }
+                    else
+                    {
+                        // 清空第 1 行写入的表头文本
+                        row1Range.ClearContents();
+                    }
+
+                    // 2. 还原背景底色
+                    if (snapshot.OriginalInteriorColorIndex != null && Convert.ToInt32(snapshot.OriginalInteriorColorIndex) == XlNoneColorIndex)
+                    {
+                        // 还原为无填充色
+                        row1Range.Interior.ColorIndex = XlNoneColorIndex;
+                    }
+                    else if (snapshot.OriginalInteriorColor != null)
+                    {
+                        // 还原为原始具体颜色
+                        row1Range.Interior.Color = snapshot.OriginalInteriorColor;
+                    }
+
+                    // 3. 还原字体加粗与大小
+                    if (snapshot.OriginalFontBold != null) row1Range.Font.Bold = snapshot.OriginalFontBold;
+                    if (snapshot.OriginalFontSize != null) row1Range.Font.Size = snapshot.OriginalFontSize;
+                    // 还原水平与垂直对齐方式
+                    if (snapshot.OriginalHorizontalAlignment != null) row1Range.HorizontalAlignment = snapshot.OriginalHorizontalAlignment;
+                    if (snapshot.OriginalVerticalAlignment != null) row1Range.VerticalAlignment = snapshot.OriginalVerticalAlignment;
+
+                    // 4. 若原本存在合并单元格，还原合并
+                    if (snapshot.OriginalMergeCells)
+                    {
+                        try { row1Range.Merge(); } catch { }
+                    }
+
+                    // 5. 还原第 1 行原始行高 (如原本只有几像素的极窄行高)
+                    if (snapshot.OriginalRowHeight != null)
+                    {
+                        // 设置回原始行高
+                        sheet.Rows[1].RowHeight = snapshot.OriginalRowHeight;
+                    }
+
+                    // 6. 还原原始窗口冻结窗格配置
+                    if (app != null)
+                    {
+                        try
+                        {
+                            // 获取活动窗口句柄
+                            dynamic win = app.ActiveWindow;
+                            // 校验窗口句柄有效性
+                            if (win != null)
+                            {
+                                // 若原本处于冻结状态
+                                if (snapshot.OriginalFreezePanes == true)
+                                {
+                                    // 先关闭当前冻结
+                                    win.FreezePanes = false;
+                                    // 还原拆分行
+                                    win.SplitRow = snapshot.OriginalSplitRow;
+                                    // 还原拆分列
+                                    win.SplitColumn = snapshot.OriginalSplitColumn;
+                                    // 重新激活冻结
+                                    win.FreezePanes = true;
+                                }
+                                else
+                                {
+                                    // 若原本无冻结，彻底关闭冻结窗格
+                                    win.FreezePanes = false;
+                                    // 重置拆分行
+                                    win.SplitRow = 0;
+                                    // 重置拆分列
+                                    win.SplitColumn = 0;
+                                }
+                            }
+                        }
+                        catch (Exception winEx)
+                        {
+                            // 记录还原窗口冻结异常日志
+                            LogHelper.WriteLog($"还原窗口冻结异常: {winEx.Message}");
+                        }
+                    }
+
+                    // 从静态字典中移除已还原的快照缓存
+                    _virtualHeaderSnapshots.Remove(sheetKey);
+                    // 标记还原成功
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录还原虚拟表头异常日志
+                LogHelper.WriteLog($"还原虚拟表头异常: {ex.Message}");
+            }
+
+            // 未命中快照返回 false
+            return false;
         }
     }
 }
