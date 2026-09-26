@@ -150,6 +150,26 @@
     <None Include="Resources\TenderReport_Regular.xlsx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将材料统计前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\material_stat.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- 自动将人工清单前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\labor_list.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- 自动将三箱型号添写管道决策前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\cabinet_model_pipeline.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- 自动将成品交接单前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\finished_handover.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- 自动将报价智能核验前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\quotation_check.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将 JSON 配置文件复制至构建输出路径中 -->
     <None Include="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

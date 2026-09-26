@@ -1325,59 +1325,46 @@ namespace ExcelAddInDemo
                 {
                     // 1. 克隆源工作表并放置在最后一个工作表之后
                     srcSheet.Copy(After: activeWb.Sheets[activeWb.Sheets.Count]);
+                    // 获取克隆生成的新工作表 COM 实例
                     dynamic newSheet = activeWb.Sheets[activeWb.Sheets.Count];
-                    // 重命名为用户指定的新名称
+                    // 重命名为用户指定的新分类名称
                     newSheet.Name = targetName;
 
                     // 2. 清洗跨工作簿外部公式链接 (将残留的源工作簿或外部路径洗成本地公式)
                     Tool.CleanRangeFormulas(newSheet.UsedRange);
 
-                    // 3. 动态智能探测新分类表的基准行号分布
-                    var rowIndexes = Tool.FindStandardCategoryRowIndexes((object)newSheet);
-                    int cabSumRow = rowIndexes.cabSumRow;
-                    int cabDetRow = rowIndexes.cabDetRow;
-                    int subsumRow = rowIndexes.cabSubsumRow;
-                    int cabTolsumRow = rowIndexes.cabTolsumRow;
-
-                    // 读取箱柜定义名称前缀值对象
-                    var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
-
-                    // 4. 重新扫描全工作簿分配新的全局唯一箱柜序号 K，杜绝跨表名称冲突 (规则 6 & 启发式经验 12)
-                    int newCabinetK = GetNextCabinetIndex(activeWb, newSheet);
-
-                    // 绑定新的 4 个工作表级定义名称锚点
-                    Tool.SafeSetSheetName(newSheet, targetName, $"{sumPrefix}{newCabinetK}", cabSumRow);
-                    Tool.SafeSetSheetName(newSheet, targetName, $"{detPrefix}{newCabinetK}", cabDetRow);
-                    Tool.SafeSetSheetName(newSheet, targetName, $"{subsumPrefix}{newCabinetK}", subsumRow);
-                    Tool.SafeSetSheetName(newSheet, targetName, $"{tolsumPrefix}{newCabinetK}", cabTolsumRow);
-
-                    // 5. 重新配置顶部汇总行与底部明细行超链接
+                    // 3. 全量清洗并重定向超链接：将新表中原本残留指向源表名的超链接 SubAddress 替换为新分类表名
                     try
                     {
-                        // 顶部 A 列超链接指向明细行定义名称
-                        // 屏幕提示明确标注：点击进入本箱柜明细表 --硬编码: 屏幕提示文本--
-                        newSheet.Hyperlinks.Add(
-                            Anchor: newSheet.Range[$"A{cabSumRow}"],
-                            Address: "",
-                            SubAddress: $"'{targetName}'!{detPrefix}{newCabinetK}",
-                            ScreenTip: "点击进入本箱柜明细表",
-                            TextToDisplay: Convert.ToString(newCabinetK)
-                        );
-
-                        // 底部 A 列超链接指向汇总行定义名称
-                        newSheet.Hyperlinks.Add(
-                            Anchor: newSheet.Range[$"A{cabDetRow}"],
-                            Address: "",
-                            SubAddress: $"'{targetName}'!{sumPrefix}{newCabinetK}",
-                            TextToDisplay: "柜号:"
-                        );
+                        // 遍历新克隆表中的所有单元格超链接
+                        foreach (dynamic hl in newSheet.Hyperlinks)
+                        {
+                            try
+                            {
+                                // 获取已有超链接的子地址
+                                string subAddr = Convert.ToString(hl.SubAddress) ?? "";
+                                // 若子地址指向源分类表，精准替换为新分类表
+                                if (!string.IsNullOrEmpty(subAddr) && subAddr.Contains($"'{srcName}'!"))
+                                {
+                                    // 更新超链接目标子地址为新表
+                                    hl.SubAddress = subAddr.Replace($"'{srcName}'!", $"'{targetName}'!");
+                                }
+                            }
+                            catch { }
+                        }
                     }
                     catch { }
 
-                    // 6. 在【项目信息】工作表中追加或更新分类汇总行
+                    // 4. 在【项目信息】工作表中追加或更新分类汇总行 (先在主表注册新分类并挂载双向超链接)
                     UpdateProjectInfoCategorySummary(activeWb, targetName);
 
-                    // 7. 激活聚焦新工作表
+                    // 5. 强制刷新分类表白名单缓存，确保新工作表立即被工程纳管识别
+                    Tool.GetProjectCategorySheetNames(activeWb, forceRefresh: true);
+
+                    // 6. 严格遵守规则 8：调用全量自愈方法重置所有箱柜的 4 个定义名称与双向超链接 (规则 6 架构保障)
+                    Tool.FixAndFillCabinetNamesForSheet(newSheet, forceRebuild: true);
+
+                    // 7. 激活聚焦新工作表并默认定位至 A1
                     newSheet.Activate();
                     newSheet.Range["A1"].Select();
 

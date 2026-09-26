@@ -138,3 +138,15 @@
   1. **第 1 梯队：Windows Shell 原生缩略图工厂 (`IShellItemImageFactory`)**：通过 P/Invoke 调用 Shell32 的 `SHCreateItemFromParsingName` 与 `GetImage`，可无损提取 Windows 资源管理器自身缓存的高清缩略图（支持最高 512x512 位图），毫秒级响应且画质极佳；
   2. **第 2 梯队：纯 C# 文件流二进制解析（DWG Header IMAGE_SEEK）**：当 Shell 工厂无法提供时，直接通过 `FileStream` 顺序读取 DWG 头部二进制规范（R13~R2018 跨版本兼容），定位 `0x0D` 偏移行处的 `IMAGE_SEEK` 4字节指针，直接提取 DWG 文件内部内嵌保存的标准 256 色/真彩色 BMP 图像流，完全零外部进程依赖；
   3. **第 3 梯队：动态矢量占位符降级**：若图纸保存时未勾选内嵌预览或文件损坏，通过 GDI+ 动态绘制工业蓝图网格并居中渲染文件名作为兜底预览，提供一键外部关联 CAD 打开与资源管理器高亮定位。
+
+### 19. WebView2 交互下报表重复生成导致的 MessageBox 模态 IPC 死锁与 Excel 事件监听互锁
+- **现象**：在已有报表（如《采购清单》）时，再次打开向导并点击重新生成，Excel 界面完全冻结卡死无响应。
+- **原因**：
+  1. **WebMessageReceived 同步 MessageBox 挂起 IPC 握手**：C# 在接收 `exportPurchaseList` 消息的回调栈中同步调用了 `MessageBox.Show`，Win32 模态循环挂起当前线程，Chromium 无法完成 PostMessage 的 ACK 确认，导致 WebView2 与主线程陷入死锁；
+  2. **事件监听与表激活恢复互锁**：在关闭事件（`EnableEvents = false`）下执行表激活或删行插行，恢复 `EnableEvents = true` 时堆积的事件与尚未释放的浮窗在 COM STA 线程竞争；
+  3. **已有表重入未重置导致数据无限堆叠与占位符失效**：初次生成后第 7 行占位符已被实际数据覆写，二次生成时无法匹配占位符（品牌丢失），且在固定行（如第 13 行）盲目向下插入空行，导致旧数据永远残留且行数无限膨胀。
+- **结晶解法（终极规范）**：
+  1. **零 Win32 阻塞·全量移交 Web 端反馈**：业务服务层严禁调用 `MessageBox.Show`，全链路静默执行并返回结果对象；前端通过 `ElementPlus.ElMessage` 弹出轻量成功 Toast，延时 1 秒由前端发起关闭窗口；
+  2. **前端纯 Web 弹窗防误触覆盖**：前端检测若已存在目标表，通过 Element Plus 的 `ElMessageBox.confirm` 进行覆盖确认，纯 Web DOM 异步 Promise 保证 100% 零 Win32 阻塞风险；
+  3. **删旧表克隆新表（彻底干净重置）**：检测到已有旧报表时，先静默调用 `oldSheet.Delete()`，再从标准母版克隆全新 Sheet，保证第 7 行占位符与预留行数 100% 标准纯净，绝无旧数据残留。
+

@@ -192,11 +192,15 @@ namespace ExcelAddInDemo
               <!-- 多方案报价子项 (配置多页方案对比标准图标) -->
               <button id='btnMultiPlanQuoteSub' label='多方案报价' imageMso='MultiplePages' onAction='OnMenuAction' />
             </menu>
+            <!-- 11. 报价智能核验项 (排查同型号价格冲突、公式破坏、AA/AB图纸参数缺失与价格倒挂) -->
+            <button id='btnQuotationCheckSub' label='报价智能核验' imageMso='ReviewAcceptChange' onAction='OnMenuAction' screentip='报价智能核验' supertip='全面排查全表同型号价格冲突、公式覆写破坏、面价漏填、AA/AB图纸参数缺失及价格倒挂，支持一键自愈修复' />
           </menu>
           <!-- 在线查价大图标直达按钮 -->
           <button id='btnOnlinePriceSearchBig' label='在线查价' imageMso='WebPagePreview' size='large' screentip='在线查价与静默回写' supertip='从电气天下或天工矩阵实时拉取元器件单价，支持框选一键静默批量回写与自主选择回填列' onAction='OnMenuAction' />
           <!-- 智能算料/辅材壳体计算 按钮 (大图标直达) -->
           <button id='btnCabinetAuxCalc' label='辅材壳体计算' imageMso='CalculateNow' size='large' screentip='辅材壳体与配电智能计算' supertip='智能推导匹配壳体尺寸、计算铜排母线用量、一次及二次接线辅材与装配人工费，支持全参数动态配置' onAction='OnMenuAction' />
+          <!-- 报价核验大图标直达按钮 (全面排查同型号价格冲突、公式破坏、AA/AB图纸参数缺失与价格倒挂) -->
+          <button id='btnQuotationCheck' label='报价核验' imageMso='ReviewAcceptChange' size='large' screentip='报价智能核验与防错' supertip='全面排查全表同型号价格冲突、公式覆写破坏、面价漏填、AA/AB图纸参数缺失及价格倒挂，支持一键自愈修复' onAction='OnMenuAction' />
           <!-- 费用设定下拉菜单 (使用 Office 经典会计货币标准图标 AccountingFormat，确保各版本大图标均能正常显现) -->
           <menu id='menuFeeSetting' label='费用设定' imageMso='AccountingFormat' size='large'>
             <!-- 1. 公式法调费按钮 (对应图二样式与提示) -->
@@ -252,6 +256,12 @@ namespace ExcelAddInDemo
           <menu id='menuMaterialStat' label='材料统计' imageMso='ChartInsert' size='large'>
             <!-- 材料统计项 (配置图表插入统计图标) -->
             <button id='btnMaterialStatSub' label='材料统计' imageMso='ChartInsert' onAction='OnMenuAction' />
+            <!-- 领料清单项 (基于采购清单生成成套设备装配领料单) -->
+            <button id='btnPickListSub' label='领料清单' imageMso='CreateForm' onAction='OnMenuAction' screentip='导出装配领料单' supertip='直接基于现有【采购清单】及其 J 列库存标记，快速生成成套设备装配领料单' />
+            <!-- 人工清单项 (基于各分类表明细生成成套设备装配人工清单) -->
+            <button id='btnLaborListSub' label='人工清单' imageMso='TaskCreate' onAction='OnMenuAction' screentip='导出装配人工清单' supertip='基于各分类表明细中箱柜台套与人工费，一键导出成套设备制作与装配人工清单' />
+            <!-- 成品交接单项 (基于各分类表明细中箱柜台套、型号、主进线电流及防护等级生成成品交接单) -->
+            <button id='btnFinishedHandoverSub' label='成品交接单' imageMso='FileDeliver' onAction='OnMenuAction' screentip='生成成品交接单' supertip='基于各分类表明细中的箱柜台套、型号、主进线开关整定电流及防护等级，一键生成成品出厂交接单' />
           </menu>
         </group>
         <!-- 辅助项 功能分组 -->
@@ -279,6 +289,10 @@ namespace ExcelAddInDemo
           <menu id='menuProjectTools' label='项目工具' imageMso='ControlToolboxOutlook' size='large'>
             <!-- 智能输入按钮 -->
             <button id='btnSmartInput' label='智能输入' imageMso='SmartArtInsert' screentip='智能输入' supertip='配置元器件去重词库与C列输入智能联动选项' onAction='OnMenuAction' />
+            <!-- 三箱型号添写按钮 (使用标准列/表格图标 TableProperties) -->
+            <button id='btnCabinetModelPipeline' label='三箱型号添写' imageMso='TableProperties' screentip='三箱型号添写' supertip='根据箱体高度、深度及内部元器件特征，在管道中智能推导并批量添写三箱型号(PZ30/JXF/XL-21/ATS等)' onAction='OnMenuAction' />
+            <!-- 报价智能核验按钮 -->
+            <button id='btnQuotationCheckTools' label='报价智能核验' imageMso='ReviewAcceptChange' screentip='报价智能核验与防错' supertip='全面排查全表同型号价格冲突、公式覆写破坏、面价漏填、AA/AB图纸参数缺失及价格倒挂，支持一键自愈修复' onAction='OnMenuAction' />
             <!-- 项目工具项 (配置标准工具箱图标) -->
             <button id='btnProjectToolsSub' label='项目工具' imageMso='ControlToolboxOutlook' onAction='OnMenuAction' />
           </menu>
@@ -560,6 +574,18 @@ namespace ExcelAddInDemo
                 // 弹出基于 WebView2 + Vue 3 的“智能输入配置”窗口
                 ExcelServices.ShowSmartInputDialog();
             }
+            // 响应“三箱型号添写”按钮指令
+            else if (controlId == "btnCabinetModelPipeline")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“三箱型号添写向导”窗口
+                ExcelServices.ShowCabinetModelPipelineDialog();
+            }
+            // 响应“报价核验”按钮指令 (排查同型号价格冲突、公式破坏、AA/AB图纸参数缺失与价格倒挂)
+            else if (controlId == "btnQuotationCheck" || controlId == "btnQuotationCheckSub" || controlId == "btnQuotationCheckTools")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“报价智能核验与防错体检”向导
+                ExcelServices.ShowQuotationCheckDialog();
+            }
             // 响应“识别极数电流”按钮指令
             else if (controlId == "btnModelParamParser")
             {
@@ -647,6 +673,30 @@ namespace ExcelAddInDemo
             else if (controlId == "btnReportAdvanced" || controlId == "btnReportSGCC" || controlId == "btnReportOriginal" || controlId == "btnReportMarket")
             {
                 System.Windows.Forms.MessageBox.Show("该报表样式正在迁移流水线中，可先使用【常规样式报表】导出！", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+            }
+            // 响应“材料统计”按钮与菜单指令 (弹出分类明细选择向导窗口并生成【采购清单】)
+            else if (controlId == "btnMaterialStatSub" || controlId == "menuMaterialStat")
+            {
+                // 调度业务服务分部类：弹出基于 WebView2 + Vue 3 的材料统计与分类选择向导
+                ExcelServices.ShowMaterialStatDialog();
+            }
+            // 响应“领料清单”按钮指令 (直接根据现有的【采购清单】及其 J 列库存标记生成装配领料单)
+            else if (controlId == "btnPickListSub")
+            {
+                // 调度业务服务分部类：全量导入采购清单物料并导出领料清单
+                ExcelServices.ExportPickListFromCurrentWorkbook();
+            }
+            // 响应“人工清单”按钮指令 (基于各分类表明细中箱柜台套与人工费生成成套设备制作人工清单)
+            else if (controlId == "btnLaborListSub")
+            {
+                // 调度业务服务分部类：智能分流或弹出分类选择向导导出人工清单
+                ExcelServices.ShowLaborListDialogOrExport();
+            }
+            // 响应“成品交接单”按钮指令 (基于各分类表明细中箱柜台套、型号、主进线电流及防护等级生成成品交接单)
+            else if (controlId == "btnFinishedHandoverSub")
+            {
+                // 调度业务服务分部类：智能分流或弹出分类选择向导导出成品交接单
+                ExcelServices.ShowFinishedHandoverDialogOrExport();
             }
             // 响应“撤销 (Ctrl+Z)”按钮指令
             else if (controlId == "btnUndoAction" || controlId == "btnUndoRedoSub")

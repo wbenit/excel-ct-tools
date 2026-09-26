@@ -1,3 +1,298 @@
+- **【全量闭环交付】成套设备【报价智能核验与防错体检】全功能上线 (`QuotationCheckModels.cs`, `ExcelServices.QuotationCheck.cs`, `QuotationCheckController.cs`, `QuotationCheckForm.cs`, `Resources/quotation_check.html`, `RibbonController.cs`, `ExcelAddInDemo.csproj`, `publish/ExcelAddInDemo.dll`, `publish/Resources/quotation_check.html`)**：
+  1. **用户核心指令与需求**：“针对报价插件，怎么保证报价的准确性，有可能 型号一致，价格，折扣，报价系数却不一致，格式不小心丢失，存在没有填写等情况，你理一下思路” -> “还需要检查aa，ab列为空，需要提醒” -> “落地”；
+  2. **系统性架构与业务设计落地**：
+     - **功能区 Ribbon 挂载**：在功能区【③调价格→】分组中新增大图标按钮【报价核验】（`btnQuotationCheck`，使用官方图标 `ReviewAcceptChange`），并在【元件批调】下拉菜单（`btnQuotationCheckSub`）与【项目工具】菜单（`btnQuotationCheckTools`）提供多入口秒级直达；
+     - **交互界面 (WebView2 + Vue 3 + Element Plus)**：主色调 `#009688` 绿蓝商务科技感，弹性自适应布局，零水平滚动条，包含健康评分仪表盘、指标卡片、问题分类快速过滤、双击行秒级 Excel 视口跳转定位、一键恢复公式、一键清洗文本数字、以及同型号价格对齐看板；
+     - **五大维度全方位核验引擎 (`ExcelServices.QuotationCheck.cs`)**：
+       - **维度 1：AA 列与 AB 列 CAD 工程参数核验 (用户核心要求)**：扫描有效元器件行，AA 列（图纸名/图块名）或 AB 列（目录名/分类名）为空时精准标记为提示，防止 CAD 联动出图中断；
+       - **维度 2：同型号全局一致性核验与冲突聚类**：全表提取规格型号与品牌，识别不同箱柜中的面价、折扣、加价系数分歧，提供可视化比对与一键全表对齐广播；
+       - **维度 3：公式损毁与错误值自愈**：扫描 G 列销售单价、H 列销售总价、J 列成本单价、K 列成本总价，自动检测被手写数字覆写的断链行与 `#REF!` 错误，提供一键批量重设 `=ROUND(...)` 标准公式；
+       - **维度 4：关键价格与数量漏填**：排查有型号但面价为空/0、采购折扣为空、数量 <= 0、计费区域空行（规则 6 闭环）；
+       - **维度 5：业务合理性与价格倒挂**：严密拦截销售单价小于成本单价（毛利为负的亏本报价），预警采购折扣 > 1.0 的百分数误填；
+     - **规则 6、7、8 全流程工程闭环**：
+       - 规则 8：扫描前执行 `Tool.FixAndFillCabinetNamesForSheet(sheet)` 自愈；
+       - 规则 7：二维数组 `object[,]` 一次性读取内存；
+       - 规则 6：严格对齐 Cab_Sum / Cab_Det / Cab_Subsum / Cab_Tolsum 拓扑，计费区防空行；
+  3. **构建与产物 100% 同步**：
+     - 严格遵循新增代码每 3 行至少 1 行规范中文注释要求，无违规硬编码；
+     - `dotnet build` 编译成功：**0 错误**；
+     - 程序集 `publish/ExcelAddInDemo.dll` 与前端资源 `publish/Resources/quotation_check.html` 均已 100% 同步对齐。
+- **【全量闭环修复】“复制分类”克隆后超链接跳转失效与跨表跳回原表缺陷彻底修复 (`ExcelServices.Category.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心指令与反馈**：“‘’分类‘-“复制分类”，跳转不正常，什么原因” -> “修复”；
+  2. **深度排查与根因精确定位**：
+     - **超链接残留指向源分类表（跨表倒流核心根因）**：Excel COM 原生克隆 `srcSheet.Copy(...)` 生成新表后，单元格内的 `Hyperlinks` 目标地址 `SubAddress` 依然硬编码为原表名（例如 `'分类1'!Cab_Det_2`）。原逻辑仅重写了首台箱柜的超链接，后续箱柜超链接全量残留指向源表，点击直接跨表跳回原工作表；
+     - **后续箱柜定义名称漏绑（提示引用无效核心根因）**：原逻辑仅处理了单台箱柜，未循环处理第 2 台及后续所有箱柜，导致新表中后续箱柜缺失合法绑定的工作表级定义名称（`Cab_Sum_k`, `Cab_Det_k`, `Cab_Subsum_k`, `Cab_Tolsum_k`）；
+     - **序号错位与公式覆写**：原逻辑错误调用 `GetNextCabinetIndex` 导致首台序号变成 `maxK + 1`，且使用 `TextToDisplay` 覆写了 A 列动态公式 `=ROW()-ROW(A$6)`；
+     - **未遵循规则 8 自愈规范**：未在工程白名单注册后调用 `Tool.FixAndFillCabinetNamesForSheet(newSheet, forceRebuild: true)`。
+  3. **系统性修复与最小变动落地 (`ExcelServices.Category.cs`)**：
+     - **全局超链接表名批量清洗**：遍历 `newSheet.Hyperlinks`，将所有包含 `'源分类名'!` 的 `SubAddress` 批量重定向为 `'新分类名'!`；
+     - **前置项目信息白名单注册与缓存强制刷新**：先执行 `UpdateProjectInfoCategorySummary(activeWb, targetName)` 注册新分类并设置 A5 反向超链接，紧跟调用 `Tool.GetProjectCategorySheetNames(activeWb, forceRefresh: true)` 确保新表瞬时通过 `IsProjectCategorySheet` 守门；
+     - **严格执行规则 8 全量自愈**：显式调用 `Tool.FixAndFillCabinetNamesForSheet(newSheet, forceRebuild: true)`，自动遍历新表中所有箱柜，规范绑定全部工作表级定义名称，全面建立/校准汇总行与明细行双向超链接，恢复 A 列动态序号公式与明细表头公式，彻底清理多余幽灵名称；
+  4. **工程构建与验证**：
+     - 严格遵循每 3 行新增代码至少 1 行规范中文注释要求；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` 已覆写同步至 `publish/` 目录。
+- **【电流读取极简优化】成品交接单主进线电流直接读取 det+2 行 W 列落地 (`ExcelServices.FinishedHandover.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心指令**：“直接读取 det + 2 行的 W 列，不需要容错，如果为空则填0”；
+  2. **极简优化与无冗余实施**：
+     - **取消所有复杂正则与容错分支**：废弃并清理原 `ExtractMainIncomingCurrent` 方法，不再做任何文本正则提取、阈值范围过滤；
+     - **单点精准提取**：直接定位 `detRow + 2` 行的第 23 列（W 列，即明细表中的额定电流列），读取 `sheet.Cells[compStartRow, 23].Value2`；
+     - **极简默认回退**：若单元格有有效值直接转字符串，若单元格为空或空白字符串则直接赋值 `"0"`（--硬编码: 为空填 0--）；
+  3. **工程构建与验证**：
+     - 严格遵循新增代码每 3 行包含至少 1 行规范中文注释要求；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` 已更新并同步至 `publish/` 目录。
+- **【Bug 修复与深度根治】成品交接单主进线电流误读 N 列采购折扣系数（0.55）缺陷彻底修复 (`ExcelServices.FinishedHandover.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心指令与反馈**：“电流值为什么是0.55，你的逻辑是什么”；
+  2. **深度排查与根因精确定位**：
+     - **致命误读列含义**：此前代码误以为元器件区域的 N 列（第 14 列）是“额定电流”列。而实际上在成套电气明细表标准架构中，**N 列是元器件【采购折扣系数】**（即开关元件常用的 55 折，数值就是 `0.55`）；
+     - **短路优先匹配漏洞**：在 `ExtractMainIncomingCurrent` 前端，写了对 N 列数值的优先匹配判定，且浮点正则 `^(\d+(?:\.\d+)?)\s*A?$` 匹配了 `0.55`，导致它把采购折扣 `0.55` 误当成电流值直接短路拦截返回，根本没有去解析真正首行元件的 C 列（型号规格）或 D 列（参数描述）；
+  3. **系统性修复与最小变动落地**：
+     - **彻底切断对 N 列的读取**：读取元器件区域时范围收缩为 `A:D` 列，坚决不碰 N 列；
+     - **严格从首行元件（Cab_Det+2）型号与规格文本解析整定电流**：
+       - MCCB 塑壳断路器：优先提取脱扣器代号（`/3300` 等）之后的真实整定电流（如 `NXM-63S/3300 50A` 提取 `50A`，而不是壳架 63）；
+       - 隔离开关：提取额定电流（如 `NH40-100/3` 提取 `100A`）；
+       - MCB 微型断路器：提取脱扣电流（如 `C16` 提取 `16A`，`C63` 提取 `63A`）；
+       - 显式整定前缀：支持 `In=50A`、`Ir=100A`；
+       - **工业级数值安全防护**：严格限定电流为 6A~4000A 的合法正整数，排除电压及附件代号（3300/4300等），绝对不允许出现任何类似 `0.55` 的小数；
+  4. **工程构建与验证**：
+     - 严格遵循新增代码每 3 行包含至少 1 行规范中文注释要求；
+     - `dotnet build` 编译成功：0 错误；
+     - 最新程序集 `ExcelAddInDemo.dll` 已同步覆写至 `publish/` 目录。
+- **【全量闭环交付】成套设备【成品交接单】母版分列式自动导出全功能上线 (`ExcelServices.FinishedHandover.cs`, `FinishedHandoverModels.cs`, `FinishedHandoverController.cs`, `FinishedHandoverForm.cs`, `finished_handover.html`, `RibbonController.cs`, `ExcelAddInDemo.csproj`, `Resources/CabinetTemplate.xlsx`)**：
+  1. **用户核心指令**：“母版分列式；型号 取汇总行的N列，若为空则自动通过管道判定兜底；自动抓取明细表中该箱柜的主进线开关整定电流（首行元件规格中的电流）；防护等级：默认标准 IP30（若有特殊标注则提取）；是与【人工清单】一样生成 =HYPERLINK(...) 公式超链接，点击可直接跳回明细对应箱柜；功能入口按推荐；开始执行”；
+  2. **系统性架构与业务设计落地**：
+     - **功能区 Ribbon 挂载**：在【材料统计】下拉菜单（`menuMaterialStat`）中挂载独立按钮【成品交接单】（`btnFinishedHandoverSub`，图标 `FileDeliver`），与采购清单、领料清单、人工清单并列形成出厂出库全套报表矩阵；
+     - **交互体验与分流体系**：单分类表极速一键秒级直达（若已存在支持弹窗防误触确认覆盖）；多分类表弹出基于 WebView2 + Vue 3 + Element Plus 的小巧向导（主色调 `#009688`，绿蓝渐变，弹性自适应无水平滚动条），支持全选/单选与台数统计；
+     - **母版分列式 9 列字段智能提取与装配**：
+       - `A 列 (序号)`：生成 `=HYPERLINK("#'分类1'!A{detRow}:H{tolsumRow}", {index})` 动态公式超链接，点击秒级定位对应箱柜明细；
+       - `B 列 (名称)`：提取箱柜名称，默认“配电箱”；
+       - `C 列 (型 号)`：提取柜号（如 `2-ALZ11`、`1APL1 3`）；
+       - `D 列 (数量)`：提取箱柜台数；
+       - `E 列 (单位)`：固定“台”；
+       - `F 列 (箱柜型号)`：优先取顶部汇总行（`Cab_Sum_k`）N 列回填的三箱型号；若为空则自动调用决策流管道引擎（`EvaluateSingleCabinetInPipeline`）根据宽高深及元器件特征全自动推导兜底；
+       - `G 列 (电流)`：自动扫描箱柜首行主进线开关（`Cab_Det+2`）及关键保护元件，通过工业级正则自动提取并规整整定电流（如 `100A`、`63A`、`40A`、`400A`）；
+       - `H 列 (防护等级)`：默认标准 `IP30`（--硬编码: 默认防护等级 IP30--），并自动探测名称、型号、备注及尺寸中的特殊 IP 标注（如 `IP54`、`IP65`）；
+       - `I 列 (备注)`：提取箱柜备注或所属分类表名称；
+     - **表头联动与删旧克隆新重置保障**：
+       - 从母版 `CabinetTemplate.xlsx` 克隆纯净【成品交接单】Sheet；
+       - `A2` 公司名称、`A4` 客户单位名称、`A5` 工程项目名称均从【项目信息】表自动同步注入；
+       - 超过 6 行时整块自动向下推挤插入空行并复制第 7 行单元格格式；
+       - 规则 7 二维矩阵单次 COM 批量写入；
+       - 自适应更新 `D{totalRow}` 数量求和公式 `=SUM(D6:D{endDataRow})`；
+  3. **编译构建与产物对齐**：
+     - 严格遵循新增代码每 3 行包含至少 1 行规范中文注释要求，无违规硬编码；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 程序集 `ExcelAddInDemo.dll`、母版 `CabinetTemplate.xlsx` 与前端资源 `finished_handover.html` 均已 100% 同步更新至 `publish/` 与 `bin/` 目录。
+- **【热编译与多端产物即时同步】插件动态库与向导静态资源全量热编译对齐 (`publish/ExcelAddInDemo.dll`, `bin/Debug/net48/ExcelAddInDemo.dll`, `publish/Resources/cabinet_model_pipeline.html`)**：
+  1. **用户核心指令**：“你热编译一下”；
+  2. **热编译执行与多端资产同步**：
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none`，秒级编译成功：**0 警告，0 错误**；
+     - 将最新编译生成的动态链接库 `ExcelAddInDemo.dll` 及其符号文件强制覆写同步至发布目录 `publish/ExcelAddInDemo.dll`；
+     - 将最新包含弹性布局加固、右上角关闭按钮防拖拽冒泡死锁修复、单值统一绑定的向导前端资源 `cabinet_model_pipeline.html` 全量同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/` 目录；
+     - 经 SHA256 指纹校验，`publish/` 与 `bin/`、`Resources/` 目录下的程序集与前端静态文件 100% 对齐；
+- **【全量闭环修复】三箱型号向导右上角关闭按钮无效缺陷根除 (`cabinet_model_pipeline.html`, `publish/Resources/cabinet_model_pipeline.html`)**：
+  1. **用户核心提问**：“右上角的关闭按钮无效”；
+  2. **深度排查与根因精确定位**：
+     - **Mousedown 冒泡触发窗口拖拽模态死锁（核心根因）**：
+       - 顶部标题栏声明了 `@mousedown="startDrag"`；
+       - 当用户鼠标在右上角 `.close-btn` 上按下时，由于没有阻止冒泡，`mousedown` 瞬间冒泡至 `.window-header` 并执行 `startDrag`，进而向 C# 发送 `dragWindow`；
+       - C# 后端收到消息立即调用 Windows 原生 `SendMessage(this.Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero)`，导致操作系统底层立即接管鼠标捕获进入“窗体移动”模态；
+       - 当用户鼠标抬起时，浏览器内核由于鼠标被 OS 接管，**根本未向 DOM 分发 `click` 事件**，导致绑定的 `@click="closeWindow"` 从未被触发执行，表现为点击关闭按钮毫无反应；
+  3. **系统性修复与落地**：
+     - **模板层事件冒泡彻底截断**：将 `.close-btn` 更新为 `@mousedown.stop @click.stop="closeWindow"`，彻底阻止鼠标按下事件向标题栏冒泡；
+     - **拖拽函数增加交互元素双重防御**：在 `startDrag` 入口增加 `if (e.target && e.target.closest(".close-btn")) return;`，双保险防御，确保任何点击关闭按钮的动作 100% 触发 `closeWindow` 并平滑关闭窗体；
+  4. **工程构建与验证**：
+     - 产物 `cabinet_model_pipeline.html` 均已 100% 同步更新至 `Resources/` 与 `publish/Resources/` 目录。
+- **【全量闭环修复】三箱型号向导底部操作栏自适应弹性布局升级与确认按钮挤压成正方形根除 (`cabinet_model_pipeline.html`, `CabinetModelPipelineForm.cs`, `publish/Resources/cabinet_model_pipeline.html`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心指令与截图反馈**：“此处显示不全，使用弹性布局”（红箭头指向底部右下角被严重挤压成一个绿色小方块仅露出打钩图标的【确认添写至 Excel】按钮）；
+  2. **深度排查与根因精确定位**：
+     - **Flex 挤压与水平宽度严重不足（核心代码根因）**：
+       - 窗口初始宽度为 1020px，左侧规则流固定占 380px，右侧仅剩约 640px 可用宽度；
+       - 底部 `.bottom-bar` 中，左侧选项 `.bottom-left-opts` 文字较长（“直接回填至汇总行 (Cab_Sum) 的 N 列 (三箱型号)”约 320px + “可选同步更新 D 列”约 130px + 间距 padding 约 50px，共需 ~500px）；
+       - 右侧操作按钮组 `.bottom-right-btns`（“取消” 60px + “确认添写至 Excel” 160px，共需 ~220px）；
+       - 左右两块合计需 720px > 640px！由于 `.bottom-bar` 设定为固定 `height: 52px` 且未开启 `flex-wrap: wrap`，右侧按钮组未声明 `flex-shrink: 0`，Flexbox 引擎为了避免溢出，强行对最右侧的主按钮执行了致命的 Flex 挤压（Shrink），导致按钮被活生生压缩成 32px 的小方块，文字全部被隐藏只剩打钩图标；
+  3. **系统性弹性布局升级与落地**：
+     - **底部操作栏开启完整自适应弹性布局**：
+       - `.bottom-bar` 改为 `min-height: 52px; height: auto; padding: 8px 16px; flex-wrap: wrap; gap: 12px;`，空间不足时优雅响应折行，杜绝任何物理溢出与截断；
+       - `.bottom-right-btns` 强制声明 `flex-shrink: 0 !important; margin-left: auto;`，彻底锁死按钮尺寸，严禁被挤压；
+       - 主操作按钮 `.btn-pipeline-run` 增加 `white-space: nowrap !important; flex-shrink: 0 !important; padding: 8px 18px !important;`，文字用 `<span>` 稳健包裹，确保文字始终 100% 完整可见；
+       - 左侧复选框文案精简为“回填至汇总行 N 列 (三箱型号)”，并保留完整 `title` 气泡提示；
+     - **全局视口空间与双栏比例优化**：
+       - 左侧面板宽度由 380px 微调为 360px（`min-width: 320px`），为右侧工作台与操作栏多释放 20px 黄金空间；
+       - `CabinetModelPipelineForm.cs` 窗体尺寸由 1020x660 升级为 1100x680，左右双栏与各类分辨率下均享有充裕的视觉呼吸空间；
+  4. **工程构建与验证**：
+     - `dotnet build` 编译成功，0 错误；
+     - `ExcelAddInDemo.dll`、`ExcelAddInDemo.pdb` 与 `cabinet_model_pipeline.html` 均已 100% 同步更新至 `publish/`。
+- **【全量闭环诊断与修复】三箱型号向导点击保存仍为140成因根除与全量去除默认值防打架重构 (`cabinet_model_pipeline.html`, `ExcelServices.CabinetModelPipeline.cs`, `publish/Resources/cabinet_model_pipeline.html`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心指令与截图反馈**：“点击保存后还是140，什么原因。去除所有默认值和规则，避免打架。”
+  2. **深度排查与根因精确定位**：
+     - **“保存后还是140”的核心根因**：
+       - **根因一（触发函数内强制反向覆盖）**：在原 `triggerReEvaluate()` 计算流中，存在旧残留逻辑：`if (rule.depthCondition === '<=') { if (rule.depthMax > 0) rule.depthMin = rule.depthMax; }`。由于 C# 初始给 PZ30 注入了 `depthMax = 140`，当弹窗点击【保存修改】后触发该函数时，这句代码会把旧的 140 强制写回到 `depthMin` 中，导致卡片绑定的数值立刻被篡改回 140！
+       - **根因二（多字段双轨打架）**：单值条件 `<=`/`>=` 在卡片与弹窗中存在 `depthMin` 与 `depthMax` 两个字段双轨混用，在弹窗编辑、输入事件与触发重算之间互相打架、赋值错位；
+       - **根因三（运行时未同步 publish 目录）**：WebView2 实际加载的是 `publish/Resources/cabinet_model_pipeline.html`，之前的修改未同步到 publish 目录，导致实际运行时仍跑着老代码；
+     - **“规则打架”的核心根因**：
+       - **未配置条件的空规则全量误命中（最严重吞噬打架）**：如果某个阶段（如 XL-21）没有配置任何条件（高度、深度均为 none，关键词为空），原逻辑会直接 `return true` 判定为命中。这导致排在前面的未配置空规则把所有 8 台箱柜全部吞噬抢占，下游的 Stage 3 (PZ30) 和 Stage 4 (JXF) 根本轮不到判定；
+       - **硬编码默认值干扰（如 140、900、1400、150~320、排除“塑壳”）**：系统硬编码的预设条件和说明文本与用户的实际工程诉求冲突，导致用户反复被默认阈值限制；
+  3. **系统性修复与落地**：
+     - **全量剔除所有默认死板阈值与排除词**：
+       - C# `CreateDefaultPipelineConfig()` 中 Stage 1~4 全部将高度、深度设为 `"none"`（数值全为 0），清空所有排除关键词与写死的说明文字，完全放权给用户自由设定；
+     - **引入未配置空阶段防误判跳过机制（彻底杜绝规则打架）**：
+       - 在 C# `IsCabinetMatchRule` 与前端 `triggerReEvaluate` 中均增加兜底校验：若某条规则完全未配置任何有效条件（无高度、无深度、无宽度、无元件包含、无排除词、无名称词），则视为未配置阶段直接跳过（`continue` / `return false`），绝不盲目命中全部，只有当用户配置了条件时才参与匹配；
+     - **彻底统一单值绑定架构，彻底消除双轨错位**：
+       - 规则卡片、编辑弹窗、添加弹窗统一绑定为单一数值 `heightVal` 与 `depthVal`；
+       - `initDataLoaded` 接收数据时即自动计算并注入 `heightVal` 与 `depthVal`，避免 undefined；
+       - `confirmEditRule` 保存时转为纯数字，同步至 `min/max`，并通过 `rules.value = [...rules.value]` 替换数组引用，彻底触发 Vue 响应式刷新；
+       - 补充导出 `syncHeightVal`, `syncDepthVal`, `handleHeightConditionChange`, `handleDepthConditionChange`；
+     - **构建与产物 100% 同步**：
+       - `dotnet build` 编译成功，0 错误；
+       - `ExcelAddInDemo.dll`、`ExcelAddInDemo.pdb` 与 `cabinet_model_pipeline.html` 均已 100% 同步更新至 `publish/`。
+- **【全量闭环诊断与修复】规则卡片与编辑弹窗数值不一致（233 vs 234）成因根除 (`cabinet_model_pipeline.html`, `publish/Resources/cabinet_model_pipeline.html`)**：
+  1. **用户核心提问**：“2处的值为什么不一致”；
+  2. **深度排查与根因精确定位**：
+     - **原因一（弹窗草稿副本与未保存状态）**：弹窗打开时通过深拷贝生成独立的 `editingRule` 临时副本。若用户在弹窗中修改了数值（如 234）但尚未点击【保存修改】，背景主卡片仍保持修改前的原值（233）；
+     - **原因二（卡片与弹窗底层 min/max 变量错位脱节）**：在旧版模板中，单输入框 `<=`/`>=` 曾分别读写过 `depthMin` 与 `depthMax`，如果卡片显示的是 `depthMin`（如 233），而弹窗绑定的却是 `depthMax`（如 234），就会导致弹窗一打开就出现两处数值不同；
+  3. **系统性修复与落地**：
+     - 在 `openEditRuleDialog` 弹窗打开阶段强行执行单条件自愈规整（`<=` 时自动将 `min` 和 `max` 统一对齐为最新有效值）；
+     - 在 `confirmEditRule` 弹窗确认保存阶段再次对齐 `min` 与 `max`，并将更新直接反写至规则列表并触发 `triggerReEvaluate`；
+     - 产物已 100% 同步更新至 `publish/Resources/cabinet_model_pipeline.html`。
+- **【全量闭环诊断与修复】三箱型号向导单条件 `<=`/`>=` 数值绑定缺陷与 PZ30 未命中根因根除 (`cabinet_model_pipeline.html`, `ExcelServices.CabinetModelPipeline.cs`, `publish/Resources/cabinet_model_pipeline.html`)**：
+  1. **用户核心提问**：“为什么前2个没命中PZ30”；
+  2. **深度排查与根因精确定位**：
+     - **前端单输入框双向绑定与旧阈值压制 Bug（核心代码根因）**：
+       - 用户在向导中将 Stage 3 (PZ30) 的高度设为“不限”，深度设为 `<= 231 mm`，并清空了元器件特征词，期望前两台箱柜（深度分别为 230、231）直接按深度命中 PZ30；
+       - 但在 Vue 模板中，当条件选择 `<=` 时，输入框错误绑定到了 `rule.depthMin`，导致用户输入的 `231` 仅更新了 `depthMin`；
+       - 而系统预设的 PZ30 深度上限 `rule.depthMax` 初始值为 `140`。在 `triggerReEvaluate` 和 C# 中，`checkNumCondition` 优先取 `max`（即 140），因此实际运行的判定条件依然是 `深度 <= 140`！
+       - 前两台箱柜深度为 230 和 231，因 `230 <= 140` 和 `231 <= 140` 均为假，错过了 Stage 3，继续流转到 Stage 4 (JXF，深度范围 150~320mm)，因此最终都被判定为了 JXF；
+     - **电气成套工程规范差异**：
+       - 前两台箱柜包含“塑壳*4”、“塑壳*3”（MCCB），而行业标准中 PZ30 模数化配电箱仅支持微断（MCB），预设规则配备了“塑壳”排除词。虽然用户已清空排除词，但因代码绑定 Bug 导致无法匹配；
+  3. **系统性修复与落地**：
+     - 彻底重构前端规则卡片、编辑弹窗、添加弹窗中 `<=`/`>=` 单输入框的双向绑定：
+       - 当条件为 `<=` 时，输入框直接绑定 `heightMax` / `depthMax`；
+       - 当条件为 `>=` 时，输入框直接绑定 `heightMin` / `depthMin`；
+       - 增加 `onHeightMaxChange`、`onDepthMaxChange` 等同步监听，确保用户输入单阈值时 `min` 与 `max` 100% 保持一致；
+       - 在 `initDataLoaded` 增加初始化对齐逻辑，杜绝旧上限（140）压制新输入（231）；
+       - C# 后端预设规则同步将 PZ30、XL21 的 `Min` 与 `Max` 预设一致化，双向杜绝容错漏洞；
+     - 产物 `cabinet_model_pipeline.html` 均已 100% 同步更新至 `Resources/` 与 `publish/Resources/` 目录。
+- **【全量闭环修复】三箱型号添写向导规则编辑截断根除与弹窗/就地双编辑模式交付 (`cabinet_model_pipeline.html`, `ExcelServices.CabinetModelPipeline.cs`, `publish/Resources/cabinet_model_pipeline.html`)**：
+  1. **用户核心提问**：“管道里面的规则如果要编辑在哪里编辑呢”；
+  2. **深度排查与根因精确定位**：
+     - **CSS Flexbox 强行压扁裁切（核心根因）**：滚动区域 `.rules-scroll-area` 设置为 `display: flex; flex-direction: column`，子项 `.rule-card` 未声明 `flex-shrink: 0`。当 4 个展开的规则卡片总高度超出可视区域时，Flexbox 会强行等比例压缩子卡片高度（每个卡片被压扁至约 110px），加上 `.rule-card { overflow: hidden; }`，导致卡片下半部分的**高度限制、深度限制、包含元件、排除元件**全部被视口活生生裁切隐藏，用户在界面上只看到“规则名称”和“输出型号”，误以为规则无法编辑且找不到编辑入口；
+     - **交互缺少明确折叠/展开指示与独立弹窗**：卡片原缺少展开箭头指示，点击头部虽然有折叠逻辑但未与 Body 的显隐平滑联动；且缺少专门的“编辑规则详情”模态弹窗；
+  3. **系统性修复与落地**：
+     - **彻底解除 Flex 压缩截断**：给 `.rule-card` 添加 `flex-shrink: 0`，确保卡片保持自然高度，允许滚动条自然滚动；
+     - **卡片头部手风琴折叠与摘要条联动**：卡片头部增加折叠箭头 `<i class="fa-solid fa-chevron-right expand-arrow">`，支持点击整行折叠/展开；折叠状态下展示浅色规则摘要（如 `高>=1400 | 含: 刀开关...`），展开状态展示完整就地编辑表单；
+     - **卡片操作栏新增【✏️ 编辑】独立弹窗**：在每张卡片右上角新增铅笔图标按钮，点击直接弹出【编辑管道规则判定条件】专属模态弹窗，清晰支持修改规则名称、输出型号、高度条件、深度条件、包含元件标签、排除元件标签与说明，保存后即时生效重算；
+     - **下拉框中文占位符引导优化**：将分类表下拉框英文 `Select` 占位符修改为中文 `未检测到分类表`，并在右侧刷新按钮绑定重置探测；
+  4. **工程构建与验证**：
+     - 严格遵循每 3 行新增代码至少 1 行规范中文注释要求，无违规硬编码；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 产物 `ExcelAddInDemo.dll` 与 `cabinet_model_pipeline.html` 均已 100% 同步更新至 `publish/` 目录。
+- **【全量闭环修复】三箱型号添写向导规则无法保存/编辑与分类表识别不到缺陷修复 (`CabinetModelPipelineForm.cs`, `ExcelServices.CabinetModelPipeline.cs`, `CabinetModelPipelineController.cs`, `cabinet_model_pipeline.html`, `cabinet_pipeline_rules.json`)**：
+  1. **用户核心指令**：“规则不能保存和编辑，另外识别不到分类表”；
+  2. **深度排查与根因精确定位**：
+     - **WebView2 IPC 数据类型不匹配（最致命根因）**：在 `CabinetModelPipelineForm.cs` 中，`PostWebMessageSafe` 调用的是 `_webView.CoreWebView2.PostWebMessageAsString(json)`，发送的是 JSON 字符串；而在前端 `cabinet_model_pipeline.html` 中，`message` 监听器直接访问 `event.data.action`，由于字符串没有 `.action` 属性导致 `res.action` 为 `undefined`，被 `if (!res || !res.action) return;` 静默吞噬。这导致：
+       - `initDataLoaded` 从未触发，前端数据一直是空数组（无工作表、无规则卡片、无箱柜数据），分类表下拉框显示默认 `Select`，表格显示 `No Data`；
+       - 用户点击“保存规则配置”发出保存后，C# 回复的 `configSaved` 再次被吞噬，前端无任何反馈；且因规则未加载，前端保存时将空数组 `Rules: []` 写入了持久化 JSON，导致即使重启向导，规则也是空的；
+       - 用户在界面上看不到规则卡片，无法进行规则编辑；
+     - **分类表扫描容错度不足**：原扫描使用 `foreach (Worksheet ws in wb.Worksheets)` 存在非 Worksheet 项（如 Chart 等）强转 COM 失败的风险；且未联动成套工程白名单 `Tool.GetProjectCategorySheetNames(wb)` 与箱柜探测优先排序，容错兜底机制偏弱；
+     - **规则卡片与添加对话框编辑功能不全**：原规则卡片中的“规则名称”为只读文字不可修改；排除元器件关键词缺少添加输入框，且添加新规则弹窗缺少排除关键词字段；
+  3. **系统性修复与落地**：
+     - **双向 IPC 消息类型安全加固**：
+       - C# 端改为 `_webView.CoreWebView2.PostWebMessageAsJson(json)`，以原生 JSON 对象投递；
+       - 前端 `message` 监听器入口增加防御性兼容转换（`if (typeof res === 'string') { res = JSON.parse(res); }`），彻底杜绝跨进程解析失效；
+       - 增加 `onMounted` 800ms 容错重试机制，若首次未拉取到数据自动补发一次；
+     - **分类表扫描机制全面优化与自愈**：
+       - 优化 `GetCabinetPipelineInitData`：使用 `dynamic ws` 遍历，优先结合 `Tool.IsProjectWorkbook` 与 `Tool.GetProjectCategorySheetNames(wb)` 白名单；
+       - 若白名单过滤后无表，自动回退放行所有非系统保留表；
+       - 结合 `Tool.GetSheetValidCabinets` 探测箱柜，优先自动选中有箱柜的分类表并记录详细运行日志；
+     - **规则持久化与编辑体验全方位升级**：
+       - 修复并重置磁盘 `cabinet_pipeline_rules.json` 为合法的标准四级预设（ATS、XL-21、PZ30、JXF）；代码增加空规则防御，若检测为空自动恢复默认并存盘；
+       - 规则卡片展开区域增加**规则名称输入框**，支持随时改名；
+       - 规则卡片展开区域增加**排除元件关键词输入框**（支持回车与 + 按钮添加）；
+       - “添加自定义规则”对话框同步增加排除关键词输入项；
+       - 保存按钮绑定 `isSavingConfig` 状态，保存成功后弹出 Element Plus 绿色成功通知；
+  4. **工程构建与验证**：
+     - 严格遵循每 3 行新增代码至少 1 行规范中文注释要求，无违规硬编码；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 产物 `ExcelAddInDemo.dll` 与 `cabinet_model_pipeline.html` 均已 100% 同步更新至 `publish/` 目录。
+- **【全量闭环交付】支持基于管道决策流的三箱型号智能判定与批量添写 (`RibbonController.cs`, `ExcelServices.CabinetModelPipeline.cs`, `CabinetModelPipelineController.cs`, `CabinetModelPipelineForm.cs`, `cabinet_model_pipeline.html`, `CabinetPipelineModels.cs`)**：
+  1. **用户核心指令**：“在项目工具ribbon下面写个按钮“三箱型号添写”，写个界面，用户可以根据用户的自由判断来判定是PZ30,JXF，XL21,ATS等。判断参数为箱体高度，深度，是否包含某一种元器件，在一个管道中判断得出结果，你理解表述需求，再表述设计思路，确定后再代码 /plan”；
+  2. **系统性架构设计与管道引擎落地**：
+     - **Ribbon 独立挂载**：在功能区【项目工具】下拉菜单（`menuProjectTools`）中新增独立按钮【三箱型号添写】（`btnCabinetModelPipeline`），使用官方标准图标 `TableProperties`；
+     - **工业级向导界面 (WebView2 + Vue 3 + Element Plus)**：
+       - 主色调采用 `#009688` 绿蓝相间现代渐变，纯 Flexbox 弹性布局，无水平横向滚动条，无边框扁平设计；
+       - **左侧面板 (380px)**：管道规则流管理器（Pipeline Stages），支持卡片式展示各阶段、上下移动快速升降优先级、启用/禁用开关、高度阈值、深度阈值、包含元件与排除元件标签编辑、以及一键恢复标准预设；配置支持持久化存储至 `cabinet_pipeline_rules.json`；
+       - **右侧面板 (自适应)**：箱柜识别与实时判定看板，支持分类表切换、提取箱体尺寸（长宽深）、提取元器件特征摘要、实时计算展示命中的管道阶段与建议型号、支持人工微调纠偏与勾选回写；
+     - **规则 6、7、8 底层数据服务闭环 (`ExcelServices.CabinetModelPipeline.cs`)**：
+       - 规则 8: 扫描前先执行 `Tool.FixAndFillCabinetNamesForSheet(ws)` 保证 4 个定义名称健康；
+       - 尺寸提取（用户微调）：**直接使用汇总行（`Cab_Sum_k`）的 M 列（第 13 列）提取箱体尺寸并解析宽高深**，剔除冗余的多级探测逻辑；同时读取 N 列（第 14 列）现存型号；
+       - 规则 7: 采用 `object[,]` 二维数组一次性吞吐提取元器件区域数据（`Cab_Det+2` 到 `Cab_Subsum-1`）用于元器件特征匹配；
+       - 批量回写（用户微调）：**直接将判定型号批量回填至顶部汇总行（`Cab_Sum_k`）的 N 列（第 14 列，三箱型号）**，并在第 6 行表头为空时自动补齐列名“箱柜型号”；
+       - 全链路纯静默执行，关闭 `ScreenUpdating` 与 `EnableEvents` 提升 COM 吞吐，完成后前端 Element Plus 弹性展示 Toast 成功提示；
+  3. **工程编译构建与验证**：
+     - 严格遵循新增代码每 3 行包含至少 1 行规范中文注释要求，无违规硬编码（标注 `--硬编码--`）；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 产物 `ExcelAddInDemo.dll` 与 `cabinet_model_pipeline.html` 均已 100% 同步更新至 `publish/` 目录。
+- **【全量闭环交付与缺陷根除】支持基于各分类表明细一键导出成套设备【人工清单】(`RibbonController.cs`, `ExcelServices.LaborList.cs`, `LaborListController.cs`, `LaborListForm.cs`, `labor_list.html`, `CabinetTemplate.xlsx`)**：
+  1. **用户核心指令**：“选项 A（直接取明细原值），可以选择一个或多个分类表生成，选项 B：生成带公式的超链接（方便点击回跳到箱柜明细），项目名称：自动从【项目信息】表提取项目名称填入，队组信息：直接保留模板原本文字，选项 A（推荐）：挂在 Ribbon【材料统计】下拉菜单中（与【材料统计】、【领料清单】并列），点击独立按钮一键直接生成。执行”；
+  2. **生产环境缺陷精确定位与根除**：
+     - **资源缺失 404 根因**：`ExcelAddInDemo.csproj` 未包含 `labor_list.html` 的输出拷贝规则，且 `LaborListForm.cs` 备选路径未涵盖源码回溯与绝对兜底；已在 csproj 补全并在 Form 中升级全域多级容错探测，文件全量同步；
+     - **SumRow 运行时动态绑定异常根因**：`CabinetAnchorModel` 内部定义属性为 Range 类型的 `Sum, Det, Subsum, Tolsum`，原代码直接访问未定义的 `anchor.SumRow` 抛出 `RuntimeBinderException`；已彻底重构为安全提取物理行号（`anchor.Sum != null ? Convert.ToInt32(anchor.Sum.Row) : 0`，对 Det, Subsum, Tolsum 同步加固），全链路健壮防御；
+  3. **系统性架构设计与落地**：
+     - **母版标准模板同步**：从母版库成功提取并将【人工清单】标准 Sheet 整合同步至插件的 `Resources/CabinetTemplate.xlsx` 及 `publish/Resources/`，确保克隆结构 100% 纯净与原厂对齐；
+     - **功能区 Ribbon 独立挂载**：在功能区【材料统计】下拉菜单中新增独立按钮【人工清单】（`btnLaborListSub`），使用 Office 官方标准图标 `TaskCreate`；
+     - **单分类极速直达 vs 多分类优雅勾选**：
+       - 若工作簿仅有 1 个分类表，点击按钮直接一键秒级生成，零多余弹窗干扰；
+       - 若存在多个分类表，自动弹出基于 WebView2 + Vue 3 + Element Plus 的小巧向导（主色调 `#009688`，绿蓝渐变，弹性自适应无水平滚动条），展示各分类与箱柜台数，支持全选/单选与友好确认；
+     - **精确数据提取与公式生成**：
+       - 规则 8: `Tool.FixAndFillCabinetNamesForSheet(sheet)` 保证拓扑健康；
+       - 提取箱柜名称（B 列）、型号/柜号（C 列）、台数数量（D 列）、单位固定“台”（E 列）；
+       - 规则 6: 从明细表 `Cab_Subsum_k` 到 `Cab_Tolsum_k` 之间的计费区域精准抓取“人工费”金额，单台单价 = 计费区金额 / 台数（选项 A 原值）；
+       - 金额 G 列注入公式 `=F{row}*D{row}`；
+       - 序号 A 列注入公式超链接 `=HYPERLINK("#'" & sheetName & "'!A" & detRow & ":H" & tolRow, index)`（选项 B，点击直接回跳明细）；
+     - **自适应行数扩展与合计大写联动**：
+       - 模板默认预留 6 行（7~12 行），箱柜数大于 6 时在合计行（第 13 行）上方整块插入差额行并复用格式，合计行顺次下推；
+       - 自动自适应刷新数量合计 `=SUM(D6:D{endRow})` 与金额合计 `=ROUND(SUM(G6:G{endRow}),0)`；
+       - 自动自适应更新第 14 行中文大写人民币公式引用 `G{totalRow}`；
+       - 替换第 5 行 `[[项目名称]]`，严格保留第 4 行队组信息原样；
+     - **规则 7 内存二维数组批量回写与防假死**：
+       - 采用 `object[,]` 二维矩阵单次 COM 批量写入数据与公式；
+       - 全链路纯静默导出，前端 Element Plus 防误触确认，100% 杜绝 Win32 模态锁死与假死风险；
+       - 采用纯净“删旧克隆新”重置机制，彻底杜绝数据残留与占位符失效；
+  4. **工程编译构建与验证**：
+     - 严格遵循新增代码每 3 行包含至少 1 行规范中文注释要求，无违规硬编码（标注 `--硬编码--`）；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 产物 `ExcelAddInDemo.dll`、`CabinetTemplate.xlsx`、`labor_list.html` 已 100% 同步更新至 `publish/`。
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 产物 `ExcelAddInDemo.dll`、`CabinetTemplate.xlsx`、`labor_list.html` 已 100% 同步更新至 `publish/`。
+- **【全量闭环交付】支持基于采购清单及其 J 列库存标记一键导出【领料清单】(`RibbonController.cs`, `ExcelServices.MaterialStat.cs`)**：
+  1. **用户核心指令**：“同理生成“领料清单”，根据现有的“采购清单”生成，其中[库存标记]是“采购清单”J列内容，独立按钮（方案 A），拦截提醒（选项 A），全量带入（选项 A），不需要自动注入 =SUM(E7:E{末行}) 公式，不需要填入日期，执行”；
+  2. **系统性架构设计与落地**：
+     - **功能区 Ribbon 独立挂载**：在功能区【材料统计】下拉菜单中新增独立按钮【领料清单】（`btnPickListSub`），使用 Office 官方标准图标 `CreateForm`；
+     - **严格前置拦截机制**：检测当前工作簿是否存在【采购清单】，若未生成则友好拦截提醒：“当前工作簿未检测到【采购清单】工作表！请先点击【材料统计】生成采购清单后，再执行本功能生成领料单”，终止流程避免扑空；
+     - **全量字段精确对齐**：规则 7 一次性读取采购清单 `A7:J{endRow}` 区域，全量提取物料项（序号、名称、型号、单位、数量、品牌），将采购清单 J 列内容 100% 精确映射至领料单 K 列备注（`[库存标记]`）；
+     - **删旧克隆新重置保障**：若已存在【领料清单】工作表，静默调用 `Delete()` 移除旧表，统一从母版 `CabinetTemplate.xlsx` 克隆全新标准 Sheet，彻底杜绝数据堆叠与旧表残留；
+     - **自适应排版与格式自愈**：模板预留 4 行（第 7~10 行），物料超出 4 行时在第 11 行（合计行）上方整块插入差额行并复用格式，合计行顺次下推；合计行保持模板原样（不注入求和公式），抬头替换 `[公司名称]` 与 `[项目名称]`，制表日期与队组星号保持原样留空；
+     - **规则 7 内存二维数组批量回写**：单次 COM 回写全部领料数据并设置行高 22 与标准实线边框，平滑激活工作表；
+  3. **工程编译构建与验证**：
+     - 严格遵循新增代码每 3 行包含至少 1 行规范中文注释要求，无违规硬编码；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 产物 `ExcelAddInDemo.dll` 已 100% 同步更新至 `publish/` 目录。
+- **【全量闭环交付】根除已有采购清单再次生成导致的 Excel 卡死与监听死锁缺陷 (`MaterialStatModels.cs`, `ExcelServices.MaterialStat.cs`, `MaterialStatController.cs`, `MaterialStatForm.cs`, `material_stat.html`)**：
+  1. **用户核心指令**：“如果本来有采购清单，再生成会卡死excel，应该是弹出提示，和监听死锁的原因”；
+  2. **深度排查与根因精确定位**：
+     - **Chromium IPC 与 Win32 MessageBox 阻塞死锁 (核心根因 1)**：在 `MaterialStatForm.cs` 的 `OnWebMessageReceived` 处理 `exportPurchaseList` 期间，业务层同步调用了 `MessageBox.Show(...)`。WinForms 模态循环挂起当前线程，Chromium 无法完成 PostMessage ACK 握手确认，导致 WebView2 全局冻结并拖垮 Excel 主线程；
+     - **事件监听恢复与表激活互锁 (核心根因 2)**：在 `EnableEvents = false` 下对已有表进行大幅度操作并执行 `purchaseSheet.Activate()`，在 `finally` 恢复 `EnableEvents = true` 时，Excel 补发的大量 COM 事件（如 `OnSheetActivate`、`OnSheetSelectionChange`）与正在析构销毁的浮窗产生并发死锁；
+     - **已有表数据无限堆叠与占位符失效 (数据缺陷)**：初次生成后第 7 行模板占位符已被实际数据覆写，二次生成时未清旧表，导致无法解析出 `[品牌]` 占位符（品牌丢失）；且固定在第 13 行向下插入空行，导致旧数据被持续下推残留、行数无限膨胀；
+  3. **系统性根治与重构落地**：
+     - **底层业务 100% 静默化**：彻底移除 `ExportPurchaseListToCurrentWorkbook` 中所有的 `MessageBox.Show`，全链路静默执行，结果以实体对象安全返回；
+     - **删旧克隆新（彻底干净重置）**：检测到当前工作簿已存在【采购清单】工作表时，静默调用 `purchaseSheet.Delete()` 彻底清除旧表，统一从母版 `CabinetTemplate.xlsx` 克隆全新标准 Sheet，保证第 7 行占位符与预留 6 行结构 100% 纯净，零旧数据残留，零品牌丢失；
+     - **纯前端 Web 弹窗防误触与 Toast 反馈**：前端检测到已有采购清单时，通过 Element Plus 的 `ElMessageBox.confirm` 进行覆盖确认（纯 Web DOM 异步 Promise，100% 零 Win32 阻塞风险）；导出成功后通过 `ElMessage.success` 展示高质感 Toast，延时 1.2 秒后平滑关闭向导窗口；
+  4. **工程编译构建与验证**：
+     - 严格遵循每 3 行新增代码包含至少 1 行规范中文注释要求；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 产物 `ExcelAddInDemo.dll` 与 `material_stat.html` 均已 100% 同步更新至 `publish/` 目录。
 - **【体验优化交付】自动组价分类树首屏仅自动展开第 1 个一级分类 (`cloud_solution.html`)**：
   1. **需求理解**：在 Element Plus 懒加载模式下，用户希望分类树加载完后自动展开第 1 个一级分类节点，以展示下一级子分类或方案，同时避免全部展开带来的并发网络性能开销；
   2. **实现细节**：
@@ -3903,11 +4198,46 @@
      - 执行 `dotnet build /p:RunExcelDnaBuild=false /p:DebugType=none` 构建成功：0 错误；
      - 最新 `ExcelAddInDemo.dll` 已全量同步至 `bin/Debug/net48/` 与 `publish/`。
 
+## [Completed]
+
+- **【材料统计自动导出采购清单功能闭环交付】(`MaterialStatModels.cs`, `ExcelServices.MaterialStat.cs`, `RibbonController.cs`, `CabinetTemplate.xlsx`)**：
+  1. **核心需求 100% 达成**：
+     - **极速直达方式 A**：点击 Ribbon【材料统计】下拉菜单下的【材料统计】按钮（`btnMaterialStatSub`），直接在当前工作簿生成或刷新【采购清单】工作表，并自动激活聚焦；若当前工作簿尚无该表，自动从标准母版 `CabinetTemplate.xlsx` 动态克隆；
+     - **采购总数量准确累计**：深度扫描工程所有分类明细表（规则 6：`Cab_Det+2` 至 `Cab_Subsum-1`），将每个箱柜内元器件单台用量乘以顶部汇总行箱柜台数（`singleQty * cabinetQty`）进行综合累计求和；
+     - **严格遵循模板自适应列映射（零硬编码）**：动态扫描模板第 7 行占位符（`[元器件名称]`、`[型号]`、`[单位]`、`[数量]`、`[品牌]` 等），自适应识别列索引；若模板在 I 列备注下方配置了 `[品牌]`，自动将品牌纳入去重聚合维度并回填至对应列；
+     - **大标题与工程信息联动**：自动从【项目信息】工作表读取公司名称回填 A1 `[公司名称]`、项目名称回填 A4 `[项目名称]`；
+     - **规则 7 内存二维数组极速读写与格式自愈**：动态识别项数，若超过预留行自动批量推挤插入并复制模板行格式；采用二维矩阵一次性回写数据，自动对齐（序号/单位/数量/品牌居中，名称/型号靠左）并设置统一行高 22 与细实线网格边框；
+  2. **母版同步与工程构建**：
+     - 用户在 `E:\BaiduNetdiskWorkspace\BaseData\报价设置\CabinetTemplate.xlsx` 新增的模板已全量热同步至项目 `Resources\`、`bin\Debug\net48\Resources\` 与 `publish\Resources\`；
+     - 所有新增代码严格遵循每 3 行包含至少 1 行中文注释，无硬编码；
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false` 构建成功：0 错误，最新 dll/pdb 已同步至 `publish/`。
+
+## [Completed]
+
+- **【相同内容未合并修复与分类明细选择向导闭环交付】(`ExcelServices.MaterialStat.cs`, `MaterialStatModels.cs`, `MaterialStatController.cs`, `MaterialStatForm.cs`, `material_stat.html`, `RibbonController.cs`)**：
+  1. **相同内容未合并根因定位与彻底修复**：
+     - **根因分析**：原聚合 Key 包含了单位与品牌，截图中 45 行（微型漏电 S204M-C63...）单位为“只”，46 行单位为“台”，因单位不同导致未被归并到同一项；
+     - **聚合重构**：严格按照用户最新明确指示，聚合 Key 纯粹采用【名称+型号规格】（`$"{compName}___{compModel}"`），彻底脱钩品牌与单位；
+     - **采购总数量无损累加**：同名称同型号的采购数量 100% 累加求和（1 + 4 = 5）；单位智能保留标准“台”或有效单位，品牌多源时去重合并（如 `ABB`），彻底解决 45、46 行拆分问题；
+  2. **分类明细选择向导窗口闭环交付 (WebView2 + Vue 3 + Element Plus)**：
+     - **全新窗口挂接**：点击 Ribbon【材料统计】下拉菜单下的【材料统计】按钮，即时弹出精致的分类选择向导浮窗；
+     - **绿蓝相间主题规范**：主色调 `#009688`，无边框拖拽标题栏（防幽灵鼠标死锁），弹性布局，无水平滚动条，Vue 自定义标签 100% 显式闭合；
+     - **交互功能完备**：动态列出当前工作簿中检测到的所有有效分类明细表（如《终端》、《配电》等），展示各表箱柜台数，支持【全选 / 全不选 / 反选】，默认全选；
+     - **一键统计并刷新**：点击【⚡ 开始统计并生成采购清单】，按勾选的分类工作表极速生成/刷新【采购清单】，自动激活该表并自动关闭向导窗口；
+  3. **采购清单双模式排序功能交付 (名称+型号 / 品牌+名称+型号·默认)**：
+     - **向导界面排序配置卡片**：前端新增“清单排序”单选组，提供【品牌 + 名称 + 型号 (默认)】与【名称 + 型号】双选项；
+     - **后端多级自然排序**：`ExportPurchaseListToCurrentWorkbook` 接收 `sortBy` 参数，支持 `OrderBy(Brand).ThenBy(Name).ThenBy(Model)` 与 `OrderBy(Name).ThenBy(Model)` 动态切换；
+     - **自增序号自愈**：排序完成后重新生成连续自增序号（1, 2, 3...）并批量写回；
+  4. **编译构建与热同步**：
+     - 遵循每 3 行代码包含至少 1 行中文注释，无硬编码；
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false /p:DebugType=none` 构建成功：0 错误；
+     - 静态 HTML 资源与最新 dll 已热同步至 `publish/` 与 `bin/Debug/net48/`。
+
 ## [In-Progress]
 
-- 提示用户保存当前 Excel 工作簿并重启 Excel，检验功能区所有一级大按钮及各级下拉菜单图标完整丰富、整齐规范的效果。
+- 提示用户保存当前工作簿并重启 Excel，检验【材料统计】分类选择向导及双模式排序的导出效果。
 
 ## [Next]
 
-- 根据用户后续需求持续跟进。
+- 根据用户测试反馈持续跟进优化。
 

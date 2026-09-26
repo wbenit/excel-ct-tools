@@ -1,0 +1,2239 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>三箱型号添写 - 管道智能判定向导</title>
+    <!-- 引入 Element Plus 样式库 -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/element-plus/dist/index.css"
+    />
+    <!-- 引入 Font Awesome 图标库 -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <!-- 引入 Vue 3 核心库 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- 引入 Element Plus 组件库 -->
+    <script src="https://unpkg.com/element-plus"></script>
+    <!-- 引入公共主题样式 (主色调 #009688) -->
+    <link rel="stylesheet" href="theme.css" />
+    <style>
+      /* 全局重置与防溢出 */
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+        user-select: none;
+        background-color: #f1f5f9;
+        color: #334155;
+      }
+
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100vw;
+        border: 1px solid #cbd5e1;
+        background-color: #ffffff;
+        overflow: hidden;
+      }
+
+      /* 顶部无边框拖拽标题栏 (绿蓝相间主题, 主色调 #009688) */
+      .window-header {
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 14px;
+        background: linear-gradient(135deg, #009688 0%, #00796b 100%);
+        color: #ffffff;
+        cursor: move;
+        flex-shrink: 0;
+        touch-action: none;
+        box-shadow: 0 2px 6px rgba(0, 150, 136, 0.2);
+      }
+
+      .window-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13.5px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+
+      .window-subtitle {
+        font-size: 11.5px;
+        opacity: 0.85;
+        font-weight: normal;
+        margin-left: 6px;
+        background: rgba(255, 255, 255, 0.15);
+        padding: 2px 8px;
+        border-radius: 10px;
+      }
+
+      .close-btn {
+        width: 26px;
+        height: 26px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        opacity: 0.85;
+        transition: all 0.2s ease;
+      }
+
+      .close-btn:hover {
+        opacity: 1;
+        background-color: rgba(239, 68, 68, 0.9);
+        color: #ffffff;
+      }
+
+      /* 主体左右双栏弹性布局 */
+      .main-container {
+        flex: 1 1 0%;
+        min-height: 0;
+        display: flex;
+        flex-direction: row;
+        overflow: hidden;
+        background-color: #f8fafc;
+      }
+
+      /* 左侧面板：管道规则决策流 (宽度优化，释放更多水平空间) */
+      .left-panel {
+        width: 360px;
+        min-width: 320px;
+        max-width: 400px;
+        flex-shrink: 0;
+        border-right: 1px solid #e2e8f0;
+        background-color: #ffffff;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .panel-header {
+        height: 44px;
+        padding: 0 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid #e2e8f0;
+        background: #fafcfc;
+        flex-shrink: 0;
+      }
+
+      .panel-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: #0f766e;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .panel-actions {
+        display: flex;
+        gap: 6px;
+      }
+
+      .pipeline-tip-bar {
+        padding: 8px 12px;
+        background: #f0fdfa;
+        border-bottom: 1px solid #ccfbf1;
+        font-size: 11px;
+        color: #0d9488;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        line-height: 1.4;
+        flex-shrink: 0;
+      }
+
+      /* 规则流列表滚动区 */
+      .rules-scroll-area {
+        flex: 1 1 0%;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      /* 规则卡片样式 */
+      .rule-card {
+        flex-shrink: 0;
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        overflow: hidden;
+        transition: all 0.2s ease;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+      }
+
+      .rule-card:hover {
+        border-color: #009688;
+        box-shadow: 0 2px 8px rgba(0, 150, 136, 0.12);
+      }
+
+      .rule-card.disabled-card {
+        opacity: 0.6;
+        background: #f8fafc;
+      }
+
+      .expand-arrow {
+        font-size: 11px;
+        color: #94a3b8;
+        transition: transform 0.2s ease;
+        margin-right: 4px;
+        cursor: pointer;
+      }
+
+      .expand-arrow.expanded {
+        transform: rotate(90deg);
+      }
+
+      .rule-summary-bar {
+        padding: 6px 10px;
+        font-size: 11px;
+        color: #64748b;
+        background: #f8fafc;
+        border-top: 1px dashed #e2e8f0;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .rule-summary-bar:hover {
+        color: #009688;
+        background: #f0fdfa;
+      }
+
+      .rule-card-header {
+        padding: 7px 10px;
+        background: #f8fafc;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid #f1f5f9;
+        cursor: pointer;
+      }
+
+      .rule-stage-tag {
+        font-size: 11px;
+        font-weight: 700;
+        background: #009688;
+        color: #ffffff;
+        padding: 1px 6px;
+        border-radius: 4px;
+        letter-spacing: 0.5px;
+      }
+
+      .rule-name-text {
+        font-size: 12px;
+        font-weight: 600;
+        color: #1e293b;
+        margin-left: 6px;
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .rule-target-tag {
+        font-size: 11px;
+        font-weight: 700;
+        color: #009688;
+        background: #e6fffa;
+        border: 1px solid #b2f5ea;
+        padding: 1px 7px;
+        border-radius: 4px;
+        margin-right: 6px;
+      }
+
+      .rule-card-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .action-icon-btn {
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: #64748b;
+        border-radius: 3px;
+        font-size: 11px;
+        transition: all 0.15s;
+      }
+
+      .action-icon-btn:hover {
+        color: #009688;
+        background: #e2e8f0;
+      }
+
+      .action-icon-btn.delete:hover {
+        color: #ef4444;
+        background: #fee2e2;
+      }
+
+      .rule-card-body {
+        padding: 8px 10px;
+        font-size: 11.5px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .rule-form-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .rule-form-label {
+        width: 48px;
+        color: #64748b;
+        font-size: 11px;
+        flex-shrink: 0;
+      }
+
+      .rule-tag-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        align-items: center;
+      }
+
+      .rule-keyword-tag {
+        font-size: 10.5px;
+        background: #f1f5f9;
+        color: #334155;
+        border: 1px solid #e2e8f0;
+        padding: 1px 5px;
+        border-radius: 3px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .rule-keyword-tag i {
+        cursor: pointer;
+        color: #94a3b8;
+      }
+
+      .rule-keyword-tag i:hover {
+        color: #ef4444;
+      }
+
+      .left-panel-footer {
+        padding: 10px;
+        border-top: 1px solid #e2e8f0;
+        background: #fafcfc;
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+
+      /* 右侧面板：箱柜判定看板与回写预览 */
+      .right-panel {
+        flex: 1 1 0%;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: #ffffff;
+      }
+
+      .right-toolbar {
+        padding: 8px 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid #e2e8f0;
+        background: #ffffff;
+        flex-shrink: 0;
+        gap: 10px;
+      }
+
+      .toolbar-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex: 1;
+        min-width: 0;
+      }
+
+      .toolbar-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+
+      /* 表格区域 */
+      .table-container {
+        flex: 1 1 0%;
+        min-height: 0;
+        padding: 8px 12px;
+        overflow: hidden;
+      }
+
+      .dim-tag {
+        font-size: 11px;
+        font-weight: 600;
+        color: #0369a1;
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        padding: 1px 6px;
+        border-radius: 4px;
+        white-space: nowrap;
+      }
+
+      .dim-tag.no-dim {
+        color: #94a3b8;
+        background: #f8fafc;
+        border-color: #e2e8f0;
+      }
+
+      .comp-summary-text {
+        font-size: 11px;
+        color: #475569;
+        line-height: 1.3;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      .hit-rule-badge {
+        font-size: 11px;
+        color: #0f766e;
+        background: #ccfbf1;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-weight: 500;
+        display: inline-block;
+        white-space: nowrap;
+      }
+
+      .hit-rule-badge.fallback {
+        color: #64748b;
+        background: #f1f5f9;
+      }
+
+      /* 底部操作条 (全面升级弹性布局自适应，杜绝按钮被压缩截断) */
+      .bottom-bar {
+        min-height: 52px;
+        height: auto;
+        padding: 8px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-top: 1px solid #e2e8f0;
+        background: #fafcfc;
+        flex-shrink: 0;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .bottom-left-opts {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        font-size: 12px;
+        color: #475569;
+        flex: 1 1 auto;
+        min-width: 0;
+        flex-wrap: wrap;
+      }
+
+      .bottom-right-btns {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0 !important;
+        margin-left: auto;
+      }
+
+      /* 自定义拟物按钮样式 */
+      .btn-pipeline-run {
+        background: linear-gradient(
+          135deg,
+          #009688 0%,
+          #00796b 100%
+        ) !important;
+        border: none !important;
+        color: #ffffff !important;
+        font-weight: 600 !important;
+        box-shadow: 0 2px 4px rgba(0, 150, 136, 0.25) !important;
+        white-space: nowrap !important;
+        flex-shrink: 0 !important;
+        padding: 8px 18px !important;
+      }
+
+      .btn-pipeline-run:hover {
+        background: linear-gradient(
+          135deg,
+          #00897b 0%,
+          #00695c 100%
+        ) !important;
+        box-shadow: 0 3px 8px rgba(0, 150, 136, 0.35) !important;
+      }
+
+      /* 隐藏横向滚动条 */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 3px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <!-- 顶部无边框拖拽标题栏 -->
+      <div class="window-header" @mousedown="startDrag">
+        <div class="window-title">
+          <i class="fa-solid fa-diagram-project"></i>
+          <span>三箱型号添写向导</span>
+          <span class="window-subtitle"
+            >基于高度、深度与元器件特征管道决策</span
+          >
+        </div>
+        <div
+          class="close-btn"
+          @mousedown.stop
+          @click.stop="closeWindow"
+          title="关闭窗口"
+        >
+          <i class="fa-solid fa-xmark"></i>
+        </div>
+      </div>
+
+      <!-- 主体左右双栏 -->
+      <div class="main-container">
+        <!-- 左侧：管道决策流管理看板 -->
+        <div class="left-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <i class="fa-solid fa-filter"></i>
+              <span>管道规则流 (从上至下执行)</span>
+            </div>
+            <div class="panel-actions">
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                @click="openAddRuleDialog"
+              >
+                <i class="fa-solid fa-plus" style="margin-right: 4px"></i
+                >添加规则
+              </el-button>
+              <el-button
+                size="small"
+                plain
+                @click="resetToDefaultRules"
+                title="恢复预设规则"
+              >
+                <i class="fa-solid fa-rotate-left"></i>
+              </el-button>
+            </div>
+          </div>
+
+          <div class="pipeline-tip-bar">
+            <i class="fa-solid fa-circle-info"></i>
+            <span
+              >规则流按序匹配，一旦命中即输出型号并终止流转；若均未匹配则进入兜底。</span
+            >
+          </div>
+
+          <!-- 规则卡片垂直列表 -->
+          <div class="rules-scroll-area">
+            <div
+              v-for="(rule, index) in rules"
+              :key="rule.id"
+              class="rule-card"
+              :class="{ 'disabled-card': !rule.isEnabled }"
+            >
+              <!-- 卡片头部 (点击整行折叠/展开) -->
+              <div class="rule-card-header" @click="toggleRuleExpand(rule)">
+                <i
+                  class="fa-solid fa-chevron-right expand-arrow"
+                  :class="{ 'expanded': rule._isExpanded !== false }"
+                ></i>
+                <span class="rule-stage-tag">Stage {{ index + 1 }}</span>
+                <span class="rule-name-text" :title="rule.name"
+                  >{{ rule.name }}</span
+                >
+                <span class="rule-target-tag">{{ rule.targetModel }}</span>
+                <div class="rule-card-actions" @click.stop>
+                  <div
+                    class="action-icon-btn edit"
+                    @click="openEditRuleDialog(rule, index)"
+                    title="弹窗详细编辑此规则"
+                  >
+                    <i class="fa-solid fa-pen-to-square"></i>
+                  </div>
+                  <el-switch
+                    v-model="rule.isEnabled"
+                    size="small"
+                    @change="triggerReEvaluate"
+                    title="启用/禁用本条规则"
+                  ></el-switch>
+                  <div
+                    class="action-icon-btn"
+                    @click="moveRuleUp(index)"
+                    title="上移 (提升优先级)"
+                  >
+                    <i class="fa-solid fa-arrow-up"></i>
+                  </div>
+                  <div
+                    class="action-icon-btn"
+                    @click="moveRuleDown(index)"
+                    title="下移 (降低优先级)"
+                  >
+                    <i class="fa-solid fa-arrow-down"></i>
+                  </div>
+                  <div
+                    class="action-icon-btn delete"
+                    @click="deleteRule(index)"
+                    title="删除此规则"
+                  >
+                    <i class="fa-solid fa-trash-can"></i>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 折叠状态下的精简规则摘要行 -->
+              <div
+                class="rule-summary-bar"
+                v-show="rule._isExpanded === false"
+                @click="toggleRuleExpand(rule)"
+              >
+                <span>{{ getRuleSummary(rule) }}</span>
+                <span
+                  style="
+                    font-size: 10.5px;
+                    color: #009688;
+                    white-space: nowrap;
+                    margin-left: 6px;
+                  "
+                  >展开编辑 <i class="fa-solid fa-angle-down"></i
+                ></span>
+              </div>
+
+              <!-- 卡片完整就地编辑内容 -->
+              <div class="rule-card-body" v-show="rule._isExpanded !== false">
+                <!-- 规则名称编辑 -->
+                <div class="rule-form-row">
+                  <span class="rule-form-label">规则名称:</span>
+                  <el-input
+                    v-model="rule.name"
+                    size="small"
+                    placeholder="规则名称"
+                    style="flex: 1"
+                  ></el-input>
+                </div>
+
+                <!-- 目标型号 -->
+                <div class="rule-form-row">
+                  <span class="rule-form-label">输出型号:</span>
+                  <el-input
+                    v-model="rule.targetModel"
+                    size="small"
+                    placeholder="如 PZ30"
+                    style="flex: 1"
+                    @input="triggerReEvaluate"
+                  ></el-input>
+                </div>
+
+                <!-- 高度限制 -->
+                <div class="rule-form-row">
+                  <span class="rule-form-label">高度限制:</span>
+                  <el-select
+                    v-model="rule.heightCondition"
+                    size="small"
+                    style="width: 82px"
+                    @change="handleHeightConditionChange(rule)"
+                  >
+                    <el-option label="不限" value="none"></el-option>
+                    <el-option label=">=" value=">="></el-option>
+                    <el-option label="<=" value="<="></el-option>
+                    <el-option label="介于" value="between"></el-option>
+                  </el-select>
+                  <template v-if="rule.heightCondition !== 'none'">
+                    <!-- 单条件输入框 (<= 或 >=) 统一绑定单一数值 heightVal -->
+                    <el-input-number
+                      v-if="rule.heightCondition !== 'between'"
+                      v-model="rule.heightVal"
+                      size="small"
+                      :controls="false"
+                      placeholder="高度"
+                      style="width: 60px"
+                      @change="syncHeightVal(rule)"
+                    ></el-input-number>
+                    <!-- 介于区间 (between样式) 绑定 Min 和 Max -->
+                    <template v-else>
+                      <el-input-number
+                        v-model="rule.heightMin"
+                        size="small"
+                        :controls="false"
+                        placeholder="Min"
+                        style="width: 60px"
+                        @change="triggerReEvaluate"
+                      ></el-input-number>
+                      <span>~</span>
+                      <el-input-number
+                        v-model="rule.heightMax"
+                        size="small"
+                        :controls="false"
+                        placeholder="Max"
+                        style="width: 60px"
+                        @change="triggerReEvaluate"
+                      ></el-input-number>
+                    </template>
+                    <span style="font-size: 10px; color: #94a3b8">mm</span>
+                  </template>
+                </div>
+
+                <!-- 深度限制 -->
+                <div class="rule-form-row">
+                  <span class="rule-form-label">深度限制:</span>
+                  <el-select
+                    v-model="rule.depthCondition"
+                    size="small"
+                    style="width: 82px"
+                    @change="handleDepthConditionChange(rule)"
+                  >
+                    <el-option label="不限" value="none"></el-option>
+                    <el-option label=">=" value=">="></el-option>
+                    <el-option label="<=" value="<="></el-option>
+                    <el-option label="介于" value="between"></el-option>
+                  </el-select>
+                  <template v-if="rule.depthCondition !== 'none'">
+                    <!-- 单条件输入框 (<= 或 >=) 统一绑定单一数值 depthVal，彻底杜绝打架 -->
+                    <el-input-number
+                      v-if="rule.depthCondition !== 'between'"
+                      v-model="rule.depthVal"
+                      size="small"
+                      :controls="false"
+                      placeholder="深度"
+                      style="width: 60px"
+                      @change="syncDepthVal(rule)"
+                    ></el-input-number>
+                    <!-- 介于区间 (between样式) 绑定 Min 和 Max -->
+                    <template v-else>
+                      <el-input-number
+                        v-model="rule.depthMin"
+                        size="small"
+                        :controls="false"
+                        placeholder="Min"
+                        style="width: 60px"
+                        @change="triggerReEvaluate"
+                      ></el-input-number>
+                      <span>~</span>
+                      <el-input-number
+                        v-model="rule.depthMax"
+                        size="small"
+                        :controls="false"
+                        placeholder="Max"
+                        style="width: 60px"
+                        @change="triggerReEvaluate"
+                      ></el-input-number>
+                    </template>
+                    <span style="font-size: 10px; color: #94a3b8">mm</span>
+                  </template>
+                </div>
+
+                <!-- 包含元件关键词 -->
+                <div class="rule-form-row" style="align-items: flex-start">
+                  <span class="rule-form-label" style="margin-top: 3px"
+                    >包含元件:</span
+                  >
+                  <div
+                    style="
+                      flex: 1;
+                      display: flex;
+                      flex-direction: column;
+                      gap: 4px;
+                    "
+                  >
+                    <div class="rule-tag-group">
+                      <span
+                        v-for="(kw, kIdx) in rule.componentKeywords"
+                        :key="kIdx"
+                        class="rule-keyword-tag"
+                      >
+                        {{ kw }}
+                        <i
+                          class="fa-solid fa-xmark"
+                          @click="removeKeyword(rule.componentKeywords, kIdx)"
+                        ></i>
+                      </span>
+                    </div>
+                    <div style="display: flex; gap: 4px">
+                      <el-input
+                        v-model="rule.tempCompKey"
+                        size="small"
+                        placeholder="添加包含词回车"
+                        style="flex: 1"
+                        @keyup.enter="addKeyword(rule.componentKeywords, rule, 'tempCompKey')"
+                      ></el-input>
+                      <el-button
+                        size="small"
+                        @click="addKeyword(rule.componentKeywords, rule, 'tempCompKey')"
+                        >+</el-button
+                      >
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 排除元件关键词 -->
+                <div class="rule-form-row" style="align-items: flex-start">
+                  <span class="rule-form-label" style="margin-top: 3px"
+                    >排除元件:</span
+                  >
+                  <div
+                    style="
+                      flex: 1;
+                      display: flex;
+                      flex-direction: column;
+                      gap: 4px;
+                    "
+                  >
+                    <div
+                      class="rule-tag-group"
+                      v-if="rule.excludeComponentKeywords && rule.excludeComponentKeywords.length > 0"
+                    >
+                      <span
+                        v-for="(ex, eIdx) in rule.excludeComponentKeywords"
+                        :key="eIdx"
+                        class="rule-keyword-tag"
+                        style="
+                          color: #ef4444;
+                          border-color: #fecaca;
+                          background: #fef2f2;
+                        "
+                      >
+                        {{ ex }}
+                        <i
+                          class="fa-solid fa-xmark"
+                          @click="removeKeyword(rule.excludeComponentKeywords, eIdx)"
+                        ></i>
+                      </span>
+                    </div>
+                    <div style="display: flex; gap: 4px">
+                      <el-input
+                        v-model="rule.tempExcludeKey"
+                        size="small"
+                        placeholder="添加排除词回车"
+                        style="flex: 1"
+                        @keyup.enter="addKeyword(rule.excludeComponentKeywords, rule, 'tempExcludeKey')"
+                      ></el-input>
+                      <el-button
+                        size="small"
+                        @click="addKeyword(rule.excludeComponentKeywords, rule, 'tempExcludeKey')"
+                        >+</el-button
+                      >
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 左侧底部操作 -->
+          <div class="left-panel-footer">
+            <el-button
+              size="small"
+              type="primary"
+              plain
+              :loading="isSavingConfig"
+              @click="savePipelineConfig"
+            >
+              <i class="fa-solid fa-floppy-disk" style="margin-right: 4px"></i
+              >保存规则配置
+            </el-button>
+            <el-button
+              size="small"
+              class="btn-pipeline-run"
+              @click="runPipelineEvaluation"
+            >
+              <i class="fa-solid fa-play" style="margin-right: 4px"></i
+              >立即执行判定
+            </el-button>
+          </div>
+        </div>
+
+        <!-- 右侧：箱柜数据看板与回写预览 -->
+        <div class="right-panel">
+          <!-- 顶部工具条 -->
+          <div class="right-toolbar">
+            <div class="toolbar-left">
+              <span
+                style="
+                  font-size: 12.5px;
+                  font-weight: 600;
+                  color: #475569;
+                  white-space: nowrap;
+                "
+              >
+                <i
+                  class="fa-solid fa-folder-open"
+                  style="color: #009688; margin-right: 4px"
+                ></i
+                >分类表:
+              </span>
+              <el-select
+                v-model="selectedSheetName"
+                size="small"
+                placeholder="未检测到分类表"
+                style="width: 150px"
+                @change="handleSheetChange"
+              >
+                <el-option
+                  v-for="s in sheetNames"
+                  :key="s"
+                  :label="s"
+                  :value="s"
+                ></el-option>
+              </el-select>
+
+              <el-button
+                size="small"
+                plain
+                @click="refreshCurrentSheetData"
+                title="重新从Excel提取"
+              >
+                <i
+                  class="fa-solid fa-rotate-right"
+                  style="margin-right: 4px"
+                ></i
+                >刷新
+              </el-button>
+
+              <el-input
+                v-model="searchKeyword"
+                size="small"
+                placeholder="搜索柜号/名称/型号"
+                style="width: 180px"
+                clearable
+              >
+                <template #prefix>
+                  <i
+                    class="fa-solid fa-magnifying-glass"
+                    style="font-size: 11px; color: #94a3b8"
+                  ></i>
+                </template>
+              </el-input>
+            </div>
+
+            <div class="toolbar-right">
+              <el-tag size="small" type="info"
+                >共 {{ filteredCabinets.length }} 台</el-tag
+              >
+              <el-tag size="small" type="success"
+                >推荐 {{ hitCount }} 台</el-tag
+              >
+              <el-tag v-if="fallbackCount > 0" size="small" type="warning"
+                >待确认 {{ fallbackCount }} 台</el-tag
+              >
+            </div>
+          </div>
+
+          <!-- 箱柜明细表格 -->
+          <div class="table-container">
+            <el-table
+              :data="filteredCabinets"
+              height="100%"
+              size="small"
+              stripe
+              border
+              style="width: 100%"
+              :header-cell-style="{ background: '#f8fafc', color: '#334155', fontWeight: '600' }"
+            >
+              <!-- 勾选列 -->
+              <el-table-column width="40" align="center">
+                <template #header>
+                  <el-checkbox
+                    v-model="isAllSelected"
+                    :indeterminate="isIndeterminate"
+                    @change="toggleSelectAll"
+                  ></el-checkbox>
+                </template>
+                <template #default="{ row }">
+                  <el-checkbox v-model="row.isSelected"></el-checkbox>
+                </template>
+              </el-table-column>
+
+              <!-- 序号与柜号 -->
+              <el-table-column
+                prop="cabinetIndex"
+                label="序号"
+                width="50"
+                align="center"
+              ></el-table-column>
+              <el-table-column prop="cabinetNo" label="柜号" width="90">
+                <template #default="{ row }">
+                  <span style="font-weight: 600; color: #0f172a"
+                    >{{ row.cabinetNo }}</span
+                  >
+                </template>
+              </el-table-column>
+
+              <!-- 箱柜名称 -->
+              <el-table-column
+                prop="cabinetName"
+                label="箱柜名称"
+                width="110"
+                show-overflow-tooltip
+              >
+                <template #default="{ row }">
+                  <span>{{ row.cabinetName || '-' }}</span>
+                </template>
+              </el-table-column>
+
+              <!-- 箱体尺寸 -->
+              <el-table-column label="箱体尺寸(宽*高*深)" width="140">
+                <template #default="{ row }">
+                  <span v-if="row.hasDimension" class="dim-tag">
+                    {{ row.width }}*{{ row.height }}*{{ row.depth }}
+                  </span>
+                  <span v-else class="dim-tag no-dim">未识别尺寸</span>
+                </template>
+              </el-table-column>
+
+              <!-- 核心元器件特征 -->
+              <el-table-column label="元器件特征摘要" min-width="160">
+                <template #default="{ row }">
+                  <div class="comp-summary-text" :title="row.componentsSummary">
+                    {{ row.componentsSummary }}
+                  </div>
+                </template>
+              </el-table-column>
+
+              <!-- 原型号 -->
+              <el-table-column prop="currentModel" label="原型号" width="90">
+                <template #default="{ row }">
+                  <span style="color: #64748b"
+                    >{{ row.currentModel || '留空' }}</span
+                  >
+                </template>
+              </el-table-column>
+
+              <!-- 管道命中规则 -->
+              <el-table-column label="管道判定阶段" width="140">
+                <template #default="{ row }">
+                  <span
+                    class="hit-rule-badge"
+                    :class="{ 'fallback': row.hitRuleId === 'fallback' }"
+                    :title="row.hitRuleName"
+                  >
+                    {{ row.hitRuleName || '未命中' }}
+                  </span>
+                </template>
+              </el-table-column>
+
+              <!-- 判定输出与人工微调 -->
+              <el-table-column label="最终添写型号" width="120" fixed="right">
+                <template #default="{ row }">
+                  <el-input
+                    v-model="row.finalModel"
+                    size="small"
+                    placeholder="型号"
+                    style="width: 100%"
+                  ></el-input>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+
+          <!-- 底部操作栏 -->
+          <div class="bottom-bar">
+            <div class="bottom-left-opts">
+              <el-checkbox v-model="writeSummaryN" title="直接回填至汇总行 (Cab_Sum) 的 N 列 (三箱型号)">
+                回填至汇总行 N 列 (三箱型号)
+              </el-checkbox>
+              <el-checkbox v-model="writeSummaryD" title="可选同步更新 D 列">
+                可选同步更新 D 列
+              </el-checkbox>
+            </div>
+
+            <div class="bottom-right-btns">
+              <el-button size="default" @click="closeWindow">取消</el-button>
+              <el-button
+                size="default"
+                type="primary"
+                class="btn-pipeline-run"
+                :loading="isApplying"
+                @click="submitBatchApply"
+              >
+                <i class="fa-solid fa-check" style="margin-right: 6px"></i>
+                <span>确认添写至 Excel</span>
+              </el-button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 添加新规则对话框 -->
+      <el-dialog
+        v-model="showAddRuleDialog"
+        title="添加自定义管道规则"
+        width="460px"
+        destroy-on-close
+      >
+        <el-form label-width="90px" size="small">
+          <el-form-item label="规则名称:">
+            <el-input
+              v-model="newRule.name"
+              placeholder="如: 消防双电源箱"
+            ></el-input>
+          </el-form-item>
+          <el-form-item label="目标型号:">
+            <el-input
+              v-model="newRule.targetModel"
+              placeholder="如: ATS-XF"
+            ></el-input>
+          </el-form-item>
+          <el-form-item label="高度判定:">
+            <div style="display: flex; gap: 6px; align-items: center">
+              <el-select v-model="newRule.heightCondition" style="width: 90px">
+                <el-option label="不限" value="none"></el-option>
+                <el-option label=">=" value=">="></el-option>
+                <el-option label="<=" value="<="></el-option>
+                <el-option label="介于" value="between"></el-option>
+              </el-select>
+              <template v-if="newRule.heightCondition !== 'none'">
+                <el-input-number
+                  v-if="newRule.heightCondition !== 'between'"
+                  v-model="newRule.heightVal"
+                  :controls="false"
+                  placeholder="高度"
+                  style="width: 70px"
+                ></el-input-number>
+                <template v-else>
+                  <el-input-number
+                    v-model="newRule.heightMin"
+                    :controls="false"
+                    placeholder="Min"
+                    style="width: 70px"
+                  ></el-input-number>
+                  <span>~</span>
+                  <el-input-number
+                    v-model="newRule.heightMax"
+                    :controls="false"
+                    placeholder="Max"
+                    style="width: 70px"
+                  ></el-input-number>
+                </template>
+                <span>mm</span>
+              </template>
+            </div>
+          </el-form-item>
+          <el-form-item label="深度判定:">
+            <div style="display: flex; gap: 6px; align-items: center">
+              <el-select v-model="newRule.depthCondition" style="width: 90px">
+                <el-option label="不限" value="none"></el-option>
+                <el-option label=">=" value=">="></el-option>
+                <el-option label="<=" value="<="></el-option>
+                <el-option label="介于" value="between"></el-option>
+              </el-select>
+              <template v-if="newRule.depthCondition !== 'none'">
+                <el-input-number
+                  v-if="newRule.depthCondition !== 'between'"
+                  v-model="newRule.depthVal"
+                  :controls="false"
+                  placeholder="深度"
+                  style="width: 70px"
+                ></el-input-number>
+                <template v-else>
+                  <el-input-number
+                    v-model="newRule.depthMin"
+                    :controls="false"
+                    placeholder="Min"
+                    style="width: 70px"
+                  ></el-input-number>
+                  <span>~</span>
+                  <el-input-number
+                    v-model="newRule.depthMax"
+                    :controls="false"
+                    placeholder="Max"
+                    style="width: 70px"
+                  ></el-input-number>
+                </template>
+                <span>mm</span>
+              </template>
+            </div>
+          </el-form-item>
+          <el-form-item label="包含元件:">
+            <el-input
+              v-model="newRuleTempKeywords"
+              placeholder="多个关键词用逗号分隔，如: 双电源,ATS"
+            ></el-input>
+          </el-form-item>
+          <el-form-item label="排除元件:">
+            <el-input
+              v-model="newRuleTempExcludeKeywords"
+              placeholder="多个排除词用逗号分隔，如: 塑壳,双电源"
+            ></el-input>
+          </el-form-item>
+          <el-form-item label="规则说明:">
+            <el-input
+              v-model="newRule.description"
+              type="textarea"
+              rows="2"
+              placeholder="可选输入说明"
+            ></el-input>
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button size="small" @click="showAddRuleDialog = false"
+            >取消</el-button
+          >
+          <el-button size="small" type="primary" @click="confirmAddNewRule"
+            >添加至管道</el-button
+          >
+        </template>
+      </el-dialog>
+
+      <!-- 编辑自定义规则对话框 -->
+      <el-dialog
+        v-model="showEditRuleDialog"
+        title="编辑管道规则判定条件"
+        width="480px"
+        destroy-on-close
+      >
+        <el-form label-width="95px" size="small" v-if="editingRule">
+          <el-form-item label="规则名称:">
+            <el-input
+              v-model="editingRule.name"
+              placeholder="规则名称"
+            ></el-input>
+          </el-form-item>
+          <el-form-item label="目标型号:">
+            <el-input
+              v-model="editingRule.targetModel"
+              placeholder="输出型号，如 PZ30"
+            ></el-input>
+          </el-form-item>
+          <el-form-item label="高度判定:">
+            <div style="display: flex; gap: 6px; align-items: center">
+              <el-select
+                v-model="editingRule.heightCondition"
+                style="width: 90px"
+              >
+                <el-option label="不限" value="none"></el-option>
+                <el-option label=">=" value=">="></el-option>
+                <el-option label="<=" value="<="></el-option>
+                <el-option label="介于" value="between"></el-option>
+              </el-select>
+              <template v-if="editingRule.heightCondition !== 'none'">
+                <el-input-number
+                  v-if="editingRule.heightCondition !== 'between'"
+                  v-model="editingRule.heightVal"
+                  :controls="false"
+                  placeholder="高度"
+                  style="width: 70px"
+                ></el-input-number>
+                <template v-else>
+                  <el-input-number
+                    v-model="editingRule.heightMin"
+                    :controls="false"
+                    placeholder="Min"
+                    style="width: 70px"
+                  ></el-input-number>
+                  <span>~</span>
+                  <el-input-number
+                    v-model="editingRule.heightMax"
+                    :controls="false"
+                    placeholder="Max"
+                    style="width: 70px"
+                  ></el-input-number>
+                </template>
+                <span>mm</span>
+              </template>
+            </div>
+          </el-form-item>
+          <el-form-item label="深度判定:">
+            <div style="display: flex; gap: 6px; align-items: center">
+              <el-select
+                v-model="editingRule.depthCondition"
+                style="width: 90px"
+              >
+                <el-option label="不限" value="none"></el-option>
+                <el-option label=">=" value=">="></el-option>
+                <el-option label="<=" value="<="></el-option>
+                <el-option label="介于" value="between"></el-option>
+              </el-select>
+              <template v-if="editingRule.depthCondition !== 'none'">
+                <el-input-number
+                  v-if="editingRule.depthCondition !== 'between'"
+                  v-model="editingRule.depthVal"
+                  :controls="false"
+                  placeholder="深度"
+                  style="width: 70px"
+                ></el-input-number>
+                <template v-else>
+                  <el-input-number
+                    v-model="editingRule.depthMin"
+                    :controls="false"
+                    placeholder="Min"
+                    style="width: 70px"
+                  ></el-input-number>
+                  <span>~</span>
+                  <el-input-number
+                    v-model="editingRule.depthMax"
+                    :controls="false"
+                    placeholder="Max"
+                    style="width: 70px"
+                  ></el-input-number>
+                </template>
+                <span>mm</span>
+              </template>
+            </div>
+          </el-form-item>
+          <el-form-item label="包含元件:">
+            <div
+              style="
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                width: 100%;
+              "
+            >
+              <div
+                class="rule-tag-group"
+                v-if="editingRule.componentKeywords && editingRule.componentKeywords.length > 0"
+              >
+                <span
+                  v-for="(kw, kIdx) in editingRule.componentKeywords"
+                  :key="kIdx"
+                  class="rule-keyword-tag"
+                >
+                  {{ kw }}
+                  <i
+                    class="fa-solid fa-xmark"
+                    @click="removeKeyword(editingRule.componentKeywords, kIdx)"
+                  ></i>
+                </span>
+              </div>
+              <div style="display: flex; gap: 4px">
+                <el-input
+                  v-model="editTempCompKey"
+                  placeholder="输入元件关键字回车添加"
+                  @keyup.enter="if (editTempCompKey.trim() && !editingRule.componentKeywords.includes(editTempCompKey.trim())) { editingRule.componentKeywords.push(editTempCompKey.trim()); editTempCompKey = ''; }"
+                ></el-input>
+                <el-button
+                  @click="if (editTempCompKey.trim() && !editingRule.componentKeywords.includes(editTempCompKey.trim())) { editingRule.componentKeywords.push(editTempCompKey.trim()); editTempCompKey = ''; }"
+                  >+</el-button
+                >
+              </div>
+            </div>
+          </el-form-item>
+          <el-form-item label="排除元件:">
+            <div
+              style="
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                width: 100%;
+              "
+            >
+              <div
+                class="rule-tag-group"
+                v-if="editingRule.excludeComponentKeywords && editingRule.excludeComponentKeywords.length > 0"
+              >
+                <span
+                  v-for="(ex, eIdx) in editingRule.excludeComponentKeywords"
+                  :key="eIdx"
+                  class="rule-keyword-tag"
+                  style="
+                    color: #ef4444;
+                    border-color: #fecaca;
+                    background: #fef2f2;
+                  "
+                >
+                  {{ ex }}
+                  <i
+                    class="fa-solid fa-xmark"
+                    @click="removeKeyword(editingRule.excludeComponentKeywords, eIdx)"
+                  ></i>
+                </span>
+              </div>
+              <div style="display: flex; gap: 4px">
+                <el-input
+                  v-model="editTempExcludeKey"
+                  placeholder="输入排除词回车添加"
+                  @keyup.enter="if (editTempExcludeKey.trim() && !editingRule.excludeComponentKeywords.includes(editTempExcludeKey.trim())) { editingRule.excludeComponentKeywords.push(editTempExcludeKey.trim()); editTempExcludeKey = ''; }"
+                ></el-input>
+                <el-button
+                  @click="if (editTempExcludeKey.trim() && !editingRule.excludeComponentKeywords.includes(editTempExcludeKey.trim())) { editingRule.excludeComponentKeywords.push(editTempExcludeKey.trim()); editTempExcludeKey = ''; }"
+                  >+</el-button
+                >
+              </div>
+            </div>
+          </el-form-item>
+          <el-form-item label="规则说明:">
+            <el-input
+              v-model="editingRule.description"
+              type="textarea"
+              rows="2"
+              placeholder="说明"
+            ></el-input>
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button size="small" @click="showEditRuleDialog = false"
+            >取消</el-button
+          >
+          <el-button size="small" type="primary" @click="confirmEditRule"
+            >保存修改</el-button
+          >
+        </template>
+      </el-dialog>
+    </div>
+
+    <script>
+      const { createApp, ref, computed, onMounted, nextTick } = Vue;
+
+      createApp({
+        setup() {
+          // 数据状态定义
+          const sheetNames = ref([]);
+          const selectedSheetName = ref("");
+          const rules = ref([]);
+          const cabinets = ref([]);
+          const searchKeyword = ref("");
+          const isApplying = ref(false);
+
+          // 回写选项 (默认直接回填至汇总行 N 列)
+          const writeSummaryN = ref(true);
+          const writeSummaryD = ref(false);
+          const writeDetailD = ref(false);
+
+          // 添加规则对话框状态
+          const showAddRuleDialog = ref(false);
+          const newRule = ref({
+            name: "",
+            targetModel: "",
+            heightCondition: "none",
+            heightMin: 0,
+            heightMax: 0,
+            depthCondition: "none",
+            depthMin: 0,
+            depthMax: 0,
+            componentKeywords: [],
+            excludeComponentKeywords: [],
+            description: "",
+          });
+          const newRuleTempKeywords = ref("");
+          const newRuleTempExcludeKeywords = ref("");
+          const isSavingConfig = ref(false);
+
+          // 与 C# 安全通信
+          const postToCSharp = (msgObj) => {
+            try {
+              if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage(msgObj);
+              }
+            } catch (err) {
+              console.error("[WebMessage Error]", err);
+            }
+          };
+
+          // 窗体无边框拖拽 (过滤关闭按钮等可交互元素，避免吞噬点击事件)
+          const startDrag = (e) => {
+            if (e.button !== 0) return;
+            if (e.target && e.target.closest(".close-btn")) return;
+            postToCSharp({ action: "dragWindow" });
+          };
+
+          // 关闭窗口
+          const closeWindow = () => {
+            postToCSharp({ action: "closeWindow" });
+          };
+
+          // 关键词增删
+          const addKeyword = (list, ruleObj, keyName) => {
+            const val = ruleObj[keyName]?.trim();
+            if (val && !list.includes(val)) {
+              list.push(val);
+              ruleObj[keyName] = "";
+              triggerReEvaluate();
+            }
+          };
+
+          const removeKeyword = (list, index) => {
+            list.splice(index, 1);
+            triggerReEvaluate();
+          };
+
+          // 上下移动规则改变优先级
+          const moveRuleUp = (index) => {
+            if (index <= 0) return;
+            const temp = rules.value[index];
+            rules.value[index] = rules.value[index - 1];
+            rules.value[index - 1] = temp;
+            updateRuleSortOrders();
+            triggerReEvaluate();
+          };
+
+          const moveRuleDown = (index) => {
+            if (index >= rules.value.length - 1) return;
+            const temp = rules.value[index];
+            rules.value[index] = rules.value[index + 1];
+            rules.value[index + 1] = temp;
+            updateRuleSortOrders();
+            triggerReEvaluate();
+          };
+
+          const updateRuleSortOrders = () => {
+            rules.value.forEach((r, idx) => {
+              r.sortOrder = idx + 1;
+            });
+          };
+
+          const deleteRule = (index) => {
+            ElementPlus.ElMessageBox.confirm(
+              "确定从管道中删除该条规则吗？",
+              "删除确认",
+              {
+                confirmButtonText: "确定删除",
+                cancelButtonText: "取消",
+                type: "warning",
+              },
+            )
+              .then(() => {
+                rules.value.splice(index, 1);
+                updateRuleSortOrders();
+                triggerReEvaluate();
+              })
+              .catch(() => {});
+          };
+
+          // 规则摘要精炼生成 (供折叠卡片展示)
+          const getRuleSummary = (r) => {
+            const parts = [];
+            if (r.heightCondition && r.heightCondition !== "none") {
+              if (r.heightCondition === ">=")
+                parts.push(`高>=${r.heightVal || r.heightMin}`);
+              else if (r.heightCondition === "<=")
+                parts.push(`高<=${r.heightVal || r.heightMax}`);
+              else if (r.heightCondition === "between")
+                parts.push(`高 ${r.heightMin}~${r.heightMax}`);
+            }
+            if (r.depthCondition && r.depthCondition !== "none") {
+              if (r.depthCondition === ">=")
+                parts.push(`深>=${r.depthVal || r.depthMin}`);
+              else if (r.depthCondition === "<=")
+                parts.push(`深<=${r.depthVal || r.depthMax}`);
+              else if (r.depthCondition === "between")
+                parts.push(`深 ${r.depthMin}~${r.depthMax}`);
+            }
+            if (r.componentKeywords && r.componentKeywords.length > 0) {
+              parts.push(
+                `含: ${r.componentKeywords.slice(0, 3).join(",")}${r.componentKeywords.length > 3 ? "..." : ""}`,
+              );
+            }
+            if (
+              r.excludeComponentKeywords &&
+              r.excludeComponentKeywords.length > 0
+            ) {
+              parts.push(
+                `排: ${r.excludeComponentKeywords.slice(0, 2).join(",")}`,
+              );
+            }
+            if (parts.length === 0) return "无特殊尺寸/元件限制 (通用规则)";
+            return parts.join(" | ");
+          };
+
+          // 高度单值修改同步
+          const syncHeightVal = (rule) => {
+            const v = rule.heightVal || 0;
+            rule.heightMin = v;
+            rule.heightMax = v;
+            triggerReEvaluate();
+          };
+
+          // 深度单值修改同步
+          const syncDepthVal = (rule) => {
+            const v = rule.depthVal || 0;
+            rule.depthMin = v;
+            rule.depthMax = v;
+            triggerReEvaluate();
+          };
+
+          // 高度条件切换事件
+          const handleHeightConditionChange = (rule) => {
+            if (rule.heightCondition === "none") {
+              rule.heightVal = 0;
+              rule.heightMin = 0;
+              rule.heightMax = 0;
+            } else if (rule.heightCondition !== "between") {
+              if (!rule.heightVal)
+                rule.heightVal = rule.heightMin || rule.heightMax || 0;
+              rule.heightMin = rule.heightVal;
+              rule.heightMax = rule.heightVal;
+            }
+            triggerReEvaluate();
+          };
+
+          // 深度条件切换事件
+          const handleDepthConditionChange = (rule) => {
+            if (rule.depthCondition === "none") {
+              rule.depthVal = 0;
+              rule.depthMin = 0;
+              rule.depthMax = 0;
+            } else if (rule.depthCondition !== "between") {
+              if (!rule.depthVal)
+                rule.depthVal = rule.depthMin || rule.depthMax || 0;
+              rule.depthMin = rule.depthVal;
+              rule.depthMax = rule.depthVal;
+            }
+            triggerReEvaluate();
+          };
+
+          // 编辑规则弹窗状态
+          const showEditRuleDialog = ref(false);
+          const editingRule = ref(null);
+          const editingIndex = ref(-1);
+          const editTempCompKey = ref("");
+          const editTempExcludeKey = ref("");
+
+          const openEditRuleDialog = (rule, index) => {
+            editingIndex.value = index;
+            // 打开前将单值统一对齐
+            if (rule.heightCondition !== "between") {
+              const h =
+                rule.heightVal ||
+                (rule.heightCondition === "<="
+                  ? rule.heightMax
+                  : rule.heightMin) ||
+                rule.heightMax ||
+                rule.heightMin ||
+                0;
+              rule.heightVal = h;
+              rule.heightMin = h;
+              rule.heightMax = h;
+            }
+            if (rule.depthCondition !== "between") {
+              const d =
+                rule.depthVal ||
+                (rule.depthCondition === "<="
+                  ? rule.depthMax
+                  : rule.depthMin) ||
+                rule.depthMax ||
+                rule.depthMin ||
+                0;
+              rule.depthVal = d;
+              rule.depthMin = d;
+              rule.depthMax = d;
+            }
+            editingRule.value = JSON.parse(JSON.stringify(rule));
+            editingRule.value.componentKeywords =
+              editingRule.value.componentKeywords || [];
+            editingRule.value.excludeComponentKeywords =
+              editingRule.value.excludeComponentKeywords || [];
+            editTempCompKey.value = "";
+            editTempExcludeKey.value = "";
+            showEditRuleDialog.value = true;
+          };
+
+          const confirmEditRule = () => {
+            if (!editingRule.value || editingIndex.value < 0) return;
+            if (
+              !editingRule.value.name.trim() ||
+              !editingRule.value.targetModel.trim()
+            ) {
+              ElementPlus.ElMessage.warning("请输入规则名称和目标型号！");
+              return;
+            }
+            // 保存前统一同步单值
+            if (editingRule.value.heightCondition !== "between") {
+              // 统一转换为纯数字
+              const h = Number(editingRule.value.heightVal) || 0;
+              editingRule.value.heightVal = h;
+              // 同步至 min 与 max
+              editingRule.value.heightMin = h;
+              editingRule.value.heightMax = h;
+            }
+            if (editingRule.value.depthCondition !== "between") {
+              // 统一转换为纯数字
+              const d = Number(editingRule.value.depthVal) || 0;
+              editingRule.value.depthVal = d;
+              // 同步至 min 与 max
+              editingRule.value.depthMin = d;
+              editingRule.value.depthMax = d;
+            }
+            // 深度属性覆盖原对象，彻底避免 DOM 引用脱节
+            Object.assign(rules.value[editingIndex.value], editingRule.value);
+            // 默认展开卡片
+            rules.value[editingIndex.value]._isExpanded = true;
+            // 顶层替换数组引用，强力触发 Vue 响应式彻底刷新卡片显示
+            rules.value = [...rules.value];
+            // 关闭弹窗
+            showEditRuleDialog.value = false;
+            // 立即重新推导全局判定
+            triggerReEvaluate();
+            ElementPlus.ElMessage.success("规则修改已生效！");
+          };
+
+          // 切换规则折叠
+          const toggleRuleExpand = (rule) => {
+            rule._isExpanded = !rule._isExpanded;
+          };
+
+          // 打开添加规则弹窗
+          const openAddRuleDialog = () => {
+            newRule.value = {
+              name: "",
+              targetModel: "",
+              heightCondition: "none",
+              heightVal: 0,
+              heightMin: 0,
+              heightMax: 0,
+              depthCondition: "none",
+              depthVal: 0,
+              depthMin: 0,
+              depthMax: 0,
+              componentKeywords: [],
+              excludeComponentKeywords: [],
+              description: "",
+            };
+            newRuleTempKeywords.value = "";
+            newRuleTempExcludeKeywords.value = "";
+            showAddRuleDialog.value = true;
+          };
+
+          // 确认添加规则
+          const confirmAddNewRule = () => {
+            if (
+              !newRule.value.name.trim() ||
+              !newRule.value.targetModel.trim()
+            ) {
+              ElementPlus.ElMessage.warning("请输入规则名称和目标型号！");
+              return;
+            }
+            if (newRule.value.heightCondition !== "between") {
+              const h = newRule.value.heightVal || 0;
+              newRule.value.heightMin = h;
+              newRule.value.heightMax = h;
+            }
+            if (newRule.value.depthCondition !== "between") {
+              const d = newRule.value.depthVal || 0;
+              newRule.value.depthMin = d;
+              newRule.value.depthMax = d;
+            }
+            if (newRuleTempKeywords.value.trim()) {
+              const keys = newRuleTempKeywords.value
+                .split(/[,，\s]+/)
+                .filter((k) => k.trim());
+              newRule.value.componentKeywords = keys;
+            } else {
+              newRule.value.componentKeywords = [];
+            }
+            if (newRuleTempExcludeKeywords.value.trim()) {
+              const exKeys = newRuleTempExcludeKeywords.value
+                .split(/[,，\s]+/)
+                .filter((k) => k.trim());
+              newRule.value.excludeComponentKeywords = exKeys;
+            } else {
+              newRule.value.excludeComponentKeywords = [];
+            }
+            newRule.value.id = "rule_user_" + Date.now();
+            newRule.value.isEnabled = true;
+            newRule.value.sortOrder = rules.value.length + 1;
+            newRule.value.tempCompKey = "";
+            newRule.value.tempExcludeKey = "";
+            newRule.value._isExpanded = true;
+            rules.value.push({ ...newRule.value });
+            showAddRuleDialog.value = false;
+            triggerReEvaluate();
+            ElementPlus.ElMessage.success("规则已成功添加至管道末尾！");
+          };
+
+          // 恢复预设规则 (纯净重置，零默认阈值冲突)
+          const resetToDefaultRules = () => {
+            ElementPlus.ElMessageBox.confirm(
+              "恢复预设将丢弃当前未保存的自定义规则，重置为标准行业规则流 (ATS -> XL21 -> PZ30 -> JXF，无默认尺寸与排除限制)，是否继续？",
+              "重置确认",
+              {
+                confirmButtonText: "确定重置",
+                cancelButtonText: "取消",
+                type: "info",
+              },
+            )
+              .then(() => {
+                postToCSharp({ action: "resetDefaultRules" });
+              })
+              .catch(() => {});
+          };
+
+          // 保存规则配置
+          const savePipelineConfig = () => {
+            isSavingConfig.value = true;
+            postToCSharp({
+              action: "saveConfig",
+              config: {
+                rules: rules.value,
+                writeSummaryN: writeSummaryN.value,
+                writeSummaryD: writeSummaryD.value,
+                writeDetailD: writeDetailD.value,
+              },
+            });
+          };
+
+          // 触发即时管道评估推导 (纯前端快速实时响应)
+          const triggerReEvaluate = () => {
+            const activeRules = rules.value.filter((r) => r.isEnabled);
+
+            cabinets.value.forEach((cab) => {
+              let matched = false;
+
+              for (const rule of activeRules) {
+                // 检查该阶段是否配置了至少一项有效判定条件
+                const hasH = rule.heightCondition && rule.heightCondition !== "none";
+                // 检查深度条件
+                const hasD = rule.depthCondition && rule.depthCondition !== "none";
+                // 检查包含关键词
+                const hasKw = rule.componentKeywords && rule.componentKeywords.filter((k) => k && k.trim()).length > 0;
+                // 检查排除关键词
+                const hasEx = rule.excludeComponentKeywords && rule.excludeComponentKeywords.filter((k) => k && k.trim()).length > 0;
+
+                // 若规则没有任何过滤约束，绝不盲目命中全部，避免不同阶段打架吞噬
+                if (!hasH && !hasD && !hasKw && !hasEx) {
+                  continue;
+                }
+
+                // 1. 检查排除词 (若有配置)
+                if (
+                  rule.excludeComponentKeywords &&
+                  rule.excludeComponentKeywords.length > 0
+                ) {
+                  const hasExclude =
+                    (cab.componentNames || []).some((n) =>
+                      rule.excludeComponentKeywords.some((ex) =>
+                        n.includes(ex),
+                      ),
+                    ) ||
+                    (cab.componentModels || []).some((m) =>
+                      rule.excludeComponentKeywords.some((ex) =>
+                        m.includes(ex),
+                      ),
+                    );
+                  if (hasExclude) continue;
+                }
+
+                // 2. 检查高度
+                if (
+                  !checkNumCondition(
+                    cab.height,
+                    rule.heightCondition,
+                    rule.heightMin,
+                    rule.heightMax,
+                    rule.heightVal,
+                  )
+                ) {
+                  continue;
+                }
+
+                // 3. 检查深度
+                if (
+                  !checkNumCondition(
+                    cab.depth,
+                    rule.depthCondition,
+                    rule.depthMin,
+                    rule.depthMax,
+                    rule.depthVal,
+                  )
+                ) {
+                  continue;
+                }
+
+                // 4. 检查元器件包含
+                if (
+                  rule.componentKeywords &&
+                  rule.componentKeywords.length > 0
+                ) {
+                  const validKws = rule.componentKeywords.filter(
+                    (k) => k && k.trim(),
+                  );
+                  if (validKws.length > 0) {
+                    const hasAny = validKws.some(
+                      (kw) =>
+                        (cab.componentNames || []).some((n) =>
+                          n.includes(kw),
+                        ) ||
+                        (cab.componentModels || []).some((m) => m.includes(kw)),
+                    );
+                    if (!hasAny) continue;
+                  }
+                }
+
+                // 命中当前阶段
+                cab.hitRuleId = rule.id;
+                cab.hitRuleName = rule.name;
+                cab.suggestedModel = rule.targetModel;
+                cab.finalModel = rule.targetModel;
+                matched = true;
+                break;
+              }
+
+              if (!matched) {
+                cab.hitRuleId = "fallback";
+                cab.hitRuleName = "未命中 (兜底)";
+                cab.suggestedModel = cab.currentModel || "待确认";
+                cab.finalModel = cab.currentModel || "待确认";
+              }
+            });
+          };
+
+          const checkNumCondition = (val, cond, min, max, singleVal) => {
+            if (!cond || cond === "none") return true;
+            if (!val || val <= 0) return false;
+
+            if (cond === ">=") {
+              const threshold =
+                singleVal && singleVal > 0
+                  ? singleVal
+                  : min && min > 0
+                    ? min
+                    : max && max > 0
+                      ? max
+                      : 0;
+              return threshold > 0 ? val >= threshold : true;
+            }
+
+            if (cond === "<=") {
+              const threshold =
+                singleVal && singleVal > 0
+                  ? singleVal
+                  : max && max > 0
+                    ? max
+                    : min && min > 0
+                      ? min
+                      : 0;
+              return threshold > 0 ? val <= threshold : true;
+            }
+
+            if (cond === "between") {
+              const lower = min && min > 0 ? min : 0;
+              const upper = max && max > 0 ? max : 0;
+              if (lower > 0 && upper > 0) return val >= lower && val <= upper;
+              if (lower > 0) return val >= lower;
+              if (upper > 0) return val <= upper;
+              return true;
+            }
+
+            return true;
+          };
+
+          // 过滤后的箱柜列表
+          const filteredCabinets = computed(() => {
+            if (!searchKeyword.value.trim()) return cabinets.value;
+            const kw = searchKeyword.value.trim().toLowerCase();
+            return cabinets.value.filter(
+              (c) =>
+                (c.cabinetNo && c.cabinetNo.toLowerCase().includes(kw)) ||
+                (c.cabinetName && c.cabinetName.toLowerCase().includes(kw)) ||
+                (c.finalModel && c.finalModel.toLowerCase().includes(kw)) ||
+                (c.componentsSummary &&
+                  c.componentsSummary.toLowerCase().includes(kw)),
+            );
+          });
+
+          // 统计
+          const hitCount = computed(() => {
+            return filteredCabinets.value.filter(
+              (c) => c.hitRuleId !== "fallback",
+            ).length;
+          });
+
+          const fallbackCount = computed(() => {
+            return filteredCabinets.value.filter(
+              (c) => c.hitRuleId === "fallback",
+            ).length;
+          });
+
+          // 全选逻辑
+          const isAllSelected = computed({
+            get: () => {
+              const list = filteredCabinets.value;
+              return list.length > 0 && list.every((c) => c.isSelected);
+            },
+            set: (val) => {
+              filteredCabinets.value.forEach((c) => (c.isSelected = val));
+            },
+          });
+
+          const isIndeterminate = computed(() => {
+            const list = filteredCabinets.value;
+            const selectedLen = list.filter((c) => c.isSelected).length;
+            return selectedLen > 0 && selectedLen < list.length;
+          });
+
+          const toggleSelectAll = (val) => {
+            filteredCabinets.value.forEach((c) => (c.isSelected = val));
+          };
+
+          // 切换分类表
+          const handleSheetChange = (sheetName) => {
+            postToCSharp({
+              action: "switchSheet",
+              sheetName: sheetName,
+              config: { rules: rules.value },
+            });
+          };
+
+          // 刷新当前工作表
+          const refreshCurrentSheetData = () => {
+            handleSheetChange(selectedSheetName.value);
+          };
+
+          // 执行判定
+          const runPipelineEvaluation = () => {
+            triggerReEvaluate();
+            ElementPlus.ElMessage.success("管道判定重新执行完毕！");
+          };
+
+          // 提交批量回写
+          const submitBatchApply = () => {
+            const toApply = cabinets.value.filter((c) => c.isSelected);
+            if (toApply.length === 0) {
+              ElementPlus.ElMessage.warning(
+                "请至少勾选一台需要回写型号的箱柜！",
+              );
+              return;
+            }
+
+            ElementPlus.ElMessageBox.confirm(
+              `确定将判定的型号批量添写至选中的 ${toApply.length} 台箱柜中吗？`,
+              "确认添写",
+              {
+                confirmButtonText: "确定回写",
+                cancelButtonText: "取消",
+                type: "primary",
+              },
+            )
+              .then(() => {
+                isApplying.value = true;
+                postToCSharp({
+                  action: "batchApply",
+                  items: toApply.map((c) => ({
+                    sheetName: c.sheetName,
+                    cabinetIndex: c.cabinetIndex,
+                    sumRow: c.sumRow,
+                    detRow: c.detRow,
+                    model: c.finalModel,
+                  })),
+                  writeSummaryN: writeSummaryN.value,
+                  writeSummaryD: writeSummaryD.value,
+                  writeDetailD: writeDetailD.value,
+                });
+              })
+              .catch(() => {});
+          };
+
+          // 初始化挂载
+          onMounted(() => {
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.addEventListener("message", (event) => {
+                let res = event.data;
+                // 兼容字符串与对象双模式，彻底杜绝 IPC 解析失效
+                if (typeof res === "string") {
+                  try {
+                    res = JSON.parse(res);
+                  } catch (e) {
+                    console.error("[WebMessage Parse Error]", e);
+                    return;
+                  }
+                }
+                if (!res || !res.action) return;
+
+                if (res.action === "initDataLoaded") {
+                  sheetNames.value = res.data.sheetNames || [];
+                  selectedSheetName.value = res.data.selectedSheetName || "";
+                  rules.value = (res.data.rules || []).map((r) => {
+                    // 规整高度上下限
+                    let hMin = r.heightMin || 0;
+                    let hMax = r.heightMax || 0;
+                    // 若为 <= 条件且上限有效，同步至下限
+                    if (r.heightCondition === "<=" && hMax > 0 && hMin === 0)
+                      hMin = hMax;
+                    // 若为 >= 条件且下限有效，同步至上限
+                    if (r.heightCondition === ">=" && hMin > 0 && hMax === 0)
+                      hMax = hMin;
+
+                    // 规整深度上下限
+                    let dMin = r.depthMin || 0;
+                    let dMax = r.depthMax || 0;
+                    // 若为 <= 条件且上限有效，同步至下限
+                    if (r.depthCondition === "<=" && dMax > 0 && dMin === 0)
+                      dMin = dMax;
+                    // 若为 >= 条件且下限有效，同步至上限
+                    if (r.depthCondition === ">=" && dMin > 0 && dMax === 0)
+                      dMax = dMin;
+
+                    // 计算统一高度单值
+                    let hVal = 0;
+                    if (r.heightCondition === "<=") hVal = hMax || hMin || 0;
+                    else if (r.heightCondition === ">=") hVal = hMin || hMax || 0;
+                    else if (r.heightCondition === "between") hVal = hMin || 0;
+
+                    // 计算统一深度单值
+                    let dVal = 0;
+                    if (r.depthCondition === "<=") dVal = dMax || dMin || 0;
+                    else if (r.depthCondition === ">=") dVal = dMin || dMax || 0;
+                    else if (r.depthCondition === "between") dVal = dMin || 0;
+
+                    return {
+                      ...r,
+                      heightVal: hVal,
+                      heightMin: hMin,
+                      heightMax: hMax,
+                      depthVal: dVal,
+                      depthMin: dMin,
+                      depthMax: dMax,
+                      tempCompKey: "",
+                      tempExcludeKey: "",
+                      componentKeywords: r.componentKeywords || [],
+                      excludeComponentKeywords:
+                        r.excludeComponentKeywords || [],
+                      _isExpanded: true,
+                    };
+                  });
+                  cabinets.value = res.data.cabinets || [];
+                  if (res.data.config) {
+                    writeSummaryN.value =
+                      res.data.config.writeSummaryN !== false;
+                    writeSummaryD.value =
+                      res.data.config.writeSummaryD === true;
+                    writeDetailD.value = res.data.config.writeDetailD === true;
+                  }
+                } else if (res.action === "sheetSwitched") {
+                  cabinets.value = res.data || [];
+                } else if (res.action === "configSaved") {
+                  isSavingConfig.value = false;
+                  if (res.success) {
+                    ElementPlus.ElMessage.success("管道规则配置已持久化保存！");
+                  } else {
+                    ElementPlus.ElMessage.error(
+                      "保存配置失败: " + (res.message || ""),
+                    );
+                  }
+                } else if (res.action === "applyFinished") {
+                  isApplying.value = false;
+                  if (res.success) {
+                    ElementPlus.ElMessage.success({
+                      message: res.message || "型号批量回写成功！",
+                      duration: 2500,
+                    });
+                    setTimeout(() => {
+                      closeWindow();
+                    }, 1200);
+                  } else {
+                    ElementPlus.ElMessage.error(
+                      res.message || "回写发生错误！",
+                    );
+                  }
+                }
+              });
+            }
+
+            // 通知 C# 请求初始化数据
+            postToCSharp({ action: "getInitData" });
+
+            // 容错双重保证：800ms 后若未收到数据，自动重发一次请求
+            setTimeout(() => {
+              if (sheetNames.value.length === 0 && rules.value.length === 0) {
+                postToCSharp({ action: "getInitData" });
+              }
+            }, 800);
+          });
+
+          return {
+            sheetNames,
+            selectedSheetName,
+            rules,
+            cabinets,
+            searchKeyword,
+            filteredCabinets,
+            isApplying,
+            isSavingConfig,
+            writeSummaryN,
+            writeSummaryD,
+            writeDetailD,
+            hitCount,
+            fallbackCount,
+            isAllSelected,
+            isIndeterminate,
+            showAddRuleDialog,
+            newRule,
+            newRuleTempKeywords,
+            newRuleTempExcludeKeywords,
+            showEditRuleDialog,
+            editingRule,
+            editTempCompKey,
+            editTempExcludeKey,
+            getRuleSummary,
+            openEditRuleDialog,
+            confirmEditRule,
+            startDrag,
+            closeWindow,
+            addKeyword,
+            removeKeyword,
+            moveRuleUp,
+            moveRuleDown,
+            deleteRule,
+            toggleRuleExpand,
+            openAddRuleDialog,
+            confirmAddNewRule,
+            resetToDefaultRules,
+            savePipelineConfig,
+            triggerReEvaluate,
+            toggleSelectAll,
+            handleSheetChange,
+            refreshCurrentSheetData,
+            runPipelineEvaluation,
+            submitBatchApply,
+            syncHeightVal,
+            syncDepthVal,
+            handleHeightConditionChange,
+            handleDepthConditionChange,
+          };
+        },
+      })
+        .use(ElementPlus)
+        .mount("#app");
+    </script>
+  </body>
+</html>

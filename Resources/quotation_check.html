@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>报价智能核验与防错体检</title>
+  <!-- 引入 Element Plus 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <!-- 引入 Font Awesome 6 图标库 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- 引入 Vue 3 核心库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入 Element Plus 组件库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <style>
+    /* 全局盒模型重置与防水平溢出 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+      user-select: none;
+      background-color: #f1f5f9;
+      color: #1e293b;
+    }
+
+    /* 根应用容器采用纯 Flexbox 垂直流 */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+    }
+
+    /* 顶部无边框标题栏 (绿蓝主色调 #009688) */
+    .window-header {
+      height: 48px;
+      min-height: 48px;
+      background: linear-gradient(135deg, #009688 0%, #00796b 100%);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      cursor: move;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+      z-index: 10;
+    }
+
+    .header-title-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .header-title-box i {
+      font-size: 18px;
+      color: #80cbc4;
+    }
+
+    .header-right-tools {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: default;
+    }
+
+    .header-btn {
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: #ffffff;
+      padding: 5px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .header-btn:hover {
+      background: rgba(255, 255, 255, 0.28);
+      border-color: #ffffff;
+    }
+
+    .close-btn {
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      color: #ffffff;
+      font-size: 16px;
+    }
+
+    .close-btn:hover {
+      background-color: #e11d48;
+    }
+
+    /* 指标卡片栏 */
+    .summary-cards-bar {
+      display: grid;
+      grid-template-columns: 180px repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+      padding: 12px 16px 8px 16px;
+      background: #ffffff;
+      border-bottom: 1px solid #e2e8f0;
+      flex-shrink: 0;
+    }
+
+    .score-card {
+      background: linear-gradient(135deg, #f0fdf4 0%, #e6fffa 100%);
+      border: 1px solid #a7f3d0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+
+    .score-circle {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: #009688;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 700;
+      box-shadow: 0 2px 6px rgba(0, 150, 136, 0.35);
+      flex-shrink: 0;
+    }
+
+    .score-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .score-title {
+      font-size: 11px;
+      color: #047857;
+      font-weight: 600;
+    }
+
+    .score-desc {
+      font-size: 13px;
+      color: #0f172a;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .stat-metric-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .stat-metric-card:hover {
+      border-color: #009688;
+      background: #ffffff;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 5px rgba(0, 150, 136, 0.12);
+    }
+
+    .stat-metric-card.active {
+      border-color: #009688;
+      background: #e6fffa;
+    }
+
+    .stat-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .stat-num {
+      font-size: 20px;
+      font-weight: 700;
+      color: #1e293b;
+      margin-top: 2px;
+    }
+
+    .stat-icon {
+      font-size: 24px;
+      opacity: 0.85;
+    }
+
+    /* 过滤与操作栏 */
+    .filter-action-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 16px;
+      background: #ffffff;
+      border-bottom: 1px solid #e2e8f0;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    .filter-left-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+
+    .filter-right-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    /* 主内容视口区域 */
+    .main-body-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 8px 16px 12px 16px;
+    }
+
+    /* 选项卡容器自适应 */
+    .el-tabs {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .el-tabs__content {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .el-tab-pane {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* 表格自适应容器 */
+    .table-wrapper {
+      flex: 1;
+      overflow: hidden;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+    }
+
+    /* 表格高亮标签 */
+    .badge-error {
+      background: #fee2e2;
+      color: #dc2626;
+      border: 1px solid #fca5a5;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .badge-warning {
+      background: #fef3c7;
+      color: #d97706;
+      border: 1px solid #fcd34d;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .badge-info {
+      background: #e0f2fe;
+      color: #0284c7;
+      border: 1px solid #bae6fd;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    /* 同型号冲突卡片列表 */
+    .conflict-cards-scroll {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 4px;
+    }
+
+    .conflict-card {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 14px 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .conflict-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #f1f5f9;
+      padding-bottom: 8px;
+    }
+
+    .conflict-model-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: #0f172a;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .conflict-variants-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .variant-box {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 8px 10px;
+      background: #f8fafc;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      position: relative;
+    }
+
+    .variant-box.recommended {
+      border-color: #009688;
+      background: #f0fdfa;
+    }
+
+    .variant-tag {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      font-size: 10px;
+      background: #009688;
+      color: #fff;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    /* 底部操作反馈栏 */
+    .bottom-status-bar {
+      height: 32px;
+      min-height: 32px;
+      background: #f1f5f9;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      font-size: 12px;
+      color: #64748b;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部无边框标题栏 -->
+    <div class="window-header" @mousedown="startDrag">
+      <div class="header-title-box">
+        <i class="fa-solid fa-shield-halved"></i>
+        <span>成套设备报价智能核验与防错体检</span>
+      </div>
+      <div class="header-right-tools">
+        <button class="header-btn" @mousedown.stop @click="runAudit">
+          <i class="fa-solid fa-rotate"></i>
+          <span>重新体检</span>
+        </button>
+        <button class="header-btn" @mousedown.stop @click="fixAllFormulas" :disabled="summary.formulaBrokenCount === 0">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>
+          <span>一键恢复公式 ({{ summary.formulaBrokenCount }})</span>
+        </button>
+        <button class="header-btn" @mousedown.stop @click="cleanAllTextNumbers">
+          <i class="fa-solid fa-broom"></i>
+          <span>清洗文本数字</span>
+        </button>
+        <div class="close-btn" @mousedown.stop @click.stop="closeWindow" title="关闭窗口">
+          <i class="fa-solid fa-xmark"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- 指标总览卡片栏 -->
+    <div class="summary-cards-bar">
+      <!-- 综合健康评分 -->
+      <div class="score-card">
+        <div class="score-circle" :style="{ backgroundColor: getScoreBgColor(summary.healthScore) }">
+          {{ summary.healthScore }}
+        </div>
+        <div class="score-info">
+          <span class="score-title">报价健康指数</span>
+          <span class="score-desc">{{ getScoreEvaluation(summary.healthScore) }}</span>
+        </div>
+      </div>
+
+      <!-- 同型号价格冲突卡片 -->
+      <div class="stat-metric-card" :class="{ active: currentCategoryFilter === 'PriceConflict' }" @click="setCategoryFilter('PriceConflict')">
+        <div class="stat-text">
+          <span class="stat-label"><i class="fa-solid fa-code-compare" style="color:#d97706;"></i>同型号冲突</span>
+          <span class="stat-num" style="color:#d97706;">{{ summary.conflictCount }}</span>
+        </div>
+        <i class="fa-solid fa-layer-group stat-icon" style="color:#d97706;"></i>
+      </div>
+
+      <!-- 公式损毁卡片 -->
+      <div class="stat-metric-card" :class="{ active: currentCategoryFilter === 'FormulaBroken' }" @click="setCategoryFilter('FormulaBroken')">
+        <div class="stat-text">
+          <span class="stat-label"><i class="fa-solid fa-link-slash" style="color:#e11d48;"></i>公式损毁被覆写</span>
+          <span class="stat-num" style="color:#e11d48;">{{ summary.formulaBrokenCount }}</span>
+        </div>
+        <i class="fa-solid fa-square-root-variable stat-icon" style="color:#e11d48;"></i>
+      </div>
+
+      <!-- CAD图纸参数缺失 (AA/AB列) 卡片 - 用户重点要求 -->
+      <div class="stat-metric-card" :class="{ active: currentCategoryFilter === 'CadMissing' }" @click="setCategoryFilter('CadMissing')">
+        <div class="stat-text">
+          <span class="stat-label"><i class="fa-solid fa-compass-drafting" style="color:#0284c7;"></i>AA/AB图纸参数缺失</span>
+          <span class="stat-num" style="color:#0284c7;">{{ summary.cadMissingCount }}</span>
+        </div>
+        <i class="fa-solid fa-file-lines stat-icon" style="color:#0284c7;"></i>
+      </div>
+
+      <!-- 严重价格倒挂/漏价卡片 -->
+      <div class="stat-metric-card" :class="{ active: currentCategoryFilter === 'PriceInverted' }" @click="setCategoryFilter('PriceInverted')">
+        <div class="stat-text">
+          <span class="stat-label"><i class="fa-solid fa-triangle-exclamation" style="color:#ef4444;"></i>价格倒挂/严重漏价</span>
+          <span class="stat-num" style="color:#ef4444;">{{ summary.invertedPriceCount + summary.missingPriceCount }}</span>
+        </div>
+        <i class="fa-solid fa-circle-exclamation stat-icon" style="color:#ef4444;"></i>
+      </div>
+    </div>
+
+    <!-- 过滤与快速定位栏 -->
+    <div class="filter-action-bar">
+      <div class="filter-left-group">
+        <!-- 分类表选择 -->
+        <el-select v-model="selectedSheet" placeholder="全部工作表" size="small" style="width: 150px;" clearable>
+          <el-option label="全部工作表" value=""></el-option>
+          <el-option v-for="s in sheetNames" :key="s" :label="s" :value="s"></el-option>
+        </el-select>
+
+        <!-- 异常分类过滤下拉框 -->
+        <el-select v-model="currentCategoryFilter" placeholder="全部问题分类" size="small" style="width: 170px;" clearable>
+          <el-option label="全部问题 ({{ issues.length }})" value=""></el-option>
+          <el-option label="同型号价格冲突" value="PriceConflict"></el-option>
+          <el-option label="公式损毁/断链" value="FormulaBroken"></el-option>
+          <el-option label="AA/AB图纸参数缺失" value="CadMissing"></el-option>
+          <el-option label="面价/采购折扣漏填" value="MissingPrice"></el-option>
+          <el-option label="价格倒挂(亏本报价)" value="PriceInverted"></el-option>
+        </el-select>
+
+        <!-- 搜索输入框 -->
+        <el-input v-model="searchKeyword" placeholder="搜索型号 / 元件名称 / 箱柜..." size="small" prefix-icon="el-icon-search" style="width: 220px;" clearable></el-input>
+
+        <!-- 仅展示可自动修复项 -->
+        <el-checkbox v-model="onlyAutoFixable" size="small">仅看可自愈项</el-checkbox>
+      </div>
+
+      <div class="filter-right-group">
+        <span style="font-size: 12px; color: #64748b;">
+          显示 {{ filteredIssues.length }} / {{ issues.length }} 项问题
+        </span>
+      </div>
+    </div>
+
+    <!-- 主展示区 Tabs (清单视图 vs 同型号聚类对齐视图) -->
+    <div class="main-body-container">
+      <el-tabs v-model="activeTab" style="height: 100%;">
+        <!-- TAB 1: 缺陷与异常体检清单 -->
+        <el-tab-pane label="📋 报价缺陷与异常清单" name="list">
+          <div class="table-wrapper">
+            <el-table :data="filteredIssues" height="100%" stripe style="width: 100%;" size="small" @row-dblclick="handleRowDblClick" empty-text="当前暂无检测出报价异常问题，数据健康！">
+              <!-- 级别 -->
+              <el-table-column label="级别" width="70" align="center">
+                <template #default="scope">
+                  <span v-if="scope.row.severity === 'error'" class="badge-error">严重</span>
+                  <span v-else-if="scope.row.severity === 'warning'" class="badge-warning">警告</span>
+                  <span v-else class="badge-info">提示</span>
+                </template>
+              </el-table-column>
+
+              <!-- 位置定位 -->
+              <el-table-column label="位置" width="160">
+                <template #default="scope">
+                  <span style="font-weight: 600; color: #009688;">{{ scope.row.sheetName }}</span>
+                  <span style="color: #64748b; margin-left: 4px;">{{ scope.row.cabinetName }}</span>
+                  <el-tag size="small" type="info" style="margin-left: 4px;">R{{ scope.row.row }}</el-tag>
+                </template>
+              </el-table-column>
+
+              <!-- 元器件与型号 -->
+              <el-table-column label="元器件 / 规格型号" min-width="190">
+                <template #default="scope">
+                  <div style="display: flex; flex-direction: column;">
+                    <span style="font-weight: 600; color: #1e293b;">{{ scope.row.componentName || '-' }}</span>
+                    <span style="font-size: 11px; color: #475569;">{{ scope.row.model || '-' }}</span>
+                  </div>
+                </template>
+              </el-table-column>
+
+              <!-- 品牌 -->
+              <el-table-column prop="brand" label="品牌" width="80" show-overflow-tooltip></el-table-column>
+
+              <!-- 现状数值 -->
+              <el-table-column label="当前数据" width="200">
+                <template #default="scope">
+                  <div style="font-size: 11px; line-height: 1.4; color: #334155;">
+                    <div>面价: <b>{{ scope.row.basePrice || 0 }}</b> | 折扣: <b>{{ scope.row.discount || 0 }}</b></div>
+                    <div>单价: <b>{{ scope.row.saleUnitPrice || 0 }}</b> | 成本: <b>{{ scope.row.costUnitPrice || 0 }}</b></div>
+                    <div v-if="scope.row.category.includes('Cad') || scope.row.category.includes('Block')" style="color: #0284c7;">
+                      AA(图纸): <b>{{ scope.row.blockDwg || '空' }}</b> | AB(目录): <b>{{ scope.row.blockDir || '空' }}</b>
+                    </div>
+                  </div>
+                </template>
+              </el-table-column>
+
+              <!-- 异常说明与建议 -->
+              <el-table-column label="异常诊断与建议" min-width="260">
+                <template #default="scope">
+                  <div style="display: flex; flex-direction: column; gap: 2px;">
+                    <span style="font-weight: 600; color: #0f172a;">{{ scope.row.title }}</span>
+                    <span style="font-size: 11px; color: #64748b;">{{ scope.row.detail }}</span>
+                  </div>
+                </template>
+              </el-table-column>
+
+              <!-- 操作列 -->
+              <el-table-column label="操作" width="130" align="center" fixed="right">
+                <template #default="scope">
+                  <el-button size="small" type="primary" plain @click="jumpToCell(scope.row)" title="在 Excel 中高亮选中此单元格">
+                    <i class="fa-solid fa-location-crosshairs"></i> 定位
+                  </el-button>
+                  <el-button v-if="scope.row.category === 'PriceConflict'" size="small" type="warning" plain @click="openAlignDrawer(scope.row)" title="同型号批量对齐">
+                    对齐
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-tab-pane>
+
+        <!-- TAB 2: 同型号全局价格对齐看板 -->
+        <el-tab-pane label="⚖️ 同型号价格冲突对齐看板" name="conflicts">
+          <div v-if="conflictGroups.length === 0" style="padding: 40px; text-align: center; color: #009688;">
+            <i class="fa-solid fa-circle-check" style="font-size: 40px; margin-bottom: 12px;"></i>
+            <div style="font-size: 15px; font-weight: 600;">全项目未发现同型号价格分歧！所有元器件已实现同物同价。</div>
+          </div>
+
+          <div v-else class="conflict-cards-scroll">
+            <div v-for="group in conflictGroups" :key="group.modelKey" class="conflict-card">
+              <div class="conflict-card-header">
+                <div class="conflict-model-name">
+                  <i class="fa-solid fa-tags" style="color: #009688;"></i>
+                  <span>{{ group.model }}</span>
+                  <el-tag size="small" type="info">{{ group.brand || '默认品牌' }}</el-tag>
+                  <el-tag size="small" type="warning">{{ group.variantCount }} 种价格版本 (涉及 {{ group.totalRows }} 处回路)</el-tag>
+                </div>
+                <div>
+                  <el-button size="small" type="success" plain @click="quickAlignWithRecommended(group)" :disabled="!group.recommendedVariant">
+                    <i class="fa-solid fa-check-double"></i> 以主流推荐值一键刷平全表
+                  </el-button>
+                </div>
+              </div>
+
+              <!-- 变体分布网格 -->
+              <div class="conflict-variants-grid">
+                <div v-for="(v, idx) in group.variants" :key="idx" class="variant-box" :class="{ recommended: idx === 0 }">
+                  <span v-if="idx === 0" class="variant-tag">推荐主流 ({{ v.occurrences }}次)</span>
+                  <span v-else style="color: #64748b; font-size: 11px;">出现 {{ v.occurrences }} 次</span>
+                  <div>表价 M: <b>{{ v.basePrice }}</b> 元</div>
+                  <div>采购折扣 N: <b>{{ v.discount }}</b> (约推导单价: {{ v.derivedSalePrice }}元)</div>
+                  <div>加价系数 L: <b>{{ v.markupFactor }}</b></div>
+                  <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">代表位置: {{ v.sampleLocation }}</div>
+                  <div style="margin-top: 6px; text-align: right;">
+                    <el-button size="small" type="primary" text @click="alignModelWithVariant(group, v)">以此版本对齐全表</el-button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </div>
+
+    <!-- 底部状态统计栏 -->
+    <div class="bottom-status-bar">
+      <span>已扫描 {{ summary.totalCabinets }} 台箱柜、{{ summary.totalComponents }} 行元器件 | 双击列表中任意一行可秒级定位至 Excel 单元格</span>
+      <span style="color: #009688; font-weight: 600;">报价准确性守护系统 v1.0</span>
+    </div>
+
+    <!-- 同型号价格自定义对齐弹窗 -->
+    <el-dialog v-model="alignDialogVisible" title="同型号价格全表统一对齐" width="520px" destroy-on-close>
+      <div v-if="currentAlignGroup" style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="font-size: 14px; font-weight: 600; color: #1e293b;">
+          型号: {{ currentAlignGroup.model }} ({{ currentAlignGroup.brand || '全品牌' }})
+        </div>
+        <div style="font-size: 12px; color: #64748b;">
+          确认后，将把该型号在全工作簿所有分类表回路中的面价、折扣与系数统一刷新，并自愈计算公式。
+        </div>
+
+        <el-form label-width="110px" size="small">
+          <el-form-item label="统一面价 (M列)">
+            <el-input-number v-model="alignForm.targetBasePrice" :min="0" :precision="2" style="width: 100%;"></el-input-number>
+          </el-form-item>
+          <el-form-item label="统一折扣 (N列)">
+            <el-input-number v-model="alignForm.targetDiscount" :min="0" :max="10" :precision="4" :step="0.05" style="width: 100%;"></el-input-number>
+          </el-form-item>
+          <el-form-item label="统一加价 (L列)">
+            <el-input-number v-model="alignForm.targetMarkupFactor" :min="0.5" :max="5" :precision="2" :step="0.05" style="width: 100%;"></el-input-number>
+          </el-form-item>
+          <el-form-item label="联动公式重置">
+            <el-switch v-model="alignForm.resetFormulas" active-text="同步恢复 =ROUND(M*L*N,2) 动态公式"></el-switch>
+          </el-form-item>
+        </el-form>
+      </div>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="alignDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="submitAlignModelPrice">确认对齐至全表</el-button>
+        </span>
+      </template>
+    </el-dialog>
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    createApp({
+      setup() {
+        // 活动 Tab 标签页
+        const activeTab = ref('list');
+
+        // 诊断数据源
+        const summary = ref({
+          healthScore: 100,
+          totalIssues: 0,
+          errorCount: 0,
+          warningCount: 0,
+          infoCount: 0,
+          conflictCount: 0,
+          formulaBrokenCount: 0,
+          missingPriceCount: 0,
+          cadMissingCount: 0,
+          invertedPriceCount: 0,
+          totalCabinets: 0,
+          totalComponents: 0
+        });
+
+        const issues = ref([]);
+        const conflictGroups = ref([]);
+        const sheetNames = ref([]);
+
+        // 筛选状态
+        const selectedSheet = ref('');
+        const currentCategoryFilter = ref('');
+        const searchKeyword = ref('');
+        const onlyAutoFixable = ref(false);
+
+        // 同型号对齐弹窗状态
+        const alignDialogVisible = ref(false);
+        const currentAlignGroup = ref(null);
+        const alignForm = ref({
+          targetBasePrice: 0,
+          targetDiscount: 1,
+          targetMarkupFactor: 1,
+          resetFormulas: true
+        });
+
+        // 跨进程 IPC 安全发送
+        const postToCSharp = (payload) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(payload);
+          }
+        };
+
+        // 拖拽窗口
+        const startDrag = (e) => {
+          if (e.target && e.target.closest('.header-btn, .close-btn, input, button')) return;
+          postToCSharp({ action: 'dragWindow' });
+        };
+
+        // 关闭窗口
+        const closeWindow = () => {
+          postToCSharp({ action: 'closeWindow' });
+        };
+
+        // 执行体检
+        const runAudit = () => {
+          postToCSharp({ action: 'runAudit' });
+        };
+
+        // 定位单元格
+        const jumpToCell = (item) => {
+          postToCSharp({
+            action: 'jumpToCell',
+            sheetName: item.sheetName,
+            row: item.row,
+            colLetter: item.targetCol || 'C'
+          });
+        };
+
+        // 双击列表行秒级定位
+        const handleRowDblClick = (row) => {
+          jumpToCell(row);
+        };
+
+        // 一键恢复所有公式
+        const fixAllFormulas = () => {
+          postToCSharp({ action: 'fixFormulas', issueIds: [] });
+        };
+
+        // 一键清洗文本数字
+        const cleanAllTextNumbers = () => {
+          postToCSharp({ action: 'cleanTextNumbers' });
+        };
+
+        // 快速使用推荐版本对齐
+        const quickAlignWithRecommended = (group) => {
+          if (!group || !group.recommendedVariant) return;
+          alignModelWithVariant(group, group.recommendedVariant);
+        };
+
+        // 使用指定变体版本对齐
+        const alignModelWithVariant = (group, variant) => {
+          postToCSharp({
+            action: 'alignModelPrice',
+            params: {
+              modelKey: group.modelKey,
+              model: group.model,
+              brand: group.brand,
+              targetBasePrice: variant.basePrice,
+              targetDiscount: variant.discount,
+              targetMarkupFactor: variant.markupFactor,
+              resetFormulas: true
+            }
+          });
+        };
+
+        // 打开对齐自定义弹窗
+        const openAlignDrawer = (item) => {
+          const grp = conflictGroups.value.find(g => g.model === item.model);
+          if (grp) {
+            currentAlignGroup.value = grp;
+            alignForm.value = {
+              targetBasePrice: grp.recommendedVariant ? grp.recommendedVariant.basePrice : item.basePrice,
+              targetDiscount: grp.recommendedVariant ? grp.recommendedVariant.discount : item.discount,
+              targetMarkupFactor: grp.recommendedVariant ? grp.recommendedVariant.markupFactor : item.markupFactor,
+              resetFormulas: true
+            };
+            alignDialogVisible.value = true;
+          }
+        };
+
+        // 提交自定义对齐
+        const submitAlignModelPrice = () => {
+          if (!currentAlignGroup.value) return;
+          postToCSharp({
+            action: 'alignModelPrice',
+            params: {
+              modelKey: currentAlignGroup.value.modelKey,
+              model: currentAlignGroup.value.model,
+              brand: currentAlignGroup.value.brand,
+              targetBasePrice: alignForm.value.targetBasePrice,
+              targetDiscount: alignForm.value.targetDiscount,
+              targetMarkupFactor: alignForm.value.targetMarkupFactor,
+              resetFormulas: alignForm.value.resetFormulas
+            }
+          });
+          alignDialogVisible.value = false;
+        };
+
+        // 切换指标分类筛选
+        const setCategoryFilter = (cat) => {
+          if (cat === 'PriceConflict') {
+            // 切至对齐 Tab
+            activeTab.value = 'conflicts';
+          } else {
+            activeTab.value = 'list';
+            currentCategoryFilter.value = currentCategoryFilter.value === cat ? '' : cat;
+          }
+        };
+
+        // 健康分背景色
+        const getScoreBgColor = (score) => {
+          if (score >= 90) return '#009688';
+          if (score >= 75) return '#f59e0b';
+          return '#e11d48';
+        };
+
+        // 健康分等级评定
+        const getScoreEvaluation = (score) => {
+          if (score >= 95) return '卓越 (零致命缺陷)';
+          if (score >= 85) return '优良 (存在少量提醒)';
+          if (score >= 70) return '中等 (需关注公式与参数)';
+          return '风险 (存在价格倒挂/漏价)';
+        };
+
+        // 过滤后的清单
+        const filteredIssues = computed(() => {
+          return issues.value.filter(item => {
+            // 工作表过滤
+            if (selectedSheet.value && item.sheetName !== selectedSheet.value) return false;
+
+            // 分类过滤
+            if (currentCategoryFilter.value) {
+              if (currentCategoryFilter.value === 'CadMissing') {
+                if (!item.category.includes('Cad') && !item.category.includes('Block')) return false;
+              } else if (item.category !== currentCategoryFilter.value) {
+                return false;
+              }
+            }
+
+            // 仅自愈
+            if (onlyAutoFixable.value && !item.canAutoFix) return false;
+
+            // 关键词模糊搜索
+            if (searchKeyword.value) {
+              const kw = searchKeyword.value.trim().toLowerCase();
+              const m = (item.model || '').toLowerCase();
+              const n = (item.componentName || '').toLowerCase();
+              const c = (item.cabinetName || '').toLowerCase();
+              const t = (item.title || '').toLowerCase();
+              if (!m.includes(kw) && !n.includes(kw) && !c.includes(kw) && !t.includes(kw)) return false;
+            }
+
+            return true;
+          });
+        });
+
+        // 监听 C# 回传的 IPC 消息
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (event) => {
+              let res = event.data;
+              if (typeof res === 'string') {
+                try { res = JSON.parse(res); } catch { return; }
+              }
+              if (!res || !res.action) return;
+
+              switch (res.action) {
+                case 'auditDataLoaded':
+                  if (res.data && res.data.success) {
+                    summary.value = res.data.summary || summary.value;
+                    issues.value = res.data.issues || [];
+                    conflictGroups.value = res.data.conflictGroups || [];
+                    sheetNames.value = res.data.sheetNames || [];
+                  } else {
+                    ElementPlus.ElMessage.error(res.data?.message || '报价体检加载失败');
+                  }
+                  break;
+
+                case 'formulaFixed':
+                  if (res.success) {
+                    ElementPlus.ElMessage.success(res.message);
+                  } else {
+                    ElementPlus.ElMessage.error(res.message);
+                  }
+                  break;
+
+                case 'modelAligned':
+                  if (res.success) {
+                    ElementPlus.ElMessage.success(res.message);
+                  } else {
+                    ElementPlus.ElMessage.error(res.message);
+                  }
+                  break;
+
+                case 'textNumbersCleaned':
+                  if (res.success) {
+                    ElementPlus.ElMessage.success(res.message);
+                  } else {
+                    ElementPlus.ElMessage.error(res.message);
+                  }
+                  break;
+              }
+            });
+          }
+
+          // 自动启动初始体检
+          setTimeout(() => {
+            runAudit();
+          }, 300);
+        });
+
+        return {
+          activeTab,
+          summary,
+          issues,
+          conflictGroups,
+          sheetNames,
+          selectedSheet,
+          currentCategoryFilter,
+          searchKeyword,
+          onlyAutoFixable,
+          filteredIssues,
+          alignDialogVisible,
+          currentAlignGroup,
+          alignForm,
+          startDrag,
+          closeWindow,
+          runAudit,
+          jumpToCell,
+          handleRowDblClick,
+          fixAllFormulas,
+          cleanAllTextNumbers,
+          quickAlignWithRecommended,
+          alignModelWithVariant,
+          openAlignDrawer,
+          submitAlignModelPrice,
+          setCategoryFilter,
+          getScoreBgColor,
+          getScoreEvaluation
+        };
+      }
+    }).use(ElementPlus).mount('#app');
+  </script>
+</body>
+</html>

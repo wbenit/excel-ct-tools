@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>导出人工清单 - 选择分类表</title>
+  <!-- 引入 Element Plus 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <!-- 引入 Font Awesome 图标库 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- 引入 Vue 3 核心库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入 Element Plus 组件库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <style>
+    /* 全局重置与防溢出 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* 页面基底弹性布局 */
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+      user-select: none;
+      background-color: #f8fafc;
+      color: #334155;
+    }
+
+    /* 主应用容器，无水平滚动条 */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      border: 1px solid #cbd5e1;
+      background-color: #ffffff;
+      overflow: hidden;
+    }
+
+    /* 顶部无边框拖拽标题栏 (主色调 #009688，绿蓝渐变) */
+    .window-header {
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      background: linear-gradient(135deg, #009688 0%, #00796b 100%);
+      color: #ffffff;
+      cursor: move;
+      flex-shrink: 0;
+      touch-action: none;
+      box-shadow: 0 2px 4px rgba(0, 150, 136, 0.15);
+    }
+
+    /* 标题区域 */
+    .window-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    /* 关闭窗口按钮 */
+    .close-btn {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      opacity: 0.85;
+      transition: all 0.2s ease;
+    }
+
+    .close-btn:hover {
+      opacity: 1;
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+
+    /* 窗口主体内容区域 (纵向弹性布局) */
+    .window-body {
+      flex: 1;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      background-color: #f8fafc;
+    }
+
+    /* 项目信息卡片 */
+    .project-card {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+
+    .project-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #0f172a;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .project-name i {
+      color: #009688;
+    }
+
+    .project-stat {
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    /* 分类卡片区域 */
+    .category-section {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+      min-height: 180px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px dashed #e2e8f0;
+      padding-bottom: 8px;
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #334155;
+    }
+
+    /* 分类勾选列表 */
+    .category-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow-y: auto;
+      flex: 1;
+      max-height: 190px;
+      padding-right: 4px;
+    }
+
+    /* 单个分类行项 */
+    .category-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-radius: 4px;
+      border: 1px solid #e2e8f0;
+      background-color: #ffffff;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .category-item:hover {
+      border-color: #80cbc4;
+      background-color: #e0f2f1;
+    }
+
+    .category-item.selected {
+      border-color: #009688;
+      background-color: #e0f2f1;
+    }
+
+    .cabinet-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background-color: #e2e8f0;
+      color: #475569;
+      font-weight: 500;
+    }
+
+    .category-item.selected .cabinet-badge {
+      background-color: #009688;
+      color: #ffffff;
+    }
+
+    /* 底部操作工具栏 */
+    .window-footer {
+      height: 52px;
+      padding: 0 16px;
+      background-color: #ffffff;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .summary-text {
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    .summary-text b {
+      color: #009688;
+      font-weight: 600;
+    }
+
+    /* 自定义 Element Plus 按钮与主色调对齐 */
+    .el-button--primary {
+      background-color: #009688 !important;
+      border-color: #009688 !important;
+    }
+
+    .el-button--primary:hover {
+      background-color: #00796b !important;
+      border-color: #00796b !important;
+    }
+
+    .el-checkbox__input.is-checked .el-checkbox__inner {
+      background-color: #009688 !important;
+      border-color: #009688 !important;
+    }
+
+    .el-checkbox__input.is-indeterminate .el-checkbox__inner {
+      background-color: #009688 !important;
+      border-color: #009688 !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部原生拖拽标题栏 -->
+    <div class="window-header" @mousedown="handleHeaderMouseDown">
+      <div class="window-title">
+        <i class="fa-solid fa-user-gear"></i>
+        <span>导出成套设备【人工清单】</span>
+      </div>
+      <div class="close-btn" @click="closeWindow">
+        <i class="fa-solid fa-xmark"></i>
+      </div>
+    </div>
+
+    <!-- 窗口主体内容 -->
+    <div class="window-body" v-loading="loading" element-loading-text="正在汇总生成人工清单...">
+      <!-- 工程项目名称概览 -->
+      <div class="project-card">
+        <div class="project-name">
+          <i class="fa-solid fa-folder-open"></i>
+          <span>{{ projectName || '未命名工程项目' }}</span>
+        </div>
+        <div class="project-stat">
+          <span>共 {{ totalCabinets }} 台箱柜</span>
+        </div>
+      </div>
+
+      <!-- 分类表选择区域 -->
+      <div class="category-section">
+        <div class="section-header">
+          <span class="section-title">选择要参与导出的分类表</span>
+          <!-- 全选与反选复选框 -->
+          <el-checkbox
+            v-model="checkAll"
+            :indeterminate="isIndeterminate"
+            @change="handleCheckAllChange"
+            size="small"
+          >
+            全选所有分类 ({{ selectedCount }}/{{ categories.length }})
+          </el-checkbox>
+        </div>
+
+        <!-- 分类表列表卡片 -->
+        <div class="category-list">
+          <div
+            v-for="cat in categories"
+            :key="cat.sheetName"
+            class="category-item"
+            :class="{ selected: cat.isSelected }"
+            @click="toggleCategory(cat)"
+          >
+            <el-checkbox
+              v-model="cat.isSelected"
+              @change="handleCategoryChange"
+              @click.stop
+            >
+              {{ cat.sheetName }}
+            </el-checkbox>
+            <span class="cabinet-badge">{{ cat.cabinetCount }} 台</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部操作按钮栏 -->
+    <div class="window-footer">
+      <div class="summary-text">
+        <span>已选中: <b>{{ selectedCabinetCount }}</b> 台箱柜</span>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <el-button size="small" @click="closeWindow">取消</el-button>
+        <el-button
+          type="primary"
+          size="small"
+          :disabled="selectedCount === 0 || loading"
+          @click="startExport"
+        >
+          <i class="fa-solid fa-file-export" style="margin-right: 4px;"></i>
+          立即生成
+        </el-button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    // 创建 Vue 3 应用程序，严格使用组合式架构
+    createApp({
+      setup() {
+        // 项目名称
+        const projectName = ref('');
+        // 分类工作表列表
+        const categories = ref([]);
+        // 是否正在加载
+        const loading = ref(false);
+        // 是否已存在人工清单工作表标志
+        const hasExistingLaborList = ref(false);
+
+        // 已勾选的分类数量
+        const selectedCount = computed(() => {
+          return categories.value.filter(c => c.isSelected).length;
+        });
+
+        // 已勾选分类包含的总箱柜台数
+        const selectedCabinetCount = computed(() => {
+          return categories.value
+            .filter(c => c.isSelected)
+            .reduce((sum, c) => sum + (c.cabinetCount || 0), 0);
+        });
+
+        // 工程总箱柜数
+        const totalCabinets = computed(() => {
+          return categories.value.reduce((sum, c) => sum + (c.cabinetCount || 0), 0);
+        });
+
+        // 全选状态
+        const checkAll = computed({
+          get: () => categories.value.length > 0 && selectedCount.value === categories.value.length,
+          set: (val) => handleCheckAllChange(val)
+        });
+
+        // 半选状态
+        const isIndeterminate = computed(() => {
+          return selectedCount.value > 0 && selectedCount.value < categories.value.length;
+        });
+
+        // 全选切换
+        const handleCheckAllChange = (val) => {
+          categories.value.forEach(c => c.isSelected = val);
+        };
+
+        // 单项勾选变更
+        const handleCategoryChange = () => {
+          // 状态由 computed 自动响应
+        };
+
+        // 点击卡片切换单项勾选
+        const toggleCategory = (cat) => {
+          cat.isSelected = !cat.isSelected;
+        };
+
+        // 顶部拖拽处理 (解耦原生消息，防范幽灵鼠标死锁)
+        const handleHeaderMouseDown = (e) => {
+          if (e.target.closest('.close-btn')) return;
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage({ action: 'dragWindow' });
+          }
+        };
+
+        // 关闭向导窗口
+        const closeWindow = () => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage({ action: 'closeWindow' });
+          }
+        };
+
+        // 开始执行导出
+        const startExport = async () => {
+          const selected = categories.value
+            .filter(c => c.isSelected)
+            .map(c => c.sheetName);
+
+          if (selected.length === 0) {
+            ElementPlus.ElMessage.warning('请至少勾选一个分类工作表！');
+            return;
+          }
+
+          // 若工作簿中已存在人工清单，采用 Element Plus 纯前端弹窗确认 (100% 零 Win32 假死)
+          if (hasExistingLaborList.value) {
+            try {
+              await ElementPlus.ElMessageBox.confirm(
+                '当前工作簿已存在【人工清单】工作表！\n重新生成将覆盖并重置该表，是否继续？',
+                '覆盖确认',
+                {
+                  confirmButtonText: '确定覆盖',
+                  cancelButtonText: '取消',
+                  type: 'warning',
+                  center: true
+                }
+              );
+            } catch {
+              // 用户点击取消，直接安全返回
+              return;
+            }
+          }
+
+          loading.value = true;
+
+          // 投递导出指令至 C# 宿主
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage({
+              action: 'exportLaborList',
+              selectedCategories: selected
+            });
+          }
+        };
+
+        // 监听 C# 后端回传的消息
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (event) => {
+              const res = event.data;
+              if (!res) return;
+
+              // 1. 初始化数据加载完成
+              if (res.action === 'initDataLoaded') {
+                projectName.value = res.projectName || '';
+                categories.value = (res.categories || []).map(c => ({
+                  ...c,
+                  isSelected: true
+                }));
+                hasExistingLaborList.value = !!res.hasExistingLaborList;
+                loading.value = false;
+              }
+
+              // 2. 导出完成通知
+              else if (res.action === 'exportCompleted') {
+                loading.value = false;
+                if (res.success) {
+                  ElementPlus.ElMessage.success(
+                    `人工清单导出成功！共计 ${res.cabinetCount} 台箱柜，工费合计 ${Number(res.totalAmount).toLocaleString()} 元`
+                  );
+                  // 延时 1.2 秒后平滑关闭向导窗口
+                  setTimeout(() => {
+                    closeWindow();
+                  }, 1200);
+                } else {
+                  ElementPlus.ElMessage.error(res.message || '导出人工清单失败');
+                }
+              }
+            });
+
+            // 请求加载初始化数据
+            loading.value = true;
+            window.chrome.webview.postMessage({ action: 'getInitData' });
+          }
+        });
+
+        return {
+          projectName,
+          categories,
+          loading,
+          hasExistingLaborList,
+          selectedCount,
+          selectedCabinetCount,
+          totalCabinets,
+          checkAll,
+          isIndeterminate,
+          handleCheckAllChange,
+          handleCategoryChange,
+          toggleCategory,
+          handleHeaderMouseDown,
+          closeWindow,
+          startExport
+        };
+      }
+    }).use(ElementPlus).mount('#app');
+  </script>
+</body>
+</html>
