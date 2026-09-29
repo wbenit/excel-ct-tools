@@ -43,6 +43,9 @@ namespace ExcelAddInDemo
 
             // 统一注销 Excel 全局事件并清理注册的右键菜单控件，保障环境整洁
             ExcelEventManager.UnregisterEvents();
+
+            // 安全清理与释放 AutoCAD 嵌入窗口，确保 CAD 归还至独立桌面状态，防止随 Excel 异常退出
+            Services.CadEmbedManager.Cleanup();
         }
 
         /// <summary>

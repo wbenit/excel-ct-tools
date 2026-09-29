@@ -218,16 +218,16 @@ namespace ExcelAddInDemo
             <!-- 默认费用设定子菜单选项 (同样配置 AccountingFormat 图标) -->
             <button id='btnFeeSettingSub' label='费用设定' imageMso='AccountingFormat' onAction='OnMenuAction' />
           </menu>
-          <!-- 撤销/还原下拉菜单 -->
+          <!-- 撤销/还原下拉菜单 (动态标记撤销与还原内容，不绑定快捷键) -->
           <menu id='menuUndoRedo' label='撤销/还原' imageMso='Undo' size='large'>
-            <!-- 1. 撤销指令 (Ctrl+Z) -->
-            <button id='btnUndoAction' label='撤销 (Ctrl+Z)' imageMso='Undo' screentip='撤销 (Ctrl+Z)' supertip='撤销上一步执行的操作（支持批量物料匹配、单项回填、右键筛选等）' onAction='OnMenuAction' />
-            <!-- 2. 还原/重做指令 (Ctrl+Y) -->
-            <button id='btnRedoAction' label='还原 (Ctrl+Y)' imageMso='Redo' screentip='还原/重做 (Ctrl+Y)' supertip='还原已被撤销的操作' onAction='OnMenuAction' />
+            <!-- 1. 撤销指令 (动态显示可撤销内容，禁用快捷键) -->
+            <button id='btnUndoAction' getLabel='GetUndoLabel' imageMso='Undo' getScreentip='GetUndoScreentip' getSupertip='GetUndoSupertip' getEnabled='GetUndoEnabled' onAction='OnMenuAction' />
+            <!-- 2. 还原/重做指令 (动态显示可还原内容，禁用快捷键) -->
+            <button id='btnRedoAction' getLabel='GetRedoLabel' imageMso='Redo' getScreentip='GetRedoScreentip' getSupertip='GetRedoSupertip' getEnabled='GetRedoEnabled' onAction='OnMenuAction' />
             <!-- 分割线 -->
             <menuSeparator id='sepUndoRedo' />
             <!-- 3. 清空历史记录 -->
-            <button id='btnClearUndoHistory' label='清空撤销历史' imageMso='Delete' screentip='清空历史记录' supertip='清空当前已记录的撤销与重做历史栈' onAction='OnMenuAction' />
+            <button id='btnClearUndoHistory' label='清空撤销历史' imageMso='Delete' screentip='清空撤销历史' supertip='清空当前已记录的全部撤销与重做历史记录' getEnabled='GetClearHistoryEnabled' onAction='OnMenuAction' />
           </menu>
         </group>
         <!-- ④出报表 功能分组 -->
@@ -281,6 +281,8 @@ namespace ExcelAddInDemo
               <button id='btnSpotlightModeCol' label='仅高亮当前列' imageMso='TableColumnSelect' onAction='OnMenuAction' />
             </menu>
           </splitButton>
+          <!-- AutoCAD 嵌入协同任务窗格按钮 -->
+          <button id='btnToggleCadTaskPane' label='CAD视口' imageMso='ViewSideBySide' size='large' screentip='AutoCAD 协同画图视口' supertip='在 Excel 右侧任务窗格中无缝嵌入当前 AutoCAD 绘图窗口，边看清单边画图' onAction='OnMenuAction' />
           <!-- 联动CAD夹点显示切换按钮 -->
           <toggleButton id='btnToggleCadSync' label='联动CAD' imageMso='SelectionPane' size='large' getPressed='GetCadSyncPressed' onAction='OnCadSyncAction' screentip='联动AutoCAD夹点' supertip='选中行时自动读取AA列句柄，在AutoCAD中即时高亮并激活夹点显示' />
           <!-- 右键菜单模式切换按钮 -->
@@ -628,6 +630,12 @@ namespace ExcelAddInDemo
                 // 弹出基于 WebView2 + Vue 3 的“在线查价与静默回写”工作台
                 ExcelServices.ShowOnlinePriceSearchDialog();
             }
+            // 响应“CAD视口”任务窗格开关按钮指令
+            else if (controlId == "btnToggleCadTaskPane")
+            {
+                // 切换 AutoCAD 协同任务窗格显隐并自动探测嵌入
+                ExcelServices.ToggleCadTaskPane();
+            }
             // 响应“切换右键菜单模式”按钮指令
             else if (controlId == "btnToggleContextMenuMode")
             {
@@ -698,7 +706,7 @@ namespace ExcelAddInDemo
                 // 调度业务服务分部类：智能分流或弹出分类选择向导导出成品交接单
                 ExcelServices.ShowFinishedHandoverDialogOrExport();
             }
-            // 响应“撤销 (Ctrl+Z)”按钮指令
+            // 响应“撤销”按钮指令 (标记内容，不使用快捷键)
             else if (controlId == "btnUndoAction" || controlId == "btnUndoRedoSub")
             {
                 // 若有可撤销操作则执行撤销
@@ -706,6 +714,8 @@ namespace ExcelAddInDemo
                 {
                     // 调度执行撤销业务
                     ExcelServices.Undo();
+                    // 撤销后即时刷新 Ribbon 按钮的显示文本与启用状态
+                    InvalidateRibbon();
                 }
                 else
                 {
@@ -713,7 +723,7 @@ namespace ExcelAddInDemo
                     System.Windows.Forms.MessageBox.Show("当前没有可撤销的插件操作记录。", "撤销提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
                 }
             }
-            // 响应“还原/重做 (Ctrl+Y)”按钮指令
+            // 响应“还原/重做”按钮指令 (标记内容，不使用快捷键)
             else if (controlId == "btnRedoAction")
             {
                 // 若有可还原重做操作则执行重做
@@ -721,6 +731,8 @@ namespace ExcelAddInDemo
                 {
                     // 调度执行重做业务
                     ExcelServices.Redo();
+                    // 还原后即时刷新 Ribbon 按钮的显示文本与启用状态
+                    InvalidateRibbon();
                 }
                 else
                 {
@@ -733,9 +745,124 @@ namespace ExcelAddInDemo
             {
                 // 调度执行清空所有历史
                 ExcelServices.ClearUndoHistory();
+                // 即时刷新 Ribbon 控件状态为禁用/无记录
+                InvalidateRibbon();
                 // 弹出清空成功提示
                 System.Windows.Forms.MessageBox.Show("已成功清空所有撤销与还原历史记录！", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
+
+        #region 撤销/还原动态标记与状态控制回调 (无快捷键)
+
+        /// <summary>
+        /// 动态获取撤销按钮的显示标签：标记具体可撤销的内容，不包含快捷键
+        /// </summary>
+        public string GetUndoLabel(IRibbonControl control)
+        {
+            // 判断当前是否有可撤销记录
+            if (ExcelServices.CanUndo)
+            {
+                // 获取当前可撤销操作的业务描述
+                string name = ExcelServices.CurrentUndoName ?? "上一步操作";
+                // 若描述文本过长则进行安全截断保护，防止溢出功能区
+                return name.Length > 16 ? $"撤销: {name.Substring(0, 15)}..." : $"撤销: {name}";
+            }
+            // 无记录时返回默认纯净标签 (杜绝出现快捷键)
+            return "撤销 (无)";
+        }
+
+        /// <summary>
+        /// 动态获取还原按钮的显示标签：标记具体可还原的内容，不包含快捷键
+        /// </summary>
+        public string GetRedoLabel(IRibbonControl control)
+        {
+            // 判断当前是否有可还原重做记录
+            if (ExcelServices.CanRedo)
+            {
+                // 获取当前可还原操作的业务描述
+                string name = ExcelServices.CurrentRedoName ?? "上一步操作";
+                // 若描述文本过长则进行安全截断保护
+                return name.Length > 16 ? $"还原: {name.Substring(0, 15)}..." : $"还原: {name}";
+            }
+            // 无记录时返回默认纯净标签 (杜绝出现快捷键)
+            return "还原 (无)";
+        }
+
+        /// <summary>
+        /// 动态获取撤销按钮的屏幕提示 (Screentip)
+        /// </summary>
+        public string GetUndoScreentip(IRibbonControl control)
+        {
+            // 若有可撤销记录展示明确操作名，否则展示无记录提示
+            return ExcelServices.CanUndo ? $"撤销: {ExcelServices.CurrentUndoName}" : "暂无可撤销记录";
+        }
+
+        /// <summary>
+        /// 动态获取还原按钮的屏幕提示 (Screentip)
+        /// </summary>
+        public string GetRedoScreentip(IRibbonControl control)
+        {
+            // 若有可还原记录展示明确操作名，否则展示无记录提示
+            return ExcelServices.CanRedo ? $"还原: {ExcelServices.CurrentRedoName}" : "暂无可还原记录";
+        }
+
+        /// <summary>
+        /// 动态获取撤销按钮的高级气泡提示 (Supertip)
+        /// </summary>
+        public string GetUndoSupertip(IRibbonControl control)
+        {
+            // 判断撤销状态
+            if (ExcelServices.CanUndo)
+            {
+                // 标记可撤回的内容详情
+                return $"标记撤回内容：{ExcelServices.CurrentUndoName}\n点击即可将工作表数据安全回滚至操作前状态，并在表格中自动定位高亮该内容。";
+            }
+            // 返回无记录说明
+            return "当前历史栈中没有可以撤销的插件操作记录。";
+        }
+
+        /// <summary>
+        /// 动态获取还原按钮的高级气泡提示 (Supertip)
+        /// </summary>
+        public string GetRedoSupertip(IRibbonControl control)
+        {
+            // 判断还原状态
+            if (ExcelServices.CanRedo)
+            {
+                // 标记可还原的内容详情
+                return $"标记还原内容：{ExcelServices.CurrentRedoName}\n点击即可重新应用已被撤销的操作。";
+            }
+            // 返回无记录说明
+            return "当前历史栈中没有可以还原的重做操作记录。";
+        }
+
+        /// <summary>
+        /// 动态获取撤销按钮的启用/禁用状态
+        /// </summary>
+        public bool GetUndoEnabled(IRibbonControl control)
+        {
+            // 依据业务撤销栈深度动态启用或禁用
+            return ExcelServices.CanUndo;
+        }
+
+        /// <summary>
+        /// 动态获取还原按钮的启用/禁用状态
+        /// </summary>
+        public bool GetRedoEnabled(IRibbonControl control)
+        {
+            // 依据业务重做栈深度动态启用或禁用
+            return ExcelServices.CanRedo;
+        }
+
+        /// <summary>
+        /// 动态获取清空撤销历史按钮的启用状态
+        /// </summary>
+        public bool GetClearHistoryEnabled(IRibbonControl control)
+        {
+            // 仅当存在撤销或重做历史时允许点击清空
+            return ExcelServices.CanUndo || ExcelServices.CanRedo;
+        }
+
+        #endregion
     }
 }

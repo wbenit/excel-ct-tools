@@ -98,11 +98,18 @@ namespace ExcelAddInDemo
                 // 计算本次待提取的元器件连续总行数
                 int rowCount = endRow - startRow + 1;
 
-                // 规则 8: 操作前强制执行 FixAndFillCabinetNamesForSheet 校准定义名称
-                Tool.FixAndFillCabinetNamesForSheet(sheet);
-
-                // 解析定位选区首行与末行所属的箱柜信息 (使用强类型引用模型)
+                // 1. 安全边界防护：快速定位选区起始行所属箱柜
                 CabinetRowContext? startCab = FindCabinetByRow(sheet, startRow);
+                // 仅当首次未识别到箱柜且可能定义名称未就绪时，执行快速轻量嗅探自愈并重试
+                if (startCab == null)
+                {
+                    // 轻量自愈定义名称
+                    Tool.FixAndFillCabinetNamesForSheet(sheet, forceRebuild: false);
+                    // 再次尝试根据起始行定位箱柜
+                    startCab = FindCabinetByRow(sheet, startRow);
+                }
+
+                // 定位结束行所属箱柜 (若为单行复制直接复用 startCab，避免二次检索)
                 CabinetRowContext? endCab = (rowCount == 1) ? startCab : FindCabinetByRow(sheet, endRow);
 
                 // 校验：选区必须属于同一箱柜且所有行必须完整落入有效元器件区间内
@@ -243,19 +250,27 @@ namespace ExcelAddInDemo
                 int targetRow = Convert.ToInt32(activeCell.Row);
                 string targetSheetName = Convert.ToString(targetSheet.Name) ?? "";
 
-                // 规则 8: 操作前强制修复并校准定义名称
-                Tool.FixAndFillCabinetNamesForSheet(targetSheet);
-
-                // 定位当前活动行所属的目标箱柜 (强类型接收避免 DLR 异常)
+                // 1. 安全边界防护：快速定位当前活动行所属的目标箱柜 (使用强类型接收模型)
                 CabinetRowContext? targetCab = FindCabinetByRow(targetSheet, targetRow);
+                // 仅当首次未识别到箱柜且可能定义名称未就绪时，执行快速轻量嗅探自愈并重试
+                if (targetCab == null)
+                {
+                    // 轻量自愈定义名称
+                    Tool.FixAndFillCabinetNamesForSheet(targetSheet, forceRebuild: false);
+                    // 再次尝试根据目标行定位箱柜
+                    targetCab = FindCabinetByRow(targetSheet, targetRow);
+                }
+
                 // 校验目标箱柜对象有效性
                 if (targetCab == null)
                 {
+                    // 弹出未能识别箱柜警示提示
                     System.Windows.Forms.MessageBox.Show(
                         "未检测到当前选区所属的箱柜信息，请在箱柜明细表内操作！",
                         "提示",
                         System.Windows.Forms.MessageBoxButtons.OK,
                         System.Windows.Forms.MessageBoxIcon.Warning);
+                    // 阻断插入
                     return;
                 }
 
@@ -271,9 +286,9 @@ namespace ExcelAddInDemo
                     targetRow = targetCab.CompStartRow;
                 }
 
-                // 获取剪贴板数据实体
-                // 获取剪贴板数据实体
+                // 获取全局剪贴板数据实体
                 var clipData = ComponentClipboardManager.Get();
+                // 校验剪贴板数据有效性
                 if (clipData == null) return;
 
                 // 读取待插入的元器件行数 (默认兼容单行为 1)
@@ -289,37 +304,68 @@ namespace ExcelAddInDemo
                 // 【核心指示落地】：复制剪切到不同的箱柜的时候 CadHandle 不要复制
                 if (isCrossCabinet)
                 {
+                    // 提取 CadHandle 列索引
                     int hIdx = CadHandleColIndex; // 1-based 下标
+                    // 提取 CadHandleB 列索引
                     int hbIdx = CadHandleBColIndex;
+                    // 提取二维数组总列数
                     int maxCols = valuesToWrite.GetLength(1);
                     // 批量清空全部待写入行的 CadHandle 与 HandleB
                     for (int r = 1; r <= rowCount; r++)
                     {
+                        // 若未越界则清空第一 Handle
                         if (hIdx <= maxCols) valuesToWrite[r, hIdx] = null;
+                        // 若未越界则清空第二 Handle
                         if (hbIdx <= maxCols) valuesToWrite[r, hbIdx] = null;
                     }
                 }
 
-                // 挂起屏幕刷新与自动计算以提速 COM 执行
+                // 备份原始状态以便退出时安全恢复
+                bool prevUpdating = false;
+                XlCalculation prevCalc = XlCalculation.xlCalculationAutomatic;
+                bool prevEvents = true;
+                bool prevAlerts = true;
+                try
+                {
+                    // 备份屏幕刷新状态
+                    prevUpdating = Convert.ToBoolean(app.ScreenUpdating);
+                    // 备份计算模式
+                    prevCalc = (XlCalculation)app.Calculation;
+                    // 备份系统事件响应状态
+                    prevEvents = Convert.ToBoolean(app.EnableEvents);
+                    // 备份警告提示弹窗状态
+                    prevAlerts = Convert.ToBoolean(app.DisplayAlerts);
+                }
+                catch { }
+
+                // 挂起屏幕刷新与事件分发，彻底阻断事件雪崩并获得原生秒级响应
                 app.ScreenUpdating = false;
                 app.Calculation = XlCalculation.xlCalculationManual;
+                app.EnableEvents = false;
+                app.DisplayAlerts = false;
 
                 try
                 {
                     // 在目标位置执行物理批量整块下推插入 (Shift Down，一次性插入 rowCount 行)
                     dynamic insertRows = targetSheet.Range[targetSheet.Rows[targetRow], targetSheet.Rows[targetRow + rowCount - 1]];
+                    // 执行原生向下平移插入行
                     insertRows.Insert(XlInsertShiftDirection.xlShiftDown);
 
                     // 写入整行数据矩阵 (单次 COM 批量写入，规则 7)
                     int writeCols = valuesToWrite.GetLength(1);
+                    // 定位待写入的完整目标矩形区域
                     dynamic insertRange = targetSheet.Range[targetSheet.Cells[targetRow, 1], targetSheet.Cells[targetRow + rowCount - 1, writeCols]];
+                    // 批量写入数据矩阵
                     insertRange.Value2 = valuesToWrite;
 
                     // 批量恢复自适应标准计算公式 (F 列数量 * G 列单价，F 列数量 * J 列成本单价)
                     for (int i = 0; i < rowCount; i++)
                     {
+                        // 当前行号
                         int curR = targetRow + i;
+                        // H 列总价公式
                         targetSheet.Cells[curR, 8].Formula = $"=F{curR}*G{curR}";
+                        // K 列成本总价公式
                         targetSheet.Cells[curR, 11].Formula = $"=F{curR}*J{curR}";
                     }
 
@@ -329,10 +375,12 @@ namespace ExcelAddInDemo
                         // 来源与目标在同一张工作表，计算行号下移偏移量
                         if (string.Equals(clipData.SourceSheetName, targetSheetName, StringComparison.OrdinalIgnoreCase))
                         {
+                            // 来源物理行号
                             int actualSourceRow = clipData.SourceRowIndex;
                             // 若来源行在插入点之后，因插入了 rowCount 行导致来源行号增加了 rowCount
                             if (actualSourceRow >= targetRow)
                             {
+                                // 修正来源行号下移偏移量
                                 actualSourceRow += rowCount;
                             }
 
@@ -344,13 +392,13 @@ namespace ExcelAddInDemo
                             // 跨工作表剪切，定位来源工作表并物理删除原连续行
                             try
                             {
+                                // 获取源工作表句柄
                                 dynamic srcSheet = targetSheet.Parent.Worksheets[clipData.SourceSheetName];
+                                // 若源工作表有效则执行物理删除
                                 if (srcSheet != null)
                                 {
+                                    // 物理整块上移删除源剪切行
                                     srcSheet.Range[srcSheet.Rows[clipData.SourceRowIndex], srcSheet.Rows[clipData.SourceRowIndex + rowCount - 1]].Delete(XlDeleteShiftDirection.xlShiftUp);
-                                    // 刷新源工作表的序号与小计公式
-                                    RefreshCabinetNumbersAndSubsumFormula(srcSheet);
-                                    Tool.FixAndFillCabinetNamesForSheet(srcSheet, forceRebuild: true);
                                 }
                             }
                             catch { }
@@ -360,11 +408,7 @@ namespace ExcelAddInDemo
                         ComponentClipboardManager.Clear();
                     }
 
-                    // 重新排布目标工作表所有箱柜的 A 列连续序号，并自适应刷新小计行 SUM 公式
-                    RefreshCabinetNumbersAndSubsumFormula(targetSheet);
-
-                    // 规则 8: 插入/删除行后强制调用 FixAndFillCabinetNamesForSheet 全量更新定义名称锚点
-                    Tool.FixAndFillCabinetNamesForSheet(targetSheet, forceRebuild: true);
+                    // 方案 B：彻底砍掉全表序号重排与定义名称/超链接强制重建，完全交由 Excel 原生平移处理
 
                     // 插入粘贴完成后，动态效果消失：清除橙色流动细虚线边框状态
                     try
@@ -380,13 +424,19 @@ namespace ExcelAddInDemo
                     string resultText = rowCount > 1
                         ? $"{rowCount} 行元件 (行 {targetRow}~{targetRow + rowCount - 1})"
                         : $"行 {targetRow}: {clipData.ComponentName}";
+                    // 状态栏显示提示
                     app.StatusBar = $"[插入元件成功] {resultText} (跨柜清空Handle: {isCrossCabinet})";
                 }
                 finally
                 {
-                    // 恢复自动计算与屏幕刷新
-                    app.Calculation = XlCalculation.xlCalculationAutomatic;
-                    app.ScreenUpdating = true;
+                    // 恢复原始警告提示状态
+                    try { app.DisplayAlerts = prevAlerts; } catch { }
+                    // 恢复原始事件响应状态
+                    try { app.EnableEvents = prevEvents; } catch { }
+                    // 恢复原始公式计算模式
+                    try { app.Calculation = prevCalc; } catch { }
+                    // 恢复屏幕刷新
+                    try { app.ScreenUpdating = prevUpdating; } catch { }
                 }
             }
             catch (Exception ex)
@@ -399,121 +449,164 @@ namespace ExcelAddInDemo
 
         /// <summary>
         /// 删除当前选中的元器件整行 (快捷键 Ctrl+Shift+D 或右键菜单【删除元件】触发)
-        /// 核心保障：杜绝小计公式报 #REF!；自动重排序号；最后一行元件保留空行
+        /// 极速安全模式 (方案 B)：专注安全边界防护（严禁跨柜与误删表头/小计/计费区），直接执行物理位移删除，不做任何多余全表扫描与重算
         /// </summary>
         public static void DeleteComponentRow()
         {
             try
             {
-                // 获取当前正在运行的 Excel Application
+                // 获取当前正在运行的 Excel Application 实例
                 dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                // 若获取 Application 失败则直接退出
                 if (app == null) return;
 
                 // 优先获取选区对象，兼容单选单元格与连续多选行
                 dynamic? selection = app.Selection;
+                // 获取当前活动单元格句柄
                 dynamic? activeCell = app.ActiveCell;
+                // 若选区与活动单元格均为空则安全退出
                 if (selection == null && activeCell == null) return;
 
-                // 获取所属工作表与待删除的起止行号
+                // 获取所属工作表对象
                 dynamic sheet = (selection != null) ? selection.Worksheet : activeCell!.Worksheet;
+                // 声明待删除选区的起始与终止物理行号
                 int startRow;
                 int endRow;
+                // 若为有效选区对象，计算包含的连续多行范围
                 if (selection != null)
                 {
+                    // 选区起始行号
                     startRow = Convert.ToInt32(selection.Row);
+                    // 选区总行数
                     int selRowsCount = Convert.ToInt32(selection.Rows.Count);
+                    // 选区结束行号
                     endRow = startRow + selRowsCount - 1;
                 }
                 else
                 {
+                    // 若无选区直接取活动单元格单行
                     startRow = Convert.ToInt32(activeCell!.Row);
+                    // 结束行等于起始行
                     endRow = startRow;
                 }
+                // 计算本次待删除的总行数
                 int deleteRowCount = endRow - startRow + 1;
 
-                // 规则 8: 操作前校准定义名称
-                Tool.FixAndFillCabinetNamesForSheet(sheet);
-
-                // 校验并定位选区起止行所属箱柜
+                // 1. 安全边界防护：快速定位选区起始行所属箱柜
                 CabinetRowContext? startCab = FindCabinetByRow(sheet, startRow);
+                // 仅当首次未识别到箱柜且可能定义名称未就绪时，执行快速轻量嗅探自愈并重试
+                if (startCab == null)
+                {
+                    // 轻量自愈定义名称
+                    Tool.FixAndFillCabinetNamesForSheet(sheet, forceRebuild: false);
+                    // 再次尝试根据起始行定位箱柜
+                    startCab = FindCabinetByRow(sheet, startRow);
+                }
+
+                // 定位结束行所属箱柜 (若为单行删除直接复用 startCab，避免二次检索)
                 CabinetRowContext? endCab = (deleteRowCount == 1) ? startCab : FindCabinetByRow(sheet, endRow);
 
-                // 校验是否在同一箱柜的有效元器件行内
+                // 核心安全校验：必须在同一箱柜的有效元器件行内，严禁跨柜与误删表头/小计/计费区
                 if (startCab == null || endCab == null || startCab.CabinetK != endCab.CabinetK
                     || startRow < startCab.CompStartRow || endRow > startCab.CompEndRow)
                 {
+                    // 弹出越界防护提示
                     System.Windows.Forms.MessageBox.Show(
                         "请在同一箱柜的有效元器件数据行中执行【删除元件】！\n(严禁跨箱柜删除，且不能包含箱柜信息行、表头行、小计行或计费区域)",
                         "提示",
                         System.Windows.Forms.MessageBoxButtons.OK,
                         System.Windows.Forms.MessageBoxIcon.Information);
+                    // 阻断越界删除
                     return;
                 }
 
-                // 挂起刷新提升效率
+                // 备份原始状态以便退出时安全恢复
+                bool prevUpdating = false;
+                XlCalculation prevCalc = XlCalculation.xlCalculationAutomatic;
+                bool prevEvents = true;
+                bool prevAlerts = true;
+                try
+                {
+                    // 备份屏幕刷新状态
+                    prevUpdating = Convert.ToBoolean(app.ScreenUpdating);
+                    // 备份计算模式
+                    prevCalc = (XlCalculation)app.Calculation;
+                    // 备份系统事件响应状态
+                    prevEvents = Convert.ToBoolean(app.EnableEvents);
+                    // 备份警告提示弹窗状态
+                    prevAlerts = Convert.ToBoolean(app.DisplayAlerts);
+                }
+                catch { }
+
+                // 挂起屏幕刷新与事件分发，彻底阻断事件雪崩并获得原生秒级响应
                 app.ScreenUpdating = false;
                 app.Calculation = XlCalculation.xlCalculationManual;
+                app.EnableEvents = false;
+                app.DisplayAlerts = false;
 
                 try
                 {
                     // 检测当前箱柜内现有元器件的总行数
                     int totalCompCount = startCab.CompEndRow - startCab.CompStartRow + 1;
 
-                    // 若选中的待删行数包含了该箱柜全部元器件
+                    // 骨架安全防御：若选中的待删行数包含了该箱柜全部元器件，保留 1 行空行防止小计行结构损毁
                     if (deleteRowCount >= totalCompCount)
                     {
-                        // 规则 6: 保持箱柜基本骨架，不能将箱柜全部元件行物理删光导致小计紧挨表头
-                        // 先将第 2 行至第 deleteRowCount 行删除，保留第 1 行并清空数据与公式
+                        // 若选中大于 1 行，先将第 2 行至末尾行物理上移删除
                         if (deleteRowCount > 1)
                         {
+                            // 物理删除多余行
                             sheet.Range[sheet.Rows[startRow + 1], sheet.Rows[endRow]].Delete(XlDeleteShiftDirection.xlShiftUp);
                         }
+                        // 获取有效列数
                         int colCount = Math.Max(DefaultComponentColumnCount, GetSheetColumnCount(sheet));
+                        // 准备空白行二维数组
                         object[,] blankRow = new object[1, colCount];
+                        // 清空保留的第一行元器件数据
                         sheet.Range[sheet.Cells[startRow, 1], sheet.Cells[startRow, colCount]].Value2 = blankRow;
-
-                        // 保留 A 列序号为 1
-                        sheet.Cells[startRow, 1].Value2 = 1;
                     }
                     else
                     {
-                        // 正常批量物理整块上移删除 (Shift Up)
+                        // 正常批量物理整块上移删除 (Shift Up，Excel 原生平移下方所有行与定义名称)
                         sheet.Range[sheet.Rows[startRow], sheet.Rows[endRow]].Delete(XlDeleteShiftDirection.xlShiftUp);
                     }
 
-                    // 重新排布箱柜元器件 A 列序号 1, 2, 3... 并自适应刷新小计行 SUM 公式
-                    RefreshCabinetNumbersAndSubsumFormula(sheet);
-
-                    // 规则 8: 删行后强制自愈定义名称
-                    Tool.FixAndFillCabinetNamesForSheet(sheet, forceRebuild: true);
+                    // 方案 B：不做任何全表定义名称重建、不重排序号、不重写小计公式，完全交由 Excel 原生平移处理
 
                     // 若当前处于复制/剪切动效状态，删行后同步清除橙色流动细虚线
                     try
                     {
-                        // 停止并隐藏橙色流动细虚线
+                        // 停止并隐藏流动细虚线
                         MarchingAntsManager.Hide();
-                        // 重置 CutCopyMode 状态
+                        // 重置剪贴板动效状态
                         app.CutCopyMode = (XlCutCopyMode)0;
                     }
                     catch { }
 
-                    // 状态栏提示成功
+                    // 状态栏极速反馈删除结果
                     string delDesc = deleteRowCount > 1
                         ? $"已批量移除 {deleteRowCount} 行元件 (行 {startRow}~{endRow})"
                         : $"已移除行 {startRow}";
+                    // 更新 Excel 状态栏提示信息
                     app.StatusBar = $"[删除元件成功] {delDesc}";
                 }
                 finally
                 {
-                    // 恢复刷新与计算
-                    app.Calculation = XlCalculation.xlCalculationAutomatic;
-                    app.ScreenUpdating = true;
+                    // 恢复原始警告提示状态
+                    try { app.DisplayAlerts = prevAlerts; } catch { }
+                    // 恢复原始事件响应状态
+                    try { app.EnableEvents = prevEvents; } catch { }
+                    // 恢复原始公式计算模式
+                    try { app.Calculation = prevCalc; } catch { }
+                    // 恢复屏幕刷新
+                    try { app.ScreenUpdating = prevUpdating; } catch { }
                 }
             }
             catch (Exception ex)
             {
                 // 记录删除异常日志
                 LogHelper.WriteLog($"[ComponentRowOperations] 删除元件异常: {ex.Message}");
+                // 提示用户发生异常
                 System.Windows.Forms.MessageBox.Show($"删除元件失败: {ex.Message}", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
             }
         }

@@ -223,6 +223,27 @@ namespace ExcelAddInDemo.Services
                     app.EnableEvents = oldEnableEvents;
                 }
                 catch { }
+
+                // 标记撤回内容：撤销回滚完成后，自动在工作表中定位并选中被恢复的单元格区域
+                if (isUndo && _slices != null && _slices.Count > 0)
+                {
+                    try
+                    {
+                        // 提取首个切片信息
+                        var firstSlice = _slices[0];
+                        // 校验工作表与地址有效性
+                        if (!string.IsNullOrWhiteSpace(firstSlice.SheetName) && !string.IsNullOrWhiteSpace(firstSlice.RangeAddress))
+                        {
+                            // 激活目标工作表
+                            dynamic targetSheet = app.ActiveWorkbook.Worksheets[firstSlice.SheetName];
+                            targetSheet.Activate();
+                            // 选中该单元格区域，高亮标记出刚被撤回的内容
+                            dynamic focusRange = targetSheet.Range[firstSlice.RangeAddress];
+                            focusRange.Select();
+                        }
+                    }
+                    catch { }
+                }
             }
         }
 
@@ -801,11 +822,8 @@ namespace ExcelAddInDemo.Services
                 // 在 Excel 状态栏提示撤销成功
                 SetExcelStatusBar($"[成套工具] 已撤销: {cmd.ActionName}");
 
-                // 若撤销栈还有上一步，更新 Excel 原生 OnUndo；否则重置
-                if (CanUndo)
-                {
-                    RegisterExcelOnUndo(CurrentUndoName ?? "撤销上一步操作");
-                }
+                // 状态变更：无论是否还有可撤销项，均通知 Ribbon 刷新控件显示与禁用状态
+                RegisterExcelOnUndo(CurrentUndoName ?? string.Empty);
 
                 return true;
             }
@@ -853,7 +871,7 @@ namespace ExcelAddInDemo.Services
                 // 在 Excel 状态栏给出成功提示
                 SetExcelStatusBar($"[成套工具] 已还原: {cmd.ActionName}");
 
-                // 同步更新原生 OnUndo
+                // 同步刷新 Ribbon 控件的显示与状态
                 RegisterExcelOnUndo(cmd.ActionName);
 
                 return true;
@@ -880,31 +898,24 @@ namespace ExcelAddInDemo.Services
                 _undoStack.Clear();
                 _redoStack.Clear();
             }
+            // 历史栈清空后即时刷新 Ribbon 撤销与还原按钮为禁用/无记录状态
+            RegisterExcelOnUndo(string.Empty);
         }
 
         /// <summary>
-        /// 挂接 Excel 原生 Application.OnUndo 入口
+        /// 撤销/重做状态变更通知 (贯彻“撤回不使用快捷键”，刷新功能区 Ribbon 标签显示)
         /// </summary>
         private void RegisterExcelOnUndo(string actionName)
         {
             try
             {
-                // 将任务投递到 Excel 消息队列安全执行
+                // 将刷新任务投递到 Excel 宏消息队列安全执行
                 ExcelAsyncUtil.QueueAsMacro(() =>
                 {
                     try
                     {
-                        dynamic? app = ExcelDnaUtil.Application;
-                        if (app != null)
-                        {
-                            // 挂接自定义宏过程名，当用户点击 Excel 原生撤销按钮或按系统快捷键时调用
-                            app.OnUndo($"成套工具: {actionName}", "MacroUndoAction");
-                            // 挂接重做宏过程
-                            if (CanRedo)
-                            {
-                                app.OnRepeat($"成套工具: {CurrentRedoName}", "MacroRedoAction");
-                            }
-                        }
+                        // 动态刷新 Ribbon 功能区上的撤销、还原与清空历史按钮
+                        RibbonController.InvalidateRibbon();
                     }
                     catch { }
                 });

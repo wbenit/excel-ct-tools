@@ -2067,7 +2067,7 @@ namespace ExcelAddInDemo
                 result.UpdatedSheetCount = updatedSheetCount;
                 result.UpdatedCabinetCount = updatedCabCount;
                 result.UpdatedComponentCount = updatedCompCount;
-                result.Message = $"分布调价同步成功！共更新 {updatedSheetCount} 个分类表，{updatedCabCount} 台箱柜，{updatedCompCount} 项元器件（可随时按 Ctrl+Z 撤销）。";
+                result.Message = $"分布调价同步成功！共更新 {updatedSheetCount} 个分类表，{updatedCabCount} 台箱柜，{updatedCompCount} 项元器件（可通过功能区【撤销/还原】随时撤销）。";
             }
             catch (Exception ex)
             {

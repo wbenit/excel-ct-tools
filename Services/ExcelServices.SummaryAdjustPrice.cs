@@ -2127,7 +2127,7 @@ namespace ExcelAddInDemo
                 result.UpdatedSheetCount = updatedSheetCount;
                 result.UpdatedCabinetCount = updatedCabinetCount;
                 result.UpdatedComponentCount = updatedComponentCount;
-                result.Message = "一键更新成功：共同步 " + updatedSheetCount + " 个分类表、" + updatedCabinetCount + " 台箱柜、" + updatedComponentCount + " 项元器件明细！(可按 Ctrl+Z 随时撤销)";
+                result.Message = "一键更新成功：共同步 " + updatedSheetCount + " 个分类表、" + updatedCabinetCount + " 台箱柜、" + updatedComponentCount + " 项元器件明细！(可通过功能区【撤销/还原】随时撤销)";
 
                 // 记录成功日志
                 LogHelper.WriteLog(result.Message);
