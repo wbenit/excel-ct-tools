@@ -3,446 +3,322 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
-using ExcelDna.Integration.CustomUI;
-using ExcelAddInDemo.Forms;
+using ExcelDna.Integration;
 
 namespace ExcelAddInDemo.Services
 {
     /// <summary>
-    /// AutoCAD 窗口嵌入式任务窗格统一管理器
-    /// 负责 CustomTaskPane 的初始化、Win32 句柄挂载、生命周期管理与安全还原
+    /// AutoCAD 实例信息模型
+    /// 封装活动 CAD 进程的窗口句柄、文档名称、文件全路径与进程标识
+    /// </summary>
+    public class CadInstanceInfo
+    {
+        // AutoCAD 主窗口物理句柄
+        public IntPtr Hwnd { get; set; } = IntPtr.Zero;
+
+        // 当前处于活动编辑状态的图纸名称
+        public string DocName { get; set; } = string.Empty;
+
+        // 当前图纸在磁盘上的绝对路径
+        public string DocPath { get; set; } = string.Empty;
+
+        // AutoCAD 进程 ID
+        public int ProcessId { get; set; } = 0;
+
+        // 当前 AutoCAD 实例是否有效且存活在操作系统中
+        public bool IsConnected => Hwnd != IntPtr.Zero && Win32Interop.IsWindow(Hwnd);
+    }
+
+    /// <summary>
+    /// AutoCAD 窗口与屏幕分屏协同管理器
+    /// 彻底剔除 SetParent 嵌入与任务窗格面板，仅保留原生顶层窗口 5:5 均等分屏核心逻辑
+    /// 保障 AutoCAD 100% 原生绘图性能、命令行输入、鼠标中键拖拽平移无损
     /// </summary>
     public static class CadEmbedManager
     {
-        // Excel-DNA 自定义任务窗格引用
-        private static CustomTaskPane? _taskPane;
+        // 记录当前是否处于并排分屏状态
+        private static bool _isSideBySideSplit = false;
 
-        // 承载 AutoCAD 的 WinForms 宿主控件
-        private static CadHostControl? _hostControl;
-
-        // 当前正在嵌入中的 AutoCAD 主窗口句柄
-        private static IntPtr _embeddedCadHwnd = IntPtr.Zero;
-
-        // 嵌入前 AutoCAD 原始父句柄（桌面句柄）
-        private static IntPtr _originalParent = IntPtr.Zero;
-
-        // 嵌入前 AutoCAD 原始窗口样式
-        private static IntPtr _originalStyle = IntPtr.Zero;
-
-        // 嵌入前 AutoCAD 原始窗口在屏幕中的尺寸与坐标
-        private static Win32Interop.RECT _originalRect;
-
-        // 当前绑定的 AutoCAD 进程对象引用
-        private static Process? _boundCadProcess;
-
-        // 任务窗格默认初始宽度 --硬编码: 默认窗格宽度 680 像素--
-        private const int DefaultTaskPaneWidth = 680;
-
-        // AutoCAD 主程序顶层标题栏裁剪偏移高度（纯画布模式下向上移出视口以消除多余标题栏）--硬编码: 标题栏裁剪高度 32 像素--
-        private const int CadTitleBarOffset = 32;
-
-        // 是否开启纯画布模式（自动隐藏所有工具栏与 Ribbon 功能区，默认开启）
-        public static bool IsCleanScreenEnabled { get; set; } = true;
-
-        // 互斥操作锁
+        // 操作互斥锁
         private static readonly object _syncLock = new object();
 
         /// <summary>
-        /// 切换 AutoCAD 协同任务窗格的显示与隐藏状态
+        /// 极简核心交互：一键 5:5 均等分屏与全屏还原切换
+        /// 点击后将 Excel 靠左 50%、AutoCAD 靠右 50% 均等排列；再次点击则还原 Excel 全屏最大化
         /// </summary>
-        public static void ToggleTaskPane()
+        /// <param name="excelRatio">分屏比例，默认 0.5 即 5:5 均等分</param>
+        public static void ToggleSideBySide(double excelRatio = 0.5)
         {
             lock (_syncLock)
             {
-                // 若任务窗格尚未创建，执行首次初始化与呈现
-                if (_taskPane == null)
+                // 若当前已处于并排分屏状态，则触发一键还原全屏最大化
+                if (_isSideBySideSplit)
                 {
-                    // 实例化 WinForms 宿主控件
-                    _hostControl = new CadHostControl();
+                    // 还原 Excel 最大化全屏
+                    MaximizeExcel();
+                    // 复位分屏标志
+                    _isSideBySideSplit = false;
+                    return;
+                }
 
-                    // 通过 Excel-DNA 工厂构建右侧自定义任务窗格
-                    _taskPane = CustomTaskPaneFactory.CreateCustomTaskPane(_hostControl, "AutoCAD 协同画图");
-
-                    // 设定停靠在 Excel 主界面右侧
-                    _taskPane.DockPosition = MsoCTPDockPosition.msoCTPDockPositionRight;
-
-                    // 设置默认宽度
-                    _taskPane.Width = DefaultTaskPaneWidth;
-
-                    // 监听窗格可见性变更事件（如用户点击右上角叉号关闭窗格）
-                    _taskPane.VisibleStateChange += OnTaskPaneVisibleStateChange;
-
-                    // 呈现任务窗格
-                    _taskPane.Visible = true;
-
-                    // 窗格打开后，自动探测并尝试嵌入当前正在运行的 AutoCAD
-                    EmbedActiveCad();
+                // 否则执行 5:5 均等并排分屏
+                var (ok, msg) = SnapSideBySide(excelRatio);
+                if (ok)
+                {
+                    // 标记分屏成功
+                    _isSideBySideSplit = true;
                 }
                 else
                 {
-                    // 切换窗格显隐状态
-                    _taskPane.Visible = !_taskPane.Visible;
-
-                    // 若重新显示且尚未嵌入 CAD，自动触发探测与嵌入
-                    if (_taskPane.Visible && _embeddedCadHwnd == IntPtr.Zero)
-                    {
-                        EmbedActiveCad();
-                    }
+                    // 若未检测到 CAD 或分屏失败，弹出提示
+                    MessageBox.Show(msg, "CAD 分屏提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    // 复位标志
+                    _isSideBySideSplit = false;
                 }
             }
         }
 
         /// <summary>
-        /// 显式呈现 AutoCAD 协同任务窗格
+        /// 向后兼容方法：直接触发 5:5 均等分屏切换
+        /// </summary>
+        public static void ToggleTaskPane()
+        {
+            // 执行 5:5 均等分屏
+            ToggleSideBySide(0.5);
+        }
+
+        /// <summary>
+        /// 向后兼容方法：直接触发 5:5 均等分屏
         /// </summary>
         public static void ShowTaskPane()
         {
-            // 若未打开则开启
-            if (_taskPane == null || !_taskPane.Visible)
-            {
-                ToggleTaskPane();
-            }
+            // 执行 5:5 均等分屏
+            ToggleSideBySide(0.5);
         }
 
         /// <summary>
-        /// 任务窗格可见性状态改变回调（处理用户手动关闭）
+        /// 执行智能一键左右并排分屏：Excel 靠左，AutoCAD 靠右
+        /// 两者均为 Windows 原生顶级独立窗口，拥有极致的原生性能与画图体验
         /// </summary>
-        private static void OnTaskPaneVisibleStateChange(CustomTaskPane customTaskPaneInst)
+        /// <param name="excelRatio">Excel 占据当前屏幕宽度的比例 (默认 0.5 代表 5:5 平分)</param>
+        /// <returns>操作结果元组 (是否成功, 提示消息)</returns>
+        public static (bool Success, string Message) SnapSideBySide(double excelRatio = 0.5)
         {
-            // 当用户在 Excel 中关闭了任务窗格时
-            if (!customTaskPaneInst.Visible)
-            {
-                // 如果需要避免 CAD 在后台不可见，可在此处选择保留或解绑
-                // 保留嵌入状态，用户下次点击 Ribbon 再次打开时无需重复绑定
-            }
-        }
-
-        /// <summary>
-        /// 探测当前系统中处于活动状态的单个 AutoCAD 进程与窗口
-        /// 遵循“只绑定激活的单张图纸”原则
-        /// </summary>
-        /// <returns>包含窗口句柄、图纸标题、进程对象的元组</returns>
-        private static (IntPtr Hwnd, string DocName, Process? Proc) FindActiveAutoCad()
-        {
-            // 策略 1: 优先尝试通过 COM 获取当前活跃的 AutoCAD 实例
             try
             {
-                // 从运行对象表 ROT 获取 AutoCAD.Application
-                dynamic acadApp = Marshal.GetActiveObject("AutoCAD.Application");
+                // 1. 获取 Excel 主窗口句柄
+                IntPtr excelHwnd = GetExcelMainWindowHandle();
+                if (excelHwnd == IntPtr.Zero || !Win32Interop.IsWindow(excelHwnd))
+                {
+                    return (false, "无法获取 Excel 主窗口句柄！");
+                }
+
+                // 2. 检测当前活跃的 AutoCAD 实例
+                CadInstanceInfo cadInfo = GetActiveCadInfo();
+                if (!cadInfo.IsConnected)
+                {
+                    return (false, "未检测到正在运行的 AutoCAD！请先启动 AutoCAD 并打开工程图纸。");
+                }
+
+                // 3. 读取当前 Excel 窗口所在的物理显示器屏幕
+                Screen screen = Screen.FromHandle(excelHwnd);
+                // 获取排除 Windows 任务栏后的实际可用工作区域
+                Rectangle workArea = screen.WorkingArea;
+
+                // 4. 计算两侧窗口的物理像素尺寸
+                int excelWidth = (int)(workArea.Width * excelRatio);
+                int cadWidth = workArea.Width - excelWidth;
+
+                // 5. 调整 Excel 主窗口：退出最大化还原，定位至左半屏
+                Win32Interop.ShowWindow(excelHwnd, Win32Interop.SW_RESTORE);
+                Win32Interop.MoveWindow(excelHwnd, workArea.Left, workArea.Top, excelWidth, workArea.Height, true);
+
+                // 6. 调整 AutoCAD 主窗口：退出最小化还原，定位至右半屏
+                Win32Interop.ShowWindow(cadInfo.Hwnd, Win32Interop.SW_RESTORE);
+                Win32Interop.MoveWindow(cadInfo.Hwnd, workArea.Left + excelWidth, workArea.Top, cadWidth, workArea.Height, true);
+
+                // 7. 协同激活：依次激活 CAD 与 Excel，确保两边窗口并排在前台
+                Win32Interop.SetForegroundWindow(cadInfo.Hwnd);
+                Win32Interop.SetForegroundWindow(excelHwnd);
+
+                return (true, $"已成功启动 5:5 并排分屏协同！");
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"[CadEmbedManager] 智能分屏异常: {ex.Message}");
+                return (false, $"分屏执行失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 获取当前 Excel 主窗口物理句柄
+        /// </summary>
+        public static IntPtr GetExcelMainWindowHandle()
+        {
+            try
+            {
+                // 优先通过 Excel-DNA 内置接口获取
+                IntPtr hwnd = (IntPtr)ExcelDnaUtil.WindowHandle;
+                if (hwnd != IntPtr.Zero && Win32Interop.IsWindow(hwnd))
+                {
+                    return hwnd;
+                }
+            }
+            catch { }
+
+            // 降级使用当前宿主进程 MainWindowHandle
+            return Process.GetCurrentProcess().MainWindowHandle;
+        }
+
+        /// <summary>
+        /// 将当前 Excel 窗口恢复全屏最大化显示
+        /// </summary>
+        public static void MaximizeExcel()
+        {
+            try
+            {
+                // 读取 Excel 窗口句柄
+                IntPtr excelHwnd = GetExcelMainWindowHandle();
+                if (excelHwnd != IntPtr.Zero && Win32Interop.IsWindow(excelHwnd))
+                {
+                    // 调用 Win32 API 还原全屏最大化
+                    Win32Interop.ShowWindow(excelHwnd, Win32Interop.SW_MAXIMIZE);
+                    Win32Interop.SetForegroundWindow(excelHwnd);
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 将 AutoCAD 主窗口快速唤醒并置顶到用户桌面最前端
+        /// </summary>
+        public static void ActivateCad()
+        {
+            try
+            {
+                // 获取当前 CAD 实例
+                CadInstanceInfo cadInfo = GetActiveCadInfo();
+                if (cadInfo.IsConnected)
+                {
+                    // 先还原显示再置顶
+                    Win32Interop.ShowWindow(cadInfo.Hwnd, Win32Interop.SW_RESTORE);
+                    Win32Interop.SetForegroundWindow(cadInfo.Hwnd);
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 探测当前系统中处于活动状态的单个 AutoCAD 进程、窗口与图纸信息
+        /// </summary>
+        /// <returns>AutoCAD 实例信息结构模型</returns>
+        public static CadInstanceInfo GetActiveCadInfo()
+        {
+            var info = new CadInstanceInfo();
+
+            // 策略 1: 优先尝试通过 COM 获取当前活跃的 AutoCAD 实例详细属性
+            try
+            {
+                // 获取当前活动 COM 实例
+                dynamic? acadApp = GetActiveAcadApp();
                 if (acadApp != null)
                 {
                     // 提取主窗口句柄
-                    IntPtr hwnd = new IntPtr((long)acadApp.HWND);
-                    if (hwnd != IntPtr.Zero && Win32Interop.IsWindow(hwnd))
+                    info.Hwnd = new IntPtr((long)acadApp.HWND);
+                    // 提取活动文档名与全路径
+                    try { info.DocName = (string)acadApp.ActiveDocument?.Name ?? string.Empty; } catch { }
+                    try { info.DocPath = (string)acadApp.ActiveDocument?.FullName ?? string.Empty; } catch { }
+                    // 提取进程 PID
+                    try { info.ProcessId = (int)acadApp.ProcessId; } catch { }
+
+                    // 若句柄有效且为有效窗口则直接返回
+                    if (info.IsConnected)
                     {
-                        string docName = string.Empty;
-                        try { docName = (string)acadApp.ActiveDocument?.Name ?? string.Empty; } catch { }
-
-                        int pid = 0;
-                        try { pid = (int)acadApp.ProcessId; } catch { }
-
-                        Process? proc = pid > 0 ? Process.GetProcessById(pid) : null;
-                        return (hwnd, docName, proc);
+                        return info;
                     }
                 }
             }
-            catch
-            {
-                // COM 未就绪时静默降级为进程枚举
-            }
+            catch { }
 
             // 策略 2: 降级通过 acad 进程列表扫描主窗口
             try
             {
+                // 获取所有名为 acad 的进程
                 var acadProcesses = Process.GetProcessesByName("acad");
                 foreach (var p in acadProcesses)
                 {
-                    // 必须具备有效窗口句柄且窗口在操作系统中存活
+                    // 校验是否拥有主窗口句柄
                     if (p.MainWindowHandle != IntPtr.Zero && Win32Interop.IsWindow(p.MainWindowHandle))
                     {
-                        string title = p.MainWindowTitle;
-                        return (p.MainWindowHandle, title, p);
+                        info.Hwnd = p.MainWindowHandle;
+                        info.DocName = p.MainWindowTitle;
+                        info.ProcessId = p.Id;
+                        return info;
                     }
                 }
             }
-            catch
-            {
-                // 忽略进程枚举异常
-            }
+            catch { }
 
-            return (IntPtr.Zero, string.Empty, null);
+            return info;
         }
 
         /// <summary>
-        /// 检测并嵌入当前活动的 AutoCAD 窗口到任务窗格
+        /// 安全获取当前处于活动运行状态的 AutoCAD COM Application 实例
+        /// 支持 AutoCAD.Application 以及多版本 ProgID (2016~2026) 自动降级探测
         /// </summary>
-        public static bool EmbedActiveCad()
+        /// <returns>成功获取返回 dynamic COM 实例，否则返回 null</returns>
+        public static dynamic? GetActiveAcadApp()
         {
-            lock (_syncLock)
-            {
-                // 确保宿主控件已就绪
-                if (_hostControl == null) return false;
-
-                // 探测当前运行的 AutoCAD 实例
-                var (cadHwnd, docName, proc) = FindActiveAutoCad();
-                if (cadHwnd == IntPtr.Zero)
-                {
-                    // 未检测到运行中的 CAD，更新界面为空状态
-                    _hostControl.UpdateConnectionState(false);
-                    return false;
-                }
-
-                // 如果当前检测到的句柄与已嵌入的句柄相同，只需同步尺寸并赋予焦点
-                if (_embeddedCadHwnd == cadHwnd)
-                {
-                    SyncCadSize();
-                    FocusCad();
-                    return true;
-                }
-
-                // 若之前已嵌入其他 CAD 窗口，先安全还原旧窗口
-                if (_embeddedCadHwnd != IntPtr.Zero)
-                {
-                    DetachCad();
-                }
-
-                try
-                {
-                    // 1. 记录 AutoCAD 窗口原始属性以便后续完美还原
-                    _originalParent = Win32Interop.GetParent(cadHwnd);
-                    _originalStyle = Win32Interop.GetWindowLongPtr(cadHwnd, Win32Interop.GWL_STYLE);
-                    Win32Interop.GetWindowRect(cadHwnd, out _originalRect);
-
-                    // 2. 剥离标题栏、独立边框与最大/最小化按钮，赋予子窗口属性
-                    int style = _originalStyle.ToInt32();
-                    style &= ~Win32Interop.WS_POPUP;
-                    style &= ~Win32Interop.WS_CAPTION;
-                    style &= ~Win32Interop.WS_THICKFRAME;
-                    style &= ~Win32Interop.WS_MINIMIZEBOX;
-                    style &= ~Win32Interop.WS_MAXIMIZEBOX;
-                    style &= ~Win32Interop.WS_SYSMENU;
-                    style |= Win32Interop.WS_CHILD | Win32Interop.WS_VISIBLE | Win32Interop.WS_CLIPCHILDREN | Win32Interop.WS_CLIPSIBLINGS;
-
-                    // 设置精简后的子窗口样式
-                    Win32Interop.SetWindowLongPtr(cadHwnd, Win32Interop.GWL_STYLE, new IntPtr(style));
-
-                    // 3. 将 AutoCAD 句柄的父容器重定向为 WinForms Panel
-                    IntPtr containerHwnd = _hostControl.GetContainerHandle();
-                    Win32Interop.SetParent(cadHwnd, containerHwnd);
-
-                    // 4. 同步视口尺寸
-                    Size containerSize = _hostControl.GetContainerSize();
-                    Win32Interop.MoveWindow(cadHwnd, 0, 0, containerSize.Width, containerSize.Height, true);
-                    Win32Interop.ShowWindow(cadHwnd, Win32Interop.SW_SHOW);
-
-                    // 5. 注册进程退出监控：防止 CAD 意外退出时残留白屏
-                    _boundCadProcess = proc;
-                    if (_boundCadProcess != null)
-                    {
-                        try
-                        {
-                            _boundCadProcess.EnableRaisingEvents = true;
-                            _boundCadProcess.Exited += OnCadProcessExited;
-                        }
-                        catch { }
-                    }
-
-                    // 6. 保存当前嵌入状态并刷新宿主 UI 顶栏
-                    _embeddedCadHwnd = cadHwnd;
-                    _hostControl.UpdateConnectionState(true, docName);
-
-                    // 7. 若开启纯画布模式，自动隐藏 AutoCAD 所有工具栏与 Ribbon 功能区
-                    if (IsCleanScreenEnabled)
-                    {
-                        SetCadCleanScreen(true);
-                    }
-
-                    // 赋予键盘焦点
-                    FocusCad();
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    LogHelper.WriteLog($"[CadEmbedManager] 嵌入 AutoCAD 异常: {ex.Message}");
-                    _hostControl.UpdateConnectionState(false);
-                    return false;
-                }
-            }
-        }
-
-        /// <summary>
-        /// 将 AutoCAD 窗口安全从任务窗格剥离并归还至桌面独立窗口
-        /// </summary>
-        public static void DetachCad()
-        {
-            lock (_syncLock)
-            {
-                // 若当前没有正在嵌入的 CAD 窗口，直接退出
-                if (_embeddedCadHwnd == IntPtr.Zero) return;
-
-                try
-                {
-                    // 0. 将 AutoCAD 工具栏与 Ribbon 功能区完整恢复
-                    SetCadCleanScreen(false);
-
-                    // 解绑进程退出监听
-                    if (_boundCadProcess != null)
-                    {
-                        try { _boundCadProcess.Exited -= OnCadProcessExited; } catch { }
-                        _boundCadProcess = null;
-                    }
-
-                    // 1. 重置父窗口为桌面（IntPtr.Zero）
-                    Win32Interop.SetParent(_embeddedCadHwnd, _originalParent);
-
-                    // 2. 恢复原生的窗口样式（带标题栏、控制按钮与边框）
-                    if (_originalStyle != IntPtr.Zero)
-                    {
-                        Win32Interop.SetWindowLongPtr(_embeddedCadHwnd, Win32Interop.GWL_STYLE, _originalStyle);
-                    }
-
-                    // 3. 恢复原始位置与尺寸
-                    if (_originalRect.Width > 100 && _originalRect.Height > 100)
-                    {
-                        Win32Interop.MoveWindow(
-                            _embeddedCadHwnd,
-                            _originalRect.Left,
-                            _originalRect.Top,
-                            _originalRect.Width,
-                            _originalRect.Height,
-                            true);
-                    }
-
-                    // 4. 显示并还原窗口状态
-                    Win32Interop.ShowWindow(_embeddedCadHwnd, Win32Interop.SW_RESTORE);
-                    Win32Interop.SetForegroundWindow(_embeddedCadHwnd);
-                }
-                catch (Exception ex)
-                {
-                    LogHelper.WriteLog($"[CadEmbedManager] 归还 AutoCAD 异常: {ex.Message}");
-                }
-                finally
-                {
-                    // 重置状态
-                    _embeddedCadHwnd = IntPtr.Zero;
-                    _originalStyle = IntPtr.Zero;
-                    _originalParent = IntPtr.Zero;
-                    _hostControl?.UpdateConnectionState(false);
-                }
-            }
-        }
-
-        /// <summary>
-        /// 当绑定的 AutoCAD 进程在外部被用户关闭或崩溃时的容灾清理
-        /// </summary>
-        private static void OnCadProcessExited(object? sender, EventArgs e)
-        {
-            lock (_syncLock)
-            {
-                // 重置句柄状态
-                _embeddedCadHwnd = IntPtr.Zero;
-                _boundCadProcess = null;
-
-                // 通知宿主控件更新为空状态
-                _hostControl?.UpdateConnectionState(false);
-            }
-        }
-
-        /// <summary>
-        /// 同步 AutoCAD 窗口尺寸以铺满宿主容器
-        /// 当开启纯画布模式时，向上偏移裁剪 AutoCAD 原生标题栏
-        /// </summary>
-        public static void SyncCadSize()
-        {
-            // 校验当前嵌入句柄是否有效
-            if (_embeddedCadHwnd != IntPtr.Zero && _hostControl != null)
-            {
-                Size size = _hostControl.GetContainerSize();
-                if (size.Width > 0 && size.Height > 0)
-                {
-                    // 若开启纯画布模式，将 AutoCAD 窗口向上偏移以裁剪顶层标题栏，彻底消除多余外壳
-                    int yOffset = IsCleanScreenEnabled ? -CadTitleBarOffset : 0;
-                    // 同步补偿增加高度，确保底端画图区与状态栏完整充满
-                    int extraHeight = IsCleanScreenEnabled ? CadTitleBarOffset : 0;
-
-                    // 调整 CAD 窗口尺寸与物理偏移
-                    Win32Interop.MoveWindow(_embeddedCadHwnd, 0, yOffset, size.Width, size.Height + extraHeight, true);
-                }
-            }
-        }
-
-        /// <summary>
-        /// 将键盘输入焦点切换至 AutoCAD 窗口，确保绘图快捷键（LINE, ESC, 空格）直接生效
-        /// </summary>
-        public static void FocusCad()
-        {
-            if (_embeddedCadHwnd != IntPtr.Zero && Win32Interop.IsWindow(_embeddedCadHwnd))
-            {
-                // 赋予焦点
-                Win32Interop.SetFocus(_embeddedCadHwnd);
-            }
-        }
-
-        /// <summary>
-        /// 设置 AutoCAD 是否开启极简纯净视口模式
-        /// 开启时自动隐藏所有工具栏、Ribbon功能区、文件标签与视口辅助件，只保留纯绘图画布
-        /// </summary>
-        /// <param name="enableClean">是否启用纯画布模式</param>
-        public static void SetCadCleanScreen(bool enableClean)
-        {
+            // 1. 优先尝试标准无版本后缀 ProgID
             try
             {
-                // 优先通过 COM 接口指令控制 AutoCAD 功能区与工具栏显隐
-                dynamic acadApp = Marshal.GetActiveObject("AutoCAD.Application");
-                if (acadApp != null && acadApp.ActiveDocument != null)
-                {
-                    if (enableClean)
-                    {
-                        // 1. 发送 (command) 退出当前可能处于活动中的命令（安全避开非法的 ASCII 27 转义字符）
-                        // 2. CLEANSCREENON 隐藏所有停靠/浮动工具栏与系统菜单
-                        // 3. RIBBONCLOSE 彻底隐藏顶部功能区
-                        // 4. FILETABCLOSE 隐藏顶部文件标签栏（开始、图纸名标签）
-                        // 5. NAVVCUBEDISPLAY 0 隐藏右上角 ViewCube 视角立方体
-                        // 6. NAVBAR 0 隐藏右侧悬浮导航栏
-                        // 7. (setvar "layouttab" 0) 隐藏底端布局标签栏
-                        string cleanCmd = "(command)\nCLEANSCREENON\nRIBBONCLOSE\nFILETABCLOSE\nNAVVCUBEDISPLAY 0\nNAVBAR 0\n(setvar \"layouttab\" 0)\n";
-                        acadApp.ActiveDocument.SendCommand(cleanCmd);
-                    }
-                    else
-                    {
-                        // 还原全功能模式：恢复功能区、工具栏、文件标签、ViewCube、导航栏与布局标签
-                        string restoreCmd = "(command)\nCLEANSCREENOFF\nRIBBON\nFILETAB\nNAVVCUBEDISPLAY 3\nNAVBAR 1\n(setvar \"layouttab\" 1)\n";
-                        acadApp.ActiveDocument.SendCommand(restoreCmd);
-                    }
-                }
-
-                // 同步刷新物理视口剪裁位置
-                SyncCadSize();
+                // 从系统运行对象表 ROT 读取活动实例
+                dynamic app = Marshal.GetActiveObject("AutoCAD.Application");
+                // 命中立即返回
+                if (app != null) return app;
             }
-            catch (Exception ex)
+            catch { }
+
+            // 2. 降级遍历探测各版本 ProgID (支持 2016 ~ 2026)
+            string[] progIds = new string[]
             {
-                LogHelper.WriteLog($"[CadEmbedManager] 切换 CAD 纯净视口模式异常: {ex.Message}");
-            }
-        }
+                "AutoCAD.Application.25",   // AutoCAD 2025
+                "AutoCAD.Application.24.3", // AutoCAD 2024
+                "AutoCAD.Application.24.2", // AutoCAD 2023
+                "AutoCAD.Application.24.1", // AutoCAD 2022
+                "AutoCAD.Application.24",   // AutoCAD 2021
+                "AutoCAD.Application.23.1", // AutoCAD 2020
+                "AutoCAD.Application.23",   // AutoCAD 2019
+                "AutoCAD.Application.22",   // AutoCAD 2018
+                "AutoCAD.Application.21",   // AutoCAD 2017
+                "AutoCAD.Application.20"    // AutoCAD 2016
+            };
 
-        /// <summary>
-        /// 插件卸载或 Excel 关闭时的全局安全清理方法
-        /// 彻底杜绝 AutoCAD 随 Excel 关闭而异常崩溃或被宿主连带销毁
-        /// </summary>
-        public static void Cleanup()
-        {
-            // 强制将 CAD 还原回独立桌面状态
-            DetachCad();
-
-            // 隐藏任务窗格
-            if (_taskPane != null)
+            // 循环遍历探测
+            foreach (string pid in progIds)
             {
                 try
                 {
-                    _taskPane.Visible = false;
+                    // 尝试以指定版本 ProgID 读取
+                    dynamic app = Marshal.GetActiveObject(pid);
+                    // 命中即刻返回
+                    if (app != null) return app;
                 }
                 catch { }
             }
+
+            // 全部未命中返回 null
+            return null;
+        }
+
+        /// <summary>
+        /// 插件卸载或退出时的清理方法
+        /// </summary>
+        public static void Cleanup()
+        {
+            // 重置分屏状态标记
+            _isSideBySideSplit = false;
         }
     }
 }

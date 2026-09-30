@@ -281,8 +281,8 @@ namespace ExcelAddInDemo
               <button id='btnSpotlightModeCol' label='仅高亮当前列' imageMso='TableColumnSelect' onAction='OnMenuAction' />
             </menu>
           </splitButton>
-          <!-- AutoCAD 嵌入协同任务窗格按钮 -->
-          <button id='btnToggleCadTaskPane' label='CAD视口' imageMso='ViewSideBySide' size='large' screentip='AutoCAD 协同画图视口' supertip='在 Excel 右侧任务窗格中无缝嵌入当前 AutoCAD 绘图窗口，边看清单边画图' onAction='OnMenuAction' />
+          <!-- AutoCAD 5:5 均等分屏按钮 -->
+          <button id='btnToggleCadTaskPane' label='CAD分屏' imageMso='ViewSideBySide' size='large' screentip='AutoCAD 5:5 均等分屏' supertip='一键将当前 Excel 与 AutoCAD 在屏幕上 5:5 均等并排排列，再次点击还原 Excel 全屏最大化' onAction='OnMenuAction' />
           <!-- 联动CAD夹点显示切换按钮 -->
           <toggleButton id='btnToggleCadSync' label='联动CAD' imageMso='SelectionPane' size='large' getPressed='GetCadSyncPressed' onAction='OnCadSyncAction' screentip='联动AutoCAD夹点' supertip='选中行时自动读取AA列句柄，在AutoCAD中即时高亮并激活夹点显示' />
           <!-- 右键菜单模式切换按钮 -->
@@ -630,11 +630,11 @@ namespace ExcelAddInDemo
                 // 弹出基于 WebView2 + Vue 3 的“在线查价与静默回写”工作台
                 ExcelServices.ShowOnlinePriceSearchDialog();
             }
-            // 响应“CAD视口”任务窗格开关按钮指令
+            // 响应“CAD分屏”5:5 均等分屏按钮指令
             else if (controlId == "btnToggleCadTaskPane")
             {
-                // 切换 AutoCAD 协同任务窗格显隐并自动探测嵌入
-                ExcelServices.ToggleCadTaskPane();
+                // 执行 Excel 与 AutoCAD 5:5 均等分屏与全屏还原切换
+                ExcelServices.ToggleCadSideBySide();
             }
             // 响应“切换右键菜单模式”按钮指令
             else if (controlId == "btnToggleContextMenuMode")

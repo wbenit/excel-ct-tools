@@ -51,6 +51,9 @@ namespace ExcelAddInDemo.Services
         // 显示窗口标志：激活并以最小化状态显示
         public const int SW_MINIMIZE = 6;
 
+        // 显示窗口标志：激活并最大化窗口
+        public const int SW_MAXIMIZE = 3;
+
         // 显示窗口标志：还原窗口（退出最大化/最小化状态）
         public const int SW_RESTORE = 9;
 

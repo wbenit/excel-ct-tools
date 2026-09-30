@@ -4,36 +4,28 @@ using ExcelAddInDemo.Services;
 namespace ExcelAddInDemo
 {
     /// <summary>
-    /// Excel 业务服务分部类：AutoCAD 协同任务窗格宿主与窗口联动接口
+    /// Excel 业务服务分部类：AutoCAD 5:5 均等分屏协同调度接口
     /// 满足规则 3：所有窗口交互调度由公共业务层统一暴露
     /// </summary>
     public static partial class ExcelServices
     {
         /// <summary>
-        /// 切换 AutoCAD 协同画图任务窗格的显示与隐藏
+        /// 切换 Excel 与 AutoCAD 5:5 均等智能并排分屏
+        /// 彻底去除右侧任务窗格面板，点击瞬间 5:5 铺满屏幕，再点一次还原 Excel 全屏最大化
+        /// </summary>
+        public static void ToggleCadSideBySide()
+        {
+            // 调度 CadEmbedManager 执行 5:5 均等分屏切换
+            CadEmbedManager.ToggleSideBySide(0.5);
+        }
+
+        /// <summary>
+        /// 兼容接口：触发 5:5 均等分屏切换
         /// </summary>
         public static void ToggleCadTaskPane()
         {
-            // 调度 CadEmbedManager 执行右侧任务窗格切换与自动嵌入
-            CadEmbedManager.ToggleTaskPane();
-        }
-
-        /// <summary>
-        /// 显式展开 AutoCAD 协同画图任务窗格并嵌入当前图纸
-        /// </summary>
-        public static void ShowCadTaskPane()
-        {
-            // 显式展开任务窗格
-            CadEmbedManager.ShowTaskPane();
-        }
-
-        /// <summary>
-        /// 将 AutoCAD 从任务窗格还原至桌面独立窗口
-        /// </summary>
-        public static void DetachCadFromTaskPane()
-        {
-            // 释放并还原 AutoCAD 窗口至桌面
-            CadEmbedManager.DetachCad();
+            // 执行 5:5 均等分屏切换
+            ToggleCadSideBySide();
         }
     }
 }
