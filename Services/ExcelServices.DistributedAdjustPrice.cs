@@ -2099,5 +2099,419 @@ namespace ExcelAddInDemo
 
             return result;
         }
+
+        #region 元件汇总分布表专属右键菜单业务方法
+
+        /// <summary>
+        /// 在【元件汇总分布表】当前活动单元格上方插入一个新元器件行，并自愈序号公式与 SUMPRODUCT 元件总数公式
+        /// </summary>
+        public static void InsertDistributionComponentRow()
+        {
+            try
+            {
+                // 获取 Excel 顶层应用实例
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                if (app == null) return;
+
+                // 获取当前活动工作簿与活动表
+                dynamic activeWb = app.ActiveWorkbook;
+                if (activeWb == null) return;
+                dynamic activeSheet = app.ActiveSheet;
+                if (activeSheet == null) return;
+
+                // 校验当前工作表是否为【元件汇总分布表】
+                string sName = Convert.ToString(activeSheet.Name)?.Trim() ?? "";
+                if (!string.Equals(sName, DistributionSheetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    // 仅允许在元件汇总分布表中调用
+                    System.Windows.Forms.MessageBox.Show($"当前操作仅适用于【{DistributionSheetName}】！", "提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                    return;
+                }
+
+                // 获取当前活动单元格所在物理行号
+                dynamic? activeCell = app.ActiveCell;
+                if (activeCell == null) return;
+                int targetRow = Convert.ToInt32(activeCell.Row);
+
+                // 越界安全防护：第 1~8 行为箱柜信息与表头行，元器件数据必须在第 9 行及以后插入
+                const int minDataRow = 9;
+                if (targetRow < minDataRow)
+                {
+                    targetRow = minDataRow;
+                }
+
+                // 冻结屏幕刷新提升流畅度
+                app.ScreenUpdating = false;
+
+                // 1. 在目标行上方插入新的一整行 (xlShiftDown: -4121)
+                activeSheet.Rows[targetRow].Insert(-4121);
+
+                // 2. 检测使用区域总列数与箱柜起始列
+                int fixedColCount = 11; // A~K 列
+                int totalUsedCols = activeSheet.UsedRange.Columns.Count + activeSheet.UsedRange.Column - 1;
+                int totalCabCols = Math.Max(0, totalUsedCols - fixedColCount);
+                string startCabColLetter = GetExcelColumnLetter(fixedColCount + 1); // L 列
+                string endCabColLetter = totalCabCols > 0 ? GetExcelColumnLetter(totalUsedCols) : "K";
+
+                // 3. 初始化固定属性列 (A~K 列)
+                // A 列: 序号自适应动态公式 =ROW()-ROW(A$8)
+                activeSheet.Cells[targetRow, 1].Formula = $"=ROW()-ROW(A$8)";
+                // B 列: 元件名称留空
+                activeSheet.Cells[targetRow, 2].Value = "";
+                // C 列: 型号规格留空
+                activeSheet.Cells[targetRow, 3].Value = "";
+                // D 列: 生产厂家留空
+                activeSheet.Cells[targetRow, 4].Value = "";
+                // E 列: 表价留空
+                activeSheet.Cells[targetRow, 5].Value = "";
+                // F 列: 折扣预设为 1.0
+                activeSheet.Cells[targetRow, 6].Value = 1.0;
+                // G 列: 报出单价预设为 0
+                activeSheet.Cells[targetRow, 7].Value = 0;
+                // H 列: 备注留空
+                activeSheet.Cells[targetRow, 8].Value = "";
+                // I 列: 单位预设为 "个"
+                activeSheet.Cells[targetRow, 9].Value = "个";
+                // J 列: 类别固定为 "元件" (灰字居中)
+                activeSheet.Cells[targetRow, 10].Value = "元件";
+                activeSheet.Cells[targetRow, 10].Font.Color = ColorTranslator.ToOle(Color.FromArgb(128, 128, 128));
+                activeSheet.Cells[targetRow, 10].HorizontalAlignment = -4108; // 居中
+
+                // K 列: 注入 SUMPRODUCT 自动求和公式
+                if (totalCabCols > 0)
+                {
+                    activeSheet.Cells[targetRow, 11].Formula = $"=SUMPRODUCT(${startCabColLetter}$7:${endCabColLetter}$7, {startCabColLetter}{targetRow}:{endCabColLetter}{targetRow})";
+                }
+                else
+                {
+                    activeSheet.Cells[targetRow, 11].Value = 0;
+                }
+
+                // 4. 清空并初始化横向箱柜数量列 (L 列到末列)
+                if (totalCabCols > 0)
+                {
+                    dynamic cabQtyRange = activeSheet.Range[$"{startCabColLetter}{targetRow}:{endCabColLetter}{targetRow}"];
+                    cabQtyRange.Value = "";
+                    cabQtyRange.HorizontalAlignment = -4108; // 居中
+                }
+
+                // 5. 格式与边框美化：设定整行白底与细网格边框
+                dynamic fullRowRange = activeSheet.Range[$"A{targetRow}:{endCabColLetter}{targetRow}"];
+                fullRowRange.Interior.Color = ColorTranslator.ToOle(Color.White);
+                fullRowRange.Borders.LineStyle = 1; // xlContinuous
+                fullRowRange.Borders.Weight = 2; // xlThin
+                fullRowRange.Borders.Color = ColorTranslator.ToOle(Color.FromArgb(217, 217, 217)); // 浅灰细边框
+                activeSheet.Rows[targetRow].RowHeight = 20;
+
+                // 6. 光标定位至新插入行的 B 列 (元件名称) 以便立即输入
+                activeSheet.Cells[targetRow, 2].Select();
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[分布调价] 插入元件行异常: {ex.Message}");
+            }
+            finally
+            {
+                try
+                {
+                    dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                    if (app != null) app.ScreenUpdating = true;
+                }
+                catch { }
+            }
+        }
+
+        /// <summary>
+        /// 删除【元件汇总分布表】当前选区中的元器件数据行，带用量防误删提示与序号自动重算
+        /// </summary>
+        public static void DeleteDistributionComponentRows()
+        {
+            try
+            {
+                // 获取 Excel 顶层应用实例
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                if (app == null) return;
+
+                // 获取活动工作簿与活动表
+                dynamic activeWb = app.ActiveWorkbook;
+                if (activeWb == null) return;
+                dynamic activeSheet = app.ActiveSheet;
+                if (activeSheet == null) return;
+
+                // 校验工作表名称
+                string sName = Convert.ToString(activeSheet.Name)?.Trim() ?? "";
+                if (!string.Equals(sName, DistributionSheetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    System.Windows.Forms.MessageBox.Show($"当前操作仅适用于【{DistributionSheetName}】！", "提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                    return;
+                }
+
+                // 提取用户选区中的所有有效数据行号 (必须 >= 9，严格排除前 8 行表头)
+                var rowsToDelete = new List<int>();
+                foreach (dynamic area in app.Selection.Areas)
+                {
+                    int startRow = Convert.ToInt32(area.Row);
+                    int count = Convert.ToInt32(area.Rows.Count);
+                    for (int r = startRow; r < startRow + count; r++)
+                    {
+                        if (r >= 9 && !rowsToDelete.Contains(r))
+                        {
+                            rowsToDelete.Add(r);
+                        }
+                    }
+                }
+
+                if (rowsToDelete.Count == 0)
+                {
+                    System.Windows.Forms.MessageBox.Show("请先选中需要删除的元器件数据行（第 9 行及以下）！", "提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                    return;
+                }
+
+                // 检查所选行中是否有在各箱柜中存在用量（K 列元件总数 > 0）
+                decimal totalQtyInSelection = 0;
+                var sampleNames = new List<string>();
+
+                foreach (int r in rowsToDelete)
+                {
+                    // 读取 K 列总数
+                    object kVal = activeSheet.Cells[r, 11].Value2;
+                    if (kVal != null && decimal.TryParse(Convert.ToString(kVal), out decimal q) && q > 0)
+                    {
+                        totalQtyInSelection += q;
+                    }
+                    // 收集前 2 个元件名称作为提示样本
+                    if (sampleNames.Count < 2)
+                    {
+                        string name = Convert.ToString(activeSheet.Cells[r, 2].Value)?.Trim() ?? "";
+                        string model = Convert.ToString(activeSheet.Cells[r, 3].Value)?.Trim() ?? "";
+                        if (!string.IsNullOrWhiteSpace(name) || !string.IsNullOrWhiteSpace(model))
+                        {
+                            sampleNames.Add($"{name} {model}".Trim());
+                        }
+                    }
+                }
+
+                // 若选中行包含已有用量，弹出防误删确认对话框
+                if (totalQtyInSelection > 0)
+                {
+                    string sampleText = sampleNames.Count > 0 ? $"【{string.Join("，", sampleNames)}】等 " : "";
+                    string confirmMsg = $"所选的 {rowsToDelete.Count} 个元件在横向各箱柜中共有 {totalQtyInSelection} 件用量！\n\n确定要从【元件汇总分布表】中删除 {sampleText}吗？\n(删除后点击【一键更新到明细】将同步从各箱柜中移除)";
+
+                    var dlgResult = System.Windows.Forms.MessageBox.Show(confirmMsg, "删除元件确认", System.Windows.Forms.MessageBoxButtons.YesNo, System.Windows.Forms.MessageBoxIcon.Warning);
+                    if (dlgResult != System.Windows.Forms.DialogResult.Yes)
+                    {
+                        return; // 用户取消
+                    }
+                }
+
+                app.ScreenUpdating = false;
+
+                // 从大行号到小行号降序删除，避免删除前面的行导致后续行号偏移
+                rowsToDelete.Sort((a, b) => b.CompareTo(a));
+                foreach (int r in rowsToDelete)
+                {
+                    activeSheet.Rows[r].Delete();
+                }
+
+                // 触发工作表重算以确保 A 列连号公式刷新
+                try { activeSheet.Calculate(); } catch { }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[分布调价] 删除元件行异常: {ex.Message}");
+            }
+            finally
+            {
+                try
+                {
+                    dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                    if (app != null) app.ScreenUpdating = true;
+                }
+                catch { }
+            }
+        }
+
+        /// <summary>
+        /// 针对【元件汇总分布表】执行选中行聚焦筛选：
+        /// 1. 纵向：A~K 列只显示选中行，其余数据行隐藏；
+        /// 2. 横向：K 列向右各箱柜，若所选行内容全为空则隐藏对应箱柜列。
+        /// </summary>
+        public static void FocusFilterDistributionRows()
+        {
+            try
+            {
+                // 获取 Excel 顶层应用实例
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                if (app == null) return;
+
+                // 获取活动工作簿与活动表
+                dynamic activeWb = app.ActiveWorkbook;
+                if (activeWb == null) return;
+                dynamic activeSheet = app.ActiveSheet;
+                if (activeSheet == null) return;
+
+                // 校验工作表名称
+                string sName = Convert.ToString(activeSheet.Name)?.Trim() ?? "";
+                if (!string.Equals(sName, DistributionSheetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    System.Windows.Forms.MessageBox.Show($"当前操作仅适用于【{DistributionSheetName}】！", "提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                    return;
+                }
+
+                // 1. 提取用户当前选区中的所有元器件数据行号 (必须 >= 9，严格排除前 8 行表头)
+                var selectedRows = new HashSet<int>();
+                foreach (dynamic area in app.Selection.Areas)
+                {
+                    int startRow = Convert.ToInt32(area.Row);
+                    int count = Convert.ToInt32(area.Rows.Count);
+                    for (int r = startRow; r < startRow + count; r++)
+                    {
+                        if (r >= 9) selectedRows.Add(r);
+                    }
+                }
+
+                if (selectedRows.Count == 0)
+                {
+                    System.Windows.Forms.MessageBox.Show("请先选中需要筛选的元器件数据行（第 9 行及以下）！", "提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                    return;
+                }
+
+                // 冻结屏幕刷新提升速度
+                app.ScreenUpdating = false;
+
+                // 获取表格最后一行与最后一列
+                dynamic usedRange = activeSheet.UsedRange;
+                int lastRow = usedRange.Rows.Count + usedRange.Row - 1;
+                int totalCols = usedRange.Columns.Count + usedRange.Column - 1;
+
+                const int fixedColCount = 11; // A~K 列
+                const int startCabCol = 12;   // L 列开始为箱柜
+                int endCabCol = totalCols;
+
+                // ==================== 纵向行过滤 ====================
+                // 1. 将第 9 行至最后一行全部隐藏
+                if (lastRow >= 9)
+                {
+                    activeSheet.Range[$"A9:A{lastRow}"].EntireRow.Hidden = true;
+                }
+
+                // 2. 仅将选中的数据行恢复可见
+                foreach (int r in selectedRows)
+                {
+                    activeSheet.Rows[r].Hidden = false;
+                }
+
+                // ==================== 横向箱柜列判定与过滤 ====================
+                // 确保前 11 列固定属性列始终可见
+                activeSheet.Range["A1:K1"].EntireColumn.Hidden = false;
+
+                if (endCabCol >= startCabCol)
+                {
+                    int minRow = selectedRows.Min();
+                    int maxRow = selectedRows.Max();
+
+                    // 规则 7：一次性读取选中行在 L 列至末列的大矩形数据 (仅 1 次 COM 调用)
+                    dynamic scanRange = activeSheet.Range[activeSheet.Cells[minRow, startCabCol], activeSheet.Cells[maxRow, endCabCol]];
+                    object[,] matrix = (object[,])scanRange.Value2;
+
+                    int totalCabColsCount = endCabCol - startCabCol + 1;
+
+                    // 逐列检测在选中的各行中是否全为空内容
+                    for (int c = 1; c <= totalCabColsCount; c++)
+                    {
+                        int actualCol = startCabCol + c - 1;
+                        bool isAllEmpty = true;
+
+                        foreach (int r in selectedRows)
+                        {
+                            int rowOffset = r - minRow + 1;
+                            object val = matrix[rowOffset, c];
+
+                            // 校验单元格是否非空 (null 或纯空白字符视为全为空)
+                            if (val != null && !string.IsNullOrWhiteSpace(Convert.ToString(val)))
+                            {
+                                isAllEmpty = false;
+                                break; // 只要有一行有数量，该箱柜列必须保留
+                            }
+                        }
+
+                        // 若选中行全部为空，则隐藏该列，否则保持可见
+                        activeSheet.Columns[actualCol].Hidden = isAllEmpty;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[分布调价] 聚焦筛选异常: {ex.Message}");
+            }
+            finally
+            {
+                try
+                {
+                    dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                    if (app != null) app.ScreenUpdating = true;
+                }
+                catch { }
+            }
+        }
+
+        /// <summary>
+        /// 清除【元件汇总分布表】的聚焦筛选，恢复全部数据行和箱柜列的显示
+        /// </summary>
+        public static void ClearDistributionFilter()
+        {
+            try
+            {
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                if (app == null) return;
+
+                dynamic activeWb = app.ActiveWorkbook;
+                if (activeWb == null) return;
+                dynamic activeSheet = app.ActiveSheet;
+                if (activeSheet == null) return;
+
+                string sName = Convert.ToString(activeSheet.Name)?.Trim() ?? "";
+                if (!string.Equals(sName, DistributionSheetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    System.Windows.Forms.MessageBox.Show($"当前操作仅适用于【{DistributionSheetName}】！", "提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                    return;
+                }
+
+                app.ScreenUpdating = false;
+
+                dynamic usedRange = activeSheet.UsedRange;
+                int lastRow = usedRange.Rows.Count + usedRange.Row - 1;
+                int totalCols = usedRange.Columns.Count + usedRange.Column - 1;
+
+                // 1. 恢复第 9 行及以后所有元器件数据行显示
+                if (lastRow >= 9)
+                {
+                    activeSheet.Range[$"A9:A{lastRow}"].EntireRow.Hidden = false;
+                }
+
+                // 2. 恢复 L 列至末列所有箱柜列显示
+                if (totalCols >= 12)
+                {
+                    string startLetter = GetExcelColumnLetter(12); // L 列
+                    string endLetter = GetExcelColumnLetter(totalCols);
+                    activeSheet.Range[$"{startLetter}1:{endLetter}1"].EntireColumn.Hidden = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[分布调价] 清除筛选异常: {ex.Message}");
+            }
+            finally
+            {
+                try
+                {
+                    dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                    if (app != null) app.ScreenUpdating = true;
+                }
+                catch { }
+            }
+        }
+
+        #endregion
     }
 }

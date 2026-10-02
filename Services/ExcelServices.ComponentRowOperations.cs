@@ -4,6 +4,7 @@ using System.Linq;
 using ExcelAddInDemo.Models;
 using ExcelAddInDemo.Forms;
 using Microsoft.Office.Interop.Excel;
+using ExcelAddInDemo.Services;
 
 namespace ExcelAddInDemo
 {
@@ -183,6 +184,9 @@ namespace ExcelAddInDemo
                     ComponentModel = modelVal
                 };
 
+                // 暂存操作前的剪贴板数据实体，供撤销恢复使用
+                var prevClip = ComponentClipboardManager.Get();
+
                 // 压入全局内存剪贴板管理器
                 ComponentClipboardManager.Set(exchangeDto);
 
@@ -194,14 +198,52 @@ namespace ExcelAddInDemo
                 app.StatusBar = $"[{actionText}元件] {summaryText}";
 
                 // 呈现动态效果：启动高质感橙色流动细虚线穿透浮层动效 (Marching Ants 动态流动虚线)
+                int visualEndCol = Math.Min(colCount, 20);
                 try
                 {
                     // 圈定当前元器件行前台核心业务数据列 (A~T 列，第 1 列至第 20 列) --硬编码: 可见业务数据前20列--
-                    int visualEndCol = Math.Min(colCount, 20);
                     // 启动橙色流动细虚线动效
                     MarchingAntsManager.Show(sheet, startRow, endRow, visualEndCol);
                 }
                 catch { }
+
+                // 将复制/剪切状态记录入撤销栈，支持用户一键撤销复制或剪切状态
+                UndoRedoManager.Instance.PushCommand(new ActionUndoableCommand(
+                    actionName: $"{actionText}元件 ({summaryText})",
+                    undoAction: () =>
+                    {
+                        // 撤销时恢复先前的剪贴板数据
+                        if (prevClip != null)
+                        {
+                            ComponentClipboardManager.Set(prevClip);
+                        }
+                        else
+                        {
+                            // 若先前无剪贴板数据则清空
+                            ComponentClipboardManager.Clear();
+                        }
+                        try
+                        {
+                            // 停止并隐藏流动细虚线动效
+                            MarchingAntsManager.Hide();
+                            // 重置 Excel 系统的 CutCopyMode
+                            dynamic? a = ExcelDnaSafeAccessor.GetApplication();
+                            if (a != null) a.CutCopyMode = (XlCutCopyMode)0;
+                        }
+                        catch { }
+                    },
+                    redoAction: () =>
+                    {
+                        // 重做时再次将该元器件数据压入剪贴板
+                        ComponentClipboardManager.Set(exchangeDto);
+                        try
+                        {
+                            // 重新启动流动细虚线动效
+                            MarchingAntsManager.Show(sheet, startRow, endRow, visualEndCol);
+                        }
+                        catch { }
+                    }
+                ));
             }
             catch (Exception ex)
             {
@@ -291,6 +333,24 @@ namespace ExcelAddInDemo
                 // 校验剪贴板数据有效性
                 if (clipData == null) return;
 
+                // 备份剪贴板原始快照，供可撤销命令进行源位置/目标位置原子回滚
+                var clipSnapshot = new ComponentRowExchangeDto
+                {
+                    IsCutMode = clipData.IsCutMode,
+                    SourceWorkbookName = clipData.SourceWorkbookName,
+                    SourceSheetName = clipData.SourceSheetName,
+                    SourceCabinetK = clipData.SourceCabinetK,
+                    SourceRowIndex = clipData.SourceRowIndex,
+                    RowCount = clipData.RowCount,
+                    ColumnCount = clipData.ColumnCount,
+                    FullRowValues = (object[,])clipData.FullRowValues.Clone(),
+                    CellFormulas = clipData.CellFormulas != null ? new Dictionary<int, string>(clipData.CellFormulas) : null,
+                    CadHandle = clipData.CadHandle,
+                    HandleB = clipData.HandleB,
+                    ComponentName = clipData.ComponentName,
+                    ComponentModel = clipData.ComponentModel
+                };
+
                 // 读取待插入的元器件行数 (默认兼容单行为 1)
                 int rowCount = clipData.RowCount > 0 ? clipData.RowCount : 1;
 
@@ -319,6 +379,13 @@ namespace ExcelAddInDemo
                         if (hbIdx <= maxCols) valuesToWrite[r, hbIdx] = null;
                     }
                 }
+
+                // 计算本次待写入的数据总列数
+                int writeCols = valuesToWrite.GetLength(1);
+                // 构造插入结果的人性化反馈摘要文本，供状态栏与可撤销命令统一展示
+                string resultText = rowCount > 1
+                    ? $"{rowCount} 行元件 (行 {targetRow}~{targetRow + rowCount - 1})"
+                    : $"行 {targetRow}: {clipData.ComponentName}";
 
                 // 备份原始状态以便退出时安全恢复
                 bool prevUpdating = false;
@@ -352,7 +419,6 @@ namespace ExcelAddInDemo
                     insertRows.Insert(XlInsertShiftDirection.xlShiftDown);
 
                     // 写入整行数据矩阵 (单次 COM 批量写入，规则 7)
-                    int writeCols = valuesToWrite.GetLength(1);
                     // 定位待写入的完整目标矩形区域
                     dynamic insertRange = targetSheet.Range[targetSheet.Cells[targetRow, 1], targetSheet.Cells[targetRow + rowCount - 1, writeCols]];
                     // 批量写入数据矩阵
@@ -420,11 +486,7 @@ namespace ExcelAddInDemo
                     }
                     catch { }
 
-                    // 在状态栏反馈插入成功
-                    string resultText = rowCount > 1
-                        ? $"{rowCount} 行元件 (行 {targetRow}~{targetRow + rowCount - 1})"
-                        : $"行 {targetRow}: {clipData.ComponentName}";
-                    // 状态栏显示提示
+                    // 在状态栏反馈插入成功 (直接复用前置构造好的 resultText)
                     app.StatusBar = $"[插入元件成功] {resultText} (跨柜清空Handle: {isCrossCabinet})";
                 }
                 finally
@@ -438,6 +500,18 @@ namespace ExcelAddInDemo
                     // 恢复屏幕刷新
                     try { app.ScreenUpdating = prevUpdating; } catch { }
                 }
+
+                // 构造可逆插入命令并压入撤销栈，支持复制插入撤销与剪切插入双端原子回滚
+                var insertCmd = new ComponentRowInsertCommand(
+                    actionName: clipSnapshot.IsCutMode ? $"剪切插入元件 ({resultText})" : $"插入元件 ({resultText})",
+                    targetSheetName: targetSheetName,
+                    targetRow: targetRow,
+                    rowCount: rowCount,
+                    colCount: writeCols,
+                    insertedValues: valuesToWrite,
+                    isCutMode: clipSnapshot.IsCutMode,
+                    sourceClipSnapshot: clipSnapshot);
+                UndoRedoManager.Instance.PushCommand(insertCmd);
             }
             catch (Exception ex)
             {
@@ -520,6 +594,24 @@ namespace ExcelAddInDemo
                     return;
                 }
 
+                // 计算待备份的元器件完整列数
+                int colCount = Math.Max(DefaultComponentColumnCount, GetSheetColumnCount(sheet));
+                // 规则 7: 二维数组一次性提取待删除的元器件整行原始数据矩阵快照，供撤销精准恢复
+                dynamic readRange = sheet.Range[sheet.Cells[startRow, 1], sheet.Cells[endRow, colCount]];
+                object[,] oldValues = (object[,])readRange.Value2;
+
+                // 提取待删除元件的第一行名称与型号，生成直观的人性化描述
+                string delCompName = Convert.ToString(oldValues[1, 2])?.Trim() ?? "";
+                string delCompModel = Convert.ToString(oldValues[1, 3])?.Trim() ?? "";
+                string delSummaryText = deleteRowCount > 1
+                    ? $"{deleteRowCount} 行元件 (行 {startRow}~{endRow})"
+                    : $"行 {startRow}: {delCompName} {delCompModel}".Trim();
+
+                // 检测当前箱柜内现有元器件的总行数
+                int totalCompCount = startCab.CompEndRow - startCab.CompStartRow + 1;
+                // 检测是否触发了“保留首行空行”骨架安全防御分支
+                bool isPreservedFirstBlankRow = (deleteRowCount >= totalCompCount);
+
                 // 备份原始状态以便退出时安全恢复
                 bool prevUpdating = false;
                 XlCalculation prevCalc = XlCalculation.xlCalculationAutomatic;
@@ -546,11 +638,8 @@ namespace ExcelAddInDemo
 
                 try
                 {
-                    // 检测当前箱柜内现有元器件的总行数
-                    int totalCompCount = startCab.CompEndRow - startCab.CompStartRow + 1;
-
                     // 骨架安全防御：若选中的待删行数包含了该箱柜全部元器件，保留 1 行空行防止小计行结构损毁
-                    if (deleteRowCount >= totalCompCount)
+                    if (isPreservedFirstBlankRow)
                     {
                         // 若选中大于 1 行，先将第 2 行至末尾行物理上移删除
                         if (deleteRowCount > 1)
@@ -558,8 +647,6 @@ namespace ExcelAddInDemo
                             // 物理删除多余行
                             sheet.Range[sheet.Rows[startRow + 1], sheet.Rows[endRow]].Delete(XlDeleteShiftDirection.xlShiftUp);
                         }
-                        // 获取有效列数
-                        int colCount = Math.Max(DefaultComponentColumnCount, GetSheetColumnCount(sheet));
                         // 准备空白行二维数组
                         object[,] blankRow = new object[1, colCount];
                         // 清空保留的第一行元器件数据
@@ -601,6 +688,19 @@ namespace ExcelAddInDemo
                     // 恢复屏幕刷新
                     try { app.ScreenUpdating = prevUpdating; } catch { }
                 }
+
+                // 构造可逆删除命令并压入撤销栈，支持用户一键无损撤销恢复
+                var deleteCmd = new ComponentRowDeleteCommand(
+                    actionName: $"删除元件 ({delSummaryText})",
+                    sheetName: Convert.ToString(sheet.Name) ?? "",
+                    startRow: startRow,
+                    endRow: endRow,
+                    rowCount: deleteRowCount,
+                    colCount: colCount,
+                    isPreservedFirstBlankRow: isPreservedFirstBlankRow,
+                    oldValues: oldValues,
+                    oldFormulas: null);
+                UndoRedoManager.Instance.PushCommand(deleteCmd);
             }
             catch (Exception ex)
             {

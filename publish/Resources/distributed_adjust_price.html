@@ -13,6 +13,8 @@
   <script src="https://unpkg.com/element-plus"></script>
   <!-- 引入 Element Plus 图标库 -->
   <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+  <!-- 引入 FontAwesome 图标库 (与型号识别窗口同款) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <!-- 引入公共绿蓝相间主题样式 (主色调 #009688) -->
   <link rel="stylesheet" href="theme.css">
   <style>
@@ -414,15 +416,81 @@
       to { transform: rotate(360deg); }
     }
 
-    @keyframes progressFadeIn {
-      from { opacity: 0; transform: translateY(-4px); }
-      to { opacity: 1; transform: translateY(0); }
+    /* 底部左侧容器 */
+    .footer-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 折叠/展开圆形图标按钮 (100% 对齐型号识别设置窗口同款设计) */
+    .collapse-toggle-btn {
+      border-color: #009688 !important;
+      color: #009688 !important;
+      background: #e0f2f1 !important;
+      flex-shrink: 0;
+      width: 24px !important;
+      height: 24px !important;
+      padding: 0 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      font-size: 11px !important;
+      transition: all 0.2s ease !important;
+    }
+
+    .collapse-toggle-btn:hover {
+      background: #b2dfdb !important;
+      color: #00796b !important;
+      border-color: #00796b !important;
+      transform: scale(1.1);
+    }
+
+    /* 100px 高度折叠状态样式规范 */
+    #app.is-collapsed {
+      height: 100px !important;
+      overflow: hidden !important;
+    }
+
+    #app.is-collapsed .main-body {
+      display: none !important;
+    }
+
+    #app.is-collapsed .window-footer {
+      display: none !important;
+    }
+
+    #app.is-collapsed .top-banner {
+      height: 66px !important;
+      padding: 8px 16px !important;
+      border-bottom: none !important;
+      box-sizing: border-box !important;
+    }
+
+    /* 折叠模式下的展开还原按钮 */
+    .expand-action-btn {
+      background-color: #ffffff !important;
+      border: 1px solid #009688 !important;
+      color: #00796b !important;
+      font-size: 13px !important;
+      font-weight: 600 !important;
+      padding: 7px 14px !important;
+      height: 36px !important;
+      border-radius: 6px !important;
+      transition: all 0.2s ease !important;
+    }
+
+    .expand-action-btn:hover {
+      background-color: #e0f2f1 !important;
+      color: #004d40 !important;
+      border-color: #004d40 !important;
+      box-shadow: 0 2px 6px rgba(0, 150, 136, 0.2) !important;
     }
   </style>
 </head>
 
 <body>
-  <div id="app">
+  <div id="app" :class="{ 'is-collapsed': isCollapsed }">
     <!-- 1. 顶部无边框标题栏 (支持原生级拖拽移动) -->
     <div class="window-header" @mousedown="handleHeaderMouseDown">
       <div class="window-title-box">
@@ -430,6 +498,10 @@
         <span>分布调价 (二维矩阵交叉表)</span>
       </div>
       <div class="window-actions" @mousedown.stop>
+        <!-- 顶栏折叠/展开快捷按钮 -->
+        <div class="action-btn" :title="isCollapsed ? '展开窗口 (640px)' : '折叠窗口 (100px)'" @click="toggleCollapse">
+          {{ isCollapsed ? '▼' : '▲' }}
+        </div>
         <div class="action-btn" title="最小化" @click="minimizeWindow">─</div>
         <div class="action-btn close-btn" title="关闭" @click="closeWindow">✕</div>
       </div>
@@ -457,8 +529,20 @@
       </div>
 
       <div class="banner-right">
+        <!-- 处于 100px 折叠模式时显示如图一风格的圆形展开按钮 (与底部状态栏圆形按钮同款设计) -->
+        <el-button
+          v-if="isCollapsed"
+          circle
+          size="small"
+          class="collapse-toggle-btn"
+          @click.stop="toggleCollapse"
+          title="展开恢复窗口至 640px 完整面板"
+        >
+          <i class="fa-solid fa-chevron-up"></i>
+        </el-button>
+
         <!-- 阶段二返回重新汇总链接 -->
-        <div v-if="currentStage === 'edit'" class="re-summary-link" @click="switchToConfigStage">
+        <div v-if="currentStage === 'edit' && !isCollapsed" class="re-summary-link" @click="switchToConfigStage">
           <span>🔄</span> 重新汇总
         </div>
 
@@ -648,9 +732,21 @@
 
     </div>
 
-    <!-- 4. 底部微型状态栏 -->
+    <!-- 4. 底部微型状态栏 (包含左下角折叠按钮，对应用户截图红色箭头处) -->
     <div class="window-footer">
-      <span>已连接 ExcelCTtools 工业内核</span>
+      <div class="footer-left">
+        <!-- 左下角折叠/展开圆形图标按钮 (100% 对齐用户截图型号识别设置窗口同款图标设计) -->
+        <el-button
+          circle
+          size="small"
+          class="collapse-toggle-btn"
+          :title="isCollapsed ? '展开完整面板 (640px)' : '折叠面板 (高度折叠到 100px)'"
+          @click.stop="toggleCollapse"
+        >
+          <i :class="isCollapsed ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
+        </el-button>
+        <span>已连接 ExcelCTtools 工业内核</span>
+      </div>
       <span v-if="currentStage === 'config'">状态: 等待配置生成</span>
       <span v-else style="color: #00796b; font-weight: bold;">状态: 元件汇总分布表已就绪，等待编辑后更新</span>
     </div>
@@ -663,6 +759,9 @@
     const app = createApp({
       setup() {
         // ----------------- 响应式状态定义 -----------------
+        // 窗口折叠状态: false 正常 (640px) | true 紧凑 (100px)
+        const isCollapsed = ref(false);
+
         // 当前视图阶段: 'config' (配置选择生成) | 'edit' (编辑与更新)
         const currentStage = ref('config');
 
@@ -772,6 +871,17 @@
 
         const closeWindow = () => {
           postMessageToCSharp({ action: 'closeWindow' });
+        };
+
+        // 切换窗口折叠/展开逻辑 (100px <-> 640px)
+        const toggleCollapse = () => {
+          isCollapsed.value = !isCollapsed.value;
+          const targetH = isCollapsed.value ? 100 : 640;
+          postMessageToCSharp({
+            action: 'resizeWindow',
+            height: targetH,
+            collapsed: isCollapsed.value
+          });
         };
 
         // ----------------- 双向通信消息机制 -----------------
@@ -929,6 +1039,8 @@
 
         // 暴露至模板上下文
         return {
+          isCollapsed,
+          toggleCollapse,
           currentStage,
           loading,
           generating,

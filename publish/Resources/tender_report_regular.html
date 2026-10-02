@@ -423,6 +423,31 @@
             </el-col>
           </el-row>
 
+          <!-- 分组 2.5: 明细归并与脱敏选项 (合并至计费区辅材) -->
+          <div class="setting-group-title" style="margin-top: 6px;">🧩 明细归并与脱敏选项 (合并至计费区辅材)</div>
+          <el-row :gutter="12" class="setting-row">
+            <el-col :span="6">
+              <el-checkbox v-model="reportSettings.mergeComponentGroupToAux">
+                <span style="font-weight: 500; color: #009688;">合并【元件组】到辅材</span>
+              </el-checkbox>
+            </el-col>
+            <el-col :span="6">
+              <el-checkbox v-model="reportSettings.mergeWireToAux">
+                <span style="font-weight: 500; color: #009688;">合并【电线】到辅材</span>
+              </el-checkbox>
+            </el-col>
+            <el-col :span="6">
+              <el-checkbox v-model="reportSettings.mergeCopperToAux">
+                <span style="font-weight: 500; color: #009688;">合并【铜排】到辅材</span>
+              </el-checkbox>
+            </el-col>
+            <el-col :span="6">
+              <el-checkbox v-model="reportSettings.auxRemarkShowMergedDetails" :disabled="!hasAnyMergeChecked">
+                辅材备注注明包含项
+              </el-checkbox>
+            </el-col>
+          </el-row>
+
           <!-- 分组 3: 报价说明与排版 -->
           <div class="setting-group-title" style="margin-top: 6px;">📝 报价说明与排版</div>
           <el-row :gutter="12" class="setting-row">
@@ -503,7 +528,18 @@
             notesAutoFitRowHeight: false,
             textAutoWrap: false,
             splitDetailBySheet: true, // 默认按“分类工作表”分别输出独立 Sheet
-            printSetting: 'Continuous'
+            printSetting: 'Continuous',
+            mergeComponentGroupToAux: false, // 默认不合并元件组
+            mergeWireToAux: false, // 默认不合并电线
+            mergeCopperToAux: false, // 默认不合并铜排
+            auxRemarkShowMergedDetails: true // 辅材备注默认注明包含项
+          });
+
+          // 计算属性：判定是否有任何明细归并选项被勾选
+          const hasAnyMergeChecked = computed(() => {
+            return !!(reportSettings.value.mergeComponentGroupToAux ||
+                      reportSettings.value.mergeWireToAux ||
+                      reportSettings.value.mergeCopperToAux);
           });
 
           // 打印分页切换联动属性
@@ -678,10 +714,17 @@
                     }
                   } else if (data.action === 'exportReportResult') {
                     isExporting.value = false;
-                    const res = data.payload;
-                    if (res && res.Success) {
+                    const res = data.payload || {};
+                    console.log('[TenderReport] 收到导出响应 payload:', res);
+
+                    // 兼容后端 camelCase (小写驼峰) 与 PascalCase (大写首字母) 字段命名
+                    const isSuccess = Boolean(res.success || res.Success);
+                    const msg = res.message || res.Message || (isSuccess ? '常规样式投标报表导出成功！' : '报表导出失败');
+                    const filePath = res.outputFilePath || res.OutputFilePath || '';
+
+                    if (isSuccess) {
                       ElementPlus.ElMessageBox.confirm(
-                        res.Message || '常规样式投标报表导出成功！',
+                        msg,
                         '导出完成',
                         {
                           confirmButtonText: '打开文件所在文件夹',
@@ -689,10 +732,10 @@
                           type: 'success'
                         }
                       ).then(() => {
-                        if (res.OutputFilePath) {
+                        if (filePath) {
                           postToCSharp({
                             action: 'openExportedFileLocation',
-                            filePath: res.OutputFilePath
+                            filePath: filePath
                           });
                         }
                         closeWindow();
@@ -700,7 +743,11 @@
                         closeWindow();
                       });
                     } else {
-                      ElementPlus.ElMessage.error(res.Message || '报表导出失败');
+                      ElementPlus.ElMessage.error({
+                        message: msg,
+                        duration: 5000,
+                        showClose: true
+                      });
                     }
                   }
                 } catch (e) {
@@ -731,7 +778,8 @@
             closeWindow,
             startExport,
             reportSettings,
-            isPaginatedPrint
+            isPaginatedPrint,
+            hasAnyMergeChecked
           };
         }
       });

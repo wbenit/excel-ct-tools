@@ -150,17 +150,19 @@ namespace ExcelAddInDemo
           <button id='btnCloudSolution' label='云方案' imageMso='ServerProperties' size='large' onAction='OnMenuAction' />
           <!-- 云物料下拉菜单 (使用标准SQL企业物料数据库图标) -->
           <menu id='menuCloudMaterial' label='云物料' imageMso='DatabaseSqlServer' size='large'>
-            <!-- 云物料库项 (配置SQL企业物料数据库图标) -->
-            <button id='btnCloudMaterialSub' label='云物料库' imageMso='DatabaseSqlServer' onAction='OnMenuAction' />
+            <!-- 1. 物料匹配与品牌规则按钮 -->
+            <button id='btnCloudMatchSetting' label='物料匹配与品牌规则...' imageMso='ControlProperties' screentip='物料匹配与品牌规则' supertip='配置元器件型号识别解析管道及品牌优先匹配规则' onAction='OnMenuAction' />
+            <!-- 2. 在线查价按钮 (电气天下/天工) -->
+            <button id='btnCloudOnlinePriceSearch' label='在线查价 (电气天下/天工)...' imageMso='WebPagePreview' screentip='在线查价与静默回写' supertip='从电气天下或天工矩阵实时拉取元器件单价，支持一键批量回写' onAction='OnMenuAction' />
+            <!-- 3. 元器件数据管理按钮 -->
+            <button id='btnCloudComponentManage' label='元器件数据管理...' imageMso='TableInsertRowsAbove' screentip='元器件数据管理' supertip='直接在 Excel 中维护和批量管理元器件基础数据' onAction='OnMenuAction' />
+            <!-- 4. 选配配套附件按钮 (按用户要求排在最后一项) -->
+            <button id='btnCloudComponentAttachment' label='选配配套附件...' imageMso='AccessFormWizard' screentip='选配配套附件' supertip='打开当前元器件选配配套附件工作台' onAction='OnMenuAction' />
           </menu>
           <!-- 型号识别(提取极数与电流) 按钮 (使用标准筛选过滤漏斗图标) -->
           <button id='btnModelParamParser' label='识别极数电流' imageMso='Filter' size='large' screentip='型号识别极数电流' supertip='自动从型号中识别并提取电流和极数，支持双通道顺位流水线与白名单过滤' onAction='OnMenuAction' />
-          <!-- 元器件数据管理按钮 (支持在 Excel 中直接查看、批量筛选、选中行更新/新增/删除) -->
-          <button id='btnComponentManage' label='元器件管理' imageMso='TableInsertRowsAbove' size='large' screentip='元器件数据管理' supertip='在 Excel 中按品牌和名称筛选元器件数据，支持对选中行进行精准更新、新增和删除' onAction='OnMenuAction' />
           <!-- 二次元件组规则管道(生成二次) 按钮 -->
           <button id='btnComponentGroupRule' label='生成二次元件' imageMso='TableFormulaDialog' size='large' screentip='二次元件组规则管道' supertip='基于可视化动态规则管道自动识别箱柜元件特征，生成二次元件组并自动写入套数' onAction='OnMenuAction' />
-          <!-- 二次图方案与 BOM 库按钮 -->
-          <button id='btnSecondaryCircuitManage' label='二次方案库' imageMso='QueryShowTable' size='large' screentip='二次图方案与BOM管理' supertip='管理二次原理图控制回路方案、同配置多回路映射、门板开孔、人工工费及BOM物料定额' onAction='OnMenuAction' />
         </group>
         <!-- ③调价格→ 功能分组 -->
         <group id='grpAdjustPrice' label='③调价格→'>
@@ -195,8 +197,7 @@ namespace ExcelAddInDemo
             <!-- 11. 报价智能核验项 (排查同型号价格冲突、公式破坏、AA/AB图纸参数缺失与价格倒挂) -->
             <button id='btnQuotationCheckSub' label='报价智能核验' imageMso='ReviewAcceptChange' onAction='OnMenuAction' screentip='报价智能核验' supertip='全面排查全表同型号价格冲突、公式覆写破坏、面价漏填、AA/AB图纸参数缺失及价格倒挂，支持一键自愈修复' />
           </menu>
-          <!-- 在线查价大图标直达按钮 -->
-          <button id='btnOnlinePriceSearchBig' label='在线查价' imageMso='WebPagePreview' size='large' screentip='在线查价与静默回写' supertip='从电气天下或天工矩阵实时拉取元器件单价，支持框选一键静默批量回写与自主选择回填列' onAction='OnMenuAction' />
+
           <!-- 智能算料/辅材壳体计算 按钮 (大图标直达) -->
           <button id='btnCabinetAuxCalc' label='辅材壳体计算' imageMso='CalculateNow' size='large' screentip='辅材壳体与配电智能计算' supertip='智能推导匹配壳体尺寸、计算铜排母线用量、一次及二次接线辅材与装配人工费，支持全参数动态配置' onAction='OnMenuAction' />
           <!-- 报价核验大图标直达按钮 (全面排查同型号价格冲突、公式破坏、AA/AB图纸参数缺失与价格倒挂) -->
@@ -600,23 +601,29 @@ namespace ExcelAddInDemo
                 // 弹出基于 WebView2 + Vue 3 的“二次元件组规则管道构建器”窗口
                 ExcelServices.ShowComponentGroupBuilderDialog();
             }
-            // 响应“二次方案库”按钮指令
-            else if (controlId == "btnSecondaryCircuitManage")
-            {
-                // 弹出基于 WebView2 + Vue 3 的“二次图回路方案与 BOM 管理中心”窗口
-                ExcelServices.ShowSecondaryCircuitManageDialog();
-            }
             // 响应“云方案”按钮指令
             else if (controlId == "btnCloudSolution")
             {
                 // 弹出基于 WebView2 + Vue 3 的“云方案中心 (行业方案/企业方案)”窗口
                 ExcelServices.ShowCloudSolutionDialog();
             }
-            // 响应“元器件管理”按钮指令
-            else if (controlId == "btnComponentManage")
+            // 响应“元器件管理”按钮指令 (支持大图标与云物料下拉菜单项)
+            else if (controlId == "btnComponentManage" || controlId == "btnCloudComponentManage")
             {
                 // 弹出基于 WebView2 + Vue 3 的“元器件数据管理”悬浮窗口
                 ExcelServices.ShowComponentManageDialog();
+            }
+            // 响应“物料匹配与品牌规则”按钮指令 (云物料下拉菜单项)
+            else if (controlId == "btnCloudMatchSetting")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“物料匹配与品牌规则”设置窗口
+                ExcelServices.ShowComponentMatchDialog();
+            }
+            // 响应“选配配套附件”按钮指令 (云物料下拉菜单最后一项)
+            else if (controlId == "btnCloudComponentAttachment")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“选配配套附件”浮窗
+                ExcelServices.ShowComponentAttachmentOverlay();
             }
             // 响应“智能辅材壳体计算”/“智能算料”/“箱体尺寸预估”按钮指令
             else if (controlId == "btnCabinetAuxCalc" || controlId == "btnSmartMaterial" || controlId == "btnEstimateCabinetSizeSub")
@@ -624,8 +631,8 @@ namespace ExcelAddInDemo
                 // 弹出基于 WebView2 + Vue 3 的“智能辅材与壳体计算”工作台
                 ExcelServices.ShowCabinetAuxCalcDialog();
             }
-            // 响应“在线查价 (电气天下/天工)”按钮指令
-            else if (controlId == "btnOnlinePriceSearch" || controlId == "btnOnlinePriceSearchBig")
+            // 响应“在线查价 (电气天下/天工)”按钮指令 (支持大图标与云物料下拉菜单项)
+            else if (controlId == "btnOnlinePriceSearch" || controlId == "btnOnlinePriceSearchBig" || controlId == "btnCloudOnlinePriceSearch")
             {
                 // 弹出基于 WebView2 + Vue 3 的“在线查价与静默回写”工作台
                 ExcelServices.ShowOnlinePriceSearchDialog();

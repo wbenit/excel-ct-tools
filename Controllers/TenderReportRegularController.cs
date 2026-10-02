@@ -88,8 +88,13 @@ namespace ExcelAddInDemo.Controllers
         {
             try
             {
+                // 记录进入导出控制器的调试日志
+                LogHelper.WriteLog($"[TenderReport] Controller 收到导出请求, 参数长度={configJson?.Length ?? 0}");
+
+                // 检查入参字符串是否为空
                 if (string.IsNullOrWhiteSpace(configJson))
                 {
+                    LogHelper.WriteLog("[TenderReport] 提交的导出参数为空，直接终止");
                     return JsonSerializer.Serialize(new TenderReportExportResult
                     {
                         Success = false,
@@ -101,6 +106,7 @@ namespace ExcelAddInDemo.Controllers
                 var config = JsonSerializer.Deserialize<TenderReportExportConfig>(configJson, JsonOptions);
                 if (config == null)
                 {
+                    LogHelper.WriteLog("[TenderReport] 导出参数反序列化失败，config 为 null");
                     return JsonSerializer.Serialize(new TenderReportExportResult
                     {
                         Success = false,
@@ -108,20 +114,38 @@ namespace ExcelAddInDemo.Controllers
                     }, JsonOptions);
                 }
 
+                // 记录成功解析的工程名称与分类选择数量
+                int selCatCount = config.SelectedCategories?.Count ?? 0;
+                LogHelper.WriteLog($"[TenderReport] 导出参数解析成功: 工程=[{config.ProjectInfo?.ProjectName}], 选中分类数={selCatCount}");
+
                 // 核心规则：自动将用户当前调整的报表偏好选项持久化写入本地 appsettings.json
                 if (config.Settings != null)
                 {
-                    ConfigManager.Instance.Current.TenderReport = config.Settings;
-                    ConfigManager.Instance.SaveConfig(ConfigManager.Instance.Current);
+                    try
+                    {
+                        // 保存至单例配置管理器并写盘
+                        ConfigManager.Instance.Current.TenderReport = config.Settings;
+                        ConfigManager.Instance.SaveConfig(ConfigManager.Instance.Current);
+                    }
+                    catch (Exception exCfg)
+                    {
+                        // 配置保存失败不阻断导出主流程
+                        LogHelper.WriteLog($"[TenderReport] 持久化报表偏好设置异常: {exCfg.Message}");
+                    }
                 }
 
                 // 调用服务层生成引擎执行导出
                 var result = ExcelServices.ExportTenderReportRegular(config);
 
+                // 记录服务层导出结果指标
+                LogHelper.WriteLog($"[TenderReport] 服务层导出完成: Success={result.Success}, Msg=[{result.Message}], File=[{result.OutputFilePath}]");
+
                 return JsonSerializer.Serialize(result, JsonOptions);
             }
             catch (Exception ex)
             {
+                // 记录控制器层未捕获的严重异常堆栈
+                LogHelper.WriteLog($"[TenderReport] 导出控制器处理异常: {ex}");
                 return JsonSerializer.Serialize(new TenderReportExportResult
                 {
                     Success = false,

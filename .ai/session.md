@@ -1,3 +1,69 @@
+- **【故障排查与修复】常规样式投标报表导出提示“报表导出失败”原因排查与全链路防御修复 (`Resources/tender_report_regular.html`, `publish/Resources/tender_report_regular.html`, `Controllers/TenderReportRegularController.cs`, `Services/ExcelServices.TenderReport.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **问题排查与根本原因剖析**：
+     - **UI 假报错与真实信息被遮蔽（核心直接根因）**：在前端 HTML/JS (`tender_report_regular.html`) 中，接收后端 `exportReportResult` 时，使用了大驼峰属性 `res.Success` 和 `res.Message`。而后端 ASP.NET/System.Text.Json 配置了 `JsonNamingPolicy.CamelCase`，返回的 JSON 键为小驼峰 `success` 和 `message`。导致前端判定 `res.Success` 为 `undefined`（走入 `else` 分支），且 `res.Message` 也为 `undefined`，直接触发兜底提示 `ElementPlus.ElMessage.error(res.Message || '报表导出失败')`。这使得无论后端是否导出成功，前端一律弹出“报表导出失败”，真实的后端成功结果或具体异常细节被完全掩盖。
+     - **底层数据读取潜在异常防御**：在 `CollectFullCategoryDetails` 中，原代码使用强制类型转换 `(object[,])compRange.Value2` 与 `(object[,])feeRange.Value2`。若遇到元器件行为空或计费区为空的特殊箱柜，Excel COM 返回 `null` 或单值对象，直接转换或调用 `GetLength(1)` 会引发 `NullReferenceException`。
+  2. **修复与健壮性加固措施**：
+     - **前端大小写自适应兼容**：在 `tender_report_regular.html` 中改为 `const isSuccess = Boolean(res.success || res.Success);` 与 `const msg = res.message || res.Message || ...;`，并加入 `console.log`，彻底根治假报错与报错吞没问题；
+     - **后端全链路日志追踪**：在 `TenderReportRegularController.ExportReport` 与 `ExcelServices.ExportTenderReportRegular` 的所有关键分支（参数校验、配置存储、分类抓取、模板创建、异常捕获等）加入详尽的 `LogHelper.WriteLog`，便于在遇到故障时第一时间通过日志定位具体行列与原因；
+     - **COM 读取与空值多重保护**：在 `CollectFullCategoryDetails` 中将 `compRange.Value2 as object[,]` 增加非空判断、行列长度保护；对 `Tool.FixAndFillCabinetNamesForSheet` 增加 `try-catch` 保护；对 `ApplyAuxMerge` 增加非空保护；
+  3. **编译与产物同步**：
+     - 严格遵循新增代码每 3 行包含一行中文注释的规则；
+     - `dotnet build /p:RunExcelDnaBuild=false` 编译成功：**0 错误**；
+     - 产物 `publish/ExcelAddInDemo.dll` 与 `publish/Resources/tender_report_regular.html` 均已更新同步。
+
+- **【全量闭环交付】常规样式投标报表导出支持自由勾选将“元件组”、“电线”、“铜排”合并至计费区“辅材”功能落地 (`Models/TenderReportModels.cs`, `Services/ExcelServices.TenderReport.cs`, `Resources/tender_report_regular.html`, `publish/Resources/tender_report_regular.html`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心需求与交互设计落地**：
+     - **业务痛点**：在投标报表或标书报表导出时，客户/甲方往往不希望展示过于细碎的铜排、电线或二次方案组明细，需要一键将这些敏感物料项脱敏并合流至计费区域的“辅材”费用项；
+     - **自由组合与就地持久化**：在【常规样式投标报表导出】向导窗口（卡片 3：⚙️ 报表自由配置选项）新增【🧩 明细归并与脱敏选项 (合并至计费区辅材)】面板，提供：
+       - `合并【元件组】到辅材` (`mergeComponentGroupToAux`)
+       - `合并【电线】到辅材` (`mergeWireToAux`)
+       - `合并【铜排】到辅材` (`mergeCopperToAux`)
+       - `辅材备注注明包含项` (`auxRemarkShowMergedDetails`，勾选任一合并项时可用，未勾选时智能置灰)；
+       - 所有选项通过 `TenderReportRegularController` 自动持久化写入本地 `appsettings.json`，下次打开自动回填记忆。
+  2. **精准特征识别与全域数据采集升级 (`Services/ExcelServices.TenderReport.cs`)**：
+     - 在 `CollectFullCategoryDetails` 中，将元器件读取区域从原来的 A~I 列（9 列）扩展至 A~AB 列（28 列），遵循规则 7 / 规则 12 内存 2D 数组一次性读取；
+     - **铜排特征**：名称包含/等于“铜排”、型号以“TMY”开头，或类别 (Q 列) 为“材料”且包含“铜”；
+     - **电线特征**：名称为“电线”、类别 (Q 列) 为“电线”、备注 (I 列) 包含“配线/一次线/二次线”，或型号以“BV-”、“BVR-”、“RV-”、“RVV-”、“WDZ-”等开头；
+     - **元件组特征**：AB 列标记为“二次组”、名称包含“二次组/元件组”，或备注包含“二次组/方案”；
+     - 识别结果注入到 `TenderReportComponentItem` 强类型标志中。
+  3. **内存级数据归并与财务金额绝对守恒引擎 (`ApplyAuxMerge`)**：
+     - **元器件区域**：筛选移出被勾选合并的元器件，保留其余有效元器件并重新自增排列序号（1, 2, 3...）；
+     - **计费费用区域**：
+       - 提取被移出项的总金额 $M$ 与类型描述（如“含铜排、电线”）；
+       - 小计/元器件小计行合价扣减 $M$（等于剩余元器件总价），与元器件明细严密吻合；
+       - 计费区辅材行合价累加 $M$（若底稿计费区无辅材行则动态构建“辅材”项插入在小计后），并在备注中自动追加“含铜排、电线”说明；
+       - 计费项序号连续自增刷新；
+     - **金额守恒保证**：小计扣减 $M$ 与辅材累加 $M$ 严格抵消，整柜单价、合价、分类总额及报表总额一分钱不差。
+  4. **构建与产物全量同步**：
+     - 新增代码严格遵循**至少每 3 行包含一行中文注释**规范，默认字样均标明 `--硬编码--`；
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false` 编译成功：**0 错误**；
+     - 生成产物 `publish/ExcelAddInDemo.dll` 及前端界面 `publish/Resources/tender_report_regular.html` 已全量同步。
+
+- **【全量闭环交付】辅材导线与铜排各分项明细批量写入元器件区域底部（备注带单根下料长度如水平主排0.65m）、计费区保留固定基础补贴、取消全局定义名称刷新与公式自愈落地 (`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心指令与决策落地**：
+     - 用户指令：“该功能可以自动生成辅材和铜排，需求是把辅材和铜排的明细写入元器件区域，理解表述需求，分析实现可行性” -> “1，规格 TMY-30*4、TMY-25*3写入c型号列，水平主排/垂直N排/零地排/分支排写入I备注列；2，保留固定几次补贴费用；3，电线，q列统一为电线；4，公式自愈与名称刷新（规则 8）取消这一步” -> “i列除了需要备注需要再加上长度” -> 确认格式为：“水平主排0.65m, 电线保持”；
+  2. **全面贯彻结构化明细下沉与就地轻量维护**：
+     - **【数据结构升级与单根长度核算】(`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`)**：
+       - `CopperUsageDetailItem`：扩展 `LengthMeters` 属性，并在 5 个铜排推导分支中计算单根下料长度米数；
+       - `CabinetCalcResult`：包含 `CopperDetails`、`FixedAuxiliaryCost`、`FixedAuxiliaryFormula`；
+       - 铜排 I 列备注格式化：`水平主排{L:0.##}m`（如 `水平主排0.65m`）、`垂直母排{L:0.##}m`（如 `垂直母排1.2m`）、`垂直N排{L:0.##}m`（如 `垂直N排2m`）、`零地排{L:0.##}m`（如 `零地排0.65m`）、`分支排{L:0.##}m`（如 `分支排1m`）；
+       - 电线 I 列备注：严格遵从用户指示保持为 `一次配线` 与 `二次配线`；
+     - **【计费区辅材行就地保留固定补贴】(`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+       - 若 `FixedAuxiliaryCost > 0`，保留在计费区 M 列（填入公式或数值），F 列写 1，E 列写台；若无固定补贴，清空计费区辅材行的 F 列与 M 列；
+     - **【元器件区域批量写入导线与铜排分项明细】(`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+       - 智能识别现有真实元器件与此前自动生成的历史物料行，紧挨最后一个真实元器件下一行写入，绝不出现空行断层；
+       - 导线行（一次配线 + 二次配线）：B 列写 `电线`，C 列写线规（如 `BV-10`, `BVR-1.0` 等），E 列写 `米`，F 列写推导米数，I 列保持 `一次配线` 或 `二次配线`，M 列写单价，**Q 列统一为 `电线`**；
+       - 铜排行（各分项）：B 列写 `铜排`，**C 列写截面规格（如 `TMY-30*4`, `TMY-25*3` 等）**，E 列写 `KG`，F 列写重量，**I 列写部位与单根长度（如 `水平主排0.65m`）**，M 列写单价（76），Q 列写 `材料`；
+       - 空间保障（规则 6）：元器件区域预留空行不足时在 `subsumRow` 处向下推移插入新行；清除多余旧物料行内容保留为合法空行；
+       - 2D 数组单次批量读写（规则 7）：A 到 Q 列一次性写入 `Range.Formula`；
+     - **【取消全局自愈与名称刷新】(`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+       - 彻底移除对 `RefreshCabinetFeeAreaFormulas` 的调用；
+       - 移除单柜回写 `WriteSingleCabinetAuxAndShell` 与全表批量更新 `UpdateCurrentCategoryAuxAndShell` 结尾处的 `Tool.FixAndFillCabinetNamesForSheet(ws)` 调用；
+       - 仅就地更新维护当前箱柜小计行 H 列求和公式 `=ROUND(SUM(H{compStart}:H{compEnd}),2)` 与 K 列成本求和公式；
+  3. **构建与产物 100% 对齐**：
+     - 新增代码严格遵循每 3 行包含至少 1 行规范中文注释要求，无未标记硬编码；
+     - `dotnet build /p:RunExcelDnaBuild=false` 编译通过：**0 错误**；
+     - 产物 `publish/ExcelAddInDemo.dll`（2,502,656 字节，12:31:58）已同步更新。
 - **【全量闭环交付】彻底清除嵌入 AutoCAD 的所有多余代码与废弃文件，全面纯净化交付 (`CadHostControl.cs 彻底删除`, `CadEmbedManager.cs`, `ExcelServices.CadEmbed.cs`, `RibbonController.cs`, `publish/ExcelAddInDemo.dll`)**：
   1. **用户核心指令**：“去除嵌入到excel时候的所有多余代码”；
   2. **全面大扫除与架构纯净化落地**：

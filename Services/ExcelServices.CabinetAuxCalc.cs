@@ -817,6 +817,8 @@ namespace ExcelAddInDemo
             double copperWeight = 0.0;
             // 记录铜排各分项计算公式明细列表 (主母排、垂直N排、零地排、出线分支排)
             var copperFormulaDetails = new List<string>();
+            // 记录铜排各分项结构化用量明细列表 (供直接写入元器件明细区域)
+            var copperDetails = new List<CopperUsageDetailItem>();
 
             // 提取主进线开关 (约定第一行元器件为主进线开关)
             CabinetComponentItem? mainSwitchComp = scanData.Components.Count > 0 ? scanData.Components[0] : null;
@@ -973,6 +975,18 @@ namespace ExcelAddInDemo
                     copperWeight += horizWeight;
                     // 记录透明的水平主排计算明细
                     copperFormulaDetails.Add($"水平主排 ({horizontalPoleCount}根 | {mainBusSpecItem.Spec} | {mainBusWeightPerMeter:F3}kg/m): {mainBusWeightPerMeter:F3} × [({shellWidth}-{rules.CopperRules.WidthDeduction}) × {horizontalPoleCount}] / 1000 = {horizWeight:F2} KG");
+                    // 水平主排单根展开长度 (单位: 米)
+                    double horizSingleLenMeters = Math.Round(effectiveWidth / 1000.0, 2);
+                    // 记录结构化水平主排明细供回写元器件明细区 (用户指示: 加上长度，如 水平主排0.65m)
+                    copperDetails.Add(new CopperUsageDetailItem
+                    {
+                        PartName = "水平主排",
+                        Spec = mainBusSpecItem.Spec,
+                        Weight = Math.Round(horizWeight, 2),
+                        UnitPrice = copperPrice,
+                        LengthMeters = horizSingleLenMeters,
+                        Remark = $"水平主排{horizSingleLenMeters:0.##}m"
+                    });
                 }
                 // 1.2 塑壳台数不足(节点 5 false) 或 塑壳电流和不足(节点 6 false)，均流转至垂直母排判定 (节点 16)
                 else if (branchTotalCurrentSum >= rules.CopperRules.BranchTotalCurrentThreshold &&
@@ -994,6 +1008,18 @@ namespace ExcelAddInDemo
                     copperWeight += vertWeight;
                     // 记录垂直母排计算明细
                     copperFormulaDetails.Add($"垂直母排 ({vertPoleCount}根 | {mainBusSpecItem.Spec} | {mainBusWeightPerMeter:F3}kg/m): {mainBusWeightPerMeter:F3} × [{rules.CopperRules.VerticalBaseLength:F1} + {rules.CopperRules.LoadExtensionRatio:F2}×({branchTotalCurrentSum}/{rules.CopperRules.LoadExtensionStepCurrent})] × {vertPoleCount} = {vertWeight:F2} KG");
+                    // 垂直母排单根展开长度 (单位: 米)
+                    double vertSingleMeters = Math.Round(vertSingleLenMeters, 2);
+                    // 记录结构化垂直母排明细供回写元器件明细区 (用户指示: 加上长度，如 垂直母排1.2m)
+                    copperDetails.Add(new CopperUsageDetailItem
+                    {
+                        PartName = "垂直母排",
+                        Spec = mainBusSpecItem.Spec,
+                        Weight = Math.Round(vertWeight, 2),
+                        UnitPrice = copperPrice,
+                        LengthMeters = vertSingleMeters,
+                        Remark = $"垂直母排{vertSingleMeters:0.##}m"
+                    });
                 }
 
                 // ==========================================
@@ -1011,6 +1037,18 @@ namespace ExcelAddInDemo
                     string reason = hasSpecialComponents ? "包含特殊元器件" : "主开关为4极";
                     // 记录垂直 N 排计算明细
                     copperFormulaDetails.Add($"垂直N排 ({reason} | {mainBusSpecItem.Spec}): {mainBusWeightPerMeter:F3} × ({shellHeight}-{rules.CopperRules.HeightDeduction}) / 1000 = {vertNWeight:F2} KG");
+                    // 垂直N排单根展开长度 (单位: 米)
+                    double vertNSingleLenMeters = Math.Round(vertNBusLen / 1000.0, 2);
+                    // 记录结构化垂直N排明细供回写元器件明细区 (用户指示: 加上长度，如 垂直N排2m)
+                    copperDetails.Add(new CopperUsageDetailItem
+                    {
+                        PartName = "垂直N排",
+                        Spec = mainBusSpecItem.Spec,
+                        Weight = Math.Round(vertNWeight, 2),
+                        UnitPrice = copperPrice,
+                        LengthMeters = vertNSingleLenMeters,
+                        Remark = $"垂直N排{vertNSingleLenMeters:0.##}m"
+                    });
                 }
 
                 // ==========================================
@@ -1026,6 +1064,18 @@ namespace ExcelAddInDemo
                     copperWeight += groundWeight;
                     // 记录零地排计算明细
                     copperFormulaDetails.Add($"零地排 (标配 | {mainBusSpecItem.Spec}): {mainBusWeightPerMeter:F3} × ({shellWidth}-{rules.CopperRules.WidthDeduction}) / 1000 = {groundWeight:F2} KG");
+                    // 零地排单根展开长度 (单位: 米)
+                    double groundSingleLenMeters = Math.Round(groundBusLen / 1000.0, 2);
+                    // 记录结构化零地排明细供回写元器件明细区 (用户指示: 加上长度，如 零地排0.65m)
+                    copperDetails.Add(new CopperUsageDetailItem
+                    {
+                        PartName = "零地排",
+                        Spec = mainBusSpecItem.Spec,
+                        Weight = Math.Round(groundWeight, 2),
+                        UnitPrice = copperPrice,
+                        LengthMeters = groundSingleLenMeters,
+                        Remark = $"零地排{groundSingleLenMeters:0.##}m"
+                    });
                 }
 
                 // ==========================================
@@ -1049,6 +1099,18 @@ namespace ExcelAddInDemo
                         string currentDesc = string.Join("/", group.Currents);
                         // 记录该规格出线分支排的透明推导算式
                         copperFormulaDetails.Add($"出线分支排 (出线{currentDesc}A共{group.TotalCount}台 | {group.SpecItem.Spec} | {group.SpecItem.WeightPerMeter:F3}kg/m): {group.TotalCount}台 × {branchUnitLen:F1}m × {group.SpecItem.WeightPerMeter:F3}kg/m = {groupWeight:F2} KG");
+                        // 出线分支排单台基准长 (单位: 米)
+                        double branchSingleLenMeters = Math.Round(branchUnitLen, 2);
+                        // 记录结构化分支排明细供回写元器件明细区 (用户指示: 加上长度，如 分支排1m)
+                        copperDetails.Add(new CopperUsageDetailItem
+                        {
+                            PartName = "分支排",
+                            Spec = group.SpecItem.Spec,
+                            Weight = Math.Round(groupWeight, 2),
+                            UnitPrice = copperPrice,
+                            LengthMeters = branchSingleLenMeters,
+                            Remark = $"分支排{branchSingleLenMeters:0.##}m"
+                        });
                     }
                 }
             }
@@ -1214,15 +1276,23 @@ namespace ExcelAddInDemo
                 primaryWireDetails.Add(item);
             }
 
+            // 固定基础补贴费用核算 (仅包含保留在计费区的固定基础补贴部分)
+            double fixedAuxCost = rules.AuxRules.BaseFee;
             // 小箱小零地排补贴 (最大电流 < 设定门限时补贴，且不计大铜排)
             if (maxCurrent < smallBoxCurrentThreshold)
             {
+                // 计入辅材总费用
                 auxiliaryCost += rules.AuxRules.SmallBoxGroundBarFee;
+                // 计入固定补贴保留费用
+                fixedAuxCost += rules.AuxRules.SmallBoxGroundBarFee;
             }
             // 高柜辅材补贴 (高度 > 1500mm)
             if (shellHeight > 1500)
             {
+                // 计入辅材总费用
                 auxiliaryCost += rules.AuxRules.HighCabinetExtraFee;
+                // 计入固定补贴保留费用
+                fixedAuxCost += rules.AuxRules.HighCabinetExtraFee;
             }
 
             // -------------------------------------------------------------
@@ -1365,6 +1435,10 @@ namespace ExcelAddInDemo
 
             auxiliaryCost = Math.Round(auxiliaryCost, 1);
             string auxFormula = $"=ROUND({auxiliaryCost}*{xishu}*1,1)";
+            // 核算固定基础补贴保留公式 (若有固定补贴则生成算式，否则为空)
+            fixedAuxCost = Math.Round(fixedAuxCost, 1);
+            // 生成固定补贴保留公式字符串
+            string fixedAuxFormula = fixedAuxCost > 0 ? $"=ROUND({fixedAuxCost}*{xishu}*1,1)" : string.Empty;
 
             // -------------------------------------------------------------
             // 4. 人工费计算 (箱体平铺面积制作工价 + 绑定的二次方案装配工费)
@@ -1491,6 +1565,12 @@ namespace ExcelAddInDemo
                 SecondaryTotalWireCount = totalCrossDoor,
                 SecondaryTotalWireLength = totalSecWireLength,
                 CopperFormulaDetails = copperFormulaDetails,
+                // 铜排各分项结构化明细列表
+                CopperDetails = copperDetails,
+                // 固定基础辅材补贴金额 (保留在计费区)
+                FixedAuxiliaryCost = fixedAuxCost,
+                // 固定基础辅材补贴金额公式
+                FixedAuxiliaryFormula = fixedAuxFormula,
                 Description = desc,
                 Warnings = calcWarnings,
                 MaxComponentDepth = maxCompDepth,
@@ -1683,30 +1763,30 @@ namespace ExcelAddInDemo
                                 result.ShellTargetLocation = $"计费区域第 {currentPhysRow} 行 (B列: {bName})";
                             }
 
-                            // 1.2 辅材匹配: 优先在计费区查找匹配名称，价格统一填在 M 列
+                            // 1.2 辅材匹配: 仅在计费区保留固定基础补贴费用，导线明细下沉至元器件区
                             if (!matchedAuxInFeeArea && (string.Equals(bName, auxMatchName, StringComparison.OrdinalIgnoreCase) ||
                                 (auxMatchName == "辅材" && bName == "辅材")))
                             {
-                                if (!string.IsNullOrWhiteSpace(result.AuxiliaryFormula))
+                                // 判定是否存在固定基础补贴费用 (基础定额 + 小箱零地排补贴 + 高柜补贴)
+                                if (result.FixedAuxiliaryCost > 0)
                                 {
-                                    // E 列 (第 5 列): 计量单位若为空默认补台 --硬编码--
+                                    // E 列 (第 5 列): 计量单位若为空默认补台 --硬编码: 默认计量单位--
                                     if (feeMatrix[r, 5] == null || string.IsNullOrWhiteSpace(feeMatrix[r, 5].ToString()))
                                     {
                                         feeMatrix[r, 5] = "台";
                                     }
-                                    // F 列 (第 6 列): 数量若为空或0默认补 1 --硬编码--
-                                    if (feeMatrix[r, 6] == null || string.IsNullOrWhiteSpace(feeMatrix[r, 6].ToString()) || Convert.ToString(feeMatrix[r, 6]) == "0")
-                                    {
-                                        feeMatrix[r, 6] = 1;
-                                    }
-                                    // 用户指示: 辅材价格统一填在 M 列 (第 13 列)
-                                    feeMatrix[r, 13] = result.AuxiliaryFormula;
-                                    // L 列 (第 12 列): 系数若为空默认补 1 --硬编码--
+                                    // F 列 (第 6 列): 数量补 1 --硬编码: 默认数量--
+                                    feeMatrix[r, 6] = 1;
+                                    // M 列 (第 13 列): 填入固定基础补贴保留公式或数值
+                                    feeMatrix[r, 13] = !string.IsNullOrWhiteSpace(result.FixedAuxiliaryFormula)
+                                        ? (object)result.FixedAuxiliaryFormula
+                                        : result.FixedAuxiliaryCost;
+                                    // L 列 (第 12 列): 系数若为空默认补 1 --硬编码: 默认系数--
                                     if (feeMatrix[r, 12] == null || string.IsNullOrWhiteSpace(feeMatrix[r, 12].ToString()))
                                     {
                                         feeMatrix[r, 12] = 1;
                                     }
-                                    // N 列 (第 14 列): 折扣若为空默认补 1 --硬编码--
+                                    // N 列 (第 14 列): 折扣若为空默认补 1 --硬编码: 默认折扣--
                                     if (feeMatrix[r, 14] == null || string.IsNullOrWhiteSpace(feeMatrix[r, 14].ToString()))
                                     {
                                         feeMatrix[r, 14] = 1;
@@ -1720,9 +1800,24 @@ namespace ExcelAddInDemo
                                     // K 列 (第 11 列): 成本总价联动公式
                                     feeMatrix[r, 11] = $"=ROUND(F{currentPhysRow}*J{currentPhysRow}, 2)";
 
+                                    // 标记计费区辅材已匹配回填
                                     matchedAuxInFeeArea = true;
                                     feeMatrixModified = true;
-                                    result.AuxTargetLocation = $"计费区域第 {currentPhysRow} 行 (B列: {bName})";
+                                    result.AuxTargetLocation = $"计费区域第 {currentPhysRow} 行 (固定补贴: {result.FixedAuxiliaryCost}元)";
+                                }
+                                else
+                                {
+                                    // 若无固定补贴，清空计费区数量与单价避免与元器件区导线双重计费
+                                    feeMatrix[r, 6] = string.Empty;
+                                    feeMatrix[r, 13] = string.Empty;
+                                    // 保持销售单价联动公式有效
+                                    feeMatrix[r, 7] = $"=IF(AND(B{currentPhysRow}=\"\",C{currentPhysRow}=\"\"),\"\",ROUND(M{currentPhysRow}*L{currentPhysRow}*N{currentPhysRow},2))";
+                                    // 保持销售总价联动公式有效
+                                    feeMatrix[r, 8] = $"=ROUND(F{currentPhysRow}*G{currentPhysRow}, 2)";
+                                    // 标记已处理并记录说明
+                                    matchedAuxInFeeArea = true;
+                                    feeMatrixModified = true;
+                                    result.AuxTargetLocation = $"计费区域第 {currentPhysRow} 行 (无固定补贴，已清空数量)";
                                 }
                             }
 
@@ -1996,193 +2091,255 @@ namespace ExcelAddInDemo
                 }
 
                 // ---------------------------------------------------------
-                // 4. 铜排写入底部元器件区域最后一行，确保中间不要有空行
+                // 4. 将辅材电线与铜排各分项明细批量写入元器件区域底部
                 // ---------------------------------------------------------
                 // 重新获取最新的元器件终止行 (subsumRow - 1)
                 compEndRow = subsumRow - 1;
 
-                if (result.CopperWeight > 0)
+                // 结构化组织待写入元器件区的物料明细项集合
+                var itemsToWrite = new List<(string Name, string Spec, string Unit, object Qty, string Remark, double UnitPrice, string Category)>();
+
+                // 4.1 汇总辅材一次导线明细 (用户规则 3: B列=电线, C列=线规, E列=米, I列=一次配线, Q列统一为电线)
+                if (result.PrimaryWireDetails != null && result.PrimaryWireDetails.Count > 0)
                 {
-                    // 4.1 扫描当前元器件区域的所有行状态 (记录有效元件行与已有铜排行)
-                    int lastValidCompRow = detRow + 1; // 默认若无元件则为表头行
-                    var existingCopperRows = new List<int>(); // 既有铜排行列表
-
-                    if (compEndRow >= compStartRow)
+                    // 遍历一次配线各线规明细
+                    foreach (var wire in result.PrimaryWireDetails)
                     {
-                        // 规则 7: 2D 数组读取 B 到 C 列
-                        Range scanRange = ws.Range[$"B{compStartRow}:C{compEndRow}"];
-                        object[,] scanMatrix = scanRange.Value2 as object[,];
-                        if (scanMatrix != null)
+                        // 过滤长度大于 0 的有效规格
+                        if (wire.LengthMeters > 0)
                         {
-                            int rowCount = scanMatrix.GetLength(0);
-                            for (int r = 1; r <= rowCount; r++)
-                            {
-                                int physRow = compStartRow + r - 1;
-                                string bVal = scanMatrix[r, 1]?.ToString()?.Trim() ?? string.Empty;
-                                string cVal = scanMatrix[r, 2]?.ToString()?.Trim() ?? string.Empty;
+                            // 添加一次配线明细行 (单价填在 M 列，Q 列统一为电线)
+                            itemsToWrite.Add((
+                                Name: "电线",
+                                Spec: wire.Spec,
+                                Unit: "米",
+                                Qty: wire.LengthMeters,
+                                Remark: "一次配线",
+                                UnitPrice: wire.PricePerMeter,
+                                Category: "电线"
+                            ));
+                        }
+                    }
+                }
 
-                                if (string.Equals(bVal, "铜排", StringComparison.OrdinalIgnoreCase))
+                // 4.2 汇总辅材二次导线明细 (用户规则 3: B列=电线, C列=BVR-1.0, E列=米, I列=二次配线, Q列统一为电线)
+                if (result.SecondaryTotalWireLength > 0)
+                {
+                    // 获取二次配线单价 (配置优先，默认 0.8) --硬编码: 默认二次导线单价--
+                    double secWirePrice = rules.AuxRules.SecondaryWirePrice > 0 ? rules.AuxRules.SecondaryWirePrice : 0.8;
+                    // 添加二次配线明细行
+                    itemsToWrite.Add((
+                        Name: "电线",
+                        Spec: "BVR-1.0", // --硬编码: 二次线规--
+                        Unit: "米",
+                        Qty: result.SecondaryTotalWireLength,
+                        Remark: "二次配线",
+                        UnitPrice: secWirePrice,
+                        Category: "电线"
+                    ));
+                }
+
+                // 4.3 汇总铜排各分项结构化明细 (用户规则 1: 规格写入 C 列，部位写入 I 列，B列=铜排，E列=KG，Q列=材料)
+                if (result.CopperDetails != null && result.CopperDetails.Count > 0)
+                {
+                    // 遍历收集到的各部位铜排明细 (水平主排/垂直母排/垂直N排/零地排/分支排)
+                    foreach (var cItem in result.CopperDetails)
+                    {
+                        // 过滤有效重量大于 0 的铜排项
+                        if (cItem.Weight > 0)
+                        {
+                            // 确定单价 (优先使用项单价，否则取铜排基准单价)
+                            double cPrice = cItem.UnitPrice > 0 ? cItem.UnitPrice : rules.General.CopperPricePerKg;
+                            // 添加铜排分项明细行
+                            itemsToWrite.Add((
+                                Name: "铜排",
+                                Spec: cItem.Spec,
+                                Unit: "KG",
+                                Qty: cItem.Weight,
+                                Remark: cItem.Remark,
+                                UnitPrice: cPrice,
+                                Category: "材料"
+                            ));
+                        }
+                    }
+                }
+                else if (result.CopperWeight > 0)
+                {
+                    // 兜底分支：若未生成明细但有总重量，按基础总重量写入单行铜排
+                    object qtyVal = !string.IsNullOrWhiteSpace(result.CopperQtyFormula) ? (object)result.CopperQtyFormula : result.CopperWeight;
+                    // 添加单行铜排
+                    itemsToWrite.Add((
+                        Name: "铜排",
+                        Spec: "TMY",
+                        Unit: "KG",
+                        Qty: qtyVal,
+                        Remark: string.Empty,
+                        UnitPrice: rules.General.CopperPricePerKg,
+                        Category: "材料"
+                    ));
+                }
+
+                // 4.4 扫描元器件区域：识别已有真实元器件与此前自动生成的物料行
+                int lastRealCompRow = detRow + 1; // 真实元件最大行号，初始为表头行
+                var oldGeneratedRows = new List<int>(); // 记录旧生成的电线/铜排行物理行号
+
+                if (compEndRow >= compStartRow)
+                {
+                    // 规则 7: 2D 数组读取 B 列至 Q 列进行多列特征识别 (B:相对1, C:相对2, I:相对8, Q:相对16)
+                    Range scanRange = ws.Range[$"B{compStartRow}:Q{compEndRow}"];
+                    object[,] scanMatrix = scanRange.Value2 as object[,];
+                    if (scanMatrix != null)
+                    {
+                        // 获取元器件区扫描行数
+                        int rowCount = scanMatrix.GetLength(0);
+                        // 遍历元器件区域各行
+                        for (int r = 1; r <= rowCount; r++)
+                        {
+                            // 计算对应的物理行号
+                            int physRow = compStartRow + r - 1;
+                            // 提取 B 列名称、C 列型号、I 列备注、Q 列类别
+                            string bVal = scanMatrix[r, 1]?.ToString()?.Trim() ?? string.Empty;
+                            string cVal = scanMatrix[r, 2]?.ToString()?.Trim() ?? string.Empty;
+                            string iVal = scanMatrix[r, 8]?.ToString()?.Trim() ?? string.Empty;
+                            string qVal = scanMatrix[r, 16]?.ToString()?.Trim() ?? string.Empty;
+
+                            // 判定是否为自动生成的物料行 (铜排 或 标记为配线的电线)
+                            bool isAutoGenerated = string.Equals(bVal, "铜排", StringComparison.OrdinalIgnoreCase) ||
+                                (string.Equals(bVal, "电线", StringComparison.OrdinalIgnoreCase) &&
+                                 (qVal == "电线" || qVal == "材料" || iVal.Contains("配线") || iVal.Contains("一次") || iVal.Contains("二次")));
+
+                            if (isAutoGenerated)
+                            {
+                                // 记录此前自动生成的物料行号
+                                oldGeneratedRows.Add(physRow);
+                            }
+                            else if (!string.IsNullOrWhiteSpace(bVal) || !string.IsNullOrWhiteSpace(cVal))
+                            {
+                                // 记录真实元器件的最大物理行号
+                                if (physRow > lastRealCompRow)
                                 {
-                                    // 记录既有铜排行物理行号
-                                    existingCopperRows.Add(physRow);
-                                }
-                                else if (!string.IsNullOrWhiteSpace(bVal) || !string.IsNullOrWhiteSpace(cVal))
-                                {
-                                    // 有效元器件行 (非空且非铜排)
-                                    if (physRow > lastValidCompRow)
-                                    {
-                                        lastValidCompRow = physRow;
-                                    }
+                                    lastRealCompRow = physRow;
                                 }
                             }
                         }
                     }
+                }
 
-                    // 4.2 计算铜排的目标位置: 紧挨着最后一个有效元器件的下一行
-                    // 确保最后一个有效元器件和铜排之间绝对没有任何空行
-                    int targetCopperRow = lastValidCompRow + 1;
+                // 4.5 计算物料明细的目标起始写入行 (紧挨最后一个真实元器件下一行，消除空行断层)
+                int targetStartRow = lastRealCompRow + 1;
+                // 需要写入的总明细行数
+                int needCount = itemsToWrite.Count;
 
-                    // 4.3 清理不在目标位置的既有铜排行 (自底向上倒序处理，维护行号稳定)
-                    for (int i = existingCopperRows.Count - 1; i >= 0; i--)
+                // 若此前有旧自动生成行误插入在真实元件之间 (小于 targetStartRow)，物理删除以消除断层
+                for (int i = oldGeneratedRows.Count - 1; i >= 0; i--)
+                {
+                    int oldRow = oldGeneratedRows[i];
+                    if (oldRow < targetStartRow)
                     {
-                        // 提取既有铜排物理行号
-                        int oldRow = existingCopperRows[i];
-                        // 若既有铜排行不在目标位置
-                        if (oldRow != targetCopperRow)
-                        {
-                            // 若被处理行在目标行之前，说明旧铜排卡在有效元器件中间，物理删除整行消除断层
-                            if (oldRow < targetCopperRow)
-                            {
-                                // 物理删除有效元件中间的旧铜排行
-                                ((Range)ws.Rows[oldRow]).Delete(XlDeleteShiftDirection.xlShiftUp);
-                                // 小计行号同步减 1
-                                subsumRow--;
-                                // 总计行号同步减 1
-                                tolsumRow--;
-                                // 元器件结束行号同步减 1
-                                compEndRow--;
-                                // 目标铜排行号同步前移
-                                targetCopperRow--;
-                            }
-                            else
-                            {
-                                // 用户指示：严禁刻意删除空行，旧铜排在目标行之后只需清空内容恢复为空行
-                                ws.Range[$"B{oldRow}:Q{oldRow}"].ClearContents();
-                            }
-                        }
+                        // 物理删除卡在真实元件中的旧行
+                        ((Range)ws.Rows[oldRow]).Delete(XlDeleteShiftDirection.xlShiftUp);
+                        // 小计行与总计行同步上移
+                        subsumRow--;
+                        tolsumRow--;
+                        compEndRow--;
+                        targetStartRow--;
                     }
+                }
 
-                    // 4.4 空间保障: 遵循规则 6，元器件区域可以有空行，严禁刻意删除铜排后面的预留空行
-                    // 仅当当前元器件区域已无可用空行 (targetCopperRow > compEndRow) 时，在小计行处向下推移插入新行
-                    if (targetCopperRow > compEndRow)
+                // 目标写入终止行
+                int targetEndRow = targetStartRow + needCount - 1;
+
+                // 4.6 空间保障: 遵循规则 6，如果元器件数量多于区域行数，先要在小计行处插入新行
+                if (needCount > 0 && targetEndRow > compEndRow)
+                {
+                    // 计算需要补充插入的空行数
+                    int insertCount = targetEndRow - compEndRow;
+                    for (int k = 0; k < insertCount; k++)
                     {
-                        // 规则 6: 如果元器件数量多余区域行数，先要在小计行处插入新行
+                        // 在小计行处向下推移插入新行
                         dynamic insertRange = ws.Rows[subsumRow];
-                        // 向下推移插入新行
                         insertRange.Insert(XlInsertShiftDirection.xlShiftDown);
-                        // 小计行号下移 1 行
+                        // 同步递增各行号
                         subsumRow++;
-                        // 总计行号下移 1 行
                         tolsumRow++;
-                        // 元器件结束行号增加 1 行
                         compEndRow++;
                     }
-
-                    // 同步更新 scanData 中的最新行号
-                    scanData.SubsumRow = subsumRow;
-                    // 更新总计行号
-                    scanData.TolsumRow = tolsumRow;
-                    // 更新元器件结束行号
-                    scanData.CompEndRow = compEndRow;
-
-                    // 4.5 填充元器件区域目标行的铜排明细数据 (规则 7: 2D 数组单次写入 A 到 Q 列)
-                    Range copperRowRange = ws.Range[$"A{targetCopperRow}:Q{targetCopperRow}"];
-                    // 创建 1 行 17 列公式/数值矩阵
-                    object[,] copperMatrix = new object[1, 17];
-
-                    // A 列 (索引 0): 动态序号公式
-                    copperMatrix[0, 0] = $"=ROW()-ROW(A${detRow + 1})";
-                    // B 列 (索引 1): 元件名称
-                    copperMatrix[0, 1] = "铜排";
-                    // C 列 (索引 2): 规格型号
-                    copperMatrix[0, 2] = "TMY";
-                    // D 列 (索引 3): 生产厂家
-                    copperMatrix[0, 3] = string.Empty;
-                    // E 列 (索引 4): 计量单位
-                    copperMatrix[0, 4] = "KG";
-                    // F 列 (索引 5): 数量公式
-                    copperMatrix[0, 5] = result.CopperQtyFormula;
-                    // G 列 (索引 6): 销售单价标准联动公式 (表价 M * 报出系数 L * 折扣 N)
-                    copperMatrix[0, 6] = $"=IF(AND(B{targetCopperRow}=\"\",C{targetCopperRow}=\"\"),\"\",ROUND(M{targetCopperRow}*L{targetCopperRow}*N{targetCopperRow},2))";
-                    // H 列 (索引 7): 销售总价公式
-                    copperMatrix[0, 7] = $"=ROUND(F{targetCopperRow}*G{targetCopperRow},2)";
-                    // I 列 (索引 8): 备注
-                    copperMatrix[0, 8] = string.Empty;
-                    // J 列 (索引 9): 成本单价标准联动公式 (表价 M * 折扣 N)
-                    copperMatrix[0, 9] = $"=IF(AND(B{targetCopperRow}=\"\",C{targetCopperRow}=\"\"),\"\",ROUND(M{targetCopperRow}*N{targetCopperRow},2))";
-                    // K 列 (索引 10): 成本总价公式
-                    copperMatrix[0, 10] = $"=ROUND(F{targetCopperRow}*J{targetCopperRow},2)";
-                    // L 列 (索引 11): 加价系数
-                    copperMatrix[0, 11] = 1;
-                    // M 列 (索引 12): 铜排价格统一填在 M 列
-                    copperMatrix[0, 12] = rules.General.CopperPricePerKg;
-                    // N 列 (索引 13): 采购折扣系数
-                    copperMatrix[0, 13] = 1;
-                    // O 列 (索引 14): 预留
-                    copperMatrix[0, 14] = string.Empty;
-                    // P 列 (索引 15): 预留
-                    copperMatrix[0, 15] = string.Empty;
-                    // Q 列 (索引 16): 类别
-                    copperMatrix[0, 16] = "材料";
-
-                    // 一次性写入目标铜排行 (规则 7)
-                    copperRowRange.Formula = copperMatrix;
-                    // 记录铜排目标定位描述
-                    result.CopperTargetLocation = $"元器件区域第 {targetCopperRow} 行 (紧随有效元件)";
-
-                    // 4.6 刷新小计行、计费区 A 列序号、总计行与元器件公式自愈 (规则 8)
-                    RefreshCabinetFeeAreaFormulas(ws, detRow, compStartRow, subsumRow, tolsumRow);
                 }
-                else
+
+                // 同步更新 scanData 行号
+                scanData.SubsumRow = subsumRow;
+                scanData.TolsumRow = tolsumRow;
+                scanData.CompEndRow = compEndRow;
+
+                // 4.7 批量写入物料明细数据 (规则 7: 采用 2D 数组一次性写入 A 到 Q 列)
+                if (needCount > 0)
                 {
-                    // 若推导计算铜排为 0 (如小箱免铜排)，清理元器件区域历史遗留的铜排行
-                    // 用户指示：遵循规则 6 保留预留空行，仅清空内容恢复为空行，不刻意删除空行
-                    if (compEndRow >= compStartRow)
+                    // 构造 needCount 行 17 列公式/数值二维矩阵
+                    object[,] matrix = new object[needCount, 17];
+                    // 遍历填充每个物料条目
+                    for (int i = 0; i < needCount; i++)
                     {
-                        // 规则 7: 批量读取 B 列探测既有铜排
-                        Range checkRange = ws.Range[$"B{compStartRow}:B{compEndRow}"];
-                        // 二维数组接收
-                        object[,] checkMatrix = checkRange.Value2 as object[,];
-                        // 校验数组有效性
-                        if (checkMatrix != null)
+                        var item = itemsToWrite[i];
+                        int r = targetStartRow + i;
+
+                        // A 列 (索引 0): 动态序号公式
+                        matrix[i, 0] = $"=ROW()-ROW(A${detRow + 1})";
+                        // B 列 (索引 1): 元件名称 (电线 或 铜排)
+                        matrix[i, 1] = item.Name;
+                        // C 列 (索引 2): 规格型号 (TMY-30*4 或 BV-10 等)
+                        matrix[i, 2] = item.Spec;
+                        // D 列 (索引 3): 生产厂家
+                        matrix[i, 3] = string.Empty;
+                        // E 列 (索引 4): 计量单位 (米 或 KG)
+                        matrix[i, 4] = item.Unit;
+                        // F 列 (索引 5): 数量公式或数值
+                        matrix[i, 5] = item.Qty;
+                        // G 列 (索引 6): 销售单价联动标准公式
+                        matrix[i, 6] = $"=IF(AND(B{r}=\"\",C{r}=\"\"),\"\",ROUND(M{r}*L{r}*N{r},2))";
+                        // H 列 (索引 7): 销售总价联动公式
+                        matrix[i, 7] = $"=ROUND(F{r}*G{r},2)";
+                        // I 列 (索引 8): 备注 (部位或配线说明: 水平主排/垂直N排/零地排/分支排/一次配线/二次配线)
+                        matrix[i, 8] = item.Remark;
+                        // J 列 (索引 9): 成本单价联动公式
+                        matrix[i, 9] = $"=IF(AND(B{r}=\"\",C{r}=\"\"),\"\",ROUND(M{r}*N{r},2))";
+                        // K 列 (索引 10): 成本总价联动公式
+                        matrix[i, 10] = $"=ROUND(F{r}*J{r},2)";
+                        // L 列 (索引 11): 加价系数若无特殊要求默认为 1 --硬编码: 默认加价系数--
+                        matrix[i, 11] = 1;
+                        // M 列 (索引 12): 表价/单价统一填在 M 列
+                        matrix[i, 12] = item.UnitPrice;
+                        // N 列 (索引 13): 采购折扣系数若无特殊要求默认为 1 --硬编码: 默认折扣--
+                        matrix[i, 13] = 1;
+                        // O 列 (索引 14): 预留
+                        matrix[i, 14] = string.Empty;
+                        // P 列 (索引 15): 预留
+                        matrix[i, 15] = string.Empty;
+                        // Q 列 (索引 16): 类别 (电线统一写 "电线", 铜排写 "材料")
+                        matrix[i, 16] = item.Category;
+                    }
+
+                    // 一次性批量写回元器件区域 A 到 Q 列
+                    Range writeRange = ws.Range[$"A{targetStartRow}:Q{targetEndRow}"];
+                    writeRange.Formula = matrix;
+                }
+
+                // 4.8 清理 targetEndRow 之后遗留的多余旧物料行 (规则 6: 保留为正常预留空行，仅清空内容)
+                int clearFromRow = targetEndRow + 1;
+                if (clearFromRow <= compEndRow)
+                {
+                    // 遍历检查是否有超出本次明细行范围的历史残留旧行
+                    for (int r = clearFromRow; r <= compEndRow; r++)
+                    {
+                        if (oldGeneratedRows.Contains(r))
                         {
-                            // 获取行数
-                            int rowCount = checkMatrix.GetLength(0);
-                            // 倒序遍历清空旧铜排行
-                            for (int r = rowCount; r >= 1; r--)
-                            {
-                                // 提取 B 列名称
-                                string bVal = checkMatrix[r, 1]?.ToString()?.Trim() ?? string.Empty;
-                                // 若为铜排则清空内容
-                                if (string.Equals(bVal, "铜排", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    // 计算对应物理行号
-                                    int clearRow = compStartRow + r - 1;
-                                    // 清空该行 B 到 Q 列内容，保留该行为正常预留空行
-                                    ws.Range[$"B{clearRow}:Q{clearRow}"].ClearContents();
-                                }
-                            }
+                            // 清空 B 到 Q 列内容，保留为合法空行
+                            ws.Range[$"B{r}:Q{r}"].ClearContents();
                         }
-                        // 同步更新 scanData 中的最新行号
-                        scanData.SubsumRow = subsumRow;
-                        // 更新总计行号
-                        scanData.TolsumRow = tolsumRow;
-                        // 更新元器件结束行号
-                        scanData.CompEndRow = compEndRow;
-                        // 刷新自愈公式
-                        RefreshCabinetFeeAreaFormulas(ws, detRow, compStartRow, subsumRow, tolsumRow);
                     }
                 }
+
+                // 记录回写定位说明 (用户指示：小计行已有公式完全不作改动与维护)
+                result.CopperTargetLocation = $"元器件区域第 {targetStartRow} 至 {targetEndRow} 行 (共 {needCount} 项明细)";
 
                 return true;
             }
@@ -2458,9 +2615,7 @@ namespace ExcelAddInDemo
                 bool ok = WriteCabinetCalcResultToSheet(ws, scanData, result, rules);
                 if (ok)
                 {
-                    // 操作 Excel 表格后自愈并刷新定义名称 (规则 8)
-                    Tool.FixAndFillCabinetNamesForSheet(ws);
-                    // 回写成功返回箱柜名称
+                    // 回写成功返回箱柜名称 (取消全局定义名称刷新，由 WriteCabinetCalcResultToSheet 就地维护小计行求和公式)
                     return (true, scanData.CabinetName, $"成功写入箱柜【{scanData.CabinetName}】的推导数据与公式！");
                 }
                 else
@@ -2596,10 +2751,7 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 批量更新后自愈并刷新全表所有箱柜定义名称 (规则 8)
-                Tool.FixAndFillCabinetNamesForSheet(ws);
-
-                // 结束前推送 100% 阶段完成提示
+                // 结束前推送 100% 阶段完成提示 (取消全局定义名称刷新，由就地维护小计行求和公式保障准确性)
                 onProgress?.Invoke(100, $"工作表【{ws.Name}】共 {successCount} 台箱柜更新完成！");
 
                 // 返回成功更新的箱柜总台数

@@ -76,6 +76,18 @@ namespace ExcelAddInDemo.Models
 
         // 元器件备注说明
         public string Remark { get; set; } = string.Empty;
+
+        // 是否属于铜排物料项 (TMY或名称为铜排)
+        public bool IsCopper { get; set; } = false;
+
+        // 是否属于配线/电线物料项 (一次配线、二次配线或类别为电线)
+        public bool IsWire { get; set; } = false;
+
+        // 是否属于二次元件组物料项 (二次组标记或方案项)
+        public bool IsComponentGroup { get; set; } = false;
+
+        // 物料类别名称 (如 "电线", "材料")
+        public string Category { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -220,6 +232,18 @@ namespace ExcelAddInDemo.Models
 
         // 打印设置：连页 (Continuous) 或 分页 (Paginated) (默认: Continuous)
         public string PrintSetting { get; set; } = "Continuous";
+
+        // 归并脱敏：将二次元件组合并到计费区辅材项 (默认 false)
+        public bool MergeComponentGroupToAux { get; set; } = false;
+
+        // 归并脱敏：将配线/电线物料合并到计费区辅材项 (默认 false)
+        public bool MergeWireToAux { get; set; } = false;
+
+        // 归并脱敏：将铜排物料合并到计费区辅材项 (默认 false)
+        public bool MergeCopperToAux { get; set; } = false;
+
+        // 辅材备注列是否自动注明合并包含项 (如: 含铜排、电线，默认 true)
+        public bool AuxRemarkShowMergedDetails { get; set; } = true;
     }
 
     /// <summary>

@@ -219,16 +219,22 @@ namespace ExcelAddInDemo
                         // 获取默认保存桌面路径
                         string sPath = _projectController.GetDefaultDesktopPath();
 
-                        // 读取“企业设置”中保存的单位名称与报价人
+                        // 读取“企业设置”中保存的单位名称、英文名称、联系人、电话与报价人
                         EnterpriseSettingsData settingData = await _settingsController.LoadSettingsAsync();
 
-                        // 构造回发给前端的数据
+                        // 构造回发给前端的数据包，完整包含企业中英文名称及联系人信息
                         var initMsg = new
                         {
                             action = "renderInitData",
                             quoteNumber = qNum,
                             savePath = sPath,
                             companyName = settingData.CompanyName,
+                            // 同步企业英文名称，保障新建项目回填
+                            englishName = settingData.EnglishName,
+                            // 同步企业联系人
+                            companyContact = settingData.ContactPerson,
+                            // 同步企业联系电话
+                            companyPhone = settingData.ContactPhone,
                             quoter = settingData.Quoter
                         };
 

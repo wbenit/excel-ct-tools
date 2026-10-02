@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using ExcelDna.Integration;
+using ExcelAddInDemo.Models;
+using ExcelAddInDemo.Forms;
 
 namespace ExcelAddInDemo.Services
 {
@@ -665,6 +667,551 @@ namespace ExcelAddInDemo.Services
                     app.ScreenUpdating = oldScreenUpdating;
                     app.Calculation = oldCalculation;
                     app.EnableEvents = oldEnableEvents;
+                }
+                catch { }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 成套元器件整行删除可逆命令 (支持连续多行、带公式、保留首行空行骨架保护及撤销选区高亮)
+    /// </summary>
+    public class ComponentRowDeleteCommand : IUndoableCommand
+    {
+        // 操作描述文本 (如：“撤销: 删除元件 (行 12: 断路器)”)
+        public string ActionName { get; }
+
+        // 命令记录时戳
+        public DateTime Timestamp { get; }
+
+        // 内存占用估算
+        public long EstimatedMemoryBytes { get; }
+
+        // 目标工作表名称
+        public string SheetName { get; }
+
+        // 删除起始物理行号
+        public int StartRow { get; }
+
+        // 删除终止物理行号
+        public int EndRow { get; }
+
+        // 删除的总行数
+        public int RowCount { get; }
+
+        // 备份的有效列数
+        public int ColCount { get; }
+
+        // 是否触发了“保留首行空行”骨架安全防御分支
+        public bool IsPreservedFirstBlankRow { get; }
+
+        // 备份的完整二维数据矩阵 (规则 7 一次性读写)
+        public object[,] OldValues { get; }
+
+        // 备份的公式集合 (列号 -> 公式字符串)
+        public Dictionary<int, string>? OldFormulas { get; }
+
+        /// <summary>
+        /// 构造元器件删除可逆命令
+        /// </summary>
+        public ComponentRowDeleteCommand(
+            string actionName,
+            string sheetName,
+            int startRow,
+            int endRow,
+            int rowCount,
+            int colCount,
+            bool isPreservedFirstBlankRow,
+            object[,] oldValues,
+            Dictionary<int, string>? oldFormulas)
+        {
+            // 记录显示文本
+            ActionName = actionName;
+            // 记录发生时间戳
+            Timestamp = DateTime.Now;
+            // 记录目标工作表名称
+            SheetName = sheetName;
+            // 记录起始行号
+            StartRow = startRow;
+            // 记录终止行号
+            EndRow = endRow;
+            // 记录总行数
+            RowCount = rowCount;
+            // 记录列数
+            ColCount = colCount;
+            // 记录骨架防御标志
+            IsPreservedFirstBlankRow = isPreservedFirstBlankRow;
+            // 缓存旧数据二维数组
+            OldValues = oldValues;
+            // 缓存旧公式字典
+            OldFormulas = oldFormulas;
+
+            // 粗略估算内存大小
+            EstimatedMemoryBytes = 128 + (oldValues != null ? oldValues.Length * 16 : 0);
+        }
+
+        /// <summary>
+        /// 执行撤销：将删除的行重新插回并精准还原二维数据矩阵与计算公式
+        /// </summary>
+        public void Undo()
+        {
+            // 获取 Excel Application 实例
+            dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+            if (app == null) return;
+
+            // 获取活动工作簿
+            dynamic? activeWb = app.ActiveWorkbook;
+            if (activeWb == null) return;
+
+            // 记录原环境状态
+            bool prevUpdating = true;
+            int prevCalc = -4105; // xlCalculationAutomatic --硬编码: 原生自动计算--
+            bool prevEvents = true;
+            bool prevAlerts = true;
+
+            try
+            {
+                // 备份环境状态
+                prevUpdating = Convert.ToBoolean(app.ScreenUpdating);
+                prevCalc = Convert.ToInt32(app.Calculation);
+                prevEvents = Convert.ToBoolean(app.EnableEvents);
+                prevAlerts = Convert.ToBoolean(app.DisplayAlerts);
+
+                // 挂起屏幕重绘与自动重算
+                app.ScreenUpdating = false;
+                app.Calculation = -4135; // xlCalculationManual --硬编码: 原生手动计算--
+                app.EnableEvents = false;
+                app.DisplayAlerts = false;
+
+                // 提取目标工作表
+                dynamic targetSheet = activeWb.Worksheets[SheetName];
+                if (targetSheet == null) return;
+
+                // 分支处理：若当时触发了骨架防御（首行清空保留，仅删除了第 2 行至末尾行）
+                if (IsPreservedFirstBlankRow)
+                {
+                    // 若删除行数大于 1，在 StartRow + 1 处向下插回删掉的行
+                    if (RowCount > 1)
+                    {
+                        // 在首行下方整块插入物理行
+                        targetSheet.Range[targetSheet.Rows[StartRow + 1], targetSheet.Rows[EndRow]].Insert(Microsoft.Office.Interop.Excel.XlInsertShiftDirection.xlShiftDown);
+                    }
+                    // 一次性写回完整二维数据矩阵
+                    targetSheet.Range[targetSheet.Cells[StartRow, 1], targetSheet.Cells[EndRow, ColCount]].Value2 = OldValues;
+                }
+                else
+                {
+                    // 普通整行删除分支：整块向下平移插回 RowCount 行
+                    targetSheet.Range[targetSheet.Rows[StartRow], targetSheet.Rows[EndRow]].Insert(Microsoft.Office.Interop.Excel.XlInsertShiftDirection.xlShiftDown);
+                    // 一次性批量写回完整二维数据矩阵 (规则 7)
+                    targetSheet.Range[targetSheet.Cells[StartRow, 1], targetSheet.Cells[EndRow, ColCount]].Value2 = OldValues;
+                }
+
+                // 恢复自适应标准计算公式 (H 列总价 = F*G, K 列成本总价 = F*J)
+                for (int i = 0; i < RowCount; i++)
+                {
+                    // 计算当前物理行号
+                    int curR = StartRow + i;
+                    // 恢复销售总价公式
+                    targetSheet.Cells[curR, 8].Formula = $"=F{curR}*G{curR}";
+                    // 恢复成本总价公式
+                    targetSheet.Cells[curR, 11].Formula = $"=F{curR}*J{curR}";
+                }
+
+                // 触发工作簿公式联动重算
+                try { app.Calculate(); } catch { }
+
+                // 自动激活工作表并高亮选中恢复回来的元器件行
+                try
+                {
+                    // 激活工作表
+                    targetSheet.Activate();
+                    // 圈选恢复的前台业务数据列 (第 1 列至第 20 列)
+                    int focusCol = Math.Min(ColCount, 20);
+                    // 选中并高亮显示恢复的单元格区域
+                    targetSheet.Range[targetSheet.Cells[StartRow, 1], targetSheet.Cells[EndRow, focusCol]].Select();
+                }
+                catch { }
+            }
+            catch (Exception ex)
+            {
+                // 记录撤销失败异常
+                LogHelper.WriteLog($"ComponentRowDeleteCommand Undo 异常: {ex.Message}");
+            }
+            finally
+            {
+                // 安全成对恢复原宿主环境
+                try
+                {
+                    app.DisplayAlerts = prevAlerts;
+                    app.EnableEvents = prevEvents;
+                    app.Calculation = prevCalc;
+                    app.ScreenUpdating = prevUpdating;
+                }
+                catch { }
+            }
+        }
+
+        /// <summary>
+        /// 执行重做：再次将指定元器件整行物理删除
+        /// </summary>
+        public void Redo()
+        {
+            // 获取 Excel Application 实例
+            dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+            if (app == null) return;
+
+            // 获取活动工作簿
+            dynamic? activeWb = app.ActiveWorkbook;
+            if (activeWb == null) return;
+
+            // 记录原环境状态
+            bool prevUpdating = true;
+            int prevCalc = -4105; // xlCalculationAutomatic --硬编码: 原生自动计算--
+            bool prevEvents = true;
+            bool prevAlerts = true;
+
+            try
+            {
+                // 备份环境状态
+                prevUpdating = Convert.ToBoolean(app.ScreenUpdating);
+                prevCalc = Convert.ToInt32(app.Calculation);
+                prevEvents = Convert.ToBoolean(app.EnableEvents);
+                prevAlerts = Convert.ToBoolean(app.DisplayAlerts);
+
+                // 挂起屏幕重绘与自动重算
+                app.ScreenUpdating = false;
+                app.Calculation = -4135; // xlCalculationManual --硬编码: 原生手动计算--
+                app.EnableEvents = false;
+                app.DisplayAlerts = false;
+
+                // 提取目标工作表
+                dynamic targetSheet = activeWb.Worksheets[SheetName];
+                if (targetSheet == null) return;
+
+                // 分支处理：骨架防御模式下清空首行并删除后续行
+                if (IsPreservedFirstBlankRow)
+                {
+                    // 若大于 1 行则物理删除后续行
+                    if (RowCount > 1)
+                    {
+                        targetSheet.Range[targetSheet.Rows[StartRow + 1], targetSheet.Rows[EndRow]].Delete(Microsoft.Office.Interop.Excel.XlDeleteShiftDirection.xlShiftUp);
+                    }
+                    // 清空首行元器件数据
+                    object[,] blankRow = new object[1, ColCount];
+                    targetSheet.Range[targetSheet.Cells[StartRow, 1], targetSheet.Cells[StartRow, ColCount]].Value2 = blankRow;
+                }
+                else
+                {
+                    // 普通模式下直接物理删除整块行
+                    targetSheet.Range[targetSheet.Rows[StartRow], targetSheet.Rows[EndRow]].Delete(Microsoft.Office.Interop.Excel.XlDeleteShiftDirection.xlShiftUp);
+                }
+
+                // 触发工作簿公式联动重算
+                try { app.Calculate(); } catch { }
+            }
+            catch (Exception ex)
+            {
+                // 记录重做失败异常
+                LogHelper.WriteLog($"ComponentRowDeleteCommand Redo 异常: {ex.Message}");
+            }
+            finally
+            {
+                // 安全成对恢复原宿主环境
+                try
+                {
+                    app.DisplayAlerts = prevAlerts;
+                    app.EnableEvents = prevEvents;
+                    app.Calculation = prevCalc;
+                    app.ScreenUpdating = prevUpdating;
+                }
+                catch { }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 成套元器件整行插入可逆命令 (支持复制插入回滚、剪切插入双端原子回滚与剪贴板动效自愈)
+    /// </summary>
+    public class ComponentRowInsertCommand : IUndoableCommand
+    {
+        // 操作描述文本 (如：“撤销: 插入元件 (行 20: 接触器)”)
+        public string ActionName { get; }
+
+        // 命令发生时间戳
+        public DateTime Timestamp { get; }
+
+        // 内存占用估算
+        public long EstimatedMemoryBytes { get; }
+
+        // 目标工作表名称
+        public string TargetSheetName { get; }
+
+        // 插入起始物理行号
+        public int TargetRow { get; }
+
+        // 插入的连续行数
+        public int RowCount { get; }
+
+        // 数据列数
+        public int ColCount { get; }
+
+        // 目标插入行写入的数据矩阵 (规则 7 一次性读写)
+        public object[,] InsertedValues { get; }
+
+        // 是否为剪切模式插入 (若为 true 则需同时回滚源工作表被删除的行)
+        public bool IsCutMode { get; }
+
+        // 发生剪切时的原始数据交换实体快照
+        public ComponentRowExchangeDto? SourceClipSnapshot { get; }
+
+        /// <summary>
+        /// 构造元器件插入可逆命令
+        /// </summary>
+        public ComponentRowInsertCommand(
+            string actionName,
+            string targetSheetName,
+            int targetRow,
+            int rowCount,
+            int colCount,
+            object[,] insertedValues,
+            bool isCutMode,
+            ComponentRowExchangeDto? sourceClipSnapshot)
+        {
+            // 记录描述文本
+            ActionName = actionName;
+            // 记录发生时间戳
+            Timestamp = DateTime.Now;
+            // 记录目标工作表
+            TargetSheetName = targetSheetName;
+            // 记录目标插入行号
+            TargetRow = targetRow;
+            // 记录总行数
+            RowCount = rowCount;
+            // 记录列数
+            ColCount = colCount;
+            // 缓存插入数据二维矩阵
+            InsertedValues = insertedValues;
+            // 记录是否为剪切模式
+            IsCutMode = isCutMode;
+            // 缓存源剪切数据快照
+            SourceClipSnapshot = sourceClipSnapshot;
+
+            // 粗略估算内存大小
+            EstimatedMemoryBytes = 128 + (insertedValues != null ? insertedValues.Length * 16 : 0);
+        }
+
+        /// <summary>
+        /// 执行撤销：删除目标位置插入的行；若为剪切模式，则将源行完整插回源工作表并还原剪切板与流动虚线
+        /// </summary>
+        public void Undo()
+        {
+            // 获取 Excel Application 实例
+            dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+            if (app == null) return;
+
+            // 获取活动工作簿
+            dynamic? activeWb = app.ActiveWorkbook;
+            if (activeWb == null) return;
+
+            // 记录原环境状态
+            bool prevUpdating = true;
+            int prevCalc = -4105; // xlCalculationAutomatic --硬编码: 原生自动计算--
+            bool prevEvents = true;
+            bool prevAlerts = true;
+
+            try
+            {
+                // 备份环境状态
+                prevUpdating = Convert.ToBoolean(app.ScreenUpdating);
+                prevCalc = Convert.ToInt32(app.Calculation);
+                prevEvents = Convert.ToBoolean(app.EnableEvents);
+                prevAlerts = Convert.ToBoolean(app.DisplayAlerts);
+
+                // 挂起屏幕重绘与自动重算
+                app.ScreenUpdating = false;
+                app.Calculation = -4135; // xlCalculationManual --硬编码: 原生手动计算--
+                app.EnableEvents = false;
+                app.DisplayAlerts = false;
+
+                // 1. 目标位置回滚：物理整块删除插入的 RowCount 行
+                dynamic targetSheet = activeWb.Worksheets[TargetSheetName];
+                if (targetSheet != null)
+                {
+                    // 物理删除目标行 (Shift Up)
+                    targetSheet.Range[targetSheet.Rows[TargetRow], targetSheet.Rows[TargetRow + RowCount - 1]].Delete(Microsoft.Office.Interop.Excel.XlDeleteShiftDirection.xlShiftUp);
+                }
+
+                // 2. 源位置回滚：若为剪切模式，恢复原工作表被删除的源行
+                if (IsCutMode && SourceClipSnapshot != null)
+                {
+                    // 获取源工作表对象
+                    dynamic srcSheet = activeWb.Worksheets[SourceClipSnapshot.SourceSheetName];
+                    if (srcSheet != null)
+                    {
+                        // 源行物理位置 (因目标插入行已被上一步删除，行号已精确回弹至原始 SourceRowIndex)
+                        int srcRow = SourceClipSnapshot.SourceRowIndex;
+                        int srcCols = SourceClipSnapshot.ColumnCount;
+
+                        // 物理向下平移插回原始源行
+                        srcSheet.Range[srcSheet.Rows[srcRow], srcSheet.Rows[srcRow + RowCount - 1]].Insert(Microsoft.Office.Interop.Excel.XlInsertShiftDirection.xlShiftDown);
+
+                        // 一次性写回源行的完整原始数据矩阵 (含原始 CadHandle 与业务列)
+                        srcSheet.Range[srcSheet.Cells[srcRow, 1], srcSheet.Cells[srcRow + RowCount - 1, srcCols]].Value2 = SourceClipSnapshot.FullRowValues;
+
+                        // 恢复源行的自适应计算公式
+                        for (int i = 0; i < RowCount; i++)
+                        {
+                            int curR = srcRow + i;
+                            srcSheet.Cells[curR, 8].Formula = $"=F{curR}*G{curR}";
+                            srcSheet.Cells[curR, 11].Formula = $"=F{curR}*J{curR}";
+                        }
+
+                        // 重新还原内存剪贴板与剪切流动虚线
+                        ComponentClipboardManager.Set(SourceClipSnapshot);
+                        try
+                        {
+                            // 重新启动流动细虚线动效
+                            int visualCol = Math.Min(srcCols, 20);
+                            MarchingAntsManager.Show(srcSheet, srcRow, srcRow + RowCount - 1, visualCol);
+                            // 标记剪切状态
+                            app.CutCopyMode = (Microsoft.Office.Interop.Excel.XlCutCopyMode)1; // xlCut --硬编码: 原生剪切状态--
+                        }
+                        catch { }
+                    }
+                }
+
+                // 触发工作簿公式重算
+                try { app.Calculate(); } catch { }
+            }
+            catch (Exception ex)
+            {
+                // 记录撤销失败异常
+                LogHelper.WriteLog($"ComponentRowInsertCommand Undo 异常: {ex.Message}");
+            }
+            finally
+            {
+                // 安全成对恢复原宿主环境
+                try
+                {
+                    app.DisplayAlerts = prevAlerts;
+                    app.EnableEvents = prevEvents;
+                    app.Calculation = prevCalc;
+                    app.ScreenUpdating = prevUpdating;
+                }
+                catch { }
+            }
+        }
+
+        /// <summary>
+        /// 执行重做：再次在目标位置插入行并写入数据；若为剪切模式则再次安全删除源行
+        /// </summary>
+        public void Redo()
+        {
+            // 获取 Excel Application 实例
+            dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+            if (app == null) return;
+
+            // 获取活动工作簿
+            dynamic? activeWb = app.ActiveWorkbook;
+            if (activeWb == null) return;
+
+            // 记录原环境状态
+            bool prevUpdating = true;
+            int prevCalc = -4105; // xlCalculationAutomatic --硬编码: 原生自动计算--
+            bool prevEvents = true;
+            bool prevAlerts = true;
+
+            try
+            {
+                // 备份环境状态
+                prevUpdating = Convert.ToBoolean(app.ScreenUpdating);
+                prevCalc = Convert.ToInt32(app.Calculation);
+                prevEvents = Convert.ToBoolean(app.EnableEvents);
+                prevAlerts = Convert.ToBoolean(app.DisplayAlerts);
+
+                // 挂起屏幕重绘与自动重算
+                app.ScreenUpdating = false;
+                app.Calculation = -4135; // xlCalculationManual --硬编码: 原生手动计算--
+                app.EnableEvents = false;
+                app.DisplayAlerts = false;
+
+                // 1. 目标位置执行向下平移插入 RowCount 行
+                dynamic targetSheet = activeWb.Worksheets[TargetSheetName];
+                if (targetSheet != null)
+                {
+                    // 物理插入整行
+                    targetSheet.Range[targetSheet.Rows[TargetRow], targetSheet.Rows[TargetRow + RowCount - 1]].Insert(Microsoft.Office.Interop.Excel.XlInsertShiftDirection.xlShiftDown);
+
+                    // 一次性批量写回插入数据矩阵 (规则 7)
+                    int writeCols = InsertedValues.GetLength(1);
+                    targetSheet.Range[targetSheet.Cells[TargetRow, 1], targetSheet.Cells[TargetRow + RowCount - 1, writeCols]].Value2 = InsertedValues;
+
+                    // 恢复自适应标准计算公式 (F*G, F*J)
+                    for (int i = 0; i < RowCount; i++)
+                    {
+                        int curR = TargetRow + i;
+                        targetSheet.Cells[curR, 8].Formula = $"=F{curR}*G{curR}";
+                        targetSheet.Cells[curR, 11].Formula = $"=F{curR}*J{curR}";
+                    }
+                }
+
+                // 2. 若为剪切模式，再次物理删除源行
+                if (IsCutMode && SourceClipSnapshot != null)
+                {
+                    // 获取源工作表
+                    dynamic srcSheet = activeWb.Worksheets[SourceClipSnapshot.SourceSheetName];
+                    if (srcSheet != null)
+                    {
+                        // 计算源物理行号
+                        int actualSrcRow = SourceClipSnapshot.SourceRowIndex;
+                        // 若同表且源行在插入点之后，因插入行增加了偏移
+                        if (string.Equals(SourceClipSnapshot.SourceSheetName, TargetSheetName, StringComparison.OrdinalIgnoreCase)
+                            && actualSrcRow >= TargetRow)
+                        {
+                            actualSrcRow += RowCount;
+                        }
+
+                        // 物理整块删除源剪切行
+                        srcSheet.Range[srcSheet.Rows[actualSrcRow], srcSheet.Rows[actualSrcRow + RowCount - 1]].Delete(Microsoft.Office.Interop.Excel.XlDeleteShiftDirection.xlShiftUp);
+
+                        // 清空剪贴板并隐藏流动虚线
+                        ComponentClipboardManager.Clear();
+                        try
+                        {
+                            MarchingAntsManager.Hide();
+                            app.CutCopyMode = (Microsoft.Office.Interop.Excel.XlCutCopyMode)0;
+                        }
+                        catch { }
+                    }
+                }
+
+                // 触发工作簿公式重算
+                try { app.Calculate(); } catch { }
+
+                // 聚焦并选中目标插入行
+                try
+                {
+                    targetSheet.Activate();
+                    int focusCol = Math.Min(ColCount, 20);
+                    targetSheet.Range[targetSheet.Cells[TargetRow, 1], targetSheet.Cells[TargetRow + RowCount - 1, focusCol]].Select();
+                }
+                catch { }
+            }
+            catch (Exception ex)
+            {
+                // 记录重做失败异常
+                LogHelper.WriteLog($"ComponentRowInsertCommand Redo 异常: {ex.Message}");
+            }
+            finally
+            {
+                // 安全成对恢复原宿主环境
+                try
+                {
+                    app.DisplayAlerts = prevAlerts;
+                    app.EnableEvents = prevEvents;
+                    app.Calculation = prevCalc;
+                    app.ScreenUpdating = prevUpdating;
                 }
                 catch { }
             }

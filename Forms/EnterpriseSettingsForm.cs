@@ -57,8 +57,8 @@ namespace ExcelAddInDemo
             // 设置窗体标题为“我的企业设置”
             this.Text = "我的企业设置";
 
-            // 设置窗体显示尺寸为 880x720 像素 (适配新增数据配置目录设置区域)
-            this.ClientSize = new Size(880, 720);
+            // 设置窗体显示尺寸为 880x520 像素 (初始紧凑尺寸，完全契合卡片内容高度，消灭底部留白) --硬编码: 窗体标准初始尺寸 880x520--
+            this.ClientSize = new Size(880, 520);
 
             // 设置窗体在屏幕正中央居中弹出
             this.StartPosition = FormStartPosition.CenterScreen;
@@ -240,15 +240,50 @@ namespace ExcelAddInDemo
                                 // 判断保存结果 (切回 UI 线程回发异步结果消息，彻底杜绝模态阻塞与 Chromium IPC 死锁)
                                 SafeInvoke(() =>
                                 {
+                                    // 声明返回给前端的提示消息
+                                    string feedbackMsg = success ? "企业设置数据已成功保存至本地！" : "保存数据到本地失败，请检查文件写入权限。";
+
+                                    // 若本地持久化成功，且用户勾选了“保存以上设置时，同步更新当前打开的已选中项目”
+                                    if (success && saveModel.SyncOpenProject)
+                                    {
+                                        // 调用 ExcelServices 专有同步服务将最新数据与 Logo 写入活动工作簿【项目信息】主表
+                                        var (syncOk, syncDetail) = ExcelServices.SyncEnterpriseSettingsToActiveWorkbook(saveModel);
+                                        // 组合反馈文本
+                                        feedbackMsg = syncOk ? "企业设置已保存，并已成功同步更新当前项目信息与 Logo！" : $"企业设置已保存，但项目表同步提示: {syncDetail}";
+                                    }
+
                                     // 组装回发前端的消息数据包
                                     var resMsg = new
                                     {
                                         action = "saveSettingsResult",
                                         success = success,
-                                        message = success ? "企业设置数据已成功保存至本地！" : "保存数据到本地失败，请检查文件写入权限。"
+                                        message = feedbackMsg
                                     };
                                     // 异步安全向前端推送结果，交由 Web 界面非模态提示
                                     PostWebMessageSafe(JsonSerializer.Serialize(resMsg));
+                                });
+                            }
+                        }
+                        break;
+
+                    // 视口高度自适应：根据前端实际 DOM 渲染高度调整窗体物理高度，严丝合缝消灭底部留白
+                    case "resizeWindow":
+                        // 解析高度数据参数
+                        if (root.TryGetProperty("height", out var hProp))
+                        {
+                            // 提取像素高度值
+                            int domHeight = hProp.GetInt32();
+                            // 设置有效安全范围约束 (450px ~ 750px)，杜绝异常参数形变
+                            if (domHeight >= 450 && domHeight <= 750)
+                            {
+                                // 调度 UI 线程调整窗体 ClientSize 物理高度
+                                SafeInvoke(() =>
+                                {
+                                    // 仅当高度差大于 4 像素时调整，避免频繁重绘与震荡
+                                    if (Math.Abs(this.ClientSize.Height - domHeight) > 4)
+                                    {
+                                        this.ClientSize = new Size(this.ClientSize.Width, domHeight);
+                                    }
                                 });
                             }
                         }

@@ -37,6 +37,30 @@ namespace ExcelAddInDemo.Controllers
         // 报价说明详细多行文本内容
         public string QuoteDescription { get; set; } = "123444";
 
+        // 存储 说明1 ~ 说明5 的各自多行文本内容字典
+        public System.Collections.Generic.Dictionary<string, string> QuoteTemplates { get; set; } = GetDefaultQuoteTemplates();
+
+        /// <summary>
+        /// 获取 5 套默认报价说明模板内容字典
+        /// </summary>
+        public static System.Collections.Generic.Dictionary<string, string> GetDefaultQuoteTemplates()
+        {
+            // 返回预设的 5 套成套设备专业报价说明范本
+            return new System.Collections.Generic.Dictionary<string, string>
+            {
+                // 说明1：标准质保与交付
+                { "说明1", "1. 本项目报价有效期为30天。\n2. 设备到货后提供免费指导安装调试与技术培训。\n3. 设备质保期为工程整体验收合格后12个月。" },
+                // 说明2：台数与总价动态参数范本
+                { "说明2", "1. 本项目报价包含[箱柜数量]台成套设备，项目总价：[项目总价]元（大写：[大写总价]）。\n2. 付款方式：预付30%，发货前付60%，质保金10%。\n3. 交货周期：合同签订并技术确认后25个工作日。" },
+                // 说明3：元件与品牌技术规范
+                { "说明3", "1. 报价依据设计图纸及技术规范配置核算，关键元器件：[器件名称]。\n2. 主要元器件采用[器件厂家]原厂正品标准件，随箱提供合格证与出厂检测报告。\n3. 现场接线与电缆敷设由采购方负责。" },
+                // 说明4：柜体与制造工艺标准
+                { "说明4", "1. 设备制造遵循 GB/T 7251 及国家低压成套开关设备现行强制性标准。\n2. 柜体采用优质敷铝锌板/冷轧钢板制造，防护等级满足设计要求。\n3. 本报价包含市内标准运输费用，不含现场卸车吊装费。" },
+                // 说明5：特殊补充条款
+                { "说明5", "1. 补充说明：报价未包含不可抗力因素造成的工期延误与费用增加。\n2. 如需加装智能监控仪表或通讯模块，按实际增加硬件及调试成本另行结算。" }
+            };
+        }
+
         // 保存设置时是否同步更新当前打开的已选中项目
         public bool SyncOpenProject { get; set; } = false;
 
@@ -82,6 +106,49 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
+        /// 同步直接从本地磁盘加载企业设置数据，杜绝 Task 上下文死锁，供 Excel 主线程直接调用
+        /// </summary>
+        /// <returns>企业设置实体对象</returns>
+        public static EnterpriseSettingsData LoadSettingsDirect()
+        {
+            try
+            {
+                // 获取数据目录物理路径
+                string appDataDir = Tool.GetAppDataDirectory();
+                // 拼接 EnterpriseSettings.json 物理路径
+                string filePath = Path.Combine(appDataDir, SettingsFileName);
+
+                // 实例化默认实体
+                var settings = new EnterpriseSettingsData();
+
+                // 判断配置文件物理文件是否存在
+                if (File.Exists(filePath))
+                {
+                    // 读取磁盘 JSON 字符串
+                    string jsonText = File.ReadAllText(filePath);
+                    // 驼峰命名反序列化
+                    var loaded = JsonSerializer.Deserialize<EnterpriseSettingsData>(jsonText, JsonOptions);
+                    if (loaded != null) settings = loaded;
+                }
+
+                // 防御性校验报价模版
+                if (settings.QuoteTemplates == null || settings.QuoteTemplates.Count == 0)
+                {
+                    // 注入默认模版字典
+                    settings.QuoteTemplates = EnterpriseSettingsData.GetDefaultQuoteTemplates();
+                }
+
+                // 返回最终结果
+                return settings;
+            }
+            catch
+            {
+                // 发生读取异常时返回默认设置实体
+                return new EnterpriseSettingsData();
+            }
+        }
+
+        /// <summary>
         /// 异步从本地磁盘加载企业设置数据，若不存在则返回默认初始值
         /// </summary>
         public async Task<EnterpriseSettingsData> LoadSettingsAsync()
@@ -107,6 +174,29 @@ namespace ExcelAddInDemo.Controllers
                         if (loaded != null)
                         {
                             settings = loaded;
+                        }
+                    }
+
+                    // 防御性校验：若旧版本数据中未包含报价模版字典，则自动初始化注入 5 套专业范本
+                    if (settings.QuoteTemplates == null || settings.QuoteTemplates.Count == 0)
+                    {
+                        // 实例化默认 5 套模版字典
+                        settings.QuoteTemplates = EnterpriseSettingsData.GetDefaultQuoteTemplates();
+                    }
+
+                    // 校验当前选中模版并保持当前编辑描述内容双向同步对齐
+                    if (!string.IsNullOrWhiteSpace(settings.QuoteTemplate) && settings.QuoteTemplates.ContainsKey(settings.QuoteTemplate))
+                    {
+                        // 若旧数据存有非空描述且模版字典中为空，则用历史描述回填该模版
+                        if (!string.IsNullOrWhiteSpace(settings.QuoteDescription))
+                        {
+                            // 回填当前模版内容
+                            settings.QuoteTemplates[settings.QuoteTemplate] = settings.QuoteDescription;
+                        }
+                        else
+                        {
+                            // 否则将模版预设内容同步回显至当前编辑描述文本中
+                            settings.QuoteDescription = settings.QuoteTemplates[settings.QuoteTemplate];
                         }
                     }
 

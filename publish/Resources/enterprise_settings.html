@@ -25,9 +25,10 @@
       background-color: #f8fafc;
       color: #334155;
       font-size: 13px;
-      padding: 16px;
+      padding: 10px 14px;
       user-select: none;
       overflow-x: hidden;
+      overflow-y: hidden;
     }
 
     /* 顶部两列布局：表单输入区 + 图例预览卡片区 */
@@ -35,26 +36,26 @@
       background: #ffffff;
       border-radius: 8px;
       border: 1px solid #e2e8f0;
-      padding: 16px;
+      padding: 12px 14px;
       box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
     }
 
     .top-container {
       display: flex;
-      gap: 20px;
-      margin-bottom: 12px;
+      gap: 16px;
+      margin-bottom: 6px;
     }
 
     .left-form-box {
-      flex: 1.1;
+      flex: 1.15;
     }
 
     .right-preview-box {
-      flex: 0.9;
+      flex: 0.85;
       background-color: #ffffff;
       border: 1px dashed #cbd5e1;
       border-radius: 6px;
-      padding: 10px;
+      padding: 8px;
       position: relative;
       overflow: hidden;
       display: flex;
@@ -76,10 +77,10 @@
 
     .logo-preview-card {
       width: 100%;
-      height: 56px;
+      height: 46px;
       border: 1px solid #dcdfe6;
       border-radius: 4px;
-      margin-top: 6px;
+      margin-top: 4px;
       background-color: #ffffff;
       display: flex;
       align-items: center;
@@ -96,16 +97,19 @@
     .logo-bottom-hint {
       font-size: 11px;
       color: #64748b;
-      margin-top: 4px;
+      margin-top: 2px;
     }
 
     /* 表格图例预览区域内部样式 */
     .mock-title {
-      font-size: 13px;
+      font-size: 12px;
       font-weight: bold;
       color: #b91c1c;
       text-align: center;
       margin-bottom: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .mock-subtitle {
@@ -113,7 +117,10 @@
       color: #1e3a8a;
       text-align: center;
       font-weight: 600;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .mock-table {
@@ -124,7 +131,7 @@
 
     .mock-table th, .mock-table td {
       border: 1px solid #cbd5e1;
-      padding: 3px 4px;
+      padding: 2px 3px;
       text-align: center;
     }
 
@@ -139,19 +146,47 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%) rotate(-15deg);
-      font-size: 30px;
+      font-size: 26px;
       font-weight: 900;
-      color: rgba(100, 116, 139, 0.25);
-      letter-spacing: 4px;
+      color: rgba(100, 116, 139, 0.2);
+      letter-spacing: 3px;
       pointer-events: none;
       white-space: nowrap;
     }
 
     /* 参数说明高亮标签 */
     .param-info-bar {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 3px;
       font-size: 11px;
       color: #475569;
-      margin: 4px 0 6px 0;
+      margin: 3px 0 5px 0;
+    }
+
+    .param-tag {
+      display: inline-block;
+      background: #e0f2f1;
+      color: #00796b;
+      padding: 1px 4px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-weight: 600;
+      border: 1px solid #b2dfdb;
+      user-select: none;
+      transition: all 0.15s ease;
+    }
+
+    .param-tag:hover {
+      background: #009688;
+      color: #ffffff;
+      border-color: #009688;
+    }
+
+    /* 表单项紧凑间距控制 */
+    .el-form-item {
+      margin-bottom: 7px !important;
     }
 
     /* 底部功能控制栏 */
@@ -159,8 +194,8 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-top: 16px;
-      padding-top: 12px;
+      margin-top: 8px;
+      padding-top: 8px;
       border-top: 1px solid #f1f5f9;
     }
 
@@ -174,8 +209,8 @@
     .data-dir-hint {
       font-size: 11px;
       color: #64748b;
-      margin-top: 4px;
-      line-height: 1.4;
+      margin-top: 2px;
+      line-height: 1.3;
     }
   </style>
 </head>
@@ -211,6 +246,7 @@
                 <!-- Logo 图形预览框 -->
                 <div class="logo-preview-card">
                   <img v-if="form.logoBase64" :src="form.logoBase64" alt="Logo预览" />
+                  <span v-else style="color: #94a3b8; font-size: 11px;">未上传 Logo 图片</span>
                 </div>
                 <div class="logo-bottom-hint">以上用于报价文件表头显示，如右图示例。</div>
               </div>
@@ -286,12 +322,12 @@
           </el-col>
         </el-row>
 
-        <!-- 报价说明及模板选择 -->
+        <!-- 报价说明及模板选择 (红框核心区域) -->
         <el-form-item label="报价说明：">
           <div style="width: 100%;">
             <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px;">
               <el-button type="danger" link size="small" @click="applyTemplate" style="font-weight: bold;">套用示例</el-button>
-              <el-radio-group v-model="form.quoteTemplate" size="small">
+              <el-radio-group v-model="form.quoteTemplate" size="small" @change="onQuoteTemplateChange">
                 <el-radio label="说明1">说明1</el-radio>
                 <el-radio label="说明2">说明2</el-radio>
                 <el-radio label="说明3">说明3</el-radio>
@@ -300,16 +336,23 @@
               </el-radio-group>
             </div>
 
-            <!-- VIP 动态参数替换提示 -->
+            <!-- VIP 动态参数替换提示 (支持点击快速插入) -->
             <div class="param-info-bar">
-              (VIP可用参数: [箱柜数量]、[项目总价]、[大写总价]、[器件名称]、[器件厂家]，输出报表显示实际值)
+              <span>(VIP可用参数: </span>
+              <span class="param-tag" title="点击插入到说明文本" @click="insertParam('[箱柜数量]')">[箱柜数量]</span>
+              <span class="param-tag" title="点击插入到说明文本" @click="insertParam('[项目总价]')">[项目总价]</span>
+              <span class="param-tag" title="点击插入到说明文本" @click="insertParam('[大写总价]')">[大写总价]</span>
+              <span class="param-tag" title="点击插入到说明文本" @click="insertParam('[器件名称]')">[器件名称]</span>
+              <span class="param-tag" title="点击插入到说明文本" @click="insertParam('[器件厂家]')">[器件厂家]</span>
+              <span>，输出报表显示实际值)</span>
             </div>
 
             <!-- 详细说明多行输入域 -->
             <el-input
               type="textarea"
-              :rows="4"
+              :rows="3"
               v-model="form.quoteDescription"
+              @input="onQuoteDescriptionInput"
               placeholder="请输入具体的报价说明文本..."
             />
           </div>
@@ -350,266 +393,250 @@
     </div>
   </div>
 
-  <!-- 使用 Vue 3 Script Setup 架构模式配置 Vue 组件 -->
-  <script setup>
-    // 引入 Vue 响应式 API 组合函数
-    const { reactive, onMounted } = Vue;
+  <!-- 挂载 Vue 3 & Element Plus 应用脚本 -->
+  <script>
+    // 实例化 Vue 3 App 并注入 Element Plus 组件库
+    const { createApp, reactive, onMounted } = Vue;
 
-    // 声明绑定的表单响应式数据对象
-    const form = reactive({
-      companyName: '扬州华科智能科技有限公司',
-      englishName: '',
-      logoBase64: '',
-      quoter: '吴磊',
-      contactPerson: '',
-      contactPhone: '',
-      salesRegion: '',
-      quoteTemplate: '说明2',
-      quoteDescription: '123444',
-      syncOpenProject: false,
-      customDataDirectory: ''
-    });
+    // 默认 5 套成套报价说明标准模版
+    const defaultQuoteTemplates = {
+      '说明1': '1. 本项目报价有效期为30天。\n2. 设备到货后提供免费指导安装调试与技术培训。\n3. 设备质保期为工程整体验收合格后12个月。',
+      '说明2': '1. 本项目报价包含[箱柜数量]台成套设备，项目总价：[项目总价]元（大写：[大写总价]）。\n2. 付款方式：预付30%，发货前付60%，质保金10%。\n3. 交货周期：合同签订并技术确认后25个工作日。',
+      '说明3': '1. 报价依据设计图纸及技术规范配置核算，关键元器件：[器件名称]。\n2. 主要元器件采用[器件厂家]原厂正品标准件，随箱提供合格证与出厂检测报告。\n3. 现场接线与电缆敷设由采购方负责。',
+      '说明4': '1. 设备制造遵循 GB/T 7251 及国家低压成套开关设备现行强制性标准。\n2. 柜体采用优质敷铝锌板/冷轧钢板制造，防护等级满足设计要求。\n3. 本报价包含市内标准运输费用，不含现场卸车吊装费。',
+      '说明5': '1. 补充说明：报价未包含不可抗力因素造成的工期延误与费用增加。\n2. 如需加装智能监控仪表或通讯模块，按实际增加硬件及调试成本另行结算。'
+    };
 
-    // 挂载加载回调：初始化时向 C# 宿主发送请求读取本地保存的数据反显
-    onMounted(() => {
-      // 判断 WebView2 全局通信接口是否存在
-      if (window.chrome && window.chrome.webview) {
-        // 向 C# 发送数据反显加载动作请求
-        window.chrome.webview.postMessage(JSON.stringify({ action: 'loadSettings' }));
+    const app = createApp({
+      setup() {
+        // 声明绑定的表单响应式数据模型
+        const form = reactive({
+          companyName: '扬州华科智能科技有限公司',
+          englishName: '',
+          logoBase64: '',
+          quoter: '吴磊',
+          contactPerson: '',
+          contactPhone: '',
+          salesRegion: '',
+          quoteTemplate: '说明2',
+          quoteDescription: '123444',
+          quoteTemplates: { ...defaultQuoteTemplates },
+          syncOpenProject: false,
+          customDataDirectory: ''
+        });
 
-        // 监听 C# 宿主回发的消息通知
-        window.chrome.webview.addEventListener('message', (event) => {
-          try {
-            // 解析回发的 JSON 消息对象
-            const res = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        // 记录上一次选中的模板分类
+        let currentTemplateKey = '说明2';
 
-            // 若响应动作为 renderSettings，更新数据反显绑定
-            if (res && res.action === 'renderSettings') {
-              // 属性合并回 form 响应式模型
-              Object.assign(form, res.data);
-            } 
-            // 若响应动作为 setLogo，更新图片 base64
-            else if (res && res.action === 'setLogo') {
-              // 更新 Logo 数据
-              form.logoBase64 = res.logoBase64;
-            }
-            // 若响应动作为 setDataDirectory，更新数据配置存储目录
-            else if (res && res.action === 'setDataDirectory') {
-              // 更新数据存储目录路径
-              form.customDataDirectory = res.dataDirectory || '';
-            }
-            // 若响应动作为 saveSettingsResult，非模态提示保存结果并安全退出
-            else if (res && res.action === 'saveSettingsResult') {
-              if (res.success) {
-                ElementPlus.ElMessage.success(res.message || '企业设置数据已成功保存至本地！');
-                setTimeout(() => {
-                  window.chrome.webview.postMessage(JSON.stringify({ action: 'cancel' }));
-                }, 600);
-              } else {
-                ElementPlus.ElMessage.warning(res.message || '保存失败，请检查文件写入权限');
+        // 页面挂载完成异步发送加载请求反显数据
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            // 请求 C# 宿主加载配置
+            window.chrome.webview.postMessage(JSON.stringify({ action: 'loadSettings' }));
+
+            // 监听 C# 宿主回发的消息通知
+            window.chrome.webview.addEventListener('message', (event) => {
+              try {
+                const res = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                if (res && res.action === 'renderSettings' && res.data) {
+                  const d = res.data;
+                  // 精准回显各个字段
+                  form.companyName = d.companyName !== undefined ? d.companyName : (d.CompanyName || '');
+                  form.englishName = d.englishName !== undefined ? d.englishName : (d.EnglishName || '');
+                  form.logoBase64 = d.logoBase64 !== undefined ? d.logoBase64 : (d.LogoBase64 || '');
+                  form.quoter = d.quoter !== undefined ? d.quoter : (d.Quoter || '');
+                  form.contactPerson = d.contactPerson !== undefined ? d.contactPerson : (d.ContactPerson || '');
+                  form.contactPhone = d.contactPhone !== undefined ? d.contactPhone : (d.ContactPhone || '');
+                  form.salesRegion = d.salesRegion !== undefined ? d.salesRegion : (d.SalesRegion || '');
+                  form.quoteTemplate = d.quoteTemplate !== undefined ? d.quoteTemplate : (d.QuoteTemplate || '说明2');
+                  form.syncOpenProject = d.syncOpenProject !== undefined ? d.syncOpenProject : (d.SyncOpenProject !== undefined ? d.SyncOpenProject : false);
+                  form.customDataDirectory = d.customDataDirectory !== undefined ? d.customDataDirectory : (d.CustomDataDirectory || '');
+
+                  // 回显 5 套报价模板字典
+                  const templates = d.quoteTemplates || d.QuoteTemplates;
+                  if (templates && typeof templates === 'object') {
+                    form.quoteTemplates = Object.assign({}, defaultQuoteTemplates, templates);
+                  } else {
+                    form.quoteTemplates = { ...defaultQuoteTemplates };
+                  }
+
+                  // 记录当前活跃模板键名
+                  currentTemplateKey = form.quoteTemplate || '说明2';
+
+                  // 优先提取当前选中模版的内容
+                  if (form.quoteTemplates[currentTemplateKey]) {
+                    form.quoteDescription = form.quoteTemplates[currentTemplateKey];
+                  } else {
+                    form.quoteDescription = d.quoteDescription !== undefined ? d.quoteDescription : (d.QuoteDescription || '');
+                    form.quoteTemplates[currentTemplateKey] = form.quoteDescription;
+                  }
+
+                  // 数据回显完成后自适应微调窗体高度
+                  reportActualHeight();
+
+                } else if (res && res.action === 'setLogo') {
+                  // 回显更新 Logo 图片
+                  form.logoBase64 = res.logoBase64;
+                  reportActualHeight();
+                } else if (res && res.action === 'setDataDirectory') {
+                  // 回显更新共享数据目录
+                  form.customDataDirectory = res.dataDirectory || '';
+                } else if (res && res.action === 'saveSettingsResult') {
+                  // 处理保存结果反馈
+                  if (res.success) {
+                    ElementPlus.ElMessage.success(res.message || '企业设置数据已成功保存！');
+                    setTimeout(() => {
+                      window.chrome.webview.postMessage(JSON.stringify({ action: 'cancel' }));
+                    }, 800);
+                  } else {
+                    ElementPlus.ElMessage.warning(res.message || '保存失败，请检查文件写入权限');
+                  }
+                }
+              } catch (e) {
+                console.error('解析后端反显数据发生异常:', e);
               }
+            });
+
+            // 首次挂载完成触发自适应高度测量上报
+            reportActualHeight();
+            setTimeout(reportActualHeight, 150);
+            setTimeout(reportActualHeight, 400);
+
+            // 挂载 ResizeObserver 实时监听卡片高度变动
+            if (window.ResizeObserver) {
+              const ro = new ResizeObserver(() => {
+                reportActualHeight();
+              });
+              const card = document.querySelector('.setting-card');
+              if (card) ro.observe(card);
             }
-          } catch (e) {
-            // 捕获打印异常 log
-            console.error('解析后端反显数据发生异常:', e);
           }
         });
-      }
-    });
 
-    // 触发弹出本地图片选择框
-    const selectLogo = () => {
-      // 判断 WebView2 接口有效性
-      if (window.chrome && window.chrome.webview) {
-        // 发送选择 Logo 请求
-        window.chrome.webview.postMessage(JSON.stringify({ action: 'selectLogo' }));
-      }
-    };
-
-    // 触发弹出本地数据配置存储目录选择框
-    const selectDataDirectory = () => {
-      // 判断 WebView2 接口有效性
-      if (window.chrome && window.chrome.webview) {
-        // 发送选择数据存储目录请求
-        window.chrome.webview.postMessage(JSON.stringify({ action: 'selectDataDirectory' }));
-      }
-    };
-
-    // 移除已选择的 Logo 图形
-    const removeLogo = () => {
-      // 重置清空图片串
-      form.logoBase64 = '';
-    };
-
-    // 一键套用示例模版
-    const applyTemplate = () => {
-      // 填入示例文本
-      form.quoteDescription = '套用示例模版：本项目报价有效期为30天。包含[箱柜数量]台设备，项目总价：[项目总价]元。';
-    };
-
-    // 点击保存企业设置数据
-    const saveSettings = () => {
-      // 判断通信管道有效性
-      if (window.chrome && window.chrome.webview) {
-        // 发送 saveSettings 消息及表单最新数据
-        window.chrome.webview.postMessage(JSON.stringify({
-          action: 'saveSettings',
-          data: form
-        }));
-      }
-    };
-
-    // 恢复分享配置
-    const recoverShare = () => {
-      // 消息提示
-      ElementPlus.ElMessage.info('正在恢复分享配置数据...');
-    };
-
-    // 取消并关闭当前设置窗体
-    const cancel = () => {
-      // 判断通信管道有效性
-      if (window.chrome && window.chrome.webview) {
-        // 发送取消动作给 C# 宿主关闭窗体
-        window.chrome.webview.postMessage(JSON.stringify({ action: 'cancel' }));
-      }
-    };
-  </script>
-
-  <!-- 挂载 Vue 3 & Element Plus 应用根组件 -->
-  <script>
-    // 实例化 Vue 3 App 并注入 Element Plus 组件库支持
-    const app = Vue.createApp({
-      // 挂载 setup 逻辑
-      setup() {
-        // 返回 script setup 中定义的所有变量与响应式函数句柄
-        return setupLogic();
-      }
-    });
-
-    // 适配 script setup 函数提炼
-    function setupLogic() {
-      // 获取 script setup 内部构建逻辑上下文
-      const { reactive, onMounted } = Vue;
-
-      // 声明绑定的表单响应式数据对象
-      const form = reactive({
-        companyName: '扬州华科智能科技有限公司',
-        englishName: '',
-        logoBase64: '',
-        quoter: '吴磊',
-        contactPerson: '',
-        contactPhone: '',
-        salesRegion: '',
-        quoteTemplate: '说明2',
-        quoteDescription: '123444',
-        syncOpenProject: false,
-        customDataDirectory: ''
-      });
-
-      // 挂载初始化：发送请求读取反显数据
-      onMounted(() => {
-        if (window.chrome && window.chrome.webview) {
-          window.chrome.webview.postMessage(JSON.stringify({ action: 'loadSettings' }));
-          window.chrome.webview.addEventListener('message', (event) => {
-            try {
-              const res = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-              if (res && res.action === 'renderSettings' && res.data) {
-                const d = res.data;
-                // 精准解析并绑定每一个输入控件字段，兼容驼峰与 PascalCase
-                form.companyName = d.companyName !== undefined ? d.companyName : (d.CompanyName || '');
-                form.englishName = d.englishName !== undefined ? d.englishName : (d.EnglishName || '');
-                form.logoBase64 = d.logoBase64 !== undefined ? d.logoBase64 : (d.LogoBase64 || '');
-                form.quoter = d.quoter !== undefined ? d.quoter : (d.Quoter || '');
-                form.contactPerson = d.contactPerson !== undefined ? d.contactPerson : (d.ContactPerson || '');
-                form.contactPhone = d.contactPhone !== undefined ? d.contactPhone : (d.ContactPhone || '');
-                form.salesRegion = d.salesRegion !== undefined ? d.salesRegion : (d.SalesRegion || '');
-                form.quoteTemplate = d.quoteTemplate !== undefined ? d.quoteTemplate : (d.QuoteTemplate || '说明2');
-                form.quoteDescription = d.quoteDescription !== undefined ? d.quoteDescription : (d.QuoteDescription || '');
-                form.syncOpenProject = d.syncOpenProject !== undefined ? d.syncOpenProject : (d.SyncOpenProject !== undefined ? d.SyncOpenProject : false);
-                form.customDataDirectory = d.customDataDirectory !== undefined ? d.customDataDirectory : (d.CustomDataDirectory || '');
-              } else if (res && res.action === 'setLogo') {
-                form.logoBase64 = res.logoBase64;
-              } else if (res && res.action === 'setDataDirectory') {
-                // 响应 C# 文件夹选择对话框回传的数据目录绝对路径
-                form.customDataDirectory = res.dataDirectory || '';
-              } else if (res && res.action === 'saveSettingsResult') {
-                if (res.success) {
-                  ElementPlus.ElMessage.success(res.message || '企业设置数据已成功保存至本地！');
-                  setTimeout(() => {
-                    window.chrome.webview.postMessage(JSON.stringify({ action: 'cancel' }));
-                  }, 600);
-                } else {
-                  ElementPlus.ElMessage.warning(res.message || '保存失败，请检查文件写入权限');
-                }
-              }
-            } catch (e) {
-              console.error('反显解析异常', e);
+        // 动态检测页面卡片实际渲染物理高度并通知 C# 动态调紧窗体，彻底消灭底部留白
+        const reportActualHeight = () => {
+          setTimeout(() => {
+            const cardEl = document.querySelector('.setting-card');
+            if (cardEl && window.chrome && window.chrome.webview) {
+              // 实际卡片物理高度 + 上下 body padding (上下各 10px 共 20px) + 2px 边框容差
+              const totalH = cardEl.offsetHeight + 22;
+              window.chrome.webview.postMessage(JSON.stringify({
+                action: 'resizeWindow',
+                height: totalH
+              }));
             }
-          });
-        }
-      });
+          }, 40);
+        };
 
-      // 选择 Logo
-      const selectLogo = () => {
-        if (window.chrome && window.chrome.webview) {
-          window.chrome.webview.postMessage(JSON.stringify({ action: 'selectLogo' }));
-        }
-      };
+        // 切换报价说明单选模版
+        const onQuoteTemplateChange = (newVal) => {
+          // 1. 将此前编辑的文本保存到上一套模版中
+          if (currentTemplateKey && form.quoteTemplates) {
+            form.quoteTemplates[currentTemplateKey] = form.quoteDescription;
+          }
+          // 2. 更新当前模版指针
+          currentTemplateKey = newVal;
+          // 3. 提取新选定模版内容展示在文本域中
+          if (form.quoteTemplates && form.quoteTemplates[newVal] !== undefined) {
+            form.quoteDescription = form.quoteTemplates[newVal];
+          } else if (defaultQuoteTemplates[newVal]) {
+            form.quoteDescription = defaultQuoteTemplates[newVal];
+            form.quoteTemplates[newVal] = defaultQuoteTemplates[newVal];
+          }
+        };
 
-      // 选择数据目录
-      const selectDataDirectory = () => {
-        if (window.chrome && window.chrome.webview) {
-          window.chrome.webview.postMessage(JSON.stringify({ action: 'selectDataDirectory' }));
-        }
-      };
+        // 文本域手动输入时实时同步写入当前模版字典
+        const onQuoteDescriptionInput = (val) => {
+          if (currentTemplateKey && form.quoteTemplates) {
+            form.quoteTemplates[currentTemplateKey] = val;
+          }
+        };
 
-      // 移除 Logo
-      const removeLogo = () => {
-        form.logoBase64 = '';
-      };
+        // 一键套用示例模版
+        const applyTemplate = () => {
+          const key = form.quoteTemplate || '说明2';
+          const sampleText = defaultQuoteTemplates[key] || defaultQuoteTemplates['说明2'];
+          form.quoteDescription = sampleText;
+          if (form.quoteTemplates) {
+            form.quoteTemplates[key] = sampleText;
+          }
+          ElementPlus.ElMessage.success(`已成功套用【${key}】标准成套报价示例模版！`);
+        };
 
-      // 套用示例
-      const applyTemplate = () => {
-        form.quoteDescription = '套用示例模版：本项目报价有效期为30天。包含[箱柜数量]台设备，项目总价：[项目总价]元。';
-      };
+        // 快捷点击插入 VIP 动态参数标签
+        const insertParam = (paramStr) => {
+          // 追加到当前说明文本中
+          form.quoteDescription = (form.quoteDescription ? form.quoteDescription : '') + paramStr;
+          if (currentTemplateKey && form.quoteTemplates) {
+            form.quoteTemplates[currentTemplateKey] = form.quoteDescription;
+          }
+          ElementPlus.ElMessage.success(`已插入动态参数 ${paramStr}`);
+        };
 
-      // 保存设置
-      const saveSettings = () => {
-        if (window.chrome && window.chrome.webview) {
-          window.chrome.webview.postMessage(JSON.stringify({
-            action: 'saveSettings',
-            data: form
-          }));
-        }
-      };
+        // 选择 Logo
+        const selectLogo = () => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ action: 'selectLogo' }));
+          }
+        };
 
-      // 恢复分享
-      const recoverShare = () => {
-        ElementPlus.ElMessage.info('正在恢复分享配置数据...');
-      };
+        // 移除 Logo
+        const removeLogo = () => {
+          form.logoBase64 = '';
+        };
 
-      // 取消并关闭
-      const cancel = () => {
-        if (window.chrome && window.chrome.webview) {
-          window.chrome.webview.postMessage(JSON.stringify({ action: 'cancel' }));
-        }
-      };
+        // 选择数据目录
+        const selectDataDirectory = () => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ action: 'selectDataDirectory' }));
+          }
+        };
 
-      return {
-        form,
-        selectLogo,
-        selectDataDirectory,
-        removeLogo,
-        applyTemplate,
-        saveSettings,
-        recoverShare,
-        cancel
-      };
-    }
+        // 保存设置
+        const saveSettings = () => {
+          // 确保当前编辑内容已同步写入当前模版
+          if (currentTemplateKey && form.quoteTemplates) {
+            form.quoteTemplates[currentTemplateKey] = form.quoteDescription;
+          }
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({
+              action: 'saveSettings',
+              data: form
+            }));
+          }
+        };
 
-    // 全局注册 Element Plus 组件库
+        // 恢复分享
+        const recoverShare = () => {
+          ElementPlus.ElMessage.info('正在连接云端恢复共享配置数据...');
+        };
+
+        // 取消关闭
+        const cancel = () => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ action: 'cancel' }));
+          }
+        };
+
+        return {
+          form,
+          selectLogo,
+          removeLogo,
+          selectDataDirectory,
+          onQuoteTemplateChange,
+          onQuoteDescriptionInput,
+          applyTemplate,
+          insertParam,
+          saveSettings,
+          recoverShare,
+          cancel
+        };
+      }
+    });
+
+    // 挂载 Element Plus 组件库
     app.use(ElementPlus);
-    // 挂载应用到 #app 容器
+    // 挂载至根节点
     app.mount('#app');
   </script>
 </body>

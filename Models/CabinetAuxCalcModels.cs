@@ -749,6 +749,36 @@ namespace ExcelAddInDemo.Models
     }
 
     /// <summary>
+    /// 铜排分项推导明细条目模型 (用于写入元器件明细区域)
+    /// </summary>
+    public class CopperUsageDetailItem
+    {
+        // 铜排所属部位名称 (如 "水平主排", "垂直母排", "垂直N排", "零地排", "出线分支排")
+        [JsonPropertyName("partName")]
+        public string PartName { get; set; } = string.Empty;
+
+        // 铜排截面规格型号 (如 "TMY-30*4", "TMY-25*3")
+        [JsonPropertyName("spec")]
+        public string Spec { get; set; } = string.Empty;
+
+        // 推导理论重量 (单位: KG)
+        [JsonPropertyName("weight")]
+        public double Weight { get; set; }
+
+        // 每公斤铜排单价 (单位: 元/KG)
+        [JsonPropertyName("unitPrice")]
+        public double UnitPrice { get; set; }
+
+        // 单根下料长度 (单位: 米)
+        [JsonPropertyName("lengthMeters")]
+        public double LengthMeters { get; set; }
+
+        // 写入 I 列的备注描述 (如 "水平主排0.65m", "垂直N排2m", "零地排0.65m", "分支排1m")
+        [JsonPropertyName("remark")]
+        public string Remark { get; set; } = string.Empty;
+    }
+
+    /// <summary>
     /// 二次元件定额规则条目
     /// </summary>
     public class SecondaryElementRule
@@ -1104,6 +1134,18 @@ namespace ExcelAddInDemo.Models
         // 铜排各分项算式明细列表 (展示主母排、各动态附件排、分支排的具体计算式与尺寸联动)
         [JsonPropertyName("copperFormulaDetails")]
         public List<string> CopperFormulaDetails { get; set; } = new List<string>();
+
+        // 铜排各分项结构化用量明细列表 (供直接写入元器件明细区域)
+        [JsonPropertyName("copperDetails")]
+        public List<CopperUsageDetailItem> CopperDetails { get; set; } = new List<CopperUsageDetailItem>();
+
+        // 固定基础辅材补贴金额 (保留在计费区的固定补贴部分)
+        [JsonPropertyName("fixedAuxiliaryCost")]
+        public double FixedAuxiliaryCost { get; set; }
+
+        // 固定基础辅材补贴金额公式 (如 "=ROUND(120*1*1,1)")
+        [JsonPropertyName("fixedAuxiliaryFormula")]
+        public string FixedAuxiliaryFormula { get; set; } = string.Empty;
 
         // 推导过程与说明明细
         [JsonPropertyName("description")]

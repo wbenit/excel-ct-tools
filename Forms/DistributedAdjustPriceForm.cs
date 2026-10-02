@@ -214,6 +214,26 @@ namespace ExcelAddInDemo
                         }
                         break;
 
+                    // 8. 窗口高度折叠与动态缩放 (支持高度折叠至 100px 或还原为 640px)
+                    case "resizeWindow":
+                    case "collapseWindow":
+                        // 若前端传递了显式高度值则按指定高度重设
+                        if (root.TryGetProperty("height", out var hProp))
+                        {
+                            // 解析目标高度像素
+                            int targetH = hProp.GetInt32();
+                            // 执行客户区尺寸更新
+                            this.ClientSize = new Size(this.ClientSize.Width, targetH);
+                        }
+                        // 兼容直接传递布尔折叠状态
+                        else if (root.TryGetProperty("collapsed", out var cProp))
+                        {
+                            // 折叠时设定为 100px，展开时还原为 640px
+                            bool isCol = cProp.GetBoolean();
+                            this.ClientSize = new Size(this.ClientSize.Width, isCol ? 100 : 640);
+                        }
+                        break;
+
                     default:
                         LogHelper.WriteLog($"[分布调价] 收到未知指令: {action}");
                         break;

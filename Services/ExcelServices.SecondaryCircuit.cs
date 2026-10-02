@@ -16,55 +16,6 @@ namespace ExcelAddInDemo
     /// </summary>
     public static partial class ExcelServices
     {
-        // 声明二次方案管理窗口静态单例引用 (可空)
-        private static SecondaryCircuitForm? _secondaryCircuitForm;
-
-        /// <summary>
-        /// 启动并弹出基于 WebView2 + Vue 3 的“二次图回路方案管理中心”窗口 (非模态，可交互编辑 Excel)
-        /// </summary>
-        public static void ShowSecondaryCircuitManageDialog()
-        {
-            try
-            {
-                // 若窗体已打开且未销毁，直接还原并激活展示
-                if (_secondaryCircuitForm != null && !_secondaryCircuitForm.IsDisposed)
-                {
-                    // 若处于最小化则还原正常大小
-                    if (_secondaryCircuitForm.WindowState == FormWindowState.Minimized)
-                    {
-                        _secondaryCircuitForm.WindowState = FormWindowState.Normal;
-                    }
-                    // 推至顶层
-                    _secondaryCircuitForm.BringToFront();
-                    // 激活窗口焦点
-                    _secondaryCircuitForm.Activate();
-                    return;
-                }
-
-                // 实例化全新窗体
-                _secondaryCircuitForm = new SecondaryCircuitForm();
-                // 绑定关闭事件清空单例
-                _secondaryCircuitForm.FormClosed += (s, e) => _secondaryCircuitForm = null;
-
-                // 获取 Excel 主窗口 HWND 句柄以依附弹出
-                IntPtr excelHwnd = ExcelDnaSafeAccessor.GetWindowHandle();
-                if (excelHwnd != IntPtr.Zero)
-                {
-                    // 设置 Owner 为 Excel 主窗口非模态显示
-                    _secondaryCircuitForm.Show(new ExcelWin32Window(excelHwnd));
-                }
-                else
-                {
-                    // 独立非模态弹出
-                    _secondaryCircuitForm.Show();
-                }
-            }
-            catch (Exception ex)
-            {
-                // 捕获异常提示用户
-                MessageBox.Show($"打开二次方案管理中心窗口失败: {ex.Message}", "系统提示", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
 
         /// <summary>
         /// 从当前 Excel 活动工作表中一键批量识别解析二次图 BOM 表及方案定额数据并入库

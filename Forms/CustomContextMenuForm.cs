@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows.Forms;
 using ExcelAddInDemo;
+using ExcelAddInDemo.Models;
 using ExcelDna.Integration;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -210,6 +211,14 @@ namespace ExcelAddInDemo.Forms
                     case "excelFilterByValue":
                     case "excelClearFilter":
                     case "createCabinet":
+                    case "createCabinetNoDetail":
+                    case "batchNewCabinet":
+                    case "editCabinet":
+                    case "cutCabinet":
+                    case "copyCabinet":
+                    case "insertCopiedCabinet":
+                    case "deleteCabinet":
+                    case "reorderCabinet":
                     case "parseAndMatch":
                     case "openComponentAttachment":
                     case "openMatchSetting":
@@ -217,9 +226,13 @@ namespace ExcelAddInDemo.Forms
                     case "openSummaryAdjustPrice":
                     case "openComponentManage":
                     case "openCabinetAuxCalc":
-                    case "openComponentParamMatch":
                     case "openOnlinePriceSearch":
                     case "switchToNativeMenu":
+                    // 元件汇总分布表专属操作
+                    case "insertDistributionComponent":
+                    case "deleteDistributionComponent":
+                    case "filterDistributionRows":
+                    case "clearDistributionFilter":
                         // 收到菜单点击指令：先隐藏菜单并关闭浮窗，后通过 ExcelAsyncUtil.QueueAsMacro 异步执行
                         SafeInvoke(() =>
                         {
@@ -421,6 +434,46 @@ namespace ExcelAddInDemo.Forms
                         ExcelServices.CreateNewCabinetFromSelection();
                         break;
 
+                    case "createCabinetNoDetail":
+                        // 调度业务层执行“新建无明细箱柜”
+                        ExcelServices.CreateNewCabinetNoDetailFromSelection();
+                        break;
+
+                    case "batchNewCabinet":
+                        // 调度业务层弹出“批建箱柜”窗口
+                        ExcelServices.ShowBatchNewCabinetDialog();
+                        break;
+
+                    case "editCabinet":
+                        // 调度业务层弹出“编辑箱柜信息”窗口
+                        ExcelServices.ShowEditCabinetDialog();
+                        break;
+
+                    case "cutCabinet":
+                        // 调度业务层执行“剪切箱柜”
+                        ExcelServices.CutCurrentCabinet();
+                        break;
+
+                    case "copyCabinet":
+                        // 调度业务层执行“复制箱柜”
+                        ExcelServices.CopyCurrentCabinet();
+                        break;
+
+                    case "insertCopiedCabinet":
+                        // 调度业务层执行“插入复制的箱柜”
+                        ExcelServices.InsertCopiedCabinet();
+                        break;
+
+                    case "deleteCabinet":
+                        // 调度业务层执行“删除箱柜”
+                        ExcelServices.DeleteCabinetFromSelection();
+                        break;
+
+                    case "reorderCabinet":
+                        // 调度业务层弹出“箱柜调序”窗口
+                        ExcelServices.ShowCabinetReorderDialog();
+                        break;
+
                     case "parseAndMatch":
                         // 调度业务层执行“识别参数并匹配物料”
                         var result = ExcelServices.ExecuteBatchMatchWithDb(null);
@@ -473,6 +526,26 @@ namespace ExcelAddInDemo.Forms
                     case "openOnlinePriceSearch":
                         // 打开“在线查价与静默回写 (电气天下/天工)”窗口
                         ExcelServices.ShowOnlinePriceSearchDialog();
+                        break;
+
+                    case "insertDistributionComponent":
+                        // 调度业务层执行【元件汇总分布表】插入新元件行
+                        ExcelServices.InsertDistributionComponentRow();
+                        break;
+
+                    case "deleteDistributionComponent":
+                        // 调度业务层执行【元件汇总分布表】删除选中元件行
+                        ExcelServices.DeleteDistributionComponentRows();
+                        break;
+
+                    case "filterDistributionRows":
+                        // 调度业务层执行【元件汇总分布表】选中行聚焦筛选 (自动隐藏全空箱柜)
+                        ExcelServices.FocusFilterDistributionRows();
+                        break;
+
+                    case "clearDistributionFilter":
+                        // 调度业务层执行【元件汇总分布表】清除筛选恢复全貌
+                        ExcelServices.ClearDistributionFilter();
                         break;
 
                     case "switchToNativeMenu":
@@ -558,6 +631,12 @@ namespace ExcelAddInDemo.Forms
                     _instance = new CustomContextMenuForm();
                 }
 
+                // 判定当前工作表是否为“元件汇总表”
+                bool isSummarySheet = string.Equals(sheetName?.Trim(), ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase);
+
+                // 判定当前工作表是否为“元件汇总分布表”
+                bool isDistributionSheet = string.Equals(sheetName?.Trim(), ExcelServices.DistributionSheetName, StringComparison.OrdinalIgnoreCase);
+
                 // 准备上下文传输数据
                 var contextData = new
                 {
@@ -567,6 +646,10 @@ namespace ExcelAddInDemo.Forms
                     row = row,
                     column = column,
                     isAboveFirstDet = isAboveFirstDet,
+                    // 标记当前活动表是否为元件汇总表
+                    isSummarySheet = isSummarySheet,
+                    // 标记当前活动表是否为元件汇总分布表
+                    isDistributionSheet = isDistributionSheet,
                     canUndo = ExcelServices.CanUndo,
                     canRedo = ExcelServices.CanRedo,
                     undoName = ExcelServices.CurrentUndoName ?? "撤销",
@@ -577,10 +660,15 @@ namespace ExcelAddInDemo.Forms
                 Screen currentScreen = Screen.FromPoint(screenPos);
                 Rectangle workArea = currentScreen.WorkingArea;
 
-                // 每次显示前重置为标准尺寸，杜绝历史状态残留与 DPI 缩放萎缩
-                int standardHeight = 610; // --硬编码: 右键菜单标准高度--
+                // 每次显示前重置为标准尺寸：
+                // 1. 元件汇总分布表 (专属6项)：165px
+                // 2. 元件汇总表 (全局大单表)：215px
+                // 3. 分类表顶部箱柜汇总区 (isAboveFirstDet == true)：385px
+                // 4. 分类表明细元器件插槽区 (isAboveFirstDet == false)：445px
+                int standardHeight = isDistributionSheet ? 175 : (isSummarySheet ? 215 : (isAboveFirstDet ? 385 : 445)); // --硬编码: 右键菜单标准高度 (分布表 165px, 汇总表 215px, 顶部箱柜 385px, 明细表 445px)--
                 // 若工作区高度受限 (如低分辨率笔记本屏幕)，自适应贴合可用工作区
                 int targetHeight = Math.Min(standardHeight, workArea.Height - 10);
+                // 设置窗口实际尺寸
                 _instance.Size = new Size(250, targetHeight);
 
                 // 初始坐标偏移 2 像素防止挡住鼠标

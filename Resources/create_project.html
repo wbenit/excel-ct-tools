@@ -491,6 +491,12 @@
                     if (res.quoteNumber) form.quoteNumber = res.quoteNumber;
                     if (res.savePath) form.savePath = res.savePath;
                     if (res.companyName) form.companyName = res.companyName;
+                    // 同步接收并回显企业英文名称
+                    if (res.englishName) form.englishName = res.englishName;
+                    // 同步接收并回显企业联系人
+                    if (res.companyContact) form.companyContact = res.companyContact;
+                    // 同步接收并回显企业联系电话
+                    if (res.companyPhone) form.companyPhone = res.companyPhone;
                     if (res.quoter) form.quoter = res.quoter;
                     updateFileName();
                   } else if (res && res.action === "setQuoteNumber") {
