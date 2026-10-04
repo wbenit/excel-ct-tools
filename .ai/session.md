@@ -1,3 +1,15 @@
+- **【全量闭环交付：多项目全量代码拉取、功能双向无损融合与远程推送闭环】(`ExcelAddInCTtools`, `cad-net_1`)**：
+  1. **用户核心指令与决策落地**:
+     - 用户指令：“拉取所有代码，并根据功能合并，不清楚的需要先确认” -> 方案确认：“同意、需要”；
+  2. **双向功能无损融合落地**:
+     - **极速内表克隆与批量导入吸收**: 全量合并远程提交中 `EnsureHiddenCabinetTemplateSheet` 极速克隆机制、CAD 箱柜批量导入服务 (`ExcelServices.CadImport.cs`)、模型定义 (`CabinetModels.cs`, `CadImportModels.cs`) 及 `Tool.cs` 跨表定义名称作用域过滤性能优化；
+     - **管道通信与箱柜感知融合**: `CadSyncClient.cs` 中同时融合远程的 `cabinetName` 箱柜感知字段与本地的 `SendUpdateComponentSpec` 规格更新指令；
+     - **右键菜单与事件管理融合**: `ExcelEventManager.cs` 中同时保留远程的选区箱柜推导与本地的 `MacroSplitComponent` / `MacroAddToPersonalDb` 宏方法；
+     - **全量业务功能保全**: 本地开发的元器件拆分改型工作台 (`ComponentSplit`)、个人元器件库 (`PersonalDb`)、标书智能导入 (`SmartImport`) 100% 完整保留；
+  3. **构建与产物全量推送**:
+     - `ExcelAddInDemo.csproj` 编译验证 0 错误；
+     - 最新程序集 `publish/ExcelAddInDemo.dll` 全量同步并成功推送至 GitHub 远程 `main` 分支。
+
 - **【功能迭代与缺陷排查】元器件拆分改型：默认填入“修改”+原规格型号，以及 CAD 同步更新未生效问题排查与全链路打通 (`component_split.html`, `CadSyncClient.cs`, `CadExcelSyncServer.cs`, `ExcelAddInDemo.dll`)**：
   1. **前端默认值需求实现**：
      - 在 `component_split.html` 中初始化时，为 `form.newModel` 自动默认填入 `candidate.value.model ? ('修改' + candidate.value.model) : ''`，无需用户每次重新输入长串规格，直接在原型号上就地微调。
