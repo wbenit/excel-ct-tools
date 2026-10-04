@@ -1,3 +1,15 @@
+- **【已修复闭环】彻底根除 CAD 抓系统图到 Excel 格式错乱与定义名称错位缺陷 (`Services/ExcelServices.Cabinet.cs`, `bin/Debug/net48/ExcelAddInDemo.dll`)**：
+  1. **问题诊断与根因定位**：
+     - 用户反馈抓系统图后，Excel 出现重复的“报价人：吴”签名行、元器件表头消失被元器件数据覆盖、箱柜行 A 列被篡改为“序号2”、定义名称 `Cab_Det_3` 错误绑定到标题行（`$A$79`）；
+     - 根本原因是在顶部汇总表插入 1 行（`sheet.Rows[sumRow].Insert`）后，`maxTolsumRow` 顺延了 1 行，但源箱柜模型基准行号 `sourceCab.DetRow`、`SubsumRow`、`TolsumRow` 漏算了 `+= 1`，导致就地克隆时 `srcBlockStart = srcDetRow - 3` 向上多截取了 1 行（把上一台的报价人复制了下来），致使新明细块内部所有行号整体向下错位 1 行。
+  2. **精确修复落地**：
+     - **物理行号同步顺延**：插行后显式对 `srcDetRow`、`srcSubsumRow`、`srcTolsumRow` 累加 1 行偏移，严格匹配插行后源明细块在物理表格中的真实起始位置；
+     - **杜绝表头篡改**：彻底删除了第 1625 行多余的 `sheet.Cells[detRow + 1, 1].Formula = $"=\"序号\" & {sumNameTag}";`，保护元器件表头 A 列“序号”纯文本不被冲刷；
+     - **规则 8 架构守门**：在操作当前表格前，前置调用 `Tool.FixAndFillCabinetNamesForSheet(sheet, forceRebuild: false)` 确保规则 6 架构自愈；
+     - **定义名称全局作用域防冲突**：在注册工作表级 4 个定义名称前，安全清理工作簿可能残留的全局同名项。
+  3. **构建验证**：
+     - `dotnet build -p:RunExcelDnaBuild=false` 编译通过：**0 错误**，最新 `ExcelAddInDemo.dll` 已成功生成。
+
 - **【全量闭环交付】Ribbon 功能区【本机项目】升级为 toggleButton 切换控件并依据控制台工程表动态呈现 Checked 状态（方案 A + 模式一） (`RibbonController.cs`, `Services/ExcelServices.Project.cs`, `ExcelEventManager.cs`, `Forms/LocalProjectForm.cs`, `publish/ExcelAddInDemo.dll`)**：
   1. **用户核心指令与决策落地 (方案 A + 模式一)**：
      - 用户指令：“ribbon中本机项目修改为check类型，如果当前路径已经在如图表中，则显示checked状态，理解表述需求”；

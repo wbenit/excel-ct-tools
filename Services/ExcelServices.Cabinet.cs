@@ -1362,7 +1362,9 @@ namespace ExcelAddInDemo
                 // 新建箱柜前主动使缓存失效，确保获取当前最新物理行分布
                 Tool.InvalidateSheetCabinetsCache(sheetName);
 
-                // 3. 扫描当前工作表已有箱柜结构 (规则 6 架构自愈)
+                // 3. 严格遵守规则 8：在操作当前表格前，先校验自愈当前表格的规则 6 定义名称正确性
+                Tool.FixAndFillCabinetNamesForSheet(sheet, forceRebuild: false);
+                // 扫描当前工作表已有箱柜结构 (规则 6 架构)
                 var validCabinets = Tool.GetSheetValidCabinets((object)sheet, (object)activeWb);
                 bool isNewSheet = (validCabinets == null || validCabinets.Count == 0);
 
@@ -1412,12 +1414,21 @@ namespace ExcelAddInDemo
                     // 汇总行插入后，其下方所有明细表物理行号顺延下移 1 行
                     maxTolsumRow += 1;
 
-                    // 直接从源箱柜模型读取当前最新的物理行号 (解决计费区不固定问题，杜绝硬编码与重复 COM 查询)
-                    srcDetRow = sourceCab.DetRow > 0 ? sourceCab.DetRow : (sourceCab.Det != null ? Convert.ToInt32(sourceCab.Det.Row) : 0);
-                    srcSubsumRow = sourceCab.SubsumRow > 0 ? sourceCab.SubsumRow : (sourceCab.Subsum != null ? Convert.ToInt32(sourceCab.Subsum.Row) : 0);
-                    srcTolsumRow = sourceCab.TolsumRow > 0 ? sourceCab.TolsumRow : (sourceCab.Tolsum != null ? Convert.ToInt32(sourceCab.Tolsum.Row) : 0);
+                    // 从源箱柜模型提取插行前的基准行号
+                    int rawDetRow = sourceCab.DetRow > 0 ? sourceCab.DetRow : (sourceCab.Det != null ? Convert.ToInt32(sourceCab.Det.Row) : 0);
+                    // 提取源箱柜插行前的小计行号
+                    int rawSubsumRow = sourceCab.SubsumRow > 0 ? sourceCab.SubsumRow : (sourceCab.Subsum != null ? Convert.ToInt32(sourceCab.Subsum.Row) : 0);
+                    // 提取源箱柜插行前的总计行号
+                    int rawTolsumRow = sourceCab.TolsumRow > 0 ? sourceCab.TolsumRow : (sourceCab.Tolsum != null ? Convert.ToInt32(sourceCab.Tolsum.Row) : 0);
 
-                    // 新箱柜明细块直接位于整张表最后一个总计行下方 (+3行签名 + 1空行)
+                    // 关键修复：因顶部汇总表插入 1 行，下方所有明细行在物理表格中必须同步顺延加 1
+                    srcDetRow = rawDetRow + 1;
+                    // 同步顺延小计行物理行号
+                    srcSubsumRow = rawSubsumRow + 1;
+                    // 同步顺延总计行物理行号
+                    srcTolsumRow = rawTolsumRow + 1;
+
+                    // 新箱柜明细块直接位于整张表最后一个总计行下方 (+3行签名 + 1空行) --硬编码: 签名及空行共4行--
                     detailStartRow = maxTolsumRow + 4;
                 }
                 else
@@ -1597,6 +1608,22 @@ namespace ExcelAddInDemo
                 string detNameTag = $"Cab_Det_{nextCabinetK}";
                 string subsumNameTag = $"Cab_Subsum_{nextCabinetK}";
                 string tolsumNameTag = $"Cab_Tolsum_{nextCabinetK}";
+
+                // 安全清除工作簿可能残留的同名全局定义名称，防止作用域冲突与名称管理器混乱
+                string[] tags = new[] { sumNameTag, detNameTag, subsumNameTag, tolsumNameTag };
+                foreach (var tag in tags)
+                {
+                    try
+                    {
+                        // 尝试在工作簿全局作用域查找
+                        dynamic wbExisting = activeWb.Names.Item(tag);
+                        // 若存在则删除全局同名定义名称
+                        if (wbExisting != null) wbExisting.Delete();
+                    }
+                    catch { }
+                }
+
+                // 规范注册工作表级 4 个定义名称 (规则 6)
                 Tool.SafeSetSheetName(sheet, sheetName, sumNameTag, sumRow);
                 Tool.SafeSetSheetName(sheet, sheetName, detNameTag, detRow);
                 Tool.SafeSetSheetName(sheet, sheetName, subsumNameTag, subsumRow);
@@ -1614,7 +1641,7 @@ namespace ExcelAddInDemo
                 }
                 catch { }
 
-                // 11. 写入明细行表头属性
+                // 11. 写入明细行表头属性 (B列名称、I列安装方式、AD列CAD坐标范围)
                 sheet.Cells[detRow, 2].Value2 = safeBoxName;
                 sheet.Cells[detRow, 9].Value2 = installMode;
                 if (cab.Header.MinMaxPoints != null && cab.Header.MinMaxPoints.Count > 0)
@@ -1622,7 +1649,6 @@ namespace ExcelAddInDemo
                     // 记录图纸范围坐标至 AD 列 (第 30 列)
                     sheet.Cells[detRow, 30].Value2 = string.Join("-", cab.Header.MinMaxPoints);
                 }
-                sheet.Cells[detRow + 1, 1].Formula = $"=\"序号\" & {sumNameTag}"; // --硬编码: 明细表头序号公式--
 
                 // 12. 刷新计费公式与总计行数量联动 (规则 6 & 规则 7)
                 RefreshCabinetFeeAreaFormulas(sheet, detRow, compStartRow, subsumRow, tolsumRow);
