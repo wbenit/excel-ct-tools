@@ -169,28 +169,20 @@ namespace ExcelAddInDemo
                     ExcelServices.UpdateSpotlightPosition(target);
                 }
 
-                // 核心安全守门：若当前工作簿不是成套工程工作簿 (不含【项目信息】表)，直接隐藏浮窗并退出，杜绝干扰常规表格
+                // 1. 若开启了 CAD 联动，只要选区触及常规核心列 (A~G 列) 且 AD/AA 列存在句柄，即时向 CAD 发起联动
                 var ws = (shObj as Microsoft.Office.Interop.Excel.Worksheet) ?? target.Worksheet;
                 var wb = ws?.Parent as Microsoft.Office.Interop.Excel.Workbook;
-                if (!Tool.IsProjectWorkbook(wb))
-                {
-                    // 隐藏浮窗并快速放行
-                    ExcelServices.HideSmartInputOverlay();
-                    ExcelServices.HideComponentMatchOverlay();
-                    return;
-                }
-
-                // 1. 判断选区是否包含 C 列 (第 3 列: 规格型号) 或选中了整行
                 int startCol = target.Column;
                 int endCol = startCol + target.Columns.Count - 1;
-                bool containsColumnC = (3 >= startCol && 3 <= endCol);
+                // 选区覆盖 A~G 列 (第 1~7 列: 序号/名称/型号/厂家/单位/数量/单价) 或包含 C 列或整行
+                bool isComponentRowArea = (startCol <= 7 && endCol >= 1) || (3 >= startCol && 3 <= endCol);
 
-                // 若选区包含 C 列且开启了 CAD 联动：提取选区内所有行的 AD 列 (第 30 列) / AA 列 (第 27 列兼容) 句柄并防抖推送
-                if (containsColumnC && Services.CadSyncClient.SyncToCadEnabled)
+                // 若处于有效列范围且全局开启了 CAD 联动：提取选区内所有行的 AD 列 (第 30 列) / AA 列 (第 27 列兼容) 句柄并防抖推送
+                if (isComponentRowArea && Services.CadSyncClient.SyncToCadEnabled)
                 {
                     try
                     {
-                        // 复用已声明的工作表引用
+                        // 校验工作表有效性
                         if (ws != null)
                         {
                             int startRow = target.Row;
@@ -203,8 +195,12 @@ namespace ExcelAddInDemo
                             // 遍历所选的所有行
                             for (int r = startRow; r <= endRow; r++)
                             {
-                                // 读取 AD 列 (第 30 列) 的 CAD 句柄字符串
+                                // 读取 AD 列 (第 30 列) 的 CAD 句柄字符串，若为空容错读取 AA 列 (第 27 列)
                                 string rawHandles = Convert.ToString(ws.Range[$"AD{r}"].Value2)?.Trim() ?? string.Empty;
+                                if (string.IsNullOrEmpty(rawHandles))
+                                {
+                                    rawHandles = Convert.ToString(ws.Range[$"AA{r}"].Value2)?.Trim() ?? string.Empty;
+                                }
                                 if (!string.IsNullOrEmpty(rawHandles))
                                 {
                                     // 兼容两级分隔符（逗号“,”与连字符“-”）进行拆分提取
@@ -220,11 +216,23 @@ namespace ExcelAddInDemo
                                 }
                             }
 
-                            // 带有 50ms 防抖与自动缩放视角（autoZoom=true）推送至 CAD 管道
-                            Services.CadSyncClient.SendHandlesDebounced(handleList, true);
+                            // 智能解析提取当前选区行所属的箱柜名称 (柜号)
+                            string activeCabinetName = ExcelServices.GetActiveCabinetName(ws, startRow);
+
+                            // 带有 50ms 防抖与自动缩放视角（autoZoom=true）推送至 CAD 管道，并附带箱柜名称以联动 TuFan 面板同步
+                            Services.CadSyncClient.SendHandlesDebounced(handleList, true, cabinetName: activeCabinetName);
                         }
                     }
                     catch { }
+                }
+
+                // 核心安全守门：若当前工作簿不是成套工程工作簿 (不含【项目信息】表)，直接隐藏浮窗并退出，杜绝干扰常规表格
+                if (!Tool.IsProjectWorkbook(wb))
+                {
+                    // 隐藏浮窗并快速放行
+                    ExcelServices.HideSmartInputOverlay();
+                    ExcelServices.HideComponentMatchOverlay();
+                    return;
                 }
 
                 // 2. 处理 UI 浮窗交互：若选中的是单个单元格

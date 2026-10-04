@@ -443,6 +443,33 @@ namespace ExcelAddInDemo.Models
     }
 
     /// <summary>
+    /// 单台箱柜极速直通导出结果模型 (携带关键物理行号以支持 0ms 视口对焦与缓存同步)
+    /// </summary>
+    public class CabinetExportResult
+    {
+        // 标记本次导出是否成功
+        public bool Success { get; set; }
+        // 箱柜名称 (柜号)
+        public string CabinetName { get; set; } = string.Empty;
+        // 箱柜序号标识 (如 1, 2)
+        public int CabinetK { get; set; }
+        // 汇总行物理行号 (Cab_Sum_k)
+        public int SumRow { get; set; }
+        // 明细信息行物理行号 (Cab_Det_k)
+        public int DetRow { get; set; }
+        // 元器件起始物理行号 (Cab_Det_k + 2)
+        public int CompStartRow { get; set; }
+        // 元器件终止物理行号 (Cab_Subsum_k - 1)
+        public int CompEndRow { get; set; }
+        // 小计行物理行号 (Cab_Subsum_k)
+        public int SubsumRow { get; set; }
+        // 总计行物理行号 (Cab_Tolsum_k)
+        public int TolsumRow { get; set; }
+        // 错误信息描述 (导出失败时)
+        public string ErrorMessage { get; set; } = string.Empty;
+    }
+
+    /// <summary>
     /// 标准箱柜面向对象实体工厂
     /// </summary>
     public static class CabinetObjectFactory
@@ -543,6 +570,18 @@ namespace ExcelAddInDemo.Models
 
         // 底部明细总计行 Range (Cab_Tolsum)
         public dynamic Tolsum { get; set; }
+
+        // 箱柜信息行物理行号 (Det.Row) 纯内存缓存，避免重复跨进程 COM 查询
+        public int DetRow { get; set; }
+
+        // 顶部汇总行物理行号 (Sum.Row) 纯内存缓存
+        public int SumRow { get; set; }
+
+        // 底部明细小计行物理行号 (Subsum.Row) 纯内存缓存
+        public int SubsumRow { get; set; }
+
+        // 底部明细总计行物理行号 (Tolsum.Row) 纯内存缓存
+        public int TolsumRow { get; set; }
 
         // 构造函数
         public CabinetAnchorModel(dynamic det = null, dynamic sum = null, dynamic subsum = null, dynamic tolsum = null)

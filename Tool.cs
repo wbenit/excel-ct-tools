@@ -908,14 +908,48 @@ namespace ExcelAddInDemo
             {
                 try
                 {
+                    // 提取原始定义名称字符串
+                    string rawName = Convert.ToString(name.Name) ?? "";
+
+                    // 优化步骤 1: 若为工作表级局部名称 (如 'Sheet1'!Cab_Det_1)，优先比对感叹号前的工作表名
+                    if (rawName.Contains("!"))
+                    {
+                        // 截取感叹号前的工作表名称
+                        string scopeSheet = rawName.Substring(0, rawName.IndexOf('!')).Trim('\'', ' ');
+                        // 若作用域明确不是当前工作表，直接跳过，0 次跨进程 COM 调用
+                        if (!string.Equals(scopeSheet, currentSheetName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+                    }
+
                     // 清洗提取定义名称字符串
-                    string clean = ExtractCleanNameStr(Convert.ToString(name.Name) ?? "");
+                    string clean = ExtractCleanNameStr(rawName);
 
                     // 提取箱柜数字序号，无法匹配则跳过
                     int k = ExtractIndexFromName(clean, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
                     if (k <= 0) continue;
 
-                    // 安全读取定义名称所指向的单元格 Range 引用
+                    // 优化步骤 2: 若为工作簿级全局名称，读取轻量公式字符串 RefersTo 校验工作表归属
+                    if (!rawName.Contains("!"))
+                    {
+                        // 提取公式引用字符串 (例如 ='Sheet1'!$A$44)
+                        string refersTo = Convert.ToString(name.RefersTo) ?? string.Empty;
+                        // 若公式中包含感叹号，提取其引用的工作表名称
+                        if (refersTo.Contains("!"))
+                        {
+                            int start = refersTo.StartsWith("=") ? 1 : 0;
+                            int excl = refersTo.IndexOf('!');
+                            string targetSheet = refersTo.Substring(start, excl - start).Trim('\'', ' ');
+                            // 若公式引用的工作表非当前工作表，直接跳过，杜绝创建无关 Range COM 对象
+                            if (!string.IsNullOrEmpty(targetSheet) && !string.Equals(targetSheet, currentSheetName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                continue;
+                            }
+                        }
+                    }
+
+                    // 安全读取定义名称所指向的单元格 Range 引用 (仅在确实属于本表时调用)
                     dynamic? refRange = null;
                     try { refRange = name.RefersToRange; } catch { }
                     if (refRange == null) continue;
@@ -930,6 +964,10 @@ namespace ExcelAddInDemo
                         continue;
                     }
 
+                    // 单次读取物理行号并存入内存，后续排序与定位 0ms 纯内存处理
+                    int rowNum = 0;
+                    try { rowNum = Convert.ToInt32(refRange.Row); } catch { }
+
                     // 初始化字典中该序号的锚点模型
                     if (!cabinetDict.ContainsKey(k)) cabinetDict[k] = new Models.CabinetAnchorModel();
 
@@ -937,30 +975,35 @@ namespace ExcelAddInDemo
                     if (clean.StartsWith(detPrefix, StringComparison.OrdinalIgnoreCase))
                     {
                         cabinetDict[k].Det = refRange;
+                        cabinetDict[k].DetRow = rowNum;
                     }
                     // 匹配 Sum 锚点（汇总行）
                     else if (clean.StartsWith(sumPrefix, StringComparison.OrdinalIgnoreCase))
                     {
                         cabinetDict[k].Sum = refRange;
+                        cabinetDict[k].SumRow = rowNum;
                     }
                     // 匹配 Subsum 锚点（小计行）
                     else if (clean.StartsWith(subsumPrefix, StringComparison.OrdinalIgnoreCase))
                     {
                         cabinetDict[k].Subsum = refRange;
+                        cabinetDict[k].SubsumRow = rowNum;
                     }
                     // 匹配 Tolsum 锚点（总计行）
                     else if (clean.StartsWith(tolsumPrefix, StringComparison.OrdinalIgnoreCase))
                     {
                         cabinetDict[k].Tolsum = refRange;
+                        cabinetDict[k].TolsumRow = rowNum;
                     }
                 }
                 catch { }
             }
 
             // 兼容普通有明细箱柜 (同时具备 Sum 和 Det) 与纯汇总无明细箱柜 (仅具备 Sum 锚点)
+            // 采用缓存的 SumRow 与 DetRow 进行纯内存排序，杜绝循环触发 COM 调用
             return cabinetDict
                 .Where(x => x.Value.Sum != null || x.Value.Det != null)
-                .OrderBy(x => x.Value.Sum != null ? (int)x.Value.Sum.Row : (int)x.Value.Det.Row)
+                .OrderBy(x => x.Value.SumRow > 0 ? x.Value.SumRow : x.Value.DetRow)
                 .ToList();
         }
 
@@ -1061,6 +1104,31 @@ namespace ExcelAddInDemo
             return allNames ?? new List<dynamic>();
         }
 
+        // 工作表有效箱柜映射短效内存缓存 (零 COM 耗时，5秒时效)
+        private static readonly Dictionary<string, (DateTime CacheTime, List<KeyValuePair<int, Models.CabinetAnchorModel>> Cabinets)> _sheetValidCabinetsCache =
+            new Dictionary<string, (DateTime, List<KeyValuePair<int, Models.CabinetAnchorModel>>)>(StringComparer.OrdinalIgnoreCase);
+
+        // 缓存有效时长 (5秒)
+        private static readonly TimeSpan _sheetValidCabinetsCacheExpiry = TimeSpan.FromSeconds(5);
+
+        /// <summary>
+        /// 主动失效工作表箱柜映射缓存 (当增删箱柜或重排时调用)
+        /// </summary>
+        /// <param name="sheetName">指定工作表名称，为空则清空全簿缓存</param>
+        public static void InvalidateSheetCabinetsCache(string? sheetName = null)
+        {
+            if (string.IsNullOrEmpty(sheetName))
+            {
+                // 清空全簿所有工作表缓存
+                _sheetValidCabinetsCache.Clear();
+            }
+            else
+            {
+                // 仅移除指定工作表缓存
+                _sheetValidCabinetsCache.Remove(sheetName);
+            }
+        }
+
         /// <summary>
         /// 快捷公共方法：获取指定工作表中按汇总行物理行号升序排列的有效箱柜映射列表
         /// 内部自动读取系统配置前缀、自动聚合双作用域定义名称并完成锚点结构化构建
@@ -1100,6 +1168,15 @@ namespace ExcelAddInDemo
             // 提取当前工作表纯文本名称
             string sheetName = Convert.ToString(dSheet.Name) ?? "";
 
+            // 检查内存短效缓存，命中且在 5 秒有效期内直接返回 (0ms 纯内存)
+            var now = DateTime.UtcNow;
+            if (_sheetValidCabinetsCache.TryGetValue(sheetName, out var cached) &&
+                (now - cached.CacheTime) < _sheetValidCabinetsCacheExpiry &&
+                cached.Cabinets != null && cached.Cabinets.Count > 0)
+            {
+                return cached.Cabinets;
+            }
+
             // 收集双作用域所有定义名称 (若为空底层自动触发智能重建)
             var allNames = CollectAllDefinedNames(dWb, dSheet, autoRebuildIfEmpty: true);
 
@@ -1115,6 +1192,12 @@ namespace ExcelAddInDemo
                 allNames = CollectAllDefinedNames(dWb, dSheet, autoRebuildIfEmpty: false);
                 // 再次构建有效箱柜列表
                 validCabinets = BuildCabinetMap(allNames, sheetName, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+            }
+
+            // 写入短效内存缓存
+            if (validCabinets != null && validCabinets.Count > 0)
+            {
+                _sheetValidCabinetsCache[sheetName] = (now, validCabinets);
             }
 
             // 返回构建结果 (保障非空)
@@ -1139,12 +1222,10 @@ namespace ExcelAddInDemo
             // 遍历所有有效箱柜进行区间命中判定
             foreach (var cab in validCabinets)
             {
-                // 读取汇总行行号
-                int sumR = cab.Value.Sum != null ? Convert.ToInt32(cab.Value.Sum.Row) : 0;
-                // 读取箱柜信息行行号
-                int detR = cab.Value.Det != null ? Convert.ToInt32(cab.Value.Det.Row) : 0;
-                // 读取总计行行号 (若总计行为空按默认 27 行估算)
-                int tolR = cab.Value.Tolsum != null ? Convert.ToInt32(cab.Value.Tolsum.Row) : (detR + 27);
+                // 优先读取模型中缓存的行号，零跨进程 COM 调用
+                int sumR = cab.Value.SumRow > 0 ? cab.Value.SumRow : (cab.Value.Sum != null ? Convert.ToInt32(cab.Value.Sum.Row) : 0);
+                int detR = cab.Value.DetRow > 0 ? cab.Value.DetRow : (cab.Value.Det != null ? Convert.ToInt32(cab.Value.Det.Row) : 0);
+                int tolR = cab.Value.TolsumRow > 0 ? cab.Value.TolsumRow : (cab.Value.Tolsum != null ? Convert.ToInt32(cab.Value.Tolsum.Row) : (detR + 27));
 
                 // 判定行号是否命中汇总行，或落在明细大标题至总计行下方3行报价人信息完整区间 (规则 6 扩展)
                 if (row == sumR || (detR > 0 && row >= (detR - 3) && row <= (tolR + 3)))

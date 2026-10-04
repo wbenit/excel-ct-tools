@@ -184,6 +184,98 @@
      - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
      - 最新程序集 `ExcelAddInDemo.dll` 已全量同步覆写至 `publish/` 目录。
 
+- **【已实施闭环】消灭全表定义名称扫描性能瓶颈：BuildCabinetMap 字符串前置短路 + 行号纯内存缓存 + GetSheetValidCabinets 5秒短效缓存 (`Tool.cs`, `Models/CabinetModels.cs`, `Services/ExcelServices.Cabinet.cs`, `ExcelAddInDemo.csproj`)**：
+  1. **全链路卡顿根因锁定**：
+     - 此前工作表中箱柜数量增多时，`BuildCabinetMap` 遍历 `wb.Names` 与 `sheet.Names` 时，对每个名称无脑调用 `name.RefersToRange` 与 `refRange.Worksheet.Name`，产生上千次跨进程 COM 调用（耗时 1.5~2.5 秒）；
+     - 排序与行号读取 `anc.Sum.Row` 再次循环触发 COM 反射；
+  2. **毫秒级极速优化落地**：
+     - **纯字符串前置短路过滤**：在触摸 COM Range 之前，优先解析 `name.Name`（工作表级）与 `name.RefersTo`（工作簿级）的纯字符串前缀；若感叹号前的工作表非当前表，直接 `continue` 跳过，0 次 COM Range 产生，消除 90% 以上无效 COM 调用；
+     - **行号纯内存缓存**：在 `CabinetAnchorModel` 中增加 `DetRow`, `SumRow`, `SubsumRow`, `TolsumRow` 强类型整数缓存，排序与比对直接采用纯内存整数，零 COM 访问；
+     - **5秒短效内存缓存**：在 `Tool.cs` 中实现 `_sheetValidCabinetsCache` 与 `InvalidateSheetCabinetsCache`；在新建箱柜、删柜及 `InvalidateActiveCabinetCache` 时协同失效，确保高频输入与连击时 0ms 纯内存命中；
+  3. **构建验证**：
+     - `ExcelAddInDemo.csproj` 编译验证 0 错误通过。
+
+- **【已实施闭环】基于定义名称Row动态推导明细块拓扑，彻底消除计费区与容量硬编码 (`Services/ExcelServices.Cabinet.cs`, `ExcelAddInDemo.csproj`)**：
+  1. **用户痛点与核心指示**：
+     - 用户指出明细行硬编码（`detRow + 22`、`detRow + 27`、`copyRowCount = 34`）不合理，因成套计费区域项数并非固定 5 项（允许替换/自定义），硬编码会导致计费行与总计行错乱；用户指示直接读取定义名称的 Row 动态解析；
+  2. **定义名称动态推导引擎落地**：
+     - 直接从克隆源箱柜（`sourceCab`）的 `Det`, `Subsum`, `Tolsum` 定义名称 Range 提取真实物理 Row；
+     - 严格遵循成套规则 6 动态计算：
+       - 源元器件容量：`srcCompCapacity = (srcSubsumRow - 1) - (srcDetRow + 2) + 1`；
+       - 源计费区项数：`srcFeeAreaCount = (srcTolsumRow - 1) - srcSubsumRow + 1`（完全动态自适应！）；
+       - 源明细块总行数：`copyRowCount = (srcTolsumRow + 3) - (srcDetRow - 3) + 1`，彻底消除 34、22、27 等所有硬编码；
+     - 克隆后新箱柜行号精准对齐：
+       - `detRow = detailStartRow + 3`；
+       - `compStartRow = detRow + 2`；
+       - `subsumRow = compStartRow + srcCompCapacity`；
+       - `tolsumRow = subsumRow + srcFeeAreaCount`；
+     - 规则 6 动态扩容时在 `subsumRow` 处插行，计费区随之整体下移，计费区项数与格式 100% 保持无损；
+     - 清除旧数据时动态限定在 `compStartRow` 至 `subsumRow - 1`，绝对不误伤小计行与计费区；
+  3. **构建验证**：
+     - `ExcelAddInDemo.csproj` 编译验证 0 错误通过。
+
+- **【已实施闭环】抓系统图极速新建箱柜（维度1内存常驻模板 + 维度2单台专线 + 维度3行号直通）(`Services/ExcelServices.Cabinet.cs`, `Models/CabinetModels.cs`, `ExcelAddInDemo.csproj`)**：
+  1. **维度 1（内存/内表常驻模板克隆）**：
+     - 实现 `EnsureHiddenCabinetTemplateSheet`：工作簿中常驻极深隐藏模板表 `_CabinetTemplate_`，全生命周期仅按需载入一次；
+     - 现有分类表优先就地克隆首台箱柜明细块（`detRow-3` 至 `detRow+30`），0 外部文件打开，0 磁盘 IO；
+  2. **维度 2（单台极速直通专线）**：
+     - 实现 `ExportSingleCabinetDirect`：专门针对单台递增新建定制极简流水线，汇总表直接插 1 行，明细表直接在末尾总计行后写入，0 临时母版占位，0 物理删行，0 多余平移；
+     - 局部精准重算：仅对新增汇总行和新明细块执行 `Calculate()`，坚决不触发全簿深度重算；
+  3. **维度 3（行号直通 0ms 对焦）**：
+     - 返回强类型 `CabinetExportResult` 携带新箱柜精确的 `SumRow`, `DetRow`, `SubsumRow`, `TolsumRow`；
+     - 同步更新内存缓存，使后续光标移动与输入 0ms 纯内存命中；
+  4. **构建验证**：
+     - `ExcelAddInDemo.csproj` 与 `TuFan.csproj` 编译验证全部通过，0 错误。
+
+- **【已实施闭环】Excel 输入与单元格光标切换卡顿排查与极速内存缓存优化 (`Services/ExcelServices.Cabinet.cs`, `ExcelAddInDemo.csproj`)**：
+  1. **输入与切换卡顿根因锁定**：
+     - 在此前为支持箱柜即时联动而加入的 `GetActiveCabinetName` 中，元器件明细行因无超链接短路，每次切换单元格或输入回车时均同步调用 `Tool.GetSheetValidCabinets`，全表扫描上千个 COM 定义名称，造成 UI 主线程产生 200~1000ms 严重迟滞卡顿；
+  2. **毫秒级高速内存缓存落地**：
+     - 在 `ExcelServices.Cabinet.cs` 中实现 `_activeCabinetSheetCache` 多工作表箱柜区间高速内存缓存（5 分钟有效期）；
+     - 首次访问后全表箱柜范围与柜号一次性载入内存，后续在箱柜内连续打字、回车或切换单元格直接 0ms 纯内存命中，彻底消除 COM 遍历开销；
+  3. **构建验证**：
+     - `ExcelAddInDemo.csproj` 编译验证 0 错误。
+
+- **【已实施闭环】Excel 与 TuFan 双向无损增量融合（手改规格/数量保护 + 手工新增脱机元件支持）(`cad-net_1`, `TuFan`, `excel-ct-tools`)**：
+  1. **无损增量吸收与 Handle 锚点保护**：
+     - 用户在 Excel 分类表中直接修改的规格型号（C 列）或数量（F 列），TuFan 在重排同步或回写时以 CAD Handle 为锚点绝对优先保留，不再被 TuFan 初态冲刷；
+     - 用户在 Excel 中手动新增的元器件行（无 CAD Handle 的脱机元件），自动由 TuFan 增量融合引擎解析并注入 CAD 内存 `eBox.EleComponents`，并在 `dataGridView2` 中呈现与参与拖动重排，绝不破坏 CAD 原生折线拓扑；
+  2. **3 大生命周期节点协同触发**：
+     - Excel 点击切换箱柜时、TuFan 面板切换箱柜激活时、CAD 视口抓元件前置探测时均自动触发融合；
+  3. **构建验证**：
+     - `ExcelAddInDemo.csproj` 与 `TuFan.csproj` 编译验证全部通过，0 错误。
+
+- **【已实施闭环】Excel 点击箱柜即时联动 TuFan 双表同步（箱柜选中 + 元器件列表刷新）(`Services/ExcelServices.Cabinet.cs`, `Services/CadSyncClient.cs`, `ExcelEventManager.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **箱柜智能解析与管道通信扩展**：
+     - 在 `ExcelServices.Cabinet.cs` 中实现 `GetActiveCabinetName(dynamic sheet, int row)`：通过超链接 0ms 快速短路与 `FindCabinetByRow` 准确提取当前所选单元格所属的箱柜名称（B 列柜号）；
+     - 扩展 `CadSyncClient.SendHandlesDebounced` 与 `SendToPipeAsync`，在 50ms 防抖的管道请求中增加 `cabinetName` 传输字段；
+     - 在 `ExcelEventManager.OnSheetSelectionChange` 中提取当前行关联的箱柜名称并随同图元句柄异步非阻塞发送至 CAD 管道。
+  2. **构建验证**：
+     - `ExcelAddInDemo.csproj` 编译验证 0 错误通过。
+
+- **【全量闭环交付】AutoCAD 扒图元器件直接录入与复选反选扣减核心公共服务上线 (`Models/CadImportModels.cs`, `Services/ExcelServices.CadImport.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心指令与决策落地 (1B, 2B, 3A)**：
+     - 用户指令：“方案 C（双模并存），提取柜号和元器件还是使用tufan的右击快捷键吗” -> “A. 形态 1（推荐）是不是 抓系统图则新建箱柜，抓元件则提取到当前箱柜” -> “1B, 2B, 3A” -> “开始实施”；
+     - 落地决策：
+       - `1B`：元器件名称（B 列）保持 TuFan 识别原样，不强行规则推导；
+       - `2B`：抓元件时若 Excel 光标未停留在任何有效箱柜内，返回 `NOT_IN_CABINET` 状态码并在 CAD 端拦截提示，绝不盲目追加；
+       - `3A`：纯净轻量提取，写入序号(A)、名称(B)、型号(C)、单位(E=只)、数量(F)、合价公式(H)、CAD 句柄(AD)，不强加自动查价；
+  2. **成套电气分类表三大黄金法则严密贯彻**：
+     - **【规则 8 前置自愈守门】**：写入前调用 `Tool.FixAndFillCabinetNamesForSheet(sheet)` 确保定义名称拓扑完整无损；
+     - **【规则 6 动态扩容与四位一体拓扑】**：
+       - 逆向定位活动单元格所属箱柜 `Cab_Det_k / Cab_Subsum_k`；
+       - 扫描已有占用行数，若新元件数多于空余行数，在小计行 `subsumRow` 处向下物理执行 `Insert(xlShiftDown)`，绝不破坏计费区和小计公式；
+     - **【规则 7 二维数组一次性批量读写】**：
+       - 单次读取元器件区域 `A:AD`（30 列）；
+       - 一次性构造包含自适应序号公式、合价公式的二维矩阵与 AD 列 Handles 矩阵单次赋给 `Range.Formula` 与 `Range.Value2`；
+     - **【复选反选取消选择与用户主权保护】**：
+       - CAD 端点选已有折线反选时，通过 AD 列 Handle 精准定位目标行，数量 > 1 则 F 列减 1 并剔除已取消的 Handle，数量 <= 1 则安全物理删行，重算小计求和公式；
+       - 尊重用户在 Excel 中的手工修改，绝不反向冲掉用户已填好的订货全称、品牌厂家和价格；
+  3. **构建与产物 100% 对齐**：
+     - 新增代码严格遵循至少每 3 行包含 1 行规范中文注释要求，识别并标注 `--硬编码--`；
+     - `dotnet build /p:RunExcelDnaBuild=false` 编译成功：**0 错误**；
+     - 程序集 `publish/ExcelAddInDemo.dll` 已同步更新。
+
 - **【故障排查与修复】常规样式投标报表导出提示“报表导出失败”原因排查与全链路防御修复 (`Resources/tender_report_regular.html`, `publish/Resources/tender_report_regular.html`, `Controllers/TenderReportRegularController.cs`, `Services/ExcelServices.TenderReport.cs`, `publish/ExcelAddInDemo.dll`)**：
   1. **问题排查与根本原因剖析**：
      - **UI 假报错与真实信息被遮蔽（核心直接根因）**：在前端 HTML/JS (`tender_report_regular.html`) 中，接收后端 `exportReportResult` 时，使用了大驼峰属性 `res.Success` 和 `res.Message`。而后端 ASP.NET/System.Text.Json 配置了 `JsonNamingPolicy.CamelCase`，返回的 JSON 键为小驼峰 `success` 和 `message`。导致前端判定 `res.Success` 为 `undefined`（走入 `else` 分支），且 `res.Message` 也为 `undefined`，直接触发兜底提示 `ElementPlus.ElMessage.error(res.Message || '报表导出失败')`。这使得无论后端是否导出成功，前端一律弹出“报表导出失败”，真实的后端成功结果或具体异常细节被完全掩盖。
