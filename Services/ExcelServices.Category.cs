@@ -367,7 +367,8 @@ namespace ExcelAddInDemo
                 {
                     // 1. 从 CabinetTemplate.xlsx 标准模板克隆纯净的【分类1】工作表 (100% 完整保留汇总表头、合计行、大写、说明及明细模板)
                     string templatePath = ProjectController.EnsureCabinetTemplate(app);
-                    dynamic templateWb = app.Workbooks.Open(templatePath, ReadOnly: true);
+                    // 打开模板时明确指定 UpdateLinks: 0，杜绝外部源链接安全警告弹窗
+                    dynamic templateWb = app.Workbooks.Open(templatePath, UpdateLinks: 0, ReadOnly: true);
                     dynamic newSheet = null;
                     try
                     {

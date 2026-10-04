@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>元器件拆分与改型工作台</title>
+  
+  <!-- 引入 Element Plus 样式 (优先使用国内高速 npmmirror 镜像源) -->
+  <link rel="stylesheet" href="https://registry.npmmirror.com/element-plus/2.4.4/files/dist/index.css" onerror="this.onerror=null;this.href='https://unpkg.com/element-plus@2.4.4/dist/index.css'">
+  
+  <style>
+    /* CSS 变量体系：绿蓝相间，主色调 #009688 */
+    :root {
+      --primary-color: #009688;
+      --primary-hover: #00796b;
+      --primary-light: #e0f2f1;
+      --primary-border: #80cbc4;
+      --bg-color: #f4f6f8;
+      --card-bg: #ffffff;
+      --text-main: #2c3e50;
+      --text-sub: #606266;
+      --text-muted: #909399;
+      --border-color: #e4e7ed;
+      --accent-orange: #e6a23c;
+    }
+
+    /* 样式重置与排版规范 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      overflow-x: hidden;
+      overflow-y: hidden;
+    }
+
+    #app {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 顶部标题栏 */
+    .header-bar {
+      height: 52px;
+      background: linear-gradient(135deg, #009688 0%, #00796b 100%);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      user-select: none;
+      flex-shrink: 0;
+      box-shadow: 0 2px 6px rgba(0, 150, 136, 0.2);
+    }
+
+    .header-title-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-icon {
+      font-size: 20px;
+    }
+
+    .header-title {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .header-tags {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header-tag {
+      background: rgba(255, 255, 255, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      color: #ffffff;
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    /* 内容滚动工作区 (弹性布局，无水平滚动条) */
+    .content-body {
+      flex: 1;
+      padding: 14px 16px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* 通用卡片容器 */
+    .workbench-card {
+      background: var(--card-bg);
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      padding: 12px 14px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .card-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px dashed var(--border-color);
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .card-badge {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* 原元件信息网格 */
+    .origin-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px 14px;
+      font-size: 12px;
+    }
+
+    .info-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .info-label {
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    .info-value {
+      font-weight: 500;
+      color: var(--text-main);
+      word-break: break-all;
+    }
+
+    .info-value-highlight {
+      color: var(--primary-color);
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    /* 拆分与切分配置区 */
+    .split-config-wrap {
+      display: flex;
+      gap: 14px;
+      flex: 1;
+    }
+
+    .split-col {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* Handle 勾选与预览区 */
+    .handle-list-wrap {
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      background: #fafafa;
+      padding: 8px;
+      max-height: 160px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .handle-item-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 8px;
+      background: #ffffff;
+      border-radius: 4px;
+      border: 1px solid #ebeef5;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .handle-item-row:hover {
+      border-color: var(--primary-border);
+      background: var(--primary-light);
+    }
+
+    .handle-item-row.is-selected {
+      border-color: var(--primary-color);
+      background: #f0fdfa;
+    }
+
+    .handle-title-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .cad-icon {
+      font-size: 13px;
+      color: var(--primary-color);
+    }
+
+    .handle-code {
+      font-family: Consolas, Monaco, monospace;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .locate-btn {
+      font-size: 11px;
+      color: var(--primary-color);
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 2px;
+    }
+
+    .locate-btn:hover {
+      background: var(--primary-light);
+      text-decoration: underline;
+    }
+
+    /* 数量对账结算条 */
+    .reconcile-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #ecf5ff;
+      border: 1px solid #d9ecff;
+      border-radius: 4px;
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+
+    .reconcile-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .reconcile-num {
+      font-weight: bold;
+      color: #409eff;
+      font-size: 13px;
+    }
+
+    .reconcile-num-orange {
+      font-weight: bold;
+      color: var(--accent-orange);
+      font-size: 13px;
+    }
+
+    /* 表单输入控件规范 */
+    .form-item-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .form-item-label {
+      width: 72px;
+      color: var(--text-sub);
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .form-item-control {
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* 底部操作工具栏 */
+    .footer-bar {
+      height: 54px;
+      background: #ffffff;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      flex-shrink: 0;
+      box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.03);
+    }
+
+    .footer-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-sub);
+    }
+
+    .footer-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* 主色调按钮覆盖 */
+    .el-button--primary {
+      background-color: var(--primary-color) !important;
+      border-color: var(--primary-color) !important;
+      color: #ffffff !important;
+    }
+
+    .el-button--primary:hover {
+      background-color: var(--primary-hover) !important;
+      border-color: var(--primary-hover) !important;
+    }
+  </style>
+
+  <!-- 引入 Vue 3 与 Element Plus 脚本 (npmmirror 高速源 + unpkg 双轨容灾) -->
+  <script src="https://registry.npmmirror.com/vue/3.3.4/files/dist/vue.global.prod.js" onerror="this.onerror=null;this.src='https://unpkg.com/vue@3.3.4/dist/vue.global.prod.js'"></script>
+  <script src="https://registry.npmmirror.com/element-plus/2.4.4/files/dist/index.full.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/element-plus@2.4.4/dist/index.full.min.js'"></script>
+  <!-- 引入中文语言包 -->
+  <script src="https://registry.npmmirror.com/element-plus/2.4.4/files/dist/locale/zh-cn.js" onerror="this.onerror=null;this.src='https://unpkg.com/element-plus@2.4.4/dist/locale/zh-cn.js'"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部标题栏 -->
+    <header class="header-bar">
+      <div class="header-title-box">
+        <span class="header-icon">✂️</span>
+        <span class="header-title">元器件拆分与改型工作台 (Split & Modify)</span>
+      </div>
+      <div class="header-tags">
+        <span class="header-tag">{{ candidate.cabinetName || '未归属箱柜' }}</span>
+        <span class="header-tag">行 {{ candidate.rowIndex }}</span>
+      </div>
+    </header>
+
+    <!-- 主体可滚动工作区 -->
+    <main class="content-body">
+      <!-- 卡片 1: 原元件概况 -->
+      <section class="workbench-card">
+        <div class="card-title-row">
+          <span class="card-title">📦 原元器件当前状态</span>
+          <span class="card-badge">当前所选行的基础属性</span>
+        </div>
+        <div class="origin-grid">
+          <div class="info-cell">
+            <span class="info-label">元件名称</span>
+            <span class="info-value">{{ candidate.name || '未命名' }}</span>
+          </div>
+          <div class="info-cell">
+            <span class="info-label">原规格型号</span>
+            <span class="info-value" style="color: #009688; font-weight: 600;">{{ candidate.model || '-' }}</span>
+          </div>
+          <div class="info-cell">
+            <span class="info-label">原品牌 / 单位</span>
+            <span class="info-value">{{ candidate.brand || '默认' }} / {{ candidate.unit || '只' }}</span>
+          </div>
+          <div class="info-cell">
+            <span class="info-label">当前总数量</span>
+            <span class="info-value-highlight">{{ candidate.quantity }} {{ candidate.unit || '只' }}</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 卡片 2: 拆分与改型双栏配置区 -->
+      <div class="split-config-wrap">
+        <!-- 左栏: Handle 勾选与数量切分 -->
+        <section class="workbench-card split-col">
+          <div class="card-title-row">
+            <span class="card-title">🎯 数量与 CAD 图元分配</span>
+            <span class="card-badge">勾选需变更为新型号的项</span>
+          </div>
+
+          <!-- 若有 Handle 列表，展示勾选面板 -->
+          <template v-if="candidate.handles && candidate.handles.length > 0">
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #909399;">
+              <span>点击项可联动 CAD 对焦高亮：</span>
+              <div style="display: flex; gap: 8px;">
+                <el-button link type="primary" size="small" @click="selectAllHandles">全选</el-button>
+                <el-button link type="primary" size="small" @click="invertSelection">反选</el-button>
+                <el-button link type="info" size="small" @click="clearHandleSelection">清空</el-button>
+              </div>
+            </div>
+
+            <!-- Handle 列表项滚动区 -->
+            <div class="handle-list-wrap">
+              <div 
+                v-for="(h, idx) in candidate.handles" 
+                :key="h" 
+                class="handle-item-row"
+                :class="{ 'is-selected': selectedHandles.includes(h) }"
+                @click="toggleHandleSelect(h)"
+              >
+                <div class="handle-title-box">
+                  <el-checkbox 
+                    :model-value="selectedHandles.includes(h)" 
+                    @change="toggleHandleSelect(h)"
+                    @click.stop
+                  ></el-checkbox>
+                  <span class="cad-icon">⚡</span>
+                  <span class="handle-code">#{{ idx + 1 }}: {{ h }}</span>
+                </div>
+                <span class="locate-btn" @click.stop="locateInCad(h)">CAD 对焦</span>
+              </div>
+            </div>
+          </template>
+
+          <!-- 若无 Handle，支持直接用数字步进器输入拆出数量 -->
+          <template v-else>
+            <div class="form-item-row" style="margin-top: 10px;">
+              <span class="form-item-label">拆出数量:</span>
+              <div class="form-item-control">
+                <el-input-number 
+                  v-model="splitQuantity" 
+                  :min="1" 
+                  :max="maxSplitQuantity" 
+                  size="small"
+                  style="width: 130px;"
+                ></el-input-number>
+                <span style="font-size: 11px; color: #909399; margin-left: 8px;">(最多可拆出 {{ maxSplitQuantity }} 只)</span>
+              </div>
+            </div>
+          </template>
+
+          <!-- 数量结算动态对账条 -->
+          <div class="reconcile-bar">
+            <div class="reconcile-item">
+              <span>原规格保留:</span>
+              <span class="reconcile-num">{{ remainQuantity }} {{ candidate.unit || '只' }}</span>
+            </div>
+            <div class="reconcile-item">
+              <span>拆分改型:</span>
+              <span class="reconcile-num-orange">{{ splitQuantity }} {{ candidate.unit || '只' }}</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 右栏: 新规格与物料信息配置 -->
+        <section class="workbench-card split-col">
+          <div class="card-title-row">
+            <span class="card-title">✨ 新规格型号与参数</span>
+            <span class="card-badge">拆出项的新物料属性</span>
+          </div>
+
+          <!-- 新规格型号 (支持输入联想) -->
+          <div class="form-item-row">
+            <span class="form-item-label">新规格型号:</span>
+            <div class="form-item-control">
+              <el-autocomplete
+                v-model="form.newModel"
+                :fetch-suggestions="queryModelSuggestions"
+                placeholder="请输入新型号 (如: NM1-125S/3300 125A)"
+                size="small"
+                style="width: 100%;"
+                @select="handleSuggestionSelect"
+              >
+                <template #default="{ item }">
+                  <div style="display: flex; justify-content: space-between; font-size: 11px;">
+                    <span style="font-weight: 500;">{{ item.model }}</span>
+                    <span style="color: #009688;">{{ item.brand }} ￥{{ item.price }}</span>
+                  </div>
+                </template>
+              </el-autocomplete>
+            </div>
+          </div>
+
+          <!-- 新元器件名称 -->
+          <div class="form-item-row">
+            <span class="form-item-label">新元件名称:</span>
+            <div class="form-item-control">
+              <el-input v-model="form.newName" placeholder="新名称 (默认沿用原名称)" size="small"></el-input>
+            </div>
+          </div>
+
+          <!-- 新品牌厂家 -->
+          <div class="form-item-row">
+            <span class="form-item-label">品牌厂家:</span>
+            <div class="form-item-control">
+              <el-input v-model="form.newBrand" placeholder="新品牌 (如: 正泰/天正/施耐德)" size="small"></el-input>
+            </div>
+          </div>
+
+          <!-- 新单价/面价 -->
+          <div class="form-item-row">
+            <span class="form-item-label">新单价(面价):</span>
+            <div class="form-item-control">
+              <el-input-number 
+                v-model="form.newPrice" 
+                :precision="2" 
+                :step="10" 
+                :min="0" 
+                size="small"
+                style="width: 100%;"
+              ></el-input-number>
+            </div>
+          </div>
+
+          <!-- 新成本单价 -->
+          <div class="form-item-row">
+            <span class="form-item-label">新成本单价:</span>
+            <div class="form-item-control">
+              <el-input-number 
+                v-model="form.newCostPrice" 
+                :precision="2" 
+                :step="10" 
+                :min="0" 
+                size="small"
+                style="width: 100%;"
+              ></el-input-number>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- 底部操作栏 -->
+    <footer class="footer-bar">
+      <div class="footer-left">
+        <el-checkbox v-model="form.syncToCad">同步更新 CAD 图纸图元文字/属性</el-checkbox>
+      </div>
+      <div class="footer-right">
+        <el-button size="small" @click="handleCancel">取消</el-button>
+        <el-button 
+          type="primary" 
+          size="small" 
+          :loading="submitting" 
+          @click="handleSubmit"
+        >
+          确认拆分并生成新行
+        </el-button>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, computed, onMounted } = Vue;
+
+    const app = createApp({
+      setup() {
+        // 候选元器件上下文实体
+        const candidate = ref({
+          sheetName: '',
+          rowIndex: 0,
+          cabinetK: 0,
+          cabinetName: '',
+          compStartRow: 0,
+          compEndRow: 0,
+          subsumRow: 0,
+          index: '',
+          name: '',
+          model: '',
+          brand: '',
+          unit: '只',
+          quantity: 1,
+          price: 0,
+          costPrice: 0,
+          rawHandles: '',
+          handles: []
+        });
+
+        // 已勾选的 Handle 列表 (代表将被拆出的项)
+        const selectedHandles = ref([]);
+
+        // 手动指定的拆分数量 (在无 Handle 时使用，或与勾选联动)
+        const splitQuantityVal = ref(1);
+
+        // 提交状态 loading
+        const submitting = ref(false);
+
+        // 联想缓存字典
+        let suggestionResolve = null;
+
+        // 表单实体
+        const form = reactive({
+          newModel: '',
+          newName: '',
+          newBrand: '',
+          newPrice: 0,
+          newCostPrice: 0,
+          syncToCad: true
+        });
+
+        // 计算最大可拆分数量 (总数减 1，至少留 1 个在原行)
+        const maxSplitQuantity = computed(() => {
+          const total = candidate.value.quantity || 1;
+          return Math.max(1, total - 1);
+        });
+
+        // 动态计算拆出数量 (若有 Handle 遵循勾选数，否则遵循手动数量)
+        const splitQuantity = computed({
+          get() {
+            if (candidate.value.handles && candidate.value.handles.length > 0) {
+              return selectedHandles.value.length;
+            }
+            return splitQuantityVal.value;
+          },
+          set(val) {
+            splitQuantityVal.value = val;
+            // 联动勾选 Handle：按顺序选取后 val 项
+            if (candidate.value.handles && candidate.value.handles.length > 0) {
+              const totalHandles = candidate.value.handles;
+              const count = Math.min(val, totalHandles.length);
+              selectedHandles.value = totalHandles.slice(totalHandles.length - count);
+            }
+          }
+        });
+
+        // 动态计算原行保留数量
+        const remainQuantity = computed(() => {
+          const total = candidate.value.quantity || 0;
+          return Math.max(0, total - splitQuantity.value);
+        });
+
+        // 与 C# 端双向 IPC 消息通讯
+        const postToCSharp = (action, payload = {}) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({
+              action: action,
+              ...payload
+            }));
+          }
+        };
+
+        // 切换 Handle 勾选状态
+        const toggleHandleSelect = (h) => {
+          const idx = selectedHandles.value.indexOf(h);
+          if (idx >= 0) {
+            selectedHandles.value.splice(idx, 1);
+          } else {
+            // 不能全选所有 Handle，至少留 1 个在原行
+            if (selectedHandles.value.length >= candidate.value.handles.length - 1) {
+              ElementPlus.ElMessage.warning('原规格必须至少保留 1 个图元！');
+              return;
+            }
+            selectedHandles.value.push(h);
+          }
+        };
+
+        // 全选 Handles (保留首项，选其余全部)
+        const selectAllHandles = () => {
+          if (!candidate.value.handles || candidate.value.handles.length === 0) return;
+          // 保留第 1 项，选取后续所有项
+          selectedHandles.value = candidate.value.handles.slice(1);
+        };
+
+        // 反选 Handles
+        const invertSelection = () => {
+          if (!candidate.value.handles || candidate.value.handles.length === 0) return;
+          const current = selectedHandles.value;
+          const inverted = candidate.value.handles.filter(h => !current.includes(h));
+          // 若反选导致全选，则剔除第 1 项
+          if (inverted.length === candidate.value.handles.length) {
+            inverted.shift();
+          }
+          selectedHandles.value = inverted;
+        };
+
+        // 清空选择 (默认选最后 1 项作为演示)
+        const clearHandleSelection = () => {
+          selectedHandles.value = [];
+        };
+
+        // 在 CAD 中对焦定位该图元
+        const locateInCad = (h) => {
+          postToCSharp('selectHandle', { handle: h });
+          ElementPlus.ElMessage.success(`已在 CAD 中对焦图元: ${h}`);
+        };
+
+        // 查询物料型号联想下拉建议
+        const queryModelSuggestions = (query, cb) => {
+          if (!query || query.trim().length === 0) {
+            cb([]);
+            return;
+          }
+          suggestionResolve = cb;
+          postToCSharp('searchSuggestions', { keyword: query.trim() });
+        };
+
+        // 选中联想条目后回填参数
+        const handleSuggestionSelect = (item) => {
+          if (item) {
+            form.newModel = item.model;
+            if (item.name) form.newName = item.name;
+            if (item.brand) form.newBrand = item.brand;
+            if (item.price > 0) form.newPrice = item.price;
+          }
+        };
+
+        // 提交拆分与改型
+        const handleSubmit = () => {
+          // 校验新型号非空
+          if (!form.newModel || form.newModel.trim().length === 0) {
+            ElementPlus.ElMessage.error('请输入新规格型号！');
+            return;
+          }
+
+          // 校验拆分数量
+          if (splitQuantity.value <= 0) {
+            ElementPlus.ElMessage.error('请至少选择拆出 1 只元器件！');
+            return;
+          }
+
+          if (remainQuantity.value <= 0) {
+            ElementPlus.ElMessage.error('原规格保留数量不能为 0！如需全量改型可直接在表格中修改。');
+            return;
+          }
+
+          submitting.value = true;
+
+          // 提取拆出的 handles 与保留的 handles
+          const splitH = selectedHandles.value;
+          const remainH = candidate.value.handles
+            ? candidate.value.handles.filter(h => !splitH.includes(h))
+            : [];
+
+          // 构造请求载荷
+          const req = {
+            sheetName: candidate.value.sheetName,
+            rowIndex: candidate.value.rowIndex,
+            cabinetK: candidate.value.cabinetK,
+            remainQuantity: remainQuantity.value,
+            remainHandles: remainH,
+            splitQuantity: splitQuantity.value,
+            splitHandles: splitH,
+            newName: form.newName || candidate.value.name,
+            newModel: form.newModel.trim(),
+            newBrand: form.newBrand || candidate.value.brand,
+            newUnit: candidate.value.unit || '只',
+            newPrice: form.newPrice,
+            newCostPrice: form.newCostPrice,
+            syncToCad: form.syncToCad
+          };
+
+          postToCSharp('submitSplit', { data: req });
+        };
+
+        // 取消并关闭
+        const handleCancel = () => {
+          postToCSharp('close');
+        };
+
+        // 监听 C# 消息
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (event) => {
+              try {
+                let msg = event.data;
+                if (typeof msg === 'string') {
+                  msg = JSON.parse(msg);
+                }
+                if (!msg || !msg.action) return;
+
+                switch (msg.action) {
+                  // 初始化数据
+                  case 'initCandidate':
+                    const raw = msg.data || {};
+                    // 兼容 PascalCase 与 camelCase 两种字段命名形态，彻底根除大小写解析失败
+                    candidate.value = {
+                      sheetName: raw.sheetName || raw.SheetName || '',
+                      rowIndex: raw.rowIndex || raw.RowIndex || 0,
+                      cabinetK: raw.cabinetK || raw.CabinetK || 0,
+                      cabinetName: raw.cabinetName || raw.CabinetName || '',
+                      compStartRow: raw.compStartRow || raw.CompStartRow || 0,
+                      compEndRow: raw.compEndRow || raw.CompEndRow || 0,
+                      subsumRow: raw.subsumRow || raw.SubsumRow || 0,
+                      index: raw.index || raw.Index || '',
+                      name: raw.name || raw.Name || '',
+                      model: raw.model || raw.Model || '',
+                      brand: raw.brand || raw.Brand || '',
+                      unit: raw.unit || raw.Unit || '只',
+                      quantity: Number(raw.quantity ?? raw.Quantity ?? 1),
+                      price: Number(raw.price ?? raw.Price ?? 0),
+                      costPrice: Number(raw.costPrice ?? raw.CostPrice ?? 0),
+                      rawHandles: raw.rawHandles || raw.RawHandles || '',
+                      handles: raw.handles || raw.Handles || []
+                    };
+
+                    // 默认填入新规格型号为 “修改” + 原规格型号
+                    form.newModel = candidate.value.model ? ('修改' + candidate.value.model) : '';
+                    form.newName = candidate.value.name || '';
+                    form.newBrand = candidate.value.brand || '';
+                    form.newPrice = candidate.value.price || 0;
+                    form.newCostPrice = candidate.value.costPrice || 0;
+
+                    // 默认拆分配置：如果有 handle 列表，默认拆出后 2 个
+                    if (candidate.value.handles && candidate.value.handles.length > 0) {
+                      const totalH = candidate.value.handles;
+                      // 默认取 2 个，若总数小于 2 则取 1 个
+                      const defaultSplitCount = totalH.length >= 5 ? 2 : Math.max(1, Math.floor(totalH.length / 2));
+                      selectedHandles.value = totalH.slice(totalH.length - defaultSplitCount);
+                    } else {
+                      // 若无 handle，总数大于等于 5 则默认拆出 2 个，否则默认 1 个
+                      splitQuantityVal.value = candidate.value.quantity >= 5 ? 2 : 1;
+                    }
+                    break;
+
+                  // 联想结果返回
+                  case 'suggestionsResult':
+                    if (suggestionResolve && msg.data && msg.data.items) {
+                      suggestionResolve(msg.data.items);
+                      suggestionResolve = null;
+                    }
+                    break;
+
+                  // 提交结果返回
+                  case 'splitResult':
+                    submitting.value = false;
+                    if (msg.data && msg.data.success) {
+                      ElementPlus.ElMessage.success(msg.data.message || '拆分改型成功！');
+                    } else {
+                      ElementPlus.ElMessage.error(msg.data ? msg.data.message : '执行失败！');
+                    }
+                    break;
+                }
+              } catch (e) {
+                console.error('[WebMessage Error]', e);
+              }
+            });
+
+            // 告知 C# 前端已就绪
+            postToCSharp('ready');
+          }
+        });
+
+        return {
+          candidate,
+          selectedHandles,
+          splitQuantity,
+          remainQuantity,
+          maxSplitQuantity,
+          form,
+          submitting,
+          toggleHandleSelect,
+          selectAllHandles,
+          invertSelection,
+          clearHandleSelection,
+          locateInCad,
+          queryModelSuggestions,
+          handleSuggestionSelect,
+          handleSubmit,
+          handleCancel
+        };
+      }
+    });
+
+    app.use(ElementPlus, { locale: ElementPlusLocaleZhCn });
+    app.mount('#app');
+  </script>
+</body>
+</html>

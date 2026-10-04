@@ -233,6 +233,8 @@ namespace ExcelAddInDemo.Forms
                     case "deleteDistributionComponent":
                     case "filterDistributionRows":
                     case "clearDistributionFilter":
+                    case "addToPersonalDb":
+                    case "splitComponent":
                         // 收到菜单点击指令：先隐藏菜单并关闭浮窗，后通过 ExcelAsyncUtil.QueueAsMacro 异步执行
                         SafeInvoke(() =>
                         {
@@ -548,6 +550,16 @@ namespace ExcelAddInDemo.Forms
                         ExcelServices.ClearDistributionFilter();
                         break;
 
+                    case "addToPersonalDb":
+                        // 调度业务层执行“添加到本地个人库”核对与入库
+                        ExcelServices.OpenAddToPersonalDbDialog();
+                        break;
+
+                    case "splitComponent":
+                        // 调度业务层执行“拆分改型元件”工作台
+                        ExcelServices.OpenComponentSplitDialog();
+                        break;
+
                     case "switchToNativeMenu":
                         // 1. 切换为 Excel 原生右键菜单模式并持久化
                         ConfigManager.Instance.SetCustomContextMenuMode(false);
@@ -664,8 +676,8 @@ namespace ExcelAddInDemo.Forms
                 // 1. 元件汇总分布表 (专属6项)：165px
                 // 2. 元件汇总表 (全局大单表)：215px
                 // 3. 分类表顶部箱柜汇总区 (isAboveFirstDet == true)：385px
-                // 4. 分类表明细元器件插槽区 (isAboveFirstDet == false)：445px
-                int standardHeight = isDistributionSheet ? 175 : (isSummarySheet ? 215 : (isAboveFirstDet ? 385 : 445)); // --硬编码: 右键菜单标准高度 (分布表 165px, 汇总表 215px, 顶部箱柜 385px, 明细表 445px)--
+                // 4. 分类表明细元器件插槽区 (isAboveFirstDet == false)：470px
+                int standardHeight = isDistributionSheet ? 175 : (isSummarySheet ? 215 : (isAboveFirstDet ? 385 : 470)); // --硬编码: 右键菜单标准高度 (分布表 175px, 汇总表 215px, 顶部箱柜 385px, 明细表 470px)--
                 // 若工作区高度受限 (如低分辨率笔记本屏幕)，自适应贴合可用工作区
                 int targetHeight = Math.Min(standardHeight, workArea.Height - 10);
                 // 设置窗口实际尺寸

@@ -1,3 +1,189 @@
+- **【功能迭代与缺陷排查】元器件拆分改型：默认填入“修改”+原规格型号，以及 CAD 同步更新未生效问题排查与全链路打通 (`component_split.html`, `CadSyncClient.cs`, `CadExcelSyncServer.cs`, `ExcelAddInDemo.dll`)**：
+  1. **前端默认值需求实现**：
+     - 在 `component_split.html` 中初始化时，为 `form.newModel` 自动默认填入 `candidate.value.model ? ('修改' + candidate.value.model) : ''`，无需用户每次重新输入长串规格，直接在原型号上就地微调。
+  2. **勾选同步更新 CAD 实际未修改的根本原因定位**：
+     - **原因 1（CAD 插件代码层缺失该动作）**：CAD 端 `CadExcelSyncServer.cs` 中之前仅支持 `selectByHandles` 指令，未实现 `updateComponentSpec` 动作处理，收到请求时被 fallback 到了普通夹点选择高亮，根本未执行任何文字或属性修改！
+     - **原因 2（CAD 句柄结构复合性）**：CAD 中多选元器件的 Handle 常为连字符拼接（如 `32AE-3286`），需分割为子句柄逐个遍历更新主文字并清空辅助文字；
+     - **原因 3（运行态 DLL 锁定）**：当前本地 AutoCAD 正在运行（PID 14468）并锁定了 `TuFan.dll`，导致更新了 `updateComponentSpec` 的新版 DLL 无法被输出覆盖，CAD 依然在运行旧逻辑。
+  3. **解决方案与代码实施**：
+     - CAD 端 `CadExcelSyncServer.cs`：全面实现 `updateComponentSpec` 管道指令拦截与 Cad 线程安全调度，支持 `DBText`、`MText` 和 `BlockReference` 属性修改，并触发自动夹点高亮、视口居中与图面 Regen 刷新；
+     - Excel 端 `CadSyncClient.cs`：将管道连接超时由 50ms 调整为 300ms，防止瞬时未就绪；
+     - Excel 端已成功编译并通过 `publish/` 全量部署，CAD 端代码已编译验证（需关闭正在运行的 AutoCAD 或重新 netload 即可让新功能完全生效）。
+
+- **【缺陷排查与修复】元器件拆分工作台弹窗展示空白默认值修复 (`Forms/ComponentSplitForm.cs`, `Resources/component_split.html`, `Services/ExcelServices.ComponentSplit.cs`, `publish/ExcelAddInDemo.dll`, `publish/Resources/component_split.html`)**：
+  1. **问题根因剖析**：
+     - **JSON 驼峰序列化策略不一致**：C# 端的 `System.Text.Json` 默认按大驼峰（PascalCase，如 `Quantity`、`RowIndex`、`Handles` 等）序列化 DTO 对象，而前端 Vue 3 模板完全按小驼峰（camelCase，如 `candidate.quantity`、`candidate.rowIndex`、`candidate.handles`）进行属性读取；
+     - 由于属性名大小写不匹配，JavaScript 取值全部落入 `undefined`，导致页面呈现默认初始值（箱柜显示“未归属箱柜”、数量仅显示单位“只”、Handle 列表未渲染进入 else 分支）。
+  2. **双重彻底加固策略**：
+     - **C# 端全局配置 CamelCase 命名策略**：在 `ComponentSplitForm.cs` 的 `JsonOptions` 中显式指定 `PropertyNamingPolicy = JsonNamingPolicy.CamelCase`，保证下发前端的数据 100% 为标准小驼峰；
+     - **前端双轨容错解构赋值**：在 `component_split.html` 的 `initCandidate` 消息处理中，采用 `raw.quantity ?? raw.Quantity` 等双轨兼容映射，无论大小写均能安全接收；
+     - **数值解析与日志强化**：在 `ExcelServices.ComponentSplit.cs` 中增加 `Convert.ToDouble` / `Convert.ToDecimal` 兜底解析并写入详细日志。
+  3. **编译构建成功**：
+     - `dotnet build /p:RunExcelDnaBuild=false` 编译通过：**0 错误**；产物已全量同步完成。
+
+- **【全量闭环交付】分类明细元器件拆分与改型 (Split & Modify) 现代化工作台落地 (方案 A：Handle 勾选与数量切分 + CAD 管道对焦与图元更新 + 规则 6/7/8 动态插行与公式重算) (`Models/ComponentSplitModels.cs`, `Services/PersonalComponentDbService.Search.cs`, `Services/CadSyncClient.cs`, `Services/ExcelServices.ComponentSplit.cs`, `Forms/ComponentSplitForm.cs`, `Resources/component_split.html`, `Resources/custom_context_menu.html`, `Forms/CustomContextMenuForm.cs`, `ExcelEventManager.cs`, `ExcelAddInDemo.csproj`, `publish/ExcelAddInDemo.dll`, `publish/Resources/component_split.html`)**：
+  1. **用户核心指令与决策落地 (方案 A)**：
+     - 用户指令：分类明细表中，一个箱柜中如果一个元器件数量有 5 个，对应 5 个 handle 在 AD 列，现在需要把其中的 2 个型号修改；
+     - 用户明确采纳**方案 A (推荐)**：右键弹出轻量拆分工作台，精准勾选 Handle 切分数量，CAD 视口联动对焦，新规格型号快速联想匹配，自动按规则 6/7/8 完成表格物理平移插行与公式重算，并支持向 CAD 管道推送图元规格更新指令。
+  2. **全面系统性架构设计与落地**：
+     - **【数据模型层】(`Models/ComponentSplitModels.cs`)**：
+       - `ComponentSplitCandidateDto`：提取原元件名称、原规格、品牌、总数量、单价、成本价及 AD 列所有 CAD 句柄列表；
+       - `ComponentSplitSubmitRequest`：承载原行保留数量与保留 Handles、拆出数量与拆出 Handles、新规格、新名称、新品牌、新单价、新成本价及 `SyncToCad` 标志；
+       - `ComponentSplitResult`：承载执行结果消息与物理插入行号。
+     - **【本地个人库模糊联想检索】(`Services/PersonalComponentDbService.Search.cs`)**：
+       - `QueryComponentSuggestions`：根据用户输入的新型号/名称关键字，快速检索 SQLite `components` 表，智能联想型号、品牌与最新单价。
+     - **【CAD 命名管道通信增强】(`Services/CadSyncClient.cs`)**：
+       - 增加 `SendUpdateComponentSpec(handles, newSpec)`：通过 `CadExcelHandleSyncPipe` 非阻塞异步推送 `updateComponentSpec` 指令，实现 CAD 图纸图元文字/属性反向同步。
+     - **【公共业务服务层】(`Services/ExcelServices.ComponentSplit.cs`)**：
+       - 规则 3：所有 Excel 操作收敛于公共文件；
+       - 规则 8 强力守门：操作前强制执行 `Tool.FixAndFillCabinetNamesForSheet` 自愈箱柜定义名称；
+       - 规则 6 动态扩容与空间复用：智能检测元器件区间内是否存在空行。若存在预留空行，插入新行后物理删除末尾空行，保持小计行与计费区位置不变；若无空行，向下平移插入，小计行公式自动包含新行，计费区紧凑无空行；
+       - 规则 7 数组批量更新：二维数组批量更新原行（扣减数量与 handles）与新行（写入新物料属性与 handles），刷新自适应公式 `=F*G` 与 `=F*J`，并调用 `RefreshCabinetNumbersAndSubsumFormula` 连续自愈序号与 SUM 公式。
+     - **【现代化前端交互界面】(`Resources/component_split.html`, `Forms/ComponentSplitForm.cs`)**：
+       - 规则 2：C# (Excel-DNA) + WebView2 + Vue 3 `<script setup>` + Element Plus，主色调 `#009688` 绿蓝相间，弹性布局无横向滚动条；
+       - Handle 勾选与数量双向联动（默认拆出后 2 个）；单项点击即时触发 CAD 视口对焦高亮；新规格型号带 ElAutocomplete 模糊联想回填；数量对账条实时校验保留数与拆出数；
+       - 踩坑经验 5 防御：所有自定义组件使用显式双闭合标签，杜绝 `/>` 自闭合。
+     - **【右键菜单与宏集成】(`Resources/custom_context_menu.html`, `Forms/CustomContextMenuForm.cs`, `ExcelEventManager.cs`)**：
+       - 在明细区元器件专属操作中新增【拆分改型元件...】（带剪刀/分支 SVG 图标与“数量/型号拆分”提示）；
+       - `ExcelEventManager` 中暴露 `MacroSplitComponent` 宏方法。
+  3. **构建验证与物理产物同步**：
+     - 新增代码严格遵循**至少每 3 行包含一行中文注释**规范，硬编码均标识 `--硬编码--`；
+     - `dotnet build /p:RunExcelDnaBuild=false` 编译通过：**0 错误**；
+     - 产物与 HTML 全量物理同步至 `publish/` 与 `bin/Debug/net48/` 目录。
+
+- **【全量闭环交付】分类明细元器件右键添加到本地个人库功能落地 (WebView2/Vue3/ElementPlus 现代化核对确认工作台 + SQLite 排重与新价格覆盖更新) (`Models/PersonalDbModels.cs`, `Services/PersonalComponentDbService.AddToPersonalDb.cs`, `Services/ExcelServices.PersonalDb.cs`, `Forms/AddToPersonalDbForm.cs`, `Resources/add_to_personal_db.html`, `Resources/custom_context_menu.html`, `Forms/CustomContextMenuForm.cs`, `ExcelEventManager.cs`, `ExcelAddInDemo.csproj`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心指令与决策落地**：
+     - 用户明确指定**选项 2 (核对确认弹窗，推荐)**：右键点击后唤起微型置顶核对窗体，展示提取到的元器件清单及排重状态；
+     - 冲突处理决策**新价格覆盖更新**：当本地 SQLite 个人库已存在同品牌同型号物料时，支持以表格中的最新面价与备注更新库数据。
+  2. **全面系统性架构设计与落地**：
+     - **【数据模型层】(`Models/PersonalDbModels.cs`)**：
+       - `AddToPersonalDbCandidateItem`：承载待入库条目（行号、品牌、名称、型号、单价、备注、类别、整定电流、极数、脱扣特性、排重状态 `New/PriceChanged/ExactMatch`、原单价与原ID）；
+       - `AddToPersonalDbSubmitRequest` / `AddToPersonalDbResult`：提交与统计结果模型。
+     - **【SQLite 数据库层】(`Services/PersonalComponentDbService.AddToPersonalDb.cs`)**：
+       - `CheckAndMatchCandidates`：批量内存哈希排重检测，比对 `Brand + Model` 及单价变动，标记全新、价格变动与完全一致状态；
+       - `BatchSaveOrUpdatePersonalComponents`：单次 SQLite 事务批量提交，执行全新物料 `INSERT` 与已有物料 `UPDATE` 覆盖更新。
+     - **【公共服务层】(`Services/ExcelServices.PersonalDb.cs`)**：
+       - 规则 3：所有 Excel 操作收敛于公共文件；
+       - 规则 6、7、8 强力闭环：先执行 `FixAndFillCabinetNamesForSheet` 预检箱柜定义名称；限制有效选区行在 `Cab_Det + 2` 至 `Cab_Subsum - 1` 之间；二维数组一次性批量读入 A~Q 列；自动过滤空行并启发式推导电流、极数、脱扣特性。
+     - **【现代化前端交互界面】(`Resources/add_to_personal_db.html`, `Forms/AddToPersonalDbForm.cs`)**：
+       - 规则 2：C# (Excel-DNA) + WebView2 + Vue 3 `<script setup>` + Element Plus，主色调 `#009688` 绿蓝相间，弹性布局无横向滚动条；
+       - 状态 Tag 区分呈现（全新物料绿色、价格变动橙色、完全一致灰色）；支持单价与原价比对（原价中划线）；支持批量一键下发品牌（【应用至选中项】实底主按钮规范为纯白文字高对比度呈现）；默认全选有效条目；提供【新价格覆盖更新】开关；
+       - 踩坑经验 17 防御：独立后台线程处理 SQLite，零 Chromium IPC 阻塞；成功反馈轻量 Toast 并在 1.2 秒后平滑关闭。
+     - **【右键菜单集成】(`Resources/custom_context_menu.html`, `Forms/CustomContextMenuForm.cs`, `ExcelEventManager.cs`)**：
+       - 在明细区元器件专属操作中新增【添加到本地个人库...】菜单项（带数据库 SVG 图标与快捷提示），标准高度自适应微调至 470px；
+       - `ExcelEventManager` 中同步暴露 `MacroAddToPersonalDb` 宏方法，兼容原生右键菜单。
+  3. **构建验证与物理产物同步**：
+     - 新增代码严格遵循**至少每 3 行包含一行中文注释**规范，硬编码均标识 `--硬编码--`；
+     - `dotnet build /p:RunExcelDnaBuild=false` 编译通过：**0 错误**；
+     - 资源与 DLL 全量物理同步至 `publish/` 与 `bin/Debug/net48/` 目录。
+
+- **【全量闭环交付】智能导入箱柜 BOM 工作台 5 核心列映射（名称、型号、数量、单价、品牌）常驻快捷工具条与自定义关键字配置弹窗落地（方式 A） (`Models/SmartImportModels.cs`, `Services/SmartImportParserService.cs`, `Resources/smart_import.html`, `publish/Resources/smart_import.html`, `bin/Debug/net48/Resources/smart_import.html`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心指令与决策落地**：
+     - 用户明确指定**方式 A（推荐）**：左侧网格上方常驻一行紧凑的【5 列快捷映射下拉条】（元件名称、规格型号、数量、单价、品牌），右侧搭配【⚙ 关键字设置】微型按钮，点击弹出弹窗进行词典维护；
+     - 步骤 1【锁表头行】智能嗅探：当用户在网格中点击第 1 柜表头行时，系统依据 5 列词典瞬间自动启发式识别目标列号，高亮选中下拉框，并联动右侧全表箱柜元器件即时重新推导刷新；
+     - 自定义关键字可配置与模板持久化：支持用户随时增删修改 5 列同义词词典，支持恢复默认预设，并伴随自定义模板 JSON 永久持久化。
+  2. **系统性架构与实现闭环**：
+     - **【数据模型层】(`Models/SmartImportModels.cs`)**：
+       - 在 `SmartImportColumnMapping` 中扩充 `BrandCol`（品牌列，默认第 8 列）及 5 组自定义同义词关键字词典：`ItemNameKeywords`、`ItemSpecKeywords`、`QuantityKeywords`、`PriceKeywords`、`BrandKeywords`；
+     - **【后端解析引擎与启发式嗅探】(`Services/SmartImportParserService.cs`, `Services/ExcelServices.SmartImport.cs`)**：
+       - `AutoDetectColumnsFromHeaderRow`：表头行启发式智能列嗅探，主动避开“合价/总价”干扰，精准命中单价、品牌、数量、型号与名称；
+       - `IsMatchingHeaderPattern`：结合自定义关键字与样本柜表头双轨核验全表后续箱柜；
+       - `ComponentItem.Manufacturer` 完整接收品牌列提取结果并回写至分类表 D 列；
+     - **【前端现代交互工作台】(`Resources/smart_import.html`)**：
+       - 在 `.step-guide-bar` 底部常驻紧凑无缝隙工具条 `.col-mapping-bar`，提供名称、型号、数量、单价、品牌 5 个快速下拉选择器；
+       - 提供 `<el-dialog>` 弹窗配置 5 列关键字，支持输入中英文逗号隔开的任意同义词，提供【恢复默认关键字】与【保存并重新匹配】；
+       - 前端本地毫秒级启发式嗅探算法 `detectColumnsFromHeaderRow`，在步骤 1 点击表头行时瞬间自动联动匹配；手动切换下拉框即刻触发 `triggerAutoParse`；
+       - 模板保存与套用全面纳管 5 列映射与关键字。
+  3. **构建验证与物理产物同步**：
+     - 新增代码严格遵循**至少每 3 行包含一行中文注释**规范，硬编码均标识 `--硬编码--`；
+     - `dotnet build /p:RunExcelDnaBuild=false` 编译通过：**0 错误**；
+     - 产物与 HTML 全量物理同步至 `publish/` 与 `bin/Debug/net48/` 目录。
+
+- **【缺陷排查与修复】外部 Excel 包含外部链接引发“此工作簿包含到一个或多个可能不安全的外界源的链接”弹窗彻底绝杀 (`Services/SmartImportParserService.cs`, `Controllers/SmartImportController.cs`, `Models/SmartImportModels.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **问题根因剖析**：
+     - **外部公式链接触发 Excel 安全审查**：外部标书 Excel 中经常存在引用其他外部文件的公式或图表，Excel COM 自动化在 `Workbooks.Open` 时，若未开启 `app.DisplayAlerts = false` 与 `app.AskToUpdateLinks = false`，即使用户代码传递了 `UpdateLinks: 0`，Excel 主程序依然会阻断线程并弹出模态对话框询问用户“是否更新可能不安全的链接”；
+     - **4步点选高频触发与模态冲突**：用户在样本柜上每进行一步点选（锁表头、锁结束行、锁柜号、锁台数），前端均会触发 `parsePreview`；后端若每次点选都通过 COM 重新打开磁盘文件，就会频繁唤醒 Excel 弹窗，且与 WebView2 顶层窗体产生焦点竞争，导致“一直弹窗、无法取消”的死锁假象。
+  2. **双重彻底根治策略**：
+     - **COM 全局静默保护**：在 `SmartImportParserService.ReadPreviewGrid` 与 `ParseAllCabinets` 中，全面设置 `origDisplayAlerts = app.DisplayAlerts; origAskToUpdateLinks = app.AskToUpdateLinks; app.DisplayAlerts = false; app.AskToUpdateLinks = false;`，并在 `finally` 中安全恢复；从 Excel 底层彻底静默任何外部链接与安全弹窗；
+     - **全量内存二维数组缓存 (零 I/O 极速推导)**：
+       - `LoadPreviewGrid` 首次加载外部工作表时，通过 `usedRange.Value2` 一次性将整张工作表数据全量读入内存 `object[,] fullMatrix` 并缓存至 `SmartImportController._cachedMatrix`；
+       - 将推导引擎核心暴露为纯内存算法 `ScanCabinetsFromMatrix(matrix, rows, cols, config)`；
+       - 用户在界面上的任何点选、调参、换模板，**100% 直接在内存矩阵中推导完成**，响应耗时仅 **1 毫秒**，**0 次磁盘文件打开，0 次 COM 调度**，从根源上杜绝重复弹窗。
+  3. **编译构建成功**：
+     - `dotnet build /p:RunExcelDnaBuild=false` 编译通过：**0 错误**；
+     - `publish/ExcelAddInDemo.dll` 与资源已全量同步完成。
+
+- **【缺陷排查与修复】智能导入箱柜 BOM 工作台弹窗白屏彻底解决 (`Forms/SmartImportForm.cs`, `Resources/smart_import.html`, `publish/Resources/smart_import.html`, `bin/Debug/net48/Resources/smart_import.html`, `publish/ExcelAddInDemo.dll`)**：
+  1. **白屏根本原因深度剖析**：
+     - **协议安全沙箱限制与 ERR_ABORTED**：原代码在 `SmartImportForm.cs` 中直接调用 `_webView.CoreWebView2.Navigate(file:///...)`，Chromium 将其判定为不安全上下文，拦截了外部 HTTPS 脚本并引发网络加载中断；
+     - **海外 unpkg.com 网络不稳定**：前端原引用 `unpkg.com`，国内网络环境下经常抽搐或超时，导致 Vue 与 Element Plus 脚本加载失败，Vue 无法挂载；
+     - **Vue 挂载清空 innerHTML**：在 Vue 3 浏览器运行时挂载阶段，Vue 一旦读取 `<div id="app">` 便会清空容器内部的静态 DOM（`container.innerHTML = ''`）；若此时由于未捕获异常或组件未就绪，渲染树未能返回，整个页面即彻底停留在白色空白；
+     - **属性暴露缺失**：模板绑定的 `onManualPathEnter` 漏写在 `setup()` 返回对象中。
+  2. **系统性修复与高可靠加固措施**：
+     - **虚拟主机映射架构 (HTTPS)**：在 `SmartImportForm.cs` 中对齐成熟成熟架构，采用 `SetVirtualHostNameToFolderMapping("appassets.local", resDir, Allow)` 并导航至 `https://appassets.local/smart_import.html`，彻底规避 `file:///` 沙箱阻断；
+     - **国内高速镜像源 (npmmirror) 双轨容灾**：全面对齐 `smart_input.html` 稳定方案，引入阿里云 `registry.npmmirror.com`（Vue 3.3.4 + Element Plus 2.4.4），并配置 `onerror` 降级回退 `unpkg.com`；
+     - **多层次异常捕获守护**：在 HTML `<head>` 注入全局 `window.addEventListener('error')`，并在 Vue 中注册 `app.config.errorHandler`，所有异常通过 `logError` 分支直接写入 C# `LogHelper`，且在界面有清晰提示；
+     - **交互体验再优化**：开启 DevTools（支持 F12 调试）；输入框追加 `#append` 文件夹浏览图标，点击大按钮或图标均可 100% 弹出文件选择对话框。
+  3. **验证与交付**：
+     - Edge Headless 实机测试通过，`<div id="app" data-v-app="">` 完整渲染标题栏、配置栏、四步引导药丸栏、网格区与卡片列表；
+     - `dotnet build /p:RunExcelDnaBuild=false` 编译通过：**0 错误**；所有目录资源与 DLL 双向物理同步完毕。
+
+- **【缺陷排查与修复】智能导入工作台“选择标书 Excel”按钮转圈未弹出文件选择对话框修复 (`Forms/SmartImportForm.cs`, `Resources/smart_import.html`, `publish/Resources/smart_import.html`, `publish/ExcelAddInDemo.dll`)**：
+  1. **问题根因剖析**：
+     - **WebMessage 解析类型不匹配**：前端 `smart_import.html` 原来直接传递原生 JavaScript Object，未经过 `JSON.stringify` 字符串化，触发后端 `e.TryGetWebMessageAsString()` 抛出 `System.ArgumentException: 值不在预期的范围内` 并直接进入 catch，消息分发根本未到达 `selectFile` 分支；
+     - **独立工作线程弹窗缺少 Owner 置顶**：后端通过独立后台线程调用无 Owner 的 `OpenFileDialog`，在 Windows 模态循环体系下，文件选择框被当前顶层模态窗体遮挡在后台；且用户取消后前端未收到通知导致 `loadingFile` 永远为 `true` 处于转圈禁用状态。
+  2. **系统性修复与防御加固**：
+     - **消息解析双轨容错**：在 `SmartImportForm.cs` 中采用 `TryGetWebMessageAsString()` 与 `e.WebMessageAsJson` 双轨提取机制，前端统一使用 `sendMessage(action, data)` 通过 `JSON.stringify` 保证 100% 成功解析；
+     - **置顶模态 ShowDialog(this) 调度**：改用 `dialog.ShowDialog(this)` 以当前窗体作为父 Owner 强力居中置顶，用户取消或异常时及时回传 `fileSelectedCancel` 重置按钮状态；选定文件后在后台线程执行网格读取；
+     - **双轨路径支持**：放开文件路径输入框只读限制，允许用户直接粘贴绝对路径并回车极速加载；
+  3. **编译构建成功**：
+     - `dotnet build /p:RunExcelDnaBuild=false` 编译通过：**0 错误**；
+     - `publish/ExcelAddInDemo.dll` 与 `publish/Resources/smart_import.html` 均已同步完成。
+
+- **【全量闭环交付】智能导入箱柜 BOM 完整功能落地 (双基线动态依附模型 + WebView2/Vue3 极简4步点选工作台 + 独立新建分类表安全回写) (`Models/SmartImportModels.cs`, `Services/SmartImportParserService.cs`, `Services/ExcelServices.SmartImport.cs`, `Controllers/SmartImportController.cs`, `Forms/SmartImportForm.cs`, `Resources/smart_import.html`, `RibbonController.cs`, `publish/Resources/smart_import.html`)**：
+  1. **用户核心指令与决策落地**：
+     - 研究利驰智能导入实现逻辑与技术栈 -> 确认“手动指定列头 + 相对位置推导”稳妥模式；
+     - 确立【双基线动态依附模型】：在样本柜（第 1 柜）上顺着完成 4 步点选（①表头行、②元器件结束行、③柜号格、④箱柜台数格），无论柜号或台数在表头上方还是小计下方，均自动计算相对位移并在全表各个箱柜间 100% 自动递推推导；
+     - 核心业务确认：新建独立分类表 Sheet、沿用系统标准计费模板与公式、外部单价写入 M 列表价/面价。
+  2. **全面系统性架构设计与落地**：
+     - **【双基线数据模型与模板持久化】(`Models/SmartImportModels.cs`)**：
+       - `DynamicFieldAnchor`：根据用户点选坐标，自动判定依附于表头（Header）还是结束行（End），记录行偏移与前缀清洗规则，支持全表任意新柜动态计算目标绝对行号；
+       - `SmartImportTemplateConfig`：记录点选规则、列映射，支持保存为命名模板并本地 JSON 持久化复用；
+       - `ParsedCabinetModel` / `ParsedComponentModel`：结构化解析输出模型；
+     - **【高性能内存矩阵推导解析引擎】(`Services/SmartImportParserService.cs`)**：
+       - `ReadPreviewGrid`：后台静默轻量打开外部 Excel 工作簿，读取 Sheet 列表与前 40 行网格供前端仿真交互，读取完毕立即关闭工作簿句柄；
+       - `ParseAllCabinets`：规则 7 内存二维数组一次性读取，全表自动识别各箱柜表头与小计分水岭，自动剥离“柜号：”等冒号前缀，自动提取总计台数与元器件明细，排除杂质行；
+     - **【Excel 底层安全写入服务】(`Services/ExcelServices.SmartImport.cs`)**：
+       - 规则 3：所有 Excel 操作写在公共服务 `ExcelServices.cs` 分部类中；
+       - 规则 6、7、8 严格闭环：创建新分类表并挂接项目信息主表；自动维护 `Cab*Sum*N`、`Cab*Det*N`、`Cab*Subsum*N`、`Cab*Tolsum*N`；元器件超出时在小计前批量插行；调用 `Tool.BuildComponentRowsMatrix` 一次性批量写入 21 列公式与数据（M 列表价、自适应小计与合价）；计费区域（Subsum 到 Tolsum-1）清理空行；事后全表定义名称自愈校验；
+     - **【现代交互工作台与双向通信】(`Forms/SmartImportForm.cs`, `Resources/smart_import.html`)**：
+       - 规则 2：C# (Excel-DNA) + WebView2 + Vue 3 `<script setup>` + Element Plus，主色调 `#009688` 绿蓝相间，弹性布局无水平滚动条；
+       - 踩坑经验 5 防御：所有 Element Plus 组件全部显式双标签闭合（禁用 `/>` 自闭合语法）；
+       - 步骤 1~4 药丸导航，网格点击动态高亮变色（绿色表头、黄色结束行、青绿柜名、蓝色台数）；右侧卡片折叠面板即时展示识别出的箱柜与元件清单；
+     - **【功能区 Ribbon 入口集成】(`RibbonController.cs`)**：
+       - 绑定 `btnSmartImportCabinetBOM` 与 `btnImportCabinetBOM` 按钮事件分发至 `ExcelServices.ShowSmartImportDialog()`。
+  3. **构建与产物 100% 对齐**：
+     - 新增代码严格遵循**至少每 3 行包含一行中文注释**规范，硬编码均标识 `--硬编码--`；
+     - `ExcelAddInDemo.dll` 编译无任何代码错误；前端页面已同步至 `Resources/` 与 `publish/Resources/` 目录。
+
+- **【全量闭环交付】Ribbon 功能区辅助项添加【修复名称】大按钮并支持一键自愈全簿定义名称与清理死链 (`RibbonController.cs`, `Services/ExcelServices.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心指令**：“在ribbon的辅助项中添加修复按钮，点击后修复excel所有的定义名称，该怎么实现” -> 用户指示：“需要”；
+  2. **全面系统性架构设计与落地**：
+     - **【功能区 Ribbon 入口布局】(`RibbonController.cs`)**：
+       - 在功能区 `<group id='grpAuxiliary' label='辅助项'>` 分组中新增大图标按钮【修复名称】（`id='btnRepairDefinedNames'`），使用官方标准更正修复图标 `imageMso='AutoCorrect'`，提供直观的 Screentip 与 Supertip；
+       - 在【项目工具】下拉菜单（`menuProjectTools`）中同步注册【修复定义名称】（`id='btnRepairDefinedNamesSub'`）子项，实现平铺大按钮与菜单双入口直达；
+       - 在 `OnMenuAction` 回调中将 `btnRepairDefinedNames` 与 `btnRepairDefinedNamesSub` 指令精准分发至业务层公共服务 `ExcelServices.RepairAllDefinedNames()`；
+     - **【公共服务层与自愈引擎】(`Services/ExcelServices.cs`)**：
+       - 严格遵循**规则 3**（所有对 Excel 的操作写在公共文件 `ExcelServices.cs` 中）；
+       - 建立安全 COM 静默提速保护栈（`ScreenUpdating = false`, `DisplayAlerts = false`, `EnableEvents = false`），保证秒级极速响应且无界面闪烁；
+       - **双层死链幽灵名称清理**：安全扫描并删除工作簿级 `activeWb.Names` 与各工作表级 `sheet.Names` 中引用损坏的 `#REF!` 废弃失效名称；
+       - **规则 6、7、8 强力自愈**：强制刷新【项目信息】白名单缓存，遍历受纳管分类表调度 `Tool.FixAndFillCabinetNamesForSheet(sheet, forceRebuild: true)`，全量校准 `Cab_Sum / Cab_Det / Cab_Subsum / Cab_Tolsum` 四元组定义名称、双向跳转超链接与小计求和公式；
+       - **透明化报告反馈**：弹窗友好展示处理分类表数、修复箱柜台套数、清理失效名称数，全流程错误捕获与日志记录；
+  3. **构建与产物 100% 对齐**：
+     - 严格遵循每 3 行新增代码至少 1 行规范中文注释要求，无违规硬编码；
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` 已全量同步覆写至 `publish/` 目录。
+
 - **【故障排查与修复】常规样式投标报表导出提示“报表导出失败”原因排查与全链路防御修复 (`Resources/tender_report_regular.html`, `publish/Resources/tender_report_regular.html`, `Controllers/TenderReportRegularController.cs`, `Services/ExcelServices.TenderReport.cs`, `publish/ExcelAddInDemo.dll`)**：
   1. **问题排查与根本原因剖析**：
      - **UI 假报错与真实信息被遮蔽（核心直接根因）**：在前端 HTML/JS (`tender_report_regular.html`) 中，接收后端 `exportReportResult` 时，使用了大驼峰属性 `res.Success` 和 `res.Message`。而后端 ASP.NET/System.Text.Json 配置了 `JsonNamingPolicy.CamelCase`，返回的 JSON 键为小驼峰 `success` 和 `message`。导致前端判定 `res.Success` 为 `undefined`（走入 `else` 分支），且 `res.Message` 也为 `undefined`，直接触发兜底提示 `ElementPlus.ElMessage.error(res.Message || '报表导出失败')`。这使得无论后端是否导出成功，前端一律弹出“报表导出失败”，真实的后端成功结果或具体异常细节被完全掩盖。

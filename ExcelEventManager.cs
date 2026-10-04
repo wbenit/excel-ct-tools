@@ -1192,6 +1192,42 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// Excel-DNA 宏入口：响应 Excel 原生右键菜单中“添加到本地个人库”指令
+        /// </summary>
+        [ExcelCommand]
+        public static void MacroAddToPersonalDb()
+        {
+            try
+            {
+                // 调度业务服务层打开添加到个人库核对确认窗体
+                ExcelServices.OpenAddToPersonalDbDialog();
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"右键添加到本地个人库宏执行异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Excel-DNA 宏入口：响应 Excel 右键菜单中“拆分改型元件”指令
+        /// </summary>
+        [ExcelCommand]
+        public static void MacroSplitComponent()
+        {
+            try
+            {
+                // 调度业务服务层打开拆分改型微型核对窗体
+                ExcelServices.OpenComponentSplitDialog();
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"右键拆分改型元件宏执行异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// 动态更新或添加 Excel 单元格右键上下文菜单（CommandBars["Cell"]）中的“新建箱柜”按钮
         /// </summary>
         private static void UpdateNewCabinetContextMenu(bool isAboveFirstDet, string menuCaption, string menuTag)

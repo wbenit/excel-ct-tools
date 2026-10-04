@@ -467,5 +467,151 @@ namespace ExcelAddInDemo
                 LogHelper.WriteLog($"执行 Excel 原生取消隐藏异常: {ex.Message}");
             }
         }
+
+        /// <summary>
+        /// 一键检查并修复当前工作簿中所有定义名称、小计公式、双向超链接及死链清理
+        /// </summary>
+        public static void RepairAllDefinedNames()
+        {
+            // 记录已扫描并修复的分类表数量
+            int processedSheets = 0;
+            // 记录成功校准并自愈的箱柜累计总数
+            int totalFixedCabinets = 0;
+            // 记录清理的断链与死链幽灵名称总数
+            int cleanedDeadNames = 0;
+
+            try
+            {
+                // 获取 Excel 宿主 COM 应用程序实例 (安全调用)
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                // 若实例为空则安全退出
+                if (app == null) return;
+
+                // 获取当前活动工作簿
+                dynamic? activeWb = app.ActiveWorkbook;
+                // 若当前没有打开的工作簿则终止并提示
+                if (activeWb == null)
+                {
+                    // 弹出未打开工作簿提示窗 --硬编码: 系统提示文本--
+                    System.Windows.Forms.MessageBox.Show("当前未检测到打开的 Excel 工作簿，无法执行定义名称修复。", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                    return;
+                }
+
+                // 暂存原有屏幕刷新与警告事件状态
+                bool prevUpdating = app.ScreenUpdating;
+                bool prevAlerts = app.DisplayAlerts;
+                bool prevEvents = app.EnableEvents;
+
+                // 压栈开启静默模式防止界面闪烁卡顿
+                app.ScreenUpdating = false;
+                app.DisplayAlerts = false;
+                app.EnableEvents = false;
+
+                try
+                {
+                    // 1. 全局清理工作簿级失效死链 (#REF!) 幽灵名称
+                    try
+                    {
+                        // 遍历工作簿级定义名称集合
+                        foreach (dynamic nameObj in activeWb.Names)
+                        {
+                            // 读取引用公式文本
+                            string refersTo = Convert.ToString(nameObj.RefersTo) ?? "";
+                            // 校验是否包含 #REF! 断链错误 --硬编码: Excel错误值--
+                            if (refersTo.Contains("#REF!"))
+                            {
+                                // 物理删除损坏名称
+                                nameObj.Delete();
+                                cleanedDeadNames++;
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // 捕获权限受限等个别名称异常
+                    }
+
+                    // 2. 清理各工作表级失效死链 (#REF!) 幽灵名称
+                    foreach (dynamic sheet in activeWb.Worksheets)
+                    {
+                        try
+                        {
+                            // 遍历单表定义名称集合
+                            foreach (dynamic sName in sheet.Names)
+                            {
+                                // 获取单表名称引用字符串
+                                string sRef = Convert.ToString(sName.RefersTo) ?? "";
+                                // 校验是否包含 #REF! 断链错误 --硬编码: Excel错误值--
+                                if (sRef.Contains("#REF!"))
+                                {
+                                    // 物理删除损坏的单表名称
+                                    sName.Delete();
+                                    cleanedDeadNames++;
+                                }
+                            }
+                        }
+                        catch
+                        {
+                            // 忽略个别受保护工作表异常
+                        }
+                    }
+
+                    // 3. 强制刷新【项目信息】白名单分类表名缓存
+                    Tool.GetProjectCategorySheetNames(activeWb, forceRefresh: true);
+
+                    // 4. 遍历所有工作表执行箱柜定义名称全量自愈 (规则 6、7、8)
+                    foreach (dynamic sheet in activeWb.Worksheets)
+                    {
+                        // 判定是否为当前工程中的标准分类明细表
+                        if (Tool.IsProjectCategorySheet(sheet, activeWb))
+                        {
+                            // 强制执行全量箱柜定义名称、双向超链接及小计公式重建自愈
+                            int fixedCount = Tool.FixAndFillCabinetNamesForSheet(sheet, forceRebuild: true);
+                            // 累加修复箱柜总数
+                            totalFixedCabinets += fixedCount;
+                            // 累加分类表数量
+                            processedSheets++;
+                        }
+                    }
+                }
+                finally
+                {
+                    // 严格成对恢复 Excel 原有运行状态
+                    app.ScreenUpdating = prevUpdating;
+                    app.DisplayAlerts = prevAlerts;
+                    app.EnableEvents = prevEvents;
+                }
+
+                // 5. 构建修复完成结果报告
+                string successMsg;
+                if (processedSheets > 0)
+                {
+                    // 包含分类表时的标准报告 --硬编码: 报告文本--
+                    successMsg = $"✅ 定义名称修复完成！\n\n" +
+                                 $"• 扫描并修复分类工作表：{processedSheets} 个\n" +
+                                 $"• 校准成套箱柜定义名称：{totalFixedCabinets} 台套\n" +
+                                 $"• 清理断链失效幽灵名称：{cleanedDeadNames} 个\n\n" +
+                                 $"已按规则 6 校准所有箱柜的 Cab_Sum / Cab_Det / Cab_Subsum / Cab_Tolsum 拓扑，并已重挂双向跳转超链接与小计公式。";
+                }
+                else
+                {
+                    // 未检测到受纳管分类表时的说明 --硬编码: 报告文本--
+                    successMsg = $"✅ 扫描完成！\n\n" +
+                                 $"• 清理断链失效幽灵名称：{cleanedDeadNames} 个\n" +
+                                 $"• 当前工作簿中未检测到在【项目信息】中登记的标准分类明细表，未执行箱柜四元组名称注入。";
+                }
+
+                // 弹出修复报告弹窗 --硬编码: 弹窗标题--
+                System.Windows.Forms.MessageBox.Show(successMsg, "定义名称修复报告", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志到日志系统
+                LogHelper.WriteLog($"执行一键修复所有定义名称异常: {ex.Message}");
+                // 弹出异常告警提示 --硬编码: 弹窗标题--
+                System.Windows.Forms.MessageBox.Show($"修复定义名称时发生异常：{ex.Message}", "修复失败", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+            }
+        }
     }
 }
+

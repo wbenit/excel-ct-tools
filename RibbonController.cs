@@ -290,6 +290,8 @@ namespace ExcelAddInDemo
           <button id='btnToggleContextMenuMode' label='右键菜单模式' imageMso='ControlsGallery' size='large' screentip='切换右键菜单模式' supertip='在【业务专属菜单】与【Excel 原生右键菜单】之间彻底二选一切换' onAction='OnMenuAction' />
           <!-- 项目工具下拉菜单 (使用标准工具箱图标 ControlToolboxOutlook，解决大图标空白问题) -->
           <menu id='menuProjectTools' label='项目工具' imageMso='ControlToolboxOutlook' size='large'>
+            <!-- 修复定义名称项 (在项目工具下拉菜单中同步提供快捷入口) -->
+            <button id='btnRepairDefinedNamesSub' label='修复' imageMso='AutoCorrect' onAction='OnMenuAction' screentip='修复所有定义名称' supertip='一键检查并修复当前工作簿所有分类表中的箱柜定义名称、小计公式与双向超链接' />
             <!-- 智能输入按钮 -->
             <button id='btnSmartInput' label='智能输入' imageMso='SmartArtInsert' screentip='智能输入' supertip='配置元器件去重词库与C列输入智能联动选项' onAction='OnMenuAction' />
             <!-- 三箱型号添写按钮 (使用标准列/表格图标 TableProperties) -->
@@ -499,6 +501,12 @@ namespace ExcelAddInDemo
                 // 弹出基于 WebView2 + Vue 3 的“箱柜调序”窗口
                 ExcelServices.ShowCabinetReorderDialog();
             }
+            // 响应“智能导入箱柜BOM”与“导入箱柜BOM”按钮指令
+            else if (controlId == "btnSmartImportCabinetBOM" || controlId == "btnImportCabinetBOM")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“智能导入箱柜BOM”工作台向导
+                ExcelServices.ShowSmartImportDialog();
+            }
             // 响应“本机项目”主按钮及下拉菜单指令
             else if (controlId == "btnLocalProjectMain" || controlId == "btnLocalProj1" || controlId == "menuLocalProject")
             {
@@ -588,6 +596,12 @@ namespace ExcelAddInDemo
             {
                 // 弹出基于 WebView2 + Vue 3 的“报价智能核验与防错体检”向导
                 ExcelServices.ShowQuotationCheckDialog();
+            }
+            // 响应“修复定义名称”按钮及菜单指令 (全局自愈所有分类表箱柜定义名称与清理死链)
+            else if (controlId == "btnRepairDefinedNames" || controlId == "btnRepairDefinedNamesSub")
+            {
+                // 调度业务层公共服务执行全表定义名称与公式自愈
+                ExcelServices.RepairAllDefinedNames();
             }
             // 响应“识别极数电流”按钮指令
             else if (controlId == "btnModelParamParser")

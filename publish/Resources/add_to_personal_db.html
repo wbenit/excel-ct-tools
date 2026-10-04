@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>添加元器件到本地个人库</title>
+  
+  <!-- 引入 Element Plus CSS (国内高速镜像双轨) -->
+  <link rel="stylesheet" href="https://registry.npmmirror.com/element-plus/2.4.4/files/dist/index.css" 
+        onerror="this.onerror=null;this.href='https://unpkg.com/element-plus@2.4.4/dist/index.css'">
+  <!-- 引入 FontAwesome 图标库 -->
+  <link rel="stylesheet" href="https://registry.npmmirror.com/@fortawesome/fontawesome-free/6.5.1/files/css/all.min.css"
+        onerror="this.onerror=null;this.href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css'">
+
+  <style>
+    /* 全局 CSS 变量：绿蓝相间，主色调 #009688 */
+    :root {
+      --primary-color: #009688;
+      --primary-hover: #00796b;
+      --primary-light: #e0f2f1;
+      --primary-border: #b2dfdb;
+      --text-main: #262626;
+      --text-regular: #595959;
+      --text-secondary: #8c8c8c;
+      --border-color: #dcdfe6;
+      --bg-color: #f5f7fa;
+    }
+
+    /* 样式重置与抗锯齿排版 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Microsoft YaHei", sans-serif;
+    }
+
+    html, body, #app {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 顶部导航标题栏 */
+    .header-bar {
+      background: linear-gradient(135deg, #009688 0%, #00796b 100%);
+      color: #ffffff;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(0, 150, 136, 0.2);
+      flex-shrink: 0;
+    }
+
+    .header-title-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-icon {
+      font-size: 22px;
+      background: rgba(255, 255, 255, 0.2);
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .header-text h1 {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .header-text p {
+      font-size: 11px;
+      opacity: 0.88;
+      margin-top: 2px;
+    }
+
+    /* 快捷工具与批量配置面板 */
+    .toolbar-container {
+      background: #ffffff;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    .toolbar-left, .toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .filter-tag-group {
+      display: flex;
+      gap: 6px;
+    }
+
+    .filter-tag {
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s;
+    }
+
+    .filter-tag.active {
+      font-weight: 600;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.12);
+    }
+
+    /* 批量品牌下发工具 */
+    .batch-brand-box {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* 主体表格展示区域 */
+    .table-container {
+      flex: 1;
+      padding: 12px 16px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .el-table {
+      border-radius: 6px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+      flex: 1;
+    }
+
+    /* 单价与原价变动比对高亮 */
+    .price-new {
+      color: #e65100;
+      font-weight: 600;
+    }
+
+    .price-old {
+      font-size: 11px;
+      color: #909399;
+      text-decoration: line-through;
+      margin-left: 4px;
+    }
+
+    /* 底部操作反馈栏 */
+    .footer-bar {
+      background: #ffffff;
+      border-top: 1px solid var(--border-color);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .summary-text {
+      font-size: 12px;
+      color: var(--text-regular);
+    }
+
+    .summary-text b {
+      color: var(--primary-color);
+    }
+
+    .footer-buttons {
+      display: flex;
+      gap: 10px;
+    }
+
+    /* Element Plus 覆盖样式 */
+    .el-button--primary {
+      color: #ffffff !important;
+      background-color: var(--primary-color) !important;
+      border-color: var(--primary-color) !important;
+    }
+    .el-button--primary:hover {
+      color: #ffffff !important;
+      background-color: var(--primary-hover) !important;
+      border-color: var(--primary-hover) !important;
+    }
+
+    /* 朴素 Plain 风格 Primary 按钮保障对比度 */
+    .el-button--primary.is-plain {
+      color: var(--primary-color) !important;
+      background-color: var(--primary-light) !important;
+      border-color: var(--primary-border) !important;
+    }
+    .el-button--primary.is-plain:hover {
+      color: #ffffff !important;
+      background-color: var(--primary-color) !important;
+      border-color: var(--primary-color) !important;
+    }
+
+    .el-switch.is-checked .el-switch__core {
+      background-color: var(--primary-color) !important;
+      border-color: var(--primary-color) !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部导航标题栏 -->
+    <div class="header-bar">
+      <div class="header-title-box">
+        <div class="header-icon">
+          <i class="fa-solid fa-cloud-arrow-down"></i>
+        </div>
+        <div class="header-text">
+          <h1>添加元器件到本地个人物料库</h1>
+          <p>已从当前 Excel 分类明细选区中提取物料，支持排重核对与新价格覆盖更新</p>
+        </div>
+      </div>
+      <div>
+        <el-tag effect="dark" color="rgba(255,255,255,0.25)" style="border: none; color: #fff;">
+          共检测到 {{ candidateList.length }} 项物料
+        </el-tag>
+      </div>
+    </div>
+
+    <!-- 快捷工具与批量配置面板 -->
+    <div class="toolbar-container">
+      <div class="toolbar-left">
+        <!-- 状态快速筛选徽标组 -->
+        <div class="filter-tag-group">
+          <el-tag 
+            size="small" 
+            :effect="currentFilter === 'all' ? 'dark' : 'plain'" 
+            class="filter-tag" 
+            :class="{ active: currentFilter === 'all' }"
+            @click="currentFilter = 'all'">
+            全部 ({{ candidateList.length }})
+          </el-tag>
+          <el-tag 
+            size="small" 
+            type="success"
+            :effect="currentFilter === 'New' ? 'dark' : 'plain'" 
+            class="filter-tag" 
+            :class="{ active: currentFilter === 'New' }"
+            @click="currentFilter = 'New'">
+            全新物料 ({{ countByStatus('New') }})
+          </el-tag>
+          <el-tag 
+            size="small" 
+            type="warning"
+            :effect="currentFilter === 'PriceChanged' ? 'dark' : 'plain'" 
+            class="filter-tag" 
+            :class="{ active: currentFilter === 'PriceChanged' }"
+            @click="currentFilter = 'PriceChanged'">
+            价格变动 ({{ countByStatus('PriceChanged') }})
+          </el-tag>
+          <el-tag 
+            size="small" 
+            type="info"
+            :effect="currentFilter === 'ExactMatch' ? 'dark' : 'plain'" 
+            class="filter-tag" 
+            :class="{ active: currentFilter === 'ExactMatch' }"
+            @click="currentFilter = 'ExactMatch'">
+            完全一致 ({{ countByStatus('ExactMatch') }})
+          </el-tag>
+        </div>
+
+        <el-divider direction="vertical"></el-divider>
+
+        <!-- 批量下发品牌工具 -->
+        <div class="batch-brand-box">
+          <span style="font-size: 12px; color: #595959;">批量下发品牌:</span>
+          <el-input 
+            v-model="batchBrandText" 
+            placeholder="例如: 施耐德/正泰/德力西" 
+            size="small" 
+            style="width: 150px;">
+          </el-input>
+          <el-button size="small" type="primary" @click="applyBatchBrand">
+            <i class="fa-solid fa-check" style="margin-right: 4px;"></i>应用至选中项
+          </el-button>
+        </div>
+      </div>
+
+      <div class="toolbar-right">
+        <!-- 重名价格冲突策略开关 (默认开启：新价格覆盖更新，符合用户决策) -->
+        <el-tooltip content="若本地库已存在同品牌同型号，开启后将用表格中的最新面价与备注更新库数据" placement="top">
+          <el-switch 
+            v-model="overwritePrice" 
+            active-text="新价格覆盖更新" 
+            inactive-text="跳过保留原价" 
+            size="small">
+          </el-switch>
+        </el-tooltip>
+      </div>
+    </div>
+
+    <!-- 主体表格展示区域 -->
+    <div class="table-container">
+      <el-table 
+        ref="tableRef"
+        :data="filteredList" 
+        height="100%" 
+        border 
+        size="small" 
+        stripe
+        style="width: 100%;"
+        @selection-change="handleSelectionChange">
+        
+        <!-- 复选勾选列 -->
+        <el-table-column type="selection" width="42" align="center"></el-table-column>
+
+        <!-- 序号列 -->
+        <el-table-column label="序号" width="50" align="center">
+          <template #default="scope">
+            <span>{{ scope.row.index }}</span>
+          </template>
+        </el-table-column>
+
+        <!-- 数据库状态列 -->
+        <el-table-column label="排重状态" width="130" align="center">
+          <template #default="scope">
+            <el-tag v-if="scope.row.status === 'New'" type="success" size="small" effect="light">
+              <i class="fa-solid fa-plus-circle"></i> 全新物料
+            </el-tag>
+            <el-tag v-else-if="scope.row.status === 'PriceChanged'" type="warning" size="small" effect="light">
+              <i class="fa-solid fa-pen-to-square"></i> 价格变动
+            </el-tag>
+            <el-tag v-else-if="scope.row.status === 'ExactMatch'" type="info" size="small" effect="light">
+              <i class="fa-solid fa-check-circle"></i> 完全一致
+            </el-tag>
+            <el-tag v-else type="danger" size="small" effect="light">
+              <i class="fa-solid fa-triangle-exclamation"></i> 缺少型号
+            </el-tag>
+          </template>
+        </el-table-column>
+
+        <!-- 品牌厂家 (支持单元格直接微调修改) -->
+        <el-table-column label="品牌/厂家" width="120">
+          <template #default="scope">
+            <el-input v-model="scope.row.brand" size="small" placeholder="品牌"></el-input>
+          </template>
+        </el-table-column>
+
+        <!-- 元件名称 -->
+        <el-table-column label="元件名称" min-width="110" prop="name" show-overflow-tooltip>
+          <template #default="scope">
+            <el-input v-model="scope.row.name" size="small" placeholder="名称"></el-input>
+          </template>
+        </el-table-column>
+
+        <!-- 规格型号 (关键项) -->
+        <el-table-column label="规格型号 (必填)" min-width="150" prop="model" show-overflow-tooltip>
+          <template #default="scope">
+            <el-input v-model="scope.row.model" size="small" placeholder="型号"></el-input>
+          </template>
+        </el-table-column>
+
+        <!-- 单价/面价比对 -->
+        <el-table-column label="单价/面价" width="120" align="right">
+          <template #default="scope">
+            <span class="price-new">￥{{ formatPrice(scope.row.price) }}</span>
+            <span v-if="scope.row.oldPrice !== null && scope.row.oldPrice !== undefined && scope.row.status === 'PriceChanged'" class="price-old">
+              ￥{{ formatPrice(scope.row.oldPrice) }}
+            </span>
+          </template>
+        </el-table-column>
+
+        <!-- 启发式参数列 (电流/极数/脱扣) -->
+        <el-table-column label="电流/极数/特性" width="125" align="center">
+          <template #default="scope">
+            <span style="font-size: 11px; color: #595959;">
+              {{ formatParams(scope.row) }}
+            </span>
+          </template>
+        </el-table-column>
+
+        <!-- 备注信息 -->
+        <el-table-column label="备注" min-width="110" prop="remark" show-overflow-tooltip>
+          <template #default="scope">
+            <el-input v-model="scope.row.remark" size="small" placeholder="备注"></el-input>
+          </template>
+        </el-table-column>
+
+        <!-- Excel 原行号定位 -->
+        <el-table-column label="原行号" width="65" align="center">
+          <template #default="scope">
+            <span style="color: #8c8c8c; font-size: 11px;">#{{ scope.row.excelRow }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+
+    <!-- 底部操作与反馈栏 -->
+    <div class="footer-bar">
+      <div class="summary-text">
+        已选中 <b>{{ selectedRows.length }}</b> 项元器件
+        (待新增: <b>{{ countSelectedByStatus('New') }}</b> 项，
+        价格覆盖更新: <b>{{ countSelectedByStatus('PriceChanged') }}</b> 项，
+        完全一致: <b>{{ countSelectedByStatus('ExactMatch') }}</b> 项)
+      </div>
+      <div class="footer-buttons">
+        <el-button size="default" @click="closeForm">
+          取消
+        </el-button>
+        <el-button 
+          size="default" 
+          type="primary" 
+          :loading="isSubmitting" 
+          :disabled="selectedRows.length === 0"
+          @click="submitSave">
+          <i class="fa-solid fa-floppy-disk" style="margin-right: 6px;"></i>确认一键入库
+        </el-button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 引入 Vue 3 与 Element Plus JS (国内高速镜像双轨) -->
+  <script src="https://registry.npmmirror.com/vue/3.3.4/files/dist/vue.global.prod.js"
+          onerror="this.onerror=null;this.src='https://unpkg.com/vue@3.3.4/dist/vue.global.prod.js'"></script>
+  <script src="https://registry.npmmirror.com/element-plus/2.4.4/files/dist/index.full.min.js"
+          onerror="this.onerror=null;this.src='https://unpkg.com/element-plus@2.4.4/dist/index.full.min.js'"></script>
+  <script src="https://registry.npmmirror.com/@element-plus/icons-vue/2.3.1/files/dist/index.iife.min.js"
+          onerror="this.onerror=null;this.src='https://unpkg.com/@element-plus/icons-vue@2.3.1/dist/index.iife.min.js'"></script>
+
+  <script>
+    const { createApp, ref, computed, onMounted, nextTick } = Vue;
+
+    const app = createApp({
+      setup() {
+        // 候选条目列表
+        const candidateList = ref([]);
+        // 当前筛选状态: 'all', 'New', 'PriceChanged', 'ExactMatch'
+        const currentFilter = ref('all');
+        // 是否开启新价格覆盖更新 (默认开启，符合用户决策)
+        const overwritePrice = ref(true);
+        // 批量下发品牌输入值
+        const batchBrandText = ref('');
+        // 当前在表格中选中的行列表
+        const selectedRows = ref([]);
+        // 是否正在提交中
+        const isSubmitting = ref(false);
+
+        // 安全向 C# 发送消息封装
+        const sendMessage = (action, data = {}) => {
+          try {
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.postMessage(JSON.stringify({ action, ...data }));
+            }
+          } catch (e) {
+            console.error('发送消息异常:', e);
+          }
+        };
+
+        // 格式化金额数值
+        const formatPrice = (val) => {
+          if (val === null || val === undefined || isNaN(val)) return '0.00';
+          return Number(val).toFixed(2);
+        };
+
+        // 格式化规格参数简述
+        const formatParams = (row) => {
+          const parts = [];
+          if (row.current) parts.push(row.current + 'A');
+          if (row.poles) parts.push(row.poles.endsWith('P') ? row.poles : row.poles + 'P');
+          if (row.tripping) parts.push(row.tripping);
+          return parts.length > 0 ? parts.join(' / ') : '-';
+        };
+
+        // 根据筛选条件返回显示的列表
+        const filteredList = computed(() => {
+          if (currentFilter.value === 'all') return candidateList.value;
+          return candidateList.value.filter(item => item.status === currentFilter.value);
+        });
+
+        // 统计各状态条目数
+        const countByStatus = (st) => {
+          return candidateList.value.filter(x => x.status === st).length;
+        };
+
+        // 统计选中项中各状态数
+        const countSelectedByStatus = (st) => {
+          return selectedRows.value.filter(x => x.status === st).length;
+        };
+
+        // 表格复选框变更事件
+        const handleSelectionChange = (rows) => {
+          selectedRows.value = rows;
+          // 同步 candidateList 的 isSelected 属性
+          const selectedIndexSet = new Set(rows.map(r => r.index));
+          candidateList.value.forEach(item => {
+            item.isSelected = selectedIndexSet.has(item.index);
+          });
+        };
+
+        // 批量下发品牌到当前选中的行
+        const applyBatchBrand = () => {
+          const brand = batchBrandText.value.trim();
+          if (!brand) {
+            ElementPlus.ElMessage.warning('请输入要下发的品牌名称！');
+            return;
+          }
+          if (selectedRows.value.length === 0) {
+            ElementPlus.ElMessage.warning('请先在表格中勾选需要下发品牌的元器件！');
+            return;
+          }
+          selectedRows.value.forEach(row => {
+            row.brand = brand;
+          });
+          ElementPlus.ElMessage.success(`已为选中的 ${selectedRows.value.length} 项物料下发品牌：${brand}`);
+        };
+
+        // 提交执行一键入库
+        const submitSave = () => {
+          if (selectedRows.value.length === 0) {
+            ElementPlus.ElMessage.warning('请至少勾选一项要入库的元器件！');
+            return;
+          }
+
+          // 校验所选行是否有型号
+          const invalidRows = selectedRows.value.filter(r => !r.model || !r.model.trim());
+          if (invalidRows.length > 0) {
+            ElementPlus.ElMessage.error(`存在 ${invalidRows.length} 项元器件未填写规格型号，请补充或取消勾选！`);
+            return;
+          }
+
+          isSubmitting.value = true;
+          // 发送提交指令至 C#
+          sendMessage('submitSave', {
+            overwritePrice: overwritePrice.value,
+            items: selectedRows.value
+          });
+        };
+
+        // 表格实例引用
+        const tableRef = ref(null);
+
+        // 关闭窗口
+        const closeForm = () => {
+          sendMessage('closeForm');
+        };
+
+        // 监听 C# 消息
+        const setupMessageListener = () => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (event) => {
+              try {
+                let packet = event.data;
+                if (typeof packet === 'string') {
+                  packet = JSON.parse(packet);
+                }
+                const action = packet.action;
+                const data = packet.data;
+
+                if (action === 'initCandidates') {
+                  candidateList.value = data.candidates || [];
+                  // 默认全选有效条目
+                  nextTick(() => {
+                    if (tableRef.value) {
+                      candidateList.value.forEach(row => {
+                        if (row.status !== 'Invalid') {
+                          tableRef.value.toggleRowSelection(row, true);
+                        }
+                      });
+                    }
+                  });
+                } else if (action === 'saveCompleted') {
+                  isSubmitting.value = false;
+                  if (data && data.success) {
+                    ElementPlus.ElNotification({
+                      title: '入库成功',
+                      message: data.message || '已成功入库！',
+                      type: 'success',
+                      duration: 2500
+                    });
+                    // 延时 1.2 秒自动关闭窗口
+                    setTimeout(() => {
+                      closeForm();
+                    }, 1200);
+                  } else {
+                    ElementPlus.ElMessage.error((data && data.message) || '入库失败！');
+                  }
+                }
+              } catch (ex) {
+                console.error('解析 C# 消息异常:', ex);
+              }
+            });
+          }
+        };
+
+        onMounted(() => {
+          setupMessageListener();
+          // 通知 C# 前端已准备完毕
+          sendMessage('ready');
+        });
+
+        return {
+          tableRef,
+          candidateList,
+          currentFilter,
+          overwritePrice,
+          batchBrandText,
+          selectedRows,
+          isSubmitting,
+          filteredList,
+          formatPrice,
+          formatParams,
+          countByStatus,
+          countSelectedByStatus,
+          handleSelectionChange,
+          applyBatchBrand,
+          submitSave,
+          closeForm
+        };
+      }
+    });
+
+    app.use(ElementPlus);
+    app.mount('#app');
+  </script>
+</body>
+</html>

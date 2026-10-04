@@ -203,7 +203,8 @@ namespace ExcelAddInDemo
                     activeSheet.Rows[$"{targetDetailStartRow}:{targetDetailStartRow + copyRowCount - 1}"].Insert(-4121);
 
                     // 10. 只读方式打开 CabinetTemplate.xlsx 模板工作簿并复制 41:74 行
-                    dynamic templateWb = app.Workbooks.Open(templatePath, ReadOnly: true);
+                    // 显式指定 UpdateLinks: 0 杜绝外部源链接安全警告弹窗
+                    dynamic templateWb = app.Workbooks.Open(templatePath, UpdateLinks: 0, ReadOnly: true);
                     try
                     {
                         // 获取模板中的源工作表
@@ -1558,8 +1559,8 @@ namespace ExcelAddInDemo
                     string templatePath = Controllers.ProjectController.EnsureCabinetTemplate(app);
                     if (!string.IsNullOrWhiteSpace(templatePath) && File.Exists(templatePath))
                     {
-                        // 以只读模式打开模板工作簿
-                        dynamic templateWb = app.Workbooks.Open(templatePath, ReadOnly: true);
+                        // 以只读模式打开模板工作簿，明确禁止链接更新
+                        dynamic templateWb = app.Workbooks.Open(templatePath, UpdateLinks: 0, ReadOnly: true);
                         try
                         {
                             // 默认选取分类模板表

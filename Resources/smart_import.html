@@ -1,0 +1,1506 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>智能导入箱柜 BOM 工作台</title>
+    <!-- 引入 Element Plus CSS 样式库 (优先国内高速 npmmirror 镜像，失败降级 unpkg) -->
+    <!-- 保持与 smart_input.html 完全一致的高稳定性 CDN 配置 -->
+    <link
+      rel="stylesheet"
+      href="https://registry.npmmirror.com/element-plus/2.4.4/files/dist/index.css"
+      onerror="
+        this.onerror = null;
+        this.href = 'https://unpkg.com/element-plus/dist/index.css';
+      "
+    />
+    <!-- 引入 Font Awesome 字体图标库 -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <!-- 引入 Vue 3 核心脚本 (优先国内高速 npmmirror 镜像，失败降级 unpkg) -->
+    <script
+      src="https://registry.npmmirror.com/vue/3.3.4/files/dist/vue.global.prod.js"
+      onerror="
+        this.onerror = null;
+        this.src = 'https://unpkg.com/vue@3/dist/vue.global.js';
+      "
+    ></script>
+    <!-- 引入 Element Plus 核心组件库 (优先国内高速 npmmirror 镜像，失败降级 unpkg) -->
+    <script
+      src="https://registry.npmmirror.com/element-plus/2.4.4/files/dist/index.full.min.js"
+      onerror="
+        this.onerror = null;
+        this.src = 'https://unpkg.com/element-plus';
+      "
+    ></script>
+    <!-- 引入公共绿蓝相间主题样式 (主色调 #009688) -->
+    <link rel="stylesheet" href="theme.css" />
+    <!-- 全局错误监听与日志回传守护脚本 -->
+    <script>
+      // 监听网络加载失败与未捕获脚本异常
+      window.addEventListener(
+        "error",
+        function (e) {
+          // 提取错误信息摘要
+          var msg =
+            e.message ||
+            (e.target && (e.target.src || e.target.href)) ||
+            "未知静态资源错误";
+          // 统一向 WebView2 宿主 C# 发送异常通知记录日志
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(
+              JSON.stringify({ action: "logError", error: msg }),
+            );
+          }
+        },
+        true,
+      );
+    </script>
+    <style>
+      /* 全局重置与盒模型设定 */
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* 限制视口充满且绝对禁止横向与全局滚动条 */
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+        user-select: none;
+        background-color: #f5f7fa;
+        color: #333333;
+      }
+
+      /* 根容器弹性垂直布局 */
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100vw;
+        overflow: hidden;
+        background: #ffffff;
+        border: 1px solid #009688;
+      }
+
+      /* 顶部可拖拽原生标题栏 */
+      .title-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 42px;
+        padding: 0 16px;
+        background: linear-gradient(135deg, #009688 0%, #1e88e5 100%);
+        color: #ffffff;
+        cursor: move;
+        flex-shrink: 0;
+      }
+
+      .title-bar-text {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .title-bar-close {
+        cursor: pointer;
+        font-size: 16px;
+        opacity: 0.85;
+        transition:
+          opacity 0.2s,
+          transform 0.2s;
+      }
+      .title-bar-close:hover {
+        opacity: 1;
+        transform: scale(1.1);
+      }
+
+      /* 顶部文件与基本配置条 */
+      .config-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 16px;
+        background: #ffffff;
+        border-bottom: 1px solid #e4e7ed;
+        flex-shrink: 0;
+        flex-wrap: wrap;
+      }
+
+      /* 工作区主容器 (左右弹性双栏) */
+      .main-workspace {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      /* 左侧网格与引导区 */
+      .left-panel {
+        flex: 62;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid #e4e7ed;
+        min-width: 0;
+        background: #fafafa;
+      }
+
+      /* 步骤引导卡片栏：0像素间距紧凑布局，彻底消除多余空隙 */
+      .step-guide-bar {
+        /* 下内边距与边框彻底归零，药丸按钮直接紧贴下方表格 */
+        padding: 6px 12px 2px 12px;
+        background: #ffffff;
+        border-bottom: none;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+
+      .step-pills {
+        display: flex;
+        gap: 8px;
+      }
+
+      .step-pill {
+        flex: 1;
+        padding: 5px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border: 1px solid #dcdfe6;
+        background: #fdfdfd;
+        transition: all 0.2s;
+      }
+
+      .step-pill.active {
+        border-color: #009688;
+        background: #e0f2f1;
+        color: #00796b;
+        font-weight: 600;
+        box-shadow: 0 1px 3px rgba(0, 150, 136, 0.15);
+      }
+
+      .step-pill.completed {
+        border-color: #4caf50;
+        background: #f1f8e9;
+        color: #2e7d32;
+      }
+
+      /* 5 列快速映射工具条 */
+      .col-mapping-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 2px 2px 0 2px;
+        font-size: 12px;
+        color: #606266;
+        background: #fcfcfc;
+        border-radius: 4px;
+      }
+
+      .col-map-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .col-map-label {
+        font-weight: 600;
+        color: #00796b;
+      }
+
+      /* 网格容器与 Excel 仿真视口：零内边距无缝衔接 */
+      .grid-container {
+        flex: 1;
+        overflow: auto;
+        /* 彻底清空内边距与外边距，表头直顶上方边框 */
+        padding: 0;
+        margin: 0;
+        background: #ffffff;
+        position: relative;
+      }
+
+      /* 仿真 Excel 表格：采用 separate 规避 Chromium 下 sticky 穿透与偏移 Bug */
+      .excel-table {
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 12px;
+        font-family: Consolas, "Microsoft YaHei", sans-serif;
+        width: max-content;
+        min-width: 100%;
+        margin: 0;
+      }
+
+      .excel-table th,
+      .excel-table td {
+        border-right: 1px solid #dcdfe6;
+        border-bottom: 1px solid #dcdfe6;
+        padding: 4px 8px;
+        white-space: nowrap;
+        height: 24px;
+        max-width: 220px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* 表头列标 (A, B, C...)：精准吸顶，不透明背景完全遮挡滚动数据行 */
+      .excel-table thead th {
+        background: #f2f3f5;
+        color: #606266;
+        font-weight: 600;
+        text-align: center;
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        /* 顶边线作为与上方药丸栏的紧密分割线 */
+        border-top: 1px solid #dcdfe6;
+        border-bottom: 2px solid #009688; /* 绿蓝相间主题色表头底边线 */
+      }
+
+      /* 数据行号列 (1, 2, 3...)：仅横向吸左，绝不纵向吸顶 */
+      .excel-table tbody th.row-header {
+        position: sticky;
+        left: 0;
+        z-index: 10;
+        background: #f8f9fa;
+        color: #606266;
+        font-weight: 600;
+        text-align: center;
+        width: 45px;
+        min-width: 45px;
+        border-left: 1px solid #dcdfe6;
+      }
+
+      /* 左上角交叉点 (#)：双向固定吸顶吸左 */
+      .excel-table thead th.row-header {
+        position: sticky;
+        top: 0;
+        left: 0;
+        z-index: 30;
+        background: #e4e7ed;
+        width: 45px;
+        min-width: 45px;
+        border-left: 1px solid #dcdfe6;
+        border-top: 1px solid #dcdfe6;
+        border-bottom: 2px solid #009688;
+      }
+
+      /* 状态高亮行样式 */
+      .row-highlight-header {
+        background-color: #e8f5e9 !important; /* 绿色表头行 */
+        font-weight: 600;
+      }
+
+      .row-highlight-end {
+        background-color: #fff8e1 !important; /* 橙黄色结束行 */
+        font-weight: 600;
+      }
+
+      .cell-highlight-cab {
+        background-color: #b2dfdb !important; /* 青绿柜号格 */
+        color: #004d40 !important;
+        font-weight: bold;
+        border: 2px solid #009688 !important;
+      }
+
+      .cell-highlight-qty {
+        background-color: #bbdefb !important; /* 蓝色台数格 */
+        color: #0d47a1 !important;
+        font-weight: bold;
+        border: 2px solid #1976d2 !important;
+      }
+
+      .excel-table td:hover {
+        background-color: #e0f2f1;
+        cursor: cell;
+      }
+
+      /* 右侧卡片预览区 */
+      .right-panel {
+        flex: 38;
+        display: flex;
+        flex-direction: column;
+        background: #ffffff;
+        min-width: 0;
+      }
+
+      .right-panel-header {
+        padding: 12px 16px;
+        border-bottom: 1px solid #e4e7ed;
+        background: #fafafa;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .cabinet-cards-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .cab-card {
+        border: 1px solid #e4e7ed;
+        border-radius: 8px;
+        padding: 10px 14px;
+        background: #ffffff;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+        transition: all 0.2s;
+      }
+
+      .cab-card:hover {
+        border-color: #009688;
+        box-shadow: 0 2px 8px rgba(0, 150, 136, 0.12);
+      }
+
+      .cab-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 6px;
+      }
+
+      .cab-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: #00796b;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .cab-tag {
+        font-size: 11px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: #e0f2f1;
+        color: #00796b;
+      }
+
+      /* 底部操作工具栏 */
+      .bottom-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 52px;
+        padding: 0 16px;
+        background: #ffffff;
+        border-top: 1px solid #e4e7ed;
+        flex-shrink: 0;
+      }
+
+      /* 主题绿色大按钮 */
+      .btn-main-action {
+        background: linear-gradient(
+          135deg,
+          #009688 0%,
+          #00796b 100%
+        ) !important;
+        border: none !important;
+        color: #ffffff !important;
+        font-weight: 600 !important;
+        box-shadow: 0 2px 8px rgba(0, 150, 136, 0.3) !important;
+        transition: all 0.2s !important;
+      }
+      .btn-main-action:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 150, 136, 0.4) !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <!-- 1. 顶部可拖拽标题栏 -->
+      <div class="title-bar" @mousedown="onDragWindow">
+        <div class="title-bar-text">
+          <i class="fa-solid fa-file-import"></i>
+          <span>智能导入箱柜 BOM 工作台</span>
+        </div>
+        <div class="title-bar-close" @click="closeWindow">
+          <i class="fa-solid fa-xmark"></i>
+        </div>
+      </div>
+
+      <!-- 2. 顶部配置与文件选择栏 -->
+      <div class="config-bar">
+        <!-- 选择外部文件按钮 (采用项目主色调 #009688，重点突出引导用户点击) -->
+        <el-button
+          type="primary"
+          size="small"
+          @click="selectExcelFile"
+          :loading="loadingFile"
+          style="
+            background-color: #009688;
+            border-color: #009688;
+            font-weight: 600;
+          "
+        >
+          <i class="fa-solid fa-folder-open" style="margin-right: 6px"></i
+          >选择标书 Excel
+        </el-button>
+        <!-- 文件路径展示与手动粘贴输入框 (双轨标准交互，附带浏览图标，支持粘贴回车极速加载) -->
+        <el-input
+          v-model="filePath"
+          placeholder="选择或粘贴 Excel 路径 (回车加载)"
+          size="small"
+          style="width: 300px"
+          @keyup.enter="onManualPathEnter"
+          clearable
+        >
+          <template #append>
+            <el-button
+              @click="selectExcelFile"
+              :loading="loadingFile"
+              title="浏览文件"
+            >
+              <i class="fa-solid fa-folder-open"></i>
+            </el-button>
+          </template>
+        </el-input>
+
+        <!-- 工作表下拉切换 -->
+        <span style="font-size: 13px; color: #606266; margin-left: 8px"
+          >工作表:</span
+        >
+        <el-select
+          v-model="currentSheet"
+          placeholder="选择工作表"
+          size="small"
+          style="width: 140px"
+          @change="onSheetChange"
+        >
+          <el-option
+            v-for="sh in sheetNames"
+            :key="sh"
+            :label="sh"
+            :value="sh"
+          ></el-option>
+        </el-select>
+
+        <!-- 新建分类表名称 -->
+        <span style="font-size: 13px; color: #606266; margin-left: 8px"
+          >新建分类表:</span
+        >
+        <el-input
+          v-model="newCategoryName"
+          placeholder="如: 动力配电箱清单"
+          size="small"
+          style="width: 160px"
+        ></el-input>
+
+        <!-- 保存模板与选择模板 -->
+        <div
+          style="
+            margin-left: auto;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+          "
+        >
+          <el-select
+            v-model="selectedTemplate"
+            placeholder="套用已存模板"
+            size="small"
+            style="width: 150px"
+            @change="applyTemplate"
+          >
+            <el-option
+              v-for="t in savedTemplates"
+              :key="t.templateName"
+              :label="t.templateName"
+              :value="t.templateName"
+            ></el-option>
+          </el-select>
+          <el-button
+            size="small"
+            type="success"
+            plain
+            @click="saveCurrentTemplate"
+          >
+            <i class="fa-regular fa-bookmark" style="margin-right: 4px"></i
+            >保存模板
+          </el-button>
+        </div>
+      </div>
+
+      <!-- 3. 工作区主体 (左侧网格 + 右侧卡片预览) -->
+      <div class="main-workspace">
+        <!-- 左侧：网格交互与 4 步向导卡片 -->
+        <div class="left-panel">
+          <!-- 步骤引导药丸栏 -->
+          <div class="step-guide-bar">
+            <div
+              style="
+                font-size: 12px;
+                color: #909399;
+                display: flex;
+                justify-content: space-between;
+              "
+            >
+              <span
+                ><i
+                  class="fa-solid fa-wand-magic-sparkles"
+                  style="color: #009688"
+                ></i>
+                样本柜点选指认 (在第 1 个柜子上顺着点击 4 下)：</span
+              >
+              <span style="color: #e6a23c"
+                >当前步骤: 【{{ currentStepTitle }}】</span
+              >
+            </div>
+            <div class="step-pills">
+              <!-- 步骤 1 -->
+              <div
+                class="step-pill"
+                :class="{ active: currentStep === 1, completed: config.sampleHeaderRow > 0 }"
+                @click="currentStep = 1"
+              >
+                <span>① 锁表头行</span>
+                <span v-if="config.sampleHeaderRow > 0"
+                  >第{{ config.sampleHeaderRow }}行</span
+                >
+              </div>
+              <!-- 步骤 2 -->
+              <div
+                class="step-pill"
+                :class="{ active: currentStep === 2, completed: config.sampleEndRow > 0 }"
+                @click="currentStep = 2"
+              >
+                <span>② 锁结束行</span>
+                <span v-if="config.sampleEndRow > 0"
+                  >第{{ config.sampleEndRow }}行</span
+                >
+              </div>
+              <!-- 步骤 3 -->
+              <div
+                class="step-pill"
+                :class="{ active: currentStep === 3, completed: config.cabinetAnchor.targetCol > 0 }"
+                @click="currentStep = 3"
+              >
+                <span>③ 锁柜号格</span>
+                <span v-if="sampleCabinetName">{{ sampleCabinetName }}</span>
+              </div>
+              <!-- 步骤 4 -->
+              <div
+                class="step-pill"
+                :class="{ active: currentStep === 4, completed: config.quantityAnchor.targetCol > 0 }"
+                @click="currentStep = 4"
+              >
+                <span>④ 锁台数格</span>
+                <span v-if="sampleQuantity">{{ sampleQuantity }}台</span>
+              </div>
+            </div>
+
+            <!-- 5 列快捷列映射工具条 (方式 A: 常驻紧凑下拉条 + 关键字配置齿轮) -->
+            <div class="col-mapping-bar">
+              <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <div class="col-map-item">
+                  <span class="col-map-label">名称:</span>
+                  <el-select v-model="config.columnMapping.itemNameCol" size="small" style="width: 72px;" @change="onColumnMappingChange">
+                    <el-option v-for="c in availableColumns" :key="c.value" :label="c.label" :value="c.value"></el-option>
+                  </el-select>
+                </div>
+                <div class="col-map-item">
+                  <span class="col-map-label">型号:</span>
+                  <el-select v-model="config.columnMapping.itemSpecCol" size="small" style="width: 72px;" @change="onColumnMappingChange">
+                    <el-option v-for="c in availableColumns" :key="c.value" :label="c.label" :value="c.value"></el-option>
+                  </el-select>
+                </div>
+                <div class="col-map-item">
+                  <span class="col-map-label">数量:</span>
+                  <el-select v-model="config.columnMapping.quantityCol" size="small" style="width: 72px;" @change="onColumnMappingChange">
+                    <el-option v-for="c in availableColumns" :key="c.value" :label="c.label" :value="c.value"></el-option>
+                  </el-select>
+                </div>
+                <div class="col-map-item">
+                  <span class="col-map-label">单价:</span>
+                  <el-select v-model="config.columnMapping.priceCol" size="small" style="width: 72px;" @change="onColumnMappingChange">
+                    <el-option v-for="c in availableColumns" :key="c.value" :label="c.label" :value="c.value"></el-option>
+                  </el-select>
+                </div>
+                <div class="col-map-item">
+                  <span class="col-map-label">品牌:</span>
+                  <el-select v-model="config.columnMapping.brandCol" size="small" style="width: 72px;" @change="onColumnMappingChange">
+                    <el-option v-for="c in availableColumns" :key="c.value" :label="c.label" :value="c.value"></el-option>
+                  </el-select>
+                </div>
+              </div>
+              <el-button size="small" type="primary" link @click="showKeywordDialog = true" style="color: #009688; font-size: 12px;">
+                <i class="fa-solid fa-gear" style="margin-right: 4px;"></i>关键字设置
+              </el-button>
+            </div>
+          </div>
+
+          <!-- 仿真 Excel 网格预览区 -->
+          <div class="grid-container">
+            <table class="excel-table" v-if="gridData.length > 0">
+              <thead>
+                <tr>
+                  <th class="row-header">#</th>
+                  <th v-for="(colName, cIndex) in columnHeaders" :key="cIndex">
+                    {{ colName }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(row, rIndex) in gridData"
+                  :key="rIndex"
+                  :class="getRowClass(rIndex + 1)"
+                >
+                  <!-- 行号列 (点击行号锁定表头行或结束行) -->
+                  <th class="row-header" @click="onRowHeaderClick(rIndex + 1)">
+                    {{ rIndex + 1 }}
+                  </th>
+                  <!-- 各数据单元格 -->
+                  <td
+                    v-for="(cellVal, cIndex) in row"
+                    :key="cIndex"
+                    :class="getCellClass(rIndex + 1, cIndex + 1)"
+                    @click="onCellClick(rIndex + 1, cIndex + 1, cellVal)"
+                    :title="cellVal"
+                  >
+                    {{ cellVal }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div
+              v-else
+              style="
+                display: flex;
+                height: 100%;
+                align-items: center;
+                justify-content: center;
+                color: #909399;
+                font-size: 14px;
+              "
+            >
+              <i
+                class="fa-regular fa-file-excel"
+                style="font-size: 32px; margin-right: 12px; color: #009688"
+              ></i>
+              请先点击上方【选择标书 Excel】加载数据网格
+            </div>
+          </div>
+        </div>
+
+        <!-- 右侧：全表解析结果卡片列表 -->
+        <div class="right-panel">
+          <div class="right-panel-header">
+            <div style="font-weight: 600; font-size: 13px; color: #2c3e50">
+              <i
+                class="fa-solid fa-list-check"
+                style="color: #009688; margin-right: 6px"
+              ></i>
+              全表解析结果预览
+            </div>
+            <el-tag
+              size="small"
+              type="success"
+              v-if="parsedCabinets.length > 0"
+            >
+              已识别 {{ parsedCabinets.length }} 台箱柜
+            </el-tag>
+          </div>
+
+          <div class="cabinet-cards-list" v-if="parsedCabinets.length > 0">
+            <div
+              class="cab-card"
+              v-for="(cab, idx) in parsedCabinets"
+              :key="idx"
+            >
+              <div class="cab-card-header">
+                <div class="cab-title">
+                  <i class="fa-solid fa-cubes"></i>
+                  <span>{{ cab.cabinetName }}</span>
+                </div>
+                <div style="display: flex; gap: 6px">
+                  <span class="cab-tag"
+                    >数量: {{ cab.cabinetQuantity }} 台</span
+                  >
+                  <!-- 安全读取元器件列表长度，防范空引用异常 -->
+                  <span
+                    class="cab-tag"
+                    style="background: #e3f2fd; color: #1565c0"
+                    >{{ (cab.components || []).length }} 项元件</span
+                  >
+                </div>
+              </div>
+              <!-- 元器件简略清单 -->
+              <div
+                style="
+                  font-size: 11px;
+                  color: #606266;
+                  margin-top: 6px;
+                  border-top: 1px dashed #ebeef5;
+                  padding-top: 6px;
+                "
+              >
+                <!-- 仅安全展示前 3 项物料名称与规格 -->
+                <div
+                  v-for="(comp, cIdx) in (cab.components || []).slice(0, 3)"
+                  :key="cIdx"
+                  style="
+                    display: flex;
+                    justify-content: space-between;
+                    margin-bottom: 2px;
+                  "
+                >
+                  <span
+                    style="
+                      overflow: hidden;
+                      text-overflow: ellipsis;
+                      white-space: nowrap;
+                      max-width: 180px;
+                    "
+                    >{{ comp.itemName }} {{ comp.itemSpec }}</span
+                  >
+                  <span style="color: #909399"
+                    >{{ comp.quantity }} {{ comp.unit }} | ¥{{ comp.markedPrice
+                    }}</span
+                  >
+                </div>
+                <!-- 超出 3 项展示折叠提示 -->
+                <div
+                  v-if="(cab.components || []).length > 3"
+                  style="color: #909399; font-style: italic"
+                >
+                  ... 及其他 {{ (cab.components || []).length - 3 }} 项元件
+                </div>
+              </div>
+            </div>
+          </div>
+          <div
+            v-else
+            style="
+              display: flex;
+              flex: 1;
+              align-items: center;
+              justify-content: center;
+              color: #c0c4cc;
+              font-size: 13px;
+              flex-direction: column;
+              gap: 8px;
+            "
+          >
+            <i
+              class="fa-solid fa-magnifying-glass-chart"
+              style="font-size: 32px; color: #e0e0e0"
+            ></i>
+            <span>完成左侧 4 步点选后，此处将自动展示全表箱柜</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. 底部操作栏 -->
+      <div class="bottom-bar">
+        <div
+          style="
+            font-size: 12px;
+            color: #606266;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          "
+        >
+          <i class="fa-solid fa-circle-info" style="color: #009688"></i>
+          <span
+            >双基线依附法则：柜号与台数自动根据天花板与地板位移，全表毫秒级推导。</span
+          >
+        </div>
+        <div style="display: flex; gap: 10px">
+          <el-button size="small" @click="closeWindow">取消</el-button>
+          <el-button
+            class="btn-main-action"
+            size="small"
+            :disabled="parsedCabinets.length === 0"
+            :loading="importing"
+            @click="doExecuteImport"
+          >
+            <i class="fa-solid fa-bolt" style="margin-right: 6px"></i
+            >一键创建分类表并导入 ({{ parsedCabinets.length }} 台箱柜)
+          </el-button>
+        </div>
+      </div>
+
+      <!-- 5. 5 列智能匹配关键字设置对话框 (方式 A) -->
+      <el-dialog
+        v-model="showKeywordDialog"
+        title="5 核心列智能匹配关键字设置"
+        width="540px"
+        :close-on-click-modal="false"
+        append-to-body
+      >
+        <!-- 顶部操作指引与分隔符提示 -->
+        <div style="font-size: 12px; color: #606266; margin-bottom: 12px; line-height: 1.6;">
+          <i class="fa-solid fa-circle-info" style="color: #009688; margin-right: 4px;"></i>
+          在步骤 1 点击【锁表头行】时，系统将使用下方设置的关键词在表头行自动定位这 5 列。
+          <br />支持中英文逗号、分号或竖线分隔多个同义词。
+        </div>
+        <!-- 5 个核心列关键字编辑表单 -->
+        <el-form label-width="110px" size="small">
+          <!-- 1. 元件名称列关键字 -->
+          <el-form-item label="元件名称列:">
+            <el-input v-model="config.columnMapping.itemNameKeywords" placeholder="如: 名称,品名,材料,元件,设备,物料" clearable></el-input>
+          </el-form-item>
+          <!-- 2. 规格型号列关键字 -->
+          <el-form-item label="规格型号列:">
+            <el-input v-model="config.columnMapping.itemSpecKeywords" placeholder="如: 型号,规格,参数,描述" clearable></el-input>
+          </el-form-item>
+          <!-- 3. 数量列关键字 -->
+          <el-form-item label="数量列:">
+            <el-input v-model="config.columnMapping.quantityKeywords" placeholder="如: 数量,台数,工程量,用量" clearable></el-input>
+          </el-form-item>
+          <!-- 4. 单价/表价格列关键字 -->
+          <el-form-item label="单价/表价列:">
+            <el-input v-model="config.columnMapping.priceKeywords" placeholder="如: 单价,面价,价格,综合单价,信息价,成本价" clearable></el-input>
+          </el-form-item>
+          <!-- 5. 品牌/生产厂家列关键字 -->
+          <el-form-item label="品牌/厂家列:">
+            <el-input v-model="config.columnMapping.brandKeywords" placeholder="如: 品牌,厂家,生产厂商,制造厂商,制造商" clearable></el-input>
+          </el-form-item>
+        </el-form>
+        <!-- 对话框底部按钮区 -->
+        <template #footer>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <!-- 恢复预设默认关键词按钮 -->
+            <el-button size="small" @click="resetKeywordsToDefault">恢复默认关键字</el-button>
+            <div style="display: flex; gap: 8px;">
+              <!-- 取消按钮 -->
+              <el-button size="small" @click="showKeywordDialog = false">取消</el-button>
+              <!-- 确认保存并立即触发重新嗅探与推导 -->
+              <el-button size="small" type="primary" style="background-color: #009688; border-color: #009688;" @click="saveAndRedetectKeywords">
+                保存并重新匹配
+              </el-button>
+            </div>
+          </div>
+        </template>
+      </el-dialog>
+    </div>
+
+    <script>
+      const { createApp, ref, computed, onMounted } = Vue;
+
+      // 创建 Vue 3 根应用实例
+      const app = createApp({
+        setup() {
+          // 基本状态
+          const filePath = ref("");
+          const sheetNames = ref([]);
+          const currentSheet = ref("");
+          const newCategoryName = ref("导入_箱柜清单");
+          const gridData = ref([]);
+          const loadingFile = ref(false);
+          const importing = ref(false);
+
+          // 4 步向导状态
+          const currentStep = ref(1); // 1:表头, 2:结束行, 3:柜号, 4:台数
+          const sampleCabinetName = ref("");
+          const sampleQuantity = ref("");
+
+          // 5 列匹配关键字系统默认预设常量
+          const DEFAULT_KEYWORDS = {
+            // 元件名称默认高频关键词
+            itemNameKeywords: "名称,品名,材料,元件,设备,物料",
+            // 规格型号默认高频关键词
+            itemSpecKeywords: "型号,规格,参数,描述",
+            // 数量列默认高频关键词
+            quantityKeywords: "数量,台数,工程量,用量",
+            // 单价/表价格默认高频关键词
+            priceKeywords: "单价,面价,价格,综合单价,信息价,成本价",
+            // 品牌/厂家默认高频关键词
+            brandKeywords: "品牌,厂家,生产厂商,制造厂商,制造商",
+          };
+
+          // 关键字设置对话框显隐状态
+          const showKeywordDialog = ref(false);
+
+          // 规则配置对象
+          const config = ref({
+            templateName: "",
+            sampleHeaderRow: 2,
+            sampleEndRow: 10,
+            endKeyword: "小计",
+            cabinetAnchor: {
+              targetCol: 2,
+              attachToHeader: true,
+              rowOffset: -1,
+              prefixKeyword: "柜号",
+            },
+            quantityAnchor: {
+              targetCol: 5,
+              attachToHeader: false,
+              rowOffset: 5,
+              prefixKeyword: "",
+            },
+            columnMapping: {
+              indexCol: 1,
+              itemNameCol: 2,
+              itemSpecCol: 3,
+              unitCol: 4,
+              quantityCol: 5,
+              priceCol: 6,
+              brandCol: 8,
+              remarkCol: 9,
+              // 5 列自定义匹配关键字配置 (支持持久化保存与模板联动)
+              itemNameKeywords: DEFAULT_KEYWORDS.itemNameKeywords,
+              itemSpecKeywords: DEFAULT_KEYWORDS.itemSpecKeywords,
+              quantityKeywords: DEFAULT_KEYWORDS.quantityKeywords,
+              priceKeywords: DEFAULT_KEYWORDS.priceKeywords,
+              brandKeywords: DEFAULT_KEYWORDS.brandKeywords,
+            },
+          });
+
+          // 模板与解析结果
+          const savedTemplates = ref([]);
+          const selectedTemplate = ref("");
+          const parsedCabinets = ref([]);
+
+          // 5 列下拉选择器的可选列集合 (包含 0:无，以及 A 列、B 列...)
+          const availableColumns = computed(() => {
+            // 首项支持未指定/无
+            const list = [{ label: "0: 无", value: 0 }];
+            // 依据当前已加载网格实际列数或保证至少 26 列
+            const maxCol = Math.max(
+              gridData.value.length > 0 && gridData.value[0] ? gridData.value[0].length : 0,
+              26
+            );
+            // 循环生成标准 Excel 列标字符串
+            for (let i = 1; i <= maxCol; i++) {
+              let colLetter = "";
+              let num = i;
+              while (num > 0) {
+                let mod = (num - 1) % 26;
+                colLetter = String.fromCharCode(65 + mod) + colLetter;
+                num = Math.floor((num - 1) / 26);
+              }
+              // 压入可选列表选项
+              list.push({
+                label: `${colLetter} 列`,
+                value: i,
+              });
+            }
+            return list;
+          });
+
+          // 列标字母生成 (A, B, C...)
+          const columnHeaders = computed(() => {
+            const count =
+              gridData.value.length > 0 ? gridData.value[0].length : 15;
+            const headers = [];
+            for (let i = 0; i < count; i++) {
+              headers.push(String.fromCharCode(65 + i));
+            }
+            return headers;
+          });
+
+          const currentStepTitle = computed(() => {
+            if (currentStep.value === 1)
+              return "点击第 1 柜的【表头行】(锁定列名)";
+            if (currentStep.value === 2)
+              return "点击第 1 柜的【元器件结束行】(如小计)";
+            if (currentStep.value === 3)
+              return "点击第 1 柜的【柜号】所在单元格";
+            if (currentStep.value === 4)
+              return "点击第 1 柜的【箱柜台数】所在数字格";
+            return "";
+          });
+
+          // 统一向 C# 宿主发送 JSON 消息
+          const sendMessage = (action, data = null) => {
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.postMessage(
+                JSON.stringify(data ? { action, ...data } : { action }),
+              );
+            }
+          };
+
+          // 拖拽窗口
+          const onDragWindow = () => {
+            sendMessage("dragWindow");
+          };
+
+          // 关闭窗口
+          const closeWindow = () => {
+            sendMessage("closeWindow");
+          };
+
+          // 选择文件
+          const selectExcelFile = () => {
+            loadingFile.value = true;
+            sendMessage("selectFile");
+          };
+
+          // 手动输入或粘贴路径后回车加载
+          const onManualPathEnter = () => {
+            if (filePath.value && filePath.value.trim()) {
+              loadingFile.value = true;
+              sendMessage("changeSheet", {
+                filePath: filePath.value.trim(),
+                sheetName: currentSheet.value,
+              });
+            }
+          };
+
+          // 切换 Sheet
+          const onSheetChange = (val) => {
+            loadingFile.value = true;
+            sendMessage("changeSheet", {
+              filePath: filePath.value,
+              sheetName: val,
+            });
+          };
+
+          // 将分隔符字符串拆分为关键字数组
+          const parseKeywordsList = (raw) => {
+            if (!raw || typeof raw !== "string") return [];
+            // 支持中文逗号、英文逗号、分号与竖线拆分
+            return raw
+              .split(/[,，|;；]/)
+              .map((k) => k.trim())
+              .filter((k) => k.length > 0);
+          };
+
+          // 检查文本是否包含关键字词典中的任意一项
+          const textMatchesAny = (text, keywords) => {
+            if (!text || !keywords || keywords.length === 0) return false;
+            // 忽略大小写进行匹配
+            const lowerText = text.toLowerCase();
+            return keywords.some((kw) => lowerText.includes(kw.toLowerCase()));
+          };
+
+          // 将列号安全转换为 A, B, C... 列标
+          const toColLetter = (num) => {
+            if (!num || num <= 0) return "无";
+            let col = "";
+            let temp = num;
+            // 循环进位换算 Excel 字母列标
+            while (temp > 0) {
+              let mod = (temp - 1) % 26;
+              col = String.fromCharCode(65 + mod) + col;
+              temp = Math.floor((temp - 1) / 26);
+            }
+            return col;
+          };
+
+          // 核心：从表头行智能启发式嗅探 5 列目标列号并回写下拉框
+          const detectColumnsFromHeaderRow = (rowNum) => {
+            if (!gridData.value || gridData.value.length < rowNum) return;
+            // 获取表头行的原始单元格数组
+            const headerRow = gridData.value[rowNum - 1];
+            if (!headerRow || !Array.isArray(headerRow)) return;
+
+            const map = config.value.columnMapping;
+            // 获取 5 列当前配置的关键词列表
+            const nameKeys = parseKeywordsList(
+              map.itemNameKeywords || DEFAULT_KEYWORDS.itemNameKeywords,
+            );
+            const specKeys = parseKeywordsList(
+              map.itemSpecKeywords || DEFAULT_KEYWORDS.itemSpecKeywords,
+            );
+            const qtyKeys = parseKeywordsList(
+              map.quantityKeywords || DEFAULT_KEYWORDS.quantityKeywords,
+            );
+            const priceKeys = parseKeywordsList(
+              map.priceKeywords || DEFAULT_KEYWORDS.priceKeywords,
+            );
+            const brandKeys = parseKeywordsList(
+              map.brandKeywords || DEFAULT_KEYWORDS.brandKeywords,
+            );
+
+            let matchedCount = 0;
+            // 遍历表头各列单元格
+            for (let c = 0; c < headerRow.length; c++) {
+              const colIdx = c + 1;
+              const text = (headerRow[c] || "").trim();
+              if (!text) continue;
+
+              // 优先匹配单价 (主动避开合价与总价干扰)
+              if (
+                textMatchesAny(text, priceKeys) &&
+                !text.includes("合价") &&
+                !text.includes("总价")
+              ) {
+                map.priceCol = colIdx;
+                matchedCount++;
+              } else if (textMatchesAny(text, brandKeys)) {
+                // 匹配品牌/厂家列
+                map.brandCol = colIdx;
+                matchedCount++;
+              } else if (textMatchesAny(text, qtyKeys)) {
+                // 匹配数量列
+                map.quantityCol = colIdx;
+                matchedCount++;
+              } else if (textMatchesAny(text, specKeys)) {
+                // 匹配规格型号列
+                map.itemSpecCol = colIdx;
+                matchedCount++;
+              } else if (textMatchesAny(text, nameKeys)) {
+                // 匹配元件名称列
+                map.itemNameCol = colIdx;
+                matchedCount++;
+              }
+            }
+
+            // 若命中任意匹配列，给出友好提示
+            if (matchedCount > 0) {
+              ElementPlus.ElMessage.success(
+                `已智能定位列：名称[${toColLetter(map.itemNameCol)}] 型号[${toColLetter(map.itemSpecCol)}] 数量[${toColLetter(map.quantityCol)}] 单价[${toColLetter(map.priceCol)}] 品牌[${toColLetter(map.brandCol)}]`,
+              );
+            }
+          };
+
+          // 手动更改快捷下拉映射时立即触发重新推导
+          const onColumnMappingChange = () => {
+            triggerAutoParse();
+          };
+
+          // 恢复 5 列匹配关键字为系统默认预设
+          const resetKeywordsToDefault = () => {
+            config.value.columnMapping.itemNameKeywords =
+              DEFAULT_KEYWORDS.itemNameKeywords;
+            config.value.columnMapping.itemSpecKeywords =
+              DEFAULT_KEYWORDS.itemSpecKeywords;
+            config.value.columnMapping.quantityKeywords =
+              DEFAULT_KEYWORDS.quantityKeywords;
+            config.value.columnMapping.priceKeywords =
+              DEFAULT_KEYWORDS.priceKeywords;
+            config.value.columnMapping.brandKeywords =
+              DEFAULT_KEYWORDS.brandKeywords;
+            ElementPlus.ElMessage.info("已恢复 5 列默认匹配关键字");
+          };
+
+          // 保存关键字并立即重新对当前表头嗅探与解析
+          const saveAndRedetectKeywords = () => {
+            showKeywordDialog.value = false;
+            // 若已锁定表头行则立即重新嗅探
+            if (
+              config.value.sampleHeaderRow > 0 &&
+              gridData.value.length >= config.value.sampleHeaderRow
+            ) {
+              detectColumnsFromHeaderRow(config.value.sampleHeaderRow);
+            }
+            // 触发全表重新推导
+            triggerAutoParse();
+            ElementPlus.ElMessage.success("已更新关键字设置并重新推导！");
+          };
+
+          // 点击行号 (表头与结束行快捷绑定)
+          const onRowHeaderClick = (rowNum) => {
+            if (currentStep.value === 1) {
+              config.value.sampleHeaderRow = rowNum;
+              // 步骤 1 锁定表头行时，瞬间自动嗅探 5 列目标映射并高亮选中
+              detectColumnsFromHeaderRow(rowNum);
+              ElementPlus.ElMessage.success(
+                `已锁定第 ${rowNum} 行为【表头行】`,
+              );
+              currentStep.value = 2;
+            } else if (currentStep.value === 2) {
+              config.value.sampleEndRow = rowNum;
+              ElementPlus.ElMessage.success(
+                `已锁定第 ${rowNum} 行为【元器件结束行】`,
+              );
+              currentStep.value = 3;
+            }
+            triggerAutoParse();
+          };
+
+          // 点击单元格根据当前步骤打标
+          const onCellClick = (row, col, text) => {
+            if (currentStep.value === 1) {
+              config.value.sampleHeaderRow = row;
+              // 步骤 1 点击锁定表头行时，瞬间自动嗅探 5 列目标映射并高亮选中
+              detectColumnsFromHeaderRow(row);
+              ElementPlus.ElMessage.success(`已锁定第 ${row} 行为【表头行】`);
+              currentStep.value = 2;
+            } else if (currentStep.value === 2) {
+              config.value.sampleEndRow = row;
+              config.value.endKeyword = text ? text.trim() : "小计";
+              ElementPlus.ElMessage.success(
+                `已锁定第 ${row} 行为【结束行】(关键词: ${config.value.endKeyword})`,
+              );
+              currentStep.value = 3;
+            } else if (currentStep.value === 3) {
+              // 绑定柜号
+              config.value.cabinetAnchor.targetCol = col;
+              if (row <= config.value.sampleHeaderRow) {
+                config.value.cabinetAnchor.attachToHeader = true;
+                config.value.cabinetAnchor.rowOffset =
+                  row - config.value.sampleHeaderRow;
+              } else {
+                config.value.cabinetAnchor.attachToHeader = false;
+                config.value.cabinetAnchor.rowOffset =
+                  row - config.value.sampleEndRow;
+              }
+              sampleCabinetName.value = text
+                ? text.replace(/柜号[：:]/g, "").trim()
+                : `箱柜_${row}`;
+              ElementPlus.ElMessage.success(
+                `已锁定【柜号格】(提取: ${sampleCabinetName.value})`,
+              );
+              currentStep.value = 4;
+            } else if (currentStep.value === 4) {
+              // 绑定台数
+              config.value.quantityAnchor.targetCol = col;
+              if (row <= config.value.sampleHeaderRow) {
+                config.value.quantityAnchor.attachToHeader = true;
+                config.value.quantityAnchor.rowOffset =
+                  row - config.value.sampleHeaderRow;
+              } else {
+                config.value.quantityAnchor.attachToHeader = false;
+                config.value.quantityAnchor.rowOffset =
+                  row - config.value.sampleEndRow;
+              }
+              sampleQuantity.value = text ? text.replace(/[^0-9]/g, "") : "1";
+              ElementPlus.ElMessage.success(
+                `已锁定【台数格】(提取: ${sampleQuantity.value}台)`,
+              );
+              currentStep.value = 1; // 循环完成
+            }
+            triggerAutoParse();
+          };
+
+          // 行样式判定
+          const getRowClass = (r) => {
+            if (r === config.value.sampleHeaderRow)
+              return "row-highlight-header";
+            if (r === config.value.sampleEndRow) return "row-highlight-end";
+            return "";
+          };
+
+          // 单元格高亮判定
+          const getCellClass = (r, c) => {
+            const cabR = config.value.cabinetAnchor.attachToHeader
+              ? config.value.sampleHeaderRow +
+                config.value.cabinetAnchor.rowOffset
+              : config.value.sampleEndRow +
+                config.value.cabinetAnchor.rowOffset;
+            if (r === cabR && c === config.value.cabinetAnchor.targetCol)
+              return "cell-highlight-cab";
+
+            const qtyR = config.value.quantityAnchor.attachToHeader
+              ? config.value.sampleHeaderRow +
+                config.value.quantityAnchor.rowOffset
+              : config.value.sampleEndRow +
+                config.value.quantityAnchor.rowOffset;
+            if (r === qtyR && c === config.value.quantityAnchor.targetCol)
+              return "cell-highlight-qty";
+
+            return "";
+          };
+
+          // 触发自动推导解析
+          const triggerAutoParse = () => {
+            if (!filePath.value) return;
+            sendMessage("parsePreview", {
+              filePath: filePath.value,
+              sheetName: currentSheet.value,
+              config: JSON.parse(JSON.stringify(config.value)),
+            });
+          };
+
+          // 执行一键导入
+          const doExecuteImport = () => {
+            if (!newCategoryName.value || !newCategoryName.value.trim()) {
+              ElementPlus.ElMessage.warning("请输入新建分类表名称！");
+              return;
+            }
+            importing.value = true;
+            sendMessage("executeImport", {
+              data: {
+                filePath: filePath.value,
+                sheetName: currentSheet.value,
+                newCategoryName: newCategoryName.value.trim(),
+                config: JSON.parse(JSON.stringify(config.value)),
+                cabinets: JSON.parse(JSON.stringify(parsedCabinets.value)),
+              },
+            });
+          };
+
+          // 保存模板
+          const saveCurrentTemplate = () => {
+            ElementPlus.ElMessageBox.prompt(
+              "请输入此规则模板名称:",
+              "保存模板",
+              {
+                confirmButtonText: "确定保存",
+                cancelButtonText: "取消",
+                inputValue: config.value.templateName || "常用成套标书模板",
+              },
+            )
+              .then(({ value }) => {
+                if (value && value.trim()) {
+                  config.value.templateName = value.trim();
+                  sendMessage("saveTemplate", {
+                    config: JSON.parse(JSON.stringify(config.value)),
+                  });
+                }
+              })
+              .catch(() => {});
+          };
+
+          // 套用模板
+          const applyTemplate = (name) => {
+            const t = savedTemplates.value.find(
+              (item) => item.templateName === name,
+            );
+            if (t) {
+              config.value = JSON.parse(JSON.stringify(t));
+              ElementPlus.ElMessage.success(`已套用模板: ${name}`);
+              triggerAutoParse();
+            }
+          };
+
+          // 接收 C# 传回的消息
+          onMounted(() => {
+            window.chrome?.webview?.addEventListener("message", (event) => {
+              let data = event.data;
+              if (!data) return;
+              // 兼容字符串反序列化
+              if (typeof data === "string") {
+                try {
+                  data = JSON.parse(data);
+                } catch (e) {}
+              }
+
+              if (data.action === "fileSelectedResult") {
+                loadingFile.value = false;
+                filePath.value = data.filePath;
+                if (data.preview && data.preview.success) {
+                  sheetNames.value = data.preview.sheetNames || [];
+                  currentSheet.value = data.preview.currentSheet || "";
+                  gridData.value = data.preview.gridData || [];
+                  // 加载新数据后对默认表头行自动执行一次 5 列智能启发式嗅探
+                  if (config.value.sampleHeaderRow > 0 && gridData.value.length >= config.value.sampleHeaderRow) {
+                    detectColumnsFromHeaderRow(config.value.sampleHeaderRow);
+                  }
+                  // 触发一次推导并刷新右侧解析列表
+                  triggerAutoParse();
+                }
+              } else if (data.action === "fileSelectedCancel") {
+                loadingFile.value = false;
+              } else if (data.action === "previewGridLoaded") {
+                loadingFile.value = false;
+                if (data.preview && data.preview.success) {
+                  gridData.value = data.preview.gridData || [];
+                  // 切换工作表后自动对表头行执行 5 列智能嗅探
+                  if (config.value.sampleHeaderRow > 0 && gridData.value.length >= config.value.sampleHeaderRow) {
+                    detectColumnsFromHeaderRow(config.value.sampleHeaderRow);
+                  }
+                  triggerAutoParse();
+                }
+              } else if (data.action === "parsePreviewResult") {
+                if (data.success) {
+                  parsedCabinets.value = data.cabinets || [];
+                }
+              } else if (data.action === "executeImportResult") {
+                importing.value = false;
+                if (data.result && data.result.success) {
+                  ElementPlus.ElMessage.success({
+                    message:
+                      data.result.message || "导入成功！正在跳转工作表...",
+                    duration: 2000,
+                  });
+                } else {
+                  ElementPlus.ElMessage.error(
+                    data.result?.message || "导入失败！",
+                  );
+                }
+              } else if (data.action === "saveTemplateResult") {
+                if (data.success) {
+                  ElementPlus.ElMessage.success("模板保存成功！");
+                  sendMessage("getTemplates");
+                }
+              } else if (data.action === "getTemplatesResult") {
+                savedTemplates.value = data.templates || [];
+              }
+            });
+
+            // 初始化请求已存模板
+            sendMessage("getTemplates");
+          });
+
+          return {
+            filePath,
+            sheetNames,
+            currentSheet,
+            newCategoryName,
+            gridData,
+            loadingFile,
+            importing,
+            currentStep,
+            sampleCabinetName,
+            sampleQuantity,
+            config,
+            savedTemplates,
+            selectedTemplate,
+            parsedCabinets,
+            columnHeaders,
+            currentStepTitle,
+            onDragWindow,
+            closeWindow,
+            selectExcelFile,
+            // 暴露路径手动输入与回车加载方法
+            onManualPathEnter,
+            onSheetChange,
+            onRowHeaderClick,
+            onCellClick,
+            getRowClass,
+            getCellClass,
+            doExecuteImport,
+            saveCurrentTemplate,
+            applyTemplate,
+            // 暴露 5 核心列映射相关响应式状态与交互方法
+            availableColumns,
+            showKeywordDialog,
+            onColumnMappingChange,
+            resetKeywordsToDefault,
+            saveAndRedetectKeywords,
+          };
+        },
+      });
+
+      // 注册 Vue 运行时全局异常拦截器，防范任何模板或数据错误导致未捕获崩溃
+      app.config.errorHandler = (err, vm, info) => {
+        console.error("[Vue Runtime Error]", err, info);
+        // 向宿主 C# 发送异常通知以便于 LogHelper 追溯排查
+        if (window.chrome && window.chrome.webview) {
+          window.chrome.webview.postMessage(
+            JSON.stringify({
+              action: "logError",
+              error:
+                "Vue运行时异常: " +
+                (err?.message || err) +
+                " (信息: " +
+                info +
+                ")",
+            }),
+          );
+        }
+      };
+
+      // 挂载 Element Plus 组件库
+      app.use(ElementPlus);
+      // 挂载至根节点 #app
+      app.mount("#app");
+    </script>
+  </body>
+</html>

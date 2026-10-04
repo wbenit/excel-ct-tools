@@ -225,6 +225,53 @@ namespace ExcelAddInDemo.Services
 
             return resultList;
         }
+
+        /// <summary>
+        /// 异步向 AutoCAD 命名管道发送更新元器件规格型号指令 (非阻塞，超时 50ms 即焚)
+        /// </summary>
+        /// <param name="handles">需要更新的 CAD 句柄列表</param>
+        /// <param name="newSpec">新的规格型号字符串</param>
+        public static void SendUpdateComponentSpec(List<string>? handles, string newSpec)
+        {
+            // 校验句柄集合与新规格字符串有效性
+            if (handles == null || handles.Count == 0 || string.IsNullOrWhiteSpace(newSpec)) return;
+
+            // 启动后台异步非阻塞任务发送指令至 CAD
+            Task.Run(async () =>
+            {
+                try
+                {
+                    // 构造入站管道客户端实例
+                    using (var pipeClient = new NamedPipeClientStream(".", PipeName, PipeDirection.Out))
+                    {
+                        // 尝试连接 CAD 管道服务端，超时 300 毫秒 --硬编码: 极速管道连接超时--
+                        await pipeClient.ConnectAsync(300);
+
+                        // 构造发送载荷对象
+                        var payload = new
+                        {
+                            action = "updateComponentSpec",
+                            handles = handles,
+                            newSpec = newSpec
+                        };
+
+                        // 序列化并在尾部添加换行符
+                        string jsonStr = JsonSerializer.Serialize(payload) + "\n";
+                        byte[] buffer = Encoding.UTF8.GetBytes(jsonStr);
+
+                        // 写入管道并立即刷新
+                        await pipeClient.WriteAsync(buffer, 0, buffer.Length);
+                        await pipeClient.FlushAsync();
+                        LogHelper.WriteLog($"[CadSyncClient] SendUpdateComponentSpec 成功推送: handles={string.Join(",", handles)}, newSpec={newSpec}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // 记录管道未就绪或超时日志
+                    LogHelper.WriteLog($"[CadSyncClient] SendUpdateComponentSpec 异常: {ex.Message}");
+                }
+            });
+        }
     }
 
     /// <summary>
