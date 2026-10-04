@@ -70,16 +70,8 @@ namespace ExcelAddInDemo
         </group>
         <!-- “我的项目” 功能分组 -->
         <group id='grpProjects' label='我的项目'>
-          <!-- 本机项目 (SplitButton 支持一键大图标直达与下拉菜单) -->
-          <splitButton id='splitLocalProject' size='large'>
-            <!-- 顶部大图标一键直接唤起本地文件管理控制台 -->
-            <button id='btnLocalProjectMain' label='本机项目' imageMso='Folder' onAction='OnMenuAction' />
-            <!-- 下拉菜单列表 (保留原生下拉选项) -->
-            <menu id='menuLocalProject' label='本机项目'>
-              <!-- 打开本地文件管理控制台子项 -->
-              <button id='btnLocalProj1' label='本地文件管理控制台' imageMso='FileOpen' onAction='OnMenuAction' />
-            </menu>
-          </splitButton>
+          <!-- 本机项目 (切换大按钮：动态呈现当前工作簿是否已收录在控制台表格中) -->
+          <toggleButton id='tglLocalProject' label='本机项目' imageMso='Folder' size='large' getPressed='GetLocalProjectPressed' onAction='OnLocalProjectToggleAction' screentip='本机项目 (本地文件管理控制台)' supertip='点击唤起本地文件管理控制台。若当前活动工作簿已在控制台表格中收录登记，此按钮将自动保持高亮按压状态。' />
           <!-- 云项目下拉菜单 -->
           <menu id='menuCloudProject' label='云项目' imageMso='ServerProperties' size='large'>
             <!-- 云项目列表项 (配置服务器网络连接标准图标) -->
@@ -348,6 +340,27 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 动态获取【本机项目】切换按钮的按压/选中状态
+        /// 规则：当前活动工作簿路径若已存在于本地文件管理控制台表格中，返回 true 显示高亮 Checked 状态
+        /// </summary>
+        public bool GetLocalProjectPressed(IRibbonControl control)
+        {
+            // 调用公共业务服务层判定当前活动工作簿是否在本地控制台工程表中
+            return ExcelServices.IsActiveWorkbookInLocalProjectTable();
+        }
+
+        /// <summary>
+        /// 响应【本机项目】切换按钮点击动作（模式一：指示状态 + 点击打开控制台）
+        /// </summary>
+        public void OnLocalProjectToggleAction(IRibbonControl control, bool isPressed)
+        {
+            // 弹出基于 WebView2 + Vue 3 的“本地文件管理控制台”窗口
+            ExcelServices.ShowLocalProjectDialog();
+            // 点击后即时刷新 Ribbon 控件按压状态重绘
+            InvalidateRibbon();
+        }
+
+        /// <summary>
         /// 切换按钮状态获取回调：读取是否开启与 AutoCAD 夹点联动
         /// </summary>
         public bool GetCadSyncPressed(IRibbonControl control)
@@ -508,7 +521,7 @@ namespace ExcelAddInDemo
                 ExcelServices.ShowSmartImportDialog();
             }
             // 响应“本机项目”主按钮及下拉菜单指令
-            else if (controlId == "btnLocalProjectMain" || controlId == "btnLocalProj1" || controlId == "menuLocalProject")
+            else if (controlId == "btnLocalProjectMain" || controlId == "btnLocalProj1" || controlId == "menuLocalProject" || controlId == "tglLocalProject")
             {
                 // 弹出基于 WebView2 + Vue 3 的“本地文件管理控制台”窗口
                 ExcelServices.ShowLocalProjectDialog();

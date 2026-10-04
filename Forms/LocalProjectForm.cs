@@ -585,6 +585,11 @@ namespace ExcelAddInDemo.Forms
 
                 // 销毁并释放 WebView2 控件资源
                 _webView.Dispose();
+
+                // 窗体关闭后立即清空本地项目缓存并刷新 Ribbon 状态
+                ExcelServices.InvalidateLocalProjectCache();
+                // 触发 Ribbon 功能区重绘以反映最新文件收录状态
+                RibbonController.InvalidateRibbon();
             }
             catch (Exception ex)
             {

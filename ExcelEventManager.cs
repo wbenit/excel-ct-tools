@@ -67,6 +67,11 @@ namespace ExcelAddInDemo
                 // 重新绑定 WorkbookActivate 事件，激活或新建工作簿时自动挂载视口
                 _excelApp.WorkbookActivate += OnWorkbookActivate;
 
+                // 解除已有的 WorkbookAfterSave 事件绑定
+                _excelApp.WorkbookAfterSave -= OnWorkbookAfterSave;
+                // 重新绑定 WorkbookAfterSave 事件，文件保存后即时刷新 Ribbon 本机项目收录状态
+                _excelApp.WorkbookAfterSave += OnWorkbookAfterSave;
+
                 // 贯彻核心指令：这里的撤回不使用快捷键，彻底归还 Ctrl+Z 与 Ctrl+Y 原生控制权
                 try
                 {
@@ -123,6 +128,8 @@ namespace ExcelAddInDemo
                     _excelApp.SheetActivate -= OnSheetActivate;
                     // 解除 WorkbookActivate 事件绑定
                     _excelApp.WorkbookActivate -= OnWorkbookActivate;
+                    // 解除 WorkbookAfterSave 事件绑定
+                    _excelApp.WorkbookAfterSave -= OnWorkbookAfterSave;
 
                     // 释放快捷键挂钩，恢复 Excel 原生按键映射
                     try
@@ -392,6 +399,31 @@ namespace ExcelAddInDemo
 
                 // 切换工作簿时同步清空上一工作簿的元器件行区间缓存
                 ExcelServices.InvalidateCategoryRowCache();
+
+                // 切换工作簿时清空本机项目文件缓存，并刷新 Ribbon 按钮按压状态
+                ExcelServices.InvalidateLocalProjectCache();
+                RibbonController.InvalidateRibbon();
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 响应工作簿保存成功事件，刷新 Ribbon 本机项目勾选按压状态
+        /// </summary>
+        /// <param name="wb">已保存的工作簿对象</param>
+        /// <param name="success">是否保存成功</param>
+        private static void OnWorkbookAfterSave(Microsoft.Office.Interop.Excel.Workbook wb, bool success)
+        {
+            try
+            {
+                // 若保存成功，使本地项目缓存失效并刷新 Ribbon 状态
+                if (success)
+                {
+                    // 清除路径比对短效缓存
+                    ExcelServices.InvalidateLocalProjectCache();
+                    // 即时重绘功能区控件按压高亮状态
+                    RibbonController.InvalidateRibbon();
+                }
             }
             catch { }
         }

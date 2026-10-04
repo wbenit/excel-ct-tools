@@ -1,3 +1,24 @@
+- **【全量闭环交付】Ribbon 功能区【本机项目】升级为 toggleButton 切换控件并依据控制台工程表动态呈现 Checked 状态（方案 A + 模式一） (`RibbonController.cs`, `Services/ExcelServices.Project.cs`, `ExcelEventManager.cs`, `Forms/LocalProjectForm.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心指令与决策落地 (方案 A + 模式一)**：
+     - 用户指令：“ribbon中本机项目修改为check类型，如果当前路径已经在如图表中，则显示checked状态，理解表述需求”；
+     - 用户采纳**方案 A（`toggleButton` 大图标，保持与联动CAD/聚光灯风格一致）** 与 **模式一（指示当前文件是否收录 + 点击唤起本地文件管理控制台）**。
+  2. **全面系统性架构设计与落地**：
+     - **【Ribbon XML 与回调集成】(`RibbonController.cs`)**：
+       - 将【我的项目】分组中的 `splitButton` 升级为 `<toggleButton id='tglLocalProject' label='本机项目' imageMso='Folder' size='large' getPressed='GetLocalProjectPressed' onAction='OnLocalProjectToggleAction' ... />`；
+       - `GetLocalProjectPressed`：动态调用 `ExcelServices.IsActiveWorkbookInLocalProjectTable()` 返回 true/false 呈现高亮按压 Checked 状态；
+       - `OnLocalProjectToggleAction`：点击唤起基于 WebView2 + Vue 3 的“本地文件管理控制台”窗口，并即时重绘 Ribbon；同时在 `OnMenuAction` 中向下兼容旧指令。
+     - **【高性能轻量级路径比对引擎】(`Services/ExcelServices.Project.cs`)**：
+       - `IsActiveWorkbookInLocalProjectTable`：3 秒短效纯内存防抖缓存，避免 Ribbon 高频重绘带来重复磁盘 I/O；
+       - 向上逐级探测当前工作簿所在的 `projectJsonFile` 目录，并兼容全局/已知候选工程目录池（如 `E:\BaiduNetdiskWorkspace\hj\projectJsonFile`、`E:\2026\projectJsonFile` 等）；
+       - 优先锁定当前工程代号（如 `GZ115.json`），纯文本快速粗筛短路 + `JsonDocument` 精确比对物理路径、相对路径及文件名归属。
+     - **【全生命周期状态感知与自愈刷新】(`ExcelEventManager.cs`, `Forms/LocalProjectForm.cs`)**：
+       - 在 `ExcelEventManager` 中挂载并注销 `WorkbookAfterSave` 事件；
+       - 当用户切换工作簿（`WorkbookActivate`）、保存文件（`WorkbookAfterSave`）或关闭本地控制台窗体（`LocalProjectForm.OnFormClosing`）时，主动调用 `ExcelServices.InvalidateLocalProjectCache()` 与 `RibbonController.InvalidateRibbon()`，实现界面高亮状态实时毫秒级响应。
+  3. **构建验证与物理产物同步**：
+     - 新增代码严格遵循**至少每 3 行包含一行中文注释**规范，硬编码均标识 `--硬编码--`；
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+     - 程序集全量同步覆盖至 `publish/ExcelAddInDemo.dll`。
+
 - **【全量闭环交付：多项目全量代码拉取、功能双向无损融合与远程推送闭环】(`ExcelAddInCTtools`, `cad-net_1`)**：
   1. **用户核心指令与决策落地**:
      - 用户指令：“拉取所有代码，并根据功能合并，不清楚的需要先确认” -> 方案确认：“同意、需要”；
