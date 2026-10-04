@@ -36,6 +36,9 @@ namespace ExcelAddInDemo.Services
         // 待发送的是否缩放标志暂存
         private static bool _pendingAutoZoom = true;
 
+        // 待发送的所属箱柜名称暂存区
+        private static string _pendingCabinetName = string.Empty;
+
         // 同步锁
         private static readonly object _timerLock = new object();
 
@@ -45,7 +48,8 @@ namespace ExcelAddInDemo.Services
         /// <param name="handles">CAD 句柄列表</param>
         /// <param name="autoZoom">是否开启视角自动缩放对焦，默认 true</param>
         /// <param name="delayMs">防抖延时毫秒数，默认 50ms</param>
-        public static void SendHandlesDebounced(List<string>? handles, bool autoZoom = true, int delayMs = 50)
+        /// <param name="cabinetName">当前选中的箱柜名称 (柜号)，用于联动 TuFan 面板同步选择</param>
+        public static void SendHandlesDebounced(List<string>? handles, bool autoZoom = true, int delayMs = 50, string? cabinetName = null)
         {
             // 若联动开关未开启，直接忽略
             if (!SyncToCadEnabled) return;
@@ -55,6 +59,8 @@ namespace ExcelAddInDemo.Services
                 // 暂存最新的句柄数据副本与对焦标志
                 _pendingHandles = handles != null ? new List<string>(handles) : new List<string>();
                 _pendingAutoZoom = autoZoom && AutoZoomEnabled;
+                // 暂存当前行关联的箱柜名称
+                _pendingCabinetName = cabinetName ?? string.Empty;
 
                 // 若计时器已存在则重置触发时间，否则新建一次性计时器
                 if (_debounceTimer == null)
@@ -75,15 +81,18 @@ namespace ExcelAddInDemo.Services
         {
             List<string> handlesToSend;
             bool autoZoomToSend;
+            string cabinetNameToSend;
             lock (_timerLock)
             {
                 // 复制出待发送的句柄集合与缩放标志
                 handlesToSend = new List<string>(_pendingHandles);
                 autoZoomToSend = _pendingAutoZoom;
+                // 复制出待发送的箱柜名称
+                cabinetNameToSend = _pendingCabinetName;
             }
 
             // 启动后台异步任务发送数据至 CAD
-            Task.Run(() => SendToPipeAsync(handlesToSend, autoZoomToSend));
+            Task.Run(() => SendToPipeAsync(handlesToSend, autoZoomToSend, cabinetNameToSend));
         }
 
         /// <summary>
@@ -91,22 +100,24 @@ namespace ExcelAddInDemo.Services
         /// </summary>
         /// <param name="handles">句柄列表</param>
         /// <param name="autoZoom">是否自动聚焦缩放</param>
-        private static async Task SendToPipeAsync(List<string> handles, bool autoZoom)
+        /// <param name="cabinetName">当前选中的箱柜名称</param>
+        private static async Task SendToPipeAsync(List<string> handles, bool autoZoom, string? cabinetName = null)
         {
             try
             {
                 // 构造入站管道客户端实例
                 using (var pipeClient = new NamedPipeClientStream(".", PipeName, PipeDirection.Out))
                 {
-                    // 尝试连接 CAD 管道服务端，设置超时 50 毫秒
-                    await pipeClient.ConnectAsync(50);
+                    // 尝试连接 CAD 管道服务端，设置超时 200 毫秒（非阻塞异步连接）
+                    await pipeClient.ConnectAsync(200);
 
                     // 构造发送的载荷对象
                     var payload = new
                     {
                         action = "selectHandles",
                         handles = handles,
-                        autoZoom = autoZoom
+                        autoZoom = autoZoom,
+                        cabinetName = cabinetName ?? string.Empty
                     };
 
                     // 序列化为 JSON 字符串并在尾部添加换行符以契合服务端按行读取协议
