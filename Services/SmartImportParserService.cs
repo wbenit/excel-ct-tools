@@ -308,6 +308,32 @@ namespace ExcelAddInDemo.Services
                                 string brand = (colMap.BrandCol > 0) ? GetMatrixString(matrix, compRow, colMap.BrandCol) : "";
                                 string remark = (colMap.RemarkCol > 0) ? GetMatrixString(matrix, compRow, colMap.RemarkCol) : "";
 
+                                // 方案 B：提取扩展列 1 对应文本
+                                string extraVal1 = "";
+                                if (colMap.ExtraCol1 != null && colMap.ExtraCol1.SourceCol > 0)
+                                {
+                                    // 从矩阵指定源列中安全读取字符串文本
+                                    extraVal1 = GetMatrixString(matrix, compRow, colMap.ExtraCol1.SourceCol);
+                                    // 若扩展列 1 的目标列恰好为单位列 (第 5 列) 且值有效，同步校准 unit
+                                    if (colMap.ExtraCol1.TargetCol == 5 && !string.IsNullOrWhiteSpace(extraVal1))
+                                    {
+                                        unit = extraVal1.Trim();
+                                    }
+                                }
+
+                                // 方案 B：提取扩展列 2 对应文本
+                                string extraVal2 = "";
+                                if (colMap.ExtraCol2 != null && colMap.ExtraCol2.SourceCol > 0)
+                                {
+                                    // 从矩阵指定源列中安全读取字符串文本
+                                    extraVal2 = GetMatrixString(matrix, compRow, colMap.ExtraCol2.SourceCol);
+                                    // 若扩展列 2 的目标列恰好为备注列 (第 9 列) 且值有效，同步校准 remark
+                                    if (colMap.ExtraCol2.TargetCol == 9 && !string.IsNullOrWhiteSpace(extraVal2))
+                                    {
+                                        remark = extraVal2.Trim();
+                                    }
+                                }
+
                                 components.Add(new ParsedComponentModel
                                 {
                                     Index = compIndex++,
@@ -317,7 +343,11 @@ namespace ExcelAddInDemo.Services
                                     Unit = unit,
                                     MarkedPrice = price,
                                     Brand = brand,
-                                    Remark = remark
+                                    Remark = remark,
+                                    // 记录方案 B 扩展列 1 提取的值
+                                    ExtraValue1 = extraVal1,
+                                    // 记录方案 B 扩展列 2 提取的值
+                                    ExtraValue2 = extraVal2
                                 });
 
                                 totalMarked += (qty * price);

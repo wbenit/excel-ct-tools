@@ -176,9 +176,22 @@ namespace ExcelAddInDemo
                     ExcelServices.UpdateSpotlightPosition(target);
                 }
 
-                // 1. 若开启了 CAD 联动，只要选区触及常规核心列 (A~G 列) 且 AD/AA 列存在句柄，即时向 CAD 发起联动
+                // 提取所属工作表与工作簿 COM 对象
                 var ws = (shObj as Microsoft.Office.Interop.Excel.Worksheet) ?? target.Worksheet;
                 var wb = ws?.Parent as Microsoft.Office.Interop.Excel.Workbook;
+
+                // 核心安全守门一：若当前工作簿不是成套工程工作簿 (不含【项目信息】表)，0ms 极速放行并退出
+                // 彻底杜绝在外部公司的普通报价单中盲目读取 AD/AA 列与调用箱柜检索引起的卡顿
+                if (!Tool.IsProjectWorkbook(wb))
+                {
+                    // 安全隐藏浮窗，避免遮挡外部常规表格视线
+                    ExcelServices.HideSmartInputOverlay();
+                    // 隐藏物料联想覆盖下拉框
+                    ExcelServices.HideComponentMatchOverlay();
+                    return;
+                }
+
+                // 1. 若开启了 CAD 联动，只要选区触及常规核心列 (A~G 列) 且 AD/AA 列存在句柄，即时向 CAD 发起联动
                 int startCol = target.Column;
                 int endCol = startCol + target.Columns.Count - 1;
                 // 选区覆盖 A~G 列 (第 1~7 列: 序号/名称/型号/厂家/单位/数量/单价) 或包含 C 列或整行
@@ -231,15 +244,6 @@ namespace ExcelAddInDemo
                         }
                     }
                     catch { }
-                }
-
-                // 核心安全守门：若当前工作簿不是成套工程工作簿 (不含【项目信息】表)，直接隐藏浮窗并退出，杜绝干扰常规表格
-                if (!Tool.IsProjectWorkbook(wb))
-                {
-                    // 隐藏浮窗并快速放行
-                    ExcelServices.HideSmartInputOverlay();
-                    ExcelServices.HideComponentMatchOverlay();
-                    return;
                 }
 
                 // 2. 处理 UI 浮窗交互：若选中的是单个单元格
@@ -400,8 +404,7 @@ namespace ExcelAddInDemo
                 // 切换工作簿时同步清空上一工作簿的元器件行区间缓存
                 ExcelServices.InvalidateCategoryRowCache();
 
-                // 切换工作簿时清空本机项目文件缓存，并刷新 Ribbon 按钮按压状态
-                ExcelServices.InvalidateLocalProjectCache();
+                // 切换工作簿时仅触发功能区控件重绘，依靠多路径短效纯内存缓存实现 0ms 顺滑响应
                 RibbonController.InvalidateRibbon();
             }
             catch { }

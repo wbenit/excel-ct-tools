@@ -698,8 +698,9 @@ namespace ExcelAddInDemo
                     name = comp.Name ?? string.Empty;
                     spec = comp.Specification ?? string.Empty;
                     mfr = comp.Manufacturer ?? string.Empty;
-                    // 无论有无名称，只要存在元器件实体均默认填入"只" --硬编码: 默认元器件单位--
-                    unit = "只";
+                    // 优先使用实体自带的有效计量单位，无单位时兜底填入"只"
+                    unit = !string.IsNullOrWhiteSpace(comp.Unit) ? comp.Unit : "只";
+                    // 若单价大于 0 则赋给面价值
                     if (comp.UnitPrice > 0) mVal = comp.UnitPrice;
                 }
 
@@ -728,8 +729,10 @@ namespace ExcelAddInDemo
                 // H 列 (索引 7): 销售总价 =IF(AND(B{row}="",C{row}=""),"",ROUND(F{row}*G{row},2))
                 matrix[r, 7] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",ROUND(F{currPhysicalRow}*G{currPhysicalRow},2))";
 
-                // I 列 (索引 8): 备注 (保留空字符串)
-                matrix[r, 8] = string.Empty;
+                // I 列 (索引 8): 备注 (若传入元器件包含备注则安全回写，否则保留空字符串)
+                matrix[r, 8] = (components != null && r < components.Count && !string.IsNullOrWhiteSpace(components[r].Remark))
+                    ? components[r].Remark
+                    : string.Empty;
 
                 // J 列 (索引 9): 成本单价 =IF(AND(B{row}="",C{row}=""),"",ROUND(M{row}*N{row},2))
                 if (components != null && r < components.Count && components[r].CostUnitPrice > 0)
@@ -1528,6 +1531,13 @@ namespace ExcelAddInDemo
             }
         }
 
+        // 工作簿是否为成套工程的短效纯内存缓存 (Key: 工作簿全路径或名称, Value: (是否成套工程, 缓存时间戳))
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (bool IsProject, DateTime CacheTime)> _projectWorkbookCache =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, (bool, DateTime)>();
+
+        // 工作簿短效缓存有效期 (设定为 10 秒)
+        private static readonly TimeSpan _projectWorkbookCacheExpiry = TimeSpan.FromSeconds(10);
+
         /// <summary>
         /// 判定指定 Excel 工作簿是否属于标准的成套电气报价工程工作簿
         /// 核心准入标准：工作簿中必须显式包含名为【项目信息】的主表中枢
@@ -1542,28 +1552,49 @@ namespace ExcelAddInDemo
             try
             {
                 dynamic dWb = wb;
-                // 尝试直接通过索引器获取【项目信息】工作表句柄 --硬编码: 项目信息工作表名--
-                dynamic? infoSheet = null;
-                try { infoSheet = dWb.Sheets["项目信息"]; } catch { }
-                if (infoSheet != null) return true;
+                // 提取工作簿唯一标识键 (优先使用 FullName，未存盘使用 Name)
+                string wbKey = string.Empty;
+                try { wbKey = Convert.ToString(dWb.FullName)?.Trim() ?? ""; } catch { }
+                if (string.IsNullOrEmpty(wbKey))
+                {
+                    // 兜底提取纯工作簿名称
+                    try { wbKey = Convert.ToString(dWb.Name)?.Trim() ?? ""; } catch { }
+                }
+                // 若仍为空则采用对象的散列码
+                if (string.IsNullOrEmpty(wbKey)) wbKey = wb.GetHashCode().ToString();
 
-                // 容错遍历工作簿的所有工作表名称
+                var now = DateTime.UtcNow;
+                // 1. 高速纯内存缓存拦截 (0ms 纯内存命中，消除反复遍历与 COM 查询开销)
+                if (_projectWorkbookCache.TryGetValue(wbKey, out var cached) && (now - cached.CacheTime) < _projectWorkbookCacheExpiry)
+                {
+                    // 命中有期内的内存缓存直接返回判定结果
+                    return cached.IsProject;
+                }
+
+                bool isProj = false;
+                // 2. 遍历工作簿的所有工作表名称进行比对 (杜绝通过 Sheets["项目信息"] 引发 COM 异常和栈解开)
                 if (dWb.Worksheets != null)
                 {
                     foreach (dynamic ws in dWb.Worksheets)
                     {
                         try
                         {
+                            // 提取当前工作表名称
                             string sName = Convert.ToString(ws.Name)?.Trim() ?? "";
-                            // 匹配“项目信息”工作表名
+                            // 匹配是否存在“项目信息”工作表
                             if (string.Equals(sName, "项目信息", StringComparison.OrdinalIgnoreCase))
                             {
-                                return true;
+                                isProj = true;
+                                break;
                             }
                         }
                         catch { }
                     }
                 }
+
+                // 3. 记录判定结果至短效内存缓存中
+                _projectWorkbookCache[wbKey] = (isProj, now);
+                return isProj;
             }
             catch { }
 

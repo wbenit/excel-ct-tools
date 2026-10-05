@@ -226,6 +226,8 @@ namespace ExcelAddInDemo.Forms
                     case "openSummaryAdjustPrice":
                     case "openComponentManage":
                     case "openCabinetAuxCalc":
+                    // 恢复此前误删的元器件图纸参数匹配侧边窗口调起分支
+                    case "openComponentParamMatch":
                     case "openOnlinePriceSearch":
                     case "switchToNativeMenu":
                     // 元件汇总分布表专属操作
@@ -235,6 +237,7 @@ namespace ExcelAddInDemo.Forms
                     case "clearDistributionFilter":
                     case "addToPersonalDb":
                     case "splitComponent":
+                    case "deleteCategory":
                         // 收到菜单点击指令：先隐藏菜单并关闭浮窗，后通过 ExcelAsyncUtil.QueueAsMacro 异步执行
                         SafeInvoke(() =>
                         {

@@ -221,7 +221,11 @@ namespace ExcelAddInDemo
                                         Manufacturer = pc.Brand,
                                         Quantity = pc.Quantity,
                                         // 重点：将外部单价写入表价/面价 (UnitPrice 映射到 Tool 中的 M 列面价)
-                                        UnitPrice = pc.MarkedPrice
+                                        UnitPrice = pc.MarkedPrice,
+                                        // 方案 B：携带并回填计量单位
+                                        Unit = pc.Unit,
+                                        // 方案 B：携带并回填备注文本
+                                        Remark = pc.Remark
                                     });
                                 }
                             }
@@ -231,6 +235,11 @@ namespace ExcelAddInDemo
                             // 数组一次性批量写入 Excel 区域 (规则 7)
                             newSheet.Range[$"A{compStartRow}:U{compEndRow}"].Formula = compMatrix;
                             importedCompTotal += actualCompCount;
+
+                            // 方案 B：根据用户配置将扩展列 1 批量安全写入导入表任意指定目标列
+                            WriteExtraColumnIfConfigured(newSheet, compStartRow, actualCompCount, cab.Components, request.Config?.ColumnMapping?.ExtraCol1, 1);
+                            // 方案 B：根据用户配置将扩展列 2 批量安全写入导入表任意指定目标列
+                            WriteExtraColumnIfConfigured(newSheet, compStartRow, actualCompCount, cab.Components, request.Config?.ColumnMapping?.ExtraCol2, 2);
                         }
 
                         // 10. 检查计费区域 (SubsumRow 到 TolsumRow-1) 是否存在空行，确保公式紧凑闭环 (规则 6)
@@ -380,6 +389,68 @@ namespace ExcelAddInDemo
             catch (Exception ex)
             {
                 LogHelper.WriteLog($"[CleanEmptyRowsInBillingZone] 清理计费空行异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 方案 B：根据用户配置的扩展列映射，将额外提取的数据批量写入导入表目标列 (规则 7 数组极速覆写)
+        /// </summary>
+        /// <param name="sheet">目标工作表句柄</param>
+        /// <param name="startRow">元器件起始物理行号</param>
+        /// <param name="compCount">实际有效元器件数量</param>
+        /// <param name="components">已解析的元器件明细集合</param>
+        /// <param name="extraCol">扩展列映射配置对象</param>
+        /// <param name="colSlotIndex">扩展列槽位 (1: ExtraCol1, 2: ExtraCol2)</param>
+        private static void WriteExtraColumnIfConfigured(
+            dynamic sheet,
+            int startRow,
+            int compCount,
+            List<ParsedComponentModel>? components,
+            ExtraColumnMapping? extraCol,
+            int colSlotIndex)
+        {
+            // 校验扩展列配置有效性：源列号与目标列号均必须大于 0 且存在有效组件
+            if (extraCol == null || extraCol.SourceCol <= 0 || extraCol.TargetCol <= 0) return;
+            // 校验行号与列表有效性
+            if (components == null || compCount <= 0 || startRow <= 0) return;
+
+            try
+            {
+                // 计算实际写入的物理行数 (不超过元器件集合上限)
+                int writeRows = Math.Min(compCount, components.Count);
+                // 构建单列二维数组 (规则 7：杜绝逐格单元格 COM 互操作，一次性批量赋值)
+                object[,] colMatrix = new object[writeRows, 1];
+
+                // 遍历提取每个元件在当前槽位的数据
+                for (int r = 0; r < writeRows; r++)
+                {
+                    var pc = components[r];
+                    // 依据当前槽位索引获取提取的文本
+                    string val = (colSlotIndex == 1) ? pc.ExtraValue1 : pc.ExtraValue2;
+                    // 若槽位暂无直接提取值，根据目标列意图回退取值
+                    if (string.IsNullOrEmpty(val))
+                    {
+                        // 目标为第 5 列时优先回退 Unit 字段
+                        if (extraCol.TargetCol == 5) val = pc.Unit;
+                        // 目标为第 9 列时优先回退 Remark 字段
+                        else if (extraCol.TargetCol == 9) val = pc.Remark;
+                    }
+                    // 赋入单列二维矩阵
+                    colMatrix[r, 0] = val ?? string.Empty;
+                }
+
+                // 计算目标列对应的标准 Excel 字母列标 (例如 5->E, 9->I, 15->O)
+                string colLetter = GetExcelColumnLetter(extraCol.TargetCol);
+                // 计算截止写入行号
+                int endRow = startRow + writeRows - 1;
+
+                // 数组一次性写入目标列指定范围 (规则 7)
+                sheet.Range[$"{colLetter}{startRow}:{colLetter}{endRow}"].Value2 = colMatrix;
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志，保障导入主流程不中断
+                LogHelper.WriteLog($"[WriteExtraColumnIfConfigured] 槽位 {colSlotIndex} 写入目标列 {extraCol.TargetCol} 异常: {ex.Message}");
             }
         }
     }

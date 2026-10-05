@@ -130,6 +130,26 @@
         flex-shrink: 0;
       }
 
+      /* 智能匹配按钮样式 (微型紧凑，主题色高对比度呈现) */
+      .match-btn {
+        padding: 2px 5px;
+        font-size: 11px;
+        height: 22px;
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        flex-shrink: 0;
+        background-color: #009688 !important;
+        border-color: #009688 !important;
+        color: #ffffff !important;
+        font-weight: 500;
+      }
+
+      .match-btn:hover {
+        background-color: #00796b !important;
+        border-color: #00796b !important;
+      }
+
       .cur-dir-tag {
         flex: 1;
         overflow: hidden;
@@ -430,6 +450,16 @@
         >
           ⬆️ 上级
         </el-button>
+        <el-button
+          class="match-btn"
+          size="small"
+          type="success"
+          :loading="isMatching"
+          @click="autoMatchDirectory"
+          title="根据当前 Excel 选中行元器件名称自动进入最匹配分类目录"
+        >
+          🎯 匹配
+        </el-button>
         <div class="cur-dir-tag" :title="currentFullPath">
           {{ currentFolderName || '根目录' }}
         </div>
@@ -557,6 +587,8 @@
             const searchKeyword = ref("");
             // 状态提示文本
             const statusText = ref("就绪: 双击DWG写入Excel");
+            // 标记智能匹配中加载状态
+            const isMatching = ref(false);
             // 记录最近一次写入的 DWG 名称用于高亮反馈
             const lastBoundDwg = ref("");
             // 当前聚焦识别到的 Excel 工作表名称
@@ -714,6 +746,13 @@
               }, 1200);
             }
 
+            // 点击“🎯 匹配”按钮：向宿主发起根据当前行元器件名称自动匹配目录请求
+            function autoMatchDirectory() {
+              isMatching.value = true;
+              statusText.value = "正在检索当前行元器件并匹配目录...";
+              postToCSharp({ action: "autoMatchDirectory" });
+            }
+
             // 最小化窗口
             function minimizeWindow() {
               postToCSharp({ action: "minimizeWindow" });
@@ -796,6 +835,16 @@
                         statusText.value = `❌ ${msg.message || "写入失败"}`;
                       }
                     }
+                    // 5. 智能匹配目录结果回发
+                    else if (msg.action === "autoMatchResult") {
+                      isMatching.value = false;
+                      applyScanResult(msg.scanData);
+                      if (msg.success) {
+                        statusText.value = `✅ 已匹配进入: [${msg.matchedDirName}] (元器件: ${msg.componentName || ''})`;
+                      } else {
+                        statusText.value = `⚠️ 未匹配到目录，已返回根目录 (原名: ${msg.componentName || '无'})`;
+                      }
+                    }
                   } catch (err) {
                     console.error("IPC 消息解析异常:", err);
                   }
@@ -827,6 +876,8 @@
               handleDwgRightClick,
               handleScrollAreaRightClick,
               bindDwg,
+              isMatching,
+              autoMatchDirectory,
               minimizeWindow,
               closeWindow,
             };

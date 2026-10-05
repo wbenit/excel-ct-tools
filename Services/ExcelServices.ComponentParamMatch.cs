@@ -142,5 +142,48 @@ namespace ExcelAddInDemo
                 return (false, $"写入失败: {ex.Message}", 0, "AA", "AB", "");
             }
         }
+
+        /// <summary>
+        /// 安全获取当前活动工作表当前光标所在行的元器件名称 (优先 B 列名称，若为空安全回退 C 列型号)
+        /// </summary>
+        /// <returns>当前行的元器件名称字符串</returns>
+        public static string GetActiveRowComponentName()
+        {
+            try
+            {
+                // 获取 Excel 宿主全局 Application 对象句柄
+                dynamic? app = ExcelDnaUtil.Application;
+                if (app == null) return string.Empty;
+
+                // 获取当前活动工作表对象
+                dynamic? sheet = app.ActiveSheet;
+                if (sheet == null) return string.Empty;
+
+                // 获取当前聚焦的活动单元格对象
+                dynamic? activeCell = app.ActiveCell;
+                if (activeCell == null) return string.Empty;
+
+                // 读取当前活动单元格物理行号
+                int activeRow = Convert.ToInt32(activeCell.Row);
+                if (activeRow <= 0) return string.Empty;
+
+                // 优先读取 B 列 (第 2 列: 元器件名称)
+                string compName = Convert.ToString(sheet.Cells[activeRow, 2]?.Value2)?.Trim() ?? string.Empty;
+
+                // 若 B 列为空，尝试读取 C 列 (第 3 列: 规格型号) 进行辅助推断
+                if (string.IsNullOrWhiteSpace(compName))
+                {
+                    compName = Convert.ToString(sheet.Cells[activeRow, 3]?.Value2)?.Trim() ?? string.Empty;
+                }
+
+                return compName;
+            }
+            catch (Exception ex)
+            {
+                // 记录读取元器件名称异常日志
+                LogHelper.WriteLog($"[ExcelServices] GetActiveRowComponentName 异常: {ex.Message}");
+                return string.Empty;
+            }
+        }
     }
 }

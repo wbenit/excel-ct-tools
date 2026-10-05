@@ -1,3 +1,76 @@
+- **【全量闭环交付】图纸参数匹配面板新增【🎯 匹配】按钮并支持根据当前行元器件名称自动进入最匹配分类目录 (`Services/ExcelServices.ComponentParamMatch.cs`, `Services/DwgPreviewService.cs`, `Forms/ComponentParamMatchForm.cs`, `Resources/component_param_match.html`, `publish/ExcelAddInDemo.dll`, `publish/Resources/component_param_match.html`)**：
+  1. **用户核心指令与决策落地 (方式一 + 失败回退根目录)**：
+     - 用户指令：“需要在面板设置一个‘匹配’按钮，点击后根据元器件名称自动进入最匹配的目录”；
+     - 用户明确指定**方式一（仅手动点击按钮触发）**，并在未匹配到目录时**自动返回图纸库根物理目录**。
+  2. **全面系统性架构与实现闭环**：
+     - **【Excel 活跃行元器件名称安全提取】(`Services/ExcelServices.ComponentParamMatch.cs`)**：
+       - 实现 `GetActiveRowComponentName()`：在 Excel 宏主线程中安全提取 `ActiveCell.Row` 所在行的元器件名称；优先读取 B 列（分类表与元件汇总表标准名称列），若为空则自动读取 C 列规格型号作为兜底推断；
+     - **【两阶段电气术语模糊与加权匹配引擎】(`Services/DwgPreviewService.cs`)**：
+       - 实现 `FindBestMatchingDirectory(baseDir, compName)`：
+         - 建立电气行业核心术语别名映射词典（覆盖微断/塑壳/框架/浪涌/接触器/热继/熔断器/刀熔/双电源/变频器/变压器/电能表等20+大类常见别名与缩写）；
+         - 采用多维加权评分机制（完全匹配 100分、别名映射 95分、包含关系 90分、字符交集相似度 60~85分），阈值设定为 60 分以杜绝误匹配；
+     - **【消息路由与下钻调度】(`Forms/ComponentParamMatchForm.cs`)**：
+       - 在 `OnWebMessageReceived` 中新增 `autoMatchDirectory` 指令监听；
+       - 若成功命中目录，调度 `ScanDirectoryHierarchy` 扫描并切入该子目录；
+       - 若未达到匹配阈值，严格按用户决策自动回退至根物理目录 `baseDir`，并回发包含状态与元件原名的提示报文；
+     - **【200px 紧凑面板 UI 与交互呈现】(`Resources/component_param_match.html`)**：
+       - 在 `.nav-bar` 紧凑放置 `🎯 匹配` 按钮（`#009688` 主题色高对比度呈现，支持 `:loading="isMatching"`）；
+       - 点击即时反馈：“正在检索当前行元器件并匹配目录...”；
+       - 命中成功：“✅ 已匹配进入: [塑壳断路器] (元器件: ...)”；未命中：“⚠️ 未匹配到目录，已返回根目录 (原名: ...)”。
+  3. **构建验证与物理产物同步**：
+     - 严格遵循每 3 行新增代码至少 1 行规范中文注释规范；
+     - `dotnet build ExcelAddInDemo.csproj -p:RunExcelDnaBuild=false` 编译通过：**0 错误**；
+     - 程序集与 HTML 页面全量物理同步覆写至 `publish/` 与 `bin/Debug/net48/` 目录。
+
+- **【缺陷排查与最小改动恢复】右键菜单【图纸参数匹配...】历史误删路由精准还原 (`Forms/CustomContextMenuForm.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **历史提交追溯与根因核实**：
+     - **功能早已实现且成熟**：该功能原本全部完整可用，包括 `Forms/ComponentParamMatchForm.cs`、`Resources/component_param_match.html` 以及 `Services/ExcelServices.ComponentParamMatch.cs` 均已在以往版本中投入实际使用；
+     - **历史合并误删单行**：经 Git 历史精确定位（`commit d6322020`，日期 2026-10-02），在合并“企业设置与分布表”代码时，`Forms/CustomContextMenuForm.cs` 的消息分发外层 `switch (action)` 中，误删掉了原本存在的 `- case "openComponentParamMatch":` 这 1 行代码；而下方的具体执行方法 `ExecuteMenuAction` 中的业务调用代码（第 523 行）一直完好保留；
+     - 由于外层分发漏掉了该行，导致点击菜单时消息未能路由到下方的执行方法。
+  2. **恪守最小改动法则精准恢复**：
+     - 坚决不新写或过度重构已有功能代码，对原本运作正常的 `ComponentParamMatchForm.cs` 和前端 HTML 保持 100% 原始状态；
+     - 严格在 [`Forms/CustomContextMenuForm.cs`](file:///e:/Ace/excel-ct-tools/Forms/CustomContextMenuForm.cs) 的外层 `switch` 中，把此前误删的那 1 行 `case "openComponentParamMatch":`（及伴随的 `case "deleteCategory":`）原封不动补回，恢复历史版本原貌。
+  3. **构建验证与物理产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj -p:RunExcelDnaBuild=false` 编译通过：**0 错误**；
+     - 最新程序集全量同步至 [`publish/ExcelAddInDemo.dll`](file:///e:/Ace/excel-ct-tools/publish/ExcelAddInDemo.dll)。
+
+- **【性能优化闭环】彻底根除在其他公司报价单与本插件报价单来回切换很卡的问题 (`ExcelEventManager.cs`, `Tool.cs`, `Services/ExcelServices.Project.cs`, `Forms/LocalProjectForm.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **问题根因定位**：
+     - **外部表格未守门**：`OnSheetSelectionChange` 中 CAD 夹点联动（遍历读取 50 行的 AD/AA 句柄及解析箱柜名称）在 `!Tool.IsProjectWorkbook` 检查之前，导致每次点击外部表格或切换到外部表格时盲目跨进程读取其单元格并执行无意义的箱柜匹配；
+     - **主线程同步磁盘 I/O 阻塞**：`OnWorkbookActivate` 每次激活工作簿都调用 `InvalidateLocalProjectCache()` 清空缓存并 `InvalidateRibbon()`，促使 `IsActiveWorkbookInLocalProjectTable` 在主 UI 线程上逐层向上攀爬递归目录查找 `projectJsonFile` 并遍历读取磁盘 JSON，引发 1~3 秒界面假死；
+     - **COM 异常频繁抛出**：原 `IsProjectWorkbook` 通过 `try { dWb.Sheets["项目信息"]; } catch` 进行试探，外部表格每次点击和切换都抛出底层 `COMException`，造成高频 CLR 栈解开开销。
+  2. **精准架构优化实施**：
+     - **【选区事件守门彻底前置】(`ExcelEventManager.cs`)**：在 `OnSheetSelectionChange` 聚光灯更新后，立即校验 `if (!Tool.IsProjectWorkbook(wb))`，若非成套工程表格立即安全隐匿浮窗并 0ms 直接 `return`，彻底杜绝在外部表格上执行任何单元格读取和 CAD 通信；
+     - **【工作簿工程属性短效内存缓存与无异常判定】(`Tool.cs`)**：引入 10 秒 `_projectWorkbookCache` 纯内存短效缓存；未命中时安全遍历 `dWb.Worksheets` 对比表名，彻底杜绝抛出 COM 异常；
+     - **【消除激活事件中的磁盘 I/O 阻塞】(`ExcelEventManager.cs`, `Services/ExcelServices.Project.cs`)**：
+       - 在 `IsActiveWorkbookInLocalProjectTable` 头部加入非工程表格 0ms 短路（`!Tool.IsProjectWorkbook(activeWb)` 直接返回 false，绝对不碰磁盘）；
+       - 将单变量路径缓存升级为 15 秒多路径字典缓存 `_localProjectCheckCache`；
+       - 从 `OnWorkbookActivate` 移除多余的强清缓存操作，保留 Ribbon 0ms 纯内存刷新；
+     - **【移除主线程高频写盘调试日志】(`Forms/LocalProjectForm.cs`)**：将 `GetActiveWorkbookInfo` 中的 `LogHelper.WriteLog` 替换为控制台输出，消除了切换工作簿时的同步本地日志文件锁竞争。
+  3. **构建验证**：
+     - 执行 `dotnet build -p:RunExcelDnaBuild=false`：**0 错误**，最新 `ExcelAddInDemo.dll` 成功生成并同步至 `publish` 目录。
+
+- **【全量闭环交付】智能导入箱柜 BOM 工作台支持多携带 2 列进入导入表（方案 B：通用任意扩展列，可选择填入导入表任意列） (`Models/SmartImportModels.cs`, `Services/SmartImportParserService.cs`, `Services/ExcelServices.SmartImport.cs`, `Tool.cs`, `Resources/smart_import.html`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心指令与决策落地 (方案 B)**：
+     - 用户指令：“需求是导入的时候把原表里面多携带2列进入导入表，表述需求和如何设计” -> 用户确认执行：“方案 B（通用任意扩展列），可以选择填入导入表的任意列”。
+  2. **全面系统性架构设计与落地**：
+     - **【数据契约与模板持久化】(`Models/SmartImportModels.cs`)**：
+       - 新增 `ExtraColumnMapping` 实体（含 `SourceCol` 原表列号、`TargetCol` 导入表目标列号、`CustomLabel` 标签、`Keywords` 自动嗅探关键字）；
+       - 在 `SmartImportColumnMapping` 中引入 `ExtraCol1`（默认目标 5 即 E 列单位）与 `ExtraCol2`（默认目标 9 即 I 列备注）；
+       - 在 `ParsedComponentModel` 中扩充 `ExtraValue1` 与 `ExtraValue2` 属性。
+     - **【算法推导层升级】(`Services/SmartImportParserService.cs`)**：
+       - 在 `ScanCabinetsFromMatrix` 解析扫描元器件明细行时，提取 `colMap.ExtraCol1.SourceCol` 与 `colMap.ExtraCol2.SourceCol` 对应的单元格文本并赋入组件模型；若目标列分别指向单位（5）或备注（9），自动协同纠偏。
+     - **【底层矩阵生成与安全批量写入】(`Tool.cs`, `Services/ExcelServices.SmartImport.cs`)**：
+       - `Tool.BuildComponentRowsMatrix` 优化：优先采用元器件实体传入的 `comp.Unit`（取代硬编码“只”）与 `comp.Remark`（取代硬编码空串）；
+       - 在新建分类表批量写入基础 21 列矩阵后，新增私有方法 `WriteExtraColumnIfConfigured`：根据配置的 `TargetCol`，构造单列二维数组并调用 Excel COM 一次性批量赋值（规则 7），完美兼容将扩展列写入任意目标列（如 E、I、D、O、P 或任意自定义列），绝不破坏规则 6 架构与公式联动体系。
+     - **【前端 UI 与交互体验】(`Resources/smart_import.html`)**：
+       - 列映射工具栏增加「扩展1」与「扩展2」的「原表源列 ➜ 导入表目标列」联动下拉组；
+       - 提供 `availableTargetColumns` 计算属性（优先推荐 E列单位、I列备注、D列厂家、O/P列预留等，并支持 A~Z 任意列选择）；
+       - 关键字弹窗增加扩展列关键字设置；表头行点击时自动嗅探识别 7 核心列并友好回显；右侧箱柜卡片列表中为提取到扩展列数据的条目呈现带悬浮气泡的曲别针标识；
+       - `normalizeConfig` 兼容历史模板，防止旧模板读取异常。
+  3. **构建验证**：
+     - 执行 `dotnet build -p:RunExcelDnaBuild=false`：**0 错误**，最新 `ExcelAddInDemo.dll` 成功生成并同步至 `publish` 目录。
+
 - **【已修复闭环】彻底根除 CAD 抓系统图到 Excel 格式错乱与定义名称错位缺陷 (`Services/ExcelServices.Cabinet.cs`, `bin/Debug/net48/ExcelAddInDemo.dll`)**：
   1. **问题诊断与根因定位**：
      - 用户反馈抓系统图后，Excel 出现重复的“报价人：吴”签名行、元器件表头消失被元器件数据覆盖、箱柜行 A 列被篡改为“序号2”、定义名称 `Cab_Det_3` 错误绑定到标题行（`$A$79`）；

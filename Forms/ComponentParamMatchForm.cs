@@ -262,6 +262,59 @@ namespace ExcelAddInDemo.Forms
                         }, JsonOptions));
                     }
                 }
+                // 3.1 智能目录匹配：根据当前活动单元格所在行元器件名称自动进入最匹配目录
+                else if (action == "autoMatchDirectory")
+                {
+                    // 在 Excel 主线程宏队列中安全读取当前行元器件名称并执行目录匹配
+                    ExcelAsyncUtil.QueueAsMacro(() =>
+                    {
+                        try
+                        {
+                            var cfg = ConfigManager.Instance.Current?.ComponentParamMatch ?? new ComponentParamMatchSettings();
+                            string baseDir = cfg.BaseDirectory;
+                            // 安全提取当前活动行元器件名称 (优先 B 列)
+                            string compName = ExcelServices.GetActiveRowComponentName();
+
+                            // 调度算法计算最匹配的一级分类目录
+                            var matchDir = DwgPreviewService.FindBestMatchingDirectory(baseDir, compName);
+                            string targetPath;
+                            bool isMatched = false;
+                            string matchedDirName = string.Empty;
+
+                            if (matchDir != null && !string.IsNullOrWhiteSpace(matchDir.FullPath) && Directory.Exists(matchDir.FullPath))
+                            {
+                                // 成功命中目标分类子目录
+                                targetPath = matchDir.FullPath;
+                                isMatched = true;
+                                matchedDirName = matchDir.Name;
+                            }
+                            else
+                            {
+                                // 用户决策指示：若未匹配到目录则自动返回图纸库根物理目录
+                                targetPath = Directory.Exists(baseDir) ? baseDir : string.Empty;
+                                isMatched = false;
+                            }
+
+                            // 扫描该目标目录下的子文件夹与图纸文件
+                            var scanResult = DwgPreviewService.ScanDirectoryHierarchy(targetPath);
+
+                            // 回发智能匹配执行结果通知前端 Vue3
+                            PostWebMessageSafe(JsonSerializer.Serialize(new
+                            {
+                                action = "autoMatchResult",
+                                success = isMatched,
+                                componentName = compName,
+                                matchedDirName = matchedDirName,
+                                scanData = scanResult
+                            }, JsonOptions));
+                        }
+                        catch (Exception exMatch)
+                        {
+                            // 记录智能匹配异常日志
+                            LogHelper.WriteLog($"[ComponentParamMatchForm] autoMatchDirectory 异常: {exMatch.Message}");
+                        }
+                    });
+                }
                 // 4. 双击 DWG 图纸文件：回写 Excel X/Y 列并自动跳向下一行
                 else if (action == "bindDwg")
                 {

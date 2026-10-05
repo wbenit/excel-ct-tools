@@ -234,8 +234,8 @@ namespace ExcelAddInDemo.Forms
                 // 💡 项目名称完全且唯一从物理路径中解析提取，彻底废除不可靠的 B5 单元格关联
                 string projName = ExtractProjectNameFromPath(fullPath);
 
-                // 记录提取调试日志
-                LogHelper.WriteLog($"[LocalProjectForm] 提取当前工作簿结果: 路径=[{fullPath}], 工程=[{projName}]");
+                // 仅在调试控制台输出提取结果，杜绝同步磁盘写盘拖慢主线程
+                System.Diagnostics.Debug.WriteLine($"[LocalProjectForm] 提取当前工作簿结果: 路径=[{fullPath}], 工程=[{projName}]");
 
                 // 返回提取到的物理全路径与工程名
                 return (fullPath, projName);

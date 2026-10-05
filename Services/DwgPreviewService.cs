@@ -1324,5 +1324,169 @@ namespace ExcelAddInDemo.Services
                 return (false, $"向 AutoCAD 发送插入指令失败: {exSend.Message}");
             }
         }
+
+        /// <summary>
+        /// 根据元器件名称智能计算并查找图纸库根物理目录下最匹配的分类子目录
+        /// </summary>
+        /// <param name="baseDirectory">图纸库根物理目录</param>
+        /// <param name="componentName">元器件名称 (如“交流接触器”、“微型断路器”、“浪涌保护器”等)</param>
+        /// <returns>最匹配的目录对象，若无匹配项则返回 null</returns>
+        public static DwgDirectoryItem? FindBestMatchingDirectory(string baseDirectory, string componentName)
+        {
+            // 基础入参有效性与目录存在性校验
+            if (string.IsNullOrWhiteSpace(baseDirectory) || !Directory.Exists(baseDirectory) || string.IsNullOrWhiteSpace(componentName))
+            {
+                return null;
+            }
+
+            try
+            {
+                // 获取根目录下的一级物理子文件夹
+                var subDirs = Directory.GetDirectories(baseDirectory);
+                if (subDirs == null || subDirs.Length == 0) return null;
+
+                // 收集所有有效的直接子目录列表
+                var candidateDirs = new List<DwgDirectoryItem>();
+                foreach (var dir in subDirs)
+                {
+                    try
+                    {
+                        var di = new DirectoryInfo(dir);
+                        // 排除隐藏属性的系统目录
+                        if ((di.Attributes & FileAttributes.Hidden) != 0) continue;
+                        candidateDirs.Add(new DwgDirectoryItem
+                        {
+                            Name = di.Name,
+                            FullPath = di.FullName,
+                            HasChildren = true
+                        });
+                    }
+                    catch { }
+                }
+
+                if (candidateDirs.Count == 0) return null;
+
+                // 规范化元器件名称 (小写并去除空格)
+                string rawComp = componentName.Trim();
+                string cleanComp = rawComp.ToLowerInvariant();
+
+                // 常见电气元器件术语别名向标准分类映射表
+                var aliasMap = new (string[] Aliases, string TargetCategory)[]
+                {
+                    (new[] { "微断", "小型断路器", "微型断路器", "空开", "mcb", "1p", "2p", "3p", "4p" }, "微型断路器"),
+                    (new[] { "塑壳", "塑壳断路器", "mccb" }, "塑壳断路器"),
+                    (new[] { "框架", "万能式", "框架断路器", "acb" }, "框架断路器"),
+                    (new[] { "浪涌", "浪涌保护器", "防雷器", "避雷器", "电涌", "电涌保护器", "spd" }, "电涌保护器"),
+                    (new[] { "交流接触器", "接触器" }, "接触器"),
+                    (new[] { "热继", "热继电器", "过载继电器", "热过载" }, "热继电器"),
+                    (new[] { "熔断器", "熔丝", "保险丝", "rt18", "rt14", "rt16", "ro15" }, "熔断器"),
+                    (new[] { "刀开关", "负荷开关", "隔离开关" }, "刀开关"),
+                    (new[] { "刀熔", "刀熔开关", "熔断器式隔离开关" }, "刀熔开关"),
+                    (new[] { "双电源", "双电源转换开关", "切换开关", "ats" }, "双电源"),
+                    (new[] { "变频器", "变频调速" }, "变频器"),
+                    (new[] { "变压器", "控制变压器", "bk" }, "变压器"),
+                    (new[] { "软启", "软启动", "启动器", "电机启动器" }, "电机启动器"),
+                    (new[] { "互感器", "电流互感器", "ct" }, "互感器"),
+                    (new[] { "一体互感器" }, "一体互感器"),
+                    (new[] { "电度表", "电能表", "电表", "多功能电能表" }, "电能表"),
+                    (new[] { "多功能", "多功能表", "网络仪表" }, "多功能表"),
+                    (new[] { "直接式表", "直接式电能表" }, "直接式表"),
+                    (new[] { "时控", "时控开关", "微电脑时控" }, "时控开关"),
+                    (new[] { "控制保护", "控制保护开关", "cps", "kb0" }, "控制保护开关"),
+                    (new[] { "消防电源", "消防电源监控" }, "消防电源监控"),
+                    (new[] { "火灾探测", "火灾监控", "电气火灾" }, "火灾探测器"),
+                    (new[] { "智能照明" }, "智能照明"),
+                    (new[] { "插座" }, "插座"),
+                    (new[] { "双层门" }, "双层门")
+                };
+
+                DwgDirectoryItem? bestDir = null;
+                int maxScore = 0;
+
+                // 遍历每一个候选子目录进行加权评分
+                foreach (var dir in candidateDirs)
+                {
+                    string dirName = dir.Name.Trim();
+                    string cleanDir = dirName.ToLowerInvariant();
+                    int score = 0;
+
+                    // 1. 完全一致匹配：100 分
+                    if (string.Equals(cleanComp, cleanDir, StringComparison.OrdinalIgnoreCase))
+                    {
+                        score = 100;
+                    }
+                    else
+                    {
+                        // 2. 检查电气别名词典匹配：95 分
+                        foreach (var mapping in aliasMap)
+                        {
+                            // 检查目录名称是否匹配目标分类
+                            if (string.Equals(cleanDir, mapping.TargetCategory, StringComparison.OrdinalIgnoreCase) || cleanDir.Contains(mapping.TargetCategory.ToLowerInvariant()))
+                            {
+                                // 检查元器件名称是否命中该分类的任意别名
+                                foreach (var alias in mapping.Aliases)
+                                {
+                                    if (cleanComp.Contains(alias.ToLowerInvariant()))
+                                    {
+                                        score = Math.Max(score, 95);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3. 目录名被包含在元件名称中：90 分 + 长度权重 (匹配越具体分值越高)
+                        if (cleanComp.Contains(cleanDir))
+                        {
+                            score = Math.Max(score, 90 + Math.Min(dirName.Length, 8));
+                        }
+                        // 4. 元件名称被包含在目录名中：85 分
+                        else if (cleanDir.Contains(cleanComp))
+                        {
+                            score = Math.Max(score, 85);
+                        }
+                        // 5. 字符交集相似度评分
+                        else
+                        {
+                            int matchCharCount = 0;
+                            foreach (char c in cleanDir)
+                            {
+                                if (cleanComp.Contains(c)) matchCharCount++;
+                            }
+                            if (cleanDir.Length > 0 && matchCharCount >= 2)
+                            {
+                                double ratio = (double)matchCharCount / cleanDir.Length;
+                                if (ratio >= 0.5)
+                                {
+                                    score = Math.Max(score, (int)(60 + ratio * 20));
+                                }
+                            }
+                        }
+                    }
+
+                    // 记录最高评分与最佳目录
+                    if (score > maxScore)
+                    {
+                        maxScore = score;
+                        bestDir = dir;
+                    }
+                }
+
+                // 设定有效匹配的阈值分数 (>= 60 视为合理命中)
+                if (maxScore >= 60 && bestDir != null)
+                {
+                    return bestDir;
+                }
+
+                // 未达到阈值判定为未匹配到
+                return null;
+            }
+            catch (Exception ex)
+            {
+                // 记录匹配计算异常日志
+                LogHelper.WriteLog($"[DwgPreviewService] FindBestMatchingDirectory 异常: {ex.Message}");
+                return null;
+            }
+        }
     }
 }

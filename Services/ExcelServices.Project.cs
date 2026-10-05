@@ -69,31 +69,20 @@ namespace ExcelAddInDemo
 
         #region 本地文件管理控制台数据比对与 Ribbon 状态判定
 
-        // 缓存最近一次检测的工作簿全路径
-        private static string _lastCheckedLocalProjectPath = string.Empty;
+        // 多路径短效纯内存缓存字典 (Key: 标准化文件路径, Value: (比对结果, 缓存时间戳))
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (bool Result, DateTime CheckTime)> _localProjectCheckCache =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, (bool, DateTime)>();
 
-        // 缓存最近一次判定的结果 (true: 已在表中, false: 未在表中)
-        private static bool _lastCheckedLocalProjectResult = false;
-
-        // 缓存最近一次检测的时间戳
-        private static DateTime _lastCheckedLocalProjectTime = DateTime.MinValue;
-
-        // 本地项目路径检测同步锁对象
-        private static readonly object _localProjectCheckLock = new object();
+        // 本地项目比对短效缓存时长 (设定为 15 秒)
+        private static readonly TimeSpan _localProjectCacheDuration = TimeSpan.FromSeconds(15);
 
         /// <summary>
         /// 主动使本地项目路径比对缓存失效
         /// </summary>
         public static void InvalidateLocalProjectCache()
         {
-            // 加锁保障线程安全
-            lock (_localProjectCheckLock)
-            {
-                // 清空路径缓存字符串
-                _lastCheckedLocalProjectPath = string.Empty;
-                // 重置时间戳为最小值强制下次重新扫描
-                _lastCheckedLocalProjectTime = DateTime.MinValue;
-            }
+            // 线程安全清空所有路径短效缓存
+            _localProjectCheckCache.Clear();
         }
 
         /// <summary>
@@ -104,7 +93,20 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 1. 获取当前活动工作簿的物理全路径与工程名
+                // 1. 获取当前活动工作簿句柄
+                dynamic? app = ExcelDna.Integration.ExcelDnaUtil.Application;
+                dynamic? activeWb = null;
+                try { activeWb = app?.ActiveWorkbook; } catch { }
+                if (activeWb == null) return false;
+
+                // 核心安全守门一：若当前活动工作簿不是成套工程工作簿 (如其他公司的普通报价单)，100% 不可能收录于本地项目库中
+                // 0ms 瞬间短路返回 false，彻底杜绝主 UI 线程对外部表格执行递归目录攀爬和文件扫描
+                if (!Tool.IsProjectWorkbook(activeWb))
+                {
+                    return false;
+                }
+
+                // 2. 获取当前活动工作簿的物理全路径与工程名
                 var (activeFilePath, activeProject) = Forms.LocalProjectForm.GetActiveWorkbookInfo();
 
                 // 若当前没有打开的工作簿或文件未保存到磁盘根路径，直接判定为未在表中
@@ -114,31 +116,22 @@ namespace ExcelAddInDemo
                     return false;
                 }
 
-                // 2. 检查 3 秒内存短效缓存，消除高频 Ribbon 渲染开销
-                lock (_localProjectCheckLock)
+                // 标准化路径作为缓存键
+                string normPath = activeFilePath.Trim().ToLowerInvariant();
+                var now = DateTime.UtcNow;
+
+                // 3. 检查多路径短效纯内存缓存，在不同工作簿之间切换时 0ms 瞬间命中
+                if (_localProjectCheckCache.TryGetValue(normPath, out var cached) && (now - cached.CheckTime) < _localProjectCacheDuration)
                 {
-                    // 若路径相同且在 3 秒有效期内，直接返回上次判定的纯内存缓存结果
-                    if (string.Equals(_lastCheckedLocalProjectPath, activeFilePath, StringComparison.OrdinalIgnoreCase) &&
-                        (DateTime.Now - _lastCheckedLocalProjectTime).TotalSeconds < 3.0)
-                    {
-                        // 命中短效纯内存缓存
-                        return _lastCheckedLocalProjectResult;
-                    }
+                    // 命中短效纯内存缓存，瞬间返回
+                    return cached.Result;
                 }
 
-                // 3. 执行物理文件与 JSON 扫描比对
+                // 4. 执行物理文件与 JSON 扫描比对
                 bool isInTable = CheckIfFilePathInLocalProjectJson(activeFilePath, activeProject);
 
-                // 4. 更新短效缓存
-                lock (_localProjectCheckLock)
-                {
-                    // 记录最新检测的物理文件路径
-                    _lastCheckedLocalProjectPath = activeFilePath;
-                    // 记录判定结果
-                    _lastCheckedLocalProjectResult = isInTable;
-                    // 记录检测时间戳
-                    _lastCheckedLocalProjectTime = DateTime.Now;
-                }
+                // 5. 更新多路径短效缓存
+                _localProjectCheckCache[normPath] = (isInTable, now);
 
                 // 返回最终判定结果
                 return isInTable;

@@ -608,7 +608,7 @@
               </div>
             </div>
 
-            <!-- 5 列快捷列映射工具条 (方式 A: 常驻紧凑下拉条 + 关键字配置齿轮) -->
+            <!-- 快捷列映射工具条 (5 核心列 + 方案 B 任意 2 扩展列联动) -->
             <div class="col-mapping-bar">
               <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                 <div class="col-map-item">
@@ -641,8 +641,32 @@
                     <el-option v-for="c in availableColumns" :key="c.value" :label="c.label" :value="c.value"></el-option>
                   </el-select>
                 </div>
+
+                <!-- 方案 B：扩展列 1 联动组 (原表源列 ➜ 导入表目标列) -->
+                <div class="col-map-item" v-if="config.columnMapping.extraCol1" style="background: #eef7f6; padding: 2px 6px; border-radius: 4px; border: 1px dashed #80cbc4;">
+                  <span class="col-map-label" style="color: #00796b; font-weight: 600;">扩展1:</span>
+                  <el-select v-model="config.columnMapping.extraCol1.sourceCol" size="small" style="width: 68px;" @change="onColumnMappingChange" title="原表来源列">
+                    <el-option v-for="c in availableColumns" :key="c.value" :label="c.label" :value="c.value"></el-option>
+                  </el-select>
+                  <span style="color: #00796b; margin: 0 2px;">➜</span>
+                  <el-select v-model="config.columnMapping.extraCol1.targetCol" size="small" style="width: 108px;" @change="onColumnMappingChange" title="写入导入表目标列">
+                    <el-option v-for="tc in availableTargetColumns" :key="tc.value" :label="tc.label" :value="tc.value"></el-option>
+                  </el-select>
+                </div>
+
+                <!-- 方案 B：扩展列 2 联动组 (原表源列 ➜ 导入表目标列) -->
+                <div class="col-map-item" v-if="config.columnMapping.extraCol2" style="background: #eef7f6; padding: 2px 6px; border-radius: 4px; border: 1px dashed #80cbc4;">
+                  <span class="col-map-label" style="color: #00796b; font-weight: 600;">扩展2:</span>
+                  <el-select v-model="config.columnMapping.extraCol2.sourceCol" size="small" style="width: 68px;" @change="onColumnMappingChange" title="原表来源列">
+                    <el-option v-for="c in availableColumns" :key="c.value" :label="c.label" :value="c.value"></el-option>
+                  </el-select>
+                  <span style="color: #00796b; margin: 0 2px;">➜</span>
+                  <el-select v-model="config.columnMapping.extraCol2.targetCol" size="small" style="width: 108px;" @change="onColumnMappingChange" title="写入导入表目标列">
+                    <el-option v-for="tc in availableTargetColumns" :key="tc.value" :label="tc.label" :value="tc.value"></el-option>
+                  </el-select>
+                </div>
               </div>
-              <el-button size="small" type="primary" link @click="showKeywordDialog = true" style="color: #009688; font-size: 12px;">
+              <el-button size="small" type="primary" link @click="showKeywordDialog = true" style="color: #009688; font-size: 12px; margin-left: auto;">
                 <i class="fa-solid fa-gear" style="margin-right: 4px;"></i>关键字设置
               </el-button>
             </div>
@@ -769,14 +793,22 @@
                       overflow: hidden;
                       text-overflow: ellipsis;
                       white-space: nowrap;
-                      max-width: 180px;
+                      max-width: 170px;
                     "
+                    :title="comp.itemName + ' ' + comp.itemSpec"
                     >{{ comp.itemName }} {{ comp.itemSpec }}</span
                   >
-                  <span style="color: #909399"
-                    >{{ comp.quantity }} {{ comp.unit }} | ¥{{ comp.markedPrice
-                    }}</span
-                  >
+                  <span style="color: #909399; display: flex; align-items: center; gap: 4px;">
+                    <span>{{ comp.quantity }} {{ comp.unit }} | ¥{{ comp.markedPrice }}</span>
+                    <!-- 方案 B：若提取到扩展列数据则呈现曲别针提示图标 -->
+                    <span
+                      v-if="comp.extraValue1 || comp.extraValue2"
+                      style="color: #009688; cursor: pointer;"
+                      :title="'【扩展1】: ' + (comp.extraValue1 || '空') + '\n【扩展2】: ' + (comp.extraValue2 || '空')"
+                    >
+                      <i class="fa-solid fa-paperclip"></i>
+                    </span>
+                  </span>
                 </div>
                 <!-- 超出 3 项展示折叠提示 -->
                 <div
@@ -841,22 +873,22 @@
         </div>
       </div>
 
-      <!-- 5. 5 列智能匹配关键字设置对话框 (方式 A) -->
+      <!-- 5. 核心列与扩展列智能匹配关键字设置对话框 (方案 B) -->
       <el-dialog
         v-model="showKeywordDialog"
-        title="5 核心列智能匹配关键字设置"
-        width="540px"
+        title="核心列与扩展列智能匹配关键字设置"
+        width="560px"
         :close-on-click-modal="false"
         append-to-body
       >
         <!-- 顶部操作指引与分隔符提示 -->
         <div style="font-size: 12px; color: #606266; margin-bottom: 12px; line-height: 1.6;">
           <i class="fa-solid fa-circle-info" style="color: #009688; margin-right: 4px;"></i>
-          在步骤 1 点击【锁表头行】时，系统将使用下方设置的关键词在表头行自动定位这 5 列。
+          在步骤 1 点击【锁表头行】时，系统将使用下方设置的关键词在表头行自动定位这 7 列。
           <br />支持中英文逗号、分号或竖线分隔多个同义词。
         </div>
-        <!-- 5 个核心列关键字编辑表单 -->
-        <el-form label-width="110px" size="small">
+        <!-- 核心列与扩展列关键字编辑表单 -->
+        <el-form label-width="115px" size="small">
           <!-- 1. 元件名称列关键字 -->
           <el-form-item label="元件名称列:">
             <el-input v-model="config.columnMapping.itemNameKeywords" placeholder="如: 名称,品名,材料,元件,设备,物料" clearable></el-input>
@@ -876,6 +908,14 @@
           <!-- 5. 品牌/生产厂家列关键字 -->
           <el-form-item label="品牌/厂家列:">
             <el-input v-model="config.columnMapping.brandKeywords" placeholder="如: 品牌,厂家,生产厂商,制造厂商,制造商" clearable></el-input>
+          </el-form-item>
+          <!-- 6. 扩展列 1 关键字 (方案 B) -->
+          <el-form-item label="扩展列1关键字:" v-if="config.columnMapping.extraCol1">
+            <el-input v-model="config.columnMapping.extraCol1.keywords" placeholder="如: 单位,计量单位,单位名称" clearable></el-input>
+          </el-form-item>
+          <!-- 7. 扩展列 2 关键字 (方案 B) -->
+          <el-form-item label="扩展列2关键字:" v-if="config.columnMapping.extraCol2">
+            <el-input v-model="config.columnMapping.extraCol2.keywords" placeholder="如: 备注,说明,参数,要求,位号" clearable></el-input>
           </el-form-item>
         </el-form>
         <!-- 对话框底部按钮区 -->
@@ -928,6 +968,10 @@
             priceKeywords: "单价,面价,价格,综合单价,信息价,成本价",
             // 品牌/厂家默认高频关键词
             brandKeywords: "品牌,厂家,生产厂商,制造厂商,制造商",
+            // 方案 B：扩展列 1 默认关键词 (如单位)
+            extraCol1Keywords: "单位,计量单位,单位名称",
+            // 方案 B：扩展列 2 默认关键词 (如备注)
+            extraCol2Keywords: "备注,说明,参数,要求,位号",
           };
 
           // 关键字设置对话框显隐状态
@@ -966,6 +1010,20 @@
               quantityKeywords: DEFAULT_KEYWORDS.quantityKeywords,
               priceKeywords: DEFAULT_KEYWORDS.priceKeywords,
               brandKeywords: DEFAULT_KEYWORDS.brandKeywords,
+              // 方案 B：扩展列 1 映射 (默认源列未指定，默认写入第 5 列 E 列计量单位)
+              extraCol1: {
+                sourceCol: 0,
+                targetCol: 5,
+                customLabel: "扩展列1",
+                keywords: DEFAULT_KEYWORDS.extraCol1Keywords,
+              },
+              // 方案 B：扩展列 2 映射 (默认源列未指定，默认写入第 9 列 I 列备注)
+              extraCol2: {
+                sourceCol: 0,
+                targetCol: 9,
+                customLabel: "扩展列2",
+                keywords: DEFAULT_KEYWORDS.extraCol2Keywords,
+              },
             },
           });
 
@@ -973,6 +1031,44 @@
           const savedTemplates = ref([]);
           const selectedTemplate = ref("");
           const parsedCabinets = ref([]);
+
+          // 方案 B：导入表目标列选项集合 (推荐安全列优先，支持全量 A~Z)
+          const availableTargetColumns = computed(() => {
+            const list = [
+              { label: "0: 不导入", value: 0 },
+              { label: "E 列 (计量单位)", value: 5 },
+              { label: "I 列 (备注说明)", value: 9 },
+              { label: "D 列 (生产厂家)", value: 4 },
+              { label: "O 列 (预留扩展1)", value: 15 },
+              { label: "P 列 (预留扩展2)", value: 16 },
+              { label: "R 列 (加工费)", value: 18 },
+            ];
+            // 常用列去重集合
+            const commonCols = new Set([0, 5, 9, 4, 15, 16, 18]);
+            for (let i = 1; i <= 26; i++) {
+              if (!commonCols.has(i)) {
+                let letter = String.fromCharCode(64 + i);
+                let tag = "";
+                if (i === 1) tag = " (序号)";
+                else if (i === 2) tag = " (名称)";
+                else if (i === 3) tag = " (型号)";
+                else if (i === 6) tag = " (数量)";
+                else if (i === 7) tag = " (单价*)";
+                else if (i === 8) tag = " (总价*)";
+                else if (i === 10) tag = " (成本价*)";
+                else if (i === 11) tag = " (成本总价*)";
+                else if (i === 12) tag = " (加价率*)";
+                else if (i === 13) tag = " (面价)";
+                else if (i === 14) tag = " (折扣*)";
+                else if (i === 17) tag = " (类别*)";
+                list.push({
+                  label: `${letter} 列${tag}`,
+                  value: i,
+                });
+              }
+            }
+            return list;
+          });
 
           // 5 列下拉选择器的可选列集合 (包含 0:无，以及 A 列、B 列...)
           const availableColumns = computed(() => {
@@ -1109,7 +1205,7 @@
             if (!headerRow || !Array.isArray(headerRow)) return;
 
             const map = config.value.columnMapping;
-            // 获取 5 列当前配置的关键词列表
+            // 获取 5 核心列当前配置的关键词列表
             const nameKeys = parseKeywordsList(
               map.itemNameKeywords || DEFAULT_KEYWORDS.itemNameKeywords,
             );
@@ -1124,6 +1220,13 @@
             );
             const brandKeys = parseKeywordsList(
               map.brandKeywords || DEFAULT_KEYWORDS.brandKeywords,
+            );
+            // 方案 B：获取扩展列 1 与 2 的关键词列表
+            const extra1Keys = parseKeywordsList(
+              (map.extraCol1 && map.extraCol1.keywords) || DEFAULT_KEYWORDS.extraCol1Keywords,
+            );
+            const extra2Keys = parseKeywordsList(
+              (map.extraCol2 && map.extraCol2.keywords) || DEFAULT_KEYWORDS.extraCol2Keywords,
             );
 
             let matchedCount = 0;
@@ -1157,14 +1260,50 @@
                 // 匹配元件名称列
                 map.itemNameCol = colIdx;
                 matchedCount++;
+              } else if (textMatchesAny(text, extra1Keys) && map.extraCol1) {
+                // 匹配扩展列 1
+                map.extraCol1.sourceCol = colIdx;
+                matchedCount++;
+              } else if (textMatchesAny(text, extra2Keys) && map.extraCol2) {
+                // 匹配扩展列 2
+                map.extraCol2.sourceCol = colIdx;
+                matchedCount++;
               }
             }
 
             // 若命中任意匹配列，给出友好提示
             if (matchedCount > 0) {
-              ElementPlus.ElMessage.success(
-                `已智能定位列：名称[${toColLetter(map.itemNameCol)}] 型号[${toColLetter(map.itemSpecCol)}] 数量[${toColLetter(map.quantityCol)}] 单价[${toColLetter(map.priceCol)}] 品牌[${toColLetter(map.brandCol)}]`,
-              );
+              let msg = `已智能定位：名称[${toColLetter(map.itemNameCol)}] 型号[${toColLetter(map.itemSpecCol)}] 数量[${toColLetter(map.quantityCol)}] 单价[${toColLetter(map.priceCol)}] 品牌[${toColLetter(map.brandCol)}]`;
+              if (map.extraCol1 && map.extraCol1.sourceCol > 0) {
+                msg += ` 扩展1[${toColLetter(map.extraCol1.sourceCol)}➜${toColLetter(map.extraCol1.targetCol)}]`;
+              }
+              if (map.extraCol2 && map.extraCol2.sourceCol > 0) {
+                msg += ` 扩展2[${toColLetter(map.extraCol2.sourceCol)}➜${toColLetter(map.extraCol2.targetCol)}]`;
+              }
+              ElementPlus.ElMessage.success(msg);
+            }
+          };
+
+          // 确保配置对象具备完整的扩展列结构 (防范旧模板缺字段报错)
+          const normalizeConfig = (cfg) => {
+            if (!cfg) return;
+            if (!cfg.columnMapping) cfg.columnMapping = {};
+            const cm = cfg.columnMapping;
+            if (!cm.extraCol1) {
+              cm.extraCol1 = {
+                sourceCol: 0,
+                targetCol: 5,
+                customLabel: "扩展列1",
+                keywords: DEFAULT_KEYWORDS.extraCol1Keywords,
+              };
+            }
+            if (!cm.extraCol2) {
+              cm.extraCol2 = {
+                sourceCol: 0,
+                targetCol: 9,
+                customLabel: "扩展列2",
+                keywords: DEFAULT_KEYWORDS.extraCol2Keywords,
+              };
             }
           };
 
@@ -1173,7 +1312,7 @@
             triggerAutoParse();
           };
 
-          // 恢复 5 列匹配关键字为系统默认预设
+          // 恢复 7 列匹配关键字为系统默认预设
           const resetKeywordsToDefault = () => {
             config.value.columnMapping.itemNameKeywords =
               DEFAULT_KEYWORDS.itemNameKeywords;
@@ -1185,7 +1324,15 @@
               DEFAULT_KEYWORDS.priceKeywords;
             config.value.columnMapping.brandKeywords =
               DEFAULT_KEYWORDS.brandKeywords;
-            ElementPlus.ElMessage.info("已恢复 5 列默认匹配关键字");
+            if (config.value.columnMapping.extraCol1) {
+              config.value.columnMapping.extraCol1.keywords =
+                DEFAULT_KEYWORDS.extraCol1Keywords;
+            }
+            if (config.value.columnMapping.extraCol2) {
+              config.value.columnMapping.extraCol2.keywords =
+                DEFAULT_KEYWORDS.extraCol2Keywords;
+            }
+            ElementPlus.ElMessage.info("已恢复默认匹配关键字");
           };
 
           // 保存关键字并立即重新对当前表头嗅探与解析
@@ -1357,13 +1504,15 @@
               .catch(() => {});
           };
 
-          // 套用模板
+          // 套用模板 (自动补齐老模板可能缺失的扩展列配置)
           const applyTemplate = (name) => {
             const t = savedTemplates.value.find(
               (item) => item.templateName === name,
             );
             if (t) {
-              config.value = JSON.parse(JSON.stringify(t));
+              const loaded = JSON.parse(JSON.stringify(t));
+              normalizeConfig(loaded);
+              config.value = loaded;
               ElementPlus.ElMessage.success(`已套用模板: ${name}`);
               triggerAutoParse();
             }
@@ -1430,7 +1579,9 @@
                   sendMessage("getTemplates");
                 }
               } else if (data.action === "getTemplatesResult") {
-                savedTemplates.value = data.templates || [];
+                const list = data.templates || [];
+                list.forEach((item) => normalizeConfig(item));
+                savedTemplates.value = list;
               }
             });
 
@@ -1468,8 +1619,9 @@
             doExecuteImport,
             saveCurrentTemplate,
             applyTemplate,
-            // 暴露 5 核心列映射相关响应式状态与交互方法
+            // 暴露 5 核心列与方案 B 扩展列映射相关响应式状态与交互方法
             availableColumns,
+            availableTargetColumns,
             showKeywordDialog,
             onColumnMappingChange,
             resetKeywordsToDefault,

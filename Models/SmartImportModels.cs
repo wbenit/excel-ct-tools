@@ -73,6 +73,21 @@ namespace ExcelAddInDemo.Models
     }
 
     /// <summary>
+    /// 扩展列映射模型：支持原表任意列映射写入导入表任意列
+    /// </summary>
+    public class ExtraColumnMapping
+    {
+        // 原表源列号 (1-based，0表示未启用不导入)
+        public int SourceCol { get; set; } = 0;
+        // 导入表目标列号 (1-based，例如 5 对应 E 列单位，9 对应 I 列备注，15 对应 O 列等)
+        public int TargetCol { get; set; } = 0;
+        // 扩展列标签/自定义名称 (如 "单位", "备注", "技术参数")
+        public string CustomLabel { get; set; } = string.Empty;
+        // 自动识别关键字 (逗号分隔，用于表头启发式嗅探)
+        public string Keywords { get; set; } = string.Empty;
+    }
+
+    /// <summary>
     /// 智能导入列映射配置字典
     /// </summary>
     public class SmartImportColumnMapping
@@ -105,6 +120,32 @@ namespace ExcelAddInDemo.Models
         public string PriceKeywords { get; set; } = "单价,面价";
         // 品牌/厂家匹配关键字词典
         public string BrandKeywords { get; set; } = "品牌,厂家";
+
+        // 方案 B：通用任意扩展列 1 (默认目标列为 5，即 E 列计量单位)
+        public ExtraColumnMapping ExtraCol1 { get; set; } = new ExtraColumnMapping
+        {
+            // 默认源列未指定
+            SourceCol = 0,
+            // 目标列预设为第 5 列 (E 列计量单位)
+            TargetCol = 5,
+            // 自定义标签名称
+            CustomLabel = "扩展列1",
+            // 预设嗅探关键字
+            Keywords = "单位,计量单位"
+        };
+
+        // 方案 B：通用任意扩展列 2 (默认目标列为 9，即 I 列备注说明)
+        public ExtraColumnMapping ExtraCol2 { get; set; } = new ExtraColumnMapping
+        {
+            // 默认源列未指定
+            SourceCol = 0,
+            // 目标列预设为第 9 列 (I 列备注)
+            TargetCol = 9,
+            // 自定义标签名称
+            CustomLabel = "扩展列2",
+            // 预设嗅探关键字
+            Keywords = "备注,说明,参数,要求,位号"
+        };
     }
 
     /// <summary>
@@ -150,6 +191,10 @@ namespace ExcelAddInDemo.Models
         public string Brand { get; set; } = string.Empty;
         // 备注说明
         public string Remark { get; set; } = string.Empty;
+        // 方案 B：扩展列 1 提取的文本值
+        public string ExtraValue1 { get; set; } = string.Empty;
+        // 方案 B：扩展列 2 提取的文本值
+        public string ExtraValue2 { get; set; } = string.Empty;
     }
 
     /// <summary>
