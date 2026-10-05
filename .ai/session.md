@@ -1,3 +1,71 @@
+- **【错误结晶沉淀】提炼并归档《WinForms + WebView2 无边框窗体拖拽缩放与事件冒泡死锁终极指南》至本地启发式规则库 (`.ai/local-heuristics.md`, `.ai/session.md`)**：
+  1. **提炼第 20 条经验**：WinForms + WebView2 无边框窗体拖拽缩放的三大冲突与系统内核级接管解法（8px 留白根因、Chromium HWND 吞噬 WM_NCHITTEST 导致边缘失效、纯 CSS 透明感应 + Win32 SC_SIZE 系统内核接管零计算实现）。
+  2. **提炼第 21 条经验**：WebView2 混合应用中顶栏拖动与功能按钮事件冒泡死锁（按钮仅 stop click 导致 mousedown 冒泡触发 WM_NCLBUTTONDOWN 模态拖拽吃掉后续点击事件的根因与三重防护解法）。
+
+- **【缺陷排查与修复】图纸参数匹配浮窗顶栏【设置】【最小化】【关闭】按钮点击无效问题彻底修复 (`Resources/component_param_match.html`, `publish/Resources/component_param_match.html`)**：
+  1. **问题根因定位**：
+     - 用户反馈顶栏右侧三个按钮【📁（设置根目录）】、【—（最小化）】、【✕（关闭）】全部点击无效；
+     - **根本原因**：顶栏父容器 `.top-drag-header` 监听了 `@mousedown="onHeaderMouseDown"` 并向 C# 投递 `dragWindow` 触发 Windows 系统的 `WM_NCLBUTTONDOWN + HTCAPTION` 原生模态拖拽。由于右侧按钮及其容器未对 `mousedown` 事件执行阻断，用户鼠标按下的瞬间就冒泡到顶栏触发了系统模态移动循环，系统直接吞噬了后续的 `mouseup` 和浏览器合成的 `click` 事件，导致按钮的 `@click.stop` 完全没有机会执行。
+  2. **三重防护彻底根治**：
+     - **事件阻断**：在 `.header-icons` 按钮组容器及各个 `.header-btn` 上显式声明 `@mousedown.stop`，从根本上杜绝鼠标按下事件向顶栏冒泡；
+     - **防御过滤**：在 `onHeaderMouseDown(e)` 中严格增加元素判别（`e.target.closest('.header-btn') || e.target.closest('.header-icons')` 直接 `return`），即使漏判也绝不误发 `dragWindow`；
+     - **层级加固**：为 `.top-drag-header` 和 `.header-icons` 分别显式指定 `z-index: 10000` 与 `10001`，确保层级绝对置顶，绝不被任何透明边缘感应区遮盖。
+  3. **验证与同步**：
+     - 构建通过（0 错误），产物全量覆写至 `publish/` 与 `bin/Debug/net48/` 目录。
+
+- **【体验优化闭环】图纸参数匹配浮窗边缘拖动尺寸灵敏度根治（系统级 SC_SIZE 原生接管 + 零侵入透明边缘感应） (`Forms/ComponentParamMatchForm.cs`, `Resources/component_param_match.html`, `publish/ExcelAddInDemo.dll`, `publish/Resources/component_param_match.html`)**：
+  1. **用户核心反馈与根因定位**：
+     - 用户反馈：“修改后不好拖动改变窗体尺寸了”；
+     - **深层根本原因**：为了去除顶部 8px 空白，窗体拦截了 `WM_NCCALCSIZE` 并将非客户区清零，同时 `Padding` 设为 0。当客户区被 WebView2（独立进程渲染的 Chromium HWND）100% 占满时，Chromium 控件在内部接收并吞噬了所有鼠标命中消息（统一返回 `HTCLIENT`，不向上转发），导致父窗体 Form 的 `WndProc` 中无法收到 `WM_NCHITTEST`，边缘极难精准命中。
+  2. **系统级原生接管解决方案落地**：
+     - **【零计算透明边缘感应区】(`Resources/component_param_match.html`)**：
+       - 在 `#app` 边缘设置 5 个完全透明的感应层（左/右 6px，底部 6px，左下/右下 10px，避开标题栏按钮，不遮挡任何现有元素与 UI）；
+       - 鼠标靠近边缘时光标自动切换为系统双向调节箭头（`ew-resize`, `ns-resize`, `nesw-resize`, `nwse-resize`）；
+       - 仅在 `@mousedown` 时向 C# 投递 `startResize` 指令，前端 **0 行坐标计算、0 频繁监听、0 IPC 抖动**；
+       - 标题栏 `onHeaderMouseDown` 同步升级为向 C# 发送 `dragWindow` 调用 Windows 原生模态拖拽。
+     - **【Win32 系统命令内核级接管】(`Forms/ComponentParamMatchForm.cs`)**：
+       - 引入 `ReleaseCapture`、`SendMessage` 与 `GetAsyncKeyState(VK_LBUTTON)`；
+       - 收到 `startResize` 后，向窗体句柄发送 `WM_SYSCOMMAND` + `(SC_SIZE + dirCode)`，交由 Windows 操作系统内核模态接管缩放循环，达到原生 60/120 帧极致流畅体验；
+       - 收到 `dragWindow` 后，发送 `WM_NCLBUTTONDOWN` + `HTCAPTION` 原生平滑移动；
+       - `WndProc` 中继续保留 `WM_NCCALCSIZE` 拦截，确保顶部 8px 空白依旧 100% 消除，且无任何本地磁盘持久化负担。
+  3. **构建验证与物理产物同步**：
+     - 新增代码严格遵循每 3 行至少 1 行规范中文注释，硬编码均打标；
+     - `dotnet build ExcelAddInDemo.csproj -p:RunExcelDnaBuild=false` 编译成功：**0 错误**；
+     - 程序集与 HTML 全量物理同步覆写至 `publish/` 与 `bin/Debug/net48/` 目录。
+
+- **【全量闭环交付】图纸参数匹配浮窗顶部 8px 留白彻底根除与纯 C# 原生拖拽闭环 (`Forms/ComponentParamMatchForm.cs`, `Resources/component_param_match.html`, `publish/ExcelAddInDemo.dll`, `publish/Resources/component_param_match.html`)**：
+  1. **用户核心指令与决策落地**：
+     - 用户指令：“顶部有8px的空白，去除”；
+     - 恪守用户“方案一：纯 C# 原生拦截接管”与“不需要持久化”的核心定调，前端保持极致纯净，不使用前端 DOM 手柄。
+  2. **8px 留白根因定位与根治方案**：
+     - **根因剖析**：当无边框窗体启用 `WS_THICKFRAME` 样式以获得原生缩放能力时，Windows 系统的 `DefWindowProc` 默认会在 `WM_NCCALCSIZE` 阶段为窗口预留系统标题栏与非客户区边框高度（标准 DPI 下通常为 8px）。由于未处理该消息且之前窗体设置了 `Padding(3)`，导致 WebView2 控件整体下沉，窗体顶部露出空白缝隙。
+     - **精准消除落地**：
+       - `InitializeFormProperties`：显式设置 `this.Padding = new Padding(0)`，彻底清空四周内外边距；
+       - `WndProc` 消息拦截：拦截 `WM_NCCALCSIZE` (0x0083) 消息，当 `m.WParam != IntPtr.Zero` 时直接置 `m.Result = IntPtr.Zero; return;`，明确通知 Windows 操作系统整个窗体矩形 100% 归属于客户区，彻底抹除非客户区 8px 边距占用；
+       - 拦截 `WM_NCHITTEST` (0x0084)：在边缘 6px 感应区内原生返回 `HTTOP`, `HTBOTTOM`, `HTLEFT`, `HTRIGHT` 及四角命中标识，实现 Windows 操作系统原生平滑缩放。
+  3. **构建验证与物理产物同步**：
+     - 新增代码严格遵循每 3 行至少 1 行规范中文注释，硬编码均标识 `--硬编码--`；
+     - `dotnet build ExcelAddInDemo.csproj -p:RunExcelDnaBuild=false` 编译成功：**0 警告、0 错误**；
+     - 程序集与 HTML 页面全量物理同步覆写至 `publish/` 与 `bin/Debug/net48/` 目录。
+
+- **【全量闭环交付】图纸参数匹配浮窗升级为纯 C# 原生消息拦截拖拽调节大小（方案一：前端 0 侵入，系统级平滑原生拖拽） (`Forms/ComponentParamMatchForm.cs`, `Resources/component_param_match.html`, `publish/ExcelAddInDemo.dll`, `publish/Resources/component_param_match.html`)**：
+  1. **用户核心指令与决策落地 (方案一)**：
+     - 用户指令：“方案一：纯 C# 原生拦截接管”；
+     - 彻底摒弃前端 8 方向手柄、PointerCapture 鼠标捕获、增量监听与 WebMessage IPC 通信等复杂冗余代码，前端 HTML 恢复极致纯净，改由 Windows 操作系统原生消息循环直接驱动拖拽调节。
+  2. **全面系统性架构设计与落地**：
+     - **【前端 HTML 极致减负与自适应微调】(`Resources/component_param_match.html`)**：
+       - 彻底删除所有多余的 `.resize-handle`、`.resize-grip` DOM 节点及配套 CSS 样式；
+       - 彻底删除 `onResizePointerDown` 方法及其关联变量，前端 0 事件监听、0 IPC 投递；
+       - 仅微调状态栏 `.status-highlight` 为 `flex: 1; min-width: 0;`，确保窗口拉宽时长文本自动展开。
+     - **【Windows 原生非客户区命中测试与厚边框样式】(`Forms/ComponentParamMatchForm.cs`)**：
+       - `InitializeFormProperties` 设置 `this.Padding = new Padding(3)` 与 `BackColor = Color.FromArgb(0, 121, 107)`，四周露出 3px 主题深绿蓝边框承载系统命中，保留 `MinimumSize = new Size(180, 300)`；
+       - 重写 `CreateParams`：追加 `WS_THICKFRAME` (0x00040000) 样式，直接激活 Windows 操作系统级原生拖拽边框；
+       - 重写 `WndProc`：拦截 `WM_NCHITTEST` (0x84)，计算鼠标在窗体边缘 6px 感应区的物理相对坐标，直接返回系统原生命中标识（`HTLEFT`, `HTRIGHT`, `HTTOP`, `HTBOTTOM`, `HTTOPLEFT`, `HTTOPRIGHT`, `HTBOTTOMLEFT`, `HTBOTTOMRIGHT`），由 Windows 原生系统平滑接管缩放。
+  3. **构建验证与物理产物同步**：
+     - 代码严格遵循每 3 行新增代码至少 1 行中文规范注释，硬编码均打标；
+     - `dotnet build ExcelAddInDemo.csproj -p:RunExcelDnaBuild=false` 编译通过：**0 错误**；
+     - 程序集与 HTML 页面物理覆写至 `publish/` 与 `bin/Debug/net48/` 目录。
+
 - **【全量闭环交付】图纸参数匹配面板新增【🎯 匹配】按钮并支持根据当前行元器件名称自动进入最匹配分类目录 (`Services/ExcelServices.ComponentParamMatch.cs`, `Services/DwgPreviewService.cs`, `Forms/ComponentParamMatchForm.cs`, `Resources/component_param_match.html`, `publish/ExcelAddInDemo.dll`, `publish/Resources/component_param_match.html`)**：
   1. **用户核心指令与决策落地 (方式一 + 失败回退根目录)**：
      - 用户指令：“需要在面板设置一个‘匹配’按钮，点击后根据元器件名称自动进入最匹配的目录”；

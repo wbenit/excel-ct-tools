@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows.Forms;
 using ExcelAddInDemo.Services;
+using System.Runtime.InteropServices;
 using ExcelDna.Integration;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -29,6 +30,33 @@ namespace ExcelAddInDemo.Forms
             PropertyNameCaseInsensitive = true
         };
 
+        #region Windows API 窗口无边框原生拖拽与调整大小支持
+
+        // 释放当前线程鼠标捕获状态
+        [DllImport("user32.dll")]
+        private static extern bool ReleaseCapture();
+
+        // 向指定窗口句柄发送 Win32 消息
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        // 异步获取物理按键按下状态，防止消息延迟导致模态死锁
+        [DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int vKey);
+
+        // 物理鼠标左键虚拟键码
+        private const int VK_LBUTTON = 0x01;
+        // 非客户区鼠标左键按下消息常量
+        private const int WM_NCLBUTTONDOWN = 0xA1;
+        // 标题栏命中代码常量
+        private const int HTCAPTION = 0x2;
+        // 系统命令消息常量
+        private const int WM_SYSCOMMAND = 0x0112;
+        // 系统级调整窗口大小基准命令常量
+        private const int SC_SIZE = 0xF000;
+
+        #endregion
+
         /// <summary>
         /// 私有构造函数：配置 200x800 几何尺寸、置顶与无边框属性
         /// </summary>
@@ -52,20 +80,26 @@ namespace ExcelAddInDemo.Forms
             // 设置窗口标题栏文字
             this.Text = "元器件图纸参数匹配";
 
-            // 设定严格的 200 × 800 像素规格
-            this.ClientSize = new Size(200, 800); // --硬编码: 窗口尺寸 200x800--
+            // 设定初始窗口规格 (200x800) --硬编码: 窗口尺寸 200x800--
+            this.ClientSize = new Size(200, 800);
+
+            // 设定最小窗口尺寸限制，防止过度压缩破坏布局
+            this.MinimumSize = new Size(180, 300); // --硬编码: 最小尺寸 180x300--
 
             // 彻底去除原生系统边框，由 Vue3 前端绘制自研精致顶栏
             this.FormBorderStyle = FormBorderStyle.None;
+
+            // 彻底去除任何边距，确保前端顶栏紧密贴合窗口顶部
+            this.Padding = new Padding(0);
+
+            // 背景色设为纯白
+            this.BackColor = Color.White;
 
             // 始终置顶显示，保障用户在 Excel 单元格切换时窗口不被遮挡
             this.TopMost = true;
 
             // 不在任务栏显示独立图标
             this.ShowInTaskbar = false;
-
-            // 背景色设为纯白
-            this.BackColor = Color.White;
 
             // 启用手动绝对坐标定位
             this.StartPosition = FormStartPosition.Manual;
@@ -365,7 +399,20 @@ namespace ExcelAddInDemo.Forms
                         }, JsonOptions));
                     });
                 }
-                // 5. 鼠标按住顶栏物理拖拽移动无边框窗口
+                // 5. 鼠标按住顶栏系统原生拖拽移动窗口
+                else if (action == "dragWindow")
+                {
+                    SafeInvoke(() =>
+                    {
+                        // 校验鼠标左键物理状态，若已松开则不触发系统拖动
+                        if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) == 0) return;
+                        // 释放当前鼠标捕获
+                        ReleaseCapture();
+                        // 触发系统原生标题栏平滑拖动
+                        SendMessage(this.Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
+                    });
+                }
+                // 5.1 兼容旧版基于坐标差值的窗口位移指令
                 else if (action == "moveWindow")
                 {
                     int deltaX = root.TryGetProperty("deltaX", out var dxP) ? dxP.GetInt32() : 0;
@@ -373,6 +420,35 @@ namespace ExcelAddInDemo.Forms
                     SafeInvoke(() =>
                     {
                         this.Location = new Point(this.Location.X + deltaX, this.Location.Y + deltaY);
+                    });
+                }
+                // 5.2 边缘透明感应区触发系统原生平滑调整窗口大小 (零坐标计算，系统级 60/120 帧丝滑响应)
+                else if (action == "startResize")
+                {
+                    // 提取拖拽边缘方向标识
+                    string dirStr = root.TryGetProperty("direction", out var dP) ? (dP.GetString() ?? "") : "right";
+                    // 映射为 Win32 SC_SIZE 对应的方向代码 (1:左, 2:右, 3:顶, 4:左上, 5:右上, 6:底, 7:左下, 8:右下)
+                    int dirCode = dirStr switch
+                    {
+                        "left" => 1,
+                        "right" => 2,
+                        "top" => 3,
+                        "topLeft" => 4,
+                        "topRight" => 5,
+                        "bottom" => 6,
+                        "bottomLeft" => 7,
+                        "bottomRight" => 8,
+                        _ => 2
+                    };
+
+                    SafeInvoke(() =>
+                    {
+                        // 校验物理左键状态防误触
+                        if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) == 0) return;
+                        // 释放鼠标捕获
+                        ReleaseCapture();
+                        // 发送系统命令，交由 Windows 内核直接执行原生平滑调整窗口尺寸
+                        SendMessage(this.Handle, WM_SYSCOMMAND, (IntPtr)(SC_SIZE + dirCode), IntPtr.Zero);
                     });
                 }
                 // 6. 关闭窗口
@@ -457,6 +533,70 @@ namespace ExcelAddInDemo.Forms
             catch (Exception ex)
             {
                 LogHelper.WriteLog($"[ComponentParamMatchForm] ShowForm 异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 重写 CreateParams 样式，赋予无边框窗体系统级调整大小的厚边框特性
+        /// </summary>
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                // 获取基类创建参数
+                var cp = base.CreateParams;
+                // 追加 WS_THICKFRAME 样式标记，开启 Windows 原生拖拽边框能力
+                cp.Style |= 0x00040000;
+                return cp;
+            }
+        }
+
+        // Win32 非客户区命中测试与非客户区尺寸计算消息常量
+        private const int WM_NCHITTEST = 0x84;
+        private const int WM_NCCALCSIZE = 0x83;
+        private const int HTLEFT = 10;
+        private const int HTRIGHT = 11;
+        private const int HTTOP = 12;
+        private const int HTTOPLEFT = 13;
+        private const int HTTOPRIGHT = 14;
+        private const int HTBOTTOM = 15;
+        private const int HTBOTTOMLEFT = 16;
+        private const int HTBOTTOMRIGHT = 17;
+
+        /// <summary>
+        /// 拦截 Windows 消息以原生支持无边框窗体拖拽调整大小并彻底消除顶部 8px 系统非客户区空白
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+        /// </summary>
+        protected override void WndProc(ref Message m)
+        {
+            // 拦截 WM_NCCALCSIZE 消息，将非客户区尺寸全部清零，彻底抹除 WS_THICKFRAME 在顶部留下的 8px 空白
+            if (m.Msg == WM_NCCALCSIZE && m.WParam != IntPtr.Zero)
+            {
+                m.Result = IntPtr.Zero;
+                return;
+            }
+
+            // 调用基类默认消息循环处理
+            base.WndProc(ref m);
+
+            // 仅在收到命中测试消息时进行边缘坐标换算
+            if (m.Msg == WM_NCHITTEST)
+            {
+                // 将鼠标当前屏幕物理坐标转换为窗体客户区相对坐标
+                Point pos = this.PointToClient(Cursor.Position);
+                int w = this.ClientSize.Width;
+                int h = this.ClientSize.Height;
+                const int grip = 6; // --硬编码: 边缘拖拽感应像素阈值--
+
+                // 判断鼠标落在四角或四边，直接返回对应的 Win32 命中标识由系统原生接管拖动
+                if (pos.X <= grip && pos.Y <= grip) m.Result = (IntPtr)HTTOPLEFT;
+                else if (pos.X >= w - grip && pos.Y <= grip) m.Result = (IntPtr)HTTOPRIGHT;
+                else if (pos.X <= grip && pos.Y >= h - grip) m.Result = (IntPtr)HTBOTTOMLEFT;
+                else if (pos.X >= w - grip && pos.Y >= h - grip) m.Result = (IntPtr)HTBOTTOMRIGHT;
+                else if (pos.X <= grip) m.Result = (IntPtr)HTLEFT;
+                else if (pos.X >= w - grip) m.Result = (IntPtr)HTRIGHT;
+                else if (pos.Y <= grip) m.Result = (IntPtr)HTTOP;
+                else if (pos.Y >= h - grip) m.Result = (IntPtr)HTBOTTOM;
             }
         }
     }

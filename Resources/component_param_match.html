@@ -59,6 +59,8 @@
 
       /* 顶部拖拽标题栏 */
       .top-drag-header {
+        position: relative;
+        z-index: 10000;
         height: 30px;
         background: var(
           --theme-gradient,
@@ -83,9 +85,12 @@
       }
 
       .header-icons {
+        position: relative;
+        z-index: 10001;
         display: flex;
         align-items: center;
         gap: 3px;
+        cursor: default;
       }
 
       .header-btn {
@@ -404,7 +409,50 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        max-width: 130px;
+        flex: 1;
+        min-width: 0;
+      }
+
+      /* 边缘调整大小透明感应区 (触发 Windows 系统原生 SC_SIZE 调整) */
+      .resize-edge {
+        position: absolute;
+        z-index: 9999;
+        background: transparent;
+      }
+      .resize-edge-left {
+        top: 30px;
+        left: 0;
+        width: 6px;
+        bottom: 8px;
+        cursor: ew-resize;
+      }
+      .resize-edge-right {
+        top: 30px;
+        right: 0;
+        width: 6px;
+        bottom: 8px;
+        cursor: ew-resize;
+      }
+      .resize-edge-bottom {
+        left: 8px;
+        right: 8px;
+        bottom: 0;
+        height: 6px;
+        cursor: ns-resize;
+      }
+      .resize-edge-bl {
+        left: 0;
+        bottom: 0;
+        width: 10px;
+        height: 10px;
+        cursor: nesw-resize;
+      }
+      .resize-edge-br {
+        right: 0;
+        bottom: 0;
+        width: 10px;
+        height: 10px;
+        cursor: nwse-resize;
       }
     </style>
   </head>
@@ -416,20 +464,27 @@
           <span>📐</span>
           <span>图纸参数匹配</span>
         </div>
-        <div class="header-icons">
+        <div class="header-icons" @mousedown.stop>
           <div
             class="header-btn"
             title="设置图纸库根物理目录"
+            @mousedown.stop
             @click.stop="selectBaseDirectory"
           >
             📁
           </div>
-          <div class="header-btn" title="最小化" @click.stop="minimizeWindow">
+          <div
+            class="header-btn"
+            title="最小化"
+            @mousedown.stop
+            @click.stop="minimizeWindow"
+          >
             —
           </div>
           <div
             class="header-btn close-btn"
             title="关闭"
+            @mousedown.stop
             @click.stop="closeWindow"
           >
             ✕
@@ -563,6 +618,13 @@
         >
         <span>自动换行</span>
       </div>
+
+      <!-- 边缘调整大小透明感应区 (触发 Windows 系统原生 SC_SIZE 调整) -->
+      <div class="resize-edge resize-edge-left" @mousedown.prevent.stop="startResize('left')"></div>
+      <div class="resize-edge resize-edge-right" @mousedown.prevent.stop="startResize('right')"></div>
+      <div class="resize-edge resize-edge-bottom" @mousedown.prevent.stop="startResize('bottom')"></div>
+      <div class="resize-edge resize-edge-bl" @mousedown.prevent.stop="startResize('bottomLeft')"></div>
+      <div class="resize-edge resize-edge-br" @mousedown.prevent.stop="startResize('bottomRight')"></div>
     </div>
 
     <script>
@@ -647,38 +709,19 @@
               }
             }
 
-            // 顶栏拖拽事件
-            let isDragging = false;
-            let startScreenX = 0;
-            let startScreenY = 0;
-
+            // 顶栏拖拽移动事件 (优先调用系统原生标题栏平滑拖动)
             function onHeaderMouseDown(e) {
               if (e.button !== 0) return; // 仅响应鼠标左键
-              isDragging = true;
-              startScreenX = e.screenX;
-              startScreenY = e.screenY;
-
-              function onMouseMove(moveEvent) {
-                if (!isDragging) return;
-                const deltaX = moveEvent.screenX - startScreenX;
-                const deltaY = moveEvent.screenY - startScreenY;
-                startScreenX = moveEvent.screenX;
-                startScreenY = moveEvent.screenY;
-                postToCSharp({
-                  action: "moveWindow",
-                  deltaX: deltaX,
-                  deltaY: deltaY,
-                });
+              // 若点击的是标题栏右侧操作按钮或图标容器，坚决不触发窗口拖拽
+              if (e.target && (e.target.closest(".header-btn") || e.target.closest(".header-icons"))) {
+                return;
               }
+              postToCSharp({ action: "dragWindow" });
+            }
 
-              function onMouseUp() {
-                isDragging = false;
-                window.removeEventListener("mousemove", onMouseMove);
-                window.removeEventListener("mouseup", onMouseUp);
-              }
-
-              window.addEventListener("mousemove", onMouseMove);
-              window.addEventListener("mouseup", onMouseUp);
+            // 边缘透明感应区触发系统原生平滑调整尺寸 (SC_SIZE)
+            function startResize(direction) {
+              postToCSharp({ action: "startResize", direction: direction });
             }
 
             // 设置根目录
@@ -870,6 +913,7 @@
               configInfo,
               getCleanDwgName,
               onHeaderMouseDown,
+              startResize,
               selectBaseDirectory,
               enterDirectory,
               goToParent,

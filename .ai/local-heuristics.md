@@ -150,3 +150,42 @@
   2. **前端纯 Web 弹窗防误触覆盖**：前端检测若已存在目标表，通过 Element Plus 的 `ElMessageBox.confirm` 进行覆盖确认，纯 Web DOM 异步 Promise 保证 100% 零 Win32 阻塞风险；
   3. **删旧表克隆新表（彻底干净重置）**：检测到已有旧报表时，先静默调用 `oldSheet.Delete()`，再从标准母版克隆全新 Sheet，保证第 7 行占位符与预留行数 100% 标准纯净，绝无旧数据残留。
 
+### 20. WinForms + WebView2 无边框窗体拖拽缩放的三大冲突与系统内核级接管解法（8px 留白、Chromium 吞噬命中、SC_SIZE 极简实现）
+- **现象**：
+  1. 为了让无边框窗体支持拉伸，重写 `CreateParams` 添加 `WS_THICKFRAME` 后，窗体顶部露出约 8px 的系统非客户区白色留白；
+  2. 拦截 `WM_NCCALCSIZE` 将非客户区清零并设 `Padding = 0` 后，8px 空白虽然消除，但边缘极难拖拽，鼠标光标无法切换双向箭头，窗体尺寸难以调整；
+  3. 若在前端实现手动计算（`pointermove` + 坐标计算 + IPC 高频通信），代码冗长繁琐且卡顿明显。
+- **原因**：
+  1. **DWM 非客户区预留**：`WS_THICKFRAME` 会让 Windows `DefWindowProc` 在 `WM_NCCALCSIZE` 阶段默认预留系统标题栏与厚边框间距，无边框窗体不自绘该区域就会暴露出 8px 的背景底色；
+  2. **Chromium 子窗口吞噬 WM_NCHITTEST**：WebView2 是独立进程渲染的 Win32 原生子窗口（HWND）。当其铺满窗体客户区时，鼠标在边缘移动的所有事件均被 Chromium 自身截获并直接返回 `HTCLIENT`（不向父级 Form 转发 `HTTRANSPARENT`）。父窗体 `WndProc` 根本接收不到边缘的 `WM_NCHITTEST`，导致系统拖拽机制彻底失效。
+- **结晶解法（终极规范）**：
+  1. **WM_NCCALCSIZE 拦截抹除非客户区**：
+     在父窗体 `WndProc` 中捕获 `WM_NCCALCSIZE` (0x0083)，当 `m.WParam != IntPtr.Zero` 时直接设 `m.Result = IntPtr.Zero; return;`，明确通知 Windows 整个窗口 100% 属于客户区，彻底抹除非客户区 8px 间距，结合 `Padding = new Padding(0)` 实现顶栏 100% 紧贴上边缘；
+  2. **前端纯透明边缘感应区**：
+     在页面边缘绝对定位 5 个完全透明的感应层（左/右 6px，底部 6px，角部 10px，避开标题栏），通过纯 CSS（`cursor: ew-resize/ns-resize`）提供即时视觉反馈，完全不改变现有 UI 风格；
+  3. **Win32 系统内核级 SC_SIZE 接管（零坐标计算）**：
+     前端仅在 `@mousedown` 时向 C# 投递一次 `startResize`（**前端 0 行坐标计算、0 频繁监听、0 IPC 抖动**）；
+     C# 收到后执行：
+     ```csharp
+     ReleaseCapture();
+     SendMessage(this.Handle, WM_SYSCOMMAND, (IntPtr)(SC_SIZE + dirCode), IntPtr.Zero);
+     ```
+     由 Windows 操作系统内核直接接管模态缩放循环，达到原生 60/120 帧极致流畅体验，用户松开鼠标系统自动结束。
+
+### 21. WebView2 混合应用中顶栏拖动与功能按钮事件冒泡死锁（按钮点击完全失效）
+- **现象**：顶栏右侧的【设置】、【最小化】、【关闭】等功能按钮点击毫无反应，但整个顶栏拖动移动正常。
+- **原因**：
+  1. **mousedown 冒泡触发系统模态拖拽**：顶栏父容器（如 `.top-drag-header`）监听了 `@mousedown="onDragWindow"`，通过 IPC 驱动 C# 调用 `SendMessage(this.Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero)` 触发系统原生拖动；
+  2. **子按钮仅阻止了 click 冒泡**：子按钮元素如果只写了 `@click.stop`，当用户鼠标在按钮上**按下**的瞬间，`mousedown` 事件依然会向上冒泡到顶栏容器；
+  3. **Windows 系统模态循环吃掉后续事件**：一旦 C# 触发了 `WM_NCLBUTTONDOWN`，Windows 操作系统内核直接进入窗口移动模态循环并独占鼠标输入，**WebView2 网页内部根本收不到后续的 `mouseup` 和浏览器合成的 `click` 事件**，导致按钮绑定的点击方法永远无法执行。
+- **结晶解法（三重防护）**：
+  1. **第 1 道防线（显式阻断 mousedown 冒泡）**：在按钮父容器（`.header-icons`）及每个按钮（`.header-btn`）上必须显式添加 `@mousedown.stop`，坚决切断按下事件向上冒泡；
+  2. **第 2 道防线（逻辑防御过滤守门）**：在顶栏拖拽函数 `onHeaderMouseDown(e)` 中严格校验触发源元素：
+     ```javascript
+     if (e.target && (e.target.closest('.header-btn') || e.target.closest('.header-icons'))) {
+       return; // 只要点击落在按钮范围内，坚决不触发系统拖动
+     }
+     ```
+  3. **第 3 道防线（层级与光标保障）**：为顶栏和按钮容器配置明确的 `z-index: 10000` 与 `10001`，按钮容器设置 `cursor: default`，按钮设置 `cursor: pointer`，确保按钮绝对置顶于任何边缘感应区域之上。
+
+
