@@ -49,7 +49,7 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("selectedBrands")]
         public List<string> SelectedBrands { get; set; } = new List<string>();
 
-        // 动态必含字段约束规则集合 (多条规则间为 AND 与关系)
+        // 动态必含字段约束规则集合 (多条规则间为 OR 或关系)
         public List<MustContainRule> MustContainRules { get; set; } = new List<MustContainRule>();
 
         // 是否开启单元格点击自动弹起物料搜索框 (默认开启，提供开箱即用的智能物料联想)

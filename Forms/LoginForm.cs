@@ -61,8 +61,8 @@ namespace ExcelAddInDemo
             // 允许显示最小化按钮
             this.MinimizeBox = true;
 
-            // 设置窗体背景颜色为深色调
-            this.BackColor = Color.FromArgb(15, 23, 42);
+            // 设置窗体背景颜色为绿蓝相间深翠暗夜底色，杜绝加载过程色差闪烁
+            this.BackColor = Color.FromArgb(5, 24, 23);
         }
 
         /// <summary>
@@ -139,8 +139,28 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 获取前端传递过来的 Web Message 字符串
-                string messageJson = e.TryGetWebMessageAsString();
+                // 双轨安全提取消息文本：优先作为原生 JSON 提取，若为空再尝试字符串
+                string messageJson = string.Empty;
+                try
+                {
+                    // 前端传递原生 JS 对象时，直接读取 WebMessageAsJson 属性以防 ArgumentException
+                    messageJson = e.WebMessageAsJson;
+                }
+                catch { }
+
+                // 若原生 JSON 为空，则降级尝试作为纯字符串提取
+                if (string.IsNullOrWhiteSpace(messageJson))
+                {
+                    try
+                    {
+                        // 提取前端可能传入的纯字符串消息
+                        messageJson = e.TryGetWebMessageAsString();
+                    }
+                    catch { }
+                }
+
+                // 校验消息体有效性，若皆为空则直接忽略退出
+                if (string.IsNullOrWhiteSpace(messageJson)) return;
 
                 // 使用 JsonDocument 解析 JSON 格式数据
                 using var doc = JsonDocument.Parse(messageJson);
@@ -262,6 +282,9 @@ namespace ExcelAddInDemo
             }
             catch (Exception ex)
             {
+                // 记录详细异常日志便于在 debug.log 中追溯
+                LogHelper.WriteLog($"[LoginForm] WebMessage 处理异常: {ex}");
+
                 // 异常时提示失败信息给前端 (跨线程安全)
                 var errResponse = new
                 {

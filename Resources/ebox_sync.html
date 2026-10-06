@@ -14,130 +14,307 @@
   <script src="https://unpkg.com/@element-plus/icons-vue"></script>
 
   <style>
+    /* 绿蓝相间主题定制：主色调 #009688 与科技蓝 #0284c7 */
+    :root {
+      --el-color-primary: #009688;
+      --el-color-primary-light-3: #4db6ac;
+      --el-color-primary-light-5: #80cbd4;
+      --el-color-primary-light-7: #b2dfdb;
+      --el-color-primary-light-9: #e0f2f1;
+      --el-color-primary-dark-2: #00796b;
+      --el-border-color-lighter: #f1f5f9;
+      --el-border-color-light: #e2e8f0;
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
     }
 
-    body {
-      padding: 16px;
-      min-height: 100vh;
-      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #090d16 100%);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      color: #ffffff;
+    /* 全局清爽现代灰底，杜绝任何水平滚动条 */
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      overflow: hidden !important;
+      background-color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #1e293b;
       user-select: none;
     }
 
+    #app {
+      height: 100%;
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* 主视口弹性纵向填满容器 */
     .main-wrap {
       display: flex;
       flex-direction: column;
-      height: calc(100vh - 32px);
+      height: 100%;
+      min-height: 0;
+      gap: 10px;
     }
 
-    /* 顶部工程信息玻璃拟态卡片 */
-    .top-panel {
-      background: rgba(255, 255, 255, 0.07);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 12px;
-      padding: 14px 18px;
-      margin-bottom: 14px;
+    /* 迷你折叠视图 (高度约 65px，适配 100px 窗口高度) */
+    .mini-wrap {
+      height: 100%;
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      justify-content: space-between;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 8px 14px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     }
 
-    .top-proj-title {
-      font-size: 16px;
-      font-weight: 600;
-      color: #38bdf8;
-    }
-
-    .top-meta {
-      font-size: 12px;
-      color: #94a3b8;
-      margin-top: 4px;
-    }
-
-    /* 状态与控制栏 */
-    .control-panel {
-      background: rgba(15, 23, 42, 0.6);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 10px;
+    /* 顶部工程信息精细卡片 */
+    .info-card {
+      flex-shrink: 0;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
       padding: 12px 16px;
-      margin-bottom: 14px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      flex-wrap: wrap;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      transition: all 0.2s ease;
+    }
+
+    .info-card.is-unbound {
+      background: #fffbeb;
+      border-color: #fef3c7;
+    }
+
+    .info-card.is-bound {
+      background: #f0fdf4;
+      border-color: #bbf7d0;
+    }
+
+    .info-main-title {
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .title-bound {
+      color: #00796b;
+    }
+
+    .title-unbound {
+      color: #b45309;
+    }
+
+    .info-sub-meta {
+      font-size: 12px;
+      color: #64748b;
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
       gap: 12px;
     }
 
-    /* 表格区域撑满剩余空间 */
-    .table-container {
-      flex: 1;
-      overflow: hidden;
-      border-radius: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      background: rgba(15, 23, 42, 0.8);
-    }
-
-    /* 覆写 Element 表格深色透明主题 */
-    .el-table {
-      background-color: transparent !important;
-      color: #cbd5e1 !important;
-      font-size: 13px !important;
-    }
-
-    .el-table th.el-table__cell {
-      background-color: rgba(30, 41, 59, 0.8) !important;
-      color: #f1f5f9 !important;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
-      font-weight: 600;
-    }
-
-    .el-table td.el-table__cell {
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
-    }
-
-    .el-table--enable-row-hover .el-table__body tr:hover > td.el-table__cell {
-      background-color: rgba(99, 102, 241, 0.15) !important;
-    }
-
-    .order-badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 6px;
-      font-weight: bold;
-      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-      color: #ffffff;
-      font-family: monospace;
-      font-size: 13px;
-    }
-
-    /* 底部操作区 */
-    .bottom-bar {
-      margin-top: 14px;
+    /* 中部控制参数白底卡片 */
+    .control-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 10px 16px;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      flex-shrink: 0;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
     }
 
-    .btn-sync {
-      height: 44px;
-      font-size: 15px;
+    .control-left {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    /* 统计胶囊徽章（精致绿蓝风格） */
+    .count-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #e6f7f5;
+      color: #00796b;
+      border: 1px solid #b2dfdb;
+      border-radius: 9999px;
+      padding: 3px 12px;
+      font-size: 12px;
       font-weight: 600;
-      border-radius: 8px;
-      background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
-      border: none;
-      box-shadow: 0 4px 16px rgba(37, 99, 235, 0.4);
-      padding: 0 28px;
     }
 
-    .btn-sync:hover {
-      opacity: 0.9;
+    .count-pill strong {
+      color: #009688;
+      font-size: 14px;
+    }
+
+    /* 表格容器卡片 (核心关键：flex 1 1 0% 与 min-height 0 强制收缩限制内部高度，激活垂直滚动条) */
+    .table-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      flex: 1 1 0%;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .table-card .el-table {
+      flex: 1;
+      height: 100% !important;
+    }
+
+    /* 表格样式定制 */
+    .el-table {
+      --el-table-header-bg-color: #f8fafc;
+      --el-table-header-text-color: #334155;
+      --el-table-row-hover-bg-color: #f0fdfa;
+      font-size: 13px;
+    }
+
+    .el-table th.el-table__cell {
+      font-weight: 600 !important;
+      padding: 10px 0 !important;
+      border-bottom: 1px solid #e2e8f0 !important;
+    }
+
+    .el-table td.el-table__cell {
+      padding: 9px 0 !important;
+      border-bottom: 1px solid #f1f5f9 !important;
+    }
+
+    /* 序号等宽精致标签 */
+    .order-badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 4px;
+      font-weight: 700;
+      background: #e6f4f2;
+      color: #00796b;
+      font-family: "Consolas", monospace;
+      font-size: 13px;
+      border: 1px solid #b2dfdb;
+    }
+
+    /* 柜号主文本 */
+    .cabinet-name {
+      color: #0f172a;
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    /* 分类微型标签 */
+    .category-tag {
+      background: #f1f5f9;
+      color: #475569;
+      border: 1px solid #e2e8f0;
+      font-size: 12px;
+    }
+
+    /* 精致圆形折叠/展开按钮（100% 对齐用户指令图片：细青绿圆框 + 浅水绿底 + 居中向下箭头） */
+    .btn-circle-toggle {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 1.5px solid #009688;
+      background: #e6f7f5;
+      color: #00796b;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 1px 3px rgba(0, 150, 136, 0.15);
+      flex-shrink: 0;
+      outline: none;
+    }
+    .btn-circle-toggle:hover {
+      background: #ccefe9;
+      transform: scale(1.08);
+      box-shadow: 0 2px 6px rgba(0, 150, 136, 0.28);
+    }
+    .btn-circle-toggle:active {
+      transform: scale(0.95);
+    }
+    .btn-circle-toggle .svg-chevron {
+      width: 14px;
+      height: 14px;
+      stroke: #00796b;
+      stroke-width: 2.6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+      transition: transform 0.25s ease;
+      display: block;
+    }
+
+    /* 底部操作工具栏 (核心关键：flex-shrink 0 强制固定在视口底部，绝不被挤出屏幕) */
+    .footer-bar {
+      flex-shrink: 0;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 10px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .footer-tip {
+      font-size: 12px;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* 渐变绿蓝主操作按钮 */
+    .btn-sync-primary {
+      height: 38px;
+      padding: 0 24px;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 6px;
+      background: linear-gradient(135deg, #009688 0%, #00897b 45%, #0284c7 100%) !important;
+      border: none !important;
+      color: #ffffff !important;
+      box-shadow: 0 4px 12px rgba(0, 150, 136, 0.3) !important;
+      transition: all 0.2s ease !important;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-sync-primary:hover {
+      opacity: 0.93;
       transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(0, 150, 136, 0.45) !important;
+    }
+
+    .btn-sync-primary:disabled {
+      opacity: 0.5 !important;
+      transform: none !important;
+      box-shadow: none !important;
     }
   </style>
 </head>
@@ -145,77 +322,154 @@
   <div id="app"></div>
 
   <script type="text/x-template" id="sync-template">
-    <div class="main-wrap">
-      <!-- 顶部绑定的云端项目看板 -->
-      <div class="top-panel">
+    <!-- 1. 迷你折叠视图 (当窗口折叠至 100px 时展示精简控制条，避免遮挡 Excel 表格) -->
+    <div v-if="isCollapsed" class="mini-wrap">
+      <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;">
+        <el-tag :type="projectId > 0 ? 'success' : 'warning'" size="small" effect="dark" style="font-weight: 600;">
+          {{ projectId > 0 ? '已绑定' : '未绑定' }}
+        </el-tag>
+        <span style="font-size: 13px; font-weight: 600; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+          {{ projectId > 0 ? projectName : '未绑定云端工程' }}
+        </span>
+        <span class="count-pill" style="padding: 1px 8px; font-size: 11px;">
+          已选 {{ selectedCategories.length }} 分类 · {{ cabinets.length }} 台箱柜
+        </span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <el-button
+          type="primary"
+          size="small"
+          :disabled="projectId <= 0 || cabinets.length === 0"
+          :loading="syncing"
+          @click="handleSyncClick"
+        >
+          推送云端
+        </el-button>
+        <!-- 圆形展开按钮：旋转 180 度向上，点击展开恢复完整面板 -->
+        <button class="btn-circle-toggle" @click="toggleCollapse" title="展开恢复完整面板">
+          <svg viewBox="0 0 24 24" class="svg-chevron" style="transform: rotate(180deg);">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- 2. 常规完整视图 -->
+    <div v-else class="main-wrap">
+      <!-- 顶部工程绑定看板卡片 -->
+      <div class="info-card" :class="projectId > 0 ? 'is-bound' : 'is-unbound'">
         <div>
-          <div v-if="projectId > 0" class="top-proj-title">
-            ☁ 目标云端项目：{{ projectName }}
+          <div v-if="projectId > 0" class="info-main-title title-bound">
+            <el-icon><Check /></el-icon>
+            目标云端工程：<strong>{{ projectName }}</strong>
           </div>
-          <div v-else class="top-proj-title" style="color: #f87171;">
-            ⚠ 当前工作簿尚未绑定云端工程项目！
+          <div v-else class="info-main-title title-unbound">
+            <el-icon><Warning /></el-icon>
+            当前工作簿尚未绑定云端工程项目！
           </div>
-          <div class="top-meta">
-            所属工作组: {{ currentGroupName || '未指定' }} (ID: {{ currentGroupId }}) · 工作簿: {{ workbookName }}
+          <div class="info-sub-meta">
+            <span>工作组: <strong>{{ currentGroupName || '未指定' }}</strong> (ID: {{ currentGroupId }})</span>
+            <span>·</span>
+            <span>工作簿: {{ workbookName || '未命名' }}</span>
           </div>
         </div>
 
-        <div>
+        <div style="display: flex; align-items: center; gap: 10px;">
           <el-button
-            type="warning"
+            :type="projectId > 0 ? 'primary' : 'warning'"
             size="small"
             plain
             @click="handleOpenBind"
           >
             {{ projectId > 0 ? '更换绑定项目' : '立即绑定项目' }}
           </el-button>
+          <!-- 圆形折叠按钮 (100% 对齐用户截图：圆形向下箭头，点击折叠窗口至 100px) -->
+          <button class="btn-circle-toggle" @click="toggleCollapse" title="折叠窗口至 100px 高，避免遮挡 Excel 表格">
+            <svg viewBox="0 0 24 24" class="svg-chevron">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
         </div>
       </div>
 
-      <!-- 控制参数栏 (覆盖策略 + 批次) -->
-      <div class="control-panel">
-        <div style="display: flex; align-items: center; gap: 16px;">
-          <!-- 覆盖策略开关 (遵循用户指令: 允许确认后覆盖) -->
+      <!-- 2. 控制参数卡片 (覆盖策略 + 分类明细多选 + 批次(最大+1) + 数量胶囊) -->
+      <div class="control-card">
+        <div class="control-left">
+          <!-- 覆盖策略开关 -->
           <div style="display: flex; align-items: center; gap: 8px;">
             <el-switch
               v-model="isCover"
               active-text="允许覆盖同序号箱柜"
               inactive-text="不覆盖(遇重报错)"
-              style="--el-switch-on-color: #f59e0b;"
+              style="--el-switch-on-color: #009688;"
             />
             <el-tooltip
-              content="开启后，当云端已存在相同序号（如 2-1）的箱柜时，将覆盖更新其数据；关闭时若遇重复序号将拒绝导入。"
+              content="开启后，若云端已存在相同序号（如 1-9）的箱柜，将更新其数据；关闭时若遇重复序号将拒绝导入。"
               placement="top"
             >
               <el-icon color="#94a3b8" style="cursor: pointer;"><InfoFilled /></el-icon>
             </el-tooltip>
           </div>
 
-          <!-- 生产批次设置 -->
-          <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #cbd5e1;">
+          <!-- 核心需求：根据用户的选择，被选中的分类明细才生成如图的表 -->
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #475569;">
+            <span>分类明细:</span>
+            <el-select
+              v-model="selectedCategories"
+              multiple
+              collapse-tags
+              collapse-tags-tooltip
+              :max-collapse-tags="2"
+              placeholder="选择分类明细"
+              size="small"
+              style="min-width: 170px; max-width: 250px;"
+              @change="onCategoriesChange"
+            >
+              <el-option
+                v-for="cat in allCategories"
+                :key="cat"
+                :label="cat"
+                :value="cat"
+              />
+            </el-select>
+          </div>
+
+          <!-- 核心需求：生产批次获取该项目最大批次+1 -->
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #475569;">
             <span>生产批次:</span>
             <el-input-number
               v-model="produceOrder"
               :min="1"
-              :max="99"
+              :max="999"
               size="small"
               controls-position="right"
-              style="width: 90px;"
+              style="width: 86px;"
             />
+            <el-tooltip
+              :content="maxProduceOrder > 0 ? `当前云端项目已有最大生产批次为第 ${maxProduceOrder} 批，已自动默认设为第 ${maxProduceOrder + 1} 批` : '云端项目尚无历史生产批次，默认第 1 批'"
+              placement="top"
+            >
+              <el-tag size="small" type="success" effect="plain" style="font-size: 11px; cursor: help;">
+                {{ maxProduceOrder > 0 ? `最大+1 (${maxProduceOrder}+1)` : '首批' }}
+              </el-tag>
+            </el-tooltip>
           </div>
         </div>
 
-        <div style="font-size: 13px; color: #38bdf8; font-weight: 500;">
-          已扫描到 <strong>{{ cabinets.length }}</strong> 台箱柜
+        <!-- 扫描数量胶囊 -->
+        <div class="count-pill">
+          <el-icon><Files /></el-icon>
+          已选 <strong>{{ selectedCategories.length }}</strong>/{{ allCategories.length }} 个分类 (<strong>{{ cabinets.length }}</strong> 台)
         </div>
       </div>
 
-      <!-- 箱柜列表表格 -->
-      <div class="table-container" v-loading="loading">
+      <!-- 3. 箱柜列表白底清爽表格 -->
+      <div class="table-card" v-loading="loading">
         <el-table
           :data="cabinets"
           height="100%"
           style="width: 100%;"
+          stripe
           empty-text="当前工作簿未扫描到符合规范的箱柜数据"
         >
           <el-table-column label="云端序号 (Order)" width="150" align="center">
@@ -224,44 +478,74 @@
             </template>
           </el-table-column>
 
-          <el-table-column prop="systemDrawName" label="柜号 / 图纸代号" min-width="160">
+          <el-table-column prop="systemDrawName" label="柜号 / 图纸代号" min-width="180">
             <template #default="{ row }">
-              <strong style="color: #f1f5f9;">{{ row.systemDrawName }}</strong>
+              <span class="cabinet-name">{{ row.systemDrawName }}</span>
             </template>
           </el-table-column>
 
-          <el-table-column prop="categoryName" label="所属分类" width="130">
+          <!-- 遵循用户指示：将“所属分类”修改为“位置” -->
+          <el-table-column prop="eboxPositon" label="位置" width="150">
             <template #default="{ row }">
-              <el-tag size="small" type="info">{{ row.categoryName }} (序号: {{ row.categoryIndex }})</el-tag>
+              <el-tag size="small" class="category-tag">
+                {{ row.eboxPositon || row.categoryName }}
+              </el-tag>
             </template>
           </el-table-column>
-
-          <el-table-column prop="model" label="型号规格" min-width="150" show-overflow-tooltip />
 
           <el-table-column prop="count" label="台数" width="90" align="center">
             <template #default="{ row }">
-              <span>{{ row.count }} 台</span>
+              <strong style="color: #00796b;">{{ row.count }} 台</strong>
+            </template>
+          </el-table-column>
+
+          <!-- 动态自定义扩展属性列展示 -->
+          <el-table-column label="云端自定义扩展属性" min-width="200">
+            <template #default="{ row }">
+              <div v-if="parseCustomFields(row.customFields)" style="display: flex; flex-wrap: wrap; gap: 4px;">
+                <el-tag
+                  v-for="(val, key) in parseCustomFields(row.customFields)"
+                  :key="key"
+                  size="small"
+                  effect="light"
+                  type="success"
+                  style="font-size: 11px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                  :title="key + ': ' + val"
+                >
+                  {{ key }}: {{ val }}
+                </el-tag>
+              </div>
+              <span v-else style="color: #94a3b8; font-size: 12px;">未填写</span>
             </template>
           </el-table-column>
         </el-table>
       </div>
 
-      <!-- 底部操作栏 -->
-      <div class="bottom-bar">
-        <div style="font-size: 12px; color: #94a3b8;">
-          💡 序号规则：分类序号 - 汇总序号（例如 2-1）。点击下方按钮将一键直推至云端数据库。
+      <!-- 4. 底部固定操作栏 -->
+      <div class="footer-bar">
+        <div class="footer-tip">
+          <el-icon color="#009688"><InfoFilled /></el-icon>
+          序号规则：分类序号 - 汇总序号（例如 1-9）。可在【云端箱柜属性】工作表中批量填写扩展属性。
         </div>
 
-        <div style="display: flex; gap: 10px;">
-          <el-button @click="handleRefresh">重新扫描</el-button>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <el-button size="default" :loading="syncingProps" @click="handleSyncPropsSheet">
+            <el-icon v-if="!syncingProps"><List /></el-icon>
+            {{ syncingProps ? '正在拉取...' : '同步属性表' }}
+          </el-button>
+          <el-button size="default" @click="handleRefresh">
+            <el-icon><Refresh /></el-icon>
+            重新扫描
+          </el-button>
           <el-button
             type="primary"
-            class="btn-sync"
+            class="btn-sync-primary"
             :loading="syncing"
             :disabled="projectId <= 0 || cabinets.length === 0"
             @click="handleSyncClick"
           >
-            {{ syncing ? '正在直推入库...' : '🚀 推送到云端箱柜库' }}
+            <el-icon v-if="!syncing"><Upload /></el-icon>
+            {{ syncing ? '正在直推入库...' : '推送到云端箱柜库' }}
           </el-button>
         </div>
       </div>
@@ -270,10 +554,11 @@
 
   <script setup>
     const { ref, onMounted } = Vue;
-    const { InfoFilled } = ElementPlusIconsVue;
+    const { InfoFilled, Check, Warning, Files, Refresh, Upload, List, ArrowUp, ArrowDown } = ElementPlusIconsVue;
 
     const loading = ref(false);
     const syncing = ref(false);
+    const syncingProps = ref(false);
     const workbookName = ref('');
     const projectId = ref(0);
     const projectName = ref('');
@@ -281,9 +566,40 @@
     const currentGroupName = ref('');
     const cabinets = ref([]);
 
+    // 核心需求：当前工作簿所有分类明细列表与当前用户勾选分类
+    const allCategories = ref([]);
+    const selectedCategories = ref([]);
+    // 核心需求：云端已有最大生产批次
+    const maxProduceOrder = ref(0);
+
+    // 窗口是否处于 100px 迷你折叠收起状态
+    const isCollapsed = ref(false);
+
     // 默认开启覆盖模式（遵循用户指令：允许确认后覆盖）
     const isCover = ref(true);
     const produceOrder = ref(1);
+
+    // 切换折叠状态并通知宿主调整窗口高度 (100px <-> 原展开高度)
+    const toggleCollapse = () => {
+      isCollapsed.value = !isCollapsed.value;
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage({
+          action: 'toggleCollapse',
+          collapsed: isCollapsed.value
+        });
+      }
+    };
+
+    // 解析箱柜 JSON 自定义属性
+    const parseCustomFields = (jsonStr) => {
+      if (!jsonStr) return null;
+      try {
+        const obj = JSON.parse(jsonStr);
+        return (obj && Object.keys(obj).length > 0) ? obj : null;
+      } catch (e) {
+        return null;
+      }
+    };
 
     onMounted(() => {
       if (window.chrome && window.chrome.webview) {
@@ -297,7 +613,32 @@
             projectName.value = res.projectName;
             currentGroupId.value = res.currentGroupId;
             currentGroupName.value = res.currentGroupName;
+            allCategories.value = res.allCategories || [];
+            if (res.selectedCategories && selectedCategories.value.length === 0) {
+              selectedCategories.value = res.selectedCategories;
+            }
+            maxProduceOrder.value = res.maxProduceOrder || 0;
+            // 核心需求：生产批次需要获取该项目最大批次 + 1
+            if (res.recommendProduceOrder && (!produceOrder.value || produceOrder.value === 1)) {
+              produceOrder.value = res.recommendProduceOrder;
+            }
             cabinets.value = res.cabinets || [];
+          }
+          else if (res.action === 'syncCustomPropsSheetResult') {
+            syncingProps.value = false;
+            if (res.success) {
+              ElementPlus.ElNotification({
+                title: '✅ 属性表同步成功',
+                message: res.message || '已成功为选定分类生成云端箱柜属性表！',
+                type: 'success',
+                duration: 4000
+              });
+              if (res.cabinets) {
+                cabinets.value = res.cabinets;
+              }
+            } else {
+              ElementPlus.ElMessage.warning(res.message || '同步属性表失败！');
+            }
           }
           else if (res.action === 'syncResult') {
             syncing.value = false;
@@ -315,16 +656,58 @@
               });
             }
           }
+          else if (res.action === 'error') {
+            loading.value = false;
+            syncing.value = false;
+            syncingProps.value = false;
+            ElementPlus.ElMessage.error(res.message || '操作发生异常！');
+          }
         });
 
         handleRefresh();
       }
     });
 
+    // 核心需求：当用户选择/切换分类明细时，动态刷新箱柜列表
+    const onCategoriesChange = () => {
+      handleRefresh();
+    };
+
     const handleRefresh = () => {
       loading.value = true;
       if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.postMessage({ action: 'loadCabinets' });
+        console.log('[CloudEBoxSyncForm] 请求加载箱柜: loadCabinets, selectedCategories =', selectedCategories.value);
+        window.chrome.webview.postMessage({
+          action: 'loadCabinets',
+          selectedCategories: selectedCategories.value
+        });
+        // 10秒超时保底
+        setTimeout(() => {
+          if (loading.value) loading.value = false;
+        }, 10000);
+      }
+    };
+
+    // 核心需求：根据用户的选择，被选中的分类明细才生成属性表
+    const handleSyncPropsSheet = () => {
+      if (projectId.value <= 0) {
+        ElementPlus.ElMessage.warning('请先绑定云端项目！');
+        return;
+      }
+      if (selectedCategories.value.length === 0) {
+        ElementPlus.ElMessage.warning('请至少选择一个分类明细！');
+        return;
+      }
+      syncingProps.value = true;
+      if (window.chrome && window.chrome.webview) {
+        console.log('[CloudEBoxSyncForm] 请求同步属性表: syncCustomPropsSheet, selectedCategories =', selectedCategories.value);
+        window.chrome.webview.postMessage({
+          action: 'syncCustomPropsSheet',
+          selectedCategories: selectedCategories.value
+        });
+        setTimeout(() => {
+          if (syncingProps.value) syncingProps.value = false;
+        }, 15000);
       }
     };
 
@@ -341,14 +724,14 @@
         return;
       }
       if (cabinets.value.length === 0) {
-        ElementPlus.ElMessage.warning('当前没有可推送的箱柜数据！');
+        ElementPlus.ElMessage.warning('当前没有属于选定分类的箱柜数据！');
         return;
       }
 
-      // 用户指令：允许确认后覆盖
+      // 允许确认后覆盖
       if (isCover.value) {
         ElementPlus.ElMessageBox.confirm(
-          `已开启【覆盖模式】。推送将覆盖云端项目【${projectName.value}】中序号相同的箱柜数据，是否确认覆盖推送？`,
+          `已开启【覆盖模式】。推送将覆盖云端项目【${projectName.value}】中序号相同的箱柜数据，生产批次为第【${produceOrder.value}】批，是否确认覆盖推送？`,
           '覆盖同步确认',
           {
             confirmButtonText: '确认覆盖并推送',
@@ -370,7 +753,8 @@
           action: 'syncToCloud',
           projectId: projectId.value,
           isCover: isCover.value,
-          produceOrder: produceOrder.value
+          produceOrder: produceOrder.value,
+          selectedCategories: selectedCategories.value
         });
       }
     };
@@ -387,9 +771,13 @@
           const setupFunc = new Function('Vue', 'ElementPlusIconsVue', `
             ${setupScriptText}
             return {
-              loading, syncing, workbookName, projectId, projectName,
+              loading, syncing, syncingProps, workbookName, projectId, projectName,
               currentGroupId, currentGroupName, cabinets, isCover, produceOrder,
-              handleRefresh, handleOpenBind, handleSyncClick, InfoFilled
+              allCategories, selectedCategories, maxProduceOrder, onCategoriesChange,
+              isCollapsed, toggleCollapse,
+              parseCustomFields, handleSyncPropsSheet,
+              handleRefresh, handleOpenBind, handleSyncClick,
+              InfoFilled, Check, Warning, Files, Refresh, Upload, List, ArrowUp, ArrowDown
             };
           `);
           return setupFunc(Vue, ElementPlusIconsVue);

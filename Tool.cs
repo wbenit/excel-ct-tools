@@ -314,6 +314,31 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 获取统一的本地 WebView2 用户运行环境缓存目录 (固定位于 LocalApplicationData，严禁污染用户业务配置或网盘同步盘)
+        /// </summary>
+        /// <param name="subFolderName">可选子目录名，默认使用统一的 WebView2Data</param>
+        /// <returns>可安全读写的系统本地缓存物理绝对路径</returns>
+        public static string GetWebView2UserDataFolder(string subFolderName = "WebView2Data")
+        {
+            // 1. 获取系统当前登录用户的本地应用数据目录 (%LOCALAPPDATA%)
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            // 2. 拼接插件专用的本地环境隔离主目录 ExcelAddInDemo
+            string rootDir = Path.Combine(localAppData, "ExcelAddInDemo");
+            // 3. 拼接缓存子文件夹，若未传则默认归集于统一的 WebView2Data
+            string targetFolder = string.IsNullOrWhiteSpace(subFolderName) ? "WebView2Data" : subFolderName;
+            // 4. 拼接完整目录路径
+            string fullPath = Path.Combine(rootDir, targetFolder);
+            // 5. 若本地缓存目录不存在则主动创建
+            if (!Directory.Exists(fullPath))
+            {
+                // 创建物理缓存目录
+                Directory.CreateDirectory(fullPath);
+            }
+            // 6. 返回安全的本地缓存目录路径
+            return fullPath;
+        }
+
+        /// <summary>
         /// 提取定义名称中的纯标识文本 (清理可能存在的工作表前缀、单引号、等号与空格)
         /// </summary>
         /// <param name="rawName">原始定义名称字符串</param>

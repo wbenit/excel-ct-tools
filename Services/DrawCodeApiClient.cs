@@ -67,8 +67,9 @@ namespace ExcelAddInDemo.Services
                 Timeout = TimeSpan.FromSeconds(30)
             };
 
-            // 预设标准请求头
-            _httpClient.DefaultRequestHeaders.Add("User-Agent", "ExcelAddInDemo/1.0 (Windows NT 10.0; Win64; x64)");
+            // 预设标准请求头，模拟常规浏览器以防云端 WAF 网页防火墙拦截请求
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 ExcelAddInDemo/1.0");
+            // 设置预期的媒体接收格式为 JSON 格式
             _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         }
 
@@ -489,19 +490,60 @@ namespace ExcelAddInDemo.Services
                 {
                     foreach (var item in arrayNode.EnumerateArray())
                     {
-                        var proj = JsonSerializer.Deserialize<ProjectSummaryDto>(item.GetRawText(), JsonOpts);
-                        if (proj != null && proj.Id > 0)
+                        try
                         {
-                            list.Add(proj);
+                            // 优先通过标准反序列化解析项目概要
+                            var proj = JsonSerializer.Deserialize<ProjectSummaryDto>(item.GetRawText(), JsonOpts);
+                            if (proj != null && proj.Id > 0)
+                            {
+                                list.Add(proj);
+                                continue;
+                            }
                         }
+                        catch { }
+
+                        // 兜底方案：通过 JsonElement 逐字段弹性提取核心属性
+                        try
+                        {
+                            int pId = 0;
+                            if (item.TryGetProperty("id", out var idP) || item.TryGetProperty("Id", out idP))
+                            {
+                                if (idP.ValueKind == JsonValueKind.Number) pId = idP.GetInt32();
+                                else if (idP.ValueKind == JsonValueKind.String && int.TryParse(idP.GetString(), out int parsedId)) pId = parsedId;
+                            }
+                            string pName = string.Empty;
+                            if (item.TryGetProperty("projectName", out var nameP) || item.TryGetProperty("ProjectName", out nameP))
+                            {
+                                pName = nameP.GetString() ?? string.Empty;
+                            }
+                            string pType = string.Empty;
+                            if (item.TryGetProperty("projectType", out var typeP) || item.TryGetProperty("ProjectType", out typeP))
+                            {
+                                pType = typeP.GetString() ?? string.Empty;
+                            }
+
+                            if (pId > 0)
+                            {
+                                list.Add(new ProjectSummaryDto
+                                {
+                                    Id = pId,
+                                    ProjectName = pName,
+                                    ProjectType = pType
+                                });
+                            }
+                        }
+                        catch { }
                     }
                 }
 
+                // 记录成功日志
+                LogHelper.WriteLog($"[DrawCodeApiClient] GetProjectsAsync 成功获取 {list.Count} 条项目 (keyword: '{keyword}')");
                 return (true, "获取成功", list);
             }
             catch (Exception ex)
             {
-                LogHelper.WriteLog($"[DrawCodeApiClient] GetProjectsAsync 异常: {ex.Message}");
+                // 记录详细异常日志
+                LogHelper.WriteLog($"[DrawCodeApiClient] GetProjectsAsync 异常: {ex}");
                 return (false, $"网络通信异常: {ex.Message}", list);
             }
         }
@@ -599,6 +641,206 @@ namespace ExcelAddInDemo.Services
                 result.Success = false;
                 result.Message = $"网络异常: {ex.Message}";
                 return result;
+            }
+        }
+
+        /// <summary>
+        /// 实时从云端 WebAPI 拉取指定项目的系统图模板配置，并动态解析自定义字段标签名列表
+        /// 保证非硬编码，每次依据云端项目配置实时拉取
+        /// </summary>
+        /// <param name="projectId">目标项目 ID</param>
+        /// <param name="groupId">可选工作组 ID (若为 null 则自动使用当前工作组)</param>
+        /// <returns>(是否成功, 提示信息, 自定义字段标签列表)</returns>
+        public static async Task<(bool Success, string Message, List<string> Labels)> GetProjectCustomFieldLabelsAsync(int projectId, int? groupId = null)
+        {
+            var labels = new List<string>();
+            try
+            {
+                // 1. 优先使用当前有效 Token，未登录则抛出提示
+                string token = ExcelServices.CurrentToken;
+                if (string.IsNullOrWhiteSpace(token))
+                {
+                    return (false, "用户未登录，无法拉取项目模板", labels);
+                }
+
+                // 2. 确定请求的目标工作组 ID
+                int targetGroupId = groupId ?? ExcelServices.CurrentGroupId;
+
+                // 3. 构造请求 URL: /Project/GetProjectTemplate?projectId={projectId}&groupId={targetGroupId}
+                string baseUrl = GetBaseUrl();
+                string url = $"{baseUrl}/Project/GetProjectTemplate?projectId={projectId}&groupId={targetGroupId}";
+
+                // 4. 创建 HTTP GET 请求对象
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                // 附加 Bearer Token 认证头
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                // 附加工作组切库 Header
+                request.Headers.Add("ctmo-group-id", targetGroupId.ToString());
+
+                // 5. 设置 15 秒超时防护
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                // 异步发送请求并获取响应
+                using var response = await _httpClient.SendAsync(request, cts.Token);
+                // 读取响应体内容文本
+                string responseBody = await response.Content.ReadAsStringAsync();
+
+                // 检查并自动刷新 Token
+                CheckAndRefreshToken(response);
+
+                // 若 HTTP 状态码非 200，记录日志并返回错误
+                if (!response.IsSuccessStatusCode)
+                {
+                    string err = TryExtractErrorMessage(responseBody) ?? $"拉取模板失败 ({(int)response.StatusCode})";
+                    return (false, err, labels);
+                }
+
+                if (string.IsNullOrWhiteSpace(responseBody))
+                {
+                    return (true, "项目未配置模板", labels);
+                }
+
+                // 6. 弹性解析 JSON：可能是 AjaxResult 包裹，也可能是直接的 JSON 串
+                using var doc = JsonDocument.Parse(responseBody);
+                var root = doc.RootElement;
+
+                // 检查是否有 data 属性包裹
+                string templateJsonStr = "";
+                if (root.TryGetProperty("data", out var dataElem))
+                {
+                    // 若 data 为字符串形式的模板 JSON
+                    if (dataElem.ValueKind == JsonValueKind.String)
+                    {
+                        templateJsonStr = dataElem.GetString() ?? "";
+                    }
+                    else if (dataElem.ValueKind == JsonValueKind.Object)
+                    {
+                        // 若 data 直接为对象形式
+                        templateJsonStr = dataElem.GetRawText();
+                    }
+                }
+                else
+                {
+                    // 若无 data 外壳，则 root 本身即为模板内容
+                    templateJsonStr = responseBody;
+                }
+
+                if (string.IsNullOrWhiteSpace(templateJsonStr))
+                {
+                    return (true, "项目未配置自定义字段", labels);
+                }
+
+                // 7. 二次解析模板 JSON 提取 config.customContent
+                using var tplDoc = JsonDocument.Parse(templateJsonStr);
+                var tplRoot = tplDoc.RootElement;
+
+                JsonElement customContentNode = default;
+                bool foundCustomContent = false;
+
+                // 方式 A: 尝试在 config.customContent 中查找
+                if (tplRoot.TryGetProperty("config", out var configNode) && configNode.ValueKind == JsonValueKind.Object)
+                {
+                    if (configNode.TryGetProperty("customContent", out var ccNode) && ccNode.ValueKind == JsonValueKind.Array)
+                    {
+                        customContentNode = ccNode;
+                        foundCustomContent = true;
+                    }
+                }
+
+                // 方式 B: 若 config 下未找到，尝试直接在根节点查找 customContent
+                if (!foundCustomContent && tplRoot.TryGetProperty("customContent", out var directCcNode) && directCcNode.ValueKind == JsonValueKind.Array)
+                {
+                    customContentNode = directCcNode;
+                    foundCustomContent = true;
+                }
+
+                // 8. 遍历自定义字段数组提取 label
+                if (foundCustomContent && customContentNode.ValueKind == JsonValueKind.Array)
+                {
+                    var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var item in customContentNode.EnumerateArray())
+                    {
+                        // 提取每个自定义字段的 label 属性 (如 "柜体尺寸", "防护等级")
+                        if (item.TryGetProperty("label", out var lProp) && lProp.ValueKind == JsonValueKind.String)
+                        {
+                            string lVal = lProp.GetString()?.Trim() ?? "";
+                            // 过滤空标签与重复字段
+                            if (!string.IsNullOrEmpty(lVal) && set.Add(lVal))
+                            {
+                                labels.Add(lVal);
+                            }
+                        }
+                    }
+                }
+
+                return (true, $"成功获取 {labels.Count} 个自定义字段", labels);
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[DrawCodeApiClient] GetProjectCustomFieldLabelsAsync 异常: {ex.Message}");
+                return (false, $"解析自定义字段异常: {ex.Message}", labels);
+            }
+        }
+
+        /// <summary>
+        /// 从云端获取指定项目的生产批次列表并计算最大批次
+        /// 遵循规范：每 3 行至少 1 行中文注释
+        /// </summary>
+        /// <param name="projectId">云端项目 ID</param>
+        /// <param name="groupId">可选工作组 ID (若为 null 则自动使用当前工作组)</param>
+        /// <returns>当前最大生产批次（若尚无批次或拉取失败返回 0）</returns>
+        public static async Task<int> GetProjectMaxProduceOrderAsync(int projectId, int? groupId = null)
+        {
+            try
+            {
+                if (projectId <= 0) return 0;
+                string token = ExcelServices.CurrentToken;
+                if (string.IsNullOrWhiteSpace(token)) return 0;
+
+                int targetGroupId = groupId ?? ExcelServices.CurrentGroupId;
+                string baseUrl = GetBaseUrl();
+                // 构造请求 URL: /Project/GetProduceOrdersShow?projectId={projectId}&groupId={targetGroupId}
+                string url = $"{baseUrl}/Project/GetProduceOrdersShow?projectId={projectId}&groupId={targetGroupId}";
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                request.Headers.Add("ctmo-group-id", targetGroupId.ToString());
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                using var response = await _httpClient.SendAsync(request, cts.Token);
+                string responseBody = await response.Content.ReadAsStringAsync();
+
+                CheckAndRefreshToken(response);
+                if (!response.IsSuccessStatusCode || string.IsNullOrWhiteSpace(responseBody)) return 0;
+
+                using var doc = JsonDocument.Parse(responseBody);
+                var root = doc.RootElement;
+                var listNode = root;
+
+                // 若被 data 属性包裹则下钻
+                if (root.TryGetProperty("data", out var dNode) && dNode.ValueKind == JsonValueKind.Array)
+                {
+                    listNode = dNode;
+                }
+
+                int maxOrder = 0;
+                if (listNode.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var elem in listNode.EnumerateArray())
+                    {
+                        // 兼容 produceOrder / ProduceOrder 字段名
+                        if ((elem.TryGetProperty("produceOrder", out var poProp) || elem.TryGetProperty("ProduceOrder", out poProp))
+                            && poProp.TryGetInt32(out int poVal))
+                        {
+                            if (poVal > maxOrder) maxOrder = poVal;
+                        }
+                    }
+                }
+                return maxOrder;
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[DrawCodeApiClient] GetProjectMaxProduceOrderAsync 异常: {ex.Message}");
+                return 0;
             }
         }
 

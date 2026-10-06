@@ -71,9 +71,11 @@ namespace ExcelAddInDemo.Forms
         {
             try
             {
-                // 配置专属用户缓存目录
-                string userDataDir = Path.Combine(Tool.GetAppDataDirectory(), "WebView2_AddToPersonalDb");
+                // 1. 配置独立的系统本地用户缓存目录，避免污染用户共享配置目录与网盘同步
+                string userDataDir = Tool.GetWebView2UserDataFolder("WebView2_AddToPersonalDb");
+                // 2. 异步创建 CoreWebView2 运行环境
                 var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
+                // 3. 确保 WebView2 核心就绪
                 await _webView.EnsureCoreWebView2Async(env);
 
                 if (_webView.CoreWebView2 != null)

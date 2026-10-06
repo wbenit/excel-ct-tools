@@ -26,9 +26,9 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("projectType")]
         public string? ProjectType { get; set; }
 
-        // 项目创建时间文本
+        // 项目创建时间文本（使用 string 兼容非 ISO8601 时间格式与空值）
         [JsonPropertyName("createTime")]
-        public DateTime? CreateTime { get; set; }
+        public string? CreateTime { get; set; }
     }
 
     /// <summary>

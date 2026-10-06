@@ -101,7 +101,7 @@ namespace ExcelAddInDemo
         /// <param name="pole">极数字符串 (如: 4P, 3, 1P+N)</param>
         /// <param name="tripMode">脱扣方式代号 (如: C, D, TM, MA)</param>
         /// <param name="brand">指定品牌筛选 (如: 施耐德, ABB，为空表示不限品牌)</param>
-        /// <param name="mustContainRules">动态必含字段约束规则列表 (多条规则间为 AND 关系)</param>
+        /// <param name="mustContainRules">动态必含字段约束规则列表 (多条规则间为 OR 或关系)</param>
         /// <param name="maxResults">最多返回结果条数限制 (默认 100)</param>
         /// <returns>经过全局过滤管道筛选后的匹配条目列表</returns>
         /// <summary>
@@ -202,20 +202,25 @@ namespace ExcelAddInDemo
 
                 var items = pagedResult.Items;
 
-                // 8. 全局过滤管道第二层: 动态必含字段约束 (只要型号 Model 包含所有必含关键字即可)
+                // 8. 全局过滤管道第二层: 动态必含/包含字段约束 (满足任意一个启用的关键字即可，多条规则间为 OR 或关系)
                 if (mustContainRules != null && mustContainRules.Count > 0)
                 {
+                    // 筛选已启用且关键字非空白的规则列表
                     var activeRules = mustContainRules
                         .Where(r => r.Enabled && !string.IsNullOrWhiteSpace(r.Keyword))
                         .Select(r => r.Keyword.Trim())
                         .ToList();
 
+                    // 若存在有效规则，则要求型号包含其中任意一个关键字 (OR 关系)
                     if (activeRules.Count > 0)
                     {
+                        // 过滤出符合任意一条包含约束的物料项
                         items = items.Where(item =>
                         {
+                            // 获取物料型号字符串进行匹配
                             string modelText = item.Model ?? string.Empty;
-                            return activeRules.All(r => modelText.IndexOf(r, StringComparison.OrdinalIgnoreCase) >= 0);
+                            // 只要型号包含任意一个有效关键字即判定命中 (OR 关系)
+                            return activeRules.Any(r => modelText.IndexOf(r, StringComparison.OrdinalIgnoreCase) >= 0);
                         }).ToList();
                     }
                 }

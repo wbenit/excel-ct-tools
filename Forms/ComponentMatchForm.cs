@@ -77,9 +77,11 @@ namespace ExcelAddInDemo.Forms
         {
             try
             {
-                // 获取专属用户缓存数据目录
-                string userDataDir = Path.Combine(Tool.GetAppDataDirectory(), "WebView2_MatchProfile");
+                // 1. 获取系统本地 LocalApplicationData 专有缓存目录，避免污染用户业务配置或网盘同步
+                string userDataDir = Tool.GetWebView2UserDataFolder("WebView2_MatchProfile");
+                // 2. 异步创建 CoreWebView2 运行环境
                 var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
+                // 3. 确保 WebView2 核心就绪
                 await _webView.EnsureCoreWebView2Async(env);
 
                 // 配置 WebView2 运行环境与右键上下文菜单禁用

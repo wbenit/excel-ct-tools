@@ -45,8 +45,8 @@ namespace ExcelAddInDemo.Forms
             this.MaximizeBox = false;
             // 允许最小化
             this.MinimizeBox = true;
-            // 设置窗体背景色为暗夜蓝
-            this.BackColor = Color.FromArgb(15, 23, 42);
+            // 设置窗体背景色为图二清爽现代浅灰白底色 (#f8fafc)
+            this.BackColor = Color.FromArgb(248, 250, 252);
         }
 
         /// <summary>
@@ -103,7 +103,17 @@ namespace ExcelAddInDemo.Forms
         {
             try
             {
-                string json = e.TryGetWebMessageAsString();
+                // 双轨安全提取消息文本：优先作为原生 JSON 提取，若为空再尝试纯字符串提取
+                string json = string.Empty;
+                try { json = e.WebMessageAsJson; } catch { }
+                // 若原生 JSON 为空，则降级尝试作为纯字符串提取
+                if (string.IsNullOrWhiteSpace(json))
+                {
+                    try { json = e.TryGetWebMessageAsString(); } catch { }
+                }
+                // 校验消息体有效性，若皆为空则直接忽略退出
+                if (string.IsNullOrWhiteSpace(json)) return;
+
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
                 if (!root.TryGetProperty("action", out var actionProp)) return;
@@ -167,12 +177,27 @@ namespace ExcelAddInDemo.Forms
                     {
                         action = "bindProjectResult",
                         success = ok,
-                        message = ok ? $"成功绑定到云端项目：{projectName}" : "绑定项目失败！"
+                        message = ok ? $"成功绑定到云端项目：{projectName}！已自动拉取云端属性表。" : "绑定项目失败！"
                     };
                     PostWebMessageSafe(JsonSerializer.Serialize(res));
 
                     if (ok)
                     {
+                        // 遵循用户明确指示：绑定项目成功后，实时从云端动态拉取该项目自定义字段并自动生成【云端箱柜属性】工作表
+                        _ = System.Threading.Tasks.Task.Run(async () =>
+                        {
+                            try
+                            {
+                                // 异步执行动态拉取与属性工作表生成
+                                await ExcelServices.SyncCloudCustomPropsSheetAsync(projectId);
+                            }
+                            catch (Exception ex)
+                            {
+                                // 捕获并记录生成属性表过程中的异常
+                                LogHelper.WriteLog($"[ProjectBindForm] 自动生成云端属性表容错: {ex.Message}");
+                            }
+                        });
+
                         await System.Threading.Tasks.Task.Delay(800);
                         SafeInvoke(() => this.Close());
                     }
@@ -181,6 +206,8 @@ namespace ExcelAddInDemo.Forms
             }
             catch (Exception ex)
             {
+                // 记录详细异常日志便于追溯
+                LogHelper.WriteLog($"[ProjectBindForm] OnWebMessageReceived 异常: {ex}");
                 var err = new { action = "error", message = $"处理异常: {ex.Message}" };
                 PostWebMessageSafe(JsonSerializer.Serialize(err));
             }

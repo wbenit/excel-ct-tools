@@ -480,19 +480,21 @@ namespace ExcelAddInDemo.Services
         private const string ThumbCacheFolderName = "dwg_thumbs"; // --硬编码: 缩略图缓存子目录名--
 
         /// <summary>
-        /// 获取或初始化 DWG 缩略图本地持久化存储目录 (data/dwg_thumbs)
+        /// 获取或初始化 DWG 缩略图本地持久化存储目录 (存储于 LocalApplicationData 下，避免污染共享配置与网盘同步)
         /// </summary>
         public static string GetThumbCacheDirectory()
         {
-            // 使用公共工具类定位插件标准数据存储目录 (data)
-            string baseDataDir = Tool.GetAppDataDirectory();
-            // 拼接专用的 dwg_thumbs 缓存子目录
-            string cacheDir = Path.Combine(baseDataDir, ThumbCacheFolderName);
-            // 保证物理文件夹存在
+            // 1. 获取系统本地 LocalApplicationData 目录，杜绝将大量图纸缓存写入网盘同步盘
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            // 2. 拼接专用的 dwg_thumbs 本地缓存子目录
+            string cacheDir = Path.Combine(localAppData, "ExcelAddInDemo", ThumbCacheFolderName);
+            // 3. 保证物理文件夹存在
             if (!Directory.Exists(cacheDir))
             {
+                // 创建缓存子目录
                 Directory.CreateDirectory(cacheDir);
             }
+            // 4. 返回本地安全缓存路径
             return cacheDir;
         }
 

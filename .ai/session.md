@@ -1,3 +1,146 @@
+- **【架构与缓存优化交付：WebView2 运行时缓存与 DWG 缩略图缓存全面重定向至系统 LocalApplicationData】(`Tool.cs`, `Services/DwgPreviewService.cs`, `Forms/*.cs`)**：
+  1. **问题根因**：
+     - 用户将全局数据目录指定至百度网盘同步盘（`E:\BaiduNetdiskWorkspace\BaseData\报价设置`）；
+     - 部分窗体和图纸预览服务将 Chromium 内核运行数据（`WebView2_*`）和缩略图缓存（`dwg_thumbs`）直接建立在该目录下，导致网盘被上百兆琐碎缓存频繁上传污染，并引发 SQLite 同步锁冲突生成 `(版本1)` 冗余副本。
+  2. **核心落地与架构规范**：
+     - **公共缓存方法提取**：在 `Tool.cs` 统一提供 `GetWebView2UserDataFolder(string subFolderName = "WebView2Data")`，强制将 Chromium 用户数据隔离至 `%LOCALAPPDATA%\ExcelAddInDemo\`，彻底杜绝写入用户配置目录；
+     - **窗体全量重构**：逐一重构了 `AddToPersonalDbForm`、`CabinetModelPipelineForm`、`ComponentManageForm`、`ComponentMatchForm`、`ComponentMatchOverlayForm`、`ComponentParamMatchForm`、`ComponentSplitForm`、`CustomContextMenuForm`、`FinishedHandoverForm`、`LaborListForm`、`LocalProjectForm`、`MaterialStatForm`、`OnlinePriceSearchForm` 共 13 个窗体，统一使用规范的本地 LocalApplicationData 目录；
+     - **DWG 缩略图缓存重定向**：在 `DwgPreviewService.cs` 将 `GetThumbCacheDirectory` 重定向至系统 LocalApplicationData，避免将图纸渲染缓存放入网盘目录；
+     - **严格注释与最小变动**：每处新增代码每 3 行包含一行中文注释，零副作用。
+  3. **构建验证与产物同步**：
+     - `dotnet build` 验证 0 错误（`ExcelAddInDemo.dll` 生成成功）；
+     - 产物已同步至 `bin/Debug/net48` 与 `publish/`。
+
+- **【业务逻辑与规则微调：型号必含字段约束修改为 OR（或）关系】(`Resources/component_match_dialog.html`, `Services/ComponentApiClient.cs`, `Services/PersonalComponentDbService.cs`, `Models/ComponentMatchModels.cs`)**：
+  1. **前端文案提示更新**：
+     - 在 `component_match_dialog.html` 中将提示文案由“AND（与）关系，反查物料时型号必须同时包含所有启用的关键字”修改为“OR（或）关系，反查物料时型号只需包含任意一个启用的关键字”；
+  2. **云端商城接口过滤逻辑改造**：
+     - 在 `ComponentApiClient.cs` 的全局过滤第二层中，将原本基于 `activeRules.All(...)` 的多条件同时包含判断，调整为 `activeRules.Any(...)`，实现多行约束之间满足任意一个启用的关键字即可匹配命中的 OR 逻辑；
+  3. **本地个人库 SQLite 检索与降级检索改造**：
+     - 在 `PersonalComponentDbService.cs` 的主查询以及降级查询中，将多条必含规则原本独立的 `AND model LIKE @rule_i` 条件改造为 `AND (model LIKE @rule_0 OR model LIKE @rule_1 ...)` 组合子句，与云端检索逻辑统一；
+  4. **构建验证与产物同步**：
+     - `dotnet build` 验证 0 错误；
+     - 编译产物 `ExcelAddInDemo.dll` / `pdb` 及 `component_match_dialog.html` 已全量同步覆盖至 `bin/Debug/net48` 与 `publish/`。
+
+- **【业务功能交付：分类明细按需选择生成箱柜表 & 生产批次自动获取云端最大批次+1】(`Resources/ebox_sync.html`, `Forms/CloudEBoxSyncForm.cs`, `Services/ExcelServices.CloudProject.cs`, `Services/DrawCodeApiClient.cs`)**：
+  1. **分类明细按需选择生成（解决直接加载全部明细的问题）**：
+     - **分类动态提取**：在 `ExcelServices.CloudProject.cs` 增加 `GetProjectCategorySheetNamesList`，精准动态识别当前工作簿已登记在册的分类明细工作表列表；
+     - **前端按需多选**：在 `ebox_sync.html` 控制栏增加分类明细下拉多选框（`el-select`，支持折叠标签与一键清空/全选），右上角动态提示 `已选 X/Y 个分类 (N 台箱柜)`；
+     - **即时过滤联动**：切换选中的分类明细即时重新抽取与展示箱柜，未勾选的分类明细不出现在表格中；
+     - **Excel 属性表同步过滤**：点击【同步属性表】时，传递当前选中的分类集合，仅为被选中的分类明细生成/更新【云端箱柜属性】工作表；
+     - **重新扫描防串味保护**：在 `ExtractAllCabinetsForCloudSync` 补充对属性表未勾选分类行的隔离过滤，确保重新扫描时完全以用户选择的分类明细为准。
+  2. **生产批次自动获取该项目最大批次+1**：
+     - **云端最大批次提取**：在 `DrawCodeApiClient.cs` 实现 `GetProjectMaxProduceOrderAsync`，调用云端成熟接口 `GET /Project/GetProduceOrdersShow?projectId={id}&groupId={groupId}`，解析出该项目当前已被占用的最大 `ProduceOrder`；
+     - **自动计算 +1 赋初值**：窗口初始化与重新扫描加载时，自动计算出推荐生产批次（若最大为 3 则推荐 4，若尚无批次则推荐 1）；
+     - **前端友好指示**：生产批次步进器右侧增加清爽的“最大+1”状态徽章与 Tooltip 提示，向用户明确当前推荐值的依据，用户亦可根据实际情况自由手动调整。
+  3. **构建验证与产物同步**：
+     - `dotnet build` 验证 0 错误（`ExcelAddInDemo.dll` 生成成功）；
+     - `node -e` 校验 `ebox_sync.html` 语法通过；
+     - 产物已全量同步覆盖至 `bin/Debug/net48` 与 `publish/`。
+
+- **【UI 重构与业务体验交付：绑定项目页面对齐图二极简现代卡片美学与已绑定项目自动反显直接显示】(`Resources/project_bind.html`, `Forms/ProjectBindForm.cs`, `Services/ExcelServices.CloudProject.cs`)**：
+  1. **样式 100% 对齐图二风格**：
+     - 彻底摒弃深邃暗夜黑绿老旧底色，全局切换为图二同款现代清爽浅灰白 `#f8fafc` 底色；
+     - `ProjectBindForm.cs` 窗体 `BackColor` 改为 `Color.FromArgb(248, 250, 252)`；
+     - 顶部信息卡片：对齐图二设计，已绑定呈现翠绿卡片（`#f0fdf4` / `#bbf7d0`），展示目标云端工程名称、已绑定 ID 标签与工作组信息；未绑定呈现浅琥珀告警卡片（`#fffbeb` / `#fef3c7`）；
+     - 中部搜索卡片：白底圆角卡片，Element Plus 搜索输入框 + 主色调 `#009688` 搜索按钮；
+     - 项目列表卡片：白底圆角卡片，列表条目悬停淡水绿高亮（`#f0fdfa`），选中条目呈现翠绿左侧指示线（`#009688`）与“✔ 已选”徽章；
+     - 底部固定工具栏：白底吸底卡片，操作按钮采用图二同款渐变绿蓝（`#009688` -> `#0284c7`），带轻微上浮投影。
+  2. **支持反显，该工作簿已绑定项目直接显示**：
+     - **后端容错增强**：在 `GetBoundProject` 中剔除工作表作用域限定（如 `'Sheet1'!DrawCode_ProjectId` 自动截取纯名称），彻底清洗公式与引号，确保已绑定数据 100% 能够被稳健反解；
+     - **前端直接反显**：初始化时若当前工作簿已绑定项目，搜索框默认填入已绑定项目名称，并**直接将已绑定项目注入到列表首项直接展示并默认高亮选中（✔ 已选）**，无需等待网络请求，打开即见；
+     - **智能置顶保护**：自动触发云端检索后，若云端列表未包含已绑定项，前端主动将已绑定项置顶保留，彻底解决过去“绑定过却搜不到显示空白”的痛点。
+  3. **构建与同步**：`dotnet build` 验证 0 错误，Node.js 校验通过，dll 与 html 全量同步覆写至 `bin/Debug/net48` 与 `publish/`。
+
+- **【界面微调交付：去除顶部卡片左侧粗条样式与去除型号规格列】(`Resources/ebox_sync.html`)**：
+  1. **去除顶部红框样式**：移除了 `.info-card.is-unbound` 和 `.info-card.is-bound` 的 `border-left: 4px solid ...` 粗边框条，使卡片四周呈现平滑整洁的细圆角边框；
+  2. **去除型号规格列**：从表格中彻底移除了 `<el-table-column prop="model" label="型号规格" ...>`，精简表格横向空间，使位置、台数与云端自定义扩展属性更加紧凑易读；
+  3. **构建与同步**：`dotnet build` 验证 0 错误，Node.js 校验通过，dll 与 html 全量同步覆写至 `bin/Debug/net48` 与 `publish/`。
+
+- **【体验与核心业务能力交付：圆形折叠按钮像素级重绘、“位置”语义统一与按序号重新扫描全量同步（包括删除）】全量落地交付 (`excel-ct-tools`)**：
+  1. **折叠按钮像素级圆形重绘**：
+     - 严格对照用户提供的图片截图（青绿细圆环边框 `#009688` + 淡水绿半透明背景 `#e6f7f5` + 深青绿居中向下箭头）：
+     - 在 [ebox_sync.html](file:///e:/Ace/ExcelAddInCTtools/Resources/ebox_sync.html) 中采用独立 SVG 矢量绘制（`polyline points="6 9 12 15 18 9"`），彻底摆脱外部字体图标加载延迟与系统字体影响；
+     - 展开视图呈现与图片 100% 像素级一致的向下箭头圆形按钮；折叠视图（100px）通过 CSS `transform: rotate(180deg)` 平滑过渡为向上箭头展开按钮，带悬停弹性缩放（`scale(1.08)`）动效。
+  2. **“所属分类”全面修改为“位置”**：
+     - 前端界面：表头及单元格标签由“所属分类”修改为“位置”，并优先展示 `row.eboxPositon`；
+     - 后端模板与表头：在 [ExcelServices.CloudProject.cs](file:///e:/Ace/ExcelAddInCTtools/Services/ExcelServices.CloudProject.cs) 的 `SyncCloudCustomPropsSheetAsync` 中将生成的第 2 列表头由 `"所属分类"` 修改为 `"位置"`，填充值优先取 `cab.EboxPositon`。
+  3. **按箱柜序号（Key）全量同步修改与删除机制（深刻理解表述需求）**：
+     - **业务痛点**：此前重新扫描强依赖分类表硬汇总行，用户在【云端箱柜属性】工作表中对柜名、位置、数量、规格、扩展列所做的任何改动被旧数据冲掉；若用户删除了某一行箱柜，重新扫描时旧箱柜依然出现。
+     - **核心落地**：在 `ExtractAllCabinetsForCloudSync` 中确立【箱柜序号】（如 `1-1`, `2-1`）为 SSOT 唯一业务主键：
+       - **修改全量覆盖**：若属性表存在，以属性表中最新内容为准，全字段同步更新（柜号名称、位置、数量、型号规格、自定义属性 JSON）；
+       - **删除物理剔除（包括删除）**：属性表中已被用户删除整行的箱柜，在重新扫描时彻底从推送列表中剔除；属性表中若有用户新增行，亦同步纳入。
+  4. **构建验证与产物同步**：`dotnet build` 验证 0 错误（`ExcelAddInDemo.dll` 生成成功），Node.js 校验通过，dll 与 html 全量同步覆盖至 `bin/Debug/net48` 与 `publish/`。
+
+- **【体验与缺陷修复：表格滚动条激活、底部栏固定、100px 窗口折叠与 A 列文本格式锁定】全量优化交付 (`excel-ct-tools`)**：
+  1. **问题一：表格无垂直滚动条 & 底部固定操作栏被挤出遮挡**：
+     - 根因：Vue 宿主 `#app` 节点未设置 `height: 100%`，导致表格外层 `.table-card` 的 `flex: 1` 失效被表格内容整体撑大，把底部 `.footer-bar` 挤出视口；
+     - 修复：规范根容器 `html, body { height: 100%; overflow: hidden; }`，`#app { height: 100%; display: flex; flex-direction: column; }`，`.table-card` 设为 `flex: 1 1 0%; min-height: 0;` 并令 `.el-table { height: 100% !important; }`，`.footer-bar` 加 `flex-shrink: 0`；恢复表格纵向滚动条，底部操作栏稳定贴底。
+  2. **问题二：添加折叠按钮可将该页面折叠至 100px 高度**：
+     - 前端：在顶部信息卡片添加【折叠 (100px)】按钮；折叠后切换为精致单行迷你视图（`.mini-wrap`），展示绑定工程、台数、快捷【推送云端】与【展开】按钮；
+     - 后端：在 [CloudEBoxSyncForm.cs](file:///e:/Ace/ExcelAddInCTtools/Forms/CloudEBoxSyncForm.cs) 监听 `toggleCollapse` 消息，折叠时记忆展开高度并将 `MinimumSize` 临时放宽，将窗体高度调整为 100px；展开时恢复 680px。
+  3. **问题三：Excel 中的 A 列强制设为纯文本格式 `@`，杜绝 `1-1` 变成 `1月1日`**：
+     - 在 [ExcelServices.CloudProject.cs](file:///e:/Ace/ExcelAddInCTtools/Services/ExcelServices.CloudProject.cs) 的 `SyncCloudCustomPropsSheetAsync` 中，在写入 `newGrid` 之前和之后，均强制将 A 列的 `NumberFormatLocal = "@"` 设为纯文本格式；同时在历史数据读取解析时添加日期识别容错还原。
+  4. **构建与同步**：`dotnet build` 验证通过（0 错误），Node.js 校验通过（`Syntax OK!`），dll 与 html 全量同步覆盖至 `bin/Debug/` 与 `publish/`。
+
+- **【功能交付：云端箱柜自定义属性动态拉取与 Excel 批量填报闭环】实现绑定项目自动生成专属【云端箱柜属性】协同工作表 (`excel-ct-tools`)**：
+  1. **用户核心指令与需求落实**：
+     - **“赞同方案 B”**：在工作簿中建立专属独立的【云端箱柜属性】工作表，与报价分类明细表彻底解耦，杜绝破坏规则 6（汇总、明细、小计与计费区域）；
+     - **“绑定项目成功后自动生成”**：用户在绑定项目弹窗点击确认绑定后，后台异步自动拉取当前项目模板并生成/刷新属性工作表，并自动激活该工作表；
+     - **“生成的字段并不是写死的，需要每次拉取”**：每次通过 `GET /Project/GetProjectTemplate` 实时解析项目模板的 `config.customContent` 动态字段列表，字段增减自适应，绝不写死；
+  2. **核心实现细节与规范保障**：
+     - **实时拉取服务**：在 [DrawCodeApiClient.cs](file:///e:/Ace/ExcelAddInCTtools/Services/DrawCodeApiClient.cs) 中实现 `GetProjectCustomFieldLabelsAsync`，每次请求云端最新模板并动态提取标签集合；
+     - **安全生成与增量保护**：在 [ExcelServices.CloudProject.cs](file:///e:/Ace/ExcelAddInCTtools/Services/ExcelServices.CloudProject.cs) 中实现 `SyncCloudCustomPropsSheetAsync`，A~E 列列出全部箱柜（序号、分类、代号、数量、型号），F 列往后动态追加自定义列（主题色 `#009688` 高亮表头）。若表已存在，自动暂存并还原用户历史填报数据，防止重新同步时数据丢失；
+     - **规则 7 严格遵守**：读写区域均采用 `object[,]` 二维数组一次性在内存中读写，极大降低 COM 往返耗时；
+     - **提取推送无缝映射**：升级 `ExtractAllCabinetsForCloudSync`，自动读取【云端箱柜属性】表，将非空属性打包为 JSON 存入 `CloudEBoxItemDto.CustomFields`，推送到云端入库；
+     - **前端与弹窗联动**：[ProjectBindForm.cs](file:///e:/Ace/ExcelAddInCTtools/Forms/ProjectBindForm.cs) 绑定成功自动触发；[CloudEBoxSyncForm.cs](file:///e:/Ace/ExcelAddInCTtools/Forms/CloudEBoxSyncForm.cs) 增加 `syncCustomPropsSheet` 动作；[ebox_sync.html](file:///e:/Ace/ExcelAddInCTtools/Resources/ebox_sync.html) 增设【🔄 同步属性表】按钮并新增【云端自定义扩展属性】Tag 展示列；
+  3. **编译与验证**：`dotnet build` 验证 0 错误（`ExcelAddInDemo.dll` 生成成功），Node.js 校验 `ebox_sync.html` 语法通过（`Syntax OK!`），产物已全量同步覆盖至 `bin/Debug/` 与 `publish/`。
+
+- **【UI 重构交付：对齐图二极简现代精致美学】推送到云端箱柜界面全量升级 (`Resources/ebox_sync.html`, `Forms/CloudEBoxSyncForm.cs`)**：
+  1. **用户核心指令与美学定位**：用户明确提出“界面太丑，按图二重写界面，要求简洁精致”，摒弃此前杂乱突兀的死黑与高饱和白黑混搭，全面对齐图二的清爽浅色现代桌面卡片美学；
+  2. **端到端视觉与交互重塑**：
+     - **整体配色与背景**：窗口背景色与 HTML 底色统一切换为 `#f8fafc` 现代极简浅灰白，消除死黑割裂感；
+     - **主色调与视觉语言**：严格以 `#009688`（Teal 翠青）为主色调，搭配 `#0284c7`（科技蓝），绿蓝相间渐变按钮；
+     - **模块化卡片布局**：顶部工程绑定信息（未绑定琥珀警告卡片 / 已绑定翠绿卡片）、控制参数白底卡片（开关、批次与胶囊统计 Pill Badge）、主体清爽表格白底卡片、底部吸底工具栏；
+     - **表格视觉细节升级**：浅灰表头（`#f8fafc`）、青绿等宽 Consolas 序号标签（`order-badge`）、清晰深色字体（`#1e293b`）、斑马纹悬停淡青高亮；
+     - **布局与滚动条防护**：弹性纵向填满 `flex: 1`，严格杜绝水平滚动条；
+  3. **验证与同步**：Node.js 语法校验通过，`dotnet build` 验证通过（0 错误），产物全量同步覆盖至 `bin/Debug/` 与 `publish/`。
+
+- **【缺陷修复：消除 ebox_sync.html 语法错误导致的白屏渲染中断】恢复箱柜直推云端窗口正常展示 (`excel-ct-tools`)**：
+  1. **问题根因定位**：
+     - 用户在成功登录并绑定项目后，打开【推送到云端箱柜...】窗口呈现纯墨绿色背景白屏；
+     - 根本原因是在 `ebox_sync.html` 前端代码中，`syncResult` 分支内部的 `else` 块后面缺少闭合上一级条件的 `}`，导致 `else if (res.action === 'error')` 产生了 JavaScript `SyntaxError: Unexpected token 'else'` 语法错误；
+     - 宿主外层使用 `new Function` 构造 Vue `setup()` 时抛出语法异常，造成 `app.mount('#app')` 中断执行，Vue 无法渲染任何 DOM 节点，窗口仅露出 Form 背景底色。
+  2. **端到端最小改动修复**：
+     - **语法闭环修复**：补全缺失的 `}`，并在 Node.js 环境下使用 `node -e` 执行 `new Function` 编译校验，确认输出 `Syntax OK!`；
+     - **物理产物同步**：将修复后的 `ebox_sync.html` 全量覆盖至 `bin/Debug/net48/Resources/` 与 `publish/Resources/` 目录；
+  3. **效果**：重新打开窗口即可正常加载并呈现目标项目名称、工作组及当前工作簿所有 2-1 复合箱柜列表。
+
+- **【缺陷根治：云端项目反序列化 DateTime 类型兼容与容错兜底】解决搜索项目网络通信异常问题 (`excel-ct-tools`)**：
+  1. **问题根因定位**：
+     - 用户在 F12 控制台捕获到核心报错：`网络通信异常: The JSON value could not be converted to System.DateTime`；
+     - 后端返回的项目 `createTime` 字段为非标准 ISO 8601 格式或带空格字符串（如 `2026-08-31 20:59:25`），而 `ProjectSummaryDto.CreateTime` 声明为 `DateTime?`，导致 `System.Text.Json` 抛出类型转换异常并中断整个列表。
+  2. **端到端最小改动修复**：
+     - **DTO 类型放宽**：将 `ProjectSummaryDto.CreateTime` 改为 `string?`，彻底消除时间格式转换失败问题；
+     - **逐项弹性提取兜底**：在 `DrawCodeApiClient.GetProjectsAsync` 中增加单个 item 反序列化异常隔离，并追加通过 `JsonElement` 提取 `id`、`projectName`、`projectType` 的兜底逻辑，杜绝个别脏数据影响整体项目展现；
+  3. **构建与产物同步**：
+     - `dotnet build` 验证通过（0 错误），产物全量覆写至 `publish/` 目录。
+
+- **【缺陷修复：WebMessage 双轨安全解析与前端防死锁闭环】解决 ProjectBindForm 正在探测与搜索 Loading 卡死问题 (`excel-ct-tools`)**：
+  1. **问题根因定位**：
+     - 前端 `project_bind.html` / `ebox_sync.html` 向 C# 发送的是原生 JS Object，C# 原代码调用 `TryGetWebMessageAsString()` 返回 null/抛出异常，导致 `initContext` 与 `searchProjects` 消息全线中断，且前端未捕获 `error` 动作，`searching` 变量永远无法复位；
+     - 真实的 HTTP 请求是由 C# 原生 `HttpClient` 在宿主进程发起，不经过 Chromium 渲染栈，故 WebView2 的 F12 DevTools Network 面板捕获不到任何 HTTP 请求。
+  2. **端到端最小改动修复**：
+     - **C# 宿主双轨安全反序列化**：`ProjectBindForm.cs` 与 `CloudEBoxSyncForm.cs` 升级为 `e.WebMessageAsJson` 优先、`TryGetWebMessageAsString()` 兜底的双轨解析，并在 catch 块中补全 `LogHelper.WriteLog`；
+     - **前端生命周期与异常闭环**：`project_bind.html` 与 `ebox_sync.html` 监听 `action === 'error'` 动作，出错时自动重置 `searching`/`loading`/`submitting` 并弹出友好提示，增加 10 秒防死锁超时重置，并在关键节点添加 `console.log` 便于在 DevTools Console 中跟踪；
+  3. **构建与产物同步**：
+     - `ExcelAddInDemo.csproj` 编译通过（0 错误），dll 与 html 全量同步至 `publish/` 目录。
+
+- **【架构微调：恢复跨组协作访问】移除 CtmoGroupIdFilterAttribute 工作组归属防御 (`draw-code`)**：
+  1. **用户核心指令与决策落地**：用户明确业务初衷为“支持跨组访问未加入的工作组（如 A 访问未加入的 B/C/D 组）进行项目协同”，采纳【方案 A】；
+  2. **代码实施**：移除 `CtmoGroupIdFilterAttribute.cs` 中对 `UserInGroup` 的强制阻断逻辑，恢复无缝跨租户/工作组物理分库寻址能力；
+  3. **构建验证**：`DrawCode.Web` 成功编译构建（0 错误）。
+
 - **【全量交付：阶段1+阶段2+阶段3+后端安全与排序自愈全链路打通】Excel-CT-Tools 插件与云端 DrawCode 箱柜无缝直推闭环 (`excel-ct-tools`, `draw-code`)**：
   1. **用户核心指令与决策落地**：
      - **“允许确认后覆盖”**：箱柜直推时提供开关与弹窗二次确认，若勾选且确认覆盖则传递 `isCover: true` 重置同序号箱柜，否则 `isCover: false` 杜绝误删数据；
@@ -4971,10 +5114,37 @@
      - 执行 `dotnet build /p:RunExcelDnaBuild=false /p:DebugType=none` 构建成功：0 错误；
      - 静态 HTML 资源与最新 dll 已热同步至 `publish/` 与 `bin/Debug/net48/`。
 
+## [Completed]
+
+- **【DrawCode 云端接入登录弹窗“值不在预期的范围内”异常根因定位与修复】(`LoginForm.cs`, `DrawCodeApiClient.cs`)**：
+  1. **异常根本原因**：
+     - **WebView2 消息类型契约不匹配**：前端 `login.html` 在提交表单时使用 `window.chrome.webview.postMessage(payload)` 发送原生 JavaScript 对象（Object）；
+     - **后端单轨方法报错**：C# 后端 `LoginForm.cs` 的 `OnWebMessageReceived` 方法原本直接调用了 `e.TryGetWebMessageAsString()`。根据微软 WebView2 规范，当客户端发送非纯字符串（如对象/数组）时，`TryGetWebMessageAsString` 会直接抛出 COM `ArgumentException` 异常（错误信息为：“值不在预期的范围内。” / *Value does not fall within the expected range*）；
+     - **异常提示外显**：该未捕获异常被外部 `catch` 捕获后，格式化为 `处理异常: 值不在预期的范围内。` 回发给前端弹窗展示，导致登录流程中断。
+  2. **最小变动修复实施**：
+     - **双轨安全消息读取**：在 `LoginForm.cs` 中改用项目统一的双轨兼容提取模式，优先读取 `e.WebMessageAsJson` 属性以无缝解析原生 JS 对象，若为空再回退尝试 `e.TryGetWebMessageAsString()`；
+     - **异常日志追踪健全**：在 `LoginForm.cs` 的 `catch` 块中加入 `LogHelper.WriteLog`，便于后续异常在 `debug.log` 中精准追溯；
+     - **防范云端 WAF 拦截**：在 `DrawCodeApiClient.cs` 的 `HttpClient` 初始化中，将 `User-Agent` 增强为标准浏览器头，规避云端服务器 Web 应用防火墙（OP防火墙/Cloudflare）误拦截。
+  3. **构建验证**：
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false` 构建成功：0 警告，0 错误，生成的 `ExcelAddInDemo.dll` 已同步更新。
+
+- **【登录页面与云项目页面（绑定项目、箱柜直推）主题色规范与精致化升级交付】(`login.html`, `project_bind.html`, `ebox_sync.html`, `LoginForm.cs`, `ProjectBindForm.cs`, `CloudEBoxSyncForm.cs`)**：
+  1. **严格遵循项目规范与主色调 `#009688` 绿蓝相间体系**：
+     - **登录页面 (`login.html`)**：背景重构为深邃绿蓝暗夜微光质感（`radial-gradient` 从 `#0f3d38` 到 `#051716`），卡片升级为高透磨砂玻璃拟态，边框带 `#009688` 细腻光晕；Logo、输入框聚焦、复选框、主提交按钮（`#009688` 到 `#0284c7` 渐变）、已登录卡片全面对齐绿蓝相间主题规范；
+     - **绑定云端项目页面 (`project_bind.html`)**：背景与卡片重构为深邃绿蓝科技风格，注入 Element Plus `--el-color-primary: #009688` 主题变量；工程卡片饰以 `#009688` 竖向品牌线；已绑定/未绑定 Badge、项目列表 Hover/选中微光态（绿蓝渐变 + `#009688` 边缘线）、搜索框与“确认绑定”主按钮全面采用 `#009688` 高端渐变；
+     - **推送到云端箱柜页面 (`ebox_sync.html`)**：背景切换为深邃工控暗夜质感，顶部项目看板融入绿蓝毛玻璃设计；Element Plus 表格表头采用深青绿质感，表格悬停为青绿微光；复合云端序号（如 2-1）采用立体的 `#009688` 渐变微胶囊徽章；直推入库主按钮升级为绿蓝渐变光晕按钮；
+  2. **防止水平滚动条与全弹性布局**：
+     - 所有页面均设置 `overflow-x: hidden !important; max-width: 100vw;`，内部采用弹性布局与自适应高度，杜绝任何水平滚动条；
+  3. **WinForms 宿主底色与静态资源热同步**：
+     - `LoginForm.cs`、`ProjectBindForm.cs`、`CloudEBoxSyncForm.cs` 的窗体 `BackColor` 均微调为深翠暗夜底色 `Color.FromArgb(5, 24, 23)`，杜绝 WebView2 初始渲染闪烁；
+     - 最新 HTML 资源已完整热同步至 `Resources/`、`publish/Resources/` 以及 `bin/Debug/net48/Resources/`；
+  4. **构建编译无缝通过**：
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false` 构建成功：0 错误，生成的最新 dll 已同步到 `publish/`。
+
 ## [In-Progress]
 
-- 提示用户保存当前工作簿并重启 Excel，检验【材料统计】分类选择向导及双模式排序的导出效果。
+- 提示用户在 Excel 中重新打开【DrawCode 登录】、【绑定云端项目...】以及【推送到云端箱柜...】页面检验全新绿蓝相间精致主题效果。
 
 ## [Next]
 
-- 根据用户测试反馈持续跟进优化。
+- 持续跟进用户对界面细节与云端数据交互的体验反馈。

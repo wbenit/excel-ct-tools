@@ -14,160 +14,204 @@
   <script src="https://unpkg.com/@element-plus/icons-vue"></script>
 
   <style>
-    /* 全局背景与布局重置 */
+    /* 全局盒模型重置与防止横向滚动条溢出 */
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
     }
 
+    /* 页面背景使用高端深邃的绿蓝相间渐变光晕 */
     body {
       display: flex;
       justify-content: center;
       align-items: center;
       min-height: 100vh;
-      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311042 100%);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      overflow: hidden;
+      /* 深邃绿蓝暗夜质感主背景 */
+      background: radial-gradient(circle at 50% 10%, #0f3d38 0%, #0a2926 40%, #051716 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      /* 严格杜绝水平滚动条溢出 */
+      overflow: hidden !important;
+      max-width: 100vw;
       user-select: none;
     }
 
-    /* 结合 Element Plus 卡片的高颜值玻璃拟态容器 */
+    /* 绿蓝相间高端玻璃拟态卡片容器 */
     .login-card {
       width: 400px;
-      border-radius: 16px !important;
-      background: rgba(255, 255, 255, 0.08) !important;
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(255, 255, 255, 0.15) !important;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5) !important;
-      padding: 10px 10px 20px 10px;
+      border-radius: 18px !important;
+      /* 深翠暗绿半透明磨砂背景 */
+      background: rgba(8, 30, 28, 0.75) !important;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      /* 精致的青绿发光边框 */
+      border: 1px solid rgba(0, 150, 136, 0.35) !important;
+      /* 复合深邃阴影与青绿光晕扩散 */
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6), 0 0 30px rgba(0, 150, 136, 0.15) !important;
+      padding: 10px 10px 18px 10px;
       color: #ffffff;
+      transition: all 0.3s ease;
     }
 
+    /* 顶部头部标识排版 */
     .header-title {
       text-align: center;
-      margin-bottom: 20px;
+      margin-bottom: 22px;
       color: #ffffff;
     }
 
+    /* 绿蓝相间渐变 Logo 容器 */
     .header-title .logo {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 48px;
-      height: 48px;
-      background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-      border-radius: 14px;
-      margin-bottom: 10px;
-      box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4);
+      width: 52px;
+      height: 52px;
+      /* 核心主色调 #009688 到湖蓝渐变 */
+      background: linear-gradient(135deg, #009688 0%, #00b4d8 100%);
+      border-radius: 16px;
+      margin-bottom: 12px;
+      /* 精致 Logo 发光外投影 */
+      box-shadow: 0 8px 22px rgba(0, 150, 136, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.25);
     }
 
+    /* 登录大标题 */
     .header-title h2 {
-      font-size: 20px;
-      font-weight: 600;
-      letter-spacing: 0.5px;
+      font-size: 21px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      /* 标题微带青绿高光 */
+      color: #ffffff;
     }
 
+    /* 副标题副文本 */
     .header-title p {
       font-size: 13px;
-      color: #94a3b8;
-      margin-top: 4px;
+      color: #80cbc4;
+      margin-top: 5px;
+      letter-spacing: 0.3px;
     }
 
-    /* 覆写 Element Plus 内部深色表单控件样式 */
+    /* 表单项标签样式优化 */
     .el-form-item__label {
-      color: #cbd5e1 !important;
+      color: #b2dfdb !important;
       font-size: 13px !important;
+      font-weight: 500;
     }
 
+    /* 深色青绿质感输入框与选择框 */
     .el-input__wrapper, .el-select__wrapper {
-      background-color: rgba(15, 23, 42, 0.7) !important;
-      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15) inset !important;
-      border-radius: 8px !important;
+      background-color: rgba(5, 20, 19, 0.75) !important;
+      box-shadow: 0 0 0 1px rgba(0, 150, 136, 0.25) inset !important;
+      border-radius: 10px !important;
+      transition: all 0.25s ease !important;
     }
 
+    /* 聚焦状态下的绿蓝高亮光晕 */
     .el-input__wrapper.is-focus, .el-select__wrapper.is-focused {
-      box-shadow: 0 0 0 1.5px #818cf8 inset !important;
+      box-shadow: 0 0 0 1.5px #009688 inset, 0 0 10px rgba(0, 150, 136, 0.35) !important;
+      background-color: rgba(6, 26, 25, 0.9) !important;
     }
 
+    /* 输入文字色彩 */
     .el-input__inner, .el-select__selected-item {
       color: #ffffff !important;
     }
 
+    /* 复选框文本 */
     .el-checkbox__label {
-      color: #94a3b8 !important;
+      color: #80cbc4 !important;
       font-size: 13px !important;
     }
 
+    /* 复选框选中时的核心品牌色 #009688 */
     .el-checkbox__input.is-checked .el-checkbox__inner {
-      background-color: #6366f1 !important;
-      border-color: #6366f1 !important;
+      background-color: #009688 !important;
+      border-color: #009688 !important;
     }
 
-    /* 自定义 Element Plus 渐变提交按钮 */
+    /* 绿蓝相间核心主提交按钮 (主色调 #009688 + 蓝绿渐变) */
     .submit-btn {
       width: 100%;
-      height: 42px !important;
-      border-radius: 8px !important;
+      height: 44px !important;
+      border-radius: 10px !important;
       font-size: 14px !important;
       font-weight: 600 !important;
-      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%) !important;
+      letter-spacing: 0.5px;
+      /* 绿蓝渐变：青绿 #009688 到湛蓝 #0284c7 */
+      background: linear-gradient(135deg, #009688 0%, #00897b 45%, #0284c7 100%) !important;
       border: none !important;
-      box-shadow: 0 4px 14px rgba(79, 70, 229, 0.4) !important;
+      /* 按钮立体光晕阴影 */
+      box-shadow: 0 6px 18px rgba(0, 150, 136, 0.4) !important;
       transition: all 0.25s ease !important;
     }
 
+    /* 提交按钮悬停交互动态 */
     .submit-btn:hover {
-      opacity: 0.9;
-      transform: translateY(-1px);
-      box-shadow: 0 6px 18px rgba(79, 70, 229, 0.6) !important;
+      opacity: 0.95;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 150, 136, 0.6) !important;
     }
 
+    /* 提交按钮按下触感 */
+    .submit-btn:active {
+      transform: translateY(0);
+    }
+
+    /* 次级透明描边按钮 */
     .secondary-btn {
       width: 100%;
-      height: 38px !important;
-      border-radius: 8px !important;
+      height: 40px !important;
+      border-radius: 10px !important;
       font-size: 13px !important;
       margin-top: 10px !important;
       margin-left: 0 !important;
-      background: rgba(255, 255, 255, 0.08) !important;
-      border: 1px solid rgba(255, 255, 255, 0.2) !important;
-      color: #cbd5e1 !important;
+      background: rgba(0, 150, 136, 0.1) !important;
+      border: 1px solid rgba(0, 150, 136, 0.35) !important;
+      color: #80cbc4 !important;
+      transition: all 0.2s ease !important;
     }
 
+    /* 次级按钮悬停效果 */
     .secondary-btn:hover {
-      background: rgba(255, 255, 255, 0.15) !important;
+      background: rgba(0, 150, 136, 0.22) !important;
       color: #ffffff !important;
+      border-color: #009688 !important;
     }
 
+    /* 提示信息排版 */
     .alert-notice {
       margin-bottom: 18px;
+      border-radius: 8px !important;
     }
 
-    /* 已登录状态卡片 */
+    /* 已登录状态卡片精致化 */
     .logged-info-box {
-      background: rgba(15, 23, 42, 0.6);
-      border: 1px solid rgba(99, 102, 241, 0.3);
-      border-radius: 10px;
+      background: rgba(5, 24, 23, 0.65);
+      border: 1px solid rgba(0, 150, 136, 0.3);
+      border-radius: 12px;
       padding: 16px;
       margin-bottom: 20px;
     }
 
+    /* 会话信息行 */
     .logged-info-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
       font-size: 13px;
     }
 
+    /* 会话属性标题标签 */
     .logged-info-label {
-      color: #94a3b8;
+      color: #80cbc4;
     }
 
+    /* 会话属性高亮数值 */
     .logged-info-val {
-      color: #38bdf8;
+      color: #48cae4;
       font-weight: 600;
     }
   </style>

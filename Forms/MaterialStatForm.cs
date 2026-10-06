@@ -103,15 +103,9 @@ namespace ExcelAddInDemo.Forms
         {
             try
             {
-                // 获取用户自定义数据目录下的专有 WebView2 用户缓存目录
-                string userDataDir = Tool.GetCustomDataDirectoryFromGlobalConfig();
-                if (string.IsNullOrWhiteSpace(userDataDir))
-                {
-                    userDataDir = Tool.GetAppDataDirectory();
-                }
-                string webViewCacheDir = Path.Combine(userDataDir, "WebView2_MaterialStat");
-
-                // 异步创建 WebView2 运行环境
+                // 1. 获取系统本地 LocalApplicationData 专有缓存目录，避免污染用户业务配置或网盘同步
+                string webViewCacheDir = Tool.GetWebView2UserDataFolder("WebView2_MaterialStat");
+                // 2. 异步创建 WebView2 运行环境
                 var webViewEnv = await CoreWebView2Environment.CreateAsync(null, webViewCacheDir);
 
                 // 确保 CoreWebView2 核心对象就绪

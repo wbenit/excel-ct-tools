@@ -92,13 +92,9 @@ namespace ExcelAddInDemo.Forms
                 // 校验窗体有效性，若已处于释放流程则提前退出
                 if (this.IsDisposed || this.Disposing) return;
 
-                // 计算 WebView2 用户数据缓存专用子目录
-                string userDataFolder = Path.Combine(Tool.GetAppDataDirectory(), "WebView2_LocalProject");
-
-                // 若缓存文件夹不存在则自动创建
-                Directory.CreateDirectory(userDataFolder);
-
-                // 创建独立的 CoreWebView2 环境句柄
+                // 1. 获取系统本地 LocalApplicationData 专有缓存目录，避免污染用户业务配置或网盘同步
+                string userDataFolder = Tool.GetWebView2UserDataFolder("WebView2_LocalProject");
+                // 2. 创建独立的 CoreWebView2 环境句柄
                 var webViewEnv = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
 
                 // 二次校验窗体有效性

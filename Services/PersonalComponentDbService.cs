@@ -618,19 +618,31 @@ namespace ExcelAddInDemo.Services
                         cmd.Parameters.AddWithValue("@kw", $"%{kw}%");
                     }
 
-                    // 7. 必含约束规则 (多条规则间为 AND 关系，要求 model 必须包含关键字)
+                    // 7. 动态包含约束规则 (多条规则间为 OR 或关系，满足任意一个启用的关键字即可)
                     if (mustContainRules != null && mustContainRules.Count > 0)
                     {
-                        int ruleIndex = 0;
-                        foreach (var rule in mustContainRules)
+                        // 筛选已启用且关键字非空白的约束项
+                        var activeRules = mustContainRules
+                            .Where(r => r.Enabled && !string.IsNullOrWhiteSpace(r.Keyword))
+                            .ToList();
+
+                        // 仅当存在生效规则时组装 OR 语句
+                        if (activeRules.Count > 0)
                         {
-                            if (rule.Enabled && !string.IsNullOrWhiteSpace(rule.Keyword))
+                            // 构造 OR 条件子句集合
+                            var orClauses = new List<string>();
+                            // 遍历激活的规则并绑定参数
+                            for (int ruleIndex = 0; ruleIndex < activeRules.Count; ruleIndex++)
                             {
+                                // 生成防冲突的 SQL 参数名
                                 string paramName = $"@rule_{ruleIndex}";
-                                sb.Append($"AND model LIKE {paramName} ");
-                                cmd.Parameters.AddWithValue(paramName, $"%{rule.Keyword.Trim()}%");
-                                ruleIndex++;
+                                // 添加单条 model LIKE 模糊匹配子句
+                                orClauses.Add($"model LIKE {paramName}");
+                                // 将关键字内容绑定至参数
+                                cmd.Parameters.AddWithValue(paramName, $"%{activeRules[ruleIndex].Keyword.Trim()}%");
                             }
+                            // 将所有条件通过 OR 结合并包围后追加至 SQL
+                            sb.Append($"AND ({string.Join(" OR ", orClauses)}) ");
                         }
                     }
 
@@ -677,19 +689,31 @@ namespace ExcelAddInDemo.Services
                         fallbackSb.Append("AND (model LIKE @fbKw OR name LIKE @fbKw OR param1 LIKE @fbKw OR remark LIKE @fbKw) ");
                         fallbackCmd.Parameters.AddWithValue("@fbKw", $"%{kw}%");
 
-                        // 必含规则约束
+                        // 必含规则约束 (多条规则间为 OR 或关系，满足任一关键字即可)
                         if (mustContainRules != null && mustContainRules.Count > 0)
                         {
-                            int ruleIdx = 0;
-                            foreach (var rule in mustContainRules)
+                            // 筛选已启用且关键字非空白的约束项
+                            var fbActiveRules = mustContainRules
+                                .Where(r => r.Enabled && !string.IsNullOrWhiteSpace(r.Keyword))
+                                .ToList();
+
+                            // 仅当存在生效规则时组装降级 OR 语句
+                            if (fbActiveRules.Count > 0)
                             {
-                                if (rule.Enabled && !string.IsNullOrWhiteSpace(rule.Keyword))
+                                // 构造降级 OR 条件子句集合
+                                var fbOrClauses = new List<string>();
+                                // 遍历添加降级 SQL 参数
+                                for (int ruleIdx = 0; ruleIdx < fbActiveRules.Count; ruleIdx++)
                                 {
+                                    // 生成独立参数名称
                                     string paramName = $"@fbRule_{ruleIdx}";
-                                    fallbackSb.Append($"AND model LIKE {paramName} ");
-                                    fallbackCmd.Parameters.AddWithValue(paramName, $"%{rule.Keyword.Trim()}%");
-                                    ruleIdx++;
+                                    // 添加 model LIKE 条件
+                                    fbOrClauses.Add($"model LIKE {paramName}");
+                                    // 绑定降级模糊查询参数值
+                                    fallbackCmd.Parameters.AddWithValue(paramName, $"%{fbActiveRules[ruleIdx].Keyword.Trim()}%");
                                 }
+                                // 将所有条件通过 OR 结合并追加至降级 SQL
+                                fallbackSb.Append($"AND ({string.Join(" OR ", fbOrClauses)}) ");
                             }
                         }
 

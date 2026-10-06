@@ -195,11 +195,11 @@ namespace ExcelAddInDemo.Forms
 
             try
             {
-                // 获取专属用户缓存数据目录
-                string userDataDir = Path.Combine(Tool.GetAppDataDirectory(), "WebView2_MatchOverlay");
-                // 异步创建环境实例
+                // 1. 获取系统本地 LocalApplicationData 专有缓存目录，避免污染用户业务配置或网盘同步
+                string userDataDir = Tool.GetWebView2UserDataFolder("WebView2_MatchOverlay");
+                // 2. 异步创建环境实例
                 var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
-                // 确保 WebView2 控件初始化成功
+                // 3. 确保 WebView2 控件初始化成功
                 await _webView.EnsureCoreWebView2Async(env);
 
                 // 配置环境参数

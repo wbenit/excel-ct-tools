@@ -133,11 +133,11 @@ namespace ExcelAddInDemo.Forms
         {
             try
             {
-                // 获取专属用户缓存数据目录
-                string userDataFolder = Path.Combine(Tool.GetAppDataDirectory(), "WebView2_ParamMatch");
-                // 异步创建 WebView2 运行时环境
+                // 1. 获取系统本地 LocalApplicationData 专有缓存目录，避免污染用户业务配置或网盘同步
+                string userDataFolder = Tool.GetWebView2UserDataFolder("WebView2_ParamMatch");
+                // 2. 异步创建 WebView2 运行时环境
                 var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
-                // 确保控件初始化就绪
+                // 3. 确保控件初始化就绪
                 await _webView.EnsureCoreWebView2Async(env);
 
                 // 禁用默认右键菜单防止出现 Chromium 默认菜单

@@ -38,15 +38,15 @@ namespace ExcelAddInDemo.Forms
             // 设置窗口标题
             this.Text = "推送箱柜至 DrawCode 云端系统图库";
             // 设置窗体初始尺寸 (支持表格宽屏展示)
-            this.ClientSize = new Size(720, 680);
+            this.ClientSize = new Size(1150, 680);
             // 屏幕居中弹出
             this.StartPosition = FormStartPosition.CenterScreen;
             // 允许自由调整大小以便浏览更多箱柜
             this.FormBorderStyle = FormBorderStyle.Sizable;
             // 限制最小尺寸
-            this.MinimumSize = new Size(600, 500);
-            // 窗体暗色背景
-            this.BackColor = Color.FromArgb(15, 23, 42);
+            this.MinimumSize = new Size(800, 500);
+            // 窗体背景色：与图二保持一致的清爽浅色背景 (#f8fafc)
+            this.BackColor = Color.FromArgb(248, 250, 252);
         }
 
         /// <summary>
@@ -90,6 +90,11 @@ namespace ExcelAddInDemo.Forms
             }
         }
 
+        // 记录窗口折叠前的展开高度，便于展开时准确还原
+        private int _expandedHeight = 680;
+        // 当前窗口是否处于 100px 折叠收起状态
+        private bool _isCollapsed = false;
+
         /// <summary>
         /// 响应前端 WebMessage 通信
         /// </summary>
@@ -97,13 +102,55 @@ namespace ExcelAddInDemo.Forms
         {
             try
             {
-                string json = e.TryGetWebMessageAsString();
+                // 双轨安全提取消息文本：优先作为原生 JSON 提取，若为空再尝试纯字符串提取
+                string json = string.Empty;
+                try { json = e.WebMessageAsJson; } catch { }
+                // 若原生 JSON 为空，则降级尝试作为纯字符串提取
+                if (string.IsNullOrWhiteSpace(json))
+                {
+                    try { json = e.TryGetWebMessageAsString(); } catch { }
+                }
+                // 校验消息体有效性，若皆为空则直接忽略退出
+                if (string.IsNullOrWhiteSpace(json)) return;
+
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
                 if (!root.TryGetProperty("action", out var actionProp)) return;
                 string action = actionProp.GetString() ?? string.Empty;
 
-                // 动作 1：提取当前工作簿箱柜数据并汇总
+                // 动作 0：响应前端窗口折叠与展开切换（遵循用户要求可折叠至 100px 高）
+                if (action == "toggleCollapse")
+                {
+                    bool collapse = root.TryGetProperty("collapsed", out var cProp) && cProp.GetBoolean();
+                    SafeInvoke(() =>
+                    {
+                        if (collapse)
+                        {
+                            // 记录折叠前的展开高度
+                            if (!_isCollapsed)
+                            {
+                                _expandedHeight = this.Height;
+                            }
+                            _isCollapsed = true;
+                            // 临时放开最小尺寸约束
+                            this.MinimumSize = new Size(480, 80);
+                            // 折叠窗口至 100px 高
+                            this.Height = 100;
+                        }
+                        else
+                        {
+                            // 展开恢复正常尺寸
+                            _isCollapsed = false;
+                            // 恢复常规最小尺寸约束
+                            this.MinimumSize = new Size(600, 500);
+                            // 恢复记忆的展开高度
+                            this.Height = _expandedHeight > 120 ? _expandedHeight : 680;
+                        }
+                    });
+                    return;
+                }
+
+                // 动作 1：提取当前工作簿箱柜数据并汇总 (支持根据用户选中的分类明细生成，并获取项目最大批次+1)
                 if (action == "loadCabinets")
                 {
                     dynamic? activeWb = ExcelDnaSafeAccessor.GetApplication()?.ActiveWorkbook;
@@ -115,8 +162,34 @@ namespace ExcelAddInDemo.Forms
                     string boundProjName = bound.ProjectName;
                     int boundGroupId = bound.GroupId;
 
-                    // 结构化提取全部箱柜（符合 2-1 序号规范）
-                    var cabinets = ExcelServices.ExtractAllCabinetsForCloudSync((object?)activeWb);
+                    // 1. 获取当前工作簿登记在册的所有分类明细工作表名称列表
+                    var allCategories = ExcelServices.GetProjectCategorySheetNamesList((object?)activeWb);
+
+                    // 2. 解析前端传入的用户勾选分类列表，若未传入则默认全选
+                    List<string> selectedCategories = new List<string>();
+                    if (root.TryGetProperty("selectedCategories", out var scElem) && scElem.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var item in scElem.EnumerateArray())
+                        {
+                            string? cat = item.GetString();
+                            if (!string.IsNullOrEmpty(cat)) selectedCategories.Add(cat);
+                        }
+                    }
+                    if (selectedCategories.Count == 0)
+                    {
+                        selectedCategories = new List<string>(allCategories);
+                    }
+
+                    // 3. 结构化提取被选中的分类明细箱柜（符合 2-1 序号规范）
+                    var cabinets = ExcelServices.ExtractAllCabinetsForCloudSync((object?)activeWb, true, selectedCategories);
+
+                    // 4. 异步从云端获取该项目的最大生产批次并计算最大批次 + 1
+                    int maxProduceOrder = 0;
+                    if (boundProjId > 0)
+                    {
+                        maxProduceOrder = await DrawCodeApiClient.GetProjectMaxProduceOrderAsync(boundProjId);
+                    }
+                    int recommendProduceOrder = maxProduceOrder > 0 ? (maxProduceOrder + 1) : 1;
 
                     var res = new
                     {
@@ -126,6 +199,10 @@ namespace ExcelAddInDemo.Forms
                         projectName = boundProjName,
                         currentGroupId = ExcelServices.CurrentGroupId,
                         currentGroupName = ExcelServices.CurrentGroupName,
+                        allCategories = allCategories,
+                        selectedCategories = selectedCategories,
+                        maxProduceOrder = maxProduceOrder,
+                        recommendProduceOrder = recommendProduceOrder,
                         cabinets = cabinets
                     };
                     PostWebMessageSafe(JsonSerializer.Serialize(res));
@@ -139,6 +216,56 @@ namespace ExcelAddInDemo.Forms
                     return;
                 }
 
+                // 动作 2.5：根据用户选择的分类明细，实时拉取云端动态字段并刷新【云端箱柜属性】工作表
+                if (action == "syncCustomPropsSheet")
+                {
+                    // 获取当前活动的 Excel 工作簿对象
+                    dynamic? activeWb = ExcelDnaSafeAccessor.GetApplication()?.ActiveWorkbook;
+                    // 读取绑定的项目信息
+                    var bound = ExcelServices.GetBoundProject((object?)activeWb);
+                    int boundProjId = bound.ProjectId;
+
+                    // 若未绑定项目则终止并提示
+                    if (boundProjId <= 0)
+                    {
+                        PostWebMessageSafe(JsonSerializer.Serialize(new
+                        {
+                            action = "syncCustomPropsSheetResult",
+                            success = false,
+                            message = "当前工作簿尚未绑定云端项目，请先绑定项目！"
+                        }));
+                        return;
+                    }
+
+                    // 解析前端选中的分类明细列表
+                    List<string>? selectedCategories = null;
+                    if (root.TryGetProperty("selectedCategories", out var scElem) && scElem.ValueKind == JsonValueKind.Array)
+                    {
+                        selectedCategories = new List<string>();
+                        foreach (var item in scElem.EnumerateArray())
+                        {
+                            string? cat = item.GetString();
+                            if (!string.IsNullOrEmpty(cat)) selectedCategories.Add(cat);
+                        }
+                    }
+
+                    // 遵循用户指令：仅为选中的分类明细生成属性表
+                    var (ok, msg) = await ExcelServices.SyncCloudCustomPropsSheetAsync(boundProjId, (object?)activeWb, selectedCategories);
+
+                    // 重新提取属于选定分类明细的全部箱柜集合
+                    var cabinets = ExcelServices.ExtractAllCabinetsForCloudSync((object?)activeWb, true, selectedCategories);
+
+                    // 回传处理结果与最新箱柜数据列表给前端
+                    PostWebMessageSafe(JsonSerializer.Serialize(new
+                    {
+                        action = "syncCustomPropsSheetResult",
+                        success = ok,
+                        message = msg,
+                        cabinets = cabinets
+                    }));
+                    return;
+                }
+
                 // 动作 3：执行一键推送云端（包含允许确认后覆盖）
                 if (action == "syncToCloud")
                 {
@@ -147,9 +274,21 @@ namespace ExcelAddInDemo.Forms
                     int produceOrder = root.TryGetProperty("produceOrder", out var poProp) ? poProp.GetInt32() : 1;
                     if (produceOrder < 1) produceOrder = 1;
 
-                    // 从当前工作簿重新提取箱柜数据
+                    // 解析选中的分类明细列表
+                    List<string>? selectedCategories = null;
+                    if (root.TryGetProperty("selectedCategories", out var scElem) && scElem.ValueKind == JsonValueKind.Array)
+                    {
+                        selectedCategories = new List<string>();
+                        foreach (var item in scElem.EnumerateArray())
+                        {
+                            string? cat = item.GetString();
+                            if (!string.IsNullOrEmpty(cat)) selectedCategories.Add(cat);
+                        }
+                    }
+
+                    // 从当前工作簿重新提取选中的箱柜数据
                     dynamic? activeWb = ExcelDnaSafeAccessor.GetApplication()?.ActiveWorkbook;
-                    var cabinets = ExcelServices.ExtractAllCabinetsForCloudSync((object?)activeWb);
+                    var cabinets = ExcelServices.ExtractAllCabinetsForCloudSync((object?)activeWb, true, selectedCategories);
 
                     if (cabinets.Count == 0)
                     {
@@ -157,7 +296,7 @@ namespace ExcelAddInDemo.Forms
                         {
                             action = "syncResult",
                             success = false,
-                            message = "未在当前工作簿中检测到任何有效箱柜！"
+                            message = "未在当前工作簿中检测到任何属于选定分类的有效箱柜！"
                         }));
                         return;
                     }
@@ -192,6 +331,8 @@ namespace ExcelAddInDemo.Forms
             }
             catch (Exception ex)
             {
+                // 记录详细异常日志便于追溯
+                LogHelper.WriteLog($"[CloudEBoxSyncForm] OnWebMessageReceived 异常: {ex}");
                 var err = new { action = "error", message = $"处理异常: {ex.Message}" };
                 PostWebMessageSafe(JsonSerializer.Serialize(err));
             }
