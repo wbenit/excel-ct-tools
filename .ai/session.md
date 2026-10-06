@@ -1,3 +1,29 @@
+- **【全量交付：阶段1+阶段2+阶段3+后端安全与排序自愈全链路打通】Excel-CT-Tools 插件与云端 DrawCode 箱柜无缝直推闭环 (`excel-ct-tools`, `draw-code`)**：
+  1. **用户核心指令与决策落地**：
+     - **“允许确认后覆盖”**：箱柜直推时提供开关与弹窗二次确认，若勾选且确认覆盖则传递 `isCover: true` 重置同序号箱柜，否则 `isCover: false` 杜绝误删数据；
+     - **“序号为项目信息里面对应的分类序号-分类明细顶部的汇总序号，例如2-1”**：严格按 `"{categoryIndex}-{cabinetIndex}"` 格式生成箱柜序号，后端与前端同步支持连字符复合权重排序；
+     - **“让用户选择”**：多工作组登录时在前端展示选择列表，让用户手动自主选择目标工作组后绑定会话；
+     - **“一起修”**：后端 `CtmoGroupIdFilterAttribute` 切库越权安全漏洞与 `EBoxServicer.cs` 连字符复合序号排序权重解析一并修复。
+  2. **端到端实现闭环与文件变更**：
+     - **后端 DrawCode**：
+       - `CtmoGroupIdFilterAttribute.cs`：添加非匿名用户工作组成员合法性校验，阻断伪造 Query `groupId` 越权切库；
+       - `EBoxServicer.cs`：升级 `SortOrder` 解析逻辑，支持将 `2-1` 解析为复合排序权重 `20001`，保证箱柜物理顺序严格对齐。
+     - **前端与插件 excel-ct-tools**：
+       - **阶段 1（真实认证与多工作组选择）**：`DrawCodeApiClient.cs`（AES-128-ECB 密文密码、Windows DPAPI `user_session.dat` 加密、`x-new-token` 自动续期）、`AuthController.cs`、`LoginForm.cs`、`login.html`（Vue 3 + Element Plus 支持单工作组自动直连与多工作组下拉选择视图）、`AddInMain.cs`（`AutoOpen` 静默加载凭据）；
+       - **阶段 2（项目绑定与智能探测）**：`ExcelServices.CloudProject.cs`（工作簿双重元数据持久化与 `B5` 智能探测）、`Forms/ProjectBindForm.cs`、`Resources/project_bind.html`（工程名提取、云端模糊搜索、单选绑定回写）；
+       - **阶段 3（箱柜 2-1 复合提取与直推）**：`ExcelServices.ExtractAllCabinetsForCloudSync`、`Forms/CloudEBoxSyncForm.cs`、`Resources/ebox_sync.html`（箱柜表格预览、覆盖模式开关、批次配置、二次确认弹窗、一键调用 `POST /api/Project/ImportExcelData`）；
+       - **Ribbon 菜单挂接**：`RibbonController.cs` 中在【云项目】与【箱柜】菜单中集成【🔗 绑定云端项目...】与【🚀 推送到云端箱柜...】按钮；
+       - **编译构建验证**：`dotnet build ExcelAddInDemo.csproj -p:RunExcelDnaBuild=false` 验证通过：**0 警告、0 错误**，HTML 资源已全量同步到 `publish/` 目录。
+
+
+- **【方案规划与实施方案制定】excel-ct-tools 插件与云端多租户箱柜管理打通技术实施文档已正式归档 (`.ai/session.md`, 实施文档见 artifacts)**：
+  1. **明确多租户切库核心命门**：梳理 `CtmoGroupIdFilterAttribute` 的 `DrawCode_{groupId}` 物理分库机制，确立 `(projectId, groupId)` 二元组绑定是云端读写的核心前提；
+  2. **端到端完整闭环设计**：
+     - **阶段 1**：对接真实 `GET /api/User/Login` 与 `GET /api/Set/GetUserGroups`，提取并持久化 `Token` 与 `GroupId` (`user_session.json`)；
+     - **阶段 2**：工作簿通过 `CustomDocumentProperties` 持久化元数据，开发 `ProjectBindForm` (WebView2) 实现工程名称自探测与智能绑定弹窗；
+     - **阶段 3**：C# 原生结构化提取箱柜 (`Cab_Sum_K`)，携带 `groupId` 直调 `POST /api/Project/ImportExcelData` 一键入库，并集成至 Ribbon 与批建面板。
+  3. **产出物交付**：完整实施文档已生成至工作区 Artifacts，等待用户下发第一阶段执行指令。
+
 - **【错误结晶沉淀】提炼并归档《WinForms + WebView2 无边框窗体拖拽缩放与事件冒泡死锁终极指南》至本地启发式规则库 (`.ai/local-heuristics.md`, `.ai/session.md`)**：
   1. **提炼第 20 条经验**：WinForms + WebView2 无边框窗体拖拽缩放的三大冲突与系统内核级接管解法（8px 留白根因、Chromium HWND 吞噬 WM_NCHITTEST 导致边缘失效、纯 CSS 透明感应 + Win32 SC_SIZE 系统内核接管零计算实现）。
   2. **提炼第 21 条经验**：WebView2 混合应用中顶栏拖动与功能按钮事件冒泡死锁（按钮仅 stop click 导致 mousedown 冒泡触发 WM_NCLBUTTONDOWN 模态拖拽吃掉后续点击事件的根因与三重防护解法）。

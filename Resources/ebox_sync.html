@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>推送箱柜至 DrawCode 云端系统图库</title>
+  <!-- 引入 Vue 3 核心库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- 引入 Element Plus 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <!-- 引入 Element Plus 核心组件库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <!-- 引入 Element Plus 图标库 -->
+  <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      padding: 16px;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #090d16 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #ffffff;
+      user-select: none;
+    }
+
+    .main-wrap {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 32px);
+    }
+
+    /* 顶部工程信息玻璃拟态卡片 */
+    .top-panel {
+      background: rgba(255, 255, 255, 0.07);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-bottom: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .top-proj-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #38bdf8;
+    }
+
+    .top-meta {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+
+    /* 状态与控制栏 */
+    .control-panel {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-bottom: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    /* 表格区域撑满剩余空间 */
+    .table-container {
+      flex: 1;
+      overflow: hidden;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(15, 23, 42, 0.8);
+    }
+
+    /* 覆写 Element 表格深色透明主题 */
+    .el-table {
+      background-color: transparent !important;
+      color: #cbd5e1 !important;
+      font-size: 13px !important;
+    }
+
+    .el-table th.el-table__cell {
+      background-color: rgba(30, 41, 59, 0.8) !important;
+      color: #f1f5f9 !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+      font-weight: 600;
+    }
+
+    .el-table td.el-table__cell {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+    }
+
+    .el-table--enable-row-hover .el-table__body tr:hover > td.el-table__cell {
+      background-color: rgba(99, 102, 241, 0.15) !important;
+    }
+
+    .order-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-weight: bold;
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      color: #ffffff;
+      font-family: monospace;
+      font-size: 13px;
+    }
+
+    /* 底部操作区 */
+    .bottom-bar {
+      margin-top: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .btn-sync {
+      height: 44px;
+      font-size: 15px;
+      font-weight: 600;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+      border: none;
+      box-shadow: 0 4px 16px rgba(37, 99, 235, 0.4);
+      padding: 0 28px;
+    }
+
+    .btn-sync:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="text/x-template" id="sync-template">
+    <div class="main-wrap">
+      <!-- 顶部绑定的云端项目看板 -->
+      <div class="top-panel">
+        <div>
+          <div v-if="projectId > 0" class="top-proj-title">
+            ☁ 目标云端项目：{{ projectName }}
+          </div>
+          <div v-else class="top-proj-title" style="color: #f87171;">
+            ⚠ 当前工作簿尚未绑定云端工程项目！
+          </div>
+          <div class="top-meta">
+            所属工作组: {{ currentGroupName || '未指定' }} (ID: {{ currentGroupId }}) · 工作簿: {{ workbookName }}
+          </div>
+        </div>
+
+        <div>
+          <el-button
+            type="warning"
+            size="small"
+            plain
+            @click="handleOpenBind"
+          >
+            {{ projectId > 0 ? '更换绑定项目' : '立即绑定项目' }}
+          </el-button>
+        </div>
+      </div>
+
+      <!-- 控制参数栏 (覆盖策略 + 批次) -->
+      <div class="control-panel">
+        <div style="display: flex; align-items: center; gap: 16px;">
+          <!-- 覆盖策略开关 (遵循用户指令: 允许确认后覆盖) -->
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <el-switch
+              v-model="isCover"
+              active-text="允许覆盖同序号箱柜"
+              inactive-text="不覆盖(遇重报错)"
+              style="--el-switch-on-color: #f59e0b;"
+            />
+            <el-tooltip
+              content="开启后，当云端已存在相同序号（如 2-1）的箱柜时，将覆盖更新其数据；关闭时若遇重复序号将拒绝导入。"
+              placement="top"
+            >
+              <el-icon color="#94a3b8" style="cursor: pointer;"><InfoFilled /></el-icon>
+            </el-tooltip>
+          </div>
+
+          <!-- 生产批次设置 -->
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #cbd5e1;">
+            <span>生产批次:</span>
+            <el-input-number
+              v-model="produceOrder"
+              :min="1"
+              :max="99"
+              size="small"
+              controls-position="right"
+              style="width: 90px;"
+            />
+          </div>
+        </div>
+
+        <div style="font-size: 13px; color: #38bdf8; font-weight: 500;">
+          已扫描到 <strong>{{ cabinets.length }}</strong> 台箱柜
+        </div>
+      </div>
+
+      <!-- 箱柜列表表格 -->
+      <div class="table-container" v-loading="loading">
+        <el-table
+          :data="cabinets"
+          height="100%"
+          style="width: 100%;"
+          empty-text="当前工作簿未扫描到符合规范的箱柜数据"
+        >
+          <el-table-column label="云端序号 (Order)" width="150" align="center">
+            <template #default="{ row }">
+              <span class="order-badge">{{ row.order }}</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column prop="systemDrawName" label="柜号 / 图纸代号" min-width="160">
+            <template #default="{ row }">
+              <strong style="color: #f1f5f9;">{{ row.systemDrawName }}</strong>
+            </template>
+          </el-table-column>
+
+          <el-table-column prop="categoryName" label="所属分类" width="130">
+            <template #default="{ row }">
+              <el-tag size="small" type="info">{{ row.categoryName }} (序号: {{ row.categoryIndex }})</el-tag>
+            </template>
+          </el-table-column>
+
+          <el-table-column prop="model" label="型号规格" min-width="150" show-overflow-tooltip />
+
+          <el-table-column prop="count" label="台数" width="90" align="center">
+            <template #default="{ row }">
+              <span>{{ row.count }} 台</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <!-- 底部操作栏 -->
+      <div class="bottom-bar">
+        <div style="font-size: 12px; color: #94a3b8;">
+          💡 序号规则：分类序号 - 汇总序号（例如 2-1）。点击下方按钮将一键直推至云端数据库。
+        </div>
+
+        <div style="display: flex; gap: 10px;">
+          <el-button @click="handleRefresh">重新扫描</el-button>
+          <el-button
+            type="primary"
+            class="btn-sync"
+            :loading="syncing"
+            :disabled="projectId <= 0 || cabinets.length === 0"
+            @click="handleSyncClick"
+          >
+            {{ syncing ? '正在直推入库...' : '🚀 推送到云端箱柜库' }}
+          </el-button>
+        </div>
+      </div>
+    </div>
+  </script>
+
+  <script setup>
+    const { ref, onMounted } = Vue;
+    const { InfoFilled } = ElementPlusIconsVue;
+
+    const loading = ref(false);
+    const syncing = ref(false);
+    const workbookName = ref('');
+    const projectId = ref(0);
+    const projectName = ref('');
+    const currentGroupId = ref(0);
+    const currentGroupName = ref('');
+    const cabinets = ref([]);
+
+    // 默认开启覆盖模式（遵循用户指令：允许确认后覆盖）
+    const isCover = ref(true);
+    const produceOrder = ref(1);
+
+    onMounted(() => {
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.addEventListener('message', (event) => {
+          const res = event.data;
+
+          if (res.action === 'loadCabinetsResult') {
+            loading.value = false;
+            workbookName.value = res.workbookName;
+            projectId.value = res.projectId;
+            projectName.value = res.projectName;
+            currentGroupId.value = res.currentGroupId;
+            currentGroupName.value = res.currentGroupName;
+            cabinets.value = res.cabinets || [];
+          }
+          else if (res.action === 'syncResult') {
+            syncing.value = false;
+            if (res.success) {
+              ElementPlus.ElNotification({
+                title: '✅ 同步成功',
+                message: res.message || `成功推送 ${res.eBoxCount} 台箱柜至云端！`,
+                type: 'success',
+                duration: 5000
+              });
+            } else {
+              ElementPlus.ElMessageBox.alert(res.message || '同步失败，请检查网络或参数！', '推送异常', {
+                type: 'error',
+                confirmButtonText: '知道了'
+              });
+            }
+          }
+        });
+
+        handleRefresh();
+      }
+    });
+
+    const handleRefresh = () => {
+      loading.value = true;
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage({ action: 'loadCabinets' });
+      }
+    };
+
+    const handleOpenBind = () => {
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage({ action: 'openProjectBind' });
+      }
+    };
+
+    // 触发推送，若为覆盖模式弹出确认
+    const handleSyncClick = () => {
+      if (projectId.value <= 0) {
+        ElementPlus.ElMessage.warning('请先绑定云端项目！');
+        return;
+      }
+      if (cabinets.value.length === 0) {
+        ElementPlus.ElMessage.warning('当前没有可推送的箱柜数据！');
+        return;
+      }
+
+      // 用户指令：允许确认后覆盖
+      if (isCover.value) {
+        ElementPlus.ElMessageBox.confirm(
+          `已开启【覆盖模式】。推送将覆盖云端项目【${projectName.value}】中序号相同的箱柜数据，是否确认覆盖推送？`,
+          '覆盖同步确认',
+          {
+            confirmButtonText: '确认覆盖并推送',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }
+        ).then(() => {
+          doSubmitSync();
+        }).catch(() => {});
+      } else {
+        doSubmitSync();
+      }
+    };
+
+    const doSubmitSync = () => {
+      syncing.value = true;
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage({
+          action: 'syncToCloud',
+          projectId: projectId.value,
+          isCover: isCover.value,
+          produceOrder: produceOrder.value
+        });
+      }
+    };
+  </script>
+
+  <script>
+    (function() {
+      const templateText = document.getElementById('sync-template').innerHTML;
+      const setupScriptText = document.querySelector('script[setup]').textContent;
+
+      const Component = {
+        template: templateText,
+        setup() {
+          const setupFunc = new Function('Vue', 'ElementPlusIconsVue', `
+            ${setupScriptText}
+            return {
+              loading, syncing, workbookName, projectId, projectName,
+              currentGroupId, currentGroupName, cabinets, isCover, produceOrder,
+              handleRefresh, handleOpenBind, handleSyncClick, InfoFilled
+            };
+          `);
+          return setupFunc(Vue, ElementPlusIconsVue);
+        }
+      };
+
+      const app = Vue.createApp(Component);
+      app.use(ElementPlus);
+      app.mount('#app');
+    })();
+  </script>
+</body>
+</html>

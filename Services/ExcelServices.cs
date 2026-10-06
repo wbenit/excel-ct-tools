@@ -46,6 +46,75 @@ namespace ExcelAddInDemo
             set => _currentUserDisplayName = value ?? string.Empty;
         }
 
+        // 保存当前用户绑定的租户工作组 ID (多租户物理分库路由关键凭证)
+        private static int _currentGroupId = 0;
+
+        // 保存当前用户绑定的租户工作组企业名称
+        private static string _currentGroupName = string.Empty;
+
+        // 保存当前登录用户的 UserId 唯一标识
+        private static string _currentUserId = string.Empty;
+
+        /// <summary>
+        /// 获取或设置当前用户绑定的工作组 ID (GroupId)
+        /// </summary>
+        public static int CurrentGroupId
+        {
+            // 读取当前工作组 ID
+            get => _currentGroupId;
+            // 更新工作组 ID
+            set => _currentGroupId = value;
+        }
+
+        /// <summary>
+        /// 获取或设置当前用户绑定的工作组名称
+        /// </summary>
+        public static string CurrentGroupName
+        {
+            // 读取当前工作组名称
+            get => _currentGroupName;
+            // 更新工作组名称
+            set => _currentGroupName = value ?? string.Empty;
+        }
+
+        /// <summary>
+        /// 获取或设置当前登录用户的唯一标识 UserId
+        /// </summary>
+        public static string CurrentUserId
+        {
+            // 读取用户 UserId
+            get => _currentUserId;
+            // 更新用户 UserId
+            set => _currentUserId = value ?? string.Empty;
+        }
+
+        /// <summary>
+        /// 启动时从本地磁盘 (%AppData%\CTtools\user_session.json) 静默恢复用户会话
+        /// </summary>
+        public static void RestoreUserSession()
+        {
+            try
+            {
+                // 从磁盘加载持久化会话凭证
+                var session = Services.DrawCodeApiClient.LoadSession();
+                // 若凭证有效，自动赋值全局运行时状态
+                if (session != null && !string.IsNullOrWhiteSpace(session.Token))
+                {
+                    _currentToken = session.Token;
+                    _currentGroupId = session.GroupId;
+                    _currentGroupName = session.GroupName;
+                    _currentUserId = session.UserId;
+                    _currentUserDisplayName = session.DisplayName;
+                    LogHelper.WriteLog($"[ExcelServices] 已成功静默恢复用户登录状态: {session.DisplayName}, 租户组: {session.GroupName} (Id={session.GroupId})");
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录恢复会话异常
+                LogHelper.WriteLog($"[ExcelServices] RestoreUserSession 异常: {ex.Message}");
+            }
+        }
+
         /// <summary>
         /// Excel 主窗口 Win32 句柄包装类
         /// </summary>

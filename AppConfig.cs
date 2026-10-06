@@ -49,6 +49,10 @@ namespace ExcelAddInDemo
         // 本地文件管理控制台 Web 页面访问基准地址 (默认嵌入独立路由) --硬编码--
         // 用于在 Excel 插件点击【本机项目】时唤起无外壳的纯净文件管理控制台
         public string LocalFileControlUrl { get; set; } = "https://code.xingren.online/#/embed/fileCtrol";
+
+        // 远程 DrawCode 云端 WebAPI 服务的基准访问地址 (默认: https://code.xingren.online/api) --硬编码--
+        // 用于登录认证、租户工作组获取及箱柜项目多租户数据同步
+        public string DrawCodeBaseUrl { get; set; } = "https://code.xingren.online/api";
     }
 
 

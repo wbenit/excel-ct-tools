@@ -148,8 +148,28 @@ namespace ExcelAddInDemo
                 // 获取 RootElement 数据节点
                 var root = doc.RootElement;
 
-                // 检查动作类型是否为 login 登录
-                if (root.TryGetProperty("action", out var actionProp) && actionProp.GetString() == "login")
+                // 检查动作类型
+                if (!root.TryGetProperty("action", out var actionProp)) return;
+                string action = actionProp.GetString() ?? string.Empty;
+
+                // 动作 1：获取当前会话状态
+                if (action == "getSession")
+                {
+                    var sessionInfo = _authController.GetCurrentSessionInfo();
+                    PostWebMessageSafe(JsonSerializer.Serialize(new { action = "sessionInfo", data = sessionInfo }));
+                    return;
+                }
+
+                // 动作 2：注销当前账号
+                if (action == "logout")
+                {
+                    _authController.Logout();
+                    PostWebMessageSafe(JsonSerializer.Serialize(new { action = "logoutResult", success = true, message = "已安全退出当前账号！" }));
+                    return;
+                }
+
+                // 动作 3：执行登录认证
+                if (action == "login")
                 {
                     // 解析获取输入的用户名参数
                     string username = root.GetProperty("username").GetString() ?? string.Empty;
@@ -171,25 +191,71 @@ namespace ExcelAddInDemo
                     // 调用 Backend WebAPI 控制器接口执行异步校验
                     LoginResponse response = await _authController.LoginAsync(request);
 
-                    // 将包含状态信息的响应结果发回给 Vue 3 界面显示 (跨线程安全)
-                    string responseJson = JsonSerializer.Serialize(response);
-
-                    // 使用 PostWebMessageSafe 发送给 Vue 3 页面
-                    PostWebMessageSafe(responseJson);
-
-                    // 若登录校验成功，保存当前用户登录凭据与状态
-                    if (response.Success)
+                    // 构造回发数据
+                    var resObj = new
                     {
-                        // 将配置信息与 Token 记录回 ExcelServices 模块
-                        ExcelServices.CurrentToken = response.Token;
+                        action = "loginResult",
+                        Success = response.Success,
+                        Message = response.Message,
+                        Token = response.Token,
+                        UserId = response.UserId,
+                        DisplayName = response.DisplayName,
+                        NeedSelectGroup = response.NeedSelectGroup,
+                        SelectedGroupId = response.SelectedGroupId,
+                        SelectedGroupName = response.SelectedGroupName,
+                        Groups = response.Groups
+                    };
 
-                        // 将登录的用户名更新回 ExcelServices
-                        ExcelServices.CurrentUserDisplayName = response.User?.DisplayName ?? username;
+                    // 将包含状态信息的响应结果发回给 Vue 3 界面显示 (跨线程安全)
+                    PostWebMessageSafe(JsonSerializer.Serialize(resObj));
 
-                        // 异步等待 800 毫秒展示成功的动画给用户
+                    // 若登录校验成功且无需选择工作组，等待 800ms 关闭窗口
+                    if (response.Success && !response.NeedSelectGroup)
+                    {
                         await System.Threading.Tasks.Task.Delay(800);
+                        SafeInvoke(() => this.Close());
+                    }
+                    return;
+                }
 
-                        // 登录完成后在主线程关闭当前登录配置窗口
+                // 动作 4：用户手动选择并确认工作组
+                if (action == "selectGroup")
+                {
+                    string token = root.GetProperty("token").GetString() ?? string.Empty;
+                    string userId = root.GetProperty("userId").GetString() ?? string.Empty;
+                    string userName = root.GetProperty("userName").GetString() ?? string.Empty;
+                    string displayName = root.GetProperty("displayName").GetString() ?? string.Empty;
+                    int groupId = root.GetProperty("groupId").GetInt32();
+                    string groupName = root.TryGetProperty("groupName", out var gnProp) ? (gnProp.GetString() ?? string.Empty) : string.Empty;
+                    bool rememberMe = root.TryGetProperty("rememberMe", out var remProp) && remProp.GetBoolean();
+
+                    var selectReq = new SelectGroupRequest
+                    {
+                        Token = token,
+                        UserId = userId,
+                        UserName = userName,
+                        DisplayName = displayName,
+                        GroupId = groupId,
+                        GroupName = groupName,
+                        RememberMe = rememberMe
+                    };
+
+                    LoginResponse selectRes = await _authController.SelectGroupAsync(selectReq);
+
+                    var resObj = new
+                    {
+                        action = "selectGroupResult",
+                        Success = selectRes.Success,
+                        Message = selectRes.Message,
+                        SelectedGroupId = selectRes.SelectedGroupId,
+                        SelectedGroupName = selectRes.SelectedGroupName
+                    };
+
+                    PostWebMessageSafe(JsonSerializer.Serialize(resObj));
+
+                    if (selectRes.Success)
+                    {
+                        await System.Threading.Tasks.Task.Delay(800);
                         SafeInvoke(() => this.Close());
                     }
                 }
@@ -197,10 +263,11 @@ namespace ExcelAddInDemo
             catch (Exception ex)
             {
                 // 异常时提示失败信息给前端 (跨线程安全)
-                var errResponse = new LoginResponse
+                var errResponse = new
                 {
+                    action = "error",
                     Success = false,
-                    Message = $"处理登录失败: {ex.Message}"
+                    Message = $"处理异常: {ex.Message}"
                 };
 
                 // 将异常响应序列化并回发

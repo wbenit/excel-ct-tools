@@ -24,6 +24,9 @@ namespace ExcelAddInDemo
                 // 统一注册 Excel 全局事件与右键菜单
                 ExcelEventManager.RegisterEvents();
 
+                // 从本地安全加密凭据中静默恢复登录会话及工作组 (DPAPI)
+                ExcelServices.RestoreUserSession();
+
                 // 若之前配置开启了聚光灯，自动恢复开启
                 if (Models.SpotlightConfig.Current.IsEnabled)
                 {

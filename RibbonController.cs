@@ -74,6 +74,10 @@ namespace ExcelAddInDemo
           <toggleButton id='tglLocalProject' label='本机项目' imageMso='Folder' size='large' getPressed='GetLocalProjectPressed' onAction='OnLocalProjectToggleAction' screentip='本机项目 (本地文件管理控制台)' supertip='点击唤起本地文件管理控制台。若当前活动工作簿已在控制台表格中收录登记，此按钮将自动保持高亮按压状态。' />
           <!-- 云项目下拉菜单 -->
           <menu id='menuCloudProject' label='云项目' imageMso='ServerProperties' size='large'>
+            <!-- 绑定云端项目按钮 -->
+            <button id='btnBindCloudProject' label='绑定云端项目...' imageMso='ServerConnection' onAction='OnMenuAction' screentip='绑定云端项目' supertip='将当前 Excel 工作簿绑定至 DrawCode 云端工程项目，实现数据互联互通。' />
+            <!-- 推送箱柜至云端按钮 -->
+            <button id='btnSyncCabinetsToCloud' label='推送到云端箱柜...' imageMso='ExportTextFile' onAction='OnMenuAction' screentip='推送到云端箱柜' supertip='将当前工程所有箱柜提取并直推同步至 DrawCode 云端系统图箱柜库，支持按 2-1 复合序号精准匹配并可选择覆盖。' />
             <!-- 云项目列表项 (配置服务器网络连接标准图标) -->
             <button id='btnCloudProj1' label='默认云项目' imageMso='ServerConnection' onAction='OnMenuAction' />
           </menu>
@@ -129,6 +133,8 @@ namespace ExcelAddInDemo
             <button id='btnImportCabinetBOM' label='导入箱柜BOM' imageMso='ImportTextFile' onAction='OnMenuAction' />
             <!-- 11. 智能导入箱柜BOM按钮 (使用标准XML导入图标) -->
             <button id='btnSmartImportCabinetBOM' label='智能导入箱柜BOM' imageMso='XmlImport' onAction='OnMenuAction' />
+            <!-- 12. 推送箱柜至云端系统图库按钮 -->
+            <button id='btnSyncCabinetsToCloudMenu' label='推送到云端箱柜...' imageMso='ExportTextFile' onAction='OnMenuAction' screentip='推送到云端箱柜' supertip='将当前工程所有箱柜提取并直推同步至 DrawCode 云端系统图箱柜库，支持按 2-1 复合序号精准匹配并可选择覆盖。' />
           </menu>
         </group>
         <!-- ②录元件 功能分组 -->
@@ -525,6 +531,18 @@ namespace ExcelAddInDemo
             {
                 // 弹出基于 WebView2 + Vue 3 的“本地文件管理控制台”窗口
                 ExcelServices.ShowLocalProjectDialog();
+            }
+            // 响应“绑定云端项目”按钮指令
+            else if (controlId == "btnBindCloudProject")
+            {
+                // 弹出基于 WebView2 + Vue 3 的绑定云端项目窗口
+                ExcelServices.ShowProjectBindDialog();
+            }
+            // 响应“推送到云端箱柜”按钮指令 (支持用户确认后覆盖与 2-1 复合序号直推)
+            else if (controlId == "btnSyncCabinetsToCloud" || controlId == "btnSyncCabinetsToCloudMenu")
+            {
+                // 弹出基于 WebView2 + Vue 3 的箱柜直推云端窗口
+                ExcelServices.ShowCloudEBoxSyncDialog();
             }
             // 响应“企业设置”按钮指令
             else if (controlId == "btnEnterprise")
