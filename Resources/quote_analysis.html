@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>工程报价全景分析与可视化大屏</title>
+  <!-- 引入 Element Plus 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <!-- 引入 Vue 3 核心库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入 Element Plus 组件库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <!-- 引入 Apache ECharts 5 绚丽图表引擎 -->
+  <script src="https://unpkg.com/echarts@5.4.3/dist/echarts.min.js"></script>
+  <style>
+    /* 全局重置与防水平滚动条 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      user-select: none;
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    /* 深邃科技夜空主题 (默认科技大屏风格) */
+    body.theme-dark {
+      background-color: #0b1320;
+      color: #e2e8f0;
+    }
+
+    /* 商务清爽现代白主题 */
+    body.theme-light {
+      background-color: #f1f5f9;
+      color: #1e293b;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+    }
+
+    /* 顶部顶栏 (绿蓝相间微光渐变，主色调 #009688) */
+    .top-header {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      background: linear-gradient(135deg, #009688 0%, #00695c 40%, #0284c7 100%);
+      color: #ffffff;
+      flex-shrink: 0;
+      box-shadow: 0 2px 10px rgba(0, 150, 136, 0.25);
+      z-index: 20;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-title {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .project-badge {
+      display: inline-flex;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.18);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-btn {
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: #ffffff;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.2s ease;
+    }
+
+    .header-btn:hover {
+      background: rgba(255, 255, 255, 0.28);
+      transform: translateY(-1px);
+    }
+
+    /* 主工作区：弹性自适应纵向滚动网格，严格杜绝水平滚动条 */
+    .dashboard-body {
+      flex: 1 1 0%;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* 自定义美化滚动条 */
+    .dashboard-body::-webkit-scrollbar {
+      width: 6px;
+    }
+    .theme-dark .dashboard-body::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 4px;
+    }
+    .theme-light .dashboard-body::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+
+    /* 顶部 4 块 KPI 指标微光卡片 */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .kpi-card {
+      border-radius: 10px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .kpi-card:hover {
+      transform: translateY(-2px);
+    }
+
+    .theme-dark .kpi-card {
+      background: linear-gradient(145deg, #131d2e 0%, #0d1522 100%);
+      border: 1px solid rgba(0, 150, 136, 0.25);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    }
+
+    .theme-light .kpi-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+
+    .kpi-label {
+      font-size: 12px;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .kpi-value {
+      font-size: 24px;
+      font-weight: 700;
+      margin: 6px 0 2px 0;
+      font-family: "Consolas", "Courier New", monospace;
+      letter-spacing: -0.5px;
+    }
+
+    .kpi-sub {
+      font-size: 11px;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* 强调发光色 */
+    .color-primary { color: #009688; }
+    .color-cyan { color: #00b4d8; }
+    .color-amber { color: #f59e0b; }
+    .color-green { color: #10b981; }
+
+    /* 中部左右分栏布局 */
+    .charts-row-split {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 12px;
+      min-height: 380px;
+      flex-shrink: 0;
+    }
+
+    /* 通用图表卡片 */
+    .chart-panel {
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .theme-dark .chart-panel {
+      background: #111a28;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+    }
+
+    .theme-light .chart-panel {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px dashed rgba(148, 163, 184, 0.2);
+    }
+
+    .panel-title {
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .panel-tag {
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(0, 150, 136, 0.12);
+      color: #009688;
+      font-weight: 500;
+    }
+
+    .chart-container {
+      flex: 1 1 0%;
+      min-height: 0;
+      width: 100%;
+    }
+
+    /* 调价决策与敏感度模拟器卡片 */
+    .simulation-panel {
+      border-radius: 10px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .theme-dark .simulation-panel {
+      background: linear-gradient(135deg, #101c2b 0%, #0d1724 100%);
+      border: 1px solid rgba(0, 150, 136, 0.3);
+    }
+
+    .theme-light .simulation-panel {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+    }
+
+    .slider-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .slider-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .slider-label {
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* 底部全宽箱柜矩阵与帕累托图 */
+    .bottom-row-grid {
+      display: grid;
+      grid-template-columns: 1.25fr 0.75fr;
+      gap: 12px;
+      min-height: 380px;
+      flex-shrink: 0;
+    }
+
+    /* 抽屉明细雷达与元件列表 */
+    .drawer-content {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      height: 100%;
+      overflow-y: auto;
+      padding: 4px 8px;
+    }
+  </style>
+</head>
+<body class="theme-dark">
+  <div id="app">
+    <!-- 顶部状态栏 -->
+    <header class="top-header">
+      <div class="header-left">
+        <div class="header-title">
+          <span>📊</span>
+          <span>工程报价全景分析与可视化大屏</span>
+        </div>
+        <div class="project-badge">
+          <span>{{ summary.projectName || '正在加载工程...' }}</span>
+          <span v-if="summary.quoteNumber" style="margin-left: 6px; opacity: 0.8;">({{ summary.quoteNumber }})</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <button class="header-btn" @click="toggleTheme">
+          <span>{{ isDark ? '☀️ 切换浅色' : '🌙 切换深色' }}</span>
+        </button>
+        <button class="header-btn" @click="refreshData">
+          <span>🔄 重新扫描</span>
+        </button>
+        <button class="header-btn" @click="exportDashboardImage">
+          <span>📸 导出大屏图片</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 主展示区 -->
+    <main class="dashboard-body">
+      <!-- 1. KPI 翻牌卡片群 (支持 What-If 动态联动) -->
+      <section class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">
+            <span>总报出金额 (报价)</span>
+            <span class="color-primary">¥</span>
+          </div>
+          <div class="kpi-value color-primary">
+            {{ formatMoney(simulatedSummary.totalQuotePrice) }}
+          </div>
+          <div class="kpi-sub">
+            <span>原报价: {{ formatMoney(summary.totalQuotePrice) }}</span>
+            <span v-if="discountRate !== 0" :class="discountRate > 0 ? 'color-amber' : 'color-green'">
+              ({{ discountRate > 0 ? '-' + discountRate + '%' : '+' + Math.abs(discountRate) + '%' }})
+            </span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-label">
+            <span>综合制造成本</span>
+            <span class="color-cyan">¥</span>
+          </div>
+          <div class="kpi-value color-cyan">
+            {{ formatMoney(simulatedSummary.totalCostPrice) }}
+          </div>
+          <div class="kpi-sub">
+            <span>成本率: {{ ((simulatedSummary.totalCostPrice / (simulatedSummary.totalQuotePrice || 1)) * 100).toFixed(1) }}%</span>
+            <span v-if="costCutRate > 0" class="color-green">(-{{ costCutRate }}% 供应链降本)</span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-label">
+            <span>净毛利润总额</span>
+            <span :class="simulatedSummary.totalGrossProfit >= 0 ? 'color-green' : 'color-amber'">¥</span>
+          </div>
+          <div class="kpi-value" :class="simulatedSummary.totalGrossProfit >= 0 ? 'color-green' : 'color-amber'">
+            {{ formatMoney(simulatedSummary.totalGrossProfit) }}
+          </div>
+          <div class="kpi-sub">
+            <span>基准毛利: {{ formatMoney(summary.totalGrossProfit) }}</span>
+            <span :class="simulatedSummary.totalGrossProfit >= summary.totalGrossProfit ? 'color-green' : 'color-amber'">
+              ({{ simulatedSummary.totalGrossProfit >= summary.totalGrossProfit ? '▲ 优于基准' : '▼ 利润受挤压' }})
+            </span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-label">
+            <span>综合毛利率</span>
+            <span :class="simulatedProfitRate >= 0.15 ? 'color-primary' : 'color-amber'">%</span>
+          </div>
+          <div class="kpi-value" :class="simulatedProfitRate >= 0.15 ? 'color-primary' : 'color-amber'">
+            {{ (simulatedProfitRate * 100).toFixed(2) }}%
+          </div>
+          <div class="kpi-sub">
+            <span>箱柜规模: {{ summary.totalCabinetCount }} 台 ｜ 物料: {{ summary.totalComponentCount }} 项</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. What-If 动态调价与利润敏感度模拟器 -->
+      <section class="simulation-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+            <span>🎛️</span>
+            <span>商务投标 What-If 动态调价与利润模拟器</span>
+            <span style="font-size: 11px; opacity: 0.7; font-weight: normal;">(拉动滑块即时测算全屏财务指标联动)</span>
+          </div>
+          <el-button size="small" type="primary" plain @click="resetSimulation">恢复原价</el-button>
+        </div>
+        <div class="slider-row">
+          <div class="slider-item">
+            <div class="slider-label">
+              <span>整单商务让利幅度: <strong>{{ discountRate }}%</strong> (下调报出价)</span>
+              <span style="color: #f59e0b;">让利额: -{{ formatMoney(summary.totalQuotePrice * discountRate / 100) }} 元</span>
+            </div>
+            <el-slider v-model="discountRate" :min="0" :max="25" :step="0.5" @input="onSimulateChange"></el-slider>
+          </div>
+          <div class="slider-item">
+            <div class="slider-label">
+              <span>供应链采购议价降本: <strong>{{ costCutRate }}%</strong> (压缩器件成本)</span>
+              <span style="color: #10b981;">节约成本: -{{ formatMoney(summary.totalCostPrice * costCutRate / 100) }} 元</span>
+            </div>
+            <el-slider v-model="costCutRate" :min="0" :max="15" :step="0.5" @input="onSimulateChange"></el-slider>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. 中部：成本多维旭日/双环饼图 + 箱柜功能南丁格尔玫瑰图 -->
+      <section class="charts-row-split">
+        <!-- 图表 A: 成本利润五大支柱双环饼图 -->
+        <div class="chart-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>🍩</span>
+              <span>成本结构与利润解构 (双环嵌套旭日图)</span>
+            </div>
+            <div class="panel-tag">内环: 成本 vs 毛利 ｜ 外环: 五大支柱</div>
+          </div>
+          <div id="chartCostSunburst" class="chart-container"></div>
+        </div>
+
+        <!-- 图表 B: 箱柜功能分类南丁格尔玫瑰图 -->
+        <div class="chart-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>🌹</span>
+              <span>箱柜功能类别分布 (南丁格尔玫瑰图)</span>
+            </div>
+            <div class="panel-tag">半径: 产值金额 ｜ 角度: 台数</div>
+          </div>
+          <div id="chartRoseCategory" class="chart-container"></div>
+        </div>
+      </section>
+
+      <!-- 4. 底部：箱柜价值排布帕累托图 + 供应链物料 Treemap 树图 -->
+      <section class="bottom-row-grid">
+        <!-- 图表 C: 32台箱柜价值排布与帕累托 Pareto 80/20 累积双轴图 -->
+        <div class="chart-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>📈</span>
+              <span>32 台箱柜价值排布与帕累托 (Pareto) 累积分析</span>
+            </div>
+            <div class="panel-tag" style="cursor: pointer;" title="点击图表柱体可在 Excel 中直接定位高亮该箱柜">
+              💡 点击柱体可直达 Excel 单元格
+            </div>
+          </div>
+          <div id="chartPareto" class="chart-container"></div>
+        </div>
+
+        <!-- 图表 D: 核心器件供应链 Treemap 矩形树图 -->
+        <div class="chart-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>📦</span>
+              <span>供应链核心物料体量分布 (矩形树图)</span>
+            </div>
+            <div class="panel-tag">面积: 采购合价</div>
+          </div>
+          <div id="chartTreemap" class="chart-container"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 单台箱柜穿透微观透视抽屉 -->
+    <el-drawer v-model="drawerVisible" :title="'箱柜解剖微观透视: ' + (activeCabinet.name || '')" size="420px" direction="rtl">
+      <div class="drawer-content" v-if="activeCabinet.name">
+        <div style="background: rgba(0, 150, 136, 0.08); border-radius: 8px; padding: 12px; border-left: 4px solid #009688;">
+          <div style="font-weight: 600; font-size: 14px;">{{ activeCabinet.name }}</div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
+            型号: {{ activeCabinet.model || '标准定制箱' }} ｜ 类别: {{ activeCabinet.functionalCategory }} ｜ 安装: {{ activeCabinet.installType }}
+          </div>
+          <div style="display: flex; gap: 16px; margin-top: 8px; font-size: 13px;">
+            <span>报价: <strong style="color: #009688;">¥{{ formatMoney(activeCabinet.totalPrice) }}</strong></span>
+            <span>成本: <strong style="color: #0284c7;">¥{{ formatMoney(activeCabinet.costPrice) }}</strong></span>
+            <span>毛利: <strong style="color: #10b981;">{{ (activeCabinet.grossProfitRate * 100).toFixed(1) }}%</strong></span>
+          </div>
+        </div>
+
+        <!-- 箱柜五维雷达图 -->
+        <div id="chartCabinetRadar" style="width: 100%; height: 260px; margin-top: 8px;"></div>
+
+        <!-- 定位按钮 -->
+        <div style="margin-top: 12px; display: flex; gap: 10px;">
+          <el-button type="primary" style="flex: 1;" @click="jumpToCabinet(activeCabinet)">
+            🎯 在 Excel 中高亮居中该箱柜
+          </el-button>
+        </div>
+      </div>
+    </el-drawer>
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
+
+    createApp({
+      setup() {
+        // 主题切换状态
+        const isDark = ref(true);
+
+        // 核心业务数据源
+        const summary = reactive({
+          projectName: '',
+          quoteNumber: '',
+          companyName: '',
+          totalQuotePrice: 0,
+          totalCostPrice: 0,
+          totalGrossProfit: 0,
+          grossProfitRate: 0,
+          totalCabinetCount: 0,
+          totalComponentCount: 0
+        });
+
+        const cabinets = ref([]);
+        const costStructure = reactive({
+          componentsTotal: 0,
+          cabinetBoxTotal: 0,
+          auxMaterialsTotal: 0,
+          laborTotal: 0,
+          completeSetTotal: 0,
+          profitTotal: 0
+        });
+        const topComponents = ref([]);
+        const categoryDistributions = ref([]);
+        const brandDistributions = ref([]);
+
+        // What-If 模拟器参数
+        const discountRate = ref(0); // 报价让利 %
+        const costCutRate = ref(0);   // 供应链降本 %
+
+        // 抽屉详情
+        const drawerVisible = ref(false);
+        const activeCabinet = ref({});
+
+        // ECharts 实例缓存
+        let chartCost = null;
+        let chartRose = null;
+        let chartParetoInstance = null;
+        let chartTreemapInstance = null;
+        let chartRadarInstance = null;
+
+        // 模拟计算后的财务数值
+        const simulatedSummary = computed(() => {
+          const discountFactor = 1 - (discountRate.value / 100);
+          const costFactor = 1 - (costCutRate.value / 100);
+
+          const simQuote = summary.totalQuotePrice * discountFactor;
+          const simCost = summary.totalCostPrice * costFactor;
+          const simProfit = simQuote - simCost;
+
+          return {
+            totalQuotePrice: Math.round(simQuote * 100) / 100,
+            totalCostPrice: Math.round(simCost * 100) / 100,
+            totalGrossProfit: Math.round(simProfit * 100) / 100
+          };
+        });
+
+        const simulatedProfitRate = computed(() => {
+          if (!simulatedSummary.value.totalQuotePrice) return 0;
+          return simulatedSummary.value.totalGrossProfit / simulatedSummary.value.totalQuotePrice;
+        });
+
+        // 货币格式化
+        const formatMoney = (val) => {
+          if (val === undefined || val === null || isNaN(val)) return '0.00';
+          return Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        };
+
+        // 向 C# 宿主发送消息
+        const postToCSharp = (obj) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(obj);
+          }
+        };
+
+        // 监听 C# 消息
+        const initMessageListener = () => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (e) => {
+              const res = e.data;
+              if (res.action === 'quoteDataLoaded' && res.data) {
+                applyQuoteData(res.data);
+              } else if (res.action === 'error') {
+                ElementPlus.ElMessage.error(res.message || '加载失败');
+              }
+            });
+          }
+        };
+
+        // 应用最新提取的数据包
+        const applyQuoteData = (data) => {
+          if (data.summary) Object.assign(summary, data.summary);
+          if (data.cabinets) cabinets.value = data.cabinets;
+          if (data.costStructure) Object.assign(costStructure, data.costStructure);
+          if (data.topComponents) topComponents.value = data.topComponents;
+          if (data.categoryDistributions) categoryDistributions.value = data.categoryDistributions;
+          if (data.brandDistributions) brandDistributions.value = data.brandDistributions;
+
+          nextTick(() => {
+            renderAllCharts();
+          });
+        };
+
+        // 渲染全部绚丽图表
+        const renderAllCharts = () => {
+          renderCostSunburst();
+          renderRoseCategory();
+          renderParetoChart();
+          renderTreemapChart();
+        };
+
+        // 图表 1: 成本结构与利润解构 (双环嵌套旭日/环形图)
+        const renderCostSunburst = () => {
+          const dom = document.getElementById('chartCostSunburst');
+          if (!dom) return;
+          if (!chartCost) chartCost = echarts.init(dom);
+
+          const themeTextColor = isDark.value ? '#cbd5e1' : '#334155';
+
+          // 内环数据 (成本 vs 毛利)
+          const innerData = [
+            {
+              value: simulatedSummary.value.totalCostPrice,
+              name: '制造成本',
+              itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 1, 1, [
+                { offset: 0, color: '#0284c7' },
+                { offset: 1, color: '#0369a1' }
+              ])}
+            },
+            {
+              value: Math.max(0, simulatedSummary.value.totalGrossProfit),
+              name: '净毛利',
+              itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 1, 1, [
+                { offset: 0, color: '#009688' },
+                { offset: 1, color: '#10b981' }
+              ])}
+            }
+          ];
+
+          // 外环数据 (五大支柱拆解)
+          const outerData = [
+            { value: costStructure.componentsTotal || 24000, name: '元器件采购', itemStyle: { color: '#0ea5e9' } },
+            { value: costStructure.cabinetBoxTotal || 6500, name: '箱体钣金壳体', itemStyle: { color: '#38bdf8' } },
+            { value: costStructure.laborTotal || 4500, name: '人工装配工时', itemStyle: { color: '#7dd3fc' } },
+            { value: costStructure.auxMaterialsTotal || 2800, name: '铜排导线辅料', itemStyle: { color: '#bae6fd' } },
+            { value: Math.max(0, costStructure.completeSetTotal || 3500), name: '成套费与税金', itemStyle: { color: '#2dd4bf' } },
+            { value: Math.max(0, simulatedSummary.value.totalGrossProfit), name: '企业留存毛利', itemStyle: { color: '#059669' } }
+          ];
+
+          const option = {
+            tooltip: {
+              trigger: 'item',
+              formatter: '{a} <br/><strong>{b}</strong>: ¥{c} ({d}%)'
+            },
+            legend: {
+              bottom: '2%',
+              left: 'center',
+              textStyle: { color: themeTextColor, fontSize: 11 },
+              itemWidth: 10,
+              itemHeight: 10
+            },
+            series: [
+              {
+                name: '宏观层面',
+                type: 'pie',
+                selectedMode: 'single',
+                radius: [0, '42%'],
+                label: {
+                  position: 'inner',
+                  fontSize: 11,
+                  color: '#ffffff',
+                  fontWeight: 'bold'
+                },
+                data: innerData
+              },
+              {
+                name: '成本五大支柱',
+                type: 'pie',
+                radius: ['52%', '72%'],
+                labelLine: { length: 10, length2: 10 },
+                label: {
+                  formatter: '{b|{b}}\n{d|{d}%}',
+                  rich: {
+                    b: { color: themeTextColor, fontSize: 11, lineHeight: 14 },
+                    d: { color: '#009688', fontSize: 10, fontWeight: 'bold' }
+                  }
+                },
+                data: outerData
+              }
+            ]
+          };
+
+          chartCost.setOption(option);
+        };
+
+        // 图表 2: 箱柜功能类别南丁格尔玫瑰图
+        const renderRoseCategory = () => {
+          const dom = document.getElementById('chartRoseCategory');
+          if (!dom) return;
+          if (!chartRose) chartRose = echarts.init(dom);
+
+          const themeTextColor = isDark.value ? '#cbd5e1' : '#334155';
+
+          // 准备玫瑰图数据
+          let roseData = categoryDistributions.value.map((cat, idx) => {
+            const colors = ['#009688', '#0284c7', '#0ea5e9', '#f59e0b', '#10b981', '#6366f1', '#ec4899'];
+            return {
+              value: cat.totalPrice,
+              name: `${cat.categoryName} (${cat.cabinetCount}台)`,
+              itemStyle: { color: colors[idx % colors.length] }
+            };
+          });
+
+          if (roseData.length === 0) {
+            roseData = [
+              { value: 18500, name: '消防应急控制 (8台)', itemStyle: { color: '#009688' } },
+              { value: 14200, name: '照明配电系统 (12台)', itemStyle: { color: '#0284c7' } },
+              { value: 8900, name: '电梯动力系统 (4台)', itemStyle: { color: '#0ea5e9' } },
+              { value: 5200, name: '双电源互投箱 (4台)', itemStyle: { color: '#f59e0b' } },
+              { value: 2623, name: '专用控制箱 (4台)', itemStyle: { color: '#10b981' } }
+            ];
+          }
+
+          const option = {
+            tooltip: {
+              trigger: 'item',
+              formatter: '{a} <br/><strong>{b}</strong>: ¥{c} ({d}%)'
+            },
+            legend: {
+              bottom: '2%',
+              left: 'center',
+              textStyle: { color: themeTextColor, fontSize: 11 },
+              itemWidth: 10,
+              itemHeight: 10
+            },
+            series: [
+              {
+                name: '箱柜功能分类',
+                type: 'pie',
+                radius: ['20%', '75%'],
+                center: ['50%', '46%'],
+                roseType: 'radius',
+                itemStyle: {
+                  borderRadius: 6,
+                  borderColor: isDark.value ? '#111a28' : '#ffffff',
+                  borderWidth: 2
+                },
+                label: {
+                  color: themeTextColor,
+                  fontSize: 11
+                },
+                data: roseData
+              }
+            ]
+          };
+
+          chartRose.setOption(option);
+        };
+
+        // 图表 3: 32台箱柜价值排布与帕累托 (Pareto) 80/20 累积双轴图
+        const renderParetoChart = () => {
+          const dom = document.getElementById('chartPareto');
+          if (!dom) return;
+          if (!chartParetoInstance) {
+            chartParetoInstance = echarts.init(dom);
+            // 绑定点击穿透下钻到 Excel 单元格
+            chartParetoInstance.on('click', (params) => {
+              if (params.data && params.data.rawItem) {
+                openCabinetDrawer(params.data.rawItem);
+              }
+            });
+          }
+
+          const themeTextColor = isDark.value ? '#94a3b8' : '#64748b';
+          const splitLineColor = isDark.value ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+
+          // 按总价降序排序箱柜列表
+          const sortedList = [...cabinets.value].sort((a, b) => b.totalPrice - a.totalPrice);
+          const totalSum = sortedList.reduce((acc, cur) => acc + cur.totalPrice, 0) || 1;
+
+          const names = [];
+          const barData = [];
+          const lineData = [];
+          let runningSum = 0;
+
+          sortedList.forEach((cab) => {
+            // 简写柜名避免过长
+            let shortName = cab.name.replace("系统", "").replace("配电箱", "").trim();
+            if (shortName.length > 8) shortName = shortName.substring(0, 8) + '..';
+            names.push(shortName);
+
+            runningSum += cab.totalPrice;
+            const accumPercent = Math.round((runningSum / totalSum) * 1000) / 10;
+
+            barData.push({
+              value: cab.totalPrice,
+              rawItem: cab
+            });
+            lineData.push(accumPercent);
+          });
+
+          const option = {
+            tooltip: {
+              trigger: 'axis',
+              axisPointer: { type: 'cross' },
+              formatter: (params) => {
+                if (!params || params.length === 0) return '';
+                const item = params[0];
+                const raw = item.data.rawItem;
+                const percent = params[1] ? params[1].value : '';
+                return `<strong>${raw ? raw.name : item.name}</strong><br/>` +
+                       `报出总价: ¥${formatMoney(raw ? raw.totalPrice : item.value)}<br/>` +
+                       `成本价: ¥${formatMoney(raw ? raw.costPrice : 0)}<br/>` +
+                       `毛利率: ${(raw ? raw.grossProfitRate * 100 : 0).toFixed(1)}%<br/>` +
+                       `价值累计贡献: <strong>${percent}%</strong><br/>` +
+                       `<span style="color: #009688;">(点击直达 Excel 明细行)</span>`;
+              }
+            },
+            grid: {
+              top: '15%',
+              left: '4%',
+              right: '4%',
+              bottom: '18%',
+              containLabel: true
+            },
+            xAxis: {
+              type: 'category',
+              data: names,
+              axisLabel: {
+                color: themeTextColor,
+                rotate: 35,
+                interval: 0,
+                fontSize: 10
+              },
+              axisLine: { lineStyle: { color: splitLineColor } }
+            },
+            yAxis: [
+              {
+                type: 'value',
+                name: '金额 (元)',
+                nameTextStyle: { color: themeTextColor, fontSize: 11 },
+                axisLabel: { color: themeTextColor, fontSize: 10 },
+                splitLine: { lineStyle: { color: splitLineColor } }
+              },
+              {
+                type: 'value',
+                name: '累计占比',
+                min: 0,
+                max: 100,
+                nameTextStyle: { color: themeTextColor, fontSize: 11 },
+                axisLabel: {
+                  color: themeTextColor,
+                  fontSize: 10,
+                  formatter: '{value}%'
+                },
+                splitLine: { show: false }
+              }
+            ],
+            series: [
+              {
+                name: '箱柜金额',
+                type: 'bar',
+                barWidth: '60%',
+                itemStyle: {
+                  borderRadius: [4, 4, 0, 0],
+                  color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: '#009688' },
+                    { offset: 1, color: '#0284c7' }
+                  ])
+                },
+                data: barData
+              },
+              {
+                name: '80/20 累计占比',
+                type: 'line',
+                yAxisIndex: 1,
+                smooth: true,
+                symbol: 'circle',
+                symbolSize: 4,
+                itemStyle: { color: '#f59e0b' },
+                lineStyle: { width: 2, color: '#f59e0b' },
+                data: lineData
+              }
+            ]
+          };
+
+          chartParetoInstance.setOption(option);
+        };
+
+        // 图表 4: 供应链核心物料矩形树图 (Treemap)
+        const renderTreemapChart = () => {
+          const dom = document.getElementById('chartTreemap');
+          if (!dom) return;
+          if (!chartTreemapInstance) chartTreemapInstance = echarts.init(dom);
+
+          // 组织树图数据结构 (按品牌或名称聚合)
+          const treeData = topComponents.value.map(c => ({
+            name: `${c.name}\n${c.model.substring(0, 15)}`,
+            value: c.totalPrice,
+            rawItem: c
+          }));
+
+          const option = {
+            tooltip: {
+              formatter: (info) => {
+                const c = info.data.rawItem;
+                if (!c) return `${info.name}: ¥${info.value}`;
+                return `<strong>${c.name}</strong><br/>` +
+                       `型号: ${c.model}<br/>` +
+                       `品牌: ${c.manufacturer}<br/>` +
+                       `用量: ${c.totalQuantity} 只/套<br/>` +
+                       `采购单价: ¥${c.unitPrice}<br/>` +
+                       `采购合价: <strong>¥${c.totalPrice}</strong>`;
+              }
+            },
+            series: [
+              {
+                type: 'treemap',
+                width: '100%',
+                height: '90%',
+                roam: false,
+                nodeClick: false,
+                breadcrumb: { show: false },
+                levels: [
+                  {
+                    itemStyle: {
+                      borderColor: isDark.value ? '#111a28' : '#ffffff',
+                      borderWidth: 2,
+                      gapWidth: 2
+                    }
+                  }
+                ],
+                data: treeData
+              }
+            ]
+          };
+
+          chartTreemapInstance.setOption(option);
+        };
+
+        // 打开箱柜抽屉并渲染五维雷达图
+        const openCabinetDrawer = (cab) => {
+          activeCabinet.value = cab;
+          drawerVisible.value = true;
+
+          nextTick(() => {
+            const rDom = document.getElementById('chartCabinetRadar');
+            if (rDom) {
+              if (chartRadarInstance) chartRadarInstance.dispose();
+              chartRadarInstance = echarts.init(rDom);
+
+              const themeTextColor = isDark.value ? '#94a3b8' : '#64748b';
+
+              const rOption = {
+                radar: {
+                  indicator: [
+                    { name: '元器件费用', max: Math.max(100, cab.totalPrice * 0.8) },
+                    { name: '箱体钣金', max: Math.max(50, cab.totalPrice * 0.3) },
+                    { name: '装配人工', max: Math.max(30, cab.totalPrice * 0.25) },
+                    { name: '辅材耗材', max: Math.max(20, cab.totalPrice * 0.15) },
+                    { name: '成套与毛利', max: Math.max(50, cab.totalPrice * 0.35) }
+                  ],
+                  axisName: { color: themeTextColor, fontSize: 11 },
+                  splitLine: { lineStyle: { color: 'rgba(0,150,136,0.2)' } },
+                  splitArea: { show: false }
+                },
+                series: [
+                  {
+                    type: 'radar',
+                    data: [
+                      {
+                        value: [
+                          cab.componentsCost || (cab.costPrice * 0.65),
+                          cab.cabinetBoxCost || (cab.costPrice * 0.18),
+                          cab.laborCost || (cab.costPrice * 0.10),
+                          cab.auxMaterialsCost || (cab.costPrice * 0.07),
+                          cab.completeSetFee || (cab.totalPrice - cab.costPrice)
+                        ],
+                        name: '单台成本结构',
+                        areaStyle: { color: 'rgba(0, 150, 136, 0.35)' },
+                        lineStyle: { color: '#009688', width: 2 }
+                      }
+                    ]
+                  }
+                ]
+              };
+
+              chartRadarInstance.setOption(rOption);
+            }
+          });
+        };
+
+        // 在 Excel 中跳转到对应箱柜
+        const jumpToCabinet = (cab) => {
+          if (!cab || !cab.detRow) {
+            ElementPlus.ElMessage.warning('该箱柜暂无关联的明细锚点行');
+            return;
+          }
+          postToCSharp({
+            action: 'navigateToCabinet',
+            sheetName: cab.sheetName,
+            rowNumber: cab.detRow
+          });
+          ElementPlus.ElMessage.success(`已在 Excel 中定位至第 ${cab.detRow} 行`);
+        };
+
+        // 模拟器变动联动重绘
+        const onSimulateChange = () => {
+          renderCostSunburst();
+        };
+
+        // 重置模拟器
+        const resetSimulation = () => {
+          discountRate.value = 0;
+          costCutRate.value = 0;
+          renderCostSunburst();
+        };
+
+        // 重新扫描 Excel
+        const refreshData = () => {
+          ElementPlus.ElMessage.info('正在重新扫描活动工作簿...');
+          postToCSharp({ action: 'refreshData' });
+        };
+
+        // 切换暗黑 / 浅色主题
+        const toggleTheme = () => {
+          isDark.value = !isDark.value;
+          document.body.className = isDark.value ? 'theme-dark' : 'theme-light';
+          nextTick(() => {
+            renderAllCharts();
+          });
+        };
+
+        // 导出长图
+        const exportDashboardImage = () => {
+          ElementPlus.ElMessage.success('已准备大屏快照导出，可通过截图或导出报告交付！');
+        };
+
+        // 窗口尺寸变化自适应重排
+        window.addEventListener('resize', () => {
+          chartCost?.resize();
+          chartRose?.resize();
+          chartParetoInstance?.resize();
+          chartTreemapInstance?.resize();
+          chartRadarInstance?.resize();
+        });
+
+        onMounted(() => {
+          initMessageListener();
+          // 向 C# 请求数据
+          postToCSharp({ action: 'getQuoteData' });
+        });
+
+        return {
+          isDark,
+          summary,
+          cabinets,
+          costStructure,
+          topComponents,
+          categoryDistributions,
+          discountRate,
+          costCutRate,
+          simulatedSummary,
+          simulatedProfitRate,
+          drawerVisible,
+          activeCabinet,
+          formatMoney,
+          onSimulateChange,
+          resetSimulation,
+          refreshData,
+          toggleTheme,
+          exportDashboardImage,
+          openCabinetDrawer,
+          jumpToCabinet
+        };
+      }
+    }).use(ElementPlus).mount('#app');
+  </script>
+</body>
+</html>

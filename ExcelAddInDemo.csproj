@@ -193,6 +193,10 @@
     <None Include="Resources\ebox_sync.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将报价全景分析大屏前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\quote_analysis.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将 JSON 配置文件复制至构建输出路径中 -->
     <None Include="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
