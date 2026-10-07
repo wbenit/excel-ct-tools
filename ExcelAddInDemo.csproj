@@ -228,4 +228,9 @@
     <Copy SourceFiles="@(ConfigFile)" DestinationFolder="$(TargetDir)publish\" SkipUnchangedFiles="true" />
   </Target>
 
+  <!-- 确保主程序集 ExcelAddInDemo.dll 始终保留在输出根目录，供跨项目引用 (如 ClassLibrary3) 依赖 -->
+  <Target Name="PreservePrimaryAssembly" AfterTargets="ExcelDnaPack;Build">
+    <Copy SourceFiles="$(IntermediateOutputPath)$(TargetFileName)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" Condition="Exists('$(IntermediateOutputPath)$(TargetFileName)')" />
+  </Target>
+
 </Project>
