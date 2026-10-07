@@ -1,3 +1,82 @@
+- **【功能交付与实施闭环：江苏赛格瑞报价全景分析与绚丽可视化大屏上线】(`Models/QuoteAnalysisModels.cs`, `Services/ExcelServices.QuoteAnalysis.cs`, `Forms/QuoteAnalysisForm.cs`, `Resources/quote_analysis.html`, `RibbonController.cs`, `ExcelAddInDemo.csproj`)**：
+  1. **用户核心指令与全面落地**：
+     - 用户指令“开始实施”，解除需求分析门控，全链路完成报价全景分析大屏开发与构建；
+  2. **端到端实现架构与文件变更**：
+     - **数据模型层 (`Models/QuoteAnalysisModels.cs`)**：建立 `QuoteAnalysisDto`、`QuoteProjectSummaryDto`、`CabinetAnalysisItemDto`、`CostBreakdownDto`、`ComponentRankingDto`、`CategoryDistributionDto` 数据契约；
+     - **业务服务层 (`Services/ExcelServices.QuoteAnalysis.cs`)**：
+       - 实现 `GetQuoteAnalysisData()`：遵守规则 7，通过 `object[,]` 二维数组一次性在内存中提取【项目信息】、【分类1】（汇总行及明细计费区）与【元件汇总表】；
+       - 实现 `NavigateToCabinetInExcel(sheetName, rowNumber)`：支持图表点击下钻并安全通过 `ExcelAsyncUtil.QueueAsMacro` 在 Excel 中高亮选中并居中滚动至目标箱柜明细行；
+       - 实现 `ShowQuoteAnalysisDialog()`：通过 `ExcelWin32Window` 安全置顶弹出大屏窗口；
+       - 每 3 行代码包含 1 行中文规范注释，硬编码均打标 `// --硬编码--`；
+     - **窗体宿主层 (`Forms/QuoteAnalysisForm.cs`)**：
+       - 基于 WinForms + WebView2，尺寸 1280x820 支持 Sizable 缩放自适应；
+       - 遵守启发式经验：Chromium 缓存隔离至 `%LOCALAPPDATA%\ExcelAddInDemo\WebView2_QuoteAnalysis\`，双轨安全解析 WebMessage；
+     - **前端绚丽大屏 (`Resources/quote_analysis.html`)**：
+       - 基于 Vue 3 `<script setup>` + Element Plus + Apache ECharts 5，所有标签显式闭合，弹性 Flex 布局无横向滚动条；
+       - 主色调 `#009688` 翠青，搭配科技蓝 `#0284c7`，支持深海夜空科技大屏（`#0b1320`）与现代商务白双模切换；
+       - 包含 4 大 KPI 翻牌微动效卡片、成本利润双环嵌套旭日图、箱柜功能分类南丁格尔玫瑰图、32 台箱柜价值排布与帕累托 80/20 累积双轴图（支持柱体点击穿透定位 Excel）、供应链物料 Treemap 矩形树图、What-If 利润敏感度调价滑块以及单台箱柜五维雷达图抽屉；
+     - **功能区挂接 (`RibbonController.cs`)**：在 `④出报表` 分组首位挂接大图标直达按钮 `btnQuoteAnalysis`（【报价分析大屏】），并在 `OnMenuAction` 中处理分发；
+     - **项目配置 (`ExcelAddInDemo.csproj`)**：注册 `quote_analysis.html` 为构建输出项。
+  3. **构建验证与产物同步**：
+     - `dotnet build` 验证通过：**0 错误**；
+     - 编译产物 `ExcelAddInDemo.dll` / `pdb` 及 `quote_analysis.html` 已全量同步覆盖至 `bin/Debug/net48` 与 `publish/` 目录。
+
+- **【菜单排版精简优化：彻底隐藏底部明细右键菜单中处于 disabled 状态的新建箱柜项】(`Resources/custom_context_menu.html`, `Forms/CustomContextMenuForm.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心指令与定位**：
+     - 在分类表明细区（`Row >= Cab_Det`）右键时，原先保留的 `#detailCreateCab` 项因规则 6 约束处于灰显 `disabled` 状态；
+     - 用户明确要求“在底部明细右键点击当前‘新建箱柜’是disable状态，隐藏该‘新建箱柜’”。
+  2. **端到端最小变动落地**：
+     - **前端 DOM 与逻辑精简 (`custom_context_menu.html`)**：彻底移除明细区专属的新建箱柜节点 `#detailCreateCab`，并清理 JS 中相关的状态切换判断代码；
+     - **保留顶部汇总区正常新建**：分类表顶部箱柜汇总区（`mode-cabinet`）的 Ribbon 原生“新建箱柜”依然 100% 完整保留，不受任何影响；
+     - **窗体高度紧凑微调 (`CustomContextMenuForm.cs`)**：明细区标准高度由 470px 紧凑优化为 445px（结合 DPI 自适应），与项数减少后的排版精准贴合，无多余空隙。
+  3. **构建验证与物理产物同步**：
+     - `dotnet build` 验证通过：**0 错误**；
+     - 编译产物 `ExcelAddInDemo.dll` / `pdb` 及 `custom_context_menu.html` 已全量同步覆盖至 `bin/Debug/net48` 与 `publish/`。
+
+- **【体验与交互缺陷彻底根治：二级菜单字号像素级对齐 & 光标移回 Excel 自动平滑隐藏菜单】(`Forms/CustomContextMenuForm.cs`, `Forms/CustomContextSubmenuForm.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **问题一根因及解决：字体大小和一级菜单不一致**：
+     - **根因**：原二级子菜单 GDI+ 绘制时误使用了 `9f * dpiScale`（单位为 `GraphicsUnit.Pixel`），在 96 DPI 下仅为 6.75pt，远小于一级菜单 HTML 的 `12px`（CSS 像素），导致二级菜单字号偏小、偏纤细；
+     - **修复**：在 `CustomContextSubmenuForm.cs` 中将主菜单项字体设为 `12f * dpiScale`（Pixel），右侧提示字号设为 `11f * dpiScale`（Pixel），与一级菜单的 12px 和 11px 实现 100% 像素级对齐，字形饱满协调。
+  2. **问题二根因及解决：光标移动到 Excel 未点击时右键菜单一直不消失**：
+     - **根因**：Windows 系统中，当鼠标仅仅划过屏幕、移动到 Excel 单元格上而没有点击时，不会发生系统级激活切换（`WM_ACTIVATE / WM_KILLFOCUS`），因此 `Form.Deactivate` 事件绝不触发；且无激活窗体无法可靠捕获跨边界的快速 `WM_MOUSELEAVE`，导致主菜单与二级子菜单一直悬浮阻挡在 Excel 最前层；
+     - **彻底根治方案（Hover Exit 巡检机制）**：
+       - 在 `CustomContextMenuForm.cs` 中引入 100ms 轻量级边界巡检定时器 `_mouseTrackerTimer`（仅在菜单展示时运行，关闭即停，零后台占用）；
+       - 每次 Tick 判断鼠标绝对屏幕坐标是否在主菜单内（`this.Bounds.Contains`）或子菜单内（`CustomContextSubmenuForm.Bounds.Contains`）；
+       - 一旦检测到光标离开菜单区域（连续 2 次即超过约 200ms），立即自动调用 `this.Hide()` 并联动关闭二级子菜单，使菜单瞬间平滑隐退，Excel 单元格瞬间完全显露；
+       - 在 `CustomContextSubmenuForm.cs` 中增加主菜单存活保护，若主菜单已不可见则子菜单立即强制隐藏，彻底杜绝二级菜单独自残留悬挂现象。
+  3. **构建验证与物理产物同步**：
+     - `dotnet build` 验证通过：**0 错误**；
+     - 程序集 `ExcelAddInDemo.dll` / `pdb` 已全量同步覆盖至 `bin/Debug/net48` 与 `publish/` 目录。
+
+- **【视觉与架构彻底优化：根除右上方大背景窗体遮挡与移除最外层边框阴影】(`Forms/CustomContextMenuForm.cs`, `Forms/CustomContextSubmenuForm.cs`, `Resources/custom_context_menu.html`, `publish/ExcelAddInDemo.dll`)**：
+  1. **问题根因定位**：
+     - 此前将二级子菜单容纳在同一个 WebView2 视口内，通过 `expandSubmenu` 将整个主 Form 拓宽至 420px，导致右上方（Y: 0~380, X: 250~420）暴露为大面积纯白客户区，严重遮挡背后的 Excel 单元格；
+     - `CustomContextMenuForm` 原启用了 `CS_DROPSHADOW`（系统外阴影），在外围画出了一整圈大阴影轮廓，导致“大背景窗体”暴露无遗。
+  2. **架构重塑与极简视觉落地**：
+     - **彻底去除最外层边框阴影**：在 `CustomContextMenuForm.cs` 中移除 `CS_DROPSHADOW` 创建参数，恢复无大阴影原生形态，仅保留前端优雅的 1px 细浅灰边框；
+     - **主菜单宽度锁定 250px 绝不拓宽**：主窗口严格保持标准 250px 宽度（乘 DPI 缩放），右上方物理上 100% 露出 Excel 表格，根本不存在任何大背景窗体；
+     - **原生独立轻量子菜单窗体 (`CustomContextSubmenuForm.cs`)**：
+       - 采用独立 WinForms 物理窗体（146x88 紧凑尺寸），仅覆盖二级菜单自身区域；
+       - 配置 `ShowWithoutActivation => true` 与 `WS_EX_NOACTIVATE` 扩展样式，展示与点击时绝不抢占主窗体焦点，杜绝失活闪烁；
+       - 高性能 GDI+ 自绘高对比度 Office 极简图标与文字，1px 细灰边框，无外部冗余阴影；
+     - **HTML 与 C# 优雅解耦通信 (`custom_context_menu.html`)**：
+       - 移除 HTML 内部的绝对定位子菜单 DOM 与 CSS，鼠标悬浮向宿主发送 `openSubmenu`（携带当前项屏幕物理锚点坐标），移出发送 `closeSubmenu`；
+       - 配合 180ms 防抖机制与跨窗体失焦智能判断，实现丝滑的原生级右键二级联动。
+  3. **构建验证与物理产物同步**：
+     - `dotnet build` 验证通过：**0 错误**；
+     - 物理产物（`ExcelAddInDemo.dll` / `pdb` 及 `custom_context_menu.html`）已全量同步覆盖至 `bin/Debug/net48` 与 `publish/`。
+
+- **【缺陷修复：根除二级子菜单在高分屏与 DPI 缩放下右侧显示不全被截断问题】(`Forms/CustomContextMenuForm.cs`, `Resources/custom_context_menu.html`, `publish/ExcelAddInDemo.dll`)**：
+  1. **问题根因**：
+     - 用户屏幕通常带有 125% 或 150% 的 Windows DPI 缩放。原代码将 Form 物理宽度硬编码为 380px，在 125%/150% 缩放下被 WebView2 换算为逻辑 CSS 像素后仅剩 253~304px，减去主菜单固定占用的 250px 宽度后，留给子菜单的有效视口仅剩 3~54px，导致子菜单文字（“个人库”、“云库”、“关闭搜索”）与右侧提示被 WinForms 窗口物理边缘严重截断。
+  2. **端到端彻底根治**：
+     - **引入 DPI 动态换算 (`CustomContextMenuForm.cs`)**：实现 `GetDpiScale()`（读取 `Graphics.DpiX / 96f`），在展开二级菜单时将物理宽度计算为 `(int)Math.Ceiling(420 * dpiScale)`（例如 125% 屏为 525px，150% 屏为 630px），保证无论任何缩放率下，WebView2 内部始终拥有足足 420px 的逻辑 CSS 视口宽度；
+     - **收缩与初始尺寸 DPI 对齐**：在 `ShowMenu`、`collapseSubmenu` 及失焦隐藏时，标准宽度同步对齐 `(int)Math.Ceiling(250 * dpiScale)`；
+     - **前端样式拓宽优化 (`custom_context_menu.html`)**：将 `.submenu-panel` 宽度从 128px 放宽至 146px，为 `.item-label` 与 `.item-shortcut` 留出舒展排版空间，彻底杜绝拥挤换行与边缘裁剪。
+  3. **构建验证与物理产物同步**：
+     - `dotnet build` 验证通过：**0 错误**；
+     - 程序集与 HTML 页面全量物理同步覆写至 `bin/Debug/net48` 与 `publish/` 目录。
+
 - **【架构与缓存优化交付：WebView2 运行时缓存与 DWG 缩略图缓存全面重定向至系统 LocalApplicationData】(`Tool.cs`, `Services/DwgPreviewService.cs`, `Forms/*.cs`)**：
   1. **问题根因**：
      - 用户将全局数据目录指定至百度网盘同步盘（`E:\BaiduNetdiskWorkspace\BaseData\报价设置`）；

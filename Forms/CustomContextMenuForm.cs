@@ -28,30 +28,18 @@ namespace ExcelAddInDemo.Forms
         // 缓存的待发送上下文数据包
         private object? _pendingContextData = null;
 
+        // 鼠标移出菜单巡检定时器 (用于光标移回 Excel 单元格且未点击时自动平滑隐藏菜单)
+        private readonly System.Windows.Forms.Timer _mouseTrackerTimer;
+
+        // 记录鼠标连续检测处于外部的计数值
+        private int _outOfMenuTicks = 0;
+
         // JSON 序列化选项
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             PropertyNameCaseInsensitive = true
         };
-
-        /// <summary>
-        /// 启用 Windows 系统原生右键菜单阴影效果 (CS_DROPSHADOW)
-        /// </summary>
-        protected override CreateParams CreateParams
-        {
-            get
-            {
-                // 系统原生下拉阴影样式常数 --硬编码--
-                const int CS_DROPSHADOW = 0x00020000;
-                // 获取基础创建参数
-                CreateParams cp = base.CreateParams;
-                // 附加阴影样式位，提供 Office 原生柔和外阴影
-                cp.ClassStyle |= CS_DROPSHADOW;
-                // 返回配置后的创建参数
-                return cp;
-            }
-        }
 
         /// <summary>
         /// 私有构造函数：配置无边框置顶菜单窗体与 WebView2
@@ -81,6 +69,11 @@ namespace ExcelAddInDemo.Forms
             // 将控件添加至窗体控件集合
             this.Controls.Add(_webView);
 
+            // 初始化移出巡检定时器 (100ms 周期) --硬编码: 巡检定时器周期 100ms--
+            _mouseTrackerTimer = new System.Windows.Forms.Timer { Interval = 100 };
+            // 订阅定时器巡检事件
+            _mouseTrackerTimer.Tick += OnMouseTrackerTick;
+
             // 订阅窗体加载事件
             this.Load += OnFormLoadAsync;
             // 订阅失去焦点失活事件 (带鼠标区域防误隐藏校验)
@@ -88,19 +81,108 @@ namespace ExcelAddInDemo.Forms
         }
 
         /// <summary>
-        /// 窗体失去焦点时平滑隐藏 (若鼠标在菜单内部点击触发失焦则忽略)
+        /// 获取当前屏幕或窗体的 DPI 缩放比率 (以标准 96 DPI 为 1.0 基准)
+        /// </summary>
+        private float GetDpiScale()
+        {
+            try
+            {
+                // 获取当前窗体 GDI 句柄以读取横向物理 DPI
+                using (Graphics g = this.CreateGraphics())
+                {
+                    // 96 DPI 对应 100% 缩放
+                    float dpi = g.DpiX;
+                    // 返回安全计算比率 (最低保底 1.0)
+                    return dpi > 0 ? (dpi / 96.0f) : 1.0f;
+                }
+            }
+            catch
+            {
+                // 异常回退标准比率 1.0
+                return 1.0f;
+            }
+        }
+
+        /// <summary>
+        /// 窗体失去焦点时平滑隐藏 (若鼠标在主菜单或二级子菜单内部点击触发失焦则忽略)
         /// </summary>
         private void OnOverlayDeactivate(object? sender, EventArgs e)
         {
             try
             {
-                // 若鼠标当前仍停留在菜单窗体矩形区域内，说明用户正在点击菜单项，不触发隐藏
-                if (this.Bounds.Contains(Cursor.Position))
+                // 获取当前鼠标指针绝对物理屏幕坐标
+                Point cur = Cursor.Position;
+                // 若鼠标当前停留在主菜单窗体矩形区域内，说明用户正在操作菜单项，不触发隐藏
+                if (this.Bounds.Contains(cur))
                 {
                     return;
                 }
-                // 鼠标在外部点击，平滑隐藏菜单
+                // 若鼠标当前停留在独立二级子菜单窗体矩形区域内，说明用户正在选择子菜单，不触发隐藏
+                if (CustomContextSubmenuForm.Instance.Visible && CustomContextSubmenuForm.Instance.Bounds.Contains(cur))
+                {
+                    return;
+                }
+                // 停止鼠标移出巡检定时器
+                _mouseTrackerTimer.Stop();
+                // 重置计数值
+                _outOfMenuTicks = 0;
+                // 鼠标在外部区域点击，平滑隐藏主菜单
                 this.Hide();
+                // 联动隐藏二级子菜单
+                if (CustomContextSubmenuForm.Instance.Visible)
+                {
+                    CustomContextSubmenuForm.Instance.Hide();
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 巡检鼠标绝对坐标：当光标移出菜单区域到 Excel 表格且未点击时，自动平滑隐藏主菜单与二级子菜单
+        /// </summary>
+        private void OnMouseTrackerTick(object? sender, EventArgs e)
+        {
+            try
+            {
+                // 若主菜单已不处于显示状态，立即停用巡检定时器避免后台无效占用
+                if (!this.Visible)
+                {
+                    _mouseTrackerTimer.Stop();
+                    _outOfMenuTicks = 0;
+                    return;
+                }
+
+                // 获取鼠标屏幕绝对物理坐标
+                Point cur = Cursor.Position;
+
+                // 判断是否在主菜单内部
+                bool inMain = this.Bounds.Contains(cur);
+                // 判断是否在二级子菜单内部 (仅当子菜单可见时有效)
+                bool inSub = CustomContextSubmenuForm.Instance.Visible && CustomContextSubmenuForm.Instance.Bounds.Contains(cur);
+
+                if (inMain || inSub)
+                {
+                    // 鼠标仍在主菜单或二级子菜单内，重置离开计数
+                    _outOfMenuTicks = 0;
+                }
+                else
+                {
+                    // 鼠标已移出菜单区域 (移回 Excel 单元格或其它窗口)
+                    _outOfMenuTicks++;
+                    // 离开达到阈值 (连续检测 2 次，约 200ms)，触发自动隐藏
+                    if (_outOfMenuTicks >= 2) // --硬编码: 离开判定阈值 2 次 (约 200ms)--
+                    {
+                        _mouseTrackerTimer.Stop();
+                        _outOfMenuTicks = 0;
+                        // 平滑隐藏主菜单
+                        this.Hide();
+                        // 联动隐藏二级子菜单
+                        if (CustomContextSubmenuForm.Instance.Visible)
+                        {
+                            CustomContextSubmenuForm.Instance.Hide();
+                        }
+                    }
+                }
             }
             catch { }
         }
@@ -186,8 +268,53 @@ namespace ExcelAddInDemo.Forms
                         break;
 
                     case "closeMenu":
-                        // 隐藏当前右键菜单
-                        SafeInvoke(this.Hide);
+                        // 隐藏当前右键主菜单及独立二级子菜单
+                        SafeInvoke(() =>
+                        {
+                            // 停止鼠标移出巡检定时器
+                            _mouseTrackerTimer.Stop();
+                            _outOfMenuTicks = 0;
+                            this.Hide();
+                            // 同步隐藏二级子菜单
+                            if (CustomContextSubmenuForm.Instance.Visible)
+                            {
+                                CustomContextSubmenuForm.Instance.Hide();
+                            }
+                        });
+                        break;
+
+                    case "openSubmenu":
+                        // 呼出独立原生二级子菜单窗体，避免主窗体拓宽导致右上方大背景遮挡与最外层矩形阴影
+                        SafeInvoke(() =>
+                        {
+                            try
+                            {
+                                // 获取菜单项相对于视口顶部的相对距离
+                                double itemTop = root.TryGetProperty("top", out var tProp) ? tProp.GetDouble() : 0;
+                                float dpiScale = this.GetDpiScale();
+                                // 计算屏幕贴合坐标：X 轴为主菜单右边缘内嵌 1 像素消除接缝，Y 轴为主菜单顶边加上项的相对坐标
+                                int anchorX = this.Left + this.Width - (int)Math.Ceiling(1 * dpiScale); // --硬编码: 子菜单贴合X偏移--
+                                int anchorY = this.Top + (int)Math.Ceiling(itemTop * dpiScale);
+                                // 呼出独立轻量子菜单
+                                CustomContextSubmenuForm.Instance.ShowSubmenu(this, new Point(anchorX, anchorY));
+                            }
+                            catch (Exception ex)
+                            {
+                                LogHelper.WriteLog($"呼出二级子菜单异常: {ex.Message}");
+                            }
+                        });
+                        break;
+
+                    case "closeSubmenu":
+                        // 调度二级子菜单延迟隐藏 (支持移入子菜单防抖取消)
+                        SafeInvoke(() =>
+                        {
+                            try
+                            {
+                                CustomContextSubmenuForm.Instance.ScheduleHide();
+                            }
+                            catch { }
+                        });
                         break;
 
                     // 核心业务与原生菜单动作集合
@@ -221,6 +348,9 @@ namespace ExcelAddInDemo.Forms
                     case "reorderCabinet":
                     case "parseAndMatch":
                     case "openComponentAttachment":
+                    case "searchPricePersonal":
+                    case "searchPriceCloud":
+                    case "disablePriceSearch":
                     case "openMatchSetting":
                     case "openSmartInput":
                     case "openSummaryAdjustPrice":
@@ -238,10 +368,18 @@ namespace ExcelAddInDemo.Forms
                     case "addToPersonalDb":
                     case "splitComponent":
                     case "deleteCategory":
-                        // 收到菜单点击指令：先隐藏菜单并关闭浮窗，后通过 ExcelAsyncUtil.QueueAsMacro 异步执行
+                        // 收到菜单点击指令：先隐藏主菜单与二级子菜单，后通过 ExcelAsyncUtil.QueueAsMacro 异步执行
                         SafeInvoke(() =>
                         {
+                            // 停止巡检定时器
+                            _mouseTrackerTimer.Stop();
+                            _outOfMenuTicks = 0;
                             this.Hide();
+                            // 同步关闭二级子菜单
+                            if (CustomContextSubmenuForm.Instance.Visible)
+                            {
+                                CustomContextSubmenuForm.Instance.Hide();
+                            }
 
                             // 若是切换为原生模式，彻底关闭并释放当前菜单浮窗
                             if (action == "switchToNativeMenu")
@@ -498,6 +636,21 @@ namespace ExcelAddInDemo.Forms
                         ExcelServices.ShowComponentAttachmentOverlay();
                         break;
 
+                    case "searchPricePersonal":
+                        // 调度业务层在当前活动行弹出物料搜索下拉悬浮窗 (指定数据源为本地个人库)
+                        ExcelServices.ShowPriceSearchOverlay("personal");
+                        break;
+
+                    case "searchPriceCloud":
+                        // 调度业务层在当前活动行弹出物料搜索下拉悬浮窗 (指定数据源为云端公共库)
+                        ExcelServices.ShowPriceSearchOverlay("cloud");
+                        break;
+
+                    case "disablePriceSearch":
+                        // 调度业务层快速关闭物料搜索功能并隐藏下拉悬浮窗
+                        ExcelServices.DisablePriceSearch();
+                        break;
+
                     case "openMatchSetting":
                         // 打开“元器件物料匹配与品牌规则设置”窗口
                         ExcelServices.ShowComponentMatchDialog();
@@ -679,12 +832,15 @@ namespace ExcelAddInDemo.Forms
                 // 1. 元件汇总分布表 (专属6项)：165px
                 // 2. 元件汇总表 (全局大单表)：215px
                 // 3. 分类表顶部箱柜汇总区 (isAboveFirstDet == true)：385px
-                // 4. 分类表明细元器件插槽区 (isAboveFirstDet == false)：470px
-                int standardHeight = isDistributionSheet ? 175 : (isSummarySheet ? 215 : (isAboveFirstDet ? 385 : 470)); // --硬编码: 右键菜单标准高度 (分布表 175px, 汇总表 215px, 顶部箱柜 385px, 明细表 470px)--
+                // 4. 分类表明细元器件插槽区 (isAboveFirstDet == false)：445px (隐藏禁用的新建箱柜后紧凑自适应)
+                int standardHeight = isDistributionSheet ? 175 : (isSummarySheet ? 215 : (isAboveFirstDet ? 385 : 445)); // --硬编码: 右键菜单标准高度 (分布表 175px, 汇总表 215px, 顶部箱柜 385px, 明细表 445px)--
                 // 若工作区高度受限 (如低分辨率笔记本屏幕)，自适应贴合可用工作区
                 int targetHeight = Math.Min(standardHeight, workArea.Height - 10);
-                // 设置窗口实际尺寸
-                _instance.Size = new Size(250, targetHeight);
+                // 获取当前窗体 DPI 缩放比率并计算标准物理宽度
+                float dpiScale = _instance.GetDpiScale();
+                int standardWidth = (int)Math.Ceiling(250 * dpiScale); // --硬编码: 初始标准宽度 250px--
+                // 设置窗口实际物理尺寸
+                _instance.Size = new Size(standardWidth, targetHeight);
 
                 // 初始坐标偏移 2 像素防止挡住鼠标
                 int x = screenPos.X + 2;
@@ -716,6 +872,12 @@ namespace ExcelAddInDemo.Forms
                     _instance._pendingContextData = contextData;
                 }
 
+                // 每次弹出主菜单前确保隐藏历史残留的二级子菜单
+                if (CustomContextSubmenuForm.Instance.Visible)
+                {
+                    CustomContextSubmenuForm.Instance.Hide();
+                }
+
                 // 显示窗口并置顶
                 if (!_instance.Visible)
                 {
@@ -723,6 +885,10 @@ namespace ExcelAddInDemo.Forms
                 }
                 _instance.BringToFront();
                 _instance.Activate();
+
+                // 每次显示前重置移出离开计数并启动巡检定时器 (提供初始 200ms 防误触缓冲期)
+                _instance._outOfMenuTicks = -2; // --硬编码: 初始唤醒缓冲计数--
+                _instance._mouseTrackerTimer.Start();
             }
             catch (Exception ex)
             {

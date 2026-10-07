@@ -1161,21 +1161,132 @@ namespace ExcelAddInDemo
         /// <summary>
         /// 隐藏物料联想下拉悬浮框
         /// </summary>
-        public static void HideComponentMatchOverlay()
+        /// <param name="force">是否强制隐藏 (忽略置顶固定状态)</param>
+        public static void HideComponentMatchOverlay(bool force = false)
         {
             try
             {
+                // 校验悬浮窗对象存活与可见状态
                 if (_matchOverlayForm != null && !_matchOverlayForm.IsDisposed && _matchOverlayForm.Visible)
                 {
-                    // 若已被用户“固定置顶”在前端，绝不自动隐藏
-                    if (_matchOverlayForm.IsPinned)
+                    // 若已被用户“固定置顶”在前端且非强制关闭，绝不自动隐藏
+                    if (!force && _matchOverlayForm.IsPinned)
                     {
                         return;
                     }
+                    // 隐匿悬浮窗
                     _matchOverlayForm.Hide();
                 }
             }
             catch { }
+        }
+
+        /// <summary>
+        /// 在活动单元格 (或当前行型号列) 弹出物料联想与查价悬浮窗，并强制切入指定数据源 (个人库 vs 云库)
+        /// 供右键菜单【搜索价格 ➔ 个人库 / 云库】调用
+        /// </summary>
+        /// <param name="dataSource">目标物料数据源: "personal"(本地个人库) 或 "cloud"(云端公共库)</param>
+        public static void ShowPriceSearchOverlay(string dataSource)
+        {
+            try
+            {
+                // 1. 获取 Excel 宿主应用程序实例
+                dynamic? app = ExcelDna.Integration.ExcelDnaUtil.Application;
+                // 应用程序未就绪则直接退出
+                if (app == null) return;
+
+                // 2. 获取当前活动单元格句柄
+                dynamic activeCell = app.ActiveCell;
+                // 活动单元格为空则退出
+                if (activeCell == null) return;
+
+                // 3. 读取当前行号与所属工作表
+                int row = 0;
+                // 提取物理行号
+                try { row = Convert.ToInt32(activeCell.Row); } catch { }
+                // 行号不合法直接返回
+                if (row <= 0) return;
+
+                // 获取所属工作表对象
+                dynamic sheet = activeCell.Worksheet;
+                // 工作表不存在直接退出
+                if (sheet == null) return;
+
+                // 4. 判定当前工作表是否为元件汇总表
+                string sheetName = Convert.ToString(sheet.Name)?.Trim() ?? string.Empty;
+                // 比对表名是否与汇总表一致
+                bool isSummarySheet = string.Equals(sheetName, ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase);
+
+                // 5. 校验行有效性: 若非汇总表，检查是否落在有效箱柜元器件行区间 (规则 6)
+                if (!isSummarySheet && !IsCategoryComponentRow(sheet, row))
+                {
+                    // 非有效元器件行区间不执行弹出
+                    return;
+                }
+
+                // 6. 定位当前行型号所在单元格 (汇总表对齐 D 列，分类明细表对齐 C 列)
+                string modelCol = isSummarySheet ? "D" : "C";
+                // 锚定目标型号单元格区域
+                dynamic targetModelCell = sheet.Range[$"{modelCol}{row}"];
+
+                // 7. 加载物料匹配配置并更新数据源与开关
+                var filterConfig = LoadComponentMatchFilterConfig();
+                // 确保开启搜索下拉悬浮框开关
+                filterConfig.EnableSearchOverlay = true;
+                // 根据参数设定数据源 ("personal" 对应本地个人库，其余对应云端公共库)
+                filterConfig.DataSource = string.Equals(dataSource, "personal", StringComparison.OrdinalIgnoreCase) ? "personal" : "cloud";
+                // 持久化保存最新配置
+                SaveComponentMatchFilterConfig(filterConfig);
+
+                // 8. 确保悬浮窗单例重置，避免旧数据源缓存干扰
+                if (_matchOverlayForm != null && !_matchOverlayForm.IsDisposed && _matchOverlayForm.Visible)
+                {
+                    // 强制隐藏并重置旧悬浮窗
+                    HideComponentMatchOverlay(force: true);
+                }
+
+                // 9. 贴合目标型号单元格激活弹出物料搜索下拉悬浮窗
+                ShowComponentMatchOverlay(targetModelCell, isCategoryRowValidated: true);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"ShowPriceSearchOverlay 异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 快速关闭物料搜索功能 (供右键菜单【搜索价格 ➔ 关闭搜索】调用)
+        /// 停用单元格点击自动弹窗并立即隐藏当前正在显示的物料搜索悬浮窗
+        /// </summary>
+        public static void DisablePriceSearch()
+        {
+            try
+            {
+                // 1. 读取当前生效的物料匹配过滤配置
+                var filterConfig = LoadComponentMatchFilterConfig();
+                // 2. 将搜索悬浮窗开关置为关闭
+                filterConfig.EnableSearchOverlay = false;
+                // 3. 持久化保存关闭后的配置
+                SaveComponentMatchFilterConfig(filterConfig);
+
+                // 4. 强制隐藏当前可能正在显示的物料搜索下拉悬浮窗
+                HideComponentMatchOverlay(force: true);
+
+                // 5. 在 Excel 底部状态栏给出轻量操作成功提示
+                dynamic? app = ExcelDna.Integration.ExcelDnaUtil.Application;
+                // 状态栏回显提示
+                if (app != null)
+                {
+                    // 设置状态栏文本
+                    app.StatusBar = "已快速关闭物料搜索功能 (再次使用可通过右键菜单【搜索价格】重新开启)"; // --硬编码: 状态栏提示文本--
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"DisablePriceSearch 异常: {ex.Message}");
+            }
         }
 
         /// <summary>

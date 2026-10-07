@@ -231,6 +231,8 @@ namespace ExcelAddInDemo
         </group>
         <!-- ④出报表 功能分组 -->
         <group id='grpExportReports' label='④出报表'>
+          <!-- 报价分析大屏 (大图标直达，ECharts 5 全维度绚丽可视化大屏) -->
+          <button id='btnQuoteAnalysis' label='报价分析大屏' imageMso='ChartInsert' size='large' screentip='报价全景分析大屏' supertip='基于 ECharts 5 绚丽呈现工程报价全貌，包含成本结构双环旭日图、箱柜玫瑰图、价值排布帕累托分析、元器件树图及动态利润测算模拟器' onAction='OnMenuAction' />
           <!-- 标书报表下拉菜单 (使用官方标准报表与打印预览图标，支持多级级联导出) -->
           <menu id='menuTenderReport' label='标书报表' imageMso='FilePrintPreview' size='large'>
             <!-- 甲方投标报表 级联子菜单 -->
@@ -717,6 +719,12 @@ namespace ExcelAddInDemo
             {
                 // 切换为仅高亮整列模式
                 ExcelServices.SetSpotlightMode(Models.SpotlightMode.ColumnOnly);
+            }
+            // 响应“报价分析大屏”指令 (基于 ECharts 5 绚丽大屏)
+            else if (controlId == "btnQuoteAnalysis")
+            {
+                // 弹出基于 WebView2 + Vue 3 + ECharts 5 的报价全景分析与可视化大屏
+                ExcelServices.ShowQuoteAnalysisDialog();
             }
             // 响应“常规样式报表”及“标书报表”指令
             else if (controlId == "btnReportRegular" || controlId == "btnTenderReportSub")

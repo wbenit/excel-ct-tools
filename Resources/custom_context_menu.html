@@ -51,6 +51,7 @@
     #app {
       width: 100%;
       height: 100%;
+      position: relative;
       display: flex;
       flex-direction: column;
       margin: 0;
@@ -67,8 +68,28 @@
       display: flex;
       flex-direction: column;
       height: 100%;
-      width: 100%;
+      width: 250px;
+      min-width: 250px;
+      max-width: 250px;
       box-sizing: border-box;
+    }
+
+    /* 二级子菜单展开小箭头 */
+    .item-arrow {
+      width: 12px;
+      height: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    .item-arrow svg {
+      width: 10px;
+      height: 10px;
+      fill: currentColor;
     }
 
     /* 菜单项排版滚动列表容器 */
@@ -567,17 +588,20 @@
         <!-- 筛选组专属分割线 -->
         <div class="menu-divider detail-only"></div>
 
-        <!-- 新建箱柜 (明细区保留项) -->
-        <div class="menu-item detail-only" data-action="createCabinet" id="detailCreateCab">
+        <!-- ==================== 元器件业务工具集 (仅保留选配配套附件与图纸参数匹配) ==================== -->
+        <!-- 搜索价格 二级菜单 (包含个人库、云库、关闭搜索) -->
+        <div class="menu-item component-tool has-submenu" id="menuItemSearchPrice" data-action="openSearchPriceSubmenu">
           <div class="item-icon-wrap">
-            <!-- 文件夹加号 SVG -->
-            <svg viewBox="0 0 24 24"><path d="M20 6H12L10 4H4C2.89 4 2 4.89 2 6V18C2 19.1 2.89 20 4 20H20C21.1 20 22 19.1 22 18V8C22 6.9 21.1 6 20 6M19 14H16V17H14V14H11V12H14V9H16V12H19V14Z"/></svg>
+            <!-- 搜索放大镜+价格硬币 SVG 图标 -->
+            <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 14zm.5-7c1.38 0 2.5 1.12 2.5 2.5s-1.12 2.5-2.5 2.5-2.5-1.12-2.5-2.5 1.12-2.5 2.5-2.5z"/></svg>
           </div>
-          <span class="item-label">新建箱柜</span>
-          <span class="item-shortcut">选区顶部</span>
+          <span class="item-label">搜索价格</span>
+          <span class="item-arrow">
+            <!-- 向右展开箭头 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/></svg>
+          </span>
         </div>
 
-        <!-- ==================== 元器件业务工具集 (仅保留选配配套附件与图纸参数匹配) ==================== -->
         <!-- 选配配套附件... (唯一保留的核心元器件工具) -->
         <div class="menu-item component-tool" data-action="openComponentAttachment">
           <div class="item-icon-wrap">
@@ -707,6 +731,30 @@
         });
       });
 
+      // 二级子菜单宿主联动控制
+      const searchPriceItem = document.getElementById('menuItemSearchPrice');
+
+      // 展开二级子菜单并通知 C# 独立子窗体弹出
+      function openSubmenu() {
+        if (!searchPriceItem) return;
+        // 计算定位 top，传递给宿主进行屏幕对齐
+        const rect = searchPriceItem.getBoundingClientRect();
+        // 通知 C# 唤起独立的轻量二级子菜单窗体，避免主窗体拓宽导致右上方大背景与外层边框阴影
+        postToHost('openSubmenu', { top: rect.top, height: rect.height });
+      }
+
+      // 延时关闭二级子菜单并通知 C#
+      function scheduleCloseSubmenu() {
+        // 通知 C# 调度二级子菜单延时隐藏 (支持移入子菜单防抖取消)
+        postToHost('closeSubmenu');
+      }
+
+      // 绑定一级项的悬浮与移出事件
+      if (searchPriceItem) {
+        searchPriceItem.addEventListener('mouseenter', openSubmenu);
+        searchPriceItem.addEventListener('mouseleave', scheduleCloseSubmenu);
+      }
+
       // 绑定全局键盘导航事件 (上下箭头选择、回车确认、ESC关闭)
       window.addEventListener('keydown', function (e) {
         const focusable = getActiveFocusableItems();
@@ -720,11 +768,22 @@
           e.preventDefault();
           const activeItem = focusable[focusedIndex];
           if (activeItem && !activeItem.classList.contains('disabled')) {
+            if (activeItem.id === 'menuItemSearchPrice') {
+              openSubmenu();
+              return;
+            }
             const action = activeItem.getAttribute('data-action');
             if (action) triggerAction(action);
           }
+        } else if (e.key === 'ArrowRight') {
+          const activeItem = focusable[focusedIndex];
+          if (activeItem && activeItem.id === 'menuItemSearchPrice') {
+            e.preventDefault();
+            openSubmenu();
+          }
         } else if (e.key === 'Escape') {
           e.preventDefault();
+          postToHost('closeSubmenu');
           postToHost('closeMenu');
         }
       });
@@ -738,6 +797,8 @@
         if (!msg) return;
 
         if (msg.action === 'initContext') {
+          // 初始化时关闭二级子菜单
+          postToHost('closeSubmenu');
           // 同步宿主传递的单元格与坐标信息
           contextInfo.sheetName = msg.sheetName || '';
           contextInfo.cellAddress = msg.cellAddress || '';
@@ -769,16 +830,6 @@
             } else {
               // 模式 3：分类表明细元器件插槽区 (显示元器件专属行操作、分类删除与筛选)
               container.classList.add('mode-detail');
-            }
-          }
-
-          // 控制明细区中的新建箱柜项可用性 (在明细区禁用直接单项新建)
-          const detailCreateCab = document.getElementById('detailCreateCab');
-          if (detailCreateCab) {
-            if (contextInfo.isAboveFirstDet) {
-              detailCreateCab.classList.remove('disabled');
-            } else {
-              detailCreateCab.classList.add('disabled');
             }
           }
 
