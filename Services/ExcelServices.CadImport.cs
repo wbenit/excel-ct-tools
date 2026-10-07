@@ -203,6 +203,8 @@ namespace ExcelAddInDemo
                                 activeSheet.Cells[currentPhysRow, 6].Value2 = currentQty - 1;
                                 // 移除命中的句柄
                                 rowHandles.RemoveAll(h => targetHandles.Contains(h));
+                                // 预先将 AD 单元格设置为文本格式 "@"
+                                activeSheet.Cells[currentPhysRow, 30].NumberFormatLocal = "@";
                                 // 回写更新后的 AD 列句柄
                                 activeSheet.Cells[currentPhysRow, 30].Value2 = string.Join("-", rowHandles);
                                 affectedDeleteCount++;
@@ -320,8 +322,12 @@ namespace ExcelAddInDemo
 
                 // 规则 7 单次 Range 批量回写 A~U 列公式与文本
                 activeSheet.Range[$"A{writeStartRow}:U{writeEndRow}"].Formula = compDataMatrix;
+                // 获取待写入 CAD 句柄的目标 AD 列区域 (第 30 列)
+                dynamic adRange = activeSheet.Range[$"AD{writeStartRow}:AD{writeEndRow}"];
+                // 强制将 AD 列格式设置为文本类型 "@"，彻底杜绝 26E8 等十六进制 handle 被 Excel 误解析为科学计数法数值
+                adRange.NumberFormatLocal = "@";
                 // 单次 Range 批量写入 AD 列 CAD 图元句柄 (原 AA 列扩展) --硬编码: AD列--
-                activeSheet.Range[$"AD{writeStartRow}:AD{writeEndRow}"].Value2 = handleMatrix;
+                adRange.Value2 = handleMatrix;
 
                 // 重新校准当前箱柜小计行求和公式
                 activeSheet.Cells[subsumRow, 8].Formula = $"=ROUND(SUM(H{compStartRow}:H{compEndRow}), 2)";

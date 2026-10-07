@@ -1565,8 +1565,12 @@ namespace ExcelAddInDemo
                             handleMatrix[r, 0] = string.Empty;
                         }
                     }
+                    // 获取待写入 CAD 句柄的目标 AD 列区域 (第 30 列)
+                    dynamic adCompRange = sheet.Range[$"AD{compStartRow}:AD{compEndRow}"];
+                    // 强制将 AD 列格式设置为文本类型 "@"，彻底杜绝 26E8 等十六进制 handle 被 Excel 误解析为科学计数法数值 (如 2600000000)
+                    adCompRange.NumberFormatLocal = "@";
                     // 单次写入 AD 列 CAD 句柄扩展列 (第 30 列) --硬编码: AD列--
-                    sheet.Range[$"AD{compStartRow}:AD{compEndRow}"].Value2 = handleMatrix;
+                    adCompRange.Value2 = handleMatrix;
 
                     // 若实际元件数少于当前容量，清空多余预留空白行的数据 (规则 6 保持物理预留行)
                     if (actualCompCount < rowSpan)
@@ -1646,8 +1650,12 @@ namespace ExcelAddInDemo
                 sheet.Cells[detRow, 9].Value2 = installMode;
                 if (cab.Header.MinMaxPoints != null && cab.Header.MinMaxPoints.Count > 0)
                 {
+                    // 提取表头坐标单元格并设为文本格式
+                    dynamic adHeaderCell = sheet.Cells[detRow, 30];
+                    // 强制设置单元格格式为文本类型 "@"
+                    adHeaderCell.NumberFormatLocal = "@";
                     // 记录图纸范围坐标至 AD 列 (第 30 列)
-                    sheet.Cells[detRow, 30].Value2 = string.Join("-", cab.Header.MinMaxPoints);
+                    adHeaderCell.Value2 = string.Join("-", cab.Header.MinMaxPoints);
                 }
 
                 // 12. 刷新计费公式与总计行数量联动 (规则 6 & 规则 7)
@@ -2206,8 +2214,12 @@ namespace ExcelAddInDemo
                             handleMatrix[r, 0] = string.Empty;
                         }
                     }
+                    // 获取待写入 CAD 句柄的目标 AD 列区域 (第 30 列)
+                    dynamic adCompRange = sheet.Range[$"AD{compStartRow}:AD{compEndRow}"];
+                    // 强制将 AD 列格式设置为文本类型 "@"，彻底杜绝 26E8 等十六进制 handle 被 Excel 误解析为科学计数法数值 (如 2600000000)
+                    adCompRange.NumberFormatLocal = "@";
                     // 一次性批量写入 AD 列 CAD 句柄
-                    sheet.Range[$"AD{compStartRow}:AD{compEndRow}"].Value2 = handleMatrix;
+                    adCompRange.Value2 = handleMatrix;
                 }
 
                 // 5. 批量组装汇总行 1 行 13 列数据矩阵 (A~M 列一次性单次 Range 批量写入)
@@ -2298,8 +2310,12 @@ namespace ExcelAddInDemo
                 sheet.Cells[detRow, 9].Value2 = installMode;
                 if (cab.Header.MinMaxPoints != null && cab.Header.MinMaxPoints.Count > 0)
                 {
+                    // 提取表头坐标单元格并设为文本格式
+                    dynamic adHeaderCell = sheet.Cells[detRow, 30];
+                    // 强制设置单元格格式为文本类型 "@"
+                    adHeaderCell.NumberFormatLocal = "@";
                     // 记录图纸范围坐标至 AD 列 (第 30 列)
-                    sheet.Cells[detRow, 30].Value2 = string.Join("-", cab.Header.MinMaxPoints);
+                    adHeaderCell.Value2 = string.Join("-", cab.Header.MinMaxPoints);
                 }
 
                 // 规则：明细表头行 (detRow + 1) A 列动态自适应绑定当前箱柜汇总行序号动态公式

@@ -1167,7 +1167,8 @@
                 {{ calcResult.recommendedShellSizeFull || (calcResult.recommendedShellSize ? `${calcResult.recommendedShellSize}*${calcResult.recommendedShellDepth || 200}` : '未推导') }}
               </div>
               <div class="result-card-desc">
-                <span v-if="calcResult.isUsingExistingShellSize" style="background: #009688; color: #fff; border-radius: 2px; padding: 1px 4px; font-size: 10px; margin-right: 4px; font-weight: 600">已锁定现有尺寸</span>
+                <span v-if="calcResult.isPz30DigitModel" style="background: #e65100; color: #fff; border-radius: 2px; padding: 1px 4px; font-size: 10px; margin-right: 4px; font-weight: 600">⚡ PZ30模数箱({{ calcResult.pz30Digits }}位)</span>
+                <span v-else-if="calcResult.isUsingExistingShellSize" style="background: #009688; color: #fff; border-radius: 2px; padding: 1px 4px; font-size: 10px; margin-right: 4px; font-weight: 600">已锁定现有尺寸</span>
                 类型: {{ calcResult.isCabinet ? '落地柜体' : '配电箱体' }} | {{ calcResult.isUsingExistingShellSize ? '现有深度' : '推荐深度' }}: {{ calcResult.recommendedShellDepth || 200 }} mm (纯高度驱动)
               </div>
               <div
@@ -1567,20 +1568,20 @@
             </div>
             <div>
               • <b>壳体</b>: 计费区B列查找「{{ rules.shellRules.shellMatchName
-              || '箱体' }}」，命中写C列；未命中退回写 Cab_Det 信息行。{{
+              || '箱体' }}」，命中回写规格与价格；未命中则不填写。{{
               calcResult.shellTargetLocation ?
               `(${calcResult.shellTargetLocation})` : '' }}
             </div>
             <div>
-              • <b>辅材</b>: 优先计费区B列查找「{{ rules.auxRules.auxMatchName
-              || '辅材' }}」，未命中去元器件区查找；写入总价H列。{{
+              • <b>辅材</b>: 优先计费区后元器件区B列查找「{{ rules.auxRules.auxMatchName
+              || '辅材' }}」，未命中则不填写。{{
               calcResult.auxTargetLocation ? `(${calcResult.auxTargetLocation})`
               : '' }}
             </div>
             <div>
-              • <b>人工</b>: 优先计费区B列查找「{{
+              • <b>人工</b>: 优先计费区后元器件区B列查找「{{
               rules.laborRules.laborMatchName || '人工费'
-              }}」，未命中去元器件区查找；写入总价H列。{{
+              }}」，未命中则不填写。{{
               calcResult.laborTargetLocation ?
               `(${calcResult.laborTargetLocation})` : '' }}
             </div>
@@ -3369,6 +3370,60 @@
                     </div>
                   </div>
                 </div>
+
+                <!-- PZ30计费 (纯数字型号) -->
+                <div class="cfg-card" style="background: #fafafa; margin-top: 10px">
+                  <div class="cfg-card-header">
+                    <span>⚡ PZ30计费 (箱体型号为纯数字时自动触发)</span>
+                  </div>
+                  <div class="param-grid" style="margin-top: 4px">
+                    <div class="param-row-item">
+                      <span class="param-label">壳体单价系数:</span>
+                      <el-input-number
+                        v-model="rules.pz30Rules.shellRate"
+                        :step="0.1"
+                        :min="0"
+                        size="small"
+                        style="width: 110px"
+                        controls-position="right"
+                      ></el-input-number>
+                      <span class="param-unit">元/位 (壳体 = 数字 * {{ rules.pz30Rules?.shellRate ?? 4 }})</span>
+                    </div>
+                    <div class="param-row-item">
+                      <span class="param-label">辅材费用系数:</span>
+                      <el-input-number
+                        v-model="rules.pz30Rules.auxRate"
+                        :step="0.1"
+                        :min="0"
+                        size="small"
+                        style="width: 110px"
+                        controls-position="right"
+                      ></el-input-number>
+                      <span class="param-unit">元/位 (辅材 = 数字 * {{ rules.pz30Rules?.auxRate ?? 1.2 }})</span>
+                    </div>
+                    <div class="param-row-item">
+                      <span class="param-label">人工费用系数:</span>
+                      <el-input-number
+                        v-model="rules.pz30Rules.laborRate"
+                        :step="0.1"
+                        :min="0"
+                        size="small"
+                        style="width: 110px"
+                        controls-position="right"
+                      ></el-input-number>
+                      <span class="param-unit">元/位 (人工 = 数字 * {{ rules.pz30Rules?.laborRate ?? 1.4 }})</span>
+                    </div>
+                  </div>
+                  <div class="formula-hint-box" style="margin-top: 6px">
+                    <div>
+                      • <b>PZ30纯数字模数箱计费机制</b>：当箱体型号被修改为纯数字（如 15、20）时，自动切换为 PZ30 模数位计费规则：
+                      <b>壳体</b> = 数字 * {{ rules.pz30Rules?.shellRate ?? 4 }}；
+                      <b>辅材</b> = 数字 * {{ rules.pz30Rules?.auxRate ?? 1.2 }}；
+                      <b>人工</b> = 数字 * {{ rules.pz30Rules?.laborRate ?? 1.4 }}；
+                      铜排自动免计（不设铜排）。
+                    </div>
+                  </div>
+                </div>
               </div>
             </el-tab-pane>
           </el-tabs>
@@ -5068,7 +5123,6 @@
                 </div>
               </div>
             </div>
-          </div>
 
           <!-- 下部：箱体结构展开表格 (按面数模式) -->
           <div v-if="sheetCalcMode === 'faces'" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px">
@@ -6275,6 +6329,11 @@
               reservedCircuitDiscount: 0.4, // 预留回路工价折减系数 --硬编码--
               reservedMaxBreakersThreshold: 3, // 预留回路打折断路器台数上限门限(台) --硬编码--
             },
+            pz30Rules: {
+              shellRate: 4.0, // 壳体单价系数(元/位) --硬编码: 默认系数--
+              auxRate: 1.2,   // 辅材费用系数(元/位) --硬编码: 默认系数--
+              laborRate: 1.4, // 人工费用系数(元/位) --硬编码: 默认系数--
+            },
           });
 
           // 单台计算结果
@@ -6676,6 +6735,10 @@
                       rules.shellPriceRules.materialPrices =
                         data.rules.shellPriceRules.materialPrices;
                     }
+                  }
+                  // 6. PZ30 模数箱计费定额合并
+                  if (data.rules.pz30Rules) {
+                    Object.assign(rules.pz30Rules, data.rules.pz30Rules);
                   }
                 }
                 triggerAutoAnalyze();

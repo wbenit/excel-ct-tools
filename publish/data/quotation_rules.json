@@ -285,5 +285,10 @@
     "areaBaseRate": 2.95,
     "reservedCircuitDiscount": 0.4,
     "reservedMaxBreakersThreshold": 3
+  },
+  "pz30Rules": {
+    "shellRate": 4.0,
+    "auxRate": 1.2,
+    "laborRate": 1.4
   }
 }

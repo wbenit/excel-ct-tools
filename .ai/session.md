@@ -5148,3 +5148,16 @@
 ## [Next]
 
 - 持续跟进用户对界面细节与云端数据交互的体验反馈。
+## [2026-10-07 16:26:00] 修复壳体辅材计算白板问题
+
+### [Completed]
+- **【修复 cabinet_aux_calc.html 标签闭合错误与 Vue 3 编译白板问题】**：
+  1. **定位根因**：第 5125 行存在多余的 </div>，导致弹窗主体主容器提前闭合，进而使得 <el-dialog> 在第 5248 行被提前闭合，随后的 <template #footer> 脱离了组件作用域，导致 Vue 3 模板编译抛出 Uncaught TypeError: Cannot read properties of undefined (reading 'type') 并中断挂载呈现白板。
+  2. **代码修复**：
+     - 删除第 5125 行多余的 </div>，保证弹窗内所有表格与操作栏均在主容器内，<template #footer> 正确作为 <el-dialog> 直接子节点；
+     - 规范第 3370 行附近人工费率卡片与 PZ30 模数箱配置卡片的 </div> 闭合层级；
+     - 同步更新 Resources/cabinet_aux_calc.html、publish/Resources/cabinet_aux_calc.html 及输出目录 bin/Debug/net48/Resources/cabinet_aux_calc.html。
+  3. **无头浏览器验证**：在 Edge 无头环境中完整加载页面与各选项卡，确认 Vue 正常挂载，页面与弹窗均完美渲染，零异常。
+
+### [Next]
+- 提示用户重新打开【壳体辅材计算】窗口验证界面渲染效果。

@@ -1287,7 +1287,11 @@ namespace ExcelAddInDemo
 
                     // 一次性批量写入 T~Y 列扩展参数与 AD 列句柄矩阵 (规则 7)
                     summarySheet.Range[$"T{startDataRow}:Y{endDataRow}"].Value2 = paramMatrix;
-                    summarySheet.Range[$"AD{startDataRow}:AD{endDataRow}"].Value2 = handleMatrix;
+                    // 获取 AD 列 Range 范围对象
+                    dynamic adSummaryRange = summarySheet.Range[$"AD{startDataRow}:AD{endDataRow}"];
+                    // 强制将 AD 列格式设置为文本类型 "@"，彻底杜绝 26E8 等十六进制 handle 被 Excel 误解析为科学计数法数值
+                    adSummaryRange.NumberFormatLocal = "@";
+                    adSummaryRange.Value2 = handleMatrix;
 
                     // 设置数据行行高
                     summarySheet.Range[$"{startDataRow}:{endDataRow}"].RowHeight = 20; // --硬编码--
@@ -1545,8 +1549,11 @@ namespace ExcelAddInDemo
             // 生产厂家
             public string Manufacturer { get; set; } = string.Empty;
 
-            // 报出系数
+            // 报出系数数值
             public decimal MarkupFactor { get; set; } = 1.0m;
+
+            // 报出系数回写内容 (取消防空处理，支持回写空内容或数值)
+            public object MarkupFactorContent { get; set; } = string.Empty;
 
             // 回写至分类表 M 列（表价）的内容（公式或数值）
             public object MColContent { get; set; } = string.Empty;
@@ -1686,11 +1693,34 @@ namespace ExcelAddInDemo
                     // I 列 (索引 9): 生产厂家
                     string mfr = Convert.ToString(summaryValMatrix[r, 9])?.Trim() ?? string.Empty;
 
-                    // K 列 (索引 11): 报出系数
+                    // K 列 (索引 11): 报出系数 (默认 1.0，支持取消防空覆盖)
                     decimal markupFactor = 1.0m;
-                    if (decimal.TryParse(Convert.ToString(summaryValMatrix[r, 11]), out decimal mf) && mf > 0)
+                    // 初始化报出系数回写内容 (默认空字符串)
+                    object markupFactorContent = string.Empty;
+                    // 读取 K 列原始单元格对象
+                    object valK = summaryValMatrix[r, 11];
+                    // 校验是否非空
+                    if (valK != null)
                     {
-                        markupFactor = mf;
+                        // 提取并去除首尾空白字符
+                        string strK = Convert.ToString(valK)?.Trim() ?? string.Empty;
+                        // 若填有非空字符
+                        if (!string.IsNullOrWhiteSpace(strK))
+                        {
+                            // 尝试解析为有效浮点数值
+                            if (decimal.TryParse(strK, out decimal mf))
+                            {
+                                // 赋值有效系数数值
+                                markupFactor = mf;
+                                // 转换为 double 供 Excel 单元格写入
+                                markupFactorContent = (double)mf;
+                            }
+                            else
+                            {
+                                // 若为文本或公式则保留原内容
+                                markupFactorContent = strK;
+                            }
+                        }
                     }
 
                     // L 列 (索引 12): 本体表价 (值与公式)
@@ -1823,6 +1853,8 @@ namespace ExcelAddInDemo
                         Unit = unit,
                         Manufacturer = mfr,
                         MarkupFactor = markupFactor,
+                        // 记录报出系数回写内容 (支持空值)
+                        MarkupFactorContent = markupFactorContent,
                         MColContent = mColContent,
                         NColContent = nColContent,
                         Remark = remark,
@@ -2001,11 +2033,8 @@ namespace ExcelAddInDemo
                                         formulaMatrix[r, 3] = matchedItem.NewModel;
                                     }
 
-                                    // 2. 更新生产厂家 D 列 (索引 4)
-                                    if (!string.IsNullOrWhiteSpace(matchedItem.Manufacturer))
-                                    {
-                                        formulaMatrix[r, 4] = matchedItem.Manufacturer;
-                                    }
+                                    // 2. 更新生产厂家 D 列 (索引 4) (取消防空处理，允许空内容覆盖原厂家)
+                                    formulaMatrix[r, 4] = matchedItem.Manufacturer;
 
                                     // 3. 不管什么条件，更新单位 E 列 (索引 5)
                                     if (!string.IsNullOrWhiteSpace(matchedItem.Unit))
@@ -2016,11 +2045,8 @@ namespace ExcelAddInDemo
                                     // 4. 更新备注 I 列 (索引 9)
                                     formulaMatrix[r, 9] = matchedItem.Remark;
 
-                                    // 5. 更新报出系数 / 加价系数 L 列 (索引 12)
-                                    if (matchedItem.MarkupFactor > 0)
-                                    {
-                                        formulaMatrix[r, 12] = (double)matchedItem.MarkupFactor;
-                                    }
+                                    // 5. 更新报出系数 / 加价系数 L 列 (索引 12) (取消防空处理，允许空内容覆盖原系数)
+                                    formulaMatrix[r, 12] = matchedItem.MarkupFactorContent;
 
                                     // 6. 更新表价 / 面价 M 列 (索引 13)
                                     formulaMatrix[r, 13] = matchedItem.MColContent;
@@ -2028,45 +2054,45 @@ namespace ExcelAddInDemo
                                     // 7. 更新折扣 N 列 (索引 14)
                                     formulaMatrix[r, 14] = matchedItem.NColContent;
 
-                                    // 8. 更新额定电流: W 列 (Current, 索引 23)
-                                    if (!string.IsNullOrWhiteSpace(matchedItem.Current) && formulaMatrix.GetLength(1) >= 23)
+                                    // 8. 更新额定电流: W 列 (Current, 索引 23) (取消防空处理，允许空内容覆盖)
+                                    if (formulaMatrix.GetLength(1) >= 23)
                                     {
-                                        // 回写额定电流至明细表 W 列
+                                        // 直接回写额定电流至明细表 W 列
                                         formulaMatrix[r, 23] = matchedItem.Current;
                                     }
 
-                                    // 9. 更新极数: X 列 (Poles, 索引 24)
-                                    if (!string.IsNullOrWhiteSpace(matchedItem.Poles) && formulaMatrix.GetLength(1) >= 24)
+                                    // 9. 更新极数: X 列 (Poles, 索引 24) (取消防空处理，允许空内容覆盖)
+                                    if (formulaMatrix.GetLength(1) >= 24)
                                     {
-                                        // 回写极数至明细表 X 列
+                                        // 直接回写极数至明细表 X 列
                                         formulaMatrix[r, 24] = matchedItem.Poles;
                                     }
 
-                                    // 10. 更新脱扣方式: Y 列 (trip, 索引 25)
-                                    if (!string.IsNullOrWhiteSpace(matchedItem.Tripping) && formulaMatrix.GetLength(1) >= 25)
+                                    // 10. 更新脱扣方式: Y 列 (trip, 索引 25) (取消防空处理，允许空内容覆盖)
+                                    if (formulaMatrix.GetLength(1) >= 25)
                                     {
-                                        // 回写脱扣方式至明细表 Y 列
+                                        // 直接回写脱扣方式至明细表 Y 列
                                         formulaMatrix[r, 25] = matchedItem.Tripping;
                                     }
 
-                                    // 11. 更新配套附件: Z 列 (Accessory, 索引 26)
-                                    if (!string.IsNullOrWhiteSpace(matchedItem.Accessory) && formulaMatrix.GetLength(1) >= 26)
+                                    // 11. 更新配套附件: Z 列 (Accessory, 索引 26) (取消防空处理，允许空内容覆盖)
+                                    if (formulaMatrix.GetLength(1) >= 26)
                                     {
-                                        // 回写配套附件至明细表 Z 列
+                                        // 直接回写配套附件至明细表 Z 列
                                         formulaMatrix[r, 26] = matchedItem.Accessory;
                                     }
 
-                                    // 12. 更新图块名称: AA 列 (BlockName / 扩展参数1, 索引 27)
-                                    if (!string.IsNullOrWhiteSpace(matchedItem.Param1) && formulaMatrix.GetLength(1) >= 27)
+                                    // 12. 更新图块名称: AA 列 (BlockName / 扩展参数1, 索引 27) (取消防空处理，允许空内容覆盖)
+                                    if (formulaMatrix.GetLength(1) >= 27)
                                     {
-                                        // 回写图块名称至明细表 AA 列
+                                        // 直接回写图块名称至明细表 AA 列
                                         formulaMatrix[r, 27] = matchedItem.Param1;
                                     }
 
-                                    // 13. 更新图块类别: AB 列 (BlockCategory / 扩展参数2, 索引 28)
-                                    if (!string.IsNullOrWhiteSpace(matchedItem.Param2) && formulaMatrix.GetLength(1) >= 28)
+                                    // 13. 更新图块类别: AB 列 (BlockCategory / 扩展参数2, 索引 28) (取消防空处理，允许空内容覆盖)
+                                    if (formulaMatrix.GetLength(1) >= 28)
                                     {
-                                        // 回写图块类别至明细表 AB 列
+                                        // 直接回写图块类别至明细表 AB 列
                                         formulaMatrix[r, 28] = matchedItem.Param2;
                                     }
 

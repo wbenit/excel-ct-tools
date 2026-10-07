@@ -151,6 +151,28 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 判定并解析箱体型号是否为纯数字模数 (如 15, 20 或 15位)
+        /// </summary>
+        /// <param name="modelOrSize">规格描述字符串</param>
+        /// <param name="digits">解析出的位数数字</param>
+        /// <returns>是否为有效纯数字模数</returns>
+        public static bool TryParsePz30Digit(string? modelOrSize, out int digits)
+        {
+            // 初始化输出位数变量
+            digits = 0;
+            // 空字符串直接返回失败
+            if (string.IsNullOrWhiteSpace(modelOrSize)) return false;
+            // 去除首尾空白字符
+            string trimmed = modelOrSize.Trim();
+            // 直接尝试解析纯正整数 (如 15, 20)
+            if (int.TryParse(trimmed, out digits) && digits > 0) return true;
+            // 兼容末尾带“位”字样 (如 15位)
+            if (trimmed.EndsWith("位") && int.TryParse(trimmed.Substring(0, trimmed.Length - 1).Trim(), out digits) && digits > 0) return true;
+            // 非纯数字模数返回失败
+            return false;
+        }
+
+        /// <summary>
         /// 根据已有的箱柜锚点实体快速扫描指定箱柜元器件数据 (轻量免重复检索定义名称)
         /// 遵循规则 7 (2D数组一次性读入内存)
         /// </summary>
@@ -218,6 +240,21 @@ namespace ExcelAddInDemo
                             if (string.Equals(bName, shellMatchName, StringComparison.OrdinalIgnoreCase))
                             {
                                 string cModel = feeCheckMatrix[r, 2]?.ToString()?.Trim() ?? string.Empty;
+                                // 优先检测箱体型号是否被改为纯数字模数 (如 15, 20，触发 PZ30 模数箱计费)
+                                if (TryParsePz30Digit(cModel, out int pzDigits))
+                                {
+                                    // 标记为 PZ30 纯数字箱体模型
+                                    scanData.IsPz30DigitModel = true;
+                                    // 记录纯数字模数位数
+                                    scanData.Pz30Digits = pzDigits;
+                                    // 记录既有型号文本
+                                    scanData.ExistingShellModel = cModel;
+                                    // 记录箱体行号与计费区标记
+                                    scanData.ExistingShellRow = feeScanStart + r - 1;
+                                    scanData.IsShellInFeeArea = true;
+                                    shellFoundInFee = true;
+                                    break;
+                                }
                                 // 尝试解析 C 列外形尺寸
                                 if (TryParseShellDimensions(cModel, out int w, out int h, out int d))
                                 {
@@ -240,8 +277,21 @@ namespace ExcelAddInDemo
                 if (!shellFoundInFee)
                 {
                     string detC = ws.Range[$"C{detRow}"].Text?.ToString()?.Trim() ?? string.Empty;
+                    // 优先检测 Cab_Det 行型号是否为纯数字模数 (如 15, 20)
+                    if (TryParsePz30Digit(detC, out int pzDigits2))
+                    {
+                        // 标记为 PZ30 纯数字箱体模型
+                        scanData.IsPz30DigitModel = true;
+                        // 记录纯数字模数位数
+                        scanData.Pz30Digits = pzDigits2;
+                        // 记录既有型号文本
+                        scanData.ExistingShellModel = detC;
+                        // 记录信息行号
+                        scanData.ExistingShellRow = detRow;
+                        scanData.IsShellInFeeArea = false;
+                    }
                     // 尝试解析 Cab_Det 行 C 列尺寸
-                    if (TryParseShellDimensions(detC, out int w, out int h, out int d))
+                    else if (TryParseShellDimensions(detC, out int w, out int h, out int d))
                     {
                         scanData.HasExistingShellSize = true;
                         scanData.ExistingShellWidth = w;
@@ -420,6 +470,113 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 当箱体型号为纯数字 (如 15, 20) 时执行 PZ30 模数箱专属计费推导计算
+        /// 壳体单价 = 数字 * 壳体系数 (默认 4.0)
+        /// 辅材费用 = 数字 * 辅材系数 (默认 1.2)
+        /// 人工费用 = 数字 * 人工系数 (默认 1.4)
+        /// 铜排免计 (0)
+        /// </summary>
+        /// <param name="scanData">箱柜扫描数据</param>
+        /// <param name="rules">定额与规则配置</param>
+        /// <returns>CabinetCalcResult 计算结果实体</returns>
+        public static CabinetCalcResult CalculatePz30CabinetAuxAndShell(CabinetScanData scanData, QuotationRules rules)
+        {
+            // 基础空值保护
+            if (scanData == null) return new CabinetCalcResult();
+            // 加载或兜底规则
+            if (rules == null) rules = LoadQuotationRules();
+
+            // 提取通用加点与税率综合系数
+            double xishu = rules.General.ElementMarkupRatio;
+            // 综合税费乘数
+            double taxRatio = rules.General.TaxAndManageRatio;
+
+            // 提取 PZ30 配置参数 (带默认值兜底 4.0, 1.2, 1.4)
+            double pzShellRate = rules.Pz30Rules != null && rules.Pz30Rules.ShellRate > 0 ? rules.Pz30Rules.ShellRate : 4.0;
+            // 辅材系数
+            double pzAuxRate = rules.Pz30Rules != null && rules.Pz30Rules.AuxRate > 0 ? rules.Pz30Rules.AuxRate : 1.2;
+            // 人工系数
+            double pzLaborRate = rules.Pz30Rules != null && rules.Pz30Rules.LaborRate > 0 ? rules.Pz30Rules.LaborRate : 1.4;
+
+            // 提取纯数字模数位数 (如 15, 20)
+            int digit = scanData.Pz30Digits;
+
+            // 1. 壳体计算: 壳体单价 = 数字 * 壳体系数 (默认 4.0)
+            double shellUnitPrice = Math.Round(digit * pzShellRate, 2);
+            // 保持纯数字型号或原有规格
+            string shellModel = !string.IsNullOrWhiteSpace(scanData.ExistingShellModel) ? scanData.ExistingShellModel : digit.ToString();
+            // 推荐尺寸描述文本
+            string shellDisplaySize = $"{digit}位 (PZ30模数箱)";
+
+            // 2. 辅材计算: 辅材 = 数字 * 辅材系数 (默认 1.2)
+            double rawAuxCost = Math.Round(digit * pzAuxRate, 1);
+            // 综合加点辅材费
+            double auxCost = Math.Round(rawAuxCost * xishu, 1);
+            // 辅材动态算式字符串
+            string auxFormula = $"=ROUND({digit}*{pzAuxRate:F1}*{xishu}*1,1)";
+            // 计费区固定补贴公式
+            string fixedAuxFormula = $"=ROUND({digit}*{pzAuxRate:F1}*{xishu}*1,1)";
+
+            // 3. 人工费计算: 人工 = 数字 * 人工系数 (默认 1.4)
+            string areaLaborFormula = $"{digit}*{pzLaborRate:F1}";
+            // 综合税费人工费公式字符串
+            string laborFormula = $"=ROUND(({areaLaborFormula})*{xishu}*{taxRatio},1)";
+            // 人工综合总额
+            double laborCost = Math.Round(digit * pzLaborRate * xishu * taxRatio, 1);
+            // 箱体制作 S 列动态人工算式
+            string shellLaborFormula = $"=ROUND({digit}*{pzLaborRate:F1},1)";
+            // 箱体制作单套工费
+            double shellLaborCost = Math.Round(digit * pzLaborRate, 1);
+
+            // 4. 铜排计算: PZ30 模数小箱免计任何铜排
+            double copperWeight = 0.0;
+            // 免铜排公式描述
+            string copperQtyFormula = "0 (PZ30模数箱免铜排)";
+            // 明细描述
+            var copperFormulaDetails = new List<string>
+            {
+                $"PZ30模数箱 (纯数字 {digit} 位)，自动免计任何铜排"
+            };
+
+            // 综合推导描述
+            string desc = $"PZ30模数箱识别完成: {digit} 位 | 壳体单价={digit}*{pzShellRate:F1}={shellUnitPrice}元, 辅材={digit}*{pzAuxRate:F1}={rawAuxCost}元, 人工={digit}*{pzLaborRate:F1}={shellLaborCost}元 (免铜排)";
+
+            // 构造推导结果对象
+            return new CabinetCalcResult
+            {
+                CabinetName = scanData.CabinetName,
+                DetRow = scanData.DetRow,
+                SubsumRow = scanData.SubsumRow,
+                TolsumRow = scanData.TolsumRow,
+                ComponentArea = 0,
+                MaxCurrent = 0,
+                IsCabinet = false,
+                IsPz30DigitModel = true,
+                Pz30Digits = digit,
+                RecommendedShellSize = shellDisplaySize,
+                RecommendedShellDepth = 120,
+                RecommendedShellSizeFull = shellDisplaySize,
+                RecommendedShellModel = shellModel,
+                RecommendedShellUnitPrice = shellUnitPrice,
+                RecommendedShellExpandedArea = 0,
+                ShellLaborFormula = shellLaborFormula,
+                ShellLaborCost = shellLaborCost,
+                IsUsingExistingShellSize = true,
+                CopperWeight = copperWeight,
+                CopperQtyFormula = copperQtyFormula,
+                CopperFormulaDetails = copperFormulaDetails,
+                AuxiliaryCost = auxCost,
+                AuxiliaryFormula = auxFormula,
+                FixedAuxiliaryCost = rawAuxCost,
+                FixedAuxiliaryFormula = fixedAuxFormula,
+                LaborCost = laborCost,
+                LaborFormula = laborFormula,
+                PrimaryWireDetails = new List<PrimaryWireUsageItem>(),
+                SecondarySchemeDetails = new List<SecondarySchemeCalcItem>()
+            };
+        }
+
+        /// <summary>
         /// 执行箱柜智能推导计算：推导壳体选型、铜排用量、一次/二次辅材与装配人工费
         /// </summary>
         /// <param name="scanData">箱柜扫描数据</param>
@@ -429,7 +586,15 @@ namespace ExcelAddInDemo
         {
             // 校验入参
             if (scanData == null) return new CabinetCalcResult();
+            // 确保加载有效规则
             if (rules == null) rules = LoadQuotationRules();
+
+            // 优先检查是否为 PZ30 纯数字箱体型号 (如 15, 20)
+            if (scanData.IsPz30DigitModel && scanData.Pz30Digits > 0)
+            {
+                // 直接调度 PZ30 模数箱专属计费推导并立即返回
+                return CalculatePz30CabinetAuxAndShell(scanData, rules);
+            }
 
             // 提取通用系数
             double xishu = rules.General.ElementMarkupRatio;
@@ -1763,9 +1928,8 @@ namespace ExcelAddInDemo
                                 result.ShellTargetLocation = $"计费区域第 {currentPhysRow} 行 (B列: {bName})";
                             }
 
-                            // 1.2 辅材匹配: 仅在计费区保留固定基础补贴费用，导线明细下沉至元器件区
-                            if (!matchedAuxInFeeArea && (string.Equals(bName, auxMatchName, StringComparison.OrdinalIgnoreCase) ||
-                                (auxMatchName == "辅材" && bName == "辅材")))
+                            // 1.2 辅材匹配: 仅在计费区保留固定基础补贴费用，严格匹配用户配置的辅材名称
+                            if (!matchedAuxInFeeArea && string.Equals(bName, auxMatchName, StringComparison.OrdinalIgnoreCase))
                             {
                                 // 判定是否存在固定基础补贴费用 (基础定额 + 小箱零地排补贴 + 高柜补贴)
                                 if (result.FixedAuxiliaryCost > 0)
@@ -1821,9 +1985,8 @@ namespace ExcelAddInDemo
                                 }
                             }
 
-                            // 1.3 人工匹配: 优先在计费区查找匹配名称，人工价格统一填在 M 列
-                            if (!matchedLaborInFeeArea && (string.Equals(bName, laborMatchName, StringComparison.OrdinalIgnoreCase) ||
-                                (laborMatchName == "人工费" && (bName == "人工费" || bName == "人工"))))
+                            // 1.3 人工匹配: 优先在计费区严格查找用户配置的匹配名称，人工价格统一填在 M 列
+                            if (!matchedLaborInFeeArea && string.Equals(bName, laborMatchName, StringComparison.OrdinalIgnoreCase))
                             {
                                 if (!string.IsNullOrWhiteSpace(result.LaborFormula))
                                 {
@@ -1885,47 +2048,14 @@ namespace ExcelAddInDemo
                 }
 
                 // ---------------------------------------------------------
-                // 2. 壳体兜底写入: 若计费区未匹配到，回退写入 Cab_Det 信息行 (覆盖至 S 列第 19 列)
+                // 2. 壳体匹配结果处理: 若计费区未找到用户配置的壳体匹配名称，则不填写 (绝不回退写入 Cab_Det 信息行)
                 // ---------------------------------------------------------
                 if (!matchedShellInFeeArea)
                 {
-                    Range detRange = ws.Range[$"A{detRow}:S{detRow}"];
-                    object[,] detMatrix = detRange.Formula as object[,];
-                    // 优先写入拼装型号，兜底尺寸
-                    string fallbackModel = !string.IsNullOrWhiteSpace(result.RecommendedShellModel)
-                        ? result.RecommendedShellModel
-                        : (!string.IsNullOrWhiteSpace(result.RecommendedShellSizeFull) ? result.RecommendedShellSizeFull : result.RecommendedShellSize);
-                    if (detMatrix != null)
-                    {
-                        // B 列写入壳体匹配名称
-                        detMatrix[1, 2] = shellMatchName;
-                        // 若原先 C 列无既有尺寸，写入推荐型号或尺寸
-                        if (!scanData.HasExistingShellSize || string.IsNullOrWhiteSpace(detMatrix[1, 3]?.ToString()))
-                        {
-                            detMatrix[1, 3] = fallbackModel;
-                        }
-                        // S 列写入箱体制作人工动态算式
-                        if (!string.IsNullOrWhiteSpace(result.ShellLaborFormula))
-                        {
-                            detMatrix[1, 19] = result.ShellLaborFormula;
-                        }
-                        detRange.Formula = detMatrix;
-                    }
-                    else
-                    {
-                        // 单元格直接写入名称
-                        ws.Range[$"B{detRow}"].Value2 = shellMatchName;
-                        if (!scanData.HasExistingShellSize)
-                        {
-                            ws.Range[$"C{detRow}"].Value2 = fallbackModel;
-                        }
-                        if (!string.IsNullOrWhiteSpace(result.ShellLaborFormula))
-                        {
-                            ws.Range[$"S{detRow}"].Formula = result.ShellLaborFormula;
-                        }
-                    }
+                    // 标记未在计费区匹配到壳体
                     result.ShellMatchedInFeeArea = false;
-                    result.ShellTargetLocation = $"箱柜信息行 Cab_Det (第 {detRow} 行)";
+                    // 记录定位结果为跳过填写
+                    result.ShellTargetLocation = "计费区未找到匹配名称，已跳过填写";
                 }
 
                 // ---------------------------------------------------------
@@ -1949,9 +2079,8 @@ namespace ExcelAddInDemo
                             string bName = compMatrix[r, 2]?.ToString()?.Trim() ?? string.Empty;
                             int currentPhysRow = compStartRow + r - 1;
 
-                            // 辅材在元器件区域匹配
-                            if (!matchedAuxInFeeArea && (string.Equals(bName, auxMatchName, StringComparison.OrdinalIgnoreCase) ||
-                                (auxMatchName == "辅材" && bName == "辅材")))
+                            // 辅材在元器件区域严格匹配用户配置的名称
+                            if (!matchedAuxInFeeArea && string.Equals(bName, auxMatchName, StringComparison.OrdinalIgnoreCase))
                             {
                                 if (!string.IsNullOrWhiteSpace(result.AuxiliaryFormula))
                                 {
@@ -1984,9 +2113,8 @@ namespace ExcelAddInDemo
                                 }
                             }
 
-                            // 人工在元器件区域匹配
-                            if (!matchedLaborInFeeArea && (string.Equals(bName, laborMatchName, StringComparison.OrdinalIgnoreCase) ||
-                                (laborMatchName == "人工费" && (bName == "人工费" || bName == "人工"))))
+                            // 人工在元器件区域严格匹配用户配置的名称
+                            if (!matchedLaborInFeeArea && string.Equals(bName, laborMatchName, StringComparison.OrdinalIgnoreCase))
                             {
                                 if (!string.IsNullOrWhiteSpace(result.LaborFormula))
                                 {
@@ -2026,6 +2154,20 @@ namespace ExcelAddInDemo
                             compRange.Formula = compMatrix;
                         }
                     }
+                }
+
+                // ---------------------------------------------------------
+                // 3.1 辅材与人工未匹配状态标记: 若未找到则不填写
+                // ---------------------------------------------------------
+                if (!matchedAuxInFeeArea)
+                {
+                    // 记录辅材未匹配跳过状态
+                    result.AuxTargetLocation = "未找到辅材匹配名称，已跳过填写";
+                }
+                if (!matchedLaborInFeeArea)
+                {
+                    // 记录人工费未匹配跳过状态
+                    result.LaborTargetLocation = "未找到人工匹配名称，已跳过填写";
                 }
 
                 // ---------------------------------------------------------

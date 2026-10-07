@@ -32,6 +32,28 @@ namespace ExcelAddInDemo.Models
         // 壳体价格计算与批量定价定额分节 (单列Tab)
         [JsonPropertyName("shellPriceRules")]
         public ShellPriceConfig ShellPriceRules { get; set; } = new ShellPriceConfig();
+
+        // PZ30 模数箱计费定额配置分节 (箱体型号为纯数字时自动触发)
+        [JsonPropertyName("pz30Rules")]
+        public Pz30Config Pz30Rules { get; set; } = new Pz30Config();
+    }
+
+    /// <summary>
+    /// PZ30 模数箱计费定额配置模型 (箱体型号为纯数字如15、20时生效)
+    /// </summary>
+    public class Pz30Config
+    {
+        // 壳体单价系数 (单位: 元/位，默认 4.0，壳体 = 数字 * 4.0) --硬编码: 默认系数--
+        [JsonPropertyName("shellRate")]
+        public double ShellRate { get; set; } = 4.0;
+
+        // 辅材费用系数 (单位: 元/位，默认 1.2，辅材 = 数字 * 1.2) --硬编码: 默认系数--
+        [JsonPropertyName("auxRate")]
+        public double AuxRate { get; set; } = 1.2;
+
+        // 人工费用系数 (单位: 元/位，默认 1.4，人工 = 数字 * 1.4) --硬编码: 默认系数--
+        [JsonPropertyName("laborRate")]
+        public double LaborRate { get; set; } = 1.4;
     }
 
     /// <summary>
@@ -878,6 +900,12 @@ namespace ExcelAddInDemo.Models
         // 标识箱体行是否位于计费区域中 (true 表示计费区，false 表示 Cab_Det 信息行)
         public bool IsShellInFeeArea { get; set; } = false;
 
+        // 是否识别到箱体型号为纯数字 (触发 PZ30 模数箱计费规则)
+        public bool IsPz30DigitModel { get; set; } = false;
+
+        // PZ30 模数位数 (如 15, 20)
+        public int Pz30Digits { get; set; } = 0;
+
         // 扫描提取的元器件明细项列表
         public List<CabinetComponentItem> Components { get; set; } = new List<CabinetComponentItem>();
     }
@@ -1110,6 +1138,14 @@ namespace ExcelAddInDemo.Models
         // 是否采用工作表中既有外形尺寸核算下游指标
         [JsonPropertyName("isUsingExistingShellSize")]
         public bool IsUsingExistingShellSize { get; set; }
+
+        // 是否属于 PZ30 纯数字模数箱计费
+        [JsonPropertyName("isPz30DigitModel")]
+        public bool IsPz30DigitModel { get; set; } = false;
+
+        // PZ30 模数位数 (纯数字数值，如 15, 20)
+        [JsonPropertyName("pz30Digits")]
+        public int Pz30Digits { get; set; } = 0;
 
         // 一次导线用量与费用明细列表
         [JsonPropertyName("primaryWireDetails")]
