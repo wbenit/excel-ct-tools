@@ -170,6 +170,8 @@ namespace ExcelAddInDemo
             <button id='btnSummaryAdjustPrice' label='汇总调价' imageMso='AutoSum' screentip='汇总调价' supertip='汇总项目元件，快速调改名称、型号、...、价格...' onAction='OnMenuAction' />
             <!-- 2. 分布调价按钮 -->
             <button id='btnDistributedAdjustPrice' label='分布调价' imageMso='PivotTableInsert' onAction='OnMenuAction' />
+            <!-- 2.5 总价一键调整按钮 (与费用设定双向联动入口) -->
+            <button id='btnOneKeyAdjustTotalBatch' label='总价一键调整' imageMso='CalculateNow' screentip='总价一键调整' supertip='按目标总价倒推反算，支持元件加价/报出系数与计费区域比例系数按权重联动调整' onAction='OnMenuAction' />
             <!-- 3. 筛选调价按钮 -->
             <button id='btnFilterAdjustPrice' label='筛选调价' imageMso='Filter' onAction='OnMenuAction' />
             <!-- 4. 一键匹配价格按钮 (使用官方标准箭头选择指针图标) -->
@@ -611,6 +613,12 @@ namespace ExcelAddInDemo
             {
                 // 弹出基于 WebView2 + Vue 3 的“分布调价”窗口 (二维矩阵交叉表)
                 ExcelServices.ShowDistributedAdjustPriceDialog();
+            }
+            // 响应“总价一键调整”按钮指令 (支持元件批调菜单项与费用设定菜单项双向调用)
+            else if (controlId == "btnOneKeyAdjustTotal" || controlId == "btnOneKeyAdjustTotalBatch")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“总价一键调整”窗口
+                ExcelServices.ShowTotalPriceAdjustDialog();
             }
             // 响应“智能输入”按钮指令
             else if (controlId == "btnSmartInput")

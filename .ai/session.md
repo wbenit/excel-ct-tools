@@ -1,3 +1,15 @@
+- **【缺陷修复与提取增强：解决总价一键调整中 Q 列费用类型未在分摊区域展示问题】(`Services/ExcelServices.TotalPriceAdjust.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **问题排查与根因分析**：
+     - **主因一（零金额过滤）**：原代码在构建分摊展示标签时存在 `if (kvp.Value.amount > 0 || kvp.Key == "元件")` 硬性过滤限制。辅材费用、箱体费用等费用项若当前金额为 0、尚未输入单价或公式结果为 0，标签被直接静默丢弃；
+     - **主因二（未重启加载旧 DLL）**：用户 Excel 进程在 22:09 启动，内存中锁定的是老代码，未加载编译产物；
+     - **主因三（小计与单台合计被当成计费项）**：扫描时未对包含“小计”、“总计”、“合计”、“单台合计”的汇总行进行拦截，且计费区起始行 `feeStartRow` 偏小，导致小计和单台合计作为普通计费项混入；
+  2. **端到端最小变动修复落地**：
+     - **严密拦截求和汇总行**：扫描遇到总计/单台合计/合计直接结束，遇到小计直接跳过，并在标签列表构建时彻底排除求和关键字；
+     - **自适应起止行无缝衔接**：计费区以 `subsumRow`（小计行）起始向下扫描，跳过小计行自身，确保紧随其后的“辅材费用”、“箱体费用”100% 纳入扫描区间；
+     - **解除零金额限制**：调整过滤条件为 `occurrences > 0`，辅材与箱体费用即使当前金额为 0 也完整展示在调价分摊列表中；
+  3. **构建验证**：
+     - `dotnet build` 验证通过：**0 错误**，程序集与 pdb 已全量同步至 `publish/`。
+
 - **【功能交付与实施闭环：江苏赛格瑞报价全景分析与绚丽可视化大屏上线】(`Models/QuoteAnalysisModels.cs`, `Services/ExcelServices.QuoteAnalysis.cs`, `Forms/QuoteAnalysisForm.cs`, `Resources/quote_analysis.html`, `RibbonController.cs`, `ExcelAddInDemo.csproj`)**：
   1. **用户核心指令与全面落地**：
      - 用户指令“开始实施”，解除需求分析门控，全链路完成报价全景分析大屏开发与构建；
@@ -5240,3 +5252,32 @@
 
 ### [Next]
 - 提示用户重新打开【壳体辅材计算】窗口验证界面渲染效果。
+
+## [2026-10-08 21:10:00] 全面落地【总价一键调整】功能 (目标总价反算、Q列动态分摊、L列报出系数与计费区公式自适应重算)
+
+### [Completed]
+- **【深度需求对齐与架构设计】**：
+  1. 对齐利驰 ExWinner `frmProjectFeeFormula.html` 与 `frmProjectFeeAdjustByType.html` 的核心业务逻辑，确立“自顶向下目标价反算分摊”与“底线成本安全防御”机制；
+  2. 确立按 Q 列动态分摊策略：元器件行 Q 列固定为“元件”，计费区域动态提取 Q 列，若为空回退提取 B 列费用名，再为空归入【其他费用】兜底；
+  3. 确立默认分摊初值与落地修改字段：默认“元件”分摊 1.0 (调整 L 列加价/报出系数)，计费区修改乘数比例系数 (如 8% -> 7.2%) 或直接加减纯数值；
+  4. 采用非模态独立弹窗架构（WebView2 + Vue 3 + Element Plus，主色调 `#009688` 绿蓝相间，弹性布局无水平滚动条），直接就地修改当前工作簿并由 `UndoRedoManager` 提供秒级 Ctrl+Z 撤销保障，可选另存为副本。
+- **【核心代码与界面交付】**：
+  1. **数据模型层 (`Models/TotalPriceAdjustModels.cs`)**：
+     - 定义 `TotalPriceCategorySheetItem`、`TotalPriceAdjustTagItem`、`TotalPriceAdjustInitData`、`TotalPriceAdjustRequest`、`TotalPriceAdjustResult` 等完备 DTO。
+  2. **业务服务层 (`Services/ExcelServices.TotalPriceAdjust.cs`)**：
+     - `GetTotalPriceAdjustInitData()`：扫描全工作簿分类表与箱柜（遵循规则 6 & 8），单次 COM 调用抓取数据大矩阵（规则 7），聚合计算整簿总价、总成本、Q 列动态标签当前金额与原项目占比；
+     - `ExecuteTotalPriceAdjust()`：校验分摊比例和为 1.0 及成本底线；按标签分摊差额并计算缩放系数 $k$；批量更新元器件 L 列加价系数（保留 4 位精度）；正则匹配计费区域中的比例乘数并更新为新系数；纯固定项直接平滑加减；收集全表差量切片压入 `UndoRedoManager` 撤销栈。
+  3. **控制器与窗体层 (`Controllers/TotalPriceAdjustController.cs`, `Forms/TotalPriceAdjustForm.cs`)**：
+     - 实现基于 `ExcelAsyncUtil.QueueAsMacro` 的防死锁宏队列调度；实现基于 `moveWindow` 物理增量的平滑拖拽。
+  4. **前端交互界面 (`Resources/total_price_adjust.html`)**：
+     - 包含数据看板（总价、成本、目标价、差额红绿指示、上浮/下浮双向实时联动）；
+     - Tab 1: 动态分摊设置表格（支持比例输入、一键重置为元件 100%、按原占比自动分配、配平状态检测）；
+     - Tab 2: 参与分类表多选管理；
+     - 底部操作控制栏（另存为副本、重新扫描、执行调价按钮）；
+     - 静态资源已同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`。
+  5. **功能区集成与编译验证 (`RibbonController.cs`, `ExcelAddInDemo.csproj`)**：
+     - 关联功能区【费用设定】下拉菜单项 `btnOneKeyAdjustTotal` 与【元件批调】菜单项 `btnOneKeyAdjustTotalBatch`；
+     - 执行 `dotnet build` 编译成功：0 错误。
+
+### [Next]
+- 协助用户在 Excel 中加载插件并实测【总价一键调整】功能的完整流程。
