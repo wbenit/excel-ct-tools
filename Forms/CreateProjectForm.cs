@@ -75,8 +75,8 @@ namespace ExcelAddInDemo
             // 设置窗体标题文本
             this.Text = "新建项目";
 
-            // 默认收起状态的显示尺寸调整为 540x510 像素，确保所有表单元素完整展示
-            this.ClientSize = new Size(540, 510);
+            // 默认收起状态的显示尺寸调整为 540x430 像素，消除多余表单移除后的垂直留白
+            this.ClientSize = new Size(540, 430);
 
             // 设置窗体在屏幕中央弹窗
             this.StartPosition = FormStartPosition.CenterScreen;
@@ -196,8 +196,36 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 获取前端传递的消息字符串
-                string messageJson = e.TryGetWebMessageAsString();
+                // 声明接收到的消息 JSON 文本
+                string messageJson = string.Empty;
+
+                // 独立尝试读取纯文本消息（规避参数类型不符引起的 ArgumentException）
+                try
+                {
+                    messageJson = e.TryGetWebMessageAsString();
+                }
+                catch (Exception ex)
+                {
+                    // 记录轻量容错日志
+                    LogHelper.WriteLog($"[CreateProjectForm] TryGetWebMessageAsString 容错: {ex.Message}");
+                }
+
+                // 若文本为空，尝试降级读取 WebMessageAsJson（独立保护防没有注册类 COM 异常）
+                if (string.IsNullOrWhiteSpace(messageJson))
+                {
+                    try
+                    {
+                        messageJson = e.WebMessageAsJson;
+                    }
+                    catch (Exception ex)
+                    {
+                        // 记录轻量容错日志
+                        LogHelper.WriteLog($"[CreateProjectForm] WebMessageAsJson 降级容错: {ex.Message}");
+                    }
+                }
+
+                // 若依然为空则安全退出
+                if (string.IsNullOrWhiteSpace(messageJson)) return;
 
                 // 解析 JSON 文档
                 using var doc = JsonDocument.Parse(messageJson);
@@ -213,19 +241,20 @@ namespace ExcelAddInDemo
                 {
                     // 获取窗体初始化所需数据
                     case "getInitData":
-                        // 自动生成单号
+                        // 自动生成纯日期结构单号 (例如 261008)
                         string qNum = _projectController.GenerateQuoteNumber();
 
-                        // 获取默认保存桌面路径
-                        string sPath = _projectController.GetDefaultDesktopPath();
+                        // 优先从全局设置中获取用户自定义的新建项目默认保存目录，未设置时回退至系统桌面
+                        string sPath = Tool.GetDefaultProjectDirectory();
 
                         // 读取“企业设置”中保存的单位名称、英文名称、联系人、电话与报价人
                         EnterpriseSettingsData settingData = await _settingsController.LoadSettingsAsync();
 
-                        // 构造回发给前端的数据包，完整包含企业中英文名称及联系人信息
+                        // 构造回发给前端的数据包，完整包含当前系统日期、企业中英文名称及联系人信息
                         var initMsg = new
                         {
                             action = "renderInitData",
+                            projectDate = DateTime.Now.ToString("yyyy年MM月dd日"),
                             quoteNumber = qNum,
                             savePath = sPath,
                             companyName = settingData.CompanyName,
@@ -259,15 +288,16 @@ namespace ExcelAddInDemo
                             bool isExp = expProp.GetBoolean();
                             SafeInvoke(() =>
                             {
-                                // 展开图 2 状态设为 770 像素高度；收起图 1 状态设为 510 像素高度
-                                this.ClientSize = isExp ? new Size(540, 770) : new Size(540, 510);
+                                // 展开状态设为 680 像素高度；精简后收起状态设为 430 像素高度
+                                this.ClientSize = isExp ? new Size(540, 680) : new Size(540, 430);
                             });
                         }
                         break;
 
-                    // 选择保存文件夹
+                    // 选择保存文件夹：接收前端当前输入的保存目录并定位
                     case "selectFolder":
-                        SelectSaveFolder();
+                        string curSavePath = root.TryGetProperty("currentPath", out var pProp) ? pProp.GetString() ?? "" : "";
+                        SelectSaveFolder(curSavePath);
                         break;
 
                     // 提交开始报价：在 Excel 主线程新建 Workbook，复制 CabinetTemplate.xlsx 及其工作表并填入数据
@@ -411,18 +441,29 @@ namespace ExcelAddInDemo
         /// 弹出本地文件夹选择对话框以选定项目新建与出报表的目标路径
         /// 遵循规范：独立 STA 线程异步执行，彻底杜绝模态循环阻塞 WebView2
         /// </summary>
-        private void SelectSaveFolder()
+        /// <param name="initialPath">当前界面中填写的保存目录，存在时直接定位至该目录下</param>
+        private void SelectSaveFolder(string initialPath = "")
         {
             // 启动独立的 STA 工作线程弹出文件夹对话框
             var dialogThread = new System.Threading.Thread(() =>
             {
                 try
                 {
+                    // 实例化 FolderBrowserDialog 文件夹浏览器
                     using var dialog = new FolderBrowserDialog
                     {
+                        // 设置说明提示文本
                         Description = "请选择项目新建与出报表保存目录",
+                        // 允许用户创建新文件夹
                         ShowNewFolderButton = true
                     };
+
+                    // 若传入了有效的当前保存目录且物理路径存在，直接默认定位至该目录下
+                    if (!string.IsNullOrWhiteSpace(initialPath) && Directory.Exists(initialPath))
+                    {
+                        // 定位初始浏览路径
+                        dialog.SelectedPath = initialPath;
+                    }
 
                     // 独立模态循环执行，绝不阻塞 UI 主线程与 WebView2
                     if (dialog.ShowDialog() == DialogResult.OK && !string.IsNullOrWhiteSpace(dialog.SelectedPath))

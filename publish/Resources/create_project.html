@@ -253,29 +253,21 @@
 
         <!-- 基础输入字段区域 -->
         <el-form-item label="项目名称：">
-          <div style="display: flex; align-items: center; width: 100%">
-            <el-input
-              class="underline-input"
-              v-model="form.projectName"
-              placeholder="请输入项目名称"
-              @input="updateFileName"
-            ></el-input>
-            <span class="link-btn" @click="handleTodo">* 待办</span>
-          </div>
+          <el-input
+            class="underline-input"
+            v-model="form.projectName"
+            placeholder="请输入项目名称"
+            @input="updateFileName"
+          ></el-input>
         </el-form-item>
 
         <el-form-item label="报价单号：">
-          <div style="display: flex; align-items: center; width: 100%">
-            <el-input
-              class="underline-input"
-              v-model="form.quoteNumber"
-              placeholder="自动生成单号"
-              @input="updateFileName"
-            ></el-input>
-            <span class="link-btn-theme" @click="refreshQuoteNumber"
-              >* 重置</span
-            >
-          </div>
+          <el-input
+            class="underline-input"
+            v-model="form.quoteNumber"
+            placeholder="自动生成单号"
+            @input="updateFileName"
+          ></el-input>
         </el-form-item>
 
         <el-form-item label="项目备注：">
@@ -283,14 +275,7 @@
             class="underline-input"
             v-model="form.projectRemark"
             placeholder=""
-          />
-        </el-form-item>
-
-        <el-form-item label="项目编号：">
-          <el-input
-            class="underline-input"
-            v-model="form.projectCode"
-            placeholder=""
+            @input="updateFileName"
           />
         </el-form-item>
 
@@ -422,16 +407,8 @@
           >
         </el-form-item>
 
-        <el-form-item label="项目类型：">
-          <el-radio-group v-model="form.projectType">
-            <el-radio label="常规项目">常规项目</el-radio>
-            <el-radio label="国网项目">国网项目</el-radio>
-          </el-radio-group>
-        </el-form-item>
-
         <!-- 底部控制与操作按钮栏 -->
         <div class="bottom-action-bar">
-          <el-checkbox v-model="form.batchCabinet">批建箱柜</el-checkbox>
           <el-button class="start-btn" :loading="isSubmitting" @click="startQuotation"
             >开始报价</el-button
           >
@@ -443,21 +420,36 @@
     <script>
       const { createApp, reactive, ref, onMounted } = Vue;
 
+      // 获取当前真实系统日期 (YYYY年MM月DD日)
+      const getTodayFormatted = () => {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, "0");
+        const d = String(now.getDate()).padStart(2, "0");
+        return `${y}年${m}月${d}日`;
+      };
+
+      // 获取纯短日期结构的报价单号 (yyMMdd，例如 261008)
+      const getTodayQuoteNumber = () => {
+        const now = new Date();
+        const yy = String(now.getFullYear()).slice(-2);
+        const mm = String(now.getMonth() + 1).padStart(2, "0");
+        const dd = String(now.getDate()).padStart(2, "0");
+        return `${yy}${mm}${dd}`;
+      };
+
       const app = createApp({
         setup() {
           const isExpanded = ref(false);
           const isSubmitting = ref(false);
 
           const form = reactive({
-            projectDate: "2026年08月09日",
+            projectDate: getTodayFormatted(),
             projectName: "新建项目",
-            quoteNumber: "WB202608090130",
+            quoteNumber: getTodayQuoteNumber(),
             projectRemark: "",
-            projectCode: "",
-            fileName: "WB202608090130-新建项目-吴磊",
+            fileName: "",
             savePath: "C:\\Users\\Desktop",
-            projectType: "常规项目",
-            batchCabinet: false,
             companyName: "扬州华科智能科技有限公司",
             englishName: "",
             quoter: "吴磊",
@@ -469,12 +461,21 @@
             customerPhone: "",
           });
 
+          // 最终的文件名称公式: {项目名称}原始清单{报价单号}_{项目备注}
           const updateFileName = () => {
-            const qNum = form.quoteNumber || "";
-            const pName = form.projectName || "";
-            const qUser = form.quoter || "";
-            form.fileName = `${qNum}-${pName}-${qUser}`;
+            const pName = (form.projectName || "新建项目").trim();
+            const qNum = (form.quoteNumber || "").trim();
+            const pRemark = (form.projectRemark || "").trim();
+            // 若填写了项目备注则以下划线拼接，若无备注则省略下划线
+            if (pRemark) {
+              form.fileName = `${pName}原始清单${qNum}_${pRemark}`;
+            } else {
+              form.fileName = `${pName}原始清单${qNum}`;
+            }
           };
+
+          // 初始即执行一次文件名拼接计算
+          updateFileName();
 
           onMounted(() => {
             if (window.chrome && window.chrome.webview) {
@@ -488,6 +489,7 @@
                       ? JSON.parse(event.data)
                       : event.data;
                   if (res && res.action === "renderInitData") {
+                    if (res.projectDate) form.projectDate = res.projectDate;
                     if (res.quoteNumber) form.quoteNumber = res.quoteNumber;
                     if (res.savePath) form.savePath = res.savePath;
                     if (res.companyName) form.companyName = res.companyName;
@@ -529,18 +531,14 @@
             }
           };
 
-          const refreshQuoteNumber = () => {
-            if (window.chrome && window.chrome.webview) {
-              window.chrome.webview.postMessage(
-                JSON.stringify({ action: "refreshQuoteNumber" }),
-              );
-            }
-          };
-
+          // 更改目录时将前面的保存目录一同发送，以便原生选择器直接定位至该目录下
           const selectFolder = () => {
             if (window.chrome && window.chrome.webview) {
               window.chrome.webview.postMessage(
-                JSON.stringify({ action: "selectFolder" }),
+                JSON.stringify({
+                  action: "selectFolder",
+                  currentPath: form.savePath || ""
+                }),
               );
             }
           };
@@ -569,12 +567,16 @@
             }).catch(() => {});
           };
 
-          const handleTodo = () => {
-            ElementPlus.ElMessage.success("已将该项目加入待办任务列表");
-          };
-
+          // 刷新数据：同步刷新为最新系统今天日期与短单号
           const refreshData = () => {
-            refreshQuoteNumber();
+            form.projectDate = getTodayFormatted();
+            form.quoteNumber = getTodayQuoteNumber();
+            updateFileName();
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.postMessage(
+                JSON.stringify({ action: "getInitData" }),
+              );
+            }
           };
 
           // 关闭取消事件处理：显式调用 stopPropagation 彻底切断事件向 title-bar 冒泡
@@ -682,10 +684,8 @@
             form,
             updateFileName,
             toggleExpand,
-            refreshQuoteNumber,
             selectFolder,
             pasteFolderManual,
-            handleTodo,
             refreshData,
             cancel,
             startQuotation,

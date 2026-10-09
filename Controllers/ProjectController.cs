@@ -76,18 +76,13 @@ namespace ExcelAddInDemo.Controllers
         public static string LastCreatedTargetFilePath { get; set; } = string.Empty;
 
         /// <summary>
-        /// 自动生成包含时间戳与随机序号的报价单号
+        /// 自动生成纯日期结构的报价单号 (例如 261008)
         /// </summary>
+        /// <returns>6 位纯日期格式字符串</returns>
         public string GenerateQuoteNumber()
         {
-            // 获取当前系统时间的年月日字符串
-            string dateStr = DateTime.Now.ToString("yyyyMMdd");
-
-            // 生成 4 位随机流水序号
-            int seq = new Random().Next(1000, 9999);
-
-            // 拼接 WB + 年月日 + 4位序号
-            return $"WB{dateStr}{seq}";
+            // 按照用户规则格式化输出短日期字符串 (两位年份+两位月份+两位日期，例如 2026-10-08 格式化为 261008)
+            return DateTime.Now.ToString("yyMMdd");
         }
 
         /// <summary>

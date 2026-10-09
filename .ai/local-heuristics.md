@@ -188,4 +188,76 @@
      ```
   3. **第 3 道防线（层级与光标保障）**：为顶栏和按钮容器配置明确的 `z-index: 10000` 与 `10001`，按钮容器设置 `cursor: default`，按钮设置 `cursor: pointer`，确保按钮绝对置顶于任何边缘感应区域之上。
 
+### 22. WebView2 与 .NET Framework 4.8 混合通信中的两大致命异常（“没有注册类”与“值不在预期的范围内”）及终极双轨通信规范
+- **现象**：
+  在 WinForms + WebView2 弹窗中加载 Vue 3 / HTML 页面后，页面刚刚渲染完成或用户触发操作时，弹出阻断性系统错误：
+  1. `处理设置交互异常: 没有注册类` (`REGDB_E_CLASSNOTREG 0x80040154`)
+  2. `处理设置交互异常: 值不在预期的范围内。` (`ArgumentException 0x80070057`)
+- **原因剖析**：
+  1. **“值不在预期的范围内” (E_INVALIDARG 0x80070057)**：
+     前端使用 `window.chrome.webview.postMessage(obj)` 直接投递了原生 JavaScript Object（非序列化字符串）。在底层，WebView2 的 COM/WinRT 接口规范规定：当投递的消息类型不是 String 时，C# 宿主调用 `e.TryGetWebMessageAsString()` 会因类型不匹配直接抛出 `System.ArgumentException: 值不在预期的范围内`；
+  2. **“没有注册类” (REGDB_E_CLASSNOTREG 0x80040154)**：
+     当 `e.TryGetWebMessageAsString()` 失败后，原代码未加防护直接访问 `e.WebMessageAsJson`。在 .NET Framework 4.8 环境下，若宿主进程架构（x86/x64）或客户端机器的特定 WebView2 Runtime 版本未正确注册某些底层 WinRT/COM 代理类，访问 `WebMessageAsJson` COM 属性会触发底层 `REGDB_E_CLASSNOTREG` 崩溃；
+  3. **外层无脑弹窗阻断**：
+     C# 端 `OnWebMessageReceived` 事件处理函数未对消息提取实施独立异常隔离，未捕获异常冒泡至外层直接触发 `MessageBox.Show($"处理设置交互异常: {ex.Message}")`，导致原本微小甚至非致命的通信参数抖动演变成吓人的红叉弹窗；
+  4. **浮点数解析崩溃**：
+     前端自适应高度（如 `resizeWindow` 上报 DOM 高度）常带有小数（如 `398.4`），C# 端若直接调用 `hProp.GetInt32()` 会因类型严格校验直接抛出 `InvalidOperationException` 或 `FormatException`。
+- **结晶解法（终极通信与防御规范）**：
+  1. **前端准则：统一 `JSON.stringify` 纯字符串投递**：
+     Web 前端绝不可直接投递原生 JS Object，统一封装 `postToCSharp` 投递函数：
+     ```javascript
+     const postToCSharp = (obj) => {
+       if (window.chrome && window.chrome.webview) {
+         const payload = typeof obj === 'string' ? obj : JSON.stringify(obj);
+         window.chrome.webview.postMessage(payload);
+       }
+     };
+     ```
+     确保投递给 Chromium IPC 管道的永远是标准 JSON 字符串，彻底免疫 `E_INVALIDARG`；
+  2. **C# 宿主准则：双轨独立隔离提取与深层解包**：
+     在 `OnWebMessageReceived` 中，对 `TryGetWebMessageAsString()` 和 `WebMessageAsJson` 分别使用独立 `try-catch` 包裹，若读取失败仅记录容错日志并平滑降级，绝不外抛；若均为 null 则静默安全退出：
+     ```csharp
+     string messageJson = string.Empty;
+     try { messageJson = e.TryGetWebMessageAsString(); } catch (Exception ex) { LogHelper.WriteLog($"TryGetWebMessageAsString 容错: {ex.Message}"); }
+     if (string.IsNullOrWhiteSpace(messageJson))
+     {
+         try { messageJson = e.WebMessageAsJson; } catch (Exception ex) { LogHelper.WriteLog($"WebMessageAsJson 降级容错: {ex.Message}"); }
+     }
+     if (string.IsNullOrWhiteSpace(messageJson)) return;
+     ```
+     同时在解析时增加深层防御解包（自动识别并解包双重包装的嵌套 JSON 字符串）；
+  3. **数值转换弹性容错**：
+     前端上报的任何尺寸与数值属性，在 C# 中统一通过 `hProp.TryGetDouble(out var d)` 提取，并使用 `(int)Math.Round(d)` 转换为整数，杜绝浮点数引发的格式转换异常；
+  4. **通信入口纯日志原则**：
+     `OnWebMessageReceived` 最外层严禁调用 `MessageBox.Show`，全量切换为 `LogHelper.WriteLog` 静默记录。业务失败（如保存文件受阻）通过消息回发前端使用 Element Plus Toast 友好展示，杜绝阻断式 Windows 报错弹窗。
 
+
+
+### 23. 系统级多插件共存干扰与 Excel 全局事件钩子穿透导致的数据异常排查方法论 (以旧版 VSTO 插件在 WorkbookBeforeClose 误删定义名称为例)
+- **现象**：
+  在当前插件开发过程中，用户反馈“只要加载了插件，在打开两个工作簿并在切换或关闭其中一个工作簿时，另一个工作簿的定义名称（如 192 个箱柜名称）全部丢失；但关闭插件后不会丢失”。
+- **原因剖析**：
+  1. **变量伪相关**：用户认为“关闭插件就不丢，开启插件就丢”，看似 100% 是当前插件引起的，但实际上这是一种典型的“伪相关”。
+  2. **系统环境污染（幽灵加载项）**：用户系统注册表中常驻自启了历史遗留的旧版 VSTO 插件（如 HKCU\Software\Microsoft\Office\Excel\Addins\ExcelAddIn1），其在 Ribbon1_Load 中监听了 Excel 的全局 WorkbookBeforeClose、SheetDeactivate 等事件，并在关闭任何工作簿时无差别执行了 'PERSONAL.XLSB'!模块1.noBiaoji 或类似的宏清理逻辑；
+  3. **为什么新插件会“触发”该故障**：新插件在初始化时调用了 Application.EnableEvents = true;。若系统此前因某些异常导致 Excel 全局事件处于关闭状态，旧插件的事件钩子无法触发；一旦新插件开启了全局事件，旧插件的关闭事件钩子就顺理成章地被激活，并在关闭任意窗口时执行宏误删了并存工作簿的定义名称。
+- **排查与破局方法论（结晶原则）**：
+  1. **隔离宿主法（独立控制台复现）**：
+     当怀疑某个插件或全局事件造成数据破坏时，**不要局限在当前代码内调试**。编写一个完全不引用、不加载当前新插件的纯 C# 控制台程序（直接通过 
+ew Application() 操作 COM），复现相同的操作链路（打开受害表格 -> 新建空白表 -> 关闭空白表）。若在完全没有新插件的情况下问题依然复现，则 100% 证实是系统外部环境干扰；
+  2. **全局注册表加载项审计**：
+     检查 HKCU\Software\Microsoft\Office\Excel\Addins 与 HKLM\Software\Microsoft\Office\Excel\Addins，逐一排查各个已安装插件的 Manifest 与 LoadBehavior。通过临时将 LoadBehavior 设为   进行二分法隔离验证，可迅速锁定元凶；
+  3. **端到端前置/后置探针捕获破坏节点**：
+     在各个事件（如 OnWorkbookActivate、WindowActivate）的第一行捕获现场，若在进入自身任何业务代码前数据就已经损坏，即可确凿证实破坏行为发生在上游（Excel 内部或更早执行的其他插件事件钩子）。
+
+### 24. Excel 2013+ SDI 多窗口跨工作簿关闭时的 COM 重入挂起与 2 秒转圈死锁根治规范
+- **现象**：
+  在 Excel 中同时打开两个工作簿，当点击红叉关闭其中一个外部工作簿时，鼠标指针变成 Windows 等待转圈（WaitCursor）长达 1.5 ~ 2 秒，界面严重卡顿。
+- **原因剖析**：
+  1. **SDI 窗口销毁临界区**：Excel 2013 及以上版本采用 SDI 架构，每个工作簿是独立的顶级 HWND 窗口。当关闭一个工作簿时，Excel 正在主线程销毁该 HWND、释放 COM 资源并切换到下一个工作簿的 HWND；
+  2. **后台高频定时器竞争碰撞**：若插件中存在后台守护定时器（例如聚光灯的 120ms _foregroundGuardTimer），若仅将浮窗 Visible = false 而未停止定时器，定时器在 120ms 后触发并再次尝试通过 COM 读取 ActiveCell 或计算坐标；
+  3. **RPC 挂起等待转圈**：此时 Excel 内部消息泵正处于窗口注销繁忙状态，该跨线程/定时器 COM 调用被挂起（RPC_E_SERVERCALL_RETRYLATER 或阻塞等待），操作系统强制呈现等待光标，直接造成 1.5 ~ 2 秒的停顿。
+- **结晶解法（终极规范）**：
+  1. **关闭/失活临界区显式停用定时器**：
+     监听 WorkbookBeforeClose 与 WorkbookDeactivate 事件，在窗口即将关闭或失去焦点时，不仅要隐藏浮窗，**必须显式停用后台守护定时器（StopForegroundGuard()）并安全脱钩**；
+  2. **激活切回延迟防抖恢复**：
+     在 WorkbookActivate 中，严禁同步立即执行视口附着与复杂 COM 计算，必须通过 System.Windows.Forms.Timer（建议 150ms 延时）单次异步调度恢复，给 Excel 操作系统窗口注销与重绘留出充足的稳定期，实现完全 0 卡顿丝滑过渡。

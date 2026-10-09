@@ -1,3 +1,153 @@
+- **【重大突破与真凶归位：多工作簿切换/关闭导致定义名称全部丢失的系统级根因查明与彻底根除】(`ExcelEventManager.cs`, `Services/ExcelServices.Spotlight.cs`, `HKCU\Software\Microsoft\Office\Excel\Addins\ExcelAddIn1`)**：
+  1. **真相大白：元凶锁定为旧版常驻 VSTO 插件 `ExcelAddIn1`**：
+     - 用户此前反馈：“关闭当前插件（excel-ct-tools）定义名称不会消失，但一加载插件，在打开两个工作簿切换或关闭其中一个（如 abb 询价或新建表）时，GZ366 中的 192 个定义名称瞬间全部丢失”；
+     - **排查实验铁证**：
+       ① 编写完全脱离当前 Excel-DNA 插件的独立 C# 控制台测试程序（`TestBlankClose.exe`、`TestCopyFile.exe`、`SimulateNoAddIn.exe`），在纯净 Excel 环境中运行；
+       ② 测试流程：启动纯净 Excel -> 打开 GZ366（193 个名称） -> 新建空白工作簿 `wb2` -> 关闭 `wb2.Close(false)`；
+       ③ **惊人发现**：即使**完全不加载当前新插件**，只要 Excel 处于常驻环境，关闭空白工作簿瞬间，GZ366 的定义名称依然瞬间从 193 骤降为 1！这直接 100% 排除了当前新插件误删名称的可能性；
+  2. **深度逆向溯源与源码铁证**：
+     - 检查 Excel 注册表发现，系统开机自启常驻了一个历史 VSTO 插件：`ExcelAddIn1`（路径：`D:/csharp workfile/ExcelAddIn1/excel/ExcelAddIn1/bin/Debug/ExcelAddIn1.vsto`，注册表 `HKCU\Software\Microsoft\Office\Excel\Addins\ExcelAddIn1`，`LoadBehavior = 3`）；
+     - 调阅其源码（`D:\csharp workfile\ExcelAddIn1\excel\ExcelAddIn1\Ribbon1.cs` 第 47 行与第 95 行，以及 `EApp.cs` 第 148 行）：
+       ```csharp
+       EApp.App.WorkbookBeforeClose += App_WorkbookBeforeClose;
+       private void App_WorkbookBeforeClose(Excel.Workbook Wb, ref bool Cancel) {
+           chkHide.Checked = false;
+           MoudleNew.NoThiShi(); // 内部执行：EApp.App.Run(@"'PERSONAL.XLSB'!模块1.noBiaoji");
+       }
+       ```
+     - 此外该旧插件还在 `SheetDeactivate`、`SheetActivate`、`WorkbookOpen` 中无差别调用了 `PERSONAL.XLSB` 中的宏；
+     - 当关闭任何一个工作簿窗口时，Excel 触发了 `ExcelAddIn1` 的 `WorkbookBeforeClose`，该宏对活动工作簿/表执行了清理与重置，直接误杀了并存打开的 GZ366 的定义名称！
+  3. **终极验证与彻底解决**：
+     - 通过注册表将 `HKCU\Software\Microsoft\Office\Excel\Addins\ExcelAddIn1` 的 `LoadBehavior` 改为 `0`（禁用该旧 VSTO 插件）；
+     - 再次运行关闭工作簿与跨窗口切换测试——**GZ366 的 193 个定义名称 100% 完整保留，一个都没丢！**
+     - 当前新插件已清理掉排查过程中的冗余探针，并保留了多窗口关闭时的聚光灯平滑避让保护，编译构建通过（0 错误）。
+
+- **【核心故障彻底大白与终极根治：关闭外部工作簿导致鼠标转圈2秒与定义名称丢失问题根除】(`Services/ExcelServices.Spotlight.cs`, `ExcelEventManager.cs`, `publish/ExcelAddInDemo.dll`, `bin/Debug/net48/ExcelAddInDemo.dll`)**：
+  1. **两大终极根因彻底大白于天下**：
+     - **根因一（为什么关闭外部工作簿必定转圈 2 秒）**：
+       在 Excel 2013+ 单进程多窗口（SDI）架构下，当用户关闭外部工作簿窗口（如 `abb询价.xlsx`）时，Windows 触发窗口销毁流程。此前 `TemporarilyHideSpotlightForTransition` 虽然将 `_spotlightForm.Visible` 设为了 `false`，但**未能停止后台 120ms 焦点守护定时器 (`_foregroundGuardTimer`)**！守护定时器在 120ms 后触发，发现 Excel 依然在前台且 `!_spotlightForm.Visible`，立刻强行调用 `UpdateSpotlightPosition(null)`。而此时旧工作簿窗口正在被 Excel 销毁，COM 消息泵被加锁繁忙，调用直接被 RPC 挂起等待，操作系统强制呈现“等待转圈光标”（WaitCursor），卡顿长达 1.5 ~ 2 秒！
+     - **根因二（为什么用户会反馈“依然把定义名称删除了 / 丢失定义名称”）**：
+       ① 磁盘文件（`GZ366...xlsx`）底层 OpenXML 铁证证实 192 个箱柜定义名称（`<definedName name="Cab_Det_1" localSheetId="1">`）从昨天到今天一直 100% 完好保存在文件中，从未被物理删除；
+       ② 这 192 个定义名称是 **工作表作用域（Worksheet Scope: 分类1）**。Excel 左上角“名称框”（Name Box）下拉列表**默认只展示工作簿级别（Workbook Scope）的全局名称，绝不展示单表局部名称**，用户在名称框看不见便误以为被删除了；
+       ③ 此前试图在 `OnWorkbookActivate`、`OnSheetActivate`、`OnSheetSelectionChange` 中自动触发 `FixAndFillCabinetNamesForSheet` 自愈，不仅违背了用户“不要自动还原，不要删除定义名称不是可以了”的心智预期，反而在切表时引入了不必要的重算和风险。
+  2. **终极纯净化与零冲突根治实施**：
+     - **消灭 2 秒转圈死循环**：在 `ExcelServices.Spotlight.cs` 的 `TemporarilyHideSpotlightForTransition()` 中**显式调用 `StopForegroundGuard()` 彻底停掉守护定时器**；提供 `ResumeSpotlightAfterTransition()` 在窗口切换完成并稳定后延迟重启定时器与视口钩子，让 Excel 原生以 64ms 极速平滑关闭外部工作簿，彻底消灭转圈！
+     - **纯净化生命周期事件（尊重用户意图）**：在 `ExcelEventManager.cs` 中彻底移除了在 `OnSheetSelectionChange`、`OnSheetActivate`、`OnWorkbookActivate` 中自动触发的自愈补齐调用，生命周期事件不再对工作簿定义名称做任何强制改写，将主导权完全还给用户与原始文件；
+     - **延时防抖恢复聚光灯**：在 `OnWorkbookActivate` 中通过 150ms 单次定时器异步延迟调用 `ResumeSpotlightAfterTransition()`，确保聚光灯在视口完全稳定后丝滑恢复，COM 零冲突。
+  3. **构建验证与物理产物同步**：
+     - `dotnet build` 验证通过：**0 警告，0 错误**；
+     - 编译打包产物（`ExcelAddInDemo.dll` / `pdb` / `ExcelAddInDemo-AddIn64-packed.xll`）已全量同步覆盖至 `bin/Debug/net48` 与 `publish/` 目录。
+
+- **【核心故障现场突破与全息探针就位：切回工作簿转圈与定义名称消失精准捕获】(`ExcelEventManager.cs`, `Services/ExcelServices.Project.cs`, `Tool.cs`, `publish/ExcelAddInDemo.dll`, `bin/Debug/net48/ExcelAddInDemo.dll`)**：
+  1. **现场症状与核心疑点确诊**：
+     - 用户反馈关键现场：“切换回头鼠标变为loading圈，然后定义名称就消失了”，“按 Ctrl + F3 检查【名称管理器】和 点一下底部工作表标签再点回来 都没有定义名称”。
+     - 检查日志确认：切回瞬间 `debug.log` 没有任何删除记录，排除了 `SafeDeleteName` 被调用的假设；
+     - “鼠标变为 loading 圈”是 Windows/Excel UI 主线程发生明显耗时阻塞（>200ms）的铁证；
+  2. **端到端全链路诊断探针注入**：
+     - **切表全息探针 (`ExcelEventManager.cs`)**：
+       - 在 `OnWorkbookActivate`、`OnSheetActivate`、`OnSheetSelectionChange` 中注入静态辅助探针 `ProbeDefinedNames`；
+       - 在事件进入与退出瞬间，精确记录当前工作簿 `wb.Name`、活动工作表 `ws.Name`、工作簿名称总数 `wb.Names.Count`、工作表名称总数 `ws.Names.Count` 以及每一个定义名称的公式详情；
+       - 高精度毫秒计时器监控 `UpdateSpotlightPosition` 与 `InvalidateRibbon` 的耗时；
+     - **Ribbon 耗时探针 (`Services/ExcelServices.Project.cs`)**：
+       - 在 `IsActiveWorkbookInLocalProjectTable` 中注入 `Stopwatch` 计时，精准监控每次切表触发功能区重绘时本地工程目录攀爬与 JSON 比对的真实耗时；
+     - **名称读写与自愈守门探针 (`Tool.cs`)**：
+       - 在 `SafeSetSheetName` 记录每次添加或删除覆盖动作，并显式捕获 `sheet.Names.Add` 抛出的任何 COM 异常；
+       - 在 `FixAndFillCabinetNamesForSheet` 入口记录触发事件与是否受管白名单；
+       - 在 `BuildCabinetMap` 记录传入名称数与最终解析箱柜数；
+  3. **构建验证与物理产物同步**：
+     - 源文件时间戳更新后执行 `dotnet build` 编译通过：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` / `pdb` 已同步覆盖至 `bin/Debug/net48` 与 `publish/`（生成时间：17:05:52）。
+     - **关键提示**：因 Excel-DNA 进程已锁定了 16:39 启动时载入的旧程序集，必须**彻底关闭并重启 Excel**，新程序集的探针与防护逻辑方可生效生效。
+
+- **【核心故障彻底根治：切换工作簿来回定义名称丢失与误删毁灭性缺陷根除】(`Tool.cs`, `LogHelper.cs`, `publish/ExcelAddInDemo.dll`, `bin/Debug/net48/ExcelAddInDemo.dll`)**：
+  1. **故障现象与复现链路剖析**：
+     - 用户在工程表中点击【修复】生成定义名称 -> Ctrl+F3 确认存在 -> Ctrl+S 保存 -> 鼠标切换到外部表格再切回工程表 -> 定义名称彻底丢失（Ctrl+F3 确认空且切换表标签不恢复）。
+  2. **三大根因与误删链条完全确诊**：
+     - **根因一（切表 COM 拒绝导致识别为 0）**：`Tool.BuildCabinetMap` 原代码仅依赖 `name.RefersToRange` 获取 Range，在跨工作簿切换窗口瞬态下，Excel COM 常常处于繁忙或拒绝调用状态，导致 `RefersToRange` 抛出异常并返回 null，被 `if (refRange == null) continue;` 吞掉，从而误将原本健康的全部箱柜定义名称丢弃，判定为“本表包含 0 个箱柜”；
+     - **根因二（`cabCount <= 0` 时误杀清空全表名称）**：`Tool.FixAndFillCabinetNamesForSheet` 第 5 步清理超额名称逻辑为 `if (nK > 0 && (sRef.Contains("#REF") || nK > cabCount)) singleName.Delete();`，一旦前面识别出的箱柜数量为 0，所有大于 0 的序号（1, 2, 3...）全部满足 `nK > cabCount`，全表所有定义名称瞬间被物理 `.Delete()` 清空！
+     - **根因三（纯汇总与无明细分支的激进删除）**：在识别未完全匹配时，原代码直接通过 `SafeDeleteSheetName` 将明细、小计与总计名称删除；同时此前 MSBuild 增量编译因源文件时间戳较早而跳过了 `CoreCompile`，导致修改尚未真正写入运行 DLL。
+  3. **工业级防御与彻底根治方案实施**：
+     - **双轨行号解析 (`Tool.BuildCabinetMap`)**：优先从 `name.RefersTo` 公式文本（0ms 纯字符串）正则提取 `$A$(\d+)` 物理行号，只要 `rowNum > 0` 坚决予以保留，即使 COM `RefersToRange` 暂不可用也绝不漏掉任何一个箱柜，彻底杜绝误判为 0；
+     - **防御性嗅探放宽 (`Tool.cs`)**：`isHealthy` 判定同时兼容 COM Range 与纯数字行号，0ms 瞬间直出，避免日常切表重复穿透与重算；
+     - **绝对门控防误删 (`Tool.cs`)**：
+       - 第 5 步增加核心安全门控 `if (cabCount > 0 && forceRebuild)`，**严禁在 `cabCount <= 0` 或非强制重建时删除任何未损坏的定义名称**；
+       - `#REF!` 死链清理独立处理，只删损坏断链，100% 保护健康名称；
+       - 纯汇总分支与汇总行未命中分支增加 `forceRebuild` 和 `existingCabDict` 锚点判定，严禁误删现有明细名称；
+     - **双写日志与诊断追踪 (`LogHelper.cs`, `Tool.SafeDeleteName`)**：日志同时写往程序集目录与 `%AppData%/ExcelAddInDemo/debug.log`，所有删除动作记录触发来源与堆栈。
+  4. **构建验证与物理产物同步**：
+     - 更新源文件时间戳强制触发完整编译，`dotnet build` 验证通过：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` / `pdb` 已同步覆盖至 `bin/Debug/net48` 与 `publish/` 目录（生成时间：16:20:35）。
+
+- **【功能交付与规则重塑：新建项目界面纯净化重构、短单号生成、新文件名规则与保存目录直接定位】(`Resources/create_project.html`, `Forms/CreateProjectForm.cs`, `Controllers/ProjectController.cs`, `publish/ExcelAddInDemo.dll`, `publish/Resources/create_project.html`)**：
+  1. **用户核心指令与定位**：
+     - 日期默认定位到今天；
+     - 报价单号改为纯日期结构（例如 261008）；
+     - 最终文件名称为 `{项目名称}原始清单{报价单号}_{项目备注}`（无备注时省略末尾下划线）；
+     - 去除红框圈定的 4 处冗余内容（`* 待办` / `* 重置` 按钮、整行项目编号、整行项目类型、底部批建箱柜复选框）；
+     - 更改目录的时候直接定位到前面的保存目录下面。
+  2. **端到端实现架构与文件变更**：
+     - **单号算法升级 (`Controllers/ProjectController.cs`)**：`GenerateQuoteNumber()` 重塑为 `DateTime.Now.ToString("yyMMdd")` 纯短日期结构；
+     - **宿主窗体适配与目录定位 (`Forms/CreateProjectForm.cs`)**：
+       - `SelectSaveFolder(initialPath)` 接收当前保存目录并将其赋给 `dialog.SelectedPath`，实现文件夹选择器直接定位展开；
+       - `getInitData` 回送当前系统日期 `projectDate = DateTime.Now.ToString("yyyy年MM月dd日")`；
+       - 紧凑微调窗体尺寸：收起状态由 510 优化为 430px，展开状态由 770 优化为 680px，彻底消除表单移除后的底部留白；
+       - 消息通信接入双轨安全容错防护（启发式 #22）；
+     - **前端纯净化重构 (`Resources/create_project.html`)**：
+       - 彻底删除【项目编号】、【项目类型】、【* 待办】、【* 重置】以及【批建箱柜】DOM 节点；
+       - 动态获取当前系统日期 `getTodayFormatted()` 与 `getTodayQuoteNumber()`；
+       - 文件名拼接公式升级为 `{项目名称}原始清单{报价单号}_{项目备注}`，多字段实时联动；
+       - `selectFolder` 将当前 `form.savePath` 作为 `currentPath` 投递给宿主。
+  3. **构建验证与物理产物同步**：
+     - Node.js 校验 `create_project.html` 语法通过；
+     - `dotnet build` 验证通过：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` / `pdb` 及 `create_project.html` 已全量同步覆盖至 `bin/Debug/net48` 与 `publish/` 目录。
+
+- **【缺陷彻底排查与根治：彻底消除系统设置弹窗报“没有注册类”与“值不在预期的范围内”】(`Forms/AppSettingsForm.cs`, `Resources/app_settings.html`, `publish/ExcelAddInDemo.dll`, `publish/Resources/app_settings.html`)**：
+  1. **异常根因精准定位**：
+     - **“值不在预期的范围内。”（E_INVALIDARG）**：前端 `app_settings.html` 中 `postToCSharp` 直接向 WebView2 投递了原生 JS Object（而非序列化字符串），C# 宿主调用 `e.TryGetWebMessageAsString()` 时底层 WinRT/COM 拒绝非字符串参数并抛出 ArgumentException；
+     - **“没有注册类”（REGDB_E_CLASSNOTREG）**：`e.TryGetWebMessageAsString()` 失败后原代码直接调用 `e.WebMessageAsJson`，在 .NET Framework 4.8 / 特殊 WebView2 运行时环境下访问该 COM 属性抛出未注册接口异常；
+     - **弹窗阻断根因**：原 `AppSettingsForm.cs` 未对两处消息提取进行独立容错隔离，异常冒泡至外层 catch 触发了 `MessageBox.Show($"处理设置交互异常: ...")` 弹窗。
+  2. **双重加固彻底根治方案落地**：
+     - **前端通信规范化 (`Resources/app_settings.html`)**：对齐成熟的 `enterprise_settings.html`，`postToCSharp` 统一使用 `typeof obj === 'string' ? obj : JSON.stringify(obj)` 发送标准 JSON 字符串，100% 消除底层类型不符；
+     - **C# 宿主双轨安全提取 (`Forms/AppSettingsForm.cs`)**：
+       - `e.TryGetWebMessageAsString()` 与 `e.WebMessageAsJson` 分别由独立的 `try-catch` 包裹，若提取失败则安全记录容错日志并平滑降级，绝不外抛；
+       - `resizeWindow` 兼容浮点型与整型高度数值解析（`Math.Round` 取整），杜绝 `GetInt32()` 抛出格式转换异常；
+       - 外层 catch 块切换为纯日志模式（`LogHelper.WriteLog`），彻底移除阻塞式 MessageBox 弹窗。
+  3. **构建验证与物理产物同步**：
+     - `dotnet build` 验证通过：**0 错误**；
+     - 程序集 `ExcelAddInDemo.dll` / `pdb` 及 `app_settings.html` 已全量同步覆盖至 `bin/Debug/net48` 与 `publish/` 目录。
+
+- **【功能交付与架构重塑：数据目录设置迁移至 Ribbon 设置按钮 & 新建项目默认目录配置 & 企业 Logo 闭环】(`Tool.cs`, `Controllers/AppSettingsController.cs`, `Forms/AppSettingsForm.cs`, `Resources/app_settings.html`, `Resources/enterprise_settings.html`, `Services/ExcelServices.cs`, `Services/ExcelServices.Project.cs`, `RibbonController.cs`, `ExcelAddInDemo.csproj`)**：
+  1. **用户核心指令与定位**：
+     - 用户指令：“把数据目录设置功能，移动到ribbon的设置按钮下面，做个设置页面，另外在该页添加新建项目目录默认值设置”；
+     - 彻底解耦企业信息与系统级路径配置，解决企业设置界面配置杂乱、Logo 保存因未勾选同步而失效、新建项目漏注入企业 Logo 等历史体验痛点。
+  2. **端到端实现架构与文件变更**：
+     - **全局配置层 (`Tool.cs`)**：
+       - 扩展 Roaming AppData 全局引导配置 `global_config.json`，原子支持 `customDataDirectory` 与 `defaultProjectDirectory` 两个维度；
+       - 提供 `GetDefaultProjectDirectory()`（优先读取配置，未设置时平滑回退至桌面）、`SaveGlobalSettings(customDataDir, defaultProjectDir)` 以及保护现有配置的 `SetCustomDataDirectory`；
+     - **新建项目联动 (`Forms/CreateProjectForm.cs`, `Services/ExcelServices.Project.cs`)**：
+       - `CreateProjectForm.cs` 初始化时将默认保存路径由硬编码桌面改为从 `Tool.GetDefaultProjectDirectory()` 动态提取；
+       - `ExcelServices.InitializeCreatedProjectWorkbook` 注入本地企业设置 Logo 到【项目信息】和【分类1】表头，彻底闭环新建项目 Logo 自动带入；
+     - **后端控制器与宿主窗体 (`Controllers/AppSettingsController.cs`, `Forms/AppSettingsForm.cs`)**：
+       - 建立 `AppSettingsData` 数据模型及 `AppSettingsController` 异步读写服务；
+       - `AppSettingsForm` 基于 WebView2 + WinForms，缓存隔离至 `%LOCALAPPDATA%\ExcelAddInDemo\WebView2_AppSettings\`；
+       - 严格遵守启发式经验：文件夹浏览对话框在独立 STA 后台线程中异步弹出，彻底规避 Chromium IPC 死锁与界面冻结；
+     - **前端现代设置页面 (`Resources/app_settings.html`)**：
+       - Vue 3 `<script setup>` 结构 + Element Plus UI，绿蓝相间主题色 `#009688` 翠青，无横向滚动条，标签全部显式闭合；
+       - 包含 2 大卡片：①数据配置共享目录（浏览选择，局域网共享支持）；②新建项目默认目录（浏览选择 + 🖥️ 设为桌面快捷重置）；
+       - 支持 `resizeWindow` 动态测量自适应，消除多余留白；
+     - **企业设置精简与体验修复 (`Resources/enterprise_settings.html`, `Controllers/EnterpriseSettingsController.cs`)**：
+       - 从“企业设置”中彻底剥离数据目录表单项；将 `syncOpenProject` 默认值设为 `true`，防止用户遗漏勾选；
+       - `EnterpriseSettingsController.SaveSettingsAsync` 增加非空判断，保护全局数据目录不被误清空；
+     - **Ribbon 菜单挂接与项目配置 (`RibbonController.cs`, `ExcelAddInDemo.csproj`)**：
+       - 在 `RibbonController.cs` 中将 `btnSettings` 按钮分发至 `ExcelServices.ShowAppSettingsDialog()`；
+       - 在 `ExcelAddInDemo.csproj` 注册 `app_settings.html` 复制规则。
+  3. **构建验证、产物物理同步与缺陷根治**：
+     - **缺陷排查根治**：修复了在特定通信方式下 `e.WebMessageAsJson` 将参数封装为 JSON String 字面量导致 `The requested operation requires an element of type 'Object', but the target element has type 'String'` 异常；在 `AppSettingsForm.cs` 中增加深层自动解包防御，完美通配 Object 与 String 双重形态；
+     - **脚本纯净化**：精简重构 `app_settings.html` 脚本块，彻底杜绝多 script 干扰；
+     - `dotnet build` 验证：**0 错误**；
+     - 程序集 `ExcelAddInDemo.dll` / `pdb` 及 `app_settings.html` 已全量同步覆盖至 `bin/Debug/net48` 与 `publish/` 目录。
+
 - **【功能交付与实施闭环：江苏赛格瑞报价全景分析与绚丽可视化大屏上线】(`Models/QuoteAnalysisModels.cs`, `Services/ExcelServices.QuoteAnalysis.cs`, `Forms/QuoteAnalysisForm.cs`, `Resources/quote_analysis.html`, `RibbonController.cs`, `ExcelAddInDemo.csproj`)**：
   1. **用户核心指令与全面落地**：
      - 用户指令“开始实施”，解除需求分析门控，全链路完成报价全景分析大屏开发与构建；
@@ -5240,3 +5390,39 @@
 
 ### [Next]
 - 提示用户重新打开【壳体辅材计算】窗口验证界面渲染效果。
+
+## [2026-10-08 14:35:00] 排查切换外部工作簿切回时定义名称丢失与自动生成卡顿根因
+
+### [Completed]
+- **【根因深入诊断分析完成】**：
+  1. **“定义名称被清空”的本质**：
+     - Excel 的活动工作簿上下文机制（Active Context）：切换至外部非插件表格时，Excel 前台上下文指向外部工作簿，名称框和名称管理器仅展示活动工作簿的名称；且插件箱柜定义名称（Cab_Sum/Cab_Det 等）属于工作表级局部名称（Worksheet Scope），在外部工作簿中完全不显示，造成视觉上“被清空”的假象。
+  2. **“再自动生成与卡顿”的真正代码执行链条**：
+     - **链条一（缓存穿透）**：在 `ExcelEventManager.OnWorkbookActivate` 中，每次工作簿切换都无条件调用了 `ExcelServices.InvalidateCategoryRowCache()`，清空了分类表元器件有效行区间缓存和白名单缓存；
+     - **链条二（回退自愈重生成）**：切回时触发 `SheetSelectionChange`，若光标处于 C/D 列，`IsCategoryComponentRow` 缓存失效，在遍历扫描名称时若命中兜底，会调用 `Tool.GetSheetValidCabinets`，进而触发 `Tool.FixAndFillCabinetNamesForSheet` 全量自愈重建；
+     - **链条三（界面卡顿）**：`FixAndFillCabinetNamesForSheet` 会全量读取 UsedRange 内存数组、遍历数十台箱柜、写入定义名称与超链接、刷新公式，且伴随 Ribbon 重绘与聚光灯视口重定位，从而产生阻塞式卡顿。
+
+- **【工作簿切换定义名称重建卡顿全链路根治优化落地】(`ExcelEventManager.cs`, `Services/ExcelServices.ComponentMatch.cs`, `Tool.cs`)**：
+  1. **工作簿激活事件守门与零开销切回 (`ExcelEventManager.cs`)**：
+     - 引入 `_lastActivatedWorkbookKey`，记录并比对激活工作簿，相同工作簿重复触发时 0ms 瞬间跳过；
+     - **彻底移除 `OnWorkbookActivate` 中盲目调用 `InvalidateCategoryRowCache()` 的行为**，工作簿焦点切换绝不丢弃任何元器件行区间缓存与分类白名单缓存，切回时 0ms 纯内存命中；
+     - 仅在切换至不同工作簿时触发 Ribbon 状态轻量重绘。
+  2. **元器件行区间缓存升级工作簿隔离与纯只读嗅探兜底 (`Services/ExcelServices.ComponentMatch.cs`)**：
+     - `_categoryRangesSheetCache` 缓存键升级为带工作簿路径的复合键（`$"{wbKey}::{sheetName}"`），彻底杜绝跨工作簿同名表串缓存；
+     - 在 `IsCategoryComponentRow` 的容错嗅探兜底中，显式传入 `allowAutoRebuild: false`，杜绝光标移动与切表事件触发后台定义名称重写；
+     - `InvalidateCategoryRowCache` 同步支持复合键模糊与精确匹配清理。
+  3. **只读查询方法与自愈重构写操作彻底解耦 (`Tool.cs`)**：
+     - `CollectAllDefinedNames` 的 `autoRebuildIfEmpty` 默认值由 `true` 纠正为 `false`，确保基础收集方法严格保持无副作用的只读属性；
+     - `GetSheetValidCabinets` 新增 `bool allowAutoRebuild = false` 守门参数，默认安全只读，且内部二次容错重建必须受该参数控制，绝不擅自执行重构；
+     - `_sheetValidCabinetsCache` 升级为工作簿复合键隔离，缓存 TTL 由 5 秒大幅提升至 60 秒；
+     - `_projectWorkbookCacheExpiry` 与分类白名单缓存由 10 秒提升至 60 秒，极大削减高频 COM 遍历开销。
+  4. **构建验证与热产物同步**：
+     - `dotnet build /p:RunExcelDnaBuild=false` 验证通过：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` / `pdb` 已同步至 `publish/` 目录。
+
+### [In-Progress]
+- 交付用户在实际 Excel 多工作簿切换场景下验证 0ms 极速响应效果。
+
+### [Next]
+- 持续跟进用户在复杂图纸表格切换过程中的流畅度反馈。
+

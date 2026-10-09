@@ -552,6 +552,12 @@ namespace ExcelAddInDemo
                 // 弹出基于 WebView2 + Vue 3 的“企业设置”窗口
                 ExcelServices.ShowEnterpriseSettingsDialog();
             }
+            // 响应“设置”按钮指令 (弹出系统设置与工作空间配置)
+            else if (controlId == "btnSettings")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“系统设置”窗口
+                ExcelServices.ShowAppSettingsDialog();
+            }
             // 响应“新建项目”按钮指令
             else if (controlId == "btnNewProject")
             {

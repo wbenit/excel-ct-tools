@@ -133,6 +133,9 @@ namespace ExcelAddInDemo
         // 企业设置窗口静态单例引用 (可空)
         private static EnterpriseSettingsForm? _enterpriseSettingsForm;
 
+        // 系统设置窗口静态单例引用 (可空)
+        private static Forms.AppSettingsForm? _appSettingsForm;
+
         // 智能辅材与壳体计算窗口静态单例引用 (可空)
         private static Forms.CabinetAuxCalcForm? _cabinetAuxCalcForm;
 
@@ -334,6 +337,23 @@ namespace ExcelAddInDemo
             {
                 // 全局捕获异常防止程序闪退
                 System.Windows.Forms.MessageBox.Show($"弹出企业设置窗口失败: {ex.Message}", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// 启动并弹出基于 WebView2 + Vue 3 的“系统设置”窗口 (非模态，可编辑 Excel)
+        /// </summary>
+        public static void ShowAppSettingsDialog()
+        {
+            try
+            {
+                // 以非模态方式展示系统设置窗口，保持 Excel 处于可交互编辑状态
+                ShowModelessForm(ref _appSettingsForm, () => new Forms.AppSettingsForm());
+            }
+            catch (Exception ex)
+            {
+                // 全局捕获异常防止程序闪退
+                System.Windows.Forms.MessageBox.Show($"弹出系统设置窗口失败: {ex.Message}", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
             }
         }
 

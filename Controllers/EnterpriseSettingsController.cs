@@ -230,8 +230,11 @@ namespace ExcelAddInDemo.Controllers
             {
                 try
                 {
-                    // 1. 同步将用户在界面中配置的自定义目录更新持久化至全局引导文件
-                    Tool.SetCustomDataDirectory(settings.CustomDataDirectory);
+                    // 1. 若传入了非空的自定义数据目录，同步更新持久化至全局引导文件 (保护不被误清空)
+                    if (!string.IsNullOrWhiteSpace(settings.CustomDataDirectory))
+                    {
+                        Tool.SetCustomDataDirectory(settings.CustomDataDirectory);
+                    }
 
                     // 2. 重新获取更新后生效的目标保存路径 (若切换了目录则写入新目录)
                     string filePath = GetCurrentSettingsFilePath();

@@ -17,6 +17,9 @@ namespace ExcelAddInDemo
         // 保存对右键菜单按钮的强引用集合，防止 COM 事件下沉委托被 GC 提前回收导致点击无响应
         private static readonly List<dynamic> _contextMenuButtons = new List<dynamic>();
 
+        // 记录上一次激活的工作簿唯一标识，避免相同工作簿重复激活产生冗余开销
+        private static string _lastActivatedWorkbookKey = string.Empty;
+
         /// <summary>
         /// 注册 Excel 全局事件（SheetChange, SheetFollowHyperlink, SheetBeforeRightClick）
         /// </summary>
@@ -66,6 +69,16 @@ namespace ExcelAddInDemo
                 _excelApp.WorkbookActivate -= OnWorkbookActivate;
                 // 重新绑定 WorkbookActivate 事件，激活或新建工作簿时自动挂载视口
                 _excelApp.WorkbookActivate += OnWorkbookActivate;
+
+                // 解除已有的 WorkbookDeactivate 事件绑定，避免重复挂载
+                _excelApp.WorkbookDeactivate -= OnWorkbookDeactivate;
+                // 重新绑定 WorkbookDeactivate 事件，监控工作簿失去焦点时的定义名称现场
+                _excelApp.WorkbookDeactivate += OnWorkbookDeactivate;
+
+                // 解除已有的 WorkbookBeforeClose 事件绑定，避免重复挂载
+                _excelApp.WorkbookBeforeClose -= OnWorkbookBeforeClose;
+                // 重新绑定 WorkbookBeforeClose 事件，在工作簿关闭前执行聚光灯安全避让
+                _excelApp.WorkbookBeforeClose += OnWorkbookBeforeClose;
 
                 // 解除已有的 WorkbookAfterSave 事件绑定
                 _excelApp.WorkbookAfterSave -= OnWorkbookAfterSave;
@@ -128,6 +141,10 @@ namespace ExcelAddInDemo
                     _excelApp.SheetActivate -= OnSheetActivate;
                     // 解除 WorkbookActivate 事件绑定
                     _excelApp.WorkbookActivate -= OnWorkbookActivate;
+                    // 解除 WorkbookDeactivate 事件绑定
+                    _excelApp.WorkbookDeactivate -= OnWorkbookDeactivate;
+                    // 解除 WorkbookBeforeClose 事件绑定
+                    _excelApp.WorkbookBeforeClose -= OnWorkbookBeforeClose;
                     // 解除 WorkbookAfterSave 事件绑定
                     _excelApp.WorkbookAfterSave -= OnWorkbookAfterSave;
 
@@ -190,6 +207,7 @@ namespace ExcelAddInDemo
                     ExcelServices.HideComponentMatchOverlay();
                     return;
                 }
+
 
                 // 1. 若开启了 CAD 联动，只要选区触及常规核心列 (A~G 列) 且 AD/AA 列存在句柄，即时向 CAD 发起联动
                 int startCol = target.Column;
@@ -394,20 +412,92 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 若聚光灯功能处于激活状态，自动附着新视口并渲染高亮
+                // 提取当前激活工作簿的唯一路径或名称标识
+                string currentKey = string.Empty;
+                try { currentKey = wb?.FullName ?? wb?.Name ?? string.Empty; } catch { }
+
+                // 检查是否为同一个工作簿重复触发激活事件
+                bool isSameWorkbook = !string.IsNullOrEmpty(currentKey) &&
+                    string.Equals(currentKey, _lastActivatedWorkbookKey, StringComparison.OrdinalIgnoreCase);
+
+                // 记录当前最新激活的工作簿标识
+                _lastActivatedWorkbookKey = currentKey;
+
+                // 若聚光灯功能处于激活状态，安全异步恢复聚光灯服务（避开工作簿切换临界期的 COM 重入阻塞）
                 if (ExcelServices.IsSpotlightEnabled)
                 {
-                    // 刷新聚光灯位置
-                    ExcelServices.UpdateSpotlightPosition(null);
+                    // 延迟异步调度聚光灯恢复，彻底避开 SDI 窗口注销与重绘冲突
+                    System.Windows.Forms.Timer activateTimer = new System.Windows.Forms.Timer { Interval = 150 };
+                    // 绑定单次触发回调
+                    activateTimer.Tick += (s, e) =>
+                    {
+                        // 停止并清理临时单次定时器
+                        activateTimer.Stop();
+                        activateTimer.Dispose();
+                        // 异步安全恢复聚光灯高亮与守护定时器
+                        ExcelServices.ResumeSpotlightAfterTransition();
+                    };
+                    // 启动临时延时定时器
+                    activateTimer.Start();
                 }
 
-                // 切换工作簿时同步清空上一工作簿的元器件行区间缓存
-                ExcelServices.InvalidateCategoryRowCache();
-
-                // 切换工作簿时仅触发功能区控件重绘，依靠多路径短效纯内存缓存实现 0ms 顺滑响应
-                RibbonController.InvalidateRibbon();
+                // 仅当切换至不同工作簿时，才触发功能区按压状态重绘
+                if (!isSameWorkbook)
+                {
+                    // 刷新 Ribbon 控件状态，依靠短效纯内存缓存实现平滑响应
+                    RibbonController.InvalidateRibbon();
+                }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"[EVENT] OnWorkbookActivate 异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 响应工作簿失活事件，监控焦点离开工作簿瞬间的安全避让
+        /// </summary>
+        /// <param name="wb">失活的工作簿对象</param>
+        private static void OnWorkbookDeactivate(Microsoft.Office.Interop.Excel.Workbook wb)
+        {
+            try
+            {
+                // 核心防护：工作簿失活切出期间临时隐匿聚光灯避让，防止跨窗口销毁时死锁
+                if (ExcelServices.IsSpotlightEnabled)
+                {
+                    // 临时隐匿浮窗并安全断开视口钩子
+                    ExcelServices.TemporarilyHideSpotlightForTransition();
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录失活事件异常
+                LogHelper.WriteLog($"[EVENT] OnWorkbookDeactivate 异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 响应工作簿关闭前事件，保护工作簿安全关闭与聚光灯避让
+        /// </summary>
+        /// <param name="wb">即将关闭的工作簿对象</param>
+        /// <param name="cancel">是否取消关闭</param>
+        private static void OnWorkbookBeforeClose(Microsoft.Office.Interop.Excel.Workbook wb, ref bool cancel)
+        {
+            try
+            {
+                // 核心防护：若开启了聚光灯，在工作簿关闭临界期立即执行安全隐匿避让，消除 COM 竞争与鼠标转圈卡顿
+                if (ExcelServices.IsSpotlightEnabled)
+                {
+                    // 临时隐匿浮窗并安全断开视口钩子
+                    ExcelServices.TemporarilyHideSpotlightForTransition();
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录关闭前事件异常
+                LogHelper.WriteLog($"[EVENT] OnWorkbookBeforeClose 异常: {ex.Message}");
+            }
         }
 
         /// <summary>

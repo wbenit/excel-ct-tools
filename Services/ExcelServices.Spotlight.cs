@@ -409,6 +409,53 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 在工作簿关闭或跨窗口销毁临界期间，临时隐匿聚光灯浮窗并安全解绑视口钩子，杜绝 COM 重入死锁与界面卡顿
+        /// </summary>
+        public static void TemporarilyHideSpotlightForTransition()
+        {
+            try
+            {
+                // 若未开启聚光灯功能直接安全返回
+                if (!_isSpotlightEnabled) return;
+
+                // 核心关键：立刻停止前台守护定时器，彻底消除 120ms 误触唤醒与 COM 死锁
+                StopForegroundGuard();
+
+                // 安全解绑当前挂载的视口钩子，防止对即将销毁的 HWND 进行消息拦截
+                DetachExcelHooks();
+
+                // 若浮窗处于显示状态，立即隐藏
+                if (_spotlightForm != null && _spotlightForm.Visible)
+                {
+                    // 标记隐藏状态
+                    _spotlightForm.Visible = false;
+                    // 调用底层 API 隐藏原生窗口
+                    ShowWindow(_spotlightForm.Handle, SW_HIDE);
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 跨工作簿切换或窗口关闭完成并稳定后，安全平滑恢复聚光灯服务
+        /// </summary>
+        public static void ResumeSpotlightAfterTransition()
+        {
+            try
+            {
+                // 若未开启聚光灯功能直接安全返回
+                if (!_isSpotlightEnabled) return;
+
+                // 重新启动前台焦点守护定时器
+                StartForegroundGuard();
+
+                // 触发一次平滑位置计算与高亮渲染
+                UpdateSpotlightPosition(null);
+            }
+            catch { }
+        }
+
+        /// <summary>
         /// 响应活动单元格改变或视口变动，重新计算并刷新聚光灯高亮十字区域
         /// </summary>
         /// <param name="target">发生改变的单元格区域 (为 null 时自动提取 ActiveCell)</param>

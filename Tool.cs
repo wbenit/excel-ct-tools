@@ -122,6 +122,9 @@ namespace ExcelAddInDemo
         // 缓存当前进程中用户自定义的数据存储目录
         private static string? _customDataDirectoryCache = null;
 
+        // 缓存当前进程中用户自定义的新建项目默认存储目录
+        private static string? _defaultProjectDirectoryCache = null;
+
         // 全局引导配置文件的默认应用名称 --硬编码--
         private const string GlobalConfigFolderName = "ExcelAddInDemo";
 
@@ -201,55 +204,141 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 设置并持久化用户自定义的数据配置存储目录，同时完成新目录基础文件同步
+        /// 从全局引导配置文件中读取用户设置的新建项目默认保存目录
         /// </summary>
-        /// <param name="targetDir">目标自定义数据目录路径</param>
-        /// <returns>是否设置成功</returns>
-        public static bool SetCustomDataDirectory(string targetDir)
+        /// <returns>配置的项目默认目录路径，若未设置则返回空字符串</returns>
+        public static string GetDefaultProjectDirectoryFromGlobalConfig()
         {
-            // 加锁保护写操作
+            // 加锁保护并发安全
+            lock (_configLock)
+            {
+                // 优先从内存缓存中读取
+                if (!string.IsNullOrWhiteSpace(_defaultProjectDirectoryCache))
+                {
+                    return _defaultProjectDirectoryCache;
+                }
+                try
+                {
+                    // 获取全局配置文件物理路径
+                    string configPath = GetGlobalConfigFilePath();
+                    // 检查配置文件是否存在
+                    if (File.Exists(configPath))
+                    {
+                        // 读取全局配置文件文本
+                        string json = File.ReadAllText(configPath);
+                        // 解析 JSON 文档
+                        using var doc = JsonDocument.Parse(json);
+                        // 提取 defaultProjectDirectory 节点
+                        if (doc.RootElement.TryGetProperty("defaultProjectDirectory", out var prop))
+                        {
+                            // 提取目录字符串
+                            string? dir = prop.GetString();
+                            // 校验非空
+                            if (!string.IsNullOrWhiteSpace(dir))
+                            {
+                                // 缓存并返回
+                                _defaultProjectDirectoryCache = dir;
+                                return dir;
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // 异常容错处理
+                }
+                // 未设置时返回空字符串
+                return string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// 获取当前生效的新建项目默认保存目录 (若用户已配置且存在则返回配置路径，否则回退到用户桌面)
+        /// </summary>
+        /// <returns>有效的新建项目保存物理路径</returns>
+        public static string GetDefaultProjectDirectory()
+        {
+            // 1. 尝试从全局配置中读取用户自定义的新建项目目录
+            string customDir = GetDefaultProjectDirectoryFromGlobalConfig();
+            // 2. 校验配置路径是否非空有效
+            if (!string.IsNullOrWhiteSpace(customDir))
+            {
+                try
+                {
+                    // 若目录不存在则自动尝试创建
+                    if (!Directory.Exists(customDir))
+                    {
+                        Directory.CreateDirectory(customDir);
+                    }
+                    // 返回用户配置的新建项目保存目录
+                    return customDir;
+                }
+                catch
+                {
+                    // 若配置路径不可用 (如拔除的移动硬盘或失效网络路径)，自动回退
+                }
+            }
+            // 3. 兜底回退：返回 Windows 当前用户的桌面路径
+            return Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+        }
+
+        /// <summary>
+        /// 设置并原子持久化全局配置（包含数据共享目录与新建项目默认保存目录）
+        /// </summary>
+        /// <param name="customDataDir">CAD/Excel 共享数据目录</param>
+        /// <param name="defaultProjectDir">新建项目默认保存目录</param>
+        /// <returns>保存是否成功</returns>
+        public static bool SaveGlobalSettings(string customDataDir, string defaultProjectDir)
+        {
+            // 加锁保护多线程并发写操作
             lock (_configLock)
             {
                 try
                 {
-                    // 修剪入参字符串
-                    string cleanPath = (targetDir ?? "").Trim();
-                    // 更新当前进程内存缓存
-                    _customDataDirectoryCache = cleanPath;
+                    // 清理并修剪数据目录字符串
+                    string cleanDataDir = (customDataDir ?? "").Trim();
+                    // 清理并修剪项目保存目录字符串
+                    string cleanProjectDir = (defaultProjectDir ?? "").Trim();
 
-                    // 获取全局配置文件路径
+                    // 更新内存缓存
+                    _customDataDirectoryCache = cleanDataDir;
+                    _defaultProjectDirectoryCache = cleanProjectDir;
+
+                    // 获取全局配置文件物理路径
                     string configPath = GetGlobalConfigFilePath();
-                    // 构建全局配置实体
+                    // 构造包含两个维度的配置字典实体
                     var configObj = new Dictionary<string, string>
                     {
-                        { "customDataDirectory", cleanPath }
+                        { "customDataDirectory", cleanDataDir },
+                        { "defaultProjectDirectory", cleanProjectDir }
                     };
-                    // 序列化全局配置 JSON
+
+                    // 序列化为缩进格式的 JSON 字符串
                     string json = JsonSerializer.Serialize(configObj, new JsonSerializerOptions { WriteIndented = true });
-                    // 写入持久化文件
+                    // 覆盖写入物理文件
                     File.WriteAllText(configPath, json);
 
-                    // 如果指定了有效的新路径，确保目录存在并进行基础模板与配置文件自动复制
-                    if (!string.IsNullOrWhiteSpace(cleanPath))
+                    // 如果指定了有效的新数据目录，确保目录存在并自动同步基础配置文件
+                    if (!string.IsNullOrWhiteSpace(cleanDataDir))
                     {
-                        // 检查新目录是否存在，不存在则创建
-                        if (!Directory.Exists(cleanPath))
+                        // 校验并创建目标数据目录
+                        if (!Directory.Exists(cleanDataDir))
                         {
-                            Directory.CreateDirectory(cleanPath);
+                            Directory.CreateDirectory(cleanDataDir);
                         }
-                        // 获取默认运行目录下的旧 data 目录路径
+                        // 获取安装目录下的默认 data 目录
                         string defaultDataDir = Path.Combine(GetAppDirectory(), "data");
-                        // 若默认 data 目录存在，自动将原先的 json 配置文件复制到新目录 (不覆盖新目录已存在文件)
-                        if (Directory.Exists(defaultDataDir) && !string.Equals(Path.GetFullPath(defaultDataDir), Path.GetFullPath(cleanPath), StringComparison.OrdinalIgnoreCase))
+                        // 若默认目录存在且与新目录不是同一路径，自动同步 JSON 文件
+                        if (Directory.Exists(defaultDataDir) && !string.Equals(Path.GetFullPath(defaultDataDir), Path.GetFullPath(cleanDataDir), StringComparison.OrdinalIgnoreCase))
                         {
-                            // 遍历原目录所有 JSON 配置文件
+                            // 遍历旧目录所有 json 配置文件
                             foreach (string file in Directory.GetFiles(defaultDataDir, "*.json"))
                             {
-                                // 获取文件名
+                                // 提取文件名
                                 string fileName = Path.GetFileName(file);
-                                // 计算目标文件路径
-                                string destFile = Path.Combine(cleanPath, fileName);
-                                // 仅在目标文件不存在时复制，保护新目录既有数据
+                                // 计算目标保存路径
+                                string destFile = Path.Combine(cleanDataDir, fileName);
+                                // 仅在目标文件不存在时复制，保护既有配置
                                 if (!File.Exists(destFile))
                                 {
                                     File.Copy(file, destFile, false);
@@ -257,15 +346,37 @@ namespace ExcelAddInDemo
                             }
                         }
                     }
-                    // 设置并同步成功
+
+                    // 如果指定了有效的新建项目目录，确保目录存在
+                    if (!string.IsNullOrWhiteSpace(cleanProjectDir) && !Directory.Exists(cleanProjectDir))
+                    {
+                        // 自动创建新建项目目录
+                        Directory.CreateDirectory(cleanProjectDir);
+                    }
+
+                    // 全部操作完成返回成功
                     return true;
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // 出现异常返回 false
+                    // 记录保存异常日志
+                    LogHelper.WriteLog($"[Tool] SaveGlobalSettings 异常: {ex.Message}");
                     return false;
                 }
             }
+        }
+
+        /// <summary>
+        /// 设置并持久化用户自定义的数据配置存储目录，同时完成新目录基础文件同步（向后兼容保留）
+        /// </summary>
+        /// <param name="targetDir">目标自定义数据目录路径</param>
+        /// <returns>是否设置成功</returns>
+        public static bool SetCustomDataDirectory(string targetDir)
+        {
+            // 读取现有的项目默认目录，避免覆盖丢失
+            string currentProjDir = GetDefaultProjectDirectoryFromGlobalConfig();
+            // 调用统一的原子持久化方法
+            return SaveGlobalSettings(targetDir, currentProjDir);
         }
 
         /// <summary>
@@ -958,16 +1069,21 @@ namespace ExcelAddInDemo
                     int k = ExtractIndexFromName(clean, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
                     if (k <= 0) continue;
 
+                    // 提取公式引用字符串 (例如 ='Sheet1'!$A$44 或 =$A$44)
+                    // 规则 7: 纯文本读取，避免不必要的跨进程 COM 调用
+                    string refersTo = Convert.ToString(name.RefersTo) ?? string.Empty;
+
                     // 优化步骤 2: 若为工作簿级全局名称，读取轻量公式字符串 RefersTo 校验工作表归属
                     if (!rawName.Contains("!"))
                     {
-                        // 提取公式引用字符串 (例如 ='Sheet1'!$A$44)
-                        string refersTo = Convert.ToString(name.RefersTo) ?? string.Empty;
                         // 若公式中包含感叹号，提取其引用的工作表名称
                         if (refersTo.Contains("!"))
                         {
+                            // 计算感叹号前工作表名称起止位置
                             int start = refersTo.StartsWith("=") ? 1 : 0;
+                            // 查找感叹号索引
                             int excl = refersTo.IndexOf('!');
+                            // 提取引用的工作表名称纯文本
                             string targetSheet = refersTo.Substring(start, excl - start).Trim('\'', ' ');
                             // 若公式引用的工作表非当前工作表，直接跳过，杜绝创建无关 Range COM 对象
                             if (!string.IsNullOrEmpty(targetSheet) && !string.Equals(targetSheet, currentSheetName, StringComparison.OrdinalIgnoreCase))
@@ -977,24 +1093,54 @@ namespace ExcelAddInDemo
                         }
                     }
 
+                    // 核心稳固增强：优先尝试从 RefersTo 字符串直接快速解析物理行号 (0ms 纯字符串，彻底免除切表 COM 拒绝异常)
+                    // 匹配公式中类似 $A$25 或 A25 的物理行号
+                    int rowNum = 0;
+                    if (!string.IsNullOrEmpty(refersTo))
+                    {
+                        // 使用正则匹配 A 列绝对引用行号
+                        var match = System.Text.RegularExpressions.Regex.Match(refersTo, @"\$[A-Za-z]+\$(\d+)");
+                        if (match.Success && int.TryParse(match.Groups[1].Value, out int parsedRow))
+                        {
+                            // 成功提取出纯物理行号
+                            rowNum = parsedRow;
+                        }
+                    }
+
                     // 安全读取定义名称所指向的单元格 Range 引用 (仅在确实属于本表时调用)
                     dynamic? refRange = null;
                     try { refRange = name.RefersToRange; } catch { }
-                    if (refRange == null) continue;
 
-                    // 校验该定义名称是否属于当前活动工作表，避免跨表误取
-                    string refSheetName = "";
-                    try { refSheetName = refRange.Worksheet.Name; } catch { }
-                    if (!string.IsNullOrEmpty(refSheetName) &&
-                        !string.Equals(refSheetName, currentSheetName, StringComparison.OrdinalIgnoreCase))
+                    // 若 COM 读取 RefersToRange 成功，校验其 Worksheet.Name 与物理行
+                    if (refRange != null)
                     {
-                        // 不属于当前工作表，跳过
-                        continue;
+                        // 校验所属工作表名称
+                        try
+                        {
+                            // 提取 Range 所属工作表名
+                            string refSheetName = Convert.ToString(refRange.Worksheet.Name) ?? "";
+                            // 比对是否属于当前工作表
+                            if (!string.IsNullOrEmpty(refSheetName) &&
+                                !string.Equals(refSheetName, currentSheetName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                continue;
+                            }
+                        }
+                        catch { }
+
+                        // 提取 Range 的物理行号覆盖校准
+                        try
+                        {
+                            // 获取行号
+                            int r = Convert.ToInt32(refRange.Row);
+                            // 若行号有效则赋予
+                            if (r > 0) rowNum = r;
+                        }
+                        catch { }
                     }
 
-                    // 单次读取物理行号并存入内存，后续排序与定位 0ms 纯内存处理
-                    int rowNum = 0;
-                    try { rowNum = Convert.ToInt32(refRange.Row); } catch { }
+                    // 关键兜底：如果 refRange 为空且 rowNum 也没能提取到，才跳过；只要 rowNum > 0，坚决保留！
+                    if (refRange == null && rowNum <= 0) continue;
 
                     // 初始化字典中该序号的锚点模型
                     if (!cabinetDict.ContainsKey(k)) cabinetDict[k] = new Models.CabinetAnchorModel();
@@ -1002,25 +1148,33 @@ namespace ExcelAddInDemo
                     // 匹配 Det 锚点（箱柜信息行）
                     if (clean.StartsWith(detPrefix, StringComparison.OrdinalIgnoreCase))
                     {
+                        // 记录 Det 锚点对象与物理行号
                         cabinetDict[k].Det = refRange;
+                        // 记录行号
                         cabinetDict[k].DetRow = rowNum;
                     }
                     // 匹配 Sum 锚点（汇总行）
                     else if (clean.StartsWith(sumPrefix, StringComparison.OrdinalIgnoreCase))
                     {
+                        // 记录 Sum 锚点对象与物理行号
                         cabinetDict[k].Sum = refRange;
+                        // 记录行号
                         cabinetDict[k].SumRow = rowNum;
                     }
                     // 匹配 Subsum 锚点（小计行）
                     else if (clean.StartsWith(subsumPrefix, StringComparison.OrdinalIgnoreCase))
                     {
+                        // 记录 Subsum 锚点对象与物理行号
                         cabinetDict[k].Subsum = refRange;
+                        // 记录行号
                         cabinetDict[k].SubsumRow = rowNum;
                     }
                     // 匹配 Tolsum 锚点（总计行）
                     else if (clean.StartsWith(tolsumPrefix, StringComparison.OrdinalIgnoreCase))
                     {
+                        // 记录 Tolsum 锚点对象与物理行号
                         cabinetDict[k].Tolsum = refRange;
+                        // 记录行号
                         cabinetDict[k].TolsumRow = rowNum;
                     }
                 }
@@ -1029,10 +1183,14 @@ namespace ExcelAddInDemo
 
             // 兼容普通有明细箱柜 (同时具备 Sum 和 Det) 与纯汇总无明细箱柜 (仅具备 Sum 锚点)
             // 采用缓存的 SumRow 与 DetRow 进行纯内存排序，杜绝循环触发 COM 调用
-            return cabinetDict
+            var resList = cabinetDict
                 .Where(x => x.Value.Sum != null || x.Value.Det != null)
                 .OrderBy(x => x.Value.SumRow > 0 ? x.Value.SumRow : x.Value.DetRow)
                 .ToList();
+
+            // 输出解析结果日志帮助诊断
+            LogHelper.WriteLog($"[PROBE-BuildCabinetMap] sheet={currentSheetName}, 解析出箱柜数={resList.Count}");
+            return resList;
         }
 
         /// <summary>
@@ -1068,12 +1226,12 @@ namespace ExcelAddInDemo
         /// </summary>
         /// <param name="wb">目标工作簿 COM 对象 (可选)</param>
         /// <param name="sheet">目标工作表 COM 对象 (可选)</param>
-        /// <param name="autoRebuildIfEmpty">若定义名称为空是否自动触发重新构建 (默认 true)</param>
+        /// <param name="autoRebuildIfEmpty">若定义名称为空是否自动触发重新构建 (默认 false，纯查询安全)</param>
         /// <returns>合并后的定义名称列表</returns>
         public static List<dynamic> CollectAllDefinedNames(
             dynamic? wb,
             dynamic? sheet,
-            bool autoRebuildIfEmpty = true)
+            bool autoRebuildIfEmpty = false)
         {
             // 创建定义名称列表容器
             var allNames = new List<dynamic>();
@@ -1136,8 +1294,8 @@ namespace ExcelAddInDemo
         private static readonly Dictionary<string, (DateTime CacheTime, List<KeyValuePair<int, Models.CabinetAnchorModel>> Cabinets)> _sheetValidCabinetsCache =
             new Dictionary<string, (DateTime, List<KeyValuePair<int, Models.CabinetAnchorModel>>)>(StringComparer.OrdinalIgnoreCase);
 
-        // 缓存有效时长 (5秒)
-        private static readonly TimeSpan _sheetValidCabinetsCacheExpiry = TimeSpan.FromSeconds(5);
+        // 缓存有效时长 (优化提升至 60 秒，有效规避跨工作簿切换反复穿透扫描)
+        private static readonly TimeSpan _sheetValidCabinetsCacheExpiry = TimeSpan.FromSeconds(60);
 
         /// <summary>
         /// 主动失效工作表箱柜映射缓存 (当增删箱柜或重排时调用)
@@ -1152,22 +1310,37 @@ namespace ExcelAddInDemo
             }
             else
             {
-                // 仅移除指定工作表缓存
-                _sheetValidCabinetsCache.Remove(sheetName);
+                // 收集匹配的工作表缓存键 (兼容单表名与带工作簿前缀的复合键)
+                var keysToRemove = new List<string>();
+                foreach (var k in _sheetValidCabinetsCache.Keys)
+                {
+                    if (string.Equals(k, sheetName, StringComparison.OrdinalIgnoreCase) ||
+                        k.EndsWith($"::{sheetName}", StringComparison.OrdinalIgnoreCase))
+                    {
+                        keysToRemove.Add(k);
+                    }
+                }
+                // 执行缓存移除
+                foreach (var k in keysToRemove)
+                {
+                    _sheetValidCabinetsCache.Remove(k);
+                }
             }
         }
 
         /// <summary>
         /// 快捷公共方法：获取指定工作表中按汇总行物理行号升序排列的有效箱柜映射列表
         /// 内部自动读取系统配置前缀、自动聚合双作用域定义名称并完成锚点结构化构建
-        /// 若定义名称缺失或为空，底层 CollectAllDefinedNames 自动触发智能重建补齐
+        /// 默认只读安全查询 (allowAutoRebuild=false)，绝不擅自篡改或重建工作表定义名称
         /// </summary>
         /// <param name="sheet">目标工作表 COM 对象</param>
         /// <param name="wb">所属工作簿 COM 对象 (可选，若为空自动通过 sheet.Parent 向上获取)</param>
+        /// <param name="allowAutoRebuild">若定义名称为空是否允许触发自愈重新构建 (默认 false，安全只读)</param>
         /// <returns>按汇总行物理行号升序排列的有效箱柜映射列表</returns>
         public static List<KeyValuePair<int, Models.CabinetAnchorModel>> GetSheetValidCabinets(
             object sheet,
-            object? wb = null)
+            object? wb = null,
+            bool allowAutoRebuild = false)
         {
             // 校验工作表对象有效性
             if (sheet == null) return new List<KeyValuePair<int, Models.CabinetAnchorModel>>();
@@ -1196,23 +1369,29 @@ namespace ExcelAddInDemo
             // 提取当前工作表纯文本名称
             string sheetName = Convert.ToString(dSheet.Name) ?? "";
 
-            // 检查内存短效缓存，命中且在 5 秒有效期内直接返回 (0ms 纯内存)
+            // 提取所属工作簿标识用于支持多工作簿隔离缓存
+            string wbKey = string.Empty;
+            try { wbKey = Convert.ToString(dWb?.FullName) ?? Convert.ToString(dWb?.Name) ?? string.Empty; } catch { }
+            string cacheKey = string.IsNullOrEmpty(wbKey) ? sheetName : $"{wbKey}::{sheetName}";
+
+            // 检查内存短效缓存，命中且在 60 秒有效期内直接返回 (0ms 纯内存)
             var now = DateTime.UtcNow;
-            if (_sheetValidCabinetsCache.TryGetValue(sheetName, out var cached) &&
+            if ((_sheetValidCabinetsCache.TryGetValue(cacheKey, out var cached) ||
+                 _sheetValidCabinetsCache.TryGetValue(sheetName, out cached)) &&
                 (now - cached.CacheTime) < _sheetValidCabinetsCacheExpiry &&
                 cached.Cabinets != null && cached.Cabinets.Count > 0)
             {
                 return cached.Cabinets;
             }
 
-            // 收集双作用域所有定义名称 (若为空底层自动触发智能重建)
-            var allNames = CollectAllDefinedNames(dWb, dSheet, autoRebuildIfEmpty: true);
+            // 收集双作用域所有定义名称 (依据参数决定是否允许触发自动重建)
+            var allNames = CollectAllDefinedNames(dWb, dSheet, autoRebuildIfEmpty: allowAutoRebuild);
 
             // 调用 BuildCabinetMap 构建有效箱柜列表
             var validCabinets = BuildCabinetMap(allNames, sheetName, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
 
-            // 若构建结果仍为空，进行二次容错重建与重新构建
-            if (validCabinets == null || validCabinets.Count == 0)
+            // 仅在明确允许自动重建且构建结果为空时，才执行二次容错重建与重新构建
+            if ((validCabinets == null || validCabinets.Count == 0) && allowAutoRebuild)
             {
                 // 强制触发定义名称补齐重建
                 FixAndFillCabinetNamesForSheet(dSheet);
@@ -1222,9 +1401,10 @@ namespace ExcelAddInDemo
                 validCabinets = BuildCabinetMap(allNames, sheetName, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
             }
 
-            // 写入短效内存缓存
+            // 写入短效内存缓存 (复合键与单表名同时写入，确保隔离与兼容)
             if (validCabinets != null && validCabinets.Count > 0)
             {
+                _sheetValidCabinetsCache[cacheKey] = (now, validCabinets);
                 _sheetValidCabinetsCache[sheetName] = (now, validCabinets);
             }
 
@@ -1560,8 +1740,8 @@ namespace ExcelAddInDemo
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (bool IsProject, DateTime CacheTime)> _projectWorkbookCache =
             new System.Collections.Concurrent.ConcurrentDictionary<string, (bool, DateTime)>();
 
-        // 工作簿短效缓存有效期 (设定为 10 秒)
-        private static readonly TimeSpan _projectWorkbookCacheExpiry = TimeSpan.FromSeconds(10);
+        // 工作簿短效缓存有效期 (优化提升至 60 秒，有效规避跨工作簿切换反复穿透扫描)
+        private static readonly TimeSpan _projectWorkbookCacheExpiry = TimeSpan.FromSeconds(60);
 
         /// <summary>
         /// 判定指定 Excel 工作簿是否属于标准的成套电气报价工程工作簿
@@ -1653,12 +1833,12 @@ namespace ExcelAddInDemo
 
                 var now = DateTime.UtcNow;
 
-                // 1. 检查内存缓存 (10秒内有效且非强制刷新)
+                // 1. 检查内存缓存 (60秒内有效且非强制刷新)
                 lock (_categorySheetsCacheLock)
                 {
                     if (!forceRefresh && _projectCategorySheetsCache.TryGetValue(wbKey, out var entry))
                     {
-                        if ((now - entry.CacheTime).TotalSeconds < 10)
+                        if ((now - entry.CacheTime).TotalSeconds < 60)
                         {
                             // 纯内存命中直出 (0ms 零 COM 调用)
                             return entry.CategorySheets;
@@ -1841,10 +2021,14 @@ namespace ExcelAddInDemo
                 string sheetName = Convert.ToString(sheet.Name) ?? "";
                 if (string.IsNullOrWhiteSpace(sheetName)) return 0;
 
+                // 诊断探针：记录自愈函数触发事件、表名与是否强制重建
+                LogHelper.WriteLog($"[PROBE-FixAndFill] 进入: sheet={sheetName}, forceRebuild={forceRebuild}");
+
                 // 核心安全守门：白名单中枢校验，仅允许在【项目信息】中登记的有效分类明细表执行自愈
                 if (!IsProjectCategorySheet(sheet))
                 {
                     // 普通外部表或系统保留表严禁执行箱柜定义名称自愈，杜绝篡改 A 列公式与注入定义名称
+                    LogHelper.WriteLog($"[PROBE-FixAndFill] 拦截: sheet={sheetName} 非受管分类明细表，安全退出");
                     return 0;
                 }
 
@@ -1892,33 +2076,36 @@ namespace ExcelAddInDemo
                                 // 逐个箱柜校验锚点有效性
                                 foreach (var cab in existingMap)
                                 {
+                                    // 提取锚点模型对象
                                     var anchor = cab.Value;
-                                    // 必须具有汇总行锚点，且物理行号合法
-                                    if (anchor.Sum == null) { isHealthy = false; break; }
-                                    int sRow = Convert.ToInt32(anchor.Sum.Row);
+                                    // 提取汇总行物理行号 (优先 COM Range，回退纯数字行号)
+                                    int sRow = anchor.Sum != null ? Convert.ToInt32(anchor.Sum.Row) : anchor.SumRow;
+                                    // 若行号小于起始汇总行，判定不健康
                                     if (sRow < cabSumStartRow) { isHealthy = false; break; }
 
-                                // 若具有明细行锚点，明细行物理行必须严格位于汇总行下方
-                                if (anchor.Det != null)
-                                {
-                                    int dRow = Convert.ToInt32(anchor.Det.Row);
-                                    if (dRow <= sRow) { isHealthy = false; break; }
-
-                                    // 若包含小计行锚点，必须位于明细表头行下方
-                                    if (anchor.Subsum != null)
+                                    // 提取明细行物理行号 (若存在)
+                                    int dRow = anchor.Det != null ? Convert.ToInt32(anchor.Det.Row) : anchor.DetRow;
+                                    // 若具有明细行锚点，明细行物理行必须严格位于汇总行下方
+                                    if (dRow > 0)
                                     {
-                                        int subRow = Convert.ToInt32(anchor.Subsum.Row);
-                                        if (subRow <= dRow) { isHealthy = false; break; }
+                                        // 明细行必须位于汇总行下方
+                                        if (dRow <= sRow) { isHealthy = false; break; }
 
-                                        // 若包含总计行锚点，必须位于或等于小计行下方
-                                        if (anchor.Tolsum != null)
+                                        // 提取小计行物理行号 (若存在)
+                                        int subRow = anchor.Subsum != null ? Convert.ToInt32(anchor.Subsum.Row) : anchor.SubsumRow;
+                                        // 若包含小计行锚点，必须位于明细表头行下方
+                                        if (subRow > 0)
                                         {
-                                            int tolRow = Convert.ToInt32(anchor.Tolsum.Row);
-                                            if (tolRow < subRow) { isHealthy = false; break; }
+                                            // 小计行必须大于明细行
+                                            if (subRow <= dRow) { isHealthy = false; break; }
+
+                                            // 提取总计行物理行号 (若存在)
+                                            int tolRow = anchor.Tolsum != null ? Convert.ToInt32(anchor.Tolsum.Row) : anchor.TolsumRow;
+                                            // 若包含总计行锚点，必须位于或等于小计行下方
+                                            if (tolRow > 0 && tolRow < subRow) { isHealthy = false; break; }
                                         }
                                     }
                                 }
-                            }
                             }
 
                             // 若现有定义名称全部健康完好，耗时 0ms 直接返回现有箱柜数量，跳过后续所有 UsedRange 遍历与正则推导
@@ -2346,9 +2533,9 @@ namespace ExcelAddInDemo
                         // 只要存在真正有效的汇总行，才校准绑定 Cab_Sum_k
                         SafeSetSheetName(sheet, sheetName, $"{sumPrefix}{k}", curSumRow);
                     }
-                    else
+                    else if (forceRebuild)
                     {
-                        // 若该箱柜在顶部无对应汇总行，安全清理可能遗留的旧 Cab_Sum_k，杜绝越界挂载至小计/费用行
+                        // 若该箱柜在顶部无对应汇总行，仅在用户显式强制全量重建时安全清理，杜绝日常误删
                         SafeDeleteName(sheet, sheet.Parent, $"{sumPrefix}{k}");
                     }
 
@@ -2631,10 +2818,17 @@ namespace ExcelAddInDemo
                     }
                     else if (curSumRow > 0)
                     {
-                        // 针对纯汇总无明细箱柜：安全清理可能残留的明细定义名称，保证定义名称纯净
-                        SafeDeleteSheetName(sheet, $"{detPrefix}{k}");
-                        SafeDeleteSheetName(sheet, $"{subsumPrefix}{k}");
-                        SafeDeleteSheetName(sheet, $"{tolsumPrefix}{k}");
+                        // 针对纯汇总无明细箱柜：仅当现存定义名称也确实没有明细锚点且明确为 forceRebuild 时才清理
+                        // 若现存字典中本来就有 Det 锚点，说明明细块只是未被启发式规则探测到，坚决不能误删！
+                        bool hasExistingDet = existingCabDict != null &&
+                                              existingCabDict.TryGetValue(k, out var exCab) &&
+                                              (exCab?.Det != null || exCab?.DetRow > 0);
+                        if (!hasExistingDet && forceRebuild)
+                        {
+                            SafeDeleteSheetName(sheet, $"{detPrefix}{k}");
+                            SafeDeleteSheetName(sheet, $"{subsumPrefix}{k}");
+                            SafeDeleteSheetName(sheet, $"{tolsumPrefix}{k}");
+                        }
 
                         // 纯汇总无明细箱柜：清除超链接后同步自愈还原居中与虚线边框
                         try
@@ -2678,53 +2872,93 @@ namespace ExcelAddInDemo
                 // 采用双作用域（工作表级与工作簿级）现存集合倒序遍历精准清理，彻底杜绝盲目大循环引发数百次 COM 异常
                 try
                 {
-                    // 遍历工作表自身的作用域名称集合
-                    dynamic sNames = sheet.Names;
-                    if (sNames != null)
+                    // 核心防护：若当前识别出的有效箱柜数量小于等于 0，或者当前非 forceRebuild 强制重建，绝对严禁删除任何未损坏的名称！
+                    // 因为有效箱柜为 0 极大概率是识别异常或外部表误入，坚决不能把现存定义名称清空！
+                    if (cabCount > 0 && forceRebuild)
                     {
-                        // 倒序遍历删除避免索引偏移
-                        for (int nIdx = sNames.Count; nIdx >= 1; nIdx--)
+                        // 遍历工作表自身的作用域名称集合
+                        dynamic sNames = sheet.Names;
+                        if (sNames != null)
                         {
-                            // 提取定义名称对象
-                            dynamic singleName = sNames.Item(nIdx);
-                            string nStr = ExtractCleanNameStr(Convert.ToString(singleName.Name) ?? "");
-                            // 提取箱柜序号
-                            int nK = ExtractIndexFromName(nStr, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
-                            // 提取定义名称当前引用字符串
-                            string sRef = Convert.ToString(singleName.RefersTo) ?? "";
-                            // 若属于箱柜定义名称且引用已损坏为 #REF! 或序号大于当前实际箱柜总数，坚决删除
-                            if (nK > 0 && (sRef.Contains("#REF") || nK > cabCount))
+                            // 倒序遍历删除避免索引偏移
+                            for (int nIdx = sNames.Count; nIdx >= 1; nIdx--)
                             {
-                                // 安全删除多余或损坏的旧定义名称
-                                singleName.Delete();
+                                // 提取定义名称对象
+                                dynamic singleName = sNames.Item(nIdx);
+                                string nStr = ExtractCleanNameStr(Convert.ToString(singleName.Name) ?? "");
+                                // 提取箱柜序号
+                                int nK = ExtractIndexFromName(nStr, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                                // 若属于箱柜定义名称且序号大于当前实际箱柜总数，坚决删除
+                                if (nK > 0 && nK > cabCount)
+                                {
+                                    LogHelper.WriteLog($"[CleanExtraName] 显式清理超额工作表名称: {nStr}, k={nK} > cabCount={cabCount}");
+                                    singleName.Delete();
+                                }
+                            }
+                        }
+
+                        // 检查并清理工作簿级别属于当前工作表的超额箱柜定义名称
+                        dynamic wbParent = sheet.Parent;
+                        if (wbParent != null && wbParent.Names != null)
+                        {
+                            // 倒序遍历工作簿级定义名称
+                            for (int wIdx = wbParent.Names.Count; wIdx >= 1; wIdx--)
+                            {
+                                // 提取工作簿级定义名称对象
+                                dynamic wbName = wbParent.Names.Item(wIdx);
+                                string wnStr = ExtractCleanNameStr(Convert.ToString(wbName.Name) ?? "");
+                                int wK = ExtractIndexFromName(wnStr, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                                string refers = Convert.ToString(wbName.RefersTo) ?? "";
+                                // 针对属于箱柜定义名称且序号超额的情况进行处理
+                                if (wK > 0 && wK > cabCount)
+                                {
+                                    // 判定该名称是否属于当前工作表
+                                    if (refers.Contains($"'{sheetName}'!") || refers.Contains($"{sheetName}!"))
+                                    {
+                                        LogHelper.WriteLog($"[CleanExtraName] 显式清理超额工作簿名称: {wnStr}, k={wK} > cabCount={cabCount}");
+                                        wbName.Delete();
+                                    }
+                                }
                             }
                         }
                     }
 
-                    // 检查并清理工作簿级别属于当前工作表的超额箱柜定义名称及损坏名称
-                    dynamic wbParent = sheet.Parent;
-                    if (wbParent != null && wbParent.Names != null)
+                    // 独立安全清理失效死链 (#REF!) 名称，无论是否 forceRebuild 均安全执行
+                    try
                     {
-                        // 倒序遍历工作簿级定义名称
-                        for (int wIdx = wbParent.Names.Count; wIdx >= 1; wIdx--)
+                        // 清理工作表级死链
+                        dynamic sNames = sheet.Names;
+                        if (sNames != null)
                         {
-                            // 提取工作簿级定义名称对象
-                            dynamic wbName = wbParent.Names.Item(wIdx);
-                            string wnStr = ExtractCleanNameStr(Convert.ToString(wbName.Name) ?? "");
-                            int wK = ExtractIndexFromName(wnStr, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
-                            string refers = Convert.ToString(wbName.RefersTo) ?? "";
-                            // 针对属于箱柜定义名称且（序号超额 或 引用损坏）的情况进行处理
-                            if (wK > 0 && (wK > cabCount || refers.Contains("#REF")))
+                            for (int nIdx = sNames.Count; nIdx >= 1; nIdx--)
                             {
-                                // 判定该名称是否属于当前工作表
-                                if (refers.Contains($"'{sheetName}'!") || refers.Contains($"{sheetName}!") || refers.Contains("#REF"))
+                                dynamic singleName = sNames.Item(nIdx);
+                                string sRef = Convert.ToString(singleName.RefersTo) ?? "";
+                                if (sRef.Contains("#REF"))
                                 {
-                                    // 安全删除多余或损坏的工作簿级定义名称
+                                    LogHelper.WriteLog($"[CleanDeadName] 清理工作表死链定义名称: {singleName.Name}");
+                                    singleName.Delete();
+                                }
+                            }
+                        }
+
+                        // 清理工作簿级死链
+                        dynamic wbParent = sheet.Parent;
+                        if (wbParent != null && wbParent.Names != null)
+                        {
+                            for (int wIdx = wbParent.Names.Count; wIdx >= 1; wIdx--)
+                            {
+                                dynamic wbName = wbParent.Names.Item(wIdx);
+                                string refers = Convert.ToString(wbName.RefersTo) ?? "";
+                                if (refers.Contains("#REF"))
+                                {
+                                    LogHelper.WriteLog($"[CleanDeadName] 清理工作簿死链定义名称: {wbName.Name}");
                                     wbName.Delete();
                                 }
                             }
                         }
                     }
+                    catch { }
                 }
                 catch { }
 
@@ -2777,6 +3011,7 @@ namespace ExcelAddInDemo
                             return;
                         }
                         // 指向不一致时安全删除旧引用
+                        LogHelper.WriteLog($"[SafeSetSheetName] 修正重设: tag={tagName}, 旧引用={curRef}, 新引用={targetRef}");
                         existing.Delete();
                     }
                 }
@@ -2784,8 +3019,13 @@ namespace ExcelAddInDemo
 
                 // 添加工作表级别定义名称
                 sheet.Names.Add(tagName, targetRef);
+                LogHelper.WriteLog($"[SafeSetSheetName] 成功注册定义名称: {tagName} -> {targetRef}");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                // 记录添加失败异常帮助诊断
+                LogHelper.WriteLog($"[SafeSetSheetName] 严重异常: 注册 {tagName} 失败! ref={sheetName}!$A${row}, ex={ex.Message}");
+            }
         }
 
         /// <summary>
@@ -2822,6 +3062,9 @@ namespace ExcelAddInDemo
             if (string.IsNullOrWhiteSpace(tagName)) return;
             try
             {
+                // 记录删除动作日志方便排查诊断
+                LogHelper.WriteLog($"[SafeDeleteName] 正在调用删除名称: {tagName}, 工作表: {sheet?.Name}");
+
                 // 1. 尝试从工作表级定义名称集合中安全删除
                 if (sheet != null && sheet.Names != null)
                 {

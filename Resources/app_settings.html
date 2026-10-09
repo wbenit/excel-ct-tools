@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>系统设置</title>
+  <!-- 引入 Element Plus CSS 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+  <!-- 引入 Vue 3 核心库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入 Element Plus 组件库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <!-- 引入公共绿蓝相间主题样式 (主色调 #009688) -->
+  <link rel="stylesheet" href="theme.css" />
+  <style>
+    /* 全局重置与现代美学排版 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+    }
+
+    body {
+      background-color: #f8fafc;
+      color: #334155;
+      font-size: 13px;
+      padding: 12px 16px;
+      user-select: none;
+      overflow-x: hidden;
+      overflow-y: hidden;
+    }
+
+    /* 容器主卡片样式 */
+    .settings-main-card {
+      background: #ffffff;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      padding: 16px 18px;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* 顶部信息提示横幅 */
+    .banner-box {
+      background: linear-gradient(135deg, #e6f7f5 0%, #f0fdf4 100%);
+      border: 1px solid #b2dfdb;
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .banner-icon {
+      font-size: 20px;
+      color: #009688;
+      line-height: 1;
+    }
+
+    .banner-text {
+      font-size: 12px;
+      color: #00695c;
+      line-height: 1.4;
+    }
+
+    /* 分组模块卡片 */
+    .section-card {
+      background: #ffffff;
+      border: 1px solid #f1f5f9;
+      border-radius: 6px;
+      padding: 12px 14px;
+      transition: all 0.2s ease;
+    }
+
+    .section-card:hover {
+      border-color: #cbd5e1;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .section-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      background: #e0f2f1;
+      color: #00796b;
+      font-size: 11px;
+      font-weight: bold;
+    }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1e293b;
+    }
+
+    .section-hint {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+
+    /* 输入组合与按钮排版 */
+    .input-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .input-row .el-input {
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* 底部操作工具栏 */
+    .footer-bar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #f1f5f9;
+    }
+
+    /* 绿蓝渐变主按钮 */
+    .btn-save-primary {
+      background: linear-gradient(135deg, #009688 0%, #0284c7 100%) !important;
+      border: none !important;
+      color: #ffffff !important;
+      font-weight: 500 !important;
+      padding: 8px 20px !important;
+      box-shadow: 0 2px 4px rgba(0, 150, 136, 0.25) !important;
+      transition: all 0.2s ease !important;
+    }
+
+    .btn-save-primary:hover {
+      opacity: 0.92 !important;
+      transform: translateY(-1px) !important;
+      box-shadow: 0 4px 8px rgba(0, 150, 136, 0.35) !important;
+    }
+
+    .btn-save-primary:active {
+      transform: translateY(0) !important;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="app">
+    <div class="settings-main-card">
+      
+      <!-- 顶部提示横幅 -->
+      <div class="banner-box">
+        <div class="banner-icon">⚙️</div>
+        <div class="banner-text">
+          配置全局数据共享路径与新建项目默认工作空间，配置变更将自动在 CAD 与 Excel 端同步生效。
+        </div>
+      </div>
+
+      <!-- 设置项 1: CAD 与 Excel 共享数据目录 -->
+      <div class="section-card">
+        <div class="section-header">
+          <span class="section-badge">1</span>
+          <span class="section-title">数据配置共享目录</span>
+        </div>
+        <div class="input-row">
+          <el-input
+            v-model="form.customDataDirectory"
+            placeholder="默认使用插件安装目录下的 data 文件夹，可指定 CAD/Excel 两端共享目录"
+            clearable
+          ></el-input>
+          <el-button type="primary" plain @click="selectDataDirectory">
+            📁 浏览...
+          </el-button>
+        </div>
+        <div class="section-hint">
+          用于存储调价公式、企业设置、个人物料库等公共配置文件，支持局域网共享路径以供多人协同。
+        </div>
+      </div>
+
+      <!-- 设置项 2: 新建项目默认保存目录 -->
+      <div class="section-card">
+        <div class="section-header">
+          <span class="section-badge">2</span>
+          <span class="section-title">新建项目默认目录</span>
+        </div>
+        <div class="input-row">
+          <el-input
+            v-model="form.defaultProjectDirectory"
+            placeholder="默认保存至当前系统桌面，可指定常用工程项目文件夹"
+            clearable
+          ></el-input>
+          <el-button type="primary" plain @click="selectProjectDirectory">
+            📁 浏览...
+          </el-button>
+          <el-button type="info" plain @click="resetProjectDirectoryToDesktop" title="一键重置为桌面">
+            🖥️ 设为桌面
+          </el-button>
+        </div>
+        <div class="section-hint">
+          点击 Ribbon【新建项目】时自动预填的默认保存位置。若留空或未设置，系统将默认保存至当前用户桌面。
+        </div>
+      </div>
+
+      <!-- 底部操作按钮栏 -->
+      <div class="footer-bar">
+        <el-button @click="cancel">取消</el-button>
+        <el-button class="btn-save-primary" :loading="saving" @click="saveSettings">
+          保存设置
+        </el-button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 挂载 Vue 3 & Element Plus 应用脚本 -->
+  <script>
+    const { ref, reactive, onMounted } = Vue;
+
+    const app = Vue.createApp({
+      setup() {
+        // 表单响应式数据对象
+        const form = reactive({
+          customDataDirectory: '',
+          defaultProjectDirectory: ''
+        });
+
+        // 提交保存 loading 状态
+        const saving = ref(false);
+
+        // 安全向 C# 宿主投递消息：统一序列化为标准 JSON 字符串，兼容所有 WebView2 运行时环境
+        const postToCSharp = (obj) => {
+          if (window.chrome && window.chrome.webview) {
+            const payload = typeof obj === 'string' ? obj : JSON.stringify(obj);
+            window.chrome.webview.postMessage(payload);
+          }
+        };
+
+        // 页面挂载完成异步请求反显数据
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            // 请求加载全局设置
+            postToCSharp({ action: 'getSettings' });
+
+            // 监听 C# 消息
+            window.chrome.webview.addEventListener('message', (event) => {
+              try {
+                const res = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                if (!res) return;
+
+                // 数据反显绑定
+                if (res.action === 'renderSettings' && res.data) {
+                  const d = res.data;
+                  form.customDataDirectory = d.customDataDirectory || '';
+                  form.defaultProjectDirectory = d.defaultProjectDirectory || '';
+                  reportActualHeight();
+                }
+                // 数据目录选定回调
+                else if (res.action === 'setDataDirectory') {
+                  form.customDataDirectory = res.path || '';
+                }
+                // 项目保存目录选定回调
+                else if (res.action === 'setProjectDirectory') {
+                  form.defaultProjectDirectory = res.path || '';
+                }
+                // 保存结果处理
+                else if (res.action === 'saveSettingsResult') {
+                  saving.value = false;
+                  if (res.success) {
+                    ElementPlus.ElMessage.success(res.message || '系统设置已成功保存！');
+                    setTimeout(() => {
+                      postToCSharp({ action: 'cancel' });
+                    }, 700);
+                  } else {
+                    ElementPlus.ElMessage.error(res.message || '保存设置失败，请重试');
+                  }
+                }
+              } catch (e) {
+                console.error('解析后端数据异常:', e);
+              }
+            });
+
+            // 首次自适应调整窗体高度
+            reportActualHeight();
+            setTimeout(reportActualHeight, 150);
+            setTimeout(reportActualHeight, 350);
+          }
+        });
+
+        // 动态上报 DOM 物理高度通知宿主调紧尺寸，消灭底部空白
+        const reportActualHeight = () => {
+          setTimeout(() => {
+            const cardEl = document.querySelector('.settings-main-card');
+            if (cardEl) {
+              const totalH = cardEl.offsetHeight + 24 + 10;
+              postToCSharp({
+                action: 'resizeWindow',
+                height: totalH
+              });
+            }
+          }, 50);
+        };
+
+        // 浏览选择共享数据目录
+        const selectDataDirectory = () => {
+          postToCSharp({ action: 'selectDataDirectory' });
+        };
+
+        // 浏览选择新建项目默认保存目录
+        const selectProjectDirectory = () => {
+          postToCSharp({ action: 'selectProjectDirectory' });
+        };
+
+        // 快捷重置项目目录为桌面
+        const resetProjectDirectoryToDesktop = () => {
+          postToCSharp({ action: 'resetProjectDirectoryToDesktop' });
+        };
+
+        // 提交保存设置
+        const saveSettings = () => {
+          saving.value = true;
+          postToCSharp({
+            action: 'saveSettings',
+            data: {
+              customDataDirectory: form.customDataDirectory,
+              defaultProjectDirectory: form.defaultProjectDirectory
+            }
+          });
+        };
+
+        // 取消关闭
+        const cancel = () => {
+          postToCSharp({ action: 'cancel' });
+        };
+
+        return {
+          form,
+          saving,
+          selectDataDirectory,
+          selectProjectDirectory,
+          resetProjectDirectoryToDesktop,
+          saveSettings,
+          cancel
+        };
+      }
+    });
+
+    // 挂载 Element Plus 组件库
+    app.use(ElementPlus);
+    // 挂载至 #app
+    app.mount('#app');
+  </script>
+</body>
+</html>

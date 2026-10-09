@@ -91,6 +91,7 @@ namespace ExcelAddInDemo
         /// <returns>若已在控制台表格中返回 true，否则返回 false</returns>
         public static bool IsActiveWorkbookInLocalProjectTable()
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 // 1. 获取当前活动工作簿句柄
@@ -132,6 +133,10 @@ namespace ExcelAddInDemo
 
                 // 5. 更新多路径短效缓存
                 _localProjectCheckCache[normPath] = (isInTable, now);
+
+                sw.Stop();
+                // 记录执行耗时便于分析切回卡顿
+                LogHelper.WriteLog($"[PROBE-LocalProj] 耗时={sw.ElapsedMilliseconds}ms, isInTable={isInTable}, path={activeFilePath}");
 
                 // 返回最终判定结果
                 return isInTable;
@@ -406,6 +411,9 @@ namespace ExcelAddInDemo
                 var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
                 string defaultSheetName = ConfigManager.Instance.Current.Excel.DefaultTemplateSheet ?? "分类1";
 
+                // 同步读取本地企业设置中的配置与 Logo 数据
+                var entSettings = Controllers.EnterpriseSettingsController.LoadSettingsDirect();
+
                 // 2. 填写【项目信息】工作表
                 try
                 {
@@ -434,6 +442,13 @@ namespace ExcelAddInDemo
                         infoSheet.Range["B23"].Value = model.EnglishName;     // 英文名称 (Cell B23)
                         infoSheet.Range["B24"].Value = model.CompanyContact;  // 联系人 (Cell B24)
                         infoSheet.Range["B25"].Value = model.CompanyPhone;    // 联系电话 (Cell B25)
+
+                        // 校验 Logo 图片数据有效性并注入【项目信息】表头
+                        if (!string.IsNullOrWhiteSpace(entSettings?.LogoBase64))
+                        {
+                            // 同步写入项目信息工作表表头 Logo
+                            SyncLogoImageToSheet(infoSheet, entSettings.LogoBase64);
+                        }
                     }
                 }
                 catch (Exception exInfo)
@@ -460,6 +475,13 @@ namespace ExcelAddInDemo
                         UpdateProjectInfoCategorySummary(newWb, actualCategoryName);
                         // 调用公共通用分类初始化方法 (新建项目与新建分类共用)
                         InitializeCategorySheet(newWb, catSheet, 1, "箱柜1", "");
+
+                        // 异步获取或复用企业 Logo 注入分类1表头
+                        if (!string.IsNullOrWhiteSpace(entSettings?.LogoBase64))
+                        {
+                            // 同步写入分类1表头 Logo
+                            SyncLogoImageToSheet(catSheet, entSettings.LogoBase64);
+                        }
                     }
                 }
                 catch (Exception exCat)

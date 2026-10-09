@@ -358,24 +358,6 @@
           </div>
         </el-form-item>
 
-        <!-- 数据配置存储目录设置项 -->
-        <el-form-item label="数据目录：">
-          <div style="width: 100%;">
-            <el-input
-              v-model="form.customDataDirectory"
-              placeholder="默认使用插件安装目录下的 data 文件夹，可自定义 CAD/Excel 两端共享目录"
-              clearable
-            >
-              <template #append>
-                <el-button @click="selectDataDirectory">浏览...</el-button>
-              </template>
-            </el-input>
-            <div class="data-dir-hint">
-              设置 CAD 与 Excel 共享的数据与配置文件存储目录（如调价公式、企业设置、物料库等，支持局域网共享路径）。
-            </div>
-          </div>
-        </el-form-item>
-
         <!-- 底部功能按钮与选择框 -->
         <div class="footer-action-bar">
           <el-checkbox v-model="form.syncOpenProject">保存以上设置时，同步更新当前打开的已选中项目</el-checkbox>
@@ -421,8 +403,7 @@
           quoteTemplate: '说明2',
           quoteDescription: '123444',
           quoteTemplates: { ...defaultQuoteTemplates },
-          syncOpenProject: false,
-          customDataDirectory: ''
+          syncOpenProject: true
         });
 
         // 记录上一次选中的模板分类
@@ -449,8 +430,7 @@
                   form.contactPhone = d.contactPhone !== undefined ? d.contactPhone : (d.ContactPhone || '');
                   form.salesRegion = d.salesRegion !== undefined ? d.salesRegion : (d.SalesRegion || '');
                   form.quoteTemplate = d.quoteTemplate !== undefined ? d.quoteTemplate : (d.QuoteTemplate || '说明2');
-                  form.syncOpenProject = d.syncOpenProject !== undefined ? d.syncOpenProject : (d.SyncOpenProject !== undefined ? d.SyncOpenProject : false);
-                  form.customDataDirectory = d.customDataDirectory !== undefined ? d.customDataDirectory : (d.CustomDataDirectory || '');
+                  form.syncOpenProject = d.syncOpenProject !== undefined ? d.syncOpenProject : (d.SyncOpenProject !== undefined ? d.SyncOpenProject : true);
 
                   // 回显 5 套报价模板字典
                   const templates = d.quoteTemplates || d.QuoteTemplates;
@@ -478,9 +458,6 @@
                   // 回显更新 Logo 图片
                   form.logoBase64 = res.logoBase64;
                   reportActualHeight();
-                } else if (res && res.action === 'setDataDirectory') {
-                  // 回显更新共享数据目录
-                  form.customDataDirectory = res.dataDirectory || '';
                 } else if (res && res.action === 'saveSettingsResult') {
                   // 处理保存结果反馈
                   if (res.success) {
@@ -585,13 +562,6 @@
           form.logoBase64 = '';
         };
 
-        // 选择数据目录
-        const selectDataDirectory = () => {
-          if (window.chrome && window.chrome.webview) {
-            window.chrome.webview.postMessage(JSON.stringify({ action: 'selectDataDirectory' }));
-          }
-        };
-
         // 保存设置
         const saveSettings = () => {
           // 确保当前编辑内容已同步写入当前模版
@@ -622,7 +592,6 @@
           form,
           selectLogo,
           removeLogo,
-          selectDataDirectory,
           onQuoteTemplateChange,
           onQuoteDescriptionInput,
           applyTemplate,

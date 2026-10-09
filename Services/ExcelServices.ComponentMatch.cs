@@ -78,8 +78,21 @@ namespace ExcelAddInDemo
             }
             else
             {
-                // 仅移除指定工作表缓存
-                _categoryRangesSheetCache.Remove(sheetName);
+                // 收集并移除匹配的工作表缓存 (兼容纯表名与带工作簿前缀的复合键)
+                var keysToRemove = new List<string>();
+                foreach (var k in _categoryRangesSheetCache.Keys)
+                {
+                    if (string.Equals(k, sheetName, StringComparison.OrdinalIgnoreCase) ||
+                        k.EndsWith($"::{sheetName}", StringComparison.OrdinalIgnoreCase))
+                    {
+                        keysToRemove.Add(k);
+                    }
+                }
+                // 执行内存键值移除
+                foreach (var k in keysToRemove)
+                {
+                    _categoryRangesSheetCache.Remove(k);
+                }
             }
         }
 
@@ -145,8 +158,26 @@ namespace ExcelAddInDemo
 
                 var now = DateTime.UtcNow;
 
-                // 1. 【高速多表内存缓存命中 (0ms)】：若在 10 分钟内且已有缓存记录，直接比对内存区间！
-                if (_categoryRangesSheetCache.TryGetValue(sheetName, out var cachedEntry) &&
+                // 提取所属工作簿标识 (支持多工作簿缓存隔离与切回快速命中)
+                string wbKey = string.Empty;
+                try
+                {
+                    // 向上获取父工作簿对象
+                    dynamic? pWb = sheet.Parent;
+                    if (pWb != null)
+                    {
+                        // 优先提取工作簿完整路径，未保存时取名称
+                        wbKey = Convert.ToString(pWb.FullName) ?? Convert.ToString(pWb.Name) ?? string.Empty;
+                    }
+                }
+                catch { }
+
+                // 组装带工作簿隔离维度的复合缓存键
+                string cacheKey = string.IsNullOrEmpty(wbKey) ? sheetName : $"{wbKey}::{sheetName}";
+
+                // 1. 【高速多表内存缓存命中 (0ms)】：若在有效期内且已有缓存记录，直接比对内存区间！
+                if ((_categoryRangesSheetCache.TryGetValue(cacheKey, out var cachedEntry) ||
+                     _categoryRangesSheetCache.TryGetValue(sheetName, out cachedEntry)) &&
                     (now - cachedEntry.CacheTime) < CategoryRangesCacheExpiry)
                 {
                     // 纯内存比较，0 次 COM 调用
@@ -248,10 +279,11 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 3. 容错回退检查：若轻量快速名称扫描未发现有效箱柜，调用只读箱柜嗅探兜底
+                // 3. 容错回退检查：若轻量快速名称扫描未发现有效箱柜，调用只读箱柜嗅探兜底 (严禁 allowAutoRebuild)
                 if (newRanges.Count == 0)
                 {
-                    var validCabinets = Tool.GetSheetValidCabinets((object)sheet);
+                    // 显式传入 allowAutoRebuild: false，确保事件检测路径绝对不触发耗时的定义名称重建
+                    var validCabinets = Tool.GetSheetValidCabinets((object)sheet, wb: null, allowAutoRebuild: false);
                     if (validCabinets != null && validCabinets.Count > 0)
                     {
                         foreach (var kvp in validCabinets)
@@ -272,6 +304,8 @@ namespace ExcelAddInDemo
                 }
 
                 // 写入多工作表内存长效缓存 (即便是空列表也缓存，防止非箱柜表反复暴力扫描)
+                // 同时写入复合键与基础表名键，保障多工作簿隔离与单表快速检索
+                _categoryRangesSheetCache[cacheKey] = (now, newRanges);
                 _categoryRangesSheetCache[sheetName] = (now, newRanges);
 
                 // 纯内存比对当前行
