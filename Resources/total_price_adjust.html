@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>总价一键调整</title>
+  <!-- 引入 Element Plus 样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <!-- 引入 Vue 3 核心库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入 Element Plus 组件库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <!-- 引入 Element Plus 图标库 -->
+  <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+  <style>
+    /* 全局基础重置与弹性盒模型 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+      user-select: none;
+      background-color: #f7f9fa;
+      color: #333333;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      border: 1px solid #dcdfe6;
+      background-color: #ffffff;
+      overflow: hidden;
+    }
+
+    /* 顶部无边框窗体拖拽标题栏 (绿蓝相间主题，主色调 #009688) */
+    .window-header {
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      background: linear-gradient(135deg, #009688, #00796b);
+      color: #ffffff;
+      cursor: move;
+      touch-action: none;
+      flex-shrink: 0;
+    }
+
+    .window-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .window-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .action-btn {
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .action-btn:hover {
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .action-btn.close-btn:hover {
+      background-color: #f56c6c;
+    }
+
+    /* 主体滚动与弹性内容区 */
+    .main-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 12px 14px 8px 14px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      gap: 10px;
+    }
+
+    /* 顶部数据看板卡片网格 */
+    .dashboard-card {
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid #e0f2f1;
+      box-shadow: 0 2px 8px rgba(0, 150, 136, 0.06);
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1.2fr 1.5fr 1.3fr;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .metric-box {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .metric-label {
+      font-size: 11px;
+      color: #757575;
+      font-weight: 500;
+    }
+
+    .metric-value {
+      font-size: 15px;
+      font-weight: 700;
+      color: #263238;
+      font-family: Consolas, Monaco, monospace;
+    }
+
+    .metric-value.highlight {
+      color: #009688;
+      font-size: 16px;
+    }
+
+    .metric-value.diff-up {
+      color: #4caf50;
+    }
+
+    .metric-value.diff-down {
+      color: #ff9800;
+    }
+
+    /* 联动控制条 */
+    .interactive-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 8px;
+      border-top: 1px dashed #e0e0e0;
+      font-size: 12px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .interactive-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .interactive-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 中部选项卡容器 */
+    .tabs-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #ffffff;
+      border-radius: 6px;
+      border: 1px solid #e0f2f1;
+      padding: 4px 10px 8px 10px;
+      min-height: 280px;
+      overflow: hidden;
+    }
+
+    .el-tabs {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .el-tabs__content {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding-top: 6px;
+    }
+
+    /* 提示横幅 */
+    .rule-banner {
+      background-color: #e0f2f1;
+      border-left: 3px solid #009688;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: #004d40;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    /* 快捷操作动作按钮 */
+    .quick-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    /* 表格样式定制 */
+    .el-table {
+      font-size: 12px;
+    }
+
+    .el-table th.el-table__cell {
+      background-color: #f2f7f7 !important;
+      color: #37474f !important;
+      font-weight: 600 !important;
+      padding: 6px 0 !important;
+    }
+
+    .el-table td.el-table__cell {
+      padding: 5px 0 !important;
+    }
+
+    /* 分摊校验状态栏 */
+    .validation-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      background: #fafafa;
+      border: 1px solid #eee;
+      border-radius: 4px;
+      margin-top: 8px;
+      font-size: 12px;
+    }
+
+    .validation-status.valid {
+      color: #009688;
+      font-weight: 600;
+    }
+
+    .validation-status.invalid {
+      color: #f56c6c;
+      font-weight: 600;
+    }
+
+    /* 底部全局控制栏 */
+    .bottom-bar {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      background: #ffffff;
+      border-top: 1px solid #e0e0e0;
+      flex-shrink: 0;
+    }
+
+    .bottom-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+    }
+
+    .bottom-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 绿蓝主题按钮覆盖 */
+    .btn-theme {
+      background-color: #009688 !important;
+      border-color: #009688 !important;
+      color: #ffffff !important;
+    }
+
+    .btn-theme:hover {
+      background-color: #00796b !important;
+      border-color: #00796b !important;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app">
+    <!-- 顶部无边框窗体拖拽标题栏 -->
+    <div class="window-header" @mousedown="handleHeaderMouseDown">
+      <div class="window-title">
+        <el-icon :size="16">
+          <Calculator></Calculator>
+        </el-icon>
+        <span>总价一键调整 (目标反算与动态分摊)</span>
+      </div>
+      <div class="window-actions">
+        <div class="action-btn" title="最小化" @mousedown.stop @click.stop="minimizeWindow">
+          <el-icon :size="14">
+            <Minus></Minus>
+          </el-icon>
+        </div>
+        <div class="action-btn close-btn" title="关闭窗口" @mousedown.stop @click.stop="closeWindow">
+          <el-icon :size="14">
+            <Close></Close>
+          </el-icon>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主体内容区域 -->
+    <div class="main-body" v-loading="loading" element-loading-text="正在读取工作簿分类与分摊标签...">
+      <!-- 1. 顶部数据看板卡片 -->
+      <div class="dashboard-card">
+        <div class="metrics-grid">
+          <div class="metric-box">
+            <span class="metric-label">当前项目总价</span>
+            <span class="metric-value">¥ {{ formatMoney(totalSalesPrice) }}</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-label">当前成本总价</span>
+            <span class="metric-value">¥ {{ formatMoney(totalCostPrice) }}</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-label">🎯 目标总价 (元)</span>
+            <el-input
+              v-model="targetPriceInput"
+              size="small"
+              placeholder="请输入目标总价"
+              style="width: 100%;"
+              @input="onTargetPriceChange"
+            >
+              <template #suffix>元</template>
+            </el-input>
+          </div>
+          <div class="metric-box">
+            <span class="metric-label">调价差额</span>
+            <span :class="['metric-value', diffAmount >= 0 ? 'diff-up' : 'diff-down']">
+              {{ diffAmount >= 0 ? '+¥' : '-¥' }} {{ formatMoney(Math.abs(diffAmount)) }}
+            </span>
+          </div>
+        </div>
+
+        <!-- 联动操作辅助条 -->
+        <div class="interactive-bar">
+          <div class="interactive-left">
+            <span style="color: #616161;">调价基准:</span>
+            <el-radio-group v-model="baselineType" size="small" @change="onBaselineChange">
+              <el-radio label="total">按项目总价</el-radio>
+              <el-radio label="cost">按成本总价</el-radio>
+            </el-radio-group>
+          </div>
+          <div class="interactive-right">
+            <span style="color: #616161;">调幅联动:</span>
+            <el-select v-model="adjustDirection" size="small" style="width: 105px;" @change="onAdjustPercentChange">
+              <el-option label="总价上浮 ↑" value="up"></el-option>
+              <el-option label="总价下浮 ↓" value="down"></el-option>
+            </el-select>
+            <el-input
+              v-model="adjustPercentInput"
+              size="small"
+              placeholder="比例"
+              style="width: 90px;"
+              @input="onAdjustPercentChange"
+            >
+              <template #suffix>%</template>
+            </el-input>
+          </div>
+        </div>
+
+        <!-- 成本红线警示 -->
+        <div v-if="targetPriceNumber <= totalCostPrice && totalCostPrice > 0" style="color: #f56c6c; font-size: 11px;">
+          ⚠️ 警告：当前设定的目标总价低于或等于成本总价，执行后将导致亏损报价！
+        </div>
+      </div>
+
+      <!-- 2. 中部选项卡区域 -->
+      <div class="tabs-card">
+        <el-tabs v-model="activeTab">
+          <!-- Tab 1: 动态分摊设置 (Q 列聚合) -->
+          <el-tab-pane label="分摊设置 (按 Q 列动态提取)" name="allocation">
+            <div class="rule-banner">
+              <span>💡 默认元件分摊 1.0 (调整 L 列报出系数，保留基准面价与成本不变)，计费区修改比例系数。分摊总和必须等于 1.0。</span>
+              <div class="quick-actions">
+                <el-button size="small" link type="primary" @click="resetToComponentOnly">重置为元件100%</el-button>
+                <el-button size="small" link type="primary" @click="autoDistributeByOrigin">按原占比分配</el-button>
+              </div>
+            </div>
+
+            <!-- 分摊项表格 (显式闭合标签) -->
+            <el-table :data="tags" size="small" border stripe style="width: 100%;">
+              <el-table-column label="参与" width="55" align="center">
+                <template #default="scope">
+                  <el-checkbox v-model="scope.row.isSelected" @change="onTagCheckChange(scope.row)"></el-checkbox>
+                </template>
+              </el-table-column>
+              <el-table-column prop="tag" label="分摊项名称" min-width="110">
+                <template #default="scope">
+                  <span style="font-weight: 600;">{{ scope.row.tag }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="属性" width="80" align="center">
+                <template #default="scope">
+                  <el-tag v-if="scope.row.itemType === 'component'" type="success" size="small">元件</el-tag>
+                  <el-tag v-else type="primary" size="small">计费项</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="当前总额 (元)" min-width="110" align="right">
+                <template #default="scope">
+                  <span>¥ {{ formatMoney(scope.row.currentAmount) }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="原占比" width="80" align="center">
+                <template #default="scope">
+                  <span>{{ scope.row.originalRatio }}%</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="调价执行方式" min-width="130">
+                <template #default="scope">
+                  <span v-if="scope.row.itemType === 'component'" style="color: #009688;">调整 L 列加价系数</span>
+                  <span v-else-if="scope.row.hasRatioFormula" style="color: #e6a23c;">重算乘数比例系数</span>
+                  <span v-else style="color: #909399;">按权重调整固定值</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="分摊比例 (0~1)" width="150" align="center">
+                <template #default="scope">
+                  <el-input-number
+                    v-model="scope.row.allocationRatio"
+                    :step="0.05"
+                    :min="0"
+                    :max="1"
+                    :precision="3"
+                    size="small"
+                    style="width: 125px;"
+                    :disabled="!scope.row.isSelected"
+                    @change="onRatioChange"
+                  ></el-input-number>
+                </template>
+              </el-table-column>
+              <el-table-column label="预计承担差额" min-width="110" align="right">
+                <template #default="scope">
+                  <span :style="{ color: diffAmount >= 0 ? '#4caf50' : '#ff9800' }">
+                    {{ (diffAmount * scope.row.allocationRatio) >= 0 ? '+' : '' }}{{ formatMoney(diffAmount * scope.row.allocationRatio) }}
+                  </span>
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <!-- 底部比例配平状态条 -->
+            <div class="validation-bar">
+              <div>
+                <span>分摊比例总和: </span>
+                <span :class="['validation-status', isRatioBalanced ? 'valid' : 'invalid']">
+                  {{ sumAllocations.toFixed(3) }}
+                </span>
+                <span v-if="isRatioBalanced" style="color: #009688; margin-left: 8px;">✓ 比例已配平 (1.000)</span>
+                <span v-else style="color: #f56c6c; margin-left: 8px;">
+                  ✗ 未配平 (距 1.0 还差 {{ (1.0 - sumAllocations).toFixed(3) }})
+                </span>
+              </div>
+              <div style="font-size: 11px; color: #757575;">
+                * 调价将依据各分摊项比例自动下发至各箱柜
+              </div>
+            </div>
+          </el-tab-pane>
+
+          <!-- Tab 2: 参与分类表多选 -->
+          <el-tab-pane :label="`参与分类表 (${selectedSheetsCount}/${categorySheets.length})`" name="sheets">
+            <div class="rule-banner">
+              <span>勾选参与本次总价调整的分类工作表，未勾选的分类表不受任何影响。</span>
+              <div class="quick-actions">
+                <el-button size="small" link type="primary" @click="selectAllSheets(true)">全选</el-button>
+                <el-button size="small" link type="primary" @click="selectAllSheets(false)">清空</el-button>
+              </div>
+            </div>
+
+            <el-table :data="categorySheets" size="small" border stripe style="width: 100%;">
+              <el-table-column label="选择" width="55" align="center">
+                <template #default="scope">
+                  <el-checkbox v-model="scope.row.isSelected" @change="onSheetCheckChange"></el-checkbox>
+                </template>
+              </el-table-column>
+              <el-table-column prop="sheetName" label="分类工作表名称" min-width="150">
+                <template #default="scope">
+                  <span style="font-weight: 600;">{{ scope.row.sheetName }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="cabinetCount" label="箱柜台数" width="100" align="center">
+                <template #default="scope">
+                  <span>{{ scope.row.cabinetCount }} 台</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="销售总金额 (元)" min-width="130" align="right">
+                <template #default="scope">
+                  <span>¥ {{ formatMoney(scope.row.salesTotalPrice) }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="成本总金额 (元)" min-width="130" align="right">
+                <template #default="scope">
+                  <span>¥ {{ formatMoney(scope.row.costTotalPrice) }}</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+        </el-tabs>
+      </div>
+    </div>
+
+    <!-- 底部控制按钮栏 -->
+    <div class="bottom-bar">
+      <div class="bottom-left">
+        <el-checkbox v-model="saveAsCopy">另存为调价副本</el-checkbox>
+        <el-input
+          v-if="saveAsCopy"
+          v-model="copyFileName"
+          size="small"
+          placeholder="自定义副本文件名 (选填)"
+          style="width: 220px;"
+        ></el-input>
+      </div>
+      <div class="bottom-right">
+        <el-button size="small" @click="fetchInitData" :loading="loading">
+          <el-icon style="margin-right: 4px;"><Refresh></Refresh></el-icon>
+          重新扫描
+        </el-button>
+        <el-button size="small" @click="closeWindow">取消</el-button>
+        <el-button
+          class="btn-theme"
+          size="small"
+          type="primary"
+          :loading="adjusting"
+          :disabled="!canExecuteAdjust"
+          @click="executeAdjust"
+        >
+          <el-icon style="margin-right: 4px;"><Check></Check></el-icon>
+          执行一键调价
+        </el-button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue;
+    const { ElMessage, ElMessageBox } = ElementPlus;
+
+    const app = createApp({
+      setup() {
+        // 界面加载状态与执行状态
+        const loading = ref(false);
+        const adjusting = ref(false);
+        const activeTab = ref('allocation');
+
+        // 数据模型
+        const projectName = ref('');
+        const totalSalesPrice = ref(0);
+        const totalCostPrice = ref(0);
+        const categorySheets = ref([]);
+        const tags = ref([]);
+
+        // 调价看板控制变量
+        const targetPriceInput = ref('');
+        const baselineType = ref('total'); // 'total' | 'cost'
+        const adjustDirection = ref('down'); // 'up' | 'down'
+        const adjustPercentInput = ref('');
+        const saveAsCopy = ref(false);
+        const copyFileName = ref('');
+
+        // 计算数值型目标总价
+        const targetPriceNumber = computed(() => {
+          const val = parseFloat(targetPriceInput.value);
+          return isNaN(val) ? 0 : val;
+        });
+
+        // 计算差额 (目标总价 - 当前总价)
+        const diffAmount = computed(() => {
+          if (targetPriceNumber.value <= 0) return 0;
+          return targetPriceNumber.value - totalSalesPrice.value;
+        });
+
+        // 选中分类表数量
+        const selectedSheetsCount = computed(() => {
+          return categorySheets.value.filter(s => s.isSelected).length;
+        });
+
+        // 分摊比例总和
+        const sumAllocations = computed(() => {
+          let sum = 0;
+          tags.value.forEach(t => {
+            if (t.isSelected && t.allocationRatio > 0) {
+              sum += Number(t.allocationRatio);
+            }
+          });
+          return sum;
+        });
+
+        // 校验比例是否配平 (总和严格等于 1.0)
+        const isRatioBalanced = computed(() => {
+          return Math.abs(sumAllocations.value - 1.0) <= 0.005;
+        });
+
+        // 是否允许执行调价按钮
+        const canExecuteAdjust = computed(() => {
+          if (loading.value || adjusting.value) return false;
+          if (targetPriceNumber.value <= 0) return false;
+          if (selectedSheetsCount.value === 0) return false;
+          if (!isRatioBalanced.value) return false;
+          return true;
+        });
+
+        // 格式化金额助手函数
+        const formatMoney = (val) => {
+          if (val === null || val === undefined || isNaN(val)) return '0.00';
+          const num = Number(val);
+          return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        };
+
+        // 窗口平滑拖拽处理
+        let isDragging = false;
+        let startX = 0;
+        let startY = 0;
+
+        const handleHeaderMouseDown = (e) => {
+          isDragging = true;
+          startX = e.screenX;
+          startY = e.screenY;
+          window.addEventListener('mousemove', handleHeaderMouseMove);
+          window.addEventListener('mouseup', handleHeaderMouseUp);
+        };
+
+        const handleHeaderMouseMove = (e) => {
+          if (!isDragging) return;
+          const deltaX = e.screenX - startX;
+          const deltaY = e.screenY - startY;
+          startX = e.screenX;
+          startY = e.screenY;
+          postMessageToCSharp({
+            action: 'moveWindow',
+            deltaX: deltaX,
+            deltaY: deltaY
+          });
+        };
+
+        const handleHeaderMouseUp = () => {
+          isDragging = false;
+          window.removeEventListener('mousemove', handleHeaderMouseMove);
+          window.removeEventListener('mouseup', handleHeaderMouseUp);
+        };
+
+        // 窗体控制
+        const minimizeWindow = () => {
+          postMessageToCSharp({ action: 'minimizeWindow' });
+        };
+
+        const closeWindow = () => {
+          postMessageToCSharp({ action: 'closeWindow' });
+        };
+
+        // 发送 IPC 消息至 C#
+        const postMessageToCSharp = (payload) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify(payload));
+          }
+        };
+
+        // 目标总价输入改变时，反算调价浮动百分比与方向
+        const onTargetPriceChange = () => {
+          const tar = targetPriceNumber.value;
+          const base = baselineType.value === 'cost' ? totalCostPrice.value : totalSalesPrice.value;
+          if (base > 0 && tar > 0) {
+            const diff = tar - base;
+            const pct = Math.abs(diff) / base * 100;
+            adjustPercentInput.value = pct.toFixed(2);
+            adjustDirection.value = diff >= 0 ? 'up' : 'down';
+          }
+        };
+
+        // 调幅百分比或方向改变时，反算目标总价
+        const onAdjustPercentChange = () => {
+          const pct = parseFloat(adjustPercentInput.value);
+          if (isNaN(pct) || pct < 0) return;
+          const base = baselineType.value === 'cost' ? totalCostPrice.value : totalSalesPrice.value;
+          if (base > 0) {
+            const factor = adjustDirection.value === 'up' ? (1 + pct / 100) : (1 - pct / 100);
+            const tar = base * factor;
+            targetPriceInput.value = tar.toFixed(2);
+          }
+        };
+
+        // 调价基准切换
+        const onBaselineChange = () => {
+          onTargetPriceChange();
+        };
+
+        // 勾选标签状态改变
+        const onTagCheckChange = (tag) => {
+          if (!tag.isSelected) {
+            tag.allocationRatio = 0;
+          } else {
+            if (tag.allocationRatio <= 0) {
+              tag.allocationRatio = 0.1;
+            }
+          }
+        };
+
+        // 分摊比例修改
+        const onRatioChange = () => {
+          // 响应式触发
+        };
+
+        // 一键重置为元件 100%
+        const resetToComponentOnly = () => {
+          tags.value.forEach(t => {
+            if (t.tag === '元件') {
+              t.isSelected = true;
+              t.allocationRatio = 1.0;
+            } else {
+              t.isSelected = false;
+              t.allocationRatio = 0.0;
+            }
+          });
+          ElMessage.info('已重置分摊设置：元件分摊 100%');
+        };
+
+        // 按原项目占比自动分配
+        const autoDistributeByOrigin = () => {
+          let sumActive = 0;
+          tags.value.forEach(t => {
+            if (t.isSelected && t.currentAmount > 0) {
+              sumActive += Number(t.currentAmount);
+            }
+          });
+
+          if (sumActive > 0) {
+            let runningSum = 0;
+            const selectedList = tags.value.filter(t => t.isSelected && t.currentAmount > 0);
+            selectedList.forEach((t, idx) => {
+              if (idx === selectedList.length - 1) {
+                // 最后一项吸收小数尾差
+                t.allocationRatio = Math.max(0, Math.round((1.0 - runningSum) * 1000) / 1000);
+              } else {
+                const r = Math.round((Number(t.currentAmount) / sumActive) * 1000) / 1000;
+                t.allocationRatio = r;
+                runningSum += r;
+              }
+            });
+            ElMessage.success('已按当前各项目金额权重自动配平分摊比例！');
+          }
+        };
+
+        // 分类表全选/清空
+        const selectAllSheets = (val) => {
+          categorySheets.value.forEach(s => s.isSelected = val);
+        };
+
+        const onSheetCheckChange = () => {
+          // 重新根据选中的分类表更新总价看板
+          let selSales = 0;
+          let selCost = 0;
+          categorySheets.value.forEach(s => {
+            if (s.isSelected) {
+              selSales += Number(s.salesTotalPrice);
+              selCost += Number(s.costTotalPrice);
+            }
+          });
+          totalSalesPrice.value = selSales;
+          totalCostPrice.value = selCost;
+          onTargetPriceChange();
+        };
+
+        // 从 C# 获取初始化数据
+        const fetchInitData = () => {
+          loading.value = true;
+          postMessageToCSharp({ action: 'getInitData' });
+        };
+
+        // 执行调价
+        const executeAdjust = () => {
+          if (!canExecuteAdjust.value) return;
+
+          ElMessageBox.confirm(
+            `确定要将所选 ${selectedSheetsCount.value} 个分类表总价调整为 ¥ ${formatMoney(targetPriceNumber.value)} 吗？\n(操作后可通过功能区【撤销】随时还原)`,
+            '确认执行调价',
+            {
+              confirmButtonText: '确定调整',
+              cancelButtonText: '取消',
+              type: 'warning'
+            }
+          ).then(() => {
+            adjusting.value = true;
+
+            const selectedSheetNames = categorySheets.value
+              .filter(s => s.isSelected)
+              .map(s => s.sheetName);
+
+            const tagAllocations = tags.value
+              .filter(t => t.isSelected && t.allocationRatio > 0)
+              .map(t => ({
+                tag: t.tag,
+                ratio: Number(t.allocationRatio)
+              }));
+
+            const payload = {
+              action: 'executeAdjust',
+              selectedSheets: selectedSheetNames,
+              targetPrice: targetPriceNumber.value,
+              baselineType: baselineType.value,
+              adjustPercentage: parseFloat(adjustPercentInput.value) || 0,
+              adjustDirection: adjustDirection.value,
+              tagAllocations: tagAllocations,
+              saveAsCopy: saveAsCopy.value,
+              copyFileName: copyFileName.value
+            };
+
+            postMessageToCSharp(payload);
+          }).catch(() => {});
+        };
+
+        // 监听来自 C# 的回发消息
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (event) => {
+              try {
+                let msg = event.data;
+                if (typeof msg === 'string') {
+                  msg = JSON.parse(msg);
+                }
+
+                if (msg.action === 'onInitData') {
+                  loading.value = false;
+                  if (msg.data && msg.data.success) {
+                    projectName.value = msg.data.projectName;
+                    totalSalesPrice.value = Number(msg.data.totalSalesPrice);
+                    totalCostPrice.value = Number(msg.data.totalCostPrice);
+                    categorySheets.value = msg.data.categorySheets || [];
+                    tags.value = msg.data.tags || [];
+
+                    // 默认目标总价设为当前总价
+                    targetPriceInput.value = totalSalesPrice.value.toFixed(2);
+                    adjustPercentInput.value = '0.00';
+                    adjustDirection.value = 'down';
+
+                    ElMessage.success(msg.data.message || '扫描成功');
+                  } else {
+                    ElMessage.error(msg.data?.message || '读取工程数据失败');
+                  }
+                } else if (msg.action === 'onAdjustResult') {
+                  adjusting.value = false;
+                  if (msg.data && msg.data.success) {
+                    ElMessageBox.alert(msg.data.message, '调价成功', {
+                      confirmButtonText: '好的',
+                      type: 'success'
+                    }).then(() => {
+                      closeWindow();
+                    });
+                  } else {
+                    ElMessage.error(msg.data?.message || '执行调价失败');
+                  }
+                }
+              } catch (ex) {
+                console.error('[WebMessage] 解析异常: ', ex);
+              }
+            });
+          }
+
+          // 挂载后立即拉取初始化数据
+          fetchInitData();
+        });
+
+        return {
+          loading,
+          adjusting,
+          activeTab,
+          projectName,
+          totalSalesPrice,
+          totalCostPrice,
+          categorySheets,
+          tags,
+          targetPriceInput,
+          targetPriceNumber,
+          diffAmount,
+          baselineType,
+          adjustDirection,
+          adjustPercentInput,
+          saveAsCopy,
+          copyFileName,
+          selectedSheetsCount,
+          sumAllocations,
+          isRatioBalanced,
+          canExecuteAdjust,
+          formatMoney,
+          handleHeaderMouseDown,
+          minimizeWindow,
+          closeWindow,
+          onTargetPriceChange,
+          onAdjustPercentChange,
+          onBaselineChange,
+          onTagCheckChange,
+          onRatioChange,
+          resetToComponentOnly,
+          autoDistributeByOrigin,
+          selectAllSheets,
+          onSheetCheckChange,
+          fetchInitData,
+          executeAdjust
+        };
+      }
+    });
+
+    // 挂载图标组件
+    app.component('Calculator', ElementPlusIconsVue.Calculator);
+    app.component('Minus', ElementPlusIconsVue.Minus);
+    app.component('Close', ElementPlusIconsVue.Close);
+    app.component('Refresh', ElementPlusIconsVue.Refresh);
+    app.component('Check', ElementPlusIconsVue.Check);
+
+    app.use(ElementPlus);
+    app.mount('#app');
+  </script>
+</body>
+
+</html>
