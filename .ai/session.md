@@ -1,3 +1,36 @@
+- **【功能交付与规则扩展：二次元件组规则管道全面支持“脱扣 (Y列)”属性】(`Resources/component_group_builder.html`, `Models/ComponentGroupRuleModels.cs`, `Services/ExcelServices.ComponentGroup.cs`, `Controllers/ComponentGroupBuilderController.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户需求与意图理解**：
+     - 用户在截图红线处指出两处关键位置：
+       ① 属性过滤下拉框（现有“电流(W列)”、“型号(C列)”、“极数(X列)”、“附件(Z列)”）：要求在属性下拉菜单中新增“脱扣 (Y列)”选项；
+       ② 右侧实时沙盒测试表格（现有“名称(B)”、“型号(C)”、“数量(F)”、“电流(W)”、“极数(X)”、“附件(Z)”）：在“极数(X)”与“附件(Z)”之间添加“脱扣(Y)”展示列。
+  2. **端到端完整链路实现**：
+     - **数据模型层 (`Models/ComponentGroupRuleModels.cs`)**：
+       - 列映射配置 `ComponentGroupColumnMapping` 增加 `TrippingCol = 25`（对应 Excel Y 列）；
+       - 一次元件 DTO `EleComponentDto` 增加 `EleTripping` 属性字段；
+       - 规则摘要编译 `PipelineCompiler` 与描述格式化支持 `"Tripping" => "脱扣"` 标签输出；
+       - 沙盒与批处理评估引擎 `PipelineEvaluator` 实现 `EvaluateTrippingConditionWithOp`，支持 `contains`（包含）、`==`、`!=`、数值及整定电流比对。
+     - **后端控制器层 (`Controllers/ComponentGroupBuilderController.cs`)**：
+       - `LoadConfig` 中增加对历史配置的平滑升级，若未配置或为 0 自动补齐为第 25 列（Y 列）。
+     - **业务服务层 (`Services/ExcelServices.ComponentGroup.cs`)**：
+       - `GetActiveCabinetComponentsFromExcel` 与 `BatchGenerateComponentGroupsToExcel` 在数组读取元器件矩阵时，同步读取 Y 列脱扣方式文本并组装至 `EleComponentDto.EleTripping`。
+     - **前端界面与沙盒 (`Resources/component_group_builder.html`)**：
+       - 普通节点与【或】条件分支组的属性过滤下拉菜单中新增 `<el-option value="Tripping" label="脱扣 (Y列)"></el-option>`；
+       - 沙盒表格表头在 `极数(X)` 与 `附件(Z)` 之间添加 `<th style="width: 13%; text-align: center;">脱扣(Y)</th>`，数据行绑定 `comp.eleTripping`；
+       - `getRuleSummary` 简短摘要、`config.columnMapping` 与模拟数据同步支持脱扣属性。
+  3. **构建验证与物理产物同步**：
+     - `dotnet build /p:RunExcelDnaBuild=false` 验证通过：**0 错误**；
+     - 程序集 `ExcelAddInDemo.dll` / `pdb` 及 HTML 页面已全量同步覆盖至 `bin/Debug/net48` 与 `publish/` 目录。
+
+- **【缺陷根治：修复总价一键调整界面资源文件未找到弹窗报错】(`ExcelAddInDemo.csproj`, `Forms/TotalPriceAdjustForm.cs`, `publish/ExcelAddInDemo.dll`, `bin/Debug/net48/Resources/total_price_adjust.html`)**：
+  1. **故障现象与根因确诊**：
+     - 用户点击“总价一键调整”时，系统弹出警告：“未找到总价一键调整界面资源文件: E:\Ace\excel-ct-tools\bin\Debug\net48\Resources\total_price_adjust.html”；
+     - **根因一（项目构建配置遗漏）**：`ExcelAddInDemo.csproj` 中遗漏了 `<None Include="Resources\total_price_adjust.html"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>` 构建配置，导致执行 `dotnet build` 时该 HTML 页面未被复制至 `bin/Debug/net48/Resources/` 目录；
+     - **根因二（路径解析与旧名称硬编码缺陷）**：`TotalPriceAdjustForm.cs` 中的 `FindHtmlResourcePath` 未调用 `Tool.GetAppDirectory()`，且第 3 候选回退路径硬编码了历史工程目录 `e:\Ace\ExcelAddInCTtools\Resources`，导致在 bin 目录缺失时多重回退全部失效。
+  2. **最小变动修复落地**：
+     - **工程构建配置补充 (`ExcelAddInDemo.csproj`)**：将 `Resources\total_price_adjust.html` 注册为输出项，确保构建时自动同步到 `bin/Debug/net48/Resources/`；
+     - **资源路径多级自适应检索升级 (`Forms/TotalPriceAdjustForm.cs`)**：引入 `Tool.GetAppDirectory()` 动态获取物理加载目录，配置 `appDir/Resources` -> `baseDir/Resources` -> `publish/Resources` -> `../../Resources`（源码级回退）多层防线，彻底剔除错误硬编码路径；
+     - **编译与产物全量同步**：`dotnet build /p:RunExcelDnaBuild=false` 验证通过（0 警告，0 错误），最新程序集与 `total_price_adjust.html` 资源已同步就绪。
+
 - **【工程维护：全量仓库拉取与主分支合并闭环】(`excel-ct-tools`, `draw-mall-h5`, `publish/ExcelAddInDemo.dll`)**：
   1. **全量代码仓库拉取与同步**：
      - `e:\Ace` 下全部 8 个 Git 仓库全量 fetch/pull 检查；

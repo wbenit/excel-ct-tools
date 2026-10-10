@@ -63,9 +63,20 @@ namespace ExcelAddInDemo.Controllers
                     config.ColumnMapping.CurrentCol = 23;
                     // 将极数列迁移至 X 列 (24)
                     config.ColumnMapping.PolesCol = 24;
+                    // 将脱扣列迁移至 Y 列 (25)
+                    config.ColumnMapping.TrippingCol = 25;
                     // 将附件列迁移至 Z 列 (26)
                     config.ColumnMapping.AppendixCol = 26;
                     // 持久化保存升级后的新配置
+                    SaveConfig(config);
+                }
+
+                // 若脱扣列未配置或仍为 0，自动补齐映射至 Y 列 (25)
+                if (config?.ColumnMapping != null && config.ColumnMapping.TrippingCol <= 0)
+                {
+                    // 补齐脱扣列映射为第 25 列 (Y 列)
+                    config.ColumnMapping.TrippingCol = 25;
+                    // 持久化保存配置
                     SaveConfig(config);
                 }
 

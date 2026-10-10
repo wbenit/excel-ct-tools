@@ -910,6 +910,7 @@
                     <el-option value="Current" label="电流 (W列)"></el-option>
                     <el-option value="Model" label="型号 (C列)"></el-option>
                     <el-option value="Poles" label="极数 (X列)"></el-option>
+                    <el-option value="Tripping" label="脱扣 (Y列)"></el-option>
                     <el-option value="Appendix" label="附件 (Z列)"></el-option>
                   </el-select>
 
@@ -1006,6 +1007,7 @@
                           <el-option value="Current" label="电流 (W列)"></el-option>
                           <el-option value="Model" label="型号 (C列)"></el-option>
                           <el-option value="Poles" label="极数 (X列)"></el-option>
+                          <el-option value="Tripping" label="脱扣 (Y列)"></el-option>
                           <el-option value="Appendix" label="附件 (Z列)"></el-option>
                         </el-select>
 
@@ -1068,12 +1070,13 @@
             <table class="comp-table">
               <thead>
                 <tr>
-                  <th style="width: 20%;">名称(B)</th>
-                  <th style="width: 24%;">型号(C)</th>
-                  <th style="width: 14%; text-align: center;">数量(F)</th>
-                  <th style="width: 14%; text-align: center;">电流(W)</th>
-                  <th style="width: 14%; text-align: center;">极数(X)</th>
-                  <th style="width: 14%; text-align: center;">附件(Z)</th>
+                  <th style="width: 18%;">名称(B)</th>
+                  <th style="width: 20%;">型号(C)</th>
+                  <th style="width: 12%; text-align: center;">数量(F)</th>
+                  <th style="width: 12%; text-align: center;">电流(W)</th>
+                  <th style="width: 12%; text-align: center;">极数(X)</th>
+                  <th style="width: 13%; text-align: center;">脱扣(Y)</th>
+                  <th style="width: 13%; text-align: center;">附件(Z)</th>
                 </tr>
               </thead>
               <tbody>
@@ -1083,10 +1086,11 @@
                   <td style="text-align: center; color: #009688; font-weight: 700;">{{ comp.eleNums }}</td>
                   <td style="text-align: center; color: #64748b;">{{ comp.eleCurrent }}</td>
                   <td style="text-align: center; color: #64748b;">{{ comp.elePoles }}</td>
+                  <td style="text-align: center; color: #64748b;">{{ comp.eleTripping }}</td>
                   <td style="text-align: center; color: #64748b;">{{ comp.eleAppendix }}</td>
                 </tr>
                 <tr v-if="!testComponents || testComponents.length === 0">
-                  <td colspan="6" style="text-align: center; color: #94a3b8; padding: 25px 10px; font-size: 11px;">
+                  <td colspan="7" style="text-align: center; color: #94a3b8; padding: 25px 10px; font-size: 11px;">
                     暂无元件数据 (请在 Excel 切换至分类表并点击“抓取当前箱柜”)
                   </td>
                 </tr>
@@ -1208,6 +1212,7 @@
             unitCol: 5,
             currentCol: 23,
             polesCol: 24,
+            trippingCol: 25,
             appendixCol: 26,
             categoryCol: 2
           },
@@ -1571,7 +1576,7 @@
               if (n.propertyFilters && n.propertyFilters.length > 0) {
                 const pTags = n.propertyFilters.map(p => {
                   if (!p.value) return '';
-                  const pName = p.propertyType === 'Current' ? '电流' : p.propertyType === 'Model' ? '型号' : p.propertyType === 'Poles' ? '极数' : '附件';
+                  const pName = p.propertyType === 'Current' ? '电流' : p.propertyType === 'Model' ? '型号' : p.propertyType === 'Poles' ? '极数' : p.propertyType === 'Tripping' ? '脱扣' : '附件';
                   const op = p.operator === '==' || p.operator === '=' ? '' : p.operator;
                   return `${pName}:${op}${p.value}`;
                 }).filter(Boolean);
@@ -1590,7 +1595,7 @@
               if (sn.propertyFilters && sn.propertyFilters.length > 0) {
                 const pTags = sn.propertyFilters.map(p => {
                   if (!p.value) return '';
-                  const pName = p.propertyType === 'Current' ? '电流' : p.propertyType === 'Model' ? '型号' : p.propertyType === 'Poles' ? '极数' : '附件';
+                  const pName = p.propertyType === 'Current' ? '电流' : p.propertyType === 'Model' ? '型号' : p.propertyType === 'Poles' ? '极数' : p.propertyType === 'Tripping' ? '脱扣' : '附件';
                   const op = p.operator === '==' || p.operator === '=' ? '' : p.operator;
                   return `${pName}:${op}${p.value}`;
                 }).filter(Boolean);
@@ -1788,9 +1793,9 @@
           ];
           currentRule.value = config.value.rules[0];
           testComponents.value = [
-            { eleName: '热继电器', eleNorms: 'JR28-25', eleNums: 2, eleCurrent: '16A', elePoles: '3P', eleAppendix: '' },
-            { eleName: '接触器', eleNorms: 'CJX2-1810', eleNums: 2, eleCurrent: '18A', elePoles: '3P', eleAppendix: '' },
-            { eleName: '变频器', eleNorms: 'ATV310', eleNums: 1, eleCurrent: '', elePoles: '', eleAppendix: '' }
+            { eleName: '热继电器', eleNorms: 'JR28-25', eleNums: 2, eleCurrent: '16A', elePoles: '3P', eleTripping: '', eleAppendix: '' },
+            { eleName: '接触器', eleNorms: 'CJX2-1810', eleNums: 2, eleCurrent: '18A', elePoles: '3P', eleTripping: '', eleAppendix: '' },
+            { eleName: '变频器', eleNorms: 'ATV310', eleNums: 1, eleCurrent: '', elePoles: '', eleTripping: '', eleAppendix: '' }
           ];
         };
 

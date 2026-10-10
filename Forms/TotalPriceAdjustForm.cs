@@ -141,21 +141,30 @@ namespace ExcelAddInDemo.Forms
         /// </summary>
         private string FindHtmlResourcePath(string fileName)
         {
-            // 基础基准目录
+            // 获取应用程序域基础基准目录
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            // 获取当前插件程序集实际物理加载目录 (兼容 XLL/DLL)
+            string appDir = Tool.GetAppDirectory();
 
-            // 候选路径 1: bin 输出根目录下的 Resources
-            string path1 = Path.Combine(baseDir, "Resources", fileName);
+            // 候选路径 1: 优先从插件真实物理目录下的 Resources 目录查找
+            string path1 = Path.Combine(appDir, "Resources", fileName);
             if (File.Exists(path1)) return path1;
 
-            // 候选路径 2: publish 输出子目录下的 Resources
-            string path2 = Path.Combine(baseDir, "publish", "Resources", fileName);
+            // 候选路径 2: 应用程序基准目录下的 Resources 目录查找
+            string path2 = Path.Combine(baseDir, "Resources", fileName);
             if (File.Exists(path2)) return path2;
 
-            // 候选路径 3: 当前工程源代码目录下的 Resources
-            string srcDir = @"e:\Ace\ExcelAddInCTtools\Resources";
-            string path3 = Path.Combine(srcDir, fileName);
+            // 候选路径 3: 插件物理目录下的发布目录 publish/Resources
+            string path3 = Path.Combine(appDir, "publish", "Resources", fileName);
             if (File.Exists(path3)) return path3;
+
+            // 候选路径 4: 从插件物理目录向上一级回退至源码根目录的 Resources (针对开发调试环境)
+            string path4 = Path.Combine(appDir, "..", "..", "Resources", fileName);
+            if (File.Exists(path4)) return path4;
+
+            // 候选路径 5: 从基准目录向上一级回退至源码 Resources
+            string path5 = Path.Combine(baseDir, "..", "..", "Resources", fileName);
+            if (File.Exists(path5)) return path5;
 
             // 默认回退第一候选路径
             return path1;

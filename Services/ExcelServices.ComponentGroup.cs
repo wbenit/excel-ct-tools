@@ -122,13 +122,13 @@ namespace ExcelAddInDemo
                     return resultList;
                 }
 
-                // 提取列映射配置 (B=2, C=3, F=6, W=23, X=24, Z=26)
+                // 提取列映射配置 (B=2, C=3, F=6, W=23, X=24, Y=25, Z=26)
                 var map = config?.ColumnMapping ?? new ComponentGroupColumnMapping();
 
                 // 使用二维数组一次性读取 B 列到 Z 列 (从 Col 2 到至少 Col 26)
                 int colStart = 2; // B 列
                 // 动态计算最大所需列，确保至少完整覆盖到 Z 列 (Col 26)
-                int colEnd = Math.Max(26, Math.Max(map.CurrentCol, Math.Max(map.PolesCol, map.AppendixCol)));
+                int colEnd = Math.Max(26, Math.Max(map.CurrentCol, Math.Max(map.PolesCol, Math.Max(map.TrippingCol, map.AppendixCol))));
                 // 计算行总数
                 int totalRows = compEndRow - compStartRow + 1;
                 // 计算列总数
@@ -148,6 +148,7 @@ namespace ExcelAddInDemo
                     int qtyRelCol = map.QuantityCol - colStart + 1;    // F 列相对索引 = 5
                     int curRelCol = map.CurrentCol - colStart + 1;     // W 列相对索引 = 22
                     int poleRelCol = map.PolesCol - colStart + 1;      // X 列相对索引 = 23
+                    int tripRelCol = map.TrippingCol - colStart + 1;   // Y 列相对索引 = 24
                     int appRelCol = map.AppendixCol - colStart + 1;    // Z 列相对索引 = 25
 
                     string eleName = data[r, nameRelCol]?.ToString()?.Trim() ?? "";
@@ -155,6 +156,7 @@ namespace ExcelAddInDemo
                     string rawQty = data[r, qtyRelCol]?.ToString()?.Trim() ?? "0";
                     string eleCurrent = data[r, curRelCol]?.ToString()?.Trim() ?? "";
                     string elePoles = data[r, poleRelCol]?.ToString()?.Trim() ?? "";
+                    string eleTripping = data[r, tripRelCol]?.ToString()?.Trim() ?? "";
                     string eleAppendix = data[r, appRelCol]?.ToString()?.Trim() ?? "";
 
                     // 跳过空白行
@@ -174,6 +176,7 @@ namespace ExcelAddInDemo
                         EleNums = eleNums,
                         EleCurrent = eleCurrent,
                         ElePoles = elePoles,
+                        EleTripping = eleTripping,
                         EleAppendix = eleAppendix
                     });
                 }
@@ -440,6 +443,10 @@ namespace ExcelAddInDemo
                         string eleCurrent = data[r, curRel]?.ToString()?.Trim() ?? "";
                         // 提取极数
                         string elePoles = data[r, poleRel]?.ToString()?.Trim() ?? "";
+                        // 计算脱扣相对列
+                        int tripRel = map.TrippingCol - colStart + 1;
+                        // 提取脱扣
+                        string eleTripping = data[r, tripRel]?.ToString()?.Trim() ?? "";
                         // 提取附件
                         string eleAppendix = data[r, appRel]?.ToString()?.Trim() ?? "";
 
@@ -470,6 +477,7 @@ namespace ExcelAddInDemo
                             EleNums = eleNums,
                             EleCurrent = eleCurrent,
                             ElePoles = elePoles,
+                            EleTripping = eleTripping,
                             EleAppendix = eleAppendix
                         });
                     }

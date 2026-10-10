@@ -320,6 +320,11 @@ namespace ExcelAddInDemo.Models
         public int PolesCol { get; set; } = 24;
 
         /// <summary>
+        /// 脱扣参数列索引 (默认 Y 列 = 25)
+        /// </summary>
+        public int TrippingCol { get; set; } = 25;
+
+        /// <summary>
         /// 附件参数列索引 (默认 Z 列 = 26)
         /// </summary>
         public int AppendixCol { get; set; } = 26;
@@ -729,6 +734,11 @@ namespace ExcelAddInDemo.Models
         public string ElePoles { get; set; } = "";
 
         /// <summary>
+        /// 脱扣参数 (Y 列)
+        /// </summary>
+        public string EleTripping { get; set; } = "";
+
+        /// <summary>
         /// 附件参数 (Z 列)
         /// </summary>
         public string EleAppendix { get; set; } = "";
@@ -989,6 +999,7 @@ namespace ExcelAddInDemo.Models
                         "Current" => "电流",
                         "Model" => "型号",
                         "Poles" => "极数",
+                        "Tripping" => "脱扣",
                         "Appendix" => "附件",
                         _ => pf.PropertyType
                     };
@@ -1084,6 +1095,8 @@ namespace ExcelAddInDemo.Models
                 EleCurrent = c.EleCurrent,
                 // 复制极数参数
                 ElePoles = c.ElePoles,
+                // 复制脱扣参数
+                EleTripping = c.EleTripping,
                 // 复制附件参数
                 EleAppendix = c.EleAppendix
             }).ToList();
@@ -1103,6 +1116,8 @@ namespace ExcelAddInDemo.Models
                 EleCurrent = c.EleCurrent,
                 // 复制极数参数
                 ElePoles = c.ElePoles,
+                // 复制脱扣参数
+                EleTripping = c.EleTripping,
                 // 复制附件参数
                 EleAppendix = c.EleAppendix
             }).ToList();
@@ -1638,6 +1653,11 @@ namespace ExcelAddInDemo.Models
                     // 评估极数格式比较
                     return EvaluatePoleConditionWithOp(ec.ElePoles, op, targetVal);
 
+                // 脱扣过滤 (Y 列)
+                case "Tripping":
+                    // 评估脱扣方式过滤比较
+                    return EvaluateTrippingConditionWithOp(ec.EleTripping, op, targetVal);
+
                 // 附件过滤 (Z 列)
                 case "Appendix":
                     // 若目标值为空，要求必须无附件标识
@@ -1713,6 +1733,74 @@ namespace ExcelAddInDemo.Models
         }
 
         /// <summary>
+        /// 评估脱扣方式条件比较 (支持 contains, ==, !=, >, >=, <, <=)
+        /// </summary>
+        private static bool EvaluateTrippingConditionWithOp(string rawTripping, string op, string targetVal)
+        {
+            // 若目标比较值为空，检查脱扣方式是否为空
+            if (string.IsNullOrWhiteSpace(targetVal))
+            {
+                // 若运算符为 != 或 <>，要求脱扣方式非空
+                if (op == "!=" || op == "<>") return !string.IsNullOrWhiteSpace(rawTripping);
+                // 否则要求脱扣方式为空
+                return string.IsNullOrWhiteSpace(rawTripping);
+            }
+
+            // 若原始脱扣为空但目标值非空
+            if (string.IsNullOrWhiteSpace(rawTripping))
+            {
+                // 不等关系返回 true，其余返回 false
+                return op == "!=" || op == "<>";
+            }
+
+            // 清洗脱扣与目标比较值空白字符
+            string trip = rawTripping.Trim();
+            // 清洗目标比较值首尾空白
+            string target = targetVal.Trim();
+
+            // 1. 包含模式判断 (不区分大小写)
+            if (op == "contains")
+            {
+                // 检查是否包含目标文本
+                return trip.IndexOf(target, StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+
+            // 2. 不包含模式判断
+            if (op == "not_contains")
+            {
+                // 检查是否不包含目标文本
+                return trip.IndexOf(target, StringComparison.OrdinalIgnoreCase) < 0;
+            }
+
+            // 3. 尝试解析为纯数值进行大小比对 (兼容整定电流数值比较)
+            if (double.TryParse(trip.Replace("A", "").Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double tripNum) &&
+                double.TryParse(target.Replace("A", "").Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double targetNum))
+            {
+                // 根据运算符执行数值比对
+                return op switch
+                {
+                    ">" => tripNum > targetNum,
+                    ">=" or "=>" => tripNum >= targetNum,
+                    "<" => tripNum < targetNum,
+                    "<=" or "=<" => tripNum <= targetNum,
+                    "==" or "=" => Math.Abs(tripNum - targetNum) < 0.0001,
+                    "!=" or "<>" => Math.Abs(tripNum - targetNum) >= 0.0001,
+                    _ => Math.Abs(tripNum - targetNum) < 0.0001
+                };
+            }
+
+            // 4. 普通文本字符串比对 (不区分大小写)
+            if (op == "!=" || op == "<>")
+            {
+                // 不等关系比对
+                return !string.Equals(trip, target, StringComparison.OrdinalIgnoreCase);
+            }
+
+            // 默认等于比对 (== 或 =)
+            return string.Equals(trip, target, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
         /// 格式化单个条件节点的描述标签 (供日志输出)
         /// </summary>
         private static string FormatNodeDescription(RuleConditionNode node)
@@ -1740,6 +1828,7 @@ namespace ExcelAddInDemo.Models
                         "Current" => "电流",
                         "Model" => "型号",
                         "Poles" => "极数",
+                        "Tripping" => "脱扣",
                         "Appendix" => "附件",
                         _ => pf.PropertyType
                     };
@@ -1876,6 +1965,10 @@ namespace ExcelAddInDemo.Models
                         // 极数比较
                         if (!EvaluatePoleCondition(ec.ElePoles, propCondition)) return false;
                         break;
+                    case "脱扣":
+                        // 脱扣条件校验
+                        if (!EvaluateTrippingCondition(ec.EleTripping, propCondition)) return false;
+                        break;
                     case "附件":
                         // 附件包含校验
                         if (string.IsNullOrEmpty(propCondition))
@@ -1925,6 +2018,34 @@ namespace ExcelAddInDemo.Models
         {
             // 调用纯极数比较
             return EvaluatePoleConditionWithOp(rawPoles, "==", condition);
+        }
+
+        /// <summary>
+        /// 脱扣条件评估兼容方法
+        /// </summary>
+        private static bool EvaluateTrippingCondition(string rawTripping, string condition)
+        {
+            // 校验条件字符串非空
+            if (string.IsNullOrWhiteSpace(condition))
+            {
+                // 若条件为空则要求脱扣方式为空
+                return string.IsNullOrWhiteSpace(rawTripping);
+            }
+
+            // 提取运算符与目标值
+            string op = "contains";
+            string valStr = condition;
+            if (condition.StartsWith(">=") || condition.StartsWith("=>")) { op = ">="; valStr = condition.Substring(2); }
+            else if (condition.StartsWith("<=") || condition.StartsWith("=<")) { op = "<="; valStr = condition.Substring(2); }
+            else if (condition.StartsWith("==")) { op = "=="; valStr = condition.Substring(2); }
+            else if (condition.StartsWith("!=")) { op = "!="; valStr = condition.Substring(2); }
+            else if (condition.StartsWith(">")) { op = ">"; valStr = condition.Substring(1); }
+            else if (condition.StartsWith("<")) { op = "<"; valStr = condition.Substring(1); }
+            else if (condition.StartsWith("=")) { op = "=="; valStr = condition.Substring(1); }
+            else { op = "contains"; valStr = condition; }
+
+            // 调用通用脱扣条件比对方法
+            return EvaluateTrippingConditionWithOp(rawTripping, op, valStr);
         }
     }
 

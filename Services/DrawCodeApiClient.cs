@@ -480,10 +480,33 @@ namespace ExcelAddInDemo.Services
                 var root = doc.RootElement;
                 var arrayNode = root;
 
-                // 兼容外层带有 data 包装的数据结构
-                if (root.TryGetProperty("data", out var dataNode) && dataNode.ValueKind == JsonValueKind.Array)
+                // 💡 兼容外层带有 data 包装的数据结构，并同时兼容分页对象（data.items 或 data.list）
+                if (root.TryGetProperty("data", out var dataNode))
                 {
-                    arrayNode = dataNode;
+                    if (dataNode.ValueKind == JsonValueKind.Array)
+                    {
+                        arrayNode = dataNode;
+                    }
+                    else if (dataNode.ValueKind == JsonValueKind.Object)
+                    {
+                        // 💡 若返回的是包含 items 或 list 的标准分页对象，提取其子数组节点
+                        if ((dataNode.TryGetProperty("items", out var itemsNode) || dataNode.TryGetProperty("list", out itemsNode) ||
+                             dataNode.TryGetProperty("Items", out itemsNode) || dataNode.TryGetProperty("List", out itemsNode)) &&
+                            itemsNode.ValueKind == JsonValueKind.Array)
+                        {
+                            arrayNode = itemsNode;
+                        }
+                    }
+                }
+                else if (root.ValueKind == JsonValueKind.Object)
+                {
+                    // 💡 兼容直接返回分页对象且无外层 data 包装的情形
+                    if ((root.TryGetProperty("items", out var itemsNode) || root.TryGetProperty("list", out itemsNode) ||
+                         root.TryGetProperty("Items", out itemsNode) || root.TryGetProperty("List", out itemsNode)) &&
+                        itemsNode.ValueKind == JsonValueKind.Array)
+                    {
+                        arrayNode = itemsNode;
+                    }
                 }
 
                 if (arrayNode.ValueKind == JsonValueKind.Array)
