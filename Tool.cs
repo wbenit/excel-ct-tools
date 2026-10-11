@@ -2291,48 +2291,126 @@ namespace ExcelAddInDemo
                     // 记录底表明细行是否已被配对使用
                     bool[] detUsed = new bool[detRows.Count];
 
-                    // 第一轮：通过柜号/箱柜名称进行 100% 完全精确对齐 (优先原则)
+                    // 内部辅助规范化函数：去除常见前缀与标点空格以支持高容错双向比对
+                    string CleanCabStr(string s) => s.Replace("柜号", "").Replace("箱柜", "").Replace("设备", "").Replace("名称", "").Replace(":", "").Replace("：", "").Replace(" ", "").Trim();
+
+                    // 第一轮 (A)：双维度指纹级强匹配（箱柜名称一致 + I 列非空备注/重名标记 100% 完全吻合）
+                    // 彻底解决多台同名箱柜顺序被打乱时的错配问题，首选按 I 列标记精准 1 对 1 绑定
                     for (int i = 0; i < sumRows.Count; i++)
                     {
-                        // 提取汇总行柜号文本 ( B 列)
+                        // 若已配对则跳过
+                        if (matchedDetRows[i] > 0) continue;
+                        // 提取汇总行柜号与设备名称 (B 列与 C 列)
                         string sumCabNo = GetText(sumRows[i], 2);
-                          // 提取汇总行 C 列设备/箱柜名称 (容错柜号写在名称列或与名称一致的场景)
                         string sumCabName = GetText(sumRows[i], 3);
-                        // 若汇总行未填写柜号且未填写设备名称则跳过本轮匹配
-                        if (string.IsNullOrEmpty(sumCabNo) && string.IsNullOrEmpty(sumCabName)) continue;
+                        // 提取汇总行 I 列备注 (第 9 列，包含位置与 (2) 等重名区分标记)
+                        string sumRemark = GetText(sumRows[i], 9).Trim();
+                        // 若备注为空则本轮不参与强匹配，留待下一轮处理
+                        if (string.IsNullOrEmpty(sumRemark)) continue;
 
-                        // 内部辅助规范化函数：去除常见前缀与标点空格以支持高容错双向比对
-                        string CleanCabStr(string s) => s.Replace("柜号", "").Replace("箱柜", "").Replace("设备", "").Replace("名称", "").Replace(":", "").Replace("：", "").Replace(" ", "").Trim();
                         string cleanSumNo = CleanCabStr(sumCabNo);
                         string cleanSumName = CleanCabStr(sumCabName);
+                        // 若汇总行无有效柜号与名称则跳过
+                        if (string.IsNullOrEmpty(cleanSumNo) && string.IsNullOrEmpty(cleanSumName)) continue;
 
-                        // 遍历底表所有未使用的明细块寻找对应箱柜
+                        // 遍历底表明细块寻找双维度匹配的对应项
                         for (int j = 0; j < detRows.Count; j++)
                         {
-                            // 跳过已被配对的明细行
                             if (detUsed[j]) continue;
-                            // 提取底表明细信息行柜号 ( B 列)
+                            // 提取底表明细信息行柜号、A列文本及 I 列备注
                             string detCabNo = GetText(detRows[j], 2);
                             string detTextA = GetText(detRows[j], 1);
+                            string detRemark = GetText(detRows[j], 9).Trim();
+
+                            // 校验 I 列备注是否完全一致 (不区分大小写)
+                            if (!string.Equals(sumRemark, detRemark, StringComparison.OrdinalIgnoreCase)) continue;
 
                             string cleanDetNo = CleanCabStr(detCabNo);
                             string cleanDetA = CleanCabStr(detTextA);
-
-                            // 判定柜号是否完全吻合 (严格全等完全匹配，不区分大小写)
+                            // 判定柜号或设备名称是否完全吻合
                             bool isMatchNo = !string.IsNullOrEmpty(cleanSumNo) && (
                                              (!string.IsNullOrEmpty(cleanDetNo) && string.Equals(cleanDetNo, cleanSumNo, StringComparison.OrdinalIgnoreCase)) ||
                                              (!string.IsNullOrEmpty(cleanDetA) && string.Equals(cleanDetA, cleanSumNo, StringComparison.OrdinalIgnoreCase)));
-                            // 容错汇总行 C 列设备名称比对 (严格全等完全匹配，不区分大小写)
                             bool isMatchName = !string.IsNullOrEmpty(cleanSumName) && (
                                                (!string.IsNullOrEmpty(cleanDetNo) && string.Equals(cleanDetNo, cleanSumName, StringComparison.OrdinalIgnoreCase)) ||
                                                (!string.IsNullOrEmpty(cleanDetA) && string.Equals(cleanDetA, cleanSumName, StringComparison.OrdinalIgnoreCase)));
 
-                            // 只要柜号或设备名称吻合，立即建立 1 对 1 精准绑定
+                            // 名称与 I 列标记双维度同时吻合，建立指纹级精准锁定
                             if (isMatchNo || isMatchName)
                             {
-                                // 记录当前汇总行精准绑定的明细行行号
                                 matchedDetRows[i] = detRows[j];
-                                // 标记该明细行已被占用
+                                detUsed[j] = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // 第一轮 (B)：规范对齐（箱柜名称一致 + 汇总与明细两者的 I 列备注均为空）
+                    // 确保未加标记的唯一箱柜或首台同名箱柜，优先绑定同样未加标记的明细块，杜绝抢占后续带标记明细块
+                    for (int i = 0; i < sumRows.Count; i++)
+                    {
+                        if (matchedDetRows[i] > 0) continue;
+                        string sumCabNo = GetText(sumRows[i], 2);
+                        string sumCabName = GetText(sumRows[i], 3);
+                        string sumRemark = GetText(sumRows[i], 9).Trim();
+                        // 仅处理汇总行 I 列为空的箱柜
+                        if (!string.IsNullOrEmpty(sumRemark)) continue;
+
+                        string cleanSumNo = CleanCabStr(sumCabNo);
+                        string cleanSumName = CleanCabStr(sumCabName);
+                        if (string.IsNullOrEmpty(cleanSumNo) && string.IsNullOrEmpty(cleanSumName)) continue;
+
+                        for (int j = 0; j < detRows.Count; j++)
+                        {
+                            if (detUsed[j]) continue;
+                            string detRemark = GetText(detRows[j], 9).Trim();
+                            // 优先且仅匹配底表同样备注为空的明细块
+                            if (!string.IsNullOrEmpty(detRemark)) continue;
+
+                            string cleanDetNo = CleanCabStr(GetText(detRows[j], 2));
+                            string cleanDetA = CleanCabStr(GetText(detRows[j], 1));
+                            bool isMatchNo = !string.IsNullOrEmpty(cleanSumNo) && (
+                                             (!string.IsNullOrEmpty(cleanDetNo) && string.Equals(cleanDetNo, cleanSumNo, StringComparison.OrdinalIgnoreCase)) ||
+                                             (!string.IsNullOrEmpty(cleanDetA) && string.Equals(cleanDetA, cleanSumNo, StringComparison.OrdinalIgnoreCase)));
+                            bool isMatchName = !string.IsNullOrEmpty(cleanSumName) && (
+                                               (!string.IsNullOrEmpty(cleanDetNo) && string.Equals(cleanDetNo, cleanSumName, StringComparison.OrdinalIgnoreCase)) ||
+                                               (!string.IsNullOrEmpty(cleanDetA) && string.Equals(cleanDetA, cleanSumName, StringComparison.OrdinalIgnoreCase)));
+
+                            if (isMatchNo || isMatchName)
+                            {
+                                matchedDetRows[i] = detRows[j];
+                                detUsed[j] = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // 第一轮 (C)：容错兜底纯名称对齐（忽略 I 列备注差异，全面向后兼容历史旧表格）
+                    for (int i = 0; i < sumRows.Count; i++)
+                    {
+                        if (matchedDetRows[i] > 0) continue;
+                        string sumCabNo = GetText(sumRows[i], 2);
+                        string sumCabName = GetText(sumRows[i], 3);
+
+                        string cleanSumNo = CleanCabStr(sumCabNo);
+                        string cleanSumName = CleanCabStr(sumCabName);
+                        if (string.IsNullOrEmpty(cleanSumNo) && string.IsNullOrEmpty(cleanSumName)) continue;
+
+                        for (int j = 0; j < detRows.Count; j++)
+                        {
+                            if (detUsed[j]) continue;
+                            string cleanDetNo = CleanCabStr(GetText(detRows[j], 2));
+                            string cleanDetA = CleanCabStr(GetText(detRows[j], 1));
+                            bool isMatchNo = !string.IsNullOrEmpty(cleanSumNo) && (
+                                             (!string.IsNullOrEmpty(cleanDetNo) && string.Equals(cleanDetNo, cleanSumNo, StringComparison.OrdinalIgnoreCase)) ||
+                                             (!string.IsNullOrEmpty(cleanDetA) && string.Equals(cleanDetA, cleanSumNo, StringComparison.OrdinalIgnoreCase)));
+                            bool isMatchName = !string.IsNullOrEmpty(cleanSumName) && (
+                                               (!string.IsNullOrEmpty(cleanDetNo) && string.Equals(cleanDetNo, cleanSumName, StringComparison.OrdinalIgnoreCase)) ||
+                                               (!string.IsNullOrEmpty(cleanDetA) && string.Equals(cleanDetA, cleanSumName, StringComparison.OrdinalIgnoreCase)));
+
+                            if (isMatchNo || isMatchName)
+                            {
+                                matchedDetRows[i] = detRows[j];
                                 detUsed[j] = true;
                                 break;
                             }

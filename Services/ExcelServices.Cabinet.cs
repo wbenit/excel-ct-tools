@@ -1589,22 +1589,86 @@ namespace ExcelAddInDemo
                     ? (cab.Header.Remark ?? string.Empty)
                     : cab.Header.InstallMode.Trim();
                 int cabQty = cab.Header.Quantity > 0 ? cab.Header.Quantity : 1;
+                // 提取箱柜计量单位
                 string cabUnit = !string.IsNullOrWhiteSpace(cab.Header.Unit) ? cab.Header.Unit : "台"; // --硬编码: 单位名称--
 
+                // 计算重名区分标记：若未预置，则自动探测当前表中已有的同名箱柜数量
+                string dupTag = cab.Header.DuplicateTag ?? string.Empty;
+                // 若标记为空且当前表非空，检索既有箱柜名称以判定是否重名
+                if (string.IsNullOrEmpty(dupTag) && validCabinets != null && validCabinets.Count > 0)
+                {
+                    // 计数已有同名箱柜总数
+                    int existingSameNameCount = 0;
+                    // 遍历当前表中所有已收录的有效箱柜
+                    foreach (var pair in validCabinets)
+                    {
+                        var anc = pair.Value;
+                        // 获取箱柜明细信息行行号
+                        int dRow = anc.DetRow > 0 ? anc.DetRow : (anc.Det != null ? Convert.ToInt32(anc.Det.Row) : 0);
+                        if (dRow > 0)
+                        {
+                            // 读取 B 列已记录的箱柜名称
+                            string exName = Convert.ToString(sheet.Cells[dRow, 2].Value)?.Trim() ?? string.Empty;
+                            // 比对名称是否相同
+                            if (string.Equals(exName, safeBoxName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                existingSameNameCount++;
+                            }
+                        }
+                    }
+                    // 若存在同名箱柜，新箱柜按格式 1 追加 (N+1) 标记
+                    // 若存在同名箱柜，新箱柜按格式 1 追加 (N+1) 标记
+                    if (existingSameNameCount > 0)
+                    {
+                        dupTag = $"({existingSameNameCount + 1})";
+                    }
+                }
+
+                // 提取基础备注/位置信息 (不按位置分表时 Header.Remark 存放了布置位置)
+                string baseRemark = (cab.Header.Remark ?? string.Empty).Trim();
+                // 最终备注列内容：位置与重名标记以空格组合（如 "一层配电房 (2)"，无标记时为 "一层配电房"，无位置时为 "(2)"）
+                string finalRemark = string.Empty;
+                if (!string.IsNullOrEmpty(baseRemark) && !string.IsNullOrEmpty(dupTag))
+                {
+                    finalRemark = $"{baseRemark} {dupTag}";
+                }
+                else if (!string.IsNullOrEmpty(baseRemark))
+                {
+                    finalRemark = baseRemark;
+                }
+                else if (!string.IsNullOrEmpty(dupTag))
+                {
+                    finalRemark = dupTag;
+                }
+
                 object[,] sumRowMatrix = new object[1, 13];
+                // A 列写入自适应序号公式
                 sumRowMatrix[0, 0] = "=ROW()-ROW(A$6)"; // A 列序号公式 --硬编码--
+                // B 列写入箱柜名称 (柜号)
                 sumRowMatrix[0, 1] = safeBoxName;      // B 列箱柜名称 (柜号)
+                // C 列写入型号
                 sumRowMatrix[0, 2] = string.IsNullOrWhiteSpace(cab.Header.Model) ? safeBoxName : cab.Header.Model; // C 列型号
-                sumRowMatrix[0, 3] = string.Empty;     // D 列尺寸
+                // D 列写入安装方式 (用户需求：将原 M 列安装方式调整至 D 列)
+                sumRowMatrix[0, 3] = installMode;     // D 列: 安装方式
+                // E 列写入单位
                 sumRowMatrix[0, 4] = cabUnit;          // E 列单位
+                // F 列写入台数
                 sumRowMatrix[0, 5] = cabQty;           // F 列台数
+                // G 列单价公式指向总计行
                 sumRowMatrix[0, 6] = $"=G{tolsumRow}"; // G 列单台单价公式指向总计行
+                // H 列合价公式
                 sumRowMatrix[0, 7] = $"=F{sumRow}*G{sumRow}"; // H 列合价公式
-                sumRowMatrix[0, 8] = string.Empty;     // I 列
+                // I 列写入备注内容 (不按位置分表时为位置，同名时附加 (2), (3)... 标记)
+                sumRowMatrix[0, 8] = finalRemark;     // I 列: 备注（位置 + 重名标记）
+                // J 列成本合价公式指向总计行
                 sumRowMatrix[0, 9] = $"=K{tolsumRow}"; // J 列成本合价公式
+                // K 列毛利公式
                 sumRowMatrix[0, 10] = $"=H{sumRow}-J{sumRow}"; // K 列毛利公式
+                // L 列毛利率公式
                 sumRowMatrix[0, 11] = $"=IF(H{sumRow}=0,0,K{sumRow}/H{sumRow})"; // L 列毛利率公式
-                sumRowMatrix[0, 12] = installMode;     // M 列安装方式备注
+                // M 列用户要求留空 (原安装方式已挪至 D 列)
+                sumRowMatrix[0, 12] = string.Empty;   // M 列: 留空
+                // 批量一次性写入顶部汇总行 A~M 列公式与数据矩阵
                 sheet.Range[$"A{sumRow}:M{sumRow}"].Formula = sumRowMatrix;
 
                 // 9. 规则 6 架构规范：注册工作表级 4 个定义名称
@@ -1645,9 +1709,11 @@ namespace ExcelAddInDemo
                 }
                 catch { }
 
-                // 11. 写入明细行表头属性 (B列名称、I列安装方式、AD列CAD坐标范围)
+                // 11. 写入明细行表头属性 (B列名称、I列重名区分标记、AD列CAD坐标范围)
+                // 写入明细行箱柜名称至 B 列
                 sheet.Cells[detRow, 2].Value2 = safeBoxName;
-                sheet.Cells[detRow, 9].Value2 = installMode;
+                // 写入备注内容至 I 列 (包含位置与重名标记，与顶部汇总行保持完全同步一致)
+                sheet.Cells[detRow, 9].Value2 = finalRemark;
                 if (cab.Header.MinMaxPoints != null && cab.Header.MinMaxPoints.Count > 0)
                 {
                     // 提取表头坐标单元格并设为文本格式
@@ -1867,10 +1933,49 @@ namespace ExcelAddInDemo
                         sheetContextMap[actualSheetName] = sheetCtx;
                     }
 
+                    // 统计当前分类分组中各箱柜名称的总出现频次，以精准识别唯一箱柜与重名箱柜
+                    var nameTotalCounts = cabListInGroup
+                        .GroupBy(c => c?.Header?.Name?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                        .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+                    // 维护当前分类分组中各箱柜名称出现序号计数器
+                    var nameCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
                     // 5. 顺序遍历写入当前分类下的所有箱柜
                     for (int gIdx = 0; gIdx < cabListInGroup.Count; gIdx++)
                     {
                         var cab = cabListInGroup[gIdx];
+                        // 提取纯净箱柜名称
+                        string cleanName = cab?.Header?.Name?.Trim() ?? string.Empty;
+
+                        // 若未预置重名标记，依据当前分类分组统计自动计算格式 1 标记
+                        if (string.IsNullOrEmpty(cab.Header.DuplicateTag))
+                        {
+                            // 查询当前名称在该分类中的总数量
+                            int total = nameTotalCounts.TryGetValue(cleanName, out int cnt) ? cnt : 1;
+                            // 若总数大于 1 说明存在同名箱柜
+                            if (total > 1)
+                            {
+                                // 递增当前名称的出现频次
+                                if (!nameCounter.TryGetValue(cleanName, out int currOccur))
+                                {
+                                    currOccur = 1;
+                                }
+                                else
+                                {
+                                    currOccur++;
+                                }
+                                nameCounter[cleanName] = currOccur;
+
+                                // 格式 1 规范：首台同名箱柜保持完全空白，第 2 台及以上写入 (2), (3)...
+                                cab.Header.DuplicateTag = (currOccur == 1) ? string.Empty : $"({currOccur})";
+                            }
+                            else
+                            {
+                                // 唯一箱柜保持完全空白
+                                cab.Header.DuplicateTag = string.Empty;
+                            }
+                        }
+
                         totalProcessed++;
                         // 触发进度回调通知
                         int progress = (int)(totalProcessed * 100.0 / cabinets.Count);
@@ -2226,22 +2331,56 @@ namespace ExcelAddInDemo
                 // 提取箱柜有效数量 (最小为 1)
                 int cabQty = cab.Header.Quantity > 0 ? cab.Header.Quantity : 1;
                 // 提取箱柜单位 (优先读取 Header.Unit，若空则默认为"台") --硬编码: 箱柜单位--
+                // 提取箱柜单位 (优先读取 Header.Unit，若空则默认为"台") --硬编码: 箱柜单位--
                 string cabUnit = !string.IsNullOrWhiteSpace(cab.Header.Unit) ? cab.Header.Unit : "台";
+
+                // 提取重名区分标记 (如: (2), (3)，唯一或首台为空)
+                string dupTag = (cab.Header.DuplicateTag ?? string.Empty).Trim();
+                // 提取基础备注/位置信息 (不按位置分表时 Header.Remark 存放了布置位置)
+                string baseRemark = (cab.Header.Remark ?? string.Empty).Trim();
+
+                // 最终备注列内容：位置与重名标记以空格组合（如 "一层配电房 (2)"，无标记时为 "一层配电房"，无位置时为 "(2)"）
+                string finalRemark = string.Empty;
+                if (!string.IsNullOrEmpty(baseRemark) && !string.IsNullOrEmpty(dupTag))
+                {
+                    finalRemark = $"{baseRemark} {dupTag}";
+                }
+                else if (!string.IsNullOrEmpty(baseRemark))
+                {
+                    finalRemark = baseRemark;
+                }
+                else if (!string.IsNullOrEmpty(dupTag))
+                {
+                    finalRemark = dupTag;
+                }
+
                 object[,] sumRowMatrix = new object[1, 13];
+                // A 列写入自适应序号公式
                 sumRowMatrix[0, 0] = "=ROW()-ROW(A$6)"; // A 列: 序号 --硬编码--
+                // B 列写入箱柜名称 (柜号)
                 sumRowMatrix[0, 1] = safeBoxName; // B 列: 箱柜名称 (柜号)
+                // C 列写入型号/名称
                 sumRowMatrix[0, 2] = string.IsNullOrWhiteSpace(cab.Header.Model) ? safeBoxName : cab.Header.Model; // C 列: 型号/名称
-                sumRowMatrix[0, 3] = string.Empty; // D 列: 箱柜型号/尺寸
+                // D 列写入安装方式 (用户需求：将原 M 列安装方式调整至 D 列)
+                sumRowMatrix[0, 3] = installMode; // D 列: 安装方式
+                // E 列写入单位
                 sumRowMatrix[0, 4] = cabUnit; // E 列: 单位 (顶部箱柜默认写入"台") --硬编码: 单位名称--
+                // F 列写入数量
                 sumRowMatrix[0, 5] = cabQty; // F 列: 数量 (使用提取的有效数量)
-                // G 列: 单价公式指向明细总计行单台单价 G 列 (方式 B 稳健绑定，避免数量二次相乘)
+                // G 列单价公式指向明细总计行单台单价 G 列
                 sumRowMatrix[0, 6] = $"=G{tolsumRow}";
+                // H 列总价公式
                 sumRowMatrix[0, 7] = $"=F{sumRow}*G{sumRow}"; // H 列: 总价公式
-                sumRowMatrix[0, 8] = string.Empty; // I 列
+                // I 列写入备注内容 (不按位置分表时为位置，同名时附加 (2), (3)... 标记)
+                sumRowMatrix[0, 8] = finalRemark; // I 列: 备注（位置 + 重名标记）
+                // J 列成本总价公式指向总计行
                 sumRowMatrix[0, 9] = $"=K{tolsumRow}"; // J 列: 成本总价公式 (指向总计行)
+                // K 列毛利公式
                 sumRowMatrix[0, 10] = $"=H{sumRow}-J{sumRow}"; // K 列: 毛利公式
+                // L 列毛利率公式
                 sumRowMatrix[0, 11] = $"=IF(H{sumRow}=0,0,K{sumRow}/H{sumRow})"; // L 列: 毛利率公式
-                sumRowMatrix[0, 12] = installMode; // M 列: 安装方式备注
+                // M 列用户要求留空 (原安装方式已挪至 D 列)
+                sumRowMatrix[0, 12] = string.Empty; // M 列: 留空
                 // 单次 COM 批量写入汇总行
                 sheet.Range[$"A{sumRow}:M{sumRow}"].Formula = sumRowMatrix;
 
@@ -2305,9 +2444,10 @@ namespace ExcelAddInDemo
                 }
                 catch { }
 
-                // 8. 写入明细信息行表头属性
+                // 8. 写入明细信息行表头属性 (B列名称、I列备注与重名区分标记、AD列CAD坐标范围)
                 sheet.Cells[detRow, 2].Value2 = safeBoxName;
-                sheet.Cells[detRow, 9].Value2 = installMode;
+                // I 列写入备注内容 (包含位置与重名标记，与顶部汇总行保持完全同步一致)
+                sheet.Cells[detRow, 9].Value2 = finalRemark;
                 if (cab.Header.MinMaxPoints != null && cab.Header.MinMaxPoints.Count > 0)
                 {
                     // 提取表头坐标单元格并设为文本格式

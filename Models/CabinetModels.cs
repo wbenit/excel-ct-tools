@@ -21,6 +21,12 @@ namespace ExcelAddInDemo.Models
         // 备注信息
         public string Remark { get; set; } = string.Empty;
 
+        // 箱柜安装/布置位置 (如: 1F强电井, 负一层水泵房)
+        public string Position { get; set; } = string.Empty;
+
+        // 重名区分标记 (如: (2), (3)，同名且唯一或首台时为空)
+        public string DuplicateTag { get; set; } = string.Empty;
+
         // 安装方式 (如: 暗装, 明装, 落地式)
         public string InstallMode { get; set; } = string.Empty;
 
