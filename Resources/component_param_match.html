@@ -888,6 +888,30 @@
                         statusText.value = `⚠️ 未匹配到目录，已返回根目录 (原名: ${msg.componentName || '无'})`;
                       }
                     }
+                    // 6. 图纸物理尺寸增量测算完成回发 (支持打开后自动补全显示)
+                    else if (msg.action === "dwgDimensionsUpdated") {
+                      if (Array.isArray(msg.items) && msg.items.length > 0) {
+                        // 建立尺寸映射表 (大小写不敏感)
+                        const dimMap = new Map();
+                        msg.items.forEach((item) => {
+                          if (item && item.dwgName) {
+                            dimMap.set(item.dwgName.toLowerCase(), item);
+                          }
+                        });
+                        // 就地遍历当前显示的 DWG 图纸列表更新尺寸
+                        dwgFiles.value.forEach((file) => {
+                          const key = (file.fileName || "").toLowerCase();
+                          if (dimMap.has(key)) {
+                            const d = dimMap.get(key);
+                            file.width = d.width;
+                            file.height = d.height;
+                            file.depth = d.depth;
+                            file.hasDimension = true;
+                            file.hasTextDepth = d.hasTextDepth;
+                          }
+                        });
+                      }
+                    }
                   } catch (err) {
                     console.error("IPC 消息解析异常:", err);
                   }

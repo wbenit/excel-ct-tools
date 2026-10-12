@@ -237,6 +237,9 @@ namespace ExcelAddInDemo.Forms
                         removeExtension = cfg.RemoveExtension,
                         scanData = scanResult
                     }, JsonOptions));
+
+                    // 异步触发未录入尺寸图纸的自动测算补全
+                    TriggerAsyncDimensionAutoFill(scanResult);
                 }
                 // 2. 点击设置图标选择根物理目录
                 else if (action == "selectBaseDirectory")
@@ -270,6 +273,9 @@ namespace ExcelAddInDemo.Forms
                                     baseDirectory = chosenPath,
                                     scanData = newScanResult
                                 }, JsonOptions));
+
+                                // 异步触发未录入尺寸图纸的自动测算补全
+                                TriggerAsyncDimensionAutoFill(newScanResult);
                             }
                         }
                         catch (Exception ex)
@@ -294,6 +300,9 @@ namespace ExcelAddInDemo.Forms
                             action = "directoryScanned",
                             scanData = scanResult
                         }, JsonOptions));
+
+                        // 异步触发未录入尺寸图纸的自动测算补全
+                        TriggerAsyncDimensionAutoFill(scanResult);
                     }
                 }
                 // 3.1 智能目录匹配：根据当前活动单元格所在行元器件名称自动进入最匹配目录
@@ -341,6 +350,9 @@ namespace ExcelAddInDemo.Forms
                                 matchedDirName = matchedDirName,
                                 scanData = scanResult
                             }, JsonOptions));
+
+                            // 异步触发未录入尺寸图纸的自动测算补全
+                            TriggerAsyncDimensionAutoFill(scanResult);
                         }
                         catch (Exception exMatch)
                         {
@@ -534,6 +546,52 @@ namespace ExcelAddInDemo.Forms
             {
                 LogHelper.WriteLog($"[ComponentParamMatchForm] ShowForm 异常: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 异步自愈补测：检测当前目录下是否存在尚未录入尺寸的 DWG 图纸，自动向 CAD 管道发起提取并通知前端增量回填
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释，配置与硬编码显式标明
+        /// </summary>
+        /// <param name="scanResult">当前目录层级扫描模型</param>
+        private void TriggerAsyncDimensionAutoFill(DirectoryHierarchyResult? scanResult)
+        {
+            // 校验扫描模型及其包含的图纸列表有效性
+            if (scanResult == null || scanResult.DwgFiles == null || scanResult.DwgFiles.Count == 0) return;
+
+            // 筛选出未录入尺寸且文件实际存在的图纸项集合
+            var missingDwgs = scanResult.DwgFiles.FindAll(d => !d.HasDimension && !string.IsNullOrWhiteSpace(d.FullPath) && File.Exists(d.FullPath));
+            // 若全部图纸均已有尺寸记录则直接退出
+            if (missingDwgs.Count == 0) return;
+
+            // 收集缺失尺寸图纸的绝对物理路径
+            var missingPaths = missingDwgs.ConvertAll(d => d.FullPath);
+            string currentPath = scanResult.CurrentPath;
+
+            // 启动非阻塞后台线程池任务发起管道提取，绝不阻塞 Excel 主线程
+            System.Threading.Tasks.Task.Run(async () =>
+            {
+                try
+                {
+                    // 异步请求 AutoCAD 管道服务端批量测算图纸尺寸并持久化至 SQLite
+                    var extractedDims = await CadSyncClient.RequestExtractDwgDimensionsAsync(missingPaths);
+                    // 校验回传的尺寸实体结果集非空
+                    if (extractedDims != null && extractedDims.Count > 0)
+                    {
+                        // 回发增量更新指令通知前端 Vue 3 就地响应式刷新尺寸标签
+                        PostWebMessageSafe(JsonSerializer.Serialize(new
+                        {
+                            action = "dwgDimensionsUpdated",
+                            currentPath = currentPath,
+                            items = extractedDims
+                        }, JsonOptions));
+                    }
+                }
+                catch (Exception exFill)
+                {
+                    // 记录自动测算补全异常日志，确保宿主健壮性
+                    LogHelper.WriteLog($"[ComponentParamMatchForm] 自动补测尺寸异常: {exFill.Message}");
+                }
+            });
         }
 
         /// <summary>
