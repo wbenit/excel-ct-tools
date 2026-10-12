@@ -15,16 +15,40 @@ namespace ExcelAddInDemo.Services
     /// </summary>
     public static partial class PersonalComponentDbService
     {
-        // 声明一次方案通用的 JSON 序列化选项
-        private static readonly JsonSerializerOptions PrimJsonOptions = new JsonSerializerOptions
+        // 声明一次方案通用的 JSON 序列化选项属性 (采用延迟初始化，避免类加载时过早触碰 Web 编码器引发类型初始化异常)
+        private static JsonSerializerOptions PrimJsonOptions => _lazyPrimJsonOptions.Value;
+
+        // 延迟加载包装对象
+        private static readonly Lazy<JsonSerializerOptions> _lazyPrimJsonOptions = new Lazy<JsonSerializerOptions>(CreatePrimJsonOptions);
+
+        // 安全构建一次方案 JSON 序列化选项
+        private static JsonSerializerOptions CreatePrimJsonOptions()
         {
-            // 属性名忽略大小写
-            PropertyNameCaseInsensitive = true,
-            // 支持中文直出
-            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            // 紧凑输出
-            WriteIndented = false
-        };
+            try
+            {
+                // 首选支持中文免转义的宽松编码器
+                return new JsonSerializerOptions
+                {
+                    // 属性名忽略大小写
+                    PropertyNameCaseInsensitive = true,
+                    // 支持中文直出
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                    // 紧凑输出
+                    WriteIndented = false
+                };
+            }
+            catch
+            {
+                // 当宿主进程缺少特定版本程序集依赖时平滑降级为标准配置
+                return new JsonSerializerOptions
+                {
+                    // 保持属性名不区分大小写
+                    PropertyNameCaseInsensitive = true,
+                    // 保持紧凑格式
+                    WriteIndented = false
+                };
+            }
+        }
 
         /// <summary>
         /// 安全序列化一次方案 BOM 列表为 JSON 字符串

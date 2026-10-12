@@ -606,6 +606,64 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 检查指定品牌和型号规格在云端是否已存在对应的元器件记录 (同品牌下型号必须唯一)
+        /// </summary>
+        /// <param name="brand">所属品牌</param>
+        /// <param name="model">规格型号</param>
+        /// <returns>若存在返回该元器件实体信息，若不存在返回 null</returns>
+        public static ComponentApiDto? FindExistingComponent(string? brand, string? model)
+        {
+            // 防御空值参数校验
+            if (string.IsNullOrWhiteSpace(brand) || string.IsNullOrWhiteSpace(model))
+            {
+                // 空参数直接返回不存在
+                return null;
+            }
+
+            try
+            {
+                // 读取 API 基准地址配置
+                string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
+                // 构造单次定向快速查询 URL，按品牌与型号关键字联合检索
+                string qUrl = $"{baseUrl.TrimEnd('/')}/api/api/Component/GetPagedList?PageIndex=1&PageSize=50&Brand={Uri.EscapeDataString(brand.Trim())}&Keyword={Uri.EscapeDataString(model.Trim())}";
+
+                // 发起快速 GET 请求
+                var resp = _httpClient.GetAsync(qUrl).GetAwaiter().GetResult();
+                // 校验 HTTP 响应状态码
+                if (!resp.IsSuccessStatusCode)
+                {
+                    // 请求异常返回 null
+                    return null;
+                }
+
+                // 读取响应体内容
+                string json = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                // 反序列化结果列表容器
+                var pResult = JsonSerializer.Deserialize<ComponentPagedApiResponse<ComponentApiDto>>(json, _jsonOptions);
+                // 若列表为空则直接返回 null
+                if (pResult?.Items == null || pResult.Items.Count == 0)
+                {
+                    // 未命中记录
+                    return null;
+                }
+
+                // 严格精确匹配品牌与型号（忽略两端空格与大小写）
+                return pResult.Items
+                    .Where(x => string.Equals(x.Brand?.Trim(), brand.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                                string.Equals(x.Model?.Trim(), model.Trim(), StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(x => x.Id)
+                    .FirstOrDefault();
+            }
+            catch (Exception ex)
+            {
+                // 记录查询异常日志
+                LogHelper.WriteLog($"[ComponentApiClient] FindExistingComponent 异常: {ex.Message}");
+                // 发生异常时保底返回 null
+                return null;
+            }
+        }
+
+        /// <summary>
         /// 调用远程商城 WebAPI 新增单条元器件数据 (POST /api/api/Component/Create)
         /// </summary>
         /// <param name="dto">新增参数 DTO</param>
@@ -632,7 +690,47 @@ namespace ExcelAddInDemo
 
                 // 读取并反序列化新增成功后的实体
                 string respJson = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                return JsonSerializer.Deserialize<ComponentApiDto>(respJson, _jsonOptions);
+                var created = JsonSerializer.Deserialize<ComponentApiDto>(respJson, _jsonOptions);
+
+                // 4. 防御自愈：若远程后端成功执行写入 (HTTP 200)，但实体未正确回传自增主键 (Id <= 0)
+                if (created != null && created.Id <= 0 && !string.IsNullOrWhiteSpace(dto.Model))
+                {
+                    try
+                    {
+                        // 构造定向单次快速检索 URL，精准查询刚入库的同型号元器件
+                        string qUrl = $"{baseUrl.TrimEnd('/')}/api/api/Component/GetPagedList?PageIndex=1&PageSize=50&Brand={Uri.EscapeDataString(dto.Brand ?? "")}&Keyword={Uri.EscapeDataString(dto.Model ?? "")}";
+                        // 发起异步快速 GET 请求并等待响应
+                        var qResp = _httpClient.GetAsync(qUrl).GetAwaiter().GetResult();
+                        // 校验响应状态
+                        if (qResp.IsSuccessStatusCode)
+                        {
+                            // 读取查询结果 JSON 字符串
+                            string qJson = qResp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                            // 反序列化分页结果
+                            var pResult = JsonSerializer.Deserialize<ComponentPagedApiResponse<ComponentApiDto>>(qJson, _jsonOptions);
+                            // 若结果包含记录列表
+                            if (pResult?.Items != null)
+                            {
+                                // 精确匹配品牌与型号，并优先获取最新生成的最大主键 ID
+                                var matched = pResult.Items
+                                    .Where(x => string.Equals(x.Brand?.Trim(), dto.Brand?.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                                                string.Equals(x.Model?.Trim(), dto.Model?.Trim(), StringComparison.OrdinalIgnoreCase))
+                                    .OrderByDescending(x => x.Id)
+                                    .FirstOrDefault();
+                                // 若成功反查出有效主键
+                                if (matched != null && matched.Id > 0)
+                                {
+                                    // 成功自愈回填真实云端自增 ID
+                                    created.Id = matched.Id;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                // 返回包含有效主键 ID 的元器件实体
+                return created;
             }
             catch (Exception ex)
             {

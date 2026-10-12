@@ -379,6 +379,23 @@ namespace ExcelAddInDemo
                         Remark = Convert.ToString(rowValues[1, _manageColCfg.RemarkCol])?.Trim()
                     };
 
+                    // 校验同品牌下型号规格唯一性：不能将型号修改为已被其他已有物料占用的型号
+                    ComponentApiDto? conflictComp = isPersonal
+                        ? Services.PersonalComponentDbService.FindExistingComponent(brand, model)
+                        : ComponentApiClient.FindExistingComponent(brand, model);
+                    // 若检索到冲突记录且主键不等于当前物料 ID
+                    if (conflictComp != null && conflictComp.Id != id)
+                    {
+                        // 累计失败计数
+                        failCount++;
+                        // 区分数据源标识
+                        string tag = isPersonal ? "个人库" : "云端";
+                        // 记录失败结果与冲突提示
+                        updateResults.Add((row, false, $"❌ 该型号已被其他物料占用({tag} ID:{conflictComp.Id})"));
+                        // 跳过当前行更新
+                        continue;
+                    }
+
                     // 根据当前数据源执行更新
                     bool isOk = false;
                     if (isPersonal)
@@ -468,6 +485,8 @@ namespace ExcelAddInDemo
                 int successCount = 0;
                 int failCount = 0;
                 var createResults = new List<(int row, bool success, int? newId, string msg)>();
+                // 用于在本次选中的多个行中防止同品牌同型号重复
+                var batchKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 // 1. 读取选中行的数据 (忽略原先是否有 ID，作为全新物料新增)
                 foreach (int row in detect.RowIndices)
@@ -484,6 +503,35 @@ namespace ExcelAddInDemo
                     {
                         failCount++;
                         createResults.Add((row, false, null, "品牌和型号为必填项"));
+                        continue;
+                    }
+
+                    // 1.1 唯一性防线一：本次提交批次内同品牌同型号排重
+                    string uniqueKey = $"{brand}|||{model}";
+                    // 若批次内已存在该组合
+                    if (batchKeys.Contains(uniqueKey))
+                    {
+                        // 记录失败并拦截
+                        failCount++;
+                        createResults.Add((row, false, null, "❌ 本次提交中同品牌型号重复"));
+                        continue;
+                    }
+                    // 记录已处理的品牌型号键
+                    batchKeys.Add(uniqueKey);
+
+                    // 1.2 唯一性防线二：检查目标物料库中是否已存在该品牌型号 (严格保证唯一性)
+                    ComponentApiDto? existingComp = isPersonal
+                        ? Services.PersonalComponentDbService.FindExistingComponent(brand, model)
+                        : ComponentApiClient.FindExistingComponent(brand, model);
+
+                    // 若目标库中已存在同品牌同型号记录
+                    if (existingComp != null && existingComp.Id > 0)
+                    {
+                        // 累计失败并拦截入库
+                        failCount++;
+                        string tag = isPersonal ? "个人库" : "云端";
+                        // 回写已存在的系统 ID，提示重复，便于用户后续直接点击【更新选中行】
+                        createResults.Add((row, false, existingComp.Id, $"❌ 同品牌型号已存在({tag} ID:{existingComp.Id})"));
                         continue;
                     }
 
@@ -541,7 +589,8 @@ namespace ExcelAddInDemo
                     app.EnableEvents = false;
                     foreach (var item in createResults)
                     {
-                        if (item.success && item.newId.HasValue)
+                        // 只要分配了有效 ID (包含新生成 ID 或已存在反查回填的 ID)，均回填至 A 列
+                        if (item.newId.HasValue && item.newId.Value > 0)
                         {
                             dynamic idCell = sheet.Cells[item.row, _manageColCfg.IdCol];
                             idCell.Value2 = item.newId.Value;

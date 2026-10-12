@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows.Forms;
 using ExcelAddInDemo.Services;
+using ExcelAddInDemo.Models;
 using System.Runtime.InteropServices;
 using ExcelDna.Integration;
 using Microsoft.Web.WebView2.Core;
@@ -360,6 +361,67 @@ namespace ExcelAddInDemo.Forms
                             LogHelper.WriteLog($"[ComponentParamMatchForm] autoMatchDirectory 异常: {exMatch.Message}");
                         }
                     });
+                }
+                // 3.2 一键主动补测当前目录下图纸尺寸并存入物料库
+                else if (action == "forceExtractDimensions")
+                {
+                    // 提取目标目录路径
+                    string targetPath = root.TryGetProperty("path", out var pProp) ? (pProp.GetString() ?? "") : "";
+                    // 校验目标目录物理有效性
+                    if (!string.IsNullOrWhiteSpace(targetPath) && Directory.Exists(targetPath))
+                    {
+                        // 扫描获取当前目录下的文件列表
+                        var scanResult = DwgPreviewService.ScanDirectoryHierarchy(targetPath);
+                        if (scanResult?.DwgFiles != null && scanResult.DwgFiles.Count > 0)
+                        {
+                            // 优先筛选未录入尺寸且物理存在的图纸，若都已有尺寸则全量重新校验测算
+                            var missingDwgs = scanResult.DwgFiles.FindAll(d => !d.HasDimension && !string.IsNullOrWhiteSpace(d.FullPath) && File.Exists(d.FullPath));
+                            var targetDwgs = missingDwgs.Count > 0 ? missingDwgs : scanResult.DwgFiles.FindAll(d => !string.IsNullOrWhiteSpace(d.FullPath) && File.Exists(d.FullPath));
+                            // 获取目标图纸物理路径列表
+                            var targetPaths = targetDwgs.ConvertAll(d => d.FullPath);
+
+                            // 启动非阻塞后台线程池任务发起测算
+                            System.Threading.Tasks.Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    // 异步请求 AutoCAD 管道服务端批量测算图纸尺寸并持久化至 SQLite
+                                    var extractedDims = await CadSyncClient.RequestExtractDwgDimensionsAsync(targetPaths);
+                                    // 构造响应结果回传前端 Vue 3 界面
+                                    PostWebMessageSafe(JsonSerializer.Serialize(new
+                                    {
+                                        action = "forceExtractDimensionsResult",
+                                        success = extractedDims != null && extractedDims.Count > 0,
+                                        currentPath = targetPath,
+                                        count = extractedDims?.Count ?? 0,
+                                        items = extractedDims ?? new List<DwgDimensionItem>(),
+                                        message = (extractedDims != null && extractedDims.Count > 0) ? $"成功测算 {extractedDims.Count} 张图纸尺寸" : "CAD 未能提取到尺寸，请检查图纸或确认 AutoCAD 是否已就绪"
+                                    }, JsonOptions));
+                                }
+                                catch (Exception exExtract)
+                                {
+                                    // 记录测算异常并通知前端
+                                    LogHelper.WriteLog($"[ComponentParamMatchForm] forceExtractDimensions 异常: {exExtract.Message}");
+                                    PostWebMessageSafe(JsonSerializer.Serialize(new
+                                    {
+                                        action = "forceExtractDimensionsResult",
+                                        success = false,
+                                        message = $"测算异常: {exExtract.Message}"
+                                    }, JsonOptions));
+                                }
+                            });
+                        }
+                        else
+                        {
+                            // 提示当前目录下无可测算的 DWG 文件
+                            PostWebMessageSafe(JsonSerializer.Serialize(new
+                            {
+                                action = "forceExtractDimensionsResult",
+                                success = false,
+                                message = "当前目录下未找到任何 DWG 图纸文件"
+                            }, JsonOptions));
+                        }
+                    }
                 }
                 // 4. 双击 DWG 图纸文件：回写 Excel X/Y 列并自动跳向下一行
                 else if (action == "bindDwg")

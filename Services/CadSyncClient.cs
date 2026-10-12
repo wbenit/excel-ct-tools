@@ -176,8 +176,8 @@ namespace ExcelAddInDemo.Services
             // 校验图纸路径列表是否为空
             if (dwgPaths == null || dwgPaths.Count == 0) return resultList;
 
-            // 若未指定超时时间，按每张图 500ms 动态放宽并设 4000ms 保底
-            int effectiveTimeout = timeoutMs > 0 ? timeoutMs : Math.Max(4000, dwgPaths.Count * 500); // --硬编码: 保底超时 4000ms--
+            // 若未指定超时时间，按每张图 800ms 动态放宽并设 6000ms 保底以确保 CAD 充足执行
+            int effectiveTimeout = timeoutMs > 0 ? timeoutMs : Math.Max(6000, dwgPaths.Count * 800); // --硬编码: 保底超时 6000ms--
 
             // 创建超时取消标记源
             using (var cts = new CancellationTokenSource(effectiveTimeout))
@@ -187,8 +187,8 @@ namespace ExcelAddInDemo.Services
                     // 构造双向异步命名管道客户端以支持双向收发
                     using (var pipeClient = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous))
                     {
-                        // 尝试连接 CAD 服务端（握手连接超时设为 400ms，CAD 未打开时快速失败降级）
-                        int connectTimeout = Math.Min(400, effectiveTimeout); // --硬编码: 握手连接超时 400ms--
+                        // 尝试连接 CAD 服务端（握手连接超时设为 2500ms，为 CAD 调度主线程留出充分时间）
+                        int connectTimeout = Math.Min(2500, effectiveTimeout); // --硬编码: 握手连接超时 2500ms--
                         // 异步连接 AutoCAD 管道服务端
                         await pipeClient.ConnectAsync(connectTimeout, cts.Token);
 
@@ -244,8 +244,161 @@ namespace ExcelAddInDemo.Services
                 }
             }
 
+            // 若管道未提取到结果（如 AutoCAD 未启动），无缝触发后台 accoreconsole 极速静默测算自愈
+            if (resultList.Count == 0 && dwgPaths != null && dwgPaths.Count > 0)
+            {
+                // 调用后台核心控制台自愈测算引擎
+                resultList = await TryRunAccoreConsoleBatchExtractAsync(dwgPaths);
+            }
+
             // 返回提取到的尺寸数据列表
             return resultList;
+        }
+
+        /// <summary>
+        /// 离线静默自愈引擎：当 AutoCAD 未前台运行时，调用 accoreconsole.exe 无界面批量测算图纸并持久化至 SQLite
+        /// </summary>
+        /// <param name="dwgPaths">待测算的 DWG 绝对路径列表</param>
+        /// <returns>测算入库的尺寸实体列表</returns>
+        private static async Task<List<DwgDimensionItem>> TryRunAccoreConsoleBatchExtractAsync(List<string> dwgPaths)
+        {
+            // 初始化返回列表
+            var resultList = new List<DwgDimensionItem>();
+            // 校验路径有效性
+            if (dwgPaths == null || dwgPaths.Count == 0) return resultList;
+
+            // 检索系统中的 accoreconsole.exe 控制台执行路径
+            string accorePath = GetAccoreConsolePath();
+            // 检查控制台程序物理是否存在
+            if (string.IsNullOrWhiteSpace(accorePath) || !File.Exists(accorePath))
+            {
+                LogHelper.WriteLog("[CadSyncClient] 未检测到 accoreconsole.exe，跳过离线自愈测算");
+                return resultList;
+            }
+
+            // 获取 AutoCAD 插件 DLL 的物理路径 --硬编码: ClassLibrary3.dll 路径--
+            string pluginDllPath = @"E:\Ace\cad-net_1\cad1\ClassLibrary1\bin\Debug\ClassLibrary3.dll";
+            if (!File.Exists(pluginDllPath))
+            {
+                LogHelper.WriteLog($"[CadSyncClient] 插件程序集不存在: {pluginDllPath}");
+                return resultList;
+            }
+
+            try
+            {
+                // 1. 将待测算的图纸物理路径写入临时任务清单文件
+                string tempDir = Path.GetTempPath();
+                string taskFile = Path.Combine(tempDir, "dwg_scan_tasks.txt"); // --硬编码: 临时任务清单路径--
+                File.WriteAllLines(taskFile, dwgPaths);
+
+                // 2. 构造 accoreconsole 执行的 SCR 批处理脚本 (统一转为 Linux 正斜杠避免转义错误)
+                string scrFile = Path.Combine(tempDir, "dwg_batch_extract.scr"); // --硬编码: 临时脚本路径--
+                string normalizedDllPath = pluginDllPath.Replace('\\', '/');
+                string scrContent = $"(command \"NETLOAD\" \"{normalizedDllPath}\")\r\nSCAN_BATCH_FROM_FILE\r\nQUIT\r\n";
+                File.WriteAllText(scrFile, scrContent, Encoding.ASCII);
+
+                // 3. 构造以第一张图纸为承载上下文的静默控制台执行进程
+                string sampleDwg = dwgPaths[0];
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = accorePath,
+                    Arguments = $"/i \"{sampleDwg}\" /s \"{scrFile}\" /l en-US",
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
+                };
+
+                // 启动后台静默进程
+                using (var proc = System.Diagnostics.Process.Start(psi))
+                {
+                    if (proc != null)
+                    {
+                        // 异步等待进程完成，设置宽裕超时时间 (每张图 1 秒，保底 12 秒)
+                        int waitMs = Math.Max(12000, dwgPaths.Count * 1000);
+                        await Task.Run(() => proc.WaitForExit(waitMs));
+                    }
+                }
+
+                // 4. 从 SQLite 中批量提取最新已测算入库的尺寸数据
+                var queryKeys = new List<string>();
+                foreach (var path in dwgPaths)
+                {
+                    // 收集图纸文件名作为查询键
+                    queryKeys.Add(Path.GetFileName(path));
+                    string? dirName = Path.GetFileName(Path.GetDirectoryName(path));
+                    if (!string.IsNullOrWhiteSpace(dirName))
+                    {
+                        // 收集 目录名/图纸名 组合键
+                        queryKeys.Add($"{dirName}/{Path.GetFileName(path)}");
+                    }
+                }
+
+                // 批量查询 SQLite 数据库
+                var dimDict = PersonalComponentDbService.BatchGetDwgDimensions(queryKeys);
+                if (dimDict != null && dimDict.Count > 0)
+                {
+                    // 收集所有成功命中的尺寸项并去重
+                    var distinctItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var kvp in dimDict)
+                    {
+                        if (kvp.Value != null && !distinctItems.Contains(kvp.Value.DwgName))
+                        {
+                            distinctItems.Add(kvp.Value.DwgName);
+                            resultList.Add(kvp.Value);
+                        }
+                    }
+                    LogHelper.WriteLog($"[CadSyncClient] accoreconsole 离线自愈成功提取入库: {resultList.Count} 条尺寸");
+                }
+            }
+            catch (Exception exAccore)
+            {
+                // 记录离线执行异常日志
+                LogHelper.WriteLog($"[CadSyncClient] TryRunAccoreConsoleBatchExtractAsync 异常: {exAccore.Message}");
+            }
+
+            return resultList;
+        }
+
+        /// <summary>
+        /// 自动探测 AutoCAD accoreconsole.exe 核心控制台的物理绝对路径
+        /// </summary>
+        /// <returns>程序路径，未找到时返回空字符串</returns>
+        private static string GetAccoreConsolePath()
+        {
+            try
+            {
+                // 1. 优先从注册表 AutoCAD 2021 安装路径查找 --硬编码: 注册表路径--
+                using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Autodesk\AutoCAD\R24.0\ACAD-4101:804"))
+                {
+                    if (key != null)
+                    {
+                        string? loc = key.GetValue("AcadLocation") as string;
+                        if (!string.IsNullOrWhiteSpace(loc))
+                        {
+                            string target = Path.Combine(loc, "accoreconsole.exe");
+                            if (File.Exists(target)) return target;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // 2. 常见物理安装目录兜底排查 --硬编码: 常用安装路径--
+            string[] probePaths = new[]
+            {
+                @"D:\Program Files\Autodesk\AutoCAD 2021\accoreconsole.exe",
+                @"C:\Program Files\Autodesk\AutoCAD 2021\accoreconsole.exe",
+                @"D:\AutoCAD 2021\accoreconsole.exe",
+                @"C:\AutoCAD 2021\accoreconsole.exe"
+            };
+
+            foreach (var p in probePaths)
+            {
+                // 找到即返回
+                if (File.Exists(p)) return p;
+            }
+
+            return string.Empty;
         }
 
         /// <summary>

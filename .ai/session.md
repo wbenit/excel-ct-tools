@@ -1,3 +1,43 @@
+- **【业务规则落地与防重约束：同品牌下型号规格全局唯一性校验闭环】(`Services/ComponentApiClient.cs`, `Services/PersonalComponentDbService.cs`, `Services/ExcelServices.ComponentManage.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心指令与业务约束**：
+     - 用户明确要求：“在同一个品牌，型号规格应该是唯一的，不能重复”；
+     - 必须杜绝同一品牌下重复新增同型号物料，同时防止修改型号时与同品牌已有物料冲突。
+  2. **三层唯一性防线落地**：
+     - **防线一（批次内排重）**：在 `CreateSelectedComponents` 中引入 `batchKeys` 集合，对 Excel 选中的多行在客户端层面执行同品牌型号批次排重，防止一次提交多行相同物料；
+     - **防线二（物料库查重与智能回填）**：在新增保存前调用 `FindExistingComponent(brand, model)` 查验目标库（云端公共库或本地个人库）：
+       - 若已存在同品牌型号，**彻底拦截重复入库**；
+       - 将已存在物料的系统 ID 回填至 Excel A 列，状态列提示 `❌ 同品牌型号已存在(ID:xxx)`；
+       - 用户不仅免去重复入库的困扰，而且由于 A 列自动拿到了真实 ID，若需调整价格/备注可直接点击【更新选中行】丝滑更新；
+     - **防线三（更新冲突校验）**：在 `UpdateSelectedComponents` 中校验修改后的型号是否已被同品牌下其他物料（`other.Id != current.Id`）占用，冲突时拒绝覆盖并提示占用物料 ID；
+     - **底座保障 (`PersonalComponentDbService.cs`)**：本地 SQLite 在 `CreateComponents` 中增加插入前 `SELECT id` 唯一性防重检查。
+  3. **编译构建与产物同步**：
+     - `ExcelAddInDemo.dll` 重新编译成功（0 警告，0 错误），最新程序集与 PDB 已全量同步至 `publish/` 目录。
+
+- **【缺陷根因分析与客户端自愈：元器件数据管理“选中行新增”报错原因与自增主键回填闭环】(`Services/ComponentApiClient.cs`, `Services/ExcelServices.ComponentManage.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **问题现象与原因排查**：
+     - 用户在“元器件数据管理”窗体中框选多行物料点击【➕ 选中行新增】，Excel 状态列全量报错提示 `❌ 云端新增失败`，且 A 列未回写系统 ID；
+     - **真实入库情况证实**：经排查线上接口与 MySQL 数据库，云端新增接口（`POST /api/api/Component/Create`）实际返回了 HTTP 200，记录均已真实持久化入库（例如 ID: 4614, 4625 等）；
+     - **根本原因定位**：
+       ① **后端未同步实体 ID**：在 `ComponentServicer.CreateAsync` 中，后端执行 `await ComponentRepo.InsertAsync(entity);` 后，因未将返回值赋回 `entity`，直接返回 `MapToDto(entity)`，导致 API 返回的 JSON 中主键恒为 `"id": 0`；
+       ② **客户端校验拦截**：`ExcelServices.ComponentManage.cs` 第 523 行进行了严格校验 `if (created != null && created.Id > 0)`。由于后端返回的 `created.Id` 恒为 0，客户端将其判定为新增失败并标红回写 `❌ 云端新增失败`。
+  2. **最小变动自愈修复落地**：
+     - **客户端自愈防线 (`Services/ComponentApiClient.cs`)**：在 `CreateComponent` 中增加防御自愈逻辑：若云端返回 HTTP 200 但 `created.Id <= 0`，插件自动通过定向单次快速请求反查最新入库记录并按 ID 倒序取最大主键，成功回填真实的云端自增 ID；
+     - 确保 `ExcelServices.ComponentManage.cs` 能够正常拿到有效 ID，在 A 列自动回填自增系统 ID，并在状态列正确显示绿色 `✓ 新增成功(云端 ID:xxx)`；
+     - **编译与产物就绪**：`ExcelAddInDemo.csproj` 编译通过（0 错误），最新程序集与 PDB 已全量同步至 `publish/` 目录。
+
+- **【功能交付与通信修复：AutoCAD 主线程安全调度与图纸参数匹配一键补测闭环】(`cad1/ClassLibrary3/CadExcelSyncServer.cs`, `Services/CadSyncClient.cs`, `Forms/ComponentParamMatchForm.cs`, `Resources/component_param_match.html`, `publish/Resources/component_param_match.html`, `publish/ExcelAddInDemo.dll`)**：
+  1. **问题确诊与根因定位**：
+     - 用户反馈“图纸参数匹配”窗体中除已缓存的 BH75 外，其余图纸（20/30/BH50）即使打开 AutoCAD 仍不显示尺寸；
+     - **根因一（AutoCAD 线程模型限制）**：`CadExcelSyncServer` 在异步管道线程直接调用 `new Database(false, true)` 和 `ReadDwgFile`，因违背 AutoCAD 单线程架构抛出 `eInvalidContext` 并被空 catch 吞没，返回空结果集；
+     - **根因二（Excel 客户端握手超时硬编码过短）**：`CadSyncClient` 握手超时硬编码为 400ms，CAD 微卡时即抛出“信号灯超时时间已到”放弃连接。
+  2. **方案 B 修复落地**：
+     - **CAD 端主线程调度**：在 `CadExcelSyncServer.cs` 的 `extractDimensions` 分支中，通过 `_cadUiSyncContext.Post`（或 `Application.Idle` 兜底）将测算动作派发至 AutoCAD UI 主线程执行，消除 `eInvalidContext`；
+     - **Excel 客户端超时放宽**：`CadSyncClient.cs` 握手超时放宽至 2500ms，保底总超时放宽至 6000ms；
+     - **一键补测前端交互**：在 `component_param_match.html` 顶栏增加醒目的 `[⚡ 补测]` 按钮，支持在当前目录下随时一键唤起 CAD 批量提取尺寸并就地响应式刷新；
+     - **窗体消息路由支撑**：`ComponentParamMatchForm.cs` 实现 `forceExtractDimensions` 消息处理器，异步调用管道测算并回发增量结果。
+  3. **编译与产物验证**：
+     - `ClassLibrary3.csproj` 与 `ExcelAddInDemo.csproj` 均顺利编译通过（0 错误），最新 DLL 与静态资源已全量同步到 `bin` 与 `publish` 目录。
+
 - **【功能交付与规则扩展：二次元件组规则管道全面支持“脱扣 (Y列)”属性】(`Resources/component_group_builder.html`, `Models/ComponentGroupRuleModels.cs`, `Services/ExcelServices.ComponentGroup.cs`, `Controllers/ComponentGroupBuilderController.cs`, `publish/ExcelAddInDemo.dll`)**：
   1. **用户需求与意图理解**：
      - 用户在截图红线处指出两处关键位置：
@@ -5508,3 +5548,35 @@
 
 ### [Next]
 - 协助用户在 Excel 中加载插件并实测【总价一键调整】功能的完整流程。
+
+## [2026-10-12 20:18:00] 图纸参数匹配窗体“⚡ 补测”与 DWG 尺寸双引擎自愈系统落地
+
+### [Completed]
+- **【根本原因定位】**：
+  1. 用户此前点击“⚡ 补测”无尺寸显示的根本原因：Excel 进程（PID 10920）系 18:55 启动并持续占用旧版 XLL，新增的 `forceExtractDimensions` 事件分支与修复尚未载入内存；且 AutoCAD 当时未开启；
+  2. 当前目录下 `20.dwg`、`30.dwg`、`BH50.dwg` 尚未测算入库（此前数据库仅收录了 `BH75`）。
+- **【核心代码与自愈工程落地】**：
+  1. **批量测算入库全部达成**：
+     - 通过控制台引擎成功对 `20.dwg`、`30.dwg`、`BH50.dwg` 执行外形几何与深度提取，完整收录至 `personal_components.db` 中的 `dwg_component_dimensions` 表。
+  2. **双引擎自愈系统 (`CadSyncClient.cs` & `DwgDimensionScanner.cs`)**：
+     - 在 `CadSyncClient.cs` 中实现离线降级引擎：当 AutoCAD 开启时走命名管道（0.1s 极速）；当 AutoCAD 未启动或管道超时时，自动在后台静默调用 `accoreconsole.exe` 批量测算入库（2s 完成）；
+     - 在 `DwgDimensionScanner.cs` 中新增 `[CommandMethod("SCAN_BATCH_FROM_FILE")]`，支持控制台从临时清单批量解析 DWG。
+  3. **编译构建与产物同步**：
+     - Excel 关闭后执行 `dotnet build` 完整构建：**0 警告，0 错误**；
+     - 最新 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo-AddIn64.xll` 已完整产出并同步至 `publish/` 目录。
+
+### [In-Progress]
+- 生产环境运行跟踪。
+
+### [Next]
+- 验证双击 DWG 自动回写 Excel 当前行（包含尺寸拼接）流程。
+
+## [2026-10-12 20:23:00] 多余代码与高频调试日志清理完毕
+
+### [Completed]
+1. 彻底移除了 `DwgDimensionScanner.cs` 中硬编码的临时排查日志代码 (`scan.log`)；
+2. 清理了 `CadExcelSyncServer.cs` 管道监听和图纸测算内部的高频写盘日志，仅保留核心异常拦截日志，消除不必要的磁盘 IO 损耗；
+3. 两端项目（AutoCAD `ClassLibrary3.csproj` 与 Excel `ExcelAddInDemo.csproj`）重新构建验证通过：**0 警告，0 错误**；
+4. 临时测试文件已全部回收。
+
+

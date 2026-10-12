@@ -155,6 +155,26 @@
         border-color: #00796b !important;
       }
 
+      /* 一键测算补全按钮样式 (橙黄色醒目警示) */
+      .extract-btn {
+        padding: 2px 5px;
+        font-size: 11px;
+        height: 22px;
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        flex-shrink: 0;
+        background-color: #f59e0b !important;
+        border-color: #f59e0b !important;
+        color: #ffffff !important;
+        font-weight: 500;
+      }
+
+      .extract-btn:hover {
+        background-color: #d97706 !important;
+        border-color: #d97706 !important;
+      }
+
       .cur-dir-tag {
         flex: 1;
         overflow: hidden;
@@ -515,6 +535,17 @@
         >
           🎯 匹配
         </el-button>
+        <el-button
+          class="extract-btn"
+          size="small"
+          type="warning"
+          plain
+          :loading="isExtracting"
+          @click="forceExtractDimensions"
+          title="一键通过 AutoCAD 测算当前目录下所有图纸尺寸并存入物料库"
+        >
+          ⚡ 补测
+        </el-button>
         <div class="cur-dir-tag" :title="currentFullPath">
           {{ currentFolderName || '根目录' }}
         </div>
@@ -651,6 +682,8 @@
             const statusText = ref("就绪: 双击DWG写入Excel");
             // 标记智能匹配中加载状态
             const isMatching = ref(false);
+            // 标记一键测算中加载状态
+            const isExtracting = ref(false);
             // 记录最近一次写入的 DWG 名称用于高亮反馈
             const lastBoundDwg = ref("");
             // 当前聚焦识别到的 Excel 工作表名称
@@ -727,6 +760,17 @@
             // 设置根目录
             function selectBaseDirectory() {
               postToCSharp({ action: "selectBaseDirectory" });
+            }
+
+            // 一键主动向 AutoCAD 请求批量测算当前目录下图纸尺寸并就地响应式刷新
+            function forceExtractDimensions() {
+              if (!currentFullPath.value) return;
+              isExtracting.value = true;
+              statusText.value = "正在向 AutoCAD 请求测算当前目录图纸尺寸...";
+              postToCSharp({
+                action: "forceExtractDimensions",
+                path: currentFullPath.value,
+              });
             }
 
             // 进入子目录
@@ -888,6 +932,56 @@
                         statusText.value = `⚠️ 未匹配到目录，已返回根目录 (原名: ${msg.componentName || '无'})`;
                       }
                     }
+                    // 6. 图纸物理尺寸增量测算完成回发 (支持打开后自动补全显示)
+                    else if (msg.action === "dwgDimensionsUpdated") {
+                      if (Array.isArray(msg.items) && msg.items.length > 0) {
+                        // 建立尺寸映射表 (大小写不敏感)
+                        const dimMap = new Map();
+                        msg.items.forEach((item) => {
+                          if (item && item.dwgName) {
+                            dimMap.set(item.dwgName.toLowerCase(), item);
+                          }
+                        });
+                        // 就地遍历当前显示的 DWG 图纸列表更新尺寸
+                        dwgFiles.value.forEach((file) => {
+                          const key = (file.fileName || "").toLowerCase();
+                          if (dimMap.has(key)) {
+                            const d = dimMap.get(key);
+                            file.width = d.width;
+                            file.height = d.height;
+                            file.depth = d.depth;
+                            file.hasDimension = true;
+                            file.hasTextDepth = d.hasTextDepth;
+                          }
+                        });
+                      }
+                    }
+                    // 7. 一键主动测算尺寸结果回发
+                    else if (msg.action === "forceExtractDimensionsResult") {
+                      isExtracting.value = false;
+                      if (msg.success && Array.isArray(msg.items) && msg.items.length > 0) {
+                        const dimMap = new Map();
+                        msg.items.forEach((item) => {
+                          if (item && item.dwgName) {
+                            dimMap.set(item.dwgName.toLowerCase(), item);
+                          }
+                        });
+                        dwgFiles.value.forEach((file) => {
+                          const key = (file.fileName || "").toLowerCase();
+                          if (dimMap.has(key)) {
+                            const d = dimMap.get(key);
+                            file.width = d.width;
+                            file.height = d.height;
+                            file.depth = d.depth;
+                            file.hasDimension = true;
+                            file.hasTextDepth = d.hasTextDepth;
+                          }
+                        });
+                        statusText.value = `✅ 成功测算并入库 ${msg.count || msg.items.length} 张图纸尺寸！`;
+                      } else {
+                        statusText.value = msg.message ? `⚠️ ${msg.message}` : "⚠️ 未测算出新图纸尺寸，请确认 AutoCAD 是否已打开并就绪。";
+                      }
+                    }
                   } catch (err) {
                     console.error("IPC 消息解析异常:", err);
                   }
@@ -922,6 +1016,8 @@
               bindDwg,
               isMatching,
               autoMatchDirectory,
+              isExtracting,
+              forceExtractDimensions,
               minimizeWindow,
               closeWindow,
             };

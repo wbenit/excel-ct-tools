@@ -759,6 +759,74 @@ namespace ExcelAddInDemo.Services
         }
 
         /// <summary>
+        /// 根据品牌与型号规格在本地 SQLite 数据库中检索已存在的元器件记录 (同品牌下型号必须唯一)
+        /// </summary>
+        /// <param name="brand">所属品牌</param>
+        /// <param name="model">规格型号</param>
+        /// <returns>若存在返回实体 DTO，不存在返回 null</returns>
+        public static ComponentApiDto? FindExistingComponent(string? brand, string? model)
+        {
+            // 防御空值参数校验
+            if (string.IsNullOrWhiteSpace(brand) || string.IsNullOrWhiteSpace(model))
+            {
+                // 空参数直接返回不存在
+                return null;
+            }
+
+            try
+            {
+                // 获取本地数据库连接串
+                string connStr = GetConnectionString();
+                // 加线程锁保证 SQLite 并发安全
+                lock (_dbLock)
+                {
+                    // 打开数据库连接
+                    using var conn = new SQLiteConnection(connStr);
+                    conn.Open();
+                    // 构造查询语句，严格精确匹配品牌与型号规格 (不区分大小写)
+                    string sql = @"
+                        SELECT id, brand, original_id, name, model, price, remark, param1, param2, current, poles, tripping 
+                        FROM components 
+                        WHERE UPPER(TRIM(brand)) = UPPER(TRIM(@brand)) 
+                          AND UPPER(TRIM(model)) = UPPER(TRIM(@model)) 
+                        LIMIT 1;";
+                    using var cmd = new SQLiteCommand(sql, conn);
+                    // 绑定品牌与型号过滤参数
+                    cmd.Parameters.AddWithValue("@brand", brand.Trim());
+                    cmd.Parameters.AddWithValue("@model", model.Trim());
+                    // 执行数据读取
+                    using var reader = cmd.ExecuteReader();
+                    // 若存在匹配记录
+                    if (reader.Read())
+                    {
+                        // 组装并返回 DTO 实体
+                        return new ComponentApiDto
+                        {
+                            Id = Convert.ToInt32(reader["id"]),
+                            Brand = Convert.ToString(reader["brand"]) ?? string.Empty,
+                            Name = Convert.ToString(reader["name"]) ?? string.Empty,
+                            Model = Convert.ToString(reader["model"]) ?? string.Empty,
+                            Price = Convert.ToDecimal(reader["price"]),
+                            Remark = Convert.ToString(reader["remark"]),
+                            Param1 = Convert.ToString(reader["param1"]),
+                            Param2 = Convert.ToString(reader["param2"]),
+                            Current = reader["current"] == DBNull.Value ? null : Convert.ToInt32(reader["current"]),
+                            Poles = Convert.ToString(reader["poles"]),
+                            Tripping = Convert.ToString(reader["tripping"])
+                        };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录检索异常日志
+                LogHelper.WriteLog($"[PersonalDb] FindExistingComponent 异常: {ex.Message}");
+            }
+            // 默认返回 null
+            return null;
+        }
+
+        /// <summary>
         /// 批量新增元器件至本地个人物料库 (采用事务高速插入)
         /// </summary>
         /// <param name="requests">新增请求列表</param>
@@ -788,6 +856,20 @@ namespace ExcelAddInDemo.Services
 
                     foreach (var req in requests)
                     {
+                        // 插入前检查同品牌下是否已存在该型号规格 (保证唯一性不能重复)
+                        string checkSql = "SELECT id FROM components WHERE UPPER(TRIM(brand)) = UPPER(TRIM(@brand)) AND UPPER(TRIM(model)) = UPPER(TRIM(@model)) LIMIT 1;";
+                        using (var checkCmd = new SQLiteCommand(checkSql, conn, trans))
+                        {
+                            checkCmd.Parameters.AddWithValue("@brand", req.Brand?.Trim() ?? "通用"); // --硬编码-- 默认品牌
+                            checkCmd.Parameters.AddWithValue("@model", req.Model?.Trim() ?? string.Empty);
+                            object? existingObj = checkCmd.ExecuteScalar();
+                            if (existingObj != null && existingObj != DBNull.Value)
+                            {
+                                // 若同品牌已存在相同型号，跳过新增以防重复
+                                continue;
+                            }
+                        }
+
                         using var cmd = new SQLiteCommand(insertSql, conn, trans);
                         cmd.Parameters.AddWithValue("@brand", req.Brand?.Trim() ?? "通用"); // --硬编码-- 默认品牌
                         cmd.Parameters.AddWithValue("@name", req.Name?.Trim() ?? string.Empty);
