@@ -26,6 +26,9 @@ namespace ExcelAddInDemo.Forms
         // 当前悬浮菜单项索引 (-1 表示未悬浮)
         private int _hoverIndex = -1;
 
+        // 动态点击分发委托 (为空时走默认静态逻辑)
+        private Action<string>? _customSelectHandler;
+
         // 菜单项数据模型定义
         private class SubmenuItem
         {
@@ -37,18 +40,23 @@ namespace ExcelAddInDemo.Forms
             public string Action { get; set; } = string.Empty;
             // 是否在下方绘制分割线
             public bool HasDividerAfter { get; set; }
+            // 图标渲染类型: "device", "cloud", "disable", "sheet", "info"
+            public string IconKind { get; set; } = "default";
         }
 
-        // 固定的 3 项二级菜单配置集合
-        private readonly SubmenuItem[] _items = new[]
+        // 默认价格搜索二级菜单集合
+        private static readonly SubmenuItem[] _defaultPriceItems = new[]
         {
             // 1. 个人库选项
-            new SubmenuItem { Title = "个人库", Shortcut = "本地", Action = "searchPricePersonal" }, // --硬编码: 菜单项标题--
+            new SubmenuItem { Title = "个人库", Shortcut = "本地", Action = "searchPricePersonal", IconKind = "device" }, // --硬编码: 菜单项标题--
             // 2. 云库选项 (下方带分割线)
-            new SubmenuItem { Title = "云库", Shortcut = "云端", Action = "searchPriceCloud", HasDividerAfter = true }, // --硬编码: 菜单项标题--
+            new SubmenuItem { Title = "云库", Shortcut = "云端", Action = "searchPriceCloud", HasDividerAfter = true, IconKind = "cloud" }, // --硬编码: 菜单项标题--
             // 3. 快速关闭搜索选项
-            new SubmenuItem { Title = "关闭搜索", Shortcut = "停用", Action = "disablePriceSearch" } // --硬编码: 菜单项标题--
+            new SubmenuItem { Title = "关闭搜索", Shortcut = "停用", Action = "disablePriceSearch", IconKind = "disable" } // --硬编码: 菜单项标题--
         };
+
+        // 当前正在展示的二级菜单配置集合
+        private SubmenuItem[] _items = _defaultPriceItems;
 
         /// <summary>
         /// 确保子菜单显示时不抢占主菜单焦点
@@ -144,22 +152,115 @@ namespace ExcelAddInDemo.Forms
         }
 
         /// <summary>
-        /// 精准将二级子菜单定位展示在指定屏幕坐标贴合处
+        /// 精准将默认价格搜索二级子菜单定位展示在指定屏幕坐标贴合处
         /// </summary>
         /// <param name="parent">所属主菜单窗体实例</param>
         /// <param name="screenAnchor">主菜单项右侧屏幕锚点坐标</param>
         public void ShowSubmenu(CustomContextMenuForm parent, Point screenAnchor)
         {
+            // 恢复为默认价格搜索菜单配置
+            _items = _defaultPriceItems;
+            _customSelectHandler = null;
+            // 以标准 146px 逻辑宽度展示
+            ShowSubmenuInternal(parent, screenAnchor, logicWidth: 146); // --硬编码: 默认逻辑宽度 146px--
+        }
+
+        /// <summary>
+        /// 动态呼出【复制当前箱柜到...】的二级分类表列表子菜单
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释，动态计算自适应宽度与高度
+        /// </summary>
+        /// <param name="parent">所属主菜单窗体实例</param>
+        /// <param name="screenAnchor">主菜单项右侧屏幕锚点坐标</param>
+        /// <param name="otherCategorySheets">当前工作簿其他有效分类表名称列表</param>
+        public void ShowCabinetCopySubmenu(CustomContextMenuForm parent, Point screenAnchor, System.Collections.Generic.List<string> otherCategorySheets)
+        {
+            // 校验分类表集合是否为空
+            if (otherCategorySheets == null || otherCategorySheets.Count == 0)
+            {
+                // 若无其他分类表，呈现空提示项
+                _items = new[]
+                {
+                    new SubmenuItem
+                    {
+                        Title = "无其他分类表", // --硬编码: 空提示文本--
+                        Shortcut = "提示",     // --硬编码: 提示标签--
+                        Action = "none",
+                        IconKind = "info"
+                    }
+                };
+            }
+            else
+            {
+                // 构造各分类表对应的子菜单项
+                var list = new System.Collections.Generic.List<SubmenuItem>();
+                for (int i = 0; i < otherCategorySheets.Count; i++)
+                {
+                    string sheetName = otherCategorySheets[i];
+                    list.Add(new SubmenuItem
+                    {
+                        Title = sheetName,
+                        Shortcut = "目标表", // --硬编码: 快捷提示标签--
+                        Action = $"copyToSheet:{sheetName}",
+                        IconKind = "sheet",
+                        HasDividerAfter = false
+                    });
+                }
+                _items = list.ToArray();
+            }
+
+            // 自定义点击分发处理
+            _customSelectHandler = (action) =>
+            {
+                // 若命中有效分类表复制指令
+                if (action.StartsWith("copyToSheet:"))
+                {
+                    string targetName = action.Substring("copyToSheet:".Length);
+                    // 异步派发至 Excel 调度核心引擎
+                    ExcelServices.CopyActiveCabinetToSheet(targetName);
+                }
+            };
+
+            // 动态测量最长标题字数自适应计算逻辑宽度 (保底 160px，上限 260px)
+            int maxChars = 6;
+            foreach (var it in _items)
+            {
+                if (it.Title.Length > maxChars) maxChars = it.Title.Length;
+            }
+            int dynamicWidth = Math.Max(160, Math.Min(260, 110 + maxChars * 14)); // --硬编码: 自适应宽度系数--
+
+            // 调用内部统一定位展示方法
+            ShowSubmenuInternal(parent, screenAnchor, dynamicWidth);
+        }
+
+        /// <summary>
+        /// 内部通用子菜单屏幕贴合定位与展示核心逻辑
+        /// </summary>
+        private void ShowSubmenuInternal(CustomContextMenuForm parent, Point screenAnchor, int logicWidth)
+        {
             // 绑定主菜单父引用
             _parentMenu = parent;
             // 停止正在运行的隐藏定时器
             _hideTimer.Stop();
+            // 重置悬浮高亮项
+            _hoverIndex = -1;
 
             // 获取 DPI 缩放比率
             float dpiScale = GetDpiScale();
-            // 计算逻辑尺寸换算后的物理尺寸 (宽 146px，高 88px)
-            int targetW = (int)Math.Ceiling(146 * dpiScale); // --硬编码: 子菜单逻辑宽度 146px--
-            int targetH = (int)Math.Ceiling(88 * dpiScale);  // --硬编码: 子菜单逻辑高度 88px--
+            // 计算逻辑项高与分割线高度
+            int itemH = (int)Math.Ceiling(25 * dpiScale); // --硬编码: 项高度--
+            int divH = (int)Math.Ceiling(6 * dpiScale);   // --硬编码: 分割线高度--
+            int padY = (int)Math.Ceiling(3 * dpiScale);   // --硬编码: 上内边距--
+
+            // 统计分割线总数
+            int dividerCount = 0;
+            foreach (var it in _items)
+            {
+                if (it.HasDividerAfter) dividerCount++;
+            }
+
+            // 动态精确计算物理宽度与物理高度
+            int targetW = (int)Math.Ceiling(logicWidth * dpiScale);
+            int targetH = padY * 2 + _items.Length * itemH + dividerCount * divH;
             this.Size = new Size(targetW, targetH);
 
             // 获取当前屏幕可用工作区域
@@ -190,6 +291,8 @@ namespace ExcelAddInDemo.Forms
             {
                 this.Show();
             }
+            // 强制重绘
+            this.Invalidate();
             // 置于前台
             this.BringToFront();
         }
@@ -297,6 +400,7 @@ namespace ExcelAddInDemo.Forms
         {
             if (_hoverIndex < 0 || _hoverIndex >= _items.Length) return;
             var item = _items[_hoverIndex];
+            if (item.Action == "none") return;
 
             // 立即隐藏自身与主菜单
             this.Hide();
@@ -305,7 +409,25 @@ namespace ExcelAddInDemo.Forms
                 _parentMenu.Hide();
             }
 
-            // 脱离 WinForms 线程，交由 Excel 纯净宏队列异步调度业务
+            // 优先检查是否有自定义点击委托
+            if (_customSelectHandler != null)
+            {
+                // 脱离 WinForms 线程，派发至 Excel 纯净宏队列异步调度
+                ExcelAsyncUtil.QueueAsMacro(() =>
+                {
+                    try
+                    {
+                        _customSelectHandler(item.Action);
+                    }
+                    catch (Exception exHandler)
+                    {
+                        LogHelper.WriteLog($"执行自定义子菜单动作 [{item.Action}] 异常: {exHandler.Message}");
+                    }
+                });
+                return;
+            }
+
+            // 兜底默认静态搜索价格分发逻辑
             ExcelAsyncUtil.QueueAsMacro(() =>
             {
                 try
@@ -366,6 +488,7 @@ namespace ExcelAddInDemo.Forms
             using var textMainBrush = new SolidBrush(Color.FromArgb(38, 38, 38)); // #262626 --硬编码--
             using var textMutedBrush = new SolidBrush(Color.FromArgb(115, 115, 115)); // #737373 --硬编码--
             using var iconPen = new Pen(Color.FromArgb(74, 74, 74), 1.2f); // #4a4a4a --硬编码--
+            using var brandPen = new Pen(Color.FromArgb(0, 150, 136), 1.2f); // #009688 翠青 --硬编码--
 
             int curY = padY;
 
@@ -376,7 +499,7 @@ namespace ExcelAddInDemo.Forms
                 Rectangle itemRect = new Rectangle(padX, curY, this.Width - padX * 2, itemH);
 
                 // 绘制悬浮高亮圆角背景
-                if (i == _hoverIndex)
+                if (i == _hoverIndex && it.Action != "none")
                 {
                     g.FillRectangle(hoverBrush, itemRect);
                 }
@@ -385,25 +508,38 @@ namespace ExcelAddInDemo.Forms
                 int iconX = padX + (int)(4 * dpiScale);
                 int iconY = curY + (itemH - iconSize) / 2;
 
-                // 针对不同项绘制极简精致矢量符号
-                if (i == 0)
+                // 针对不同图标类型精致绘制轻量矢量图形
+                if (it.IconKind == "sheet")
+                {
+                    // 分类表图标：轻量工作表网格 (带表头翠青点缀)
+                    g.DrawRectangle(brandPen, iconX, iconY, iconSize - 2, iconSize - 3);
+                    g.DrawLine(brandPen, iconX, iconY + 3, iconX + iconSize - 2, iconY + 3);
+                    g.DrawLine(iconPen, iconX + 4, iconY + 3, iconX + 4, iconY + iconSize - 3);
+                }
+                else if (it.IconKind == "device")
                 {
                     // 个人库图标：微型桌面显示器
                     g.DrawRectangle(iconPen, iconX, iconY, iconSize - 2, iconSize - 5);
                     g.DrawLine(iconPen, iconX + 3, iconY + iconSize - 3, iconX + iconSize - 5, iconY + iconSize - 3);
                 }
-                else if (i == 1)
+                else if (it.IconKind == "cloud")
                 {
                     // 云库图标：微型云朵
                     g.DrawArc(iconPen, iconX + 1, iconY + 3, iconSize / 2, iconSize / 2, 180, 180);
                     g.DrawArc(iconPen, iconX + iconSize / 3, iconY + 1, iconSize / 2 + 1, iconSize / 2 + 1, 200, 160);
                     g.DrawLine(iconPen, iconX + 2, iconY + iconSize - 4, iconX + iconSize - 3, iconY + iconSize - 4);
                 }
-                else
+                else if (it.IconKind == "disable")
                 {
                     // 关闭搜索图标：圆圈带斜线 (停用)
                     g.DrawEllipse(iconPen, iconX + 1, iconY + 1, iconSize - 3, iconSize - 3);
                     g.DrawLine(iconPen, iconX + 3, iconY + 3, iconX + iconSize - 5, iconY + iconSize - 5);
+                }
+                else if (it.IconKind == "info")
+                {
+                    // 信息提示图标：微型小圆圈
+                    g.DrawEllipse(iconPen, iconX + 1, iconY + 1, iconSize - 3, iconSize - 3);
+                    g.DrawLine(iconPen, iconX + iconSize / 2 - 1, iconY + 4, iconX + iconSize / 2 - 1, iconY + iconSize - 4);
                 }
 
                 // 绘制标题文字

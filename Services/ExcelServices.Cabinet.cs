@@ -84,18 +84,8 @@ namespace ExcelAddInDemo
                     // 提取源箱柜锚点
                     var srcCabAnchor = activeCab?.Value;
 
-                    // 7. 定位顶部汇总行目标插入位置 (若明确选定非末尾箱柜在其后插入，否则在全表汇总行最大值+1追加)
-                    int insertSumRow = 0;
-                    if (srcCabAnchor?.Sum != null && validCabinets.Count > 0 && activeCab?.Key != validCabinets[validCabinets.Count - 1].Key)
-                    {
-                        // 在光标命中的箱柜汇总行下方插入
-                        insertSumRow = Convert.ToInt32(srcCabAnchor.Sum.Row) + 1;
-                    }
-                    else
-                    {
-                        // 使用全表汇总行最大值 +1 (确保无明细箱柜与普通箱柜统一在全表末尾追加)
-                        insertSumRow = lastIndexes.cabSumRow + 1;
-                    }
+                    // 7. 定位顶部汇总行目标插入位置：统一调用 DetermineTopSummaryInsertRow 实现光标行上方插入且绝不越界
+                    int insertSumRow = DetermineTopSummaryInsertRow(app, activeSheet, validCabinets);
 
                     // 检查汇总目标行 A 列与 B 列是否包含内容，防止覆盖已有行
                     string checkSumA = Convert.ToString(activeSheet.Cells[insertSumRow, 2].Value)?.Trim() ?? "";

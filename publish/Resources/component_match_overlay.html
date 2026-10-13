@@ -892,9 +892,14 @@
             <span class="brand-tag">{{ item.brand || '标准' }}</span>
             <span>{{ item.name }}</span>
             <span v-if="item.current">电流: {{ item.current }}A</span>
-            <span v-if="item.poles">极数: {{ item.poles }}</span>
+            <!-- 极数展示：在附件模式下若极数为“附件”则隐去避免与[附件]徽标重复，常规物料正常展示 -->
+            <span v-if="item.poles && (!isAttachmentMode || item.poles !== '附件')">极数: {{ item.poles }}</span>
             <span v-if="item.tripping">脱扣: {{ item.tripping }}</span>
-            <span v-if="item.param2" style="max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="item.param2">适配: {{ item.param2 }}</span>
+            <!-- 适用主体型号：优先读取新规范的 remark(备注列)，向下兼容旧数据 param2 -->
+            <span v-if="isAttachmentMode && item.remark" style="max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #00796b;" :title="item.remark">适配: {{ item.remark }}</span>
+            <!-- 扩展参数展示：若附件或常规物料含有扩展参数1和2，展示参数标记 -->
+            <span v-if="item.param1" style="color: #2e7d32;" :title="'扩展参数1: ' + item.param1">P1: {{ item.param1 }}</span>
+            <span v-if="item.param2 && (!isAttachmentMode || item.remark)" style="color: #2e7d32;" :title="'扩展参数2: ' + item.param2">P2: {{ item.param2 }}</span>
           </div>
         </div>
       </div>
@@ -1293,7 +1298,7 @@
             const kw = (searchKeyword.value || '').trim().toLowerCase();
             if (!kw) return list;
             return list.filter(it => {
-              const text = `${it.model || ''} ${it.param2 || ''} ${it.name || ''}`.toLowerCase();
+              const text = `${it.model || ''} ${it.remark || ''} ${it.param1 || ''} ${it.param2 || ''} ${it.name || ''}`.toLowerCase();
               return text.indexOf(kw) >= 0;
             });
           }

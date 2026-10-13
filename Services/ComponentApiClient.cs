@@ -543,54 +543,75 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 异步非阻塞：根据品牌、名称以及主体型号从远程接口获取可适配的配套附件列表
+        /// 异步非阻塞：根据品牌、名称以及主体型号从远程接口精准获取配套附件列表
+        /// (新规范核心落地：精确传递 pole='附件' 参数从服务端直拉极数列为附件的少量物料，极速高效且完全避开旧端点按param1查询的缺陷)
         /// </summary>
         public static async Task<List<ComponentApiDto>> GetAttachmentsAsync(string? brand, string? name, string? model)
         {
             var attachments = new List<ComponentApiDto>();
             try
             {
-                string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
                 string cleanBrand = brand?.Trim() ?? string.Empty;
                 string cleanName = name?.Trim() ?? string.Empty;
                 string cleanModel = model?.Trim() ?? string.Empty;
 
-                var queryParams = new List<string>();
-                if (!string.IsNullOrEmpty(cleanBrand)) queryParams.Add($"brand={Uri.EscapeDataString(cleanBrand)}");
-                if (!string.IsNullOrEmpty(cleanName)) queryParams.Add($"name={Uri.EscapeDataString(cleanName)}");
-                if (!string.IsNullOrEmpty(cleanModel)) queryParams.Add($"model={Uri.EscapeDataString(cleanModel)}");
-
-                string endpoint = $"{baseUrl.TrimEnd('/')}/api/api/Component/GetAttachments?{string.Join("&", queryParams)}";
-                var response = await _httpClient.GetAsync(endpoint).ConfigureAwait(false);
-
-                if (response.IsSuccessStatusCode)
+                // 1. 若当前型号已包含“+”累加附件标记 (如 "DZ47s-63 +MX3脱扣器")，剥离出核心主体型号进行匹配
+                if (cleanModel.Contains("+"))
                 {
-                    string json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    if (!string.IsNullOrWhiteSpace(json))
-                    {
-                        var list = JsonSerializer.Deserialize<List<ComponentApiDto>>(json, _jsonOptions);
-                        if (list != null) attachments = list;
-                    }
+                    // 截取加号之前的主体型号文本
+                    cleanModel = cleanModel.Substring(0, cleanModel.IndexOf('+')).Trim();
                 }
-                else
+
+                // 2. 构造品牌查询条件 (若未指定品牌则传 null 放宽至全品牌检索，避免因漏填品牌直接查无结果)
+                string? brandParam = string.IsNullOrWhiteSpace(cleanBrand) ? null : cleanBrand;
+
+                // 3. 精确传递 pole="附件" 参数向服务端查询 (服务端数据库直接通过 poles='附件' 索引命中，数据包极小、极速毫秒级响应)
+                var rawList = await SearchComponentsAsync(null, cleanName, null, "附件", null, brandParam, null, 100).ConfigureAwait(false);
+
+                // 4. 若同名称下未检索到附件，放宽名称约束拉取同品牌下所有 poles="附件" 的物料 (支持跨通用名称配套附件)
+                if (rawList == null || rawList.Count == 0)
                 {
-                    LogHelper.WriteLog($"[ComponentApiClient] GetAttachments 端点返回状态码 {response.StatusCode}，启动本地过滤降级策略");
-                    var rawList = await SearchComponentsAsync(null, cleanName, null, null, null, cleanBrand, null, 200).ConfigureAwait(false);
+                    // 放宽名称约束进行二次拉取
+                    rawList = await SearchComponentsAsync(null, null, null, "附件", null, brandParam, null, 100).ConfigureAwait(false);
+                }
+
+                if (rawList != null && rawList.Count > 0)
+                {
+                    // 5. 严格遵循新规范进行适用主体型号匹配 (附件类型已由 poles='附件' 保证，型号适配由 Remark 备注列提供)
                     attachments = rawList.Where(item =>
                     {
-                        if (!string.Equals(item.Param1?.Trim(), "附件", StringComparison.OrdinalIgnoreCase)) return false;
-                        if (string.IsNullOrWhiteSpace(item.Param2)) return false;
+                        // 确认极数必须为“附件” --硬编码: 附件标识--
+                        if (!string.Equals(item.Poles?.Trim(), "附件", StringComparison.OrdinalIgnoreCase)) return false;
+
+                        // 新规范：从备注列 (Remark) 中读取适用主体型号列表
+                        string allowedModelsText = item.Remark?.Trim() ?? string.Empty;
+                        // 若备注为空，无法判断适用型号，视为不匹配
+                        if (string.IsNullOrEmpty(allowedModelsText)) return false;
+
+                        // 若未指定当前主体型号，展示该分类下所有附件
                         if (string.IsNullOrEmpty(cleanModel)) return true;
 
-                        var keys = item.Param2.Split(new[] { ',', '，', ';', '；' }, StringSplitOptions.RemoveEmptyEntries)
-                                              .Select(k => k.Trim())
-                                              .Where(k => !string.IsNullOrEmpty(k));
-                        return keys.Any(k => cleanModel.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0);
+                        // 容错拆分备注中的适用型号代号列表 (兼容中英文逗号、分号及空格)
+                        var allowedKeys = allowedModelsText.Split(new[] { ',', '，', ';', '；' }, StringSplitOptions.RemoveEmptyEntries)
+                                                           .Select(k => k.Trim())
+                                                           .Where(k => !string.IsNullOrEmpty(k));
+
+                        // 6. 双向容错匹配：主体型号包含适用代号，或适用代号包含主体主系列型号 (如 "DZ47" 与 "DZ47MA")
+                        return allowedKeys.Any(k => 
+                        {
+                            // 规则 A: 主体规格型号包含适用代号 (如 "DZ47s-63/2P" 包含 "DZ47s")
+                            if (cleanModel.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                            // 规则 B: 适用代号包含主体型号 (如适用型号为 "DZ47MA"，当前填写通用大类系列 "DZ47")
+                            if (k.IndexOf(cleanModel, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                            // 默认不匹配
+                            return false;
+                        });
                     }).ToList();
                 }
             }
             catch (Exception ex)
             {
+                // 记录异常日志
                 LogHelper.WriteLog($"[ComponentApiClient] GetAttachments 异常: {ex.Message}");
             }
 

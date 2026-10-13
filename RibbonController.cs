@@ -301,6 +301,8 @@ namespace ExcelAddInDemo
             <!-- 报价智能核验按钮 -->
             <button id='btnQuotationCheckTools' label='报价智能核验' imageMso='ReviewAcceptChange' screentip='报价智能核验与防错' supertip='全面排查全表同型号价格冲突、公式覆写破坏、面价漏填、AA/AB图纸参数缺失及价格倒挂，支持一键自愈修复' onAction='OnMenuAction' />
             <!-- 项目工具项 (配置标准工具箱图标) -->
+            <!-- 图纸参数匹配按钮 (元器件图纸参数匹配 200x800 伴随式侧边浮窗) -->
+              <button id='btnComponentParamMatch' label='图纸参数匹配' imageMso='ShapesInsertGallery' screentip='图纸参数匹配' supertip='打开元器件图纸参数匹配伴随式侧边浮窗，浏览或自动扫描DWG图纸几何尺寸与安装进深并回写' onAction='OnMenuAction' />
             <button id='btnProjectToolsSub' label='项目工具' imageMso='ControlToolboxOutlook' onAction='OnMenuAction' />
           </menu>
           <!-- 企业DHub按钮 (使用服务器连接中枢图标 ServerConnection，支持清晰大图标渲染) -->
@@ -643,6 +645,12 @@ namespace ExcelAddInDemo
             {
                 // 弹出基于 WebView2 + Vue 3 的“报价智能核验与防错体检”向导
                 ExcelServices.ShowQuotationCheckDialog();
+            }
+            // 响应“图纸参数匹配”按钮指令 (打开元器件图纸参数匹配 200x800 伴随式侧边浮窗)
+            else if (controlId == "btnComponentParamMatch")
+            {
+                // 调起并激活“元器件图纸参数匹配 (200x800)”伴随式侧边浮窗
+                ExcelServices.ShowComponentParamMatchDialog();
             }
             // 响应“修复定义名称”按钮及菜单指令 (全局自愈所有分类表箱柜定义名称与清理死链)
             else if (controlId == "btnRepairDefinedNames" || controlId == "btnRepairDefinedNamesSub")

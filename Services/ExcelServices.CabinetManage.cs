@@ -86,18 +86,8 @@ namespace ExcelAddInDemo
                     KeyValuePair<int, Models.CabinetAnchorModel>? activeCab = Tool.GetActiveCabinet((object)app, validCabinets, fallbackSingle: true);
                     var srcCabAnchor = activeCab?.Value;
 
-                    int insertSumRow = 0;
-                    // 若明确命中了光标所在的特定箱柜，且该箱柜不是最后一台箱柜，则在其下方插入
-                    if (srcCabAnchor?.Sum != null && validCabinets.Count > 0 && activeCab?.Key != validCabinets[validCabinets.Count - 1].Key)
-                    {
-                        // 在光标所在箱柜汇总行的下方插入一行
-                        insertSumRow = Convert.ToInt32(srcCabAnchor.Sum.Row) + 1;
-                    }
-                    else
-                    {
-                        // 插入在汇总小计行上方 (即全表最后一个箱柜汇总行下方)
-                        insertSumRow = lastIndexes.cabSumRow + 1;
-                    }
+                    // 6. 定位当前插入目标位置：统一调用 DetermineTopSummaryInsertRow 实现光标行上方插入且绝不越界
+                    int insertSumRow = DetermineTopSummaryInsertRow(app, activeSheet, validCabinets);
 
                     // 7. 在目标位置插入 1 行物理行 (-4121 对应 xlDown 向下移)
                     activeSheet.Rows[$"{insertSumRow}:{insertSumRow}"].Insert(-4121);
@@ -197,52 +187,77 @@ namespace ExcelAddInDemo
         /// 核心内部方法：抓取当前活动单元格命中的箱柜整块数据至内存剪贴板
         /// </summary>
         /// <param name="isCut">是否为剪切模式</param>
-        private static void CaptureActiveCabinetToClipboard(bool isCut)
+        /// <summary>
+        /// 核心内部方法：抓取指定或当前活动单元格命中的箱柜整块数据至内存上下文模型
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释，遵循规则 7 数组批量读取
+        /// </summary>
+        /// <param name="app">Excel Application 实例</param>
+        /// <param name="activeSheet">当前工作表 COM 对象</param>
+        /// <param name="wb">当前工作簿 COM 对象</param>
+        /// <param name="specificK">指定箱柜序号 (<=0 时自动根据选区智能探测)</param>
+        /// <param name="isCut">是否为剪切模式</param>
+        /// <returns>抓取到的箱柜快照实体，未识别到返回 null</returns>
+        public static Models.CopiedCabinetContext? CaptureCabinetContext(
+            dynamic app,
+            dynamic activeSheet,
+            dynamic wb,
+            int specificK = 0,
+            bool isCut = false)
         {
             try
             {
-                // 获取当前活动 Excel 上下文
-                var context = Tool.GetActiveExcelContext();
-                if (context == null) return;
-                dynamic app = context.App;
-                dynamic wb = context.Wb;
-                dynamic activeSheet = context.Sheet;
-
-                // 获取当前工作表有效箱柜集合
-                var validCabinets = Tool.GetSheetValidCabinets(activeSheet, wb);
+                // 1. 获取当前工作表有效箱柜集合
+                var validCabinets = Tool.GetSheetValidCabinets((object)activeSheet, (object)wb);
+                // 校验工作表是否存在有效箱柜
                 if (validCabinets == null || validCabinets.Count == 0)
                 {
+                    // 弹出友好提示
                     System.Windows.Forms.MessageBox.Show("当前工作表未识别到任何有效箱柜，无法执行此操作。", "操作提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
-                    return;
+                    return null;
                 }
 
-                // 探测当前选中的箱柜 (显式强类型接收，杜绝 dynamic 运行时绑定导致结构体无法与 null 比较)
-                KeyValuePair<int, Models.CabinetAnchorModel>? activeCab = Tool.GetActiveCabinet((object)app, validCabinets, fallbackSingle: true);
-                if (!activeCab.HasValue || activeCab.Value.Key <= 0)
+                // 2. 探测目标箱柜实体
+                KeyValuePair<int, Models.CabinetAnchorModel>? targetCab = null;
+                // 若显式指定了箱柜序号 K，直接按序号查找
+                if (specificK > 0)
                 {
-                    System.Windows.Forms.MessageBox.Show("请先将光标放置在要操作的箱柜行（汇总行或明细区域内）。", "操作提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
-                    return;
+                    // 按序号匹配
+                    targetCab = validCabinets.FirstOrDefault(c => c.Key == specificK);
+                }
+                else
+                {
+                    // 否则通过光标选区智能识别命中的箱柜
+                    targetCab = Tool.GetActiveCabinet((object)app, validCabinets, fallbackSingle: true);
                 }
 
-                int k = activeCab.Value.Key;
-                var anchor = activeCab.Value.Value;
+                // 校验命中箱柜的有效性
+                if (!targetCab.HasValue || targetCab.Value.Key <= 0)
+                {
+                    // 提示用户定位光标
+                    System.Windows.Forms.MessageBox.Show("请先将光标放置在要操作的箱柜行（汇总行或明细区域内）。", "操作提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                    return null;
+                }
+
+                // 3. 提取箱柜锚点与物理行号
+                int k = targetCab.Value.Key;
+                var anchor = targetCab.Value.Value;
                 int sumRow = anchor.Sum != null ? Convert.ToInt32(anchor.Sum.Row) : 0;
                 int detRow = anchor.Det != null ? Convert.ToInt32(anchor.Det.Row) : 0;
                 int subsumRow = anchor.Subsum != null ? Convert.ToInt32(anchor.Subsum.Row) : 0;
                 int tolsumRow = anchor.Tolsum != null ? Convert.ToInt32(anchor.Tolsum.Row) : 0;
 
-                // 判断是否为无明细箱柜
+                // 判断是否为无明细箱柜 (规则 6: detRow <= 0 为无明细)
                 bool isNoDetail = (detRow <= 0);
 
-                // 读取箱柜基本信息
+                // 4. 读取箱柜顶部汇总基本信息
                 string cabNo = Convert.ToString(activeSheet.Cells[sumRow, 2].Value)?.Trim() ?? $"箱柜{k}";
                 string cabName = Convert.ToString(activeSheet.Cells[sumRow, 3].Value)?.Trim() ?? string.Empty;
                 string cabModel = Convert.ToString(activeSheet.Cells[sumRow, 4].Value)?.Trim() ?? string.Empty;
-                string unit = Convert.ToString(activeSheet.Cells[sumRow, 5].Value)?.Trim() ?? "台"; // --硬编码--
+                string unit = Convert.ToString(activeSheet.Cells[sumRow, 5].Value)?.Trim() ?? "台"; // --硬编码: 默认箱柜单位--
                 double qty = 1.0;
                 try { qty = Convert.ToDouble(activeSheet.Cells[sumRow, 6].Value); } catch { }
 
-                // 构造剪贴板内存对象
+                // 5. 构造整柜复制上下文模型实体
                 var clip = new Models.CopiedCabinetContext
                 {
                     SourceCabinetK = k,
@@ -260,25 +275,59 @@ namespace ExcelAddInDemo
                     SourceTolsumRow = tolsumRow
                 };
 
-                // 一次性读取顶部汇总行 (A列到M列) 的二维值与公式 (规则 7 规范)
+                // 6. 规则 7: 一次性读取顶部汇总行 (A列到M列) 的二维数组值与公式
                 dynamic sumRange = activeSheet.Range[$"A{sumRow}:M{sumRow}"];
                 clip.SumRowValues = (object[,])sumRange.Value2;
                 clip.SumRowFormulas = (object[,])sumRange.Formula;
 
-                // 若为普通有明细箱柜，整块读入底部明细区域 (从 detRow-3 到 tolsumRow+3)
+                // 7. 若为普通有明细箱柜，整块读入底部明细区域 (从 detRow-3 到 tolsumRow+3)
                 if (!isNoDetail && detRow > 0)
                 {
+                    // 明细块起始物理行
                     int detStart = detRow - 3;
                     if (detStart < 1) detStart = detRow;
+                    // 明细块结束物理行
                     int detEnd = tolsumRow + 3;
 
+                    // 填充明细区间与行数
                     clip.SourceDetStartRow = detStart;
                     clip.SourceDetEndRow = detEnd;
                     clip.DetailBlockRowCount = detEnd - detStart + 1;
+                    // 规则 7: 一次性将明细块大矩形加载至内存二维数组
                     dynamic detailRange = activeSheet.Range[$"A{detStart}:Q{detEnd}"];
                     clip.DetailBlockValues = (object[,])detailRange.Value2;
                     clip.DetailBlockFormulas = (object[,])detailRange.Formula;
                 }
+
+                // 返回构建就绪的整柜快照
+                return clip;
+            }
+            catch (Exception ex)
+            {
+                // 记录快照提取异常日志
+                LogHelper.WriteLog($"[CaptureCabinetContext] 提取箱柜快照异常: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 核心内部方法：抓取当前活动单元格命中的箱柜整块数据至内存剪贴板
+        /// </summary>
+        /// <param name="isCut">是否为剪切模式</param>
+        private static void CaptureActiveCabinetToClipboard(bool isCut)
+        {
+            try
+            {
+                // 获取当前活动 Excel 上下文
+                var context = Tool.GetActiveExcelContext();
+                if (context == null) return;
+                dynamic app = context.App;
+                dynamic wb = context.Wb;
+                dynamic activeSheet = context.Sheet;
+
+                // 调用通用提取方法获取箱柜上下文快照
+                var clip = CaptureCabinetContext(app, activeSheet, wb, specificK: 0, isCut: isCut);
+                if (clip == null) return;
 
                 // 驻留至全局内存静态字段
                 _copiedCabinetContext = clip;
@@ -286,7 +335,7 @@ namespace ExcelAddInDemo
                 // 给出友好状态反馈
                 string opText = isCut ? "剪切" : "复制";
                 System.Windows.Forms.MessageBox.Show(
-                    $"已成功{opText}【{cabNo}】！\n\n请将光标移动到目标位置，然后点击【插入复制的箱柜】。",
+                    $"已成功{opText}【{clip.CabinetNo}】！\n\n请将光标移动到目标位置，然后点击【插入复制的箱柜】。",
                     $"{opText}箱柜成功",
                     System.Windows.Forms.MessageBoxButtons.OK,
                     System.Windows.Forms.MessageBoxIcon.Information);
@@ -299,8 +348,554 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 跨分类表完整复制当前选中的箱柜（右键菜单级联直发）
+        /// 满足用户核心指令：跨分类表复制、名称不变、末尾追加、策略A计费区克隆、保留CAD句柄
+        /// </summary>
+        /// <param name="targetSheetName">目标分类表名称</param>
+        /// <returns>操作是否成功</returns>
+        public static bool CopyActiveCabinetToSheet(string targetSheetName)
+        {
+            try
+            {
+                // 1. 校验目标分类表名称非空
+                if (string.IsNullOrWhiteSpace(targetSheetName)) return false;
+
+                // 2. 获取当前活动 Excel 上下文
+                var context = Tool.GetActiveExcelContext();
+                if (context == null) return false;
+                dynamic app = context.App;
+                dynamic wb = context.Wb;
+                dynamic srcSheet = context.Sheet;
+
+                // 3. 校验目标表不能与当前工作表重名
+                string srcSheetName = Convert.ToString(srcSheet.Name) ?? "";
+                if (string.Equals(srcSheetName, targetSheetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    System.Windows.Forms.MessageBox.Show("目标分类表不能是当前所在的分类表！", "提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                    return false;
+                }
+
+                // 4. 定位目标分类表 COM 实例
+                dynamic? targetSheet = null;
+                try
+                {
+                    targetSheet = wb.Worksheets[targetSheetName];
+                }
+                catch { }
+
+                // 校验目标工作表是否存在
+                if (targetSheet == null)
+                {
+                    System.Windows.Forms.MessageBox.Show($"未找到目标分类表【{targetSheetName}】！", "提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                    return false;
+                }
+
+                // 5. 抓取当前活动箱柜的完整快照 (模式为复制 isCut = false)
+                var clip = CaptureCabinetContext(app, srcSheet, wb, specificK: 0, isCut: false);
+                if (clip == null) return false;
+
+                // 6. 调用统一克隆执行引擎 (用户确认：keepName = true 名称不变，appendToEnd = false 尊重顶部汇总区安全插入)
+                var result = ExecuteCabinetInsertOrClone(app, wb, clip, targetSheet, keepName: true, appendToEnd: false);
+                if (result == null) return false;
+
+                // 7. 自动切换到目标分类表并将视口平滑定位至新箱柜明细
+                try
+                {
+                    targetSheet.Activate();
+                    if (result.DetRow > 0)
+                    {
+                        targetSheet.Cells[result.DetRow, 2].Select();
+                    }
+                    else if (result.SumRow > 0)
+                    {
+                        targetSheet.Cells[result.SumRow, 2].Select();
+                    }
+                }
+                catch { }
+
+                // 8. 状态栏与轻量弹窗反馈
+                string tipMsg = $"箱柜【{clip.CabinetNo}】已成功复制到分类表【{targetSheetName}】！";
+                try { app.StatusBar = $"✓ {tipMsg}"; } catch { }
+                System.Windows.Forms.MessageBox.Show(tipMsg, "跨表复制成功", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // 记录跨表复制异常日志
+                LogHelper.WriteLog($"[CopyActiveCabinetToSheet] 异常: {ex.Message}");
+                System.Windows.Forms.MessageBox.Show($"复制箱柜失败: {ex.Message}", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 核心安全算法：定位目标分类表中顶部汇总行的物理插入行号
+        /// 严格遵循用户最新指令：需要在顶部汇总的光标行插入上方，且严格限制在顶部汇总区内部，绝不越界至底表明细区
+        /// </summary>
+        /// <param name="app">Excel Application 实例</param>
+        /// <param name="targetSheet">目标工作表 COM 实例</param>
+        /// <param name="validCabinets">目标工作表现存已识别箱柜集合</param>
+        /// <param name="preferredCursorRow">显式优先指定的光标行号 (如右键上下文行，<=0 则从 ActiveCell 获取)</param>
+        /// <returns>计算出的安全物理插入行号 (在该行执行 xlShiftDown，实现光标行上方插入)</returns>
+        public static int DetermineTopSummaryInsertRow(
+            dynamic app,
+            dynamic targetSheet,
+            List<KeyValuePair<int, Models.CabinetAnchorModel>> validCabinets,
+            int preferredCursorRow = 0)
+        {
+            // 1. 动态探测底表明细块的最小起始行 (分界线)
+            int minDetRow = int.MaxValue;
+            if (validCabinets != null && validCabinets.Count > 0)
+            {
+                // 遍历所有箱柜锚点检索最小明细行
+                foreach (var pair in validCabinets)
+                {
+                    if (pair.Value?.Det != null)
+                    {
+                        try
+                        {
+                            // 提取明细行物理行号
+                            int dR = Convert.ToInt32(pair.Value.Det.Row);
+                            // 动态维护最小明细起始行号
+                            if (dR > 0 && dR < minDetRow) minDetRow = dR;
+                        }
+                        catch { }
+                    }
+                }
+            }
+
+            // 2. 统计顶部汇总区已存在的最大有效汇总行
+            int maxValidSumRow = 0;
+            if (validCabinets != null && validCabinets.Count > 0)
+            {
+                // 遍历检索有效顶部汇总行
+                foreach (var pair in validCabinets)
+                {
+                    if (pair.Value?.Sum != null)
+                    {
+                        try
+                        {
+                            // 提取汇总行物理行号
+                            int sR = Convert.ToInt32(pair.Value.Sum.Row);
+                            // 必须严格小于 minDetRow 且大于等于 6 才属于顶部汇总区
+                            if (sR >= 6 && sR < minDetRow && sR > maxValidSumRow)
+                            {
+                                // 记录当前顶部最大汇总行号
+                                maxValidSumRow = sR;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+
+            // 3. 获取当前活动光标行号
+            int cursorRow = preferredCursorRow;
+            if (cursorRow <= 0)
+            {
+                try
+                {
+                    // 尝试从 Excel 单元格焦点提取光标行号
+                    dynamic activeCell = app?.ActiveCell;
+                    if (activeCell != null)
+                    {
+                        // 转换光标物理行号
+                        cursorRow = Convert.ToInt32(activeCell.Row);
+                    }
+                }
+                catch { }
+            }
+
+            // 4. 判定光标位置并计算插入行号：
+            // 分支 A: 光标处于顶部汇总区内部 (行号 >= 6 且小于 minDetRow)
+            // 用户指令核心：“需要在顶部汇总的光标行插入上方”
+            // 在 cursorRow 处执行 Insert(-4121)，原光标行及后续行整体向下移 1 行，新插入的空行正好占据 cursorRow，即在光标行上方
+            if (cursorRow >= 6 && cursorRow < minDetRow)
+            {
+                // 命中顶部汇总光标行上方插入
+                return cursorRow;
+            }
+
+            // 分支 B: 光标处于底表明细区内部 (行号 >= minDetRow)
+            // 尝试锁定光标当前命中的箱柜，定位其在顶部汇总表对应的汇总行，插入在对应汇总行的上方
+            if (cursorRow >= minDetRow && validCabinets != null && validCabinets.Count > 0)
+            {
+                try
+                {
+                    // 获取当前明细光标所在的箱柜实体
+                    KeyValuePair<int, Models.CabinetAnchorModel>? activeCab = Tool.GetActiveCabinet((object)app, validCabinets, fallbackSingle: false);
+                    if (activeCab != null && activeCab.Value.Value?.Sum != null)
+                    {
+                        // 提取对应箱柜的汇总行行号
+                        int sumR = Convert.ToInt32(activeCab.Value.Value.Sum.Row);
+                        if (sumR >= 6 && sumR < minDetRow)
+                        {
+                            // 插入在对应箱柜汇总行的上方
+                            return sumR;
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            // 分支 C: 兜底情况 (光标在表头 1-5 行、在空白区、或跨表复制时目标表未聚焦特定汇总行)
+            // 严格在顶部汇总区最后一个有效汇总行之后追加，保底绝不越界突破至明细区
+            if (maxValidSumRow >= 6)
+            {
+                // 在顶部最后一个箱柜汇总行下方追加一行
+                int appendRow = maxValidSumRow + 1;
+                // 若追加行已经贴到或越过了 minDetRow，强制受限在 minDetRow - 1
+                if (appendRow >= minDetRow)
+                {
+                    // 贴合在首个明细行上方
+                    return Math.Max(6, minDetRow - 1);
+                }
+                // 返回安全的顶部追加行
+                return appendRow;
+            }
+
+            // 若工作表中没有任何箱柜汇总行，回退到标准首个箱柜汇总行 6
+            return 6; // --硬编码: 首个箱柜汇总基准行 6--
+        }
+
+        /// <summary>
+        /// 核心统一执行引擎：执行箱柜完整插入、跨表克隆与定义名称系统注册
+        /// 严格遵循规则 6、7、8，支持名称不变、末尾追加、策略A计费区克隆与保留CAD句柄
+        /// </summary>
+        /// <param name="app">Excel Application 实例</param>
+        /// <param name="wb">Excel Workbook 实例</param>
+        /// <param name="clip">待插入/克隆的箱柜完整快照实体</param>
+        /// <param name="targetSheet">目标工作表 COM 实例</param>
+        /// <param name="keepName">是否保持名称不变 (true 时不加“-副本”)</param>
+        /// <param name="appendToEnd">是否严格在目标表汇总与明细末尾追加</param>
+        /// <param name="preferredCursorRow">显式优先指定的光标行号 (<=0 则动态获取)</param>
+        /// <returns>创建后的箱柜关键行号信息实体，失败返回 null</returns>
+        public static Models.CabinetCreatedInfo? ExecuteCabinetInsertOrClone(
+            dynamic app,
+            dynamic wb,
+            Models.CopiedCabinetContext clip,
+            dynamic targetSheet,
+            bool keepName = true,
+            bool appendToEnd = false,
+            int preferredCursorRow = 0)
+        {
+            if (clip == null || targetSheet == null) return null;
+
+            // 备份并关闭屏幕渲染与事件
+            bool prevUpdating = false;
+            bool prevAlerts = false;
+            bool prevEvents = false;
+            try
+            {
+                prevUpdating = Convert.ToBoolean(app.ScreenUpdating);
+                prevAlerts = Convert.ToBoolean(app.DisplayAlerts);
+                prevEvents = Convert.ToBoolean(app.EnableEvents);
+            }
+            catch { }
+
+            app.ScreenUpdating = false;
+            app.DisplayAlerts = false;
+            app.EnableEvents = false;
+
+            try
+            {
+                // 1. 规则 8 守门：操作前强制检查并自愈目标分类表的定义名称健康状态
+                Tool.FixAndFillCabinetNamesForSheet(targetSheet, forceRebuild: false);
+
+                // 2. 配置前缀模型
+                var cfg = ConfigManager.Instance.Current?.Excel;
+                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = cfg?.Prefixes ?? CabinetPrefixConfig.Default;
+
+                // 3. 规则 6: 分配目标工作表下一个全局递增唯一序号 newK
+                int newK = GetNextCabinetIndex(wb, targetSheet);
+
+                // 4. 获取源工作表句柄对象
+                dynamic srcWs = null;
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(clip.SourceSheetName))
+                    {
+                        srcWs = wb.Worksheets[clip.SourceSheetName];
+                    }
+                }
+                catch { }
+                if (srcWs == null) srcWs = targetSheet;
+                // 判断是否在同一个工作表内操作
+                bool isSameSheet = (Convert.ToString(srcWs.Name) == Convert.ToString(targetSheet.Name));
+
+                // 5. 探测目标工作表箱柜分布并精准定位汇总行物理插入行号
+                var validCabinets = Tool.GetSheetValidCabinets((object)targetSheet, (object)wb);
+                // 核心安全准则：统一调用 DetermineTopSummaryInsertRow，在顶部汇总的光标行上方插入且绝对受限在汇总区内
+                int insertSumRow = DetermineTopSummaryInsertRow(app, targetSheet, validCabinets, preferredCursorRow);
+
+                // 6. 顶部汇总表物理向下平移插入 1 行
+                targetSheet.Rows[$"{insertSumRow}:{insertSumRow}"].Insert(-4121);
+
+                // 7. 动态获取源箱柜汇总行当前最新的物理行号 (通过定义名称自适应获取)
+                int realSrcSumRow = clip.SourceSumRow;
+                try
+                {
+                    dynamic? sumName = Tool.SafeGetSheetName(srcWs, $"{sumPrefix}{clip.SourceCabinetK}");
+                    if (sumName != null)
+                    {
+                        realSrcSumRow = Convert.ToInt32(sumName.RefersToRange.Row);
+                    }
+                    else if (isSameSheet && insertSumRow <= clip.SourceSumRow)
+                    {
+                        // 同表且插在上方时自适应加 1
+                        realSrcSumRow = clip.SourceSumRow + 1;
+                    }
+                }
+                catch { }
+
+                // 8. 从源汇总行复制完整格式与单元格样式 (边框线、背景底色、行高)
+                try
+                {
+                    if (realSrcSumRow > 0)
+                    {
+                        dynamic srcSumRange = srcWs.Rows[$"{realSrcSumRow}:{realSrcSumRow}"];
+                        dynamic dstSumRange = targetSheet.Rows[$"{insertSumRow}:{insertSumRow}"];
+                        srcSumRange.Copy(dstSumRange);
+                    }
+                }
+                catch (Exception exSumCopy)
+                {
+                    LogHelper.WriteLog($"复制汇总行格式异常: {exSumCopy.Message}");
+                }
+
+                // 9. 绑定新汇总行定义名称 Cab_Sum_newK (统一工作表级别)
+                string curSheet = Convert.ToString(targetSheet.Name) ?? "";
+                string newSumTag = $"{sumPrefix}{newK}";
+                dynamic sumAnchorCell = targetSheet.Cells[insertSumRow, 1];
+                Tool.SafeSetSheetName(targetSheet, curSheet, newSumTag, insertSumRow);
+
+                // 10. 用户确认指令：名称不变 (keepName 为 true 时保持原柜号与名称，彻底不加“-副本”)
+                string newCabNo = keepName ? clip.CabinetNo : (clip.IsCut ? clip.CabinetNo : $"{clip.CabinetNo}-副本"); // --硬编码: 副本后缀--
+
+                // A 列写入自适应动态序号公式 =ROW()-ROW(A$6)
+                sumAnchorCell.Formula = "=ROW()-ROW(A$6)"; // --硬编码: 序号公式--
+                // B 列到 F 列写入箱柜基本属性
+                targetSheet.Cells[insertSumRow, 2].Value = newCabNo;
+                targetSheet.Cells[insertSumRow, 3].Value = clip.Name;
+                targetSheet.Cells[insertSumRow, 4].Value = clip.Model;
+                targetSheet.Cells[insertSumRow, 5].Value = clip.Unit;
+                targetSheet.Cells[insertSumRow, 6].Value = clip.Quantity;
+
+                // 记录返回的箱柜关键信息
+                var createdInfo = new Models.CabinetCreatedInfo
+                {
+                    CabinetK = newK,
+                    SumRow = insertSumRow
+                };
+
+                // 11. 区分箱柜类型：无明细箱柜 vs 普通有明细箱柜
+                if (clip.Kind == Models.CabinetKind.NoDetail || clip.DetailBlockRowCount <= 0)
+                {
+                    // 无明细箱柜：回写单价与成本公式
+                    object rawUnitPrice = clip.SumRowValues.GetLength(1) >= 7 ? clip.SumRowValues[1, 7] : 0;
+                    object rawCostPrice = clip.SumRowValues.GetLength(1) >= 10 ? clip.SumRowValues[1, 10] : 0;
+
+                    targetSheet.Cells[insertSumRow, 7].Value = rawUnitPrice;
+                    targetSheet.Cells[insertSumRow, 8].Formula = $"=F{insertSumRow}*G{insertSumRow}";
+                    targetSheet.Cells[insertSumRow, 10].Value = rawCostPrice;
+                    targetSheet.Cells[insertSumRow, 11].Formula = $"=F{insertSumRow}*J{insertSumRow}";
+                    targetSheet.Cells[insertSumRow, 12].Formula = $"=H{insertSumRow}-K{insertSumRow}";
+                    targetSheet.Cells[insertSumRow, 13].Formula = $"=IF(H{insertSumRow}=0,0,L{insertSumRow}/H{insertSumRow})";
+                }
+                else
+                {
+                    // 12. 普通有明细箱柜：定位明细块插入物理行 (用户指令：默认追加在目标表所有明细块最末尾)
+                    int insertDetailRow = 41;
+                    if (appendToEnd || validCabinets.Count == 0)
+                    {
+                        // 重新扫描最新总计行并在其后 + 4 行追加
+                        var curIndexes = Tool.FindStandardCategoryRowIndexes((object)targetSheet, -1);
+                        insertDetailRow = (curIndexes.cabTolsumRow > 0 ? curIndexes.cabTolsumRow + 4 : 41);
+                    }
+                    else
+                    {
+                        // 插入在指定箱柜下方
+                        KeyValuePair<int, Models.CabinetAnchorModel>? activeCab = Tool.GetActiveCabinet((object)app, validCabinets, fallbackSingle: true);
+                        var srcCabAnchor = activeCab?.Value ?? validCabinets[validCabinets.Count - 1].Value;
+                        insertDetailRow = srcCabAnchor?.Tolsum != null ? Convert.ToInt32(srcCabAnchor.Tolsum.Row) + 4 : 41;
+                    }
+
+                    // 13. 动态获取源箱柜明细块关键行号
+                    int realDetRow = 0;
+                    int realSubsumRow = 0;
+                    int realTolsumRow = 0;
+                    try
+                    {
+                        dynamic? detName = Tool.SafeGetSheetName(srcWs, $"{detPrefix}{clip.SourceCabinetK}");
+                        if (detName != null) realDetRow = Convert.ToInt32(detName.RefersToRange.Row);
+                        dynamic? subsumName = Tool.SafeGetSheetName(srcWs, $"{subsumPrefix}{clip.SourceCabinetK}");
+                        if (subsumName != null) realSubsumRow = Convert.ToInt32(subsumName.RefersToRange.Row);
+                        dynamic? tolsumName = Tool.SafeGetSheetName(srcWs, $"{tolsumPrefix}{clip.SourceCabinetK}");
+                        if (tolsumName != null) realTolsumRow = Convert.ToInt32(tolsumName.RefersToRange.Row);
+                    }
+                    catch { }
+
+                    // 兜底计算偏移
+                    if (realDetRow <= 0)
+                    {
+                        int sumOffset = (isSameSheet && insertSumRow <= clip.SourceDetStartRow) ? 1 : 0;
+                        realDetRow = clip.SourceDetRow + sumOffset;
+                        realSubsumRow = clip.SourceSubsumRow + sumOffset;
+                        realTolsumRow = clip.SourceTolsumRow + sumOffset;
+                    }
+
+                    // 推导源明细块起止行范围 (通常 detRow - 3 到 tolsumRow + 3)
+                    int realDetStart = realDetRow - 3;
+                    if (realDetStart < 1) realDetStart = realDetRow;
+                    int realDetEnd = realTolsumRow + 3;
+                    int blockRowCount = realDetEnd - realDetStart + 1;
+
+                    // 14. 物理插入明细块空白行
+                    targetSheet.Rows[$"{insertDetailRow}:{insertDetailRow + blockRowCount - 1}"].Insert(-4121);
+
+                    // 同表偏移处理
+                    if (isSameSheet && insertDetailRow <= realDetStart)
+                    {
+                        realDetStart += blockRowCount;
+                        realDetEnd += blockRowCount;
+                        realDetRow += blockRowCount;
+                        realSubsumRow += blockRowCount;
+                        realTolsumRow += blockRowCount;
+                    }
+
+                    // 15. 原生 Range.Copy 完整复刻边框、底色、合并单元格、行高，并自动保留 CAD 句柄
+                    dynamic dstDetailRange = targetSheet.Rows[$"{insertDetailRow}:{insertDetailRow + blockRowCount - 1}"];
+                    bool copySucceeded = false;
+                    try
+                    {
+                        if (realDetStart > 0 && realDetEnd >= realDetStart)
+                        {
+                            dynamic srcDetailRange = srcWs.Rows[$"{realDetStart}:{realDetEnd}"];
+                            // 全量克隆明细块 (策略 A: 完整原样克隆计费区与元器件；保留句柄)
+                            srcDetailRange.Copy(dstDetailRange);
+                            copySucceeded = true;
+                        }
+                    }
+                    catch (Exception exCopy)
+                    {
+                        LogHelper.WriteLog($"Range.Copy 明细块异常: {exCopy.Message}");
+                    }
+
+                    // 降级兜底数组写入
+                    if (!copySucceeded)
+                    {
+                        dynamic detRange = targetSheet.Range[$"A{insertDetailRow}:Q{insertDetailRow + blockRowCount - 1}"];
+                        detRange.Value2 = clip.DetailBlockValues;
+                        detRange.Formula = clip.DetailBlockFormulas;
+                        try
+                        {
+                            detRange.Borders.LineStyle = 1;
+                            detRange.Borders.Weight = 2;
+                        }
+                        catch { }
+                    }
+                    else
+                    {
+                        // 清洗复制产生的跨表外部引用公式，恢复本地自适应
+                        Tool.CleanRangeFormulas(dstDetailRange);
+                    }
+
+                    // 16. 计算新明细块关键行号
+                    int newDetRow = insertDetailRow + (realDetRow - realDetStart);
+                    int newSubsumRow = insertDetailRow + (realSubsumRow - realDetStart);
+                    int newTolsumRow = insertDetailRow + (realTolsumRow - realDetStart);
+
+                    string newDetTag = $"{detPrefix}{newK}";
+                    string newSubsumTag = $"{subsumPrefix}{newK}";
+                    string newTolsumTag = $"{tolsumPrefix}{newK}";
+
+                    // 17. 注册目标表 3 个明细定义名称 (规则 6 规范)
+                    Tool.SafeSetSheetName(targetSheet, curSheet, newDetTag, newDetRow);
+                    Tool.SafeSetSheetName(targetSheet, curSheet, newSubsumTag, newSubsumRow);
+                    Tool.SafeSetSheetName(targetSheet, curSheet, newTolsumTag, newTolsumRow);
+
+                    // 18. 重建双向跳转超链接
+                    try
+                    {
+                        targetSheet.Hyperlinks.Add(
+                            Anchor: sumAnchorCell,
+                            Address: "",
+                            SubAddress: $"'{curSheet}'!{newDetTag}",
+                            ScreenTip: "点击进入本箱柜明细表" // --硬编码: 屏幕提示文本--
+                        );
+                        sumAnchorCell.Formula = "=ROW()-ROW(A$6)"; // --硬编码: 序号公式--
+                        targetSheet.Hyperlinks.Add(
+                            Anchor: targetSheet.Cells[newDetRow, 1],
+                            Address: "",
+                            SubAddress: $"'{curSheet}'!{newSumTag}",
+                            ScreenTip: "返回汇总行" // --硬编码: 屏幕提示文本--
+                        );
+                    }
+                    catch { }
+
+                    // 19. 更新明细表头柜号文本 (名称保持不变)
+                    targetSheet.Cells[newDetRow, 2].Value = newCabNo;
+
+                    // 20. 刷新明细块元器件 A 列序号、小计求和公式与计费区域公式
+                    int compStartRow = newDetRow + 2;
+                    RefreshCabinetFeeAreaFormulas(targetSheet, newDetRow, compStartRow, newSubsumRow, newTolsumRow);
+
+                    // 21. 汇总行单价总价与成本公式联动绑定 (严谨对齐标准分类表列定义，消除 #REF!)
+                    targetSheet.Cells[insertSumRow, 7].Formula = $"=G{newTolsumRow}"; // G 列: 单价
+                    targetSheet.Cells[insertSumRow, 8].Formula = $"=F{insertSumRow}*G{insertSumRow}"; // H 列: 合计金额
+                    targetSheet.Cells[insertSumRow, 10].Formula = $"=K{newTolsumRow}"; // J 列: 成本单价
+                    targetSheet.Cells[insertSumRow, 11].Formula = $"=F{insertSumRow}*J{insertSumRow}"; // K 列: 成本总价
+                    targetSheet.Cells[insertSumRow, 12].Formula = $"=H{insertSumRow}-K{insertSumRow}"; // L 列: 毛利
+                    targetSheet.Cells[insertSumRow, 13].Formula = $"=IF(H{insertSumRow}=0,0,L{insertSumRow}/H{insertSumRow})"; // M 列: 毛利率
+
+                    // 填充创建实体明细行号
+                    createdInfo.DetRow = newDetRow;
+                    createdInfo.SubsumRow = newSubsumRow;
+                    createdInfo.TolsumRow = newTolsumRow;
+                }
+
+                // 22. 若为剪切模式，删除源工作表中的原始箱柜
+                if (clip.IsCut && !string.IsNullOrWhiteSpace(clip.SourceSheetName))
+                {
+                    try
+                    {
+                        srcWs = wb.Worksheets[clip.SourceSheetName];
+                        if (srcWs != null)
+                        {
+                            DeleteCabinets(app, srcWs, new List<int> { clip.SourceCabinetK });
+                        }
+                    }
+                    catch (Exception exDel)
+                    {
+                        LogHelper.WriteLog($"剪切后删除原箱柜异常: {exDel.Message}");
+                    }
+                    _copiedCabinetContext = null;
+                }
+
+                return createdInfo;
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[ExecuteCabinetInsertOrClone] 异常: {ex.Message}");
+                return null;
+            }
+            finally
+            {
+                // 恢复屏幕渲染与系统事件
+                try
+                {
+                    app.ScreenUpdating = true;
+                    app.DisplayAlerts = true;
+                    app.EnableEvents = true;
+                }
+                catch { }
+            }
+        }
+
+        /// <summary>
         /// 供 Ribbon 菜单调用的“插入复制的箱柜”入口
         /// 读取剪贴板整块数据，在目标行安全插入并分配新全局序号 newK，若是剪切则安全擦除原箱柜
+        /// 统一复用 ExecuteCabinetInsertOrClone 引擎，实现名称不变与末尾安全追加
         /// </summary>
         public static void InsertCopiedCabinet()
         {
@@ -320,303 +915,37 @@ namespace ExcelAddInDemo
                 dynamic wb = context.Wb;
                 dynamic activeSheet = context.Sheet;
 
-                // 配置前缀模型
-                var cfg = ConfigManager.Instance.Current?.Excel;
-                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = cfg?.Prefixes ?? CabinetPrefixConfig.Default;
-
-                // 关闭渲染提升性能
-                app.ScreenUpdating = false;
-                app.DisplayAlerts = false;
-                app.EnableEvents = false;
-
+                // 获取当前光标所在物理行号 (用户指令核心：需要在顶部汇总的光标行上方插入)
+                int cursorRow = 0;
                 try
                 {
-                    var clip = _copiedCabinetContext;
-                    // 分配全工作簿下一个全局递增唯一序号 K (规则 6 & 启发式经验 12)
-                    int newK = GetNextCabinetIndex(wb, activeSheet);
+                    dynamic activeCell = app?.ActiveCell;
+                    if (activeCell != null) cursorRow = Convert.ToInt32(activeCell.Row);
+                }
+                catch { }
 
-                    // 获取源工作表句柄对象
-                    dynamic srcWs = null;
-                    try
-                    {
-                        // 尝试从源工作簿提取源工作表
-                        if (!string.IsNullOrWhiteSpace(clip.SourceSheetName))
-                        {
-                            srcWs = wb.Worksheets[clip.SourceSheetName];
-                        }
-                    }
-                    catch { }
-                    // 若未找到源工作表，兜底使用当前活动工作表
-                    if (srcWs == null) srcWs = activeSheet;
-                    // 判断是否在同一个工作表内操作
-                    bool isSameSheet = (Convert.ToString(srcWs.Name) == Convert.ToString(activeSheet.Name));
-
-                    // 探测目标工作表箱柜分布与插入行位置
-                    var validCabinets = Tool.GetSheetValidCabinets(activeSheet, wb);
-                    var lastIndexes = Tool.FindStandardCategoryRowIndexes((object)activeSheet, -1);
-                    KeyValuePair<int, Models.CabinetAnchorModel>? activeCab = Tool.GetActiveCabinet((object)app, validCabinets, fallbackSingle: true);
-                    var srcCabAnchor = activeCab?.Value ?? (validCabinets.Count > 0 ? validCabinets[validCabinets.Count - 1].Value : null);
-
-                    int insertSumRow = srcCabAnchor?.Sum != null
-                        ? Convert.ToInt32(srcCabAnchor.Sum.Row) + 1
-                        : lastIndexes.cabSumRow + 1;
-
-                    // 1. 顶部汇总表插入 1 行物理行
-                    activeSheet.Rows[$"{insertSumRow}:{insertSumRow}"].Insert(-4121);
-
-                    // 动态获取源箱柜汇总行真实物理行号 (定义名称随插行自适应平移)
-                    int realSrcSumRow = clip.SourceSumRow;
-                    try
-                    {
-                        // 优先通过定义名称获取当前最新的源汇总行号
-                        dynamic? sumName = Tool.SafeGetSheetName(srcWs, $"{sumPrefix}{clip.SourceCabinetK}");
-                        if (sumName != null)
-                        {
-                            realSrcSumRow = Convert.ToInt32(sumName.RefersToRange.Row);
-                        }
-                        // 容错兜底：同表且插在源汇总行上方时自适应累加 1
-                        else if (isSameSheet && insertSumRow <= clip.SourceSumRow)
-                        {
-                            realSrcSumRow = clip.SourceSumRow + 1;
-                        }
-                    }
-                    catch { }
-
-                    // 从源汇总行复制完整格式与单元格样式 (包含边框线、背景底色、行高)
-                    try
-                    {
-                        if (realSrcSumRow > 0)
-                        {
-                            // 提取源汇总行与目标汇总行区域
-                            dynamic srcSumRange = srcWs.Rows[$"{realSrcSumRow}:{realSrcSumRow}"];
-                            dynamic dstSumRange = activeSheet.Rows[$"{insertSumRow}:{insertSumRow}"];
-                            // 原生 Copy 复制完整单元格格式
-                            srcSumRange.Copy(dstSumRange);
-                        }
-                    }
-                    catch (Exception exSumCopy)
-                    {
-                        // 记录复制汇总行格式异常
-                        LogHelper.WriteLog($"复制汇总行格式异常: {exSumCopy.Message}");
-                    }
-
-                    // 2. 绑定新汇总行定义名称 Cab_Sum_newK (统一工作表级别)
-                    string curSheet = Convert.ToString(activeSheet.Name) ?? "";
-                    string newSumTag = $"{sumPrefix}{newK}";
-                    dynamic sumAnchorCell = activeSheet.Cells[insertSumRow, 1];
-                    Tool.SafeSetSheetName(activeSheet, curSheet, newSumTag, insertSumRow);
-
-                    // 3. 写回汇总行数据 (数组批量写回)
-                    string newCabNo = clip.IsCut ? clip.CabinetNo : $"{clip.CabinetNo}-副本"; // --硬编码--
-                    // A 列写入自适应动态序号公式 =ROW()-ROW(A$6)
-                    activeSheet.Cells[insertSumRow, 1].Formula = "=ROW()-ROW(A$6)"; // --硬编码: 公式表达式--
-                    // B 列写入箱柜编号
-                    activeSheet.Cells[insertSumRow, 2].Value = newCabNo;
-                    activeSheet.Cells[insertSumRow, 3].Value = clip.Name;
-                    activeSheet.Cells[insertSumRow, 4].Value = clip.Model;
-                    activeSheet.Cells[insertSumRow, 5].Value = clip.Unit;
-                    activeSheet.Cells[insertSumRow, 6].Value = clip.Quantity;
-
-                    // 4. 区分箱柜类型：无明细箱柜 vs 普通有明细箱柜
-                    if (clip.Kind == Models.CabinetKind.NoDetail || clip.DetailBlockRowCount <= 0)
-                    {
-                        // 无明细箱柜：直接将暂存的单价/成本填入，恢复公式
-                        object rawUnitPrice = clip.SumRowValues.GetLength(1) >= 7 ? clip.SumRowValues[1, 7] : 0;
-                        object rawCostPrice = clip.SumRowValues.GetLength(1) >= 10 ? clip.SumRowValues[1, 10] : 0;
-
-                        activeSheet.Cells[insertSumRow, 7].Value = rawUnitPrice;
-                        activeSheet.Cells[insertSumRow, 8].Formula = $"=F{insertSumRow}*G{insertSumRow}";
-                        activeSheet.Cells[insertSumRow, 10].Value = rawCostPrice;
-                        activeSheet.Cells[insertSumRow, 11].Formula = $"=F{insertSumRow}*J{insertSumRow}";
-                        activeSheet.Cells[insertSumRow, 12].Formula = $"=H{insertSumRow}-K{insertSumRow}";
-                        activeSheet.Cells[insertSumRow, 13].Formula = $"=IF(H{insertSumRow}=0,0,L{insertSumRow}/H{insertSumRow})";
-                    }
-                    else
-                    {
-                        // 普通有明细箱柜：计算明细块插入位置 (明细区域末尾或选中箱柜明细下方)
-                        // 注意：在插了汇总行后，重新通过 Tolsum.Row 动态读取实时行号
-                        int insertDetailRow = 41;
-                        if (srcCabAnchor?.Tolsum != null)
-                        {
-                            // 动态读取目标箱柜当前最新的 Tolsum 行号 (已随插汇总行自动平移) + 4
-                            insertDetailRow = Convert.ToInt32(srcCabAnchor.Tolsum.Row) + 4;
-                        }
-                        else
-                        {
-                            // 扫描全表最新的总计行位置
-                            var curIndexes = Tool.FindStandardCategoryRowIndexes((object)activeSheet, -1);
-                            insertDetailRow = (curIndexes.cabTolsumRow > 0 ? curIndexes.cabTolsumRow + 4 : 41);
-                        }
-
-                        // 动态获取源箱柜明细块当前的实时行号 (通过定义名称获取最新物理行号)
-                        int realDetRow = 0;
-                        int realSubsumRow = 0;
-                        int realTolsumRow = 0;
-                        try
-                        {
-                            // 读取源箱柜的 Cab_Det 定义名称行号
-                            dynamic? detName = Tool.SafeGetSheetName(srcWs, $"{detPrefix}{clip.SourceCabinetK}");
-                            if (detName != null) realDetRow = Convert.ToInt32(detName.RefersToRange.Row);
-                            // 读取源箱柜的 Cab_Subsum 定义名称行号
-                            dynamic? subsumName = Tool.SafeGetSheetName(srcWs, $"{subsumPrefix}{clip.SourceCabinetK}");
-                            if (subsumName != null) realSubsumRow = Convert.ToInt32(subsumName.RefersToRange.Row);
-                            // 读取源箱柜的 Cab_Tolsum 定义名称行号
-                            dynamic? tolsumName = Tool.SafeGetSheetName(srcWs, $"{tolsumPrefix}{clip.SourceCabinetK}");
-                            if (tolsumName != null) realTolsumRow = Convert.ToInt32(tolsumName.RefersToRange.Row);
-                        }
-                        catch { }
-
-                        // 容错兜底：若定义名称未读取到，使用原始记录并累加汇总行插入偏移
-                        if (realDetRow <= 0)
-                        {
-                            // 计算汇总行对明细块造成的行号偏移量
-                            int sumOffset = (isSameSheet && insertSumRow <= clip.SourceDetStartRow) ? 1 : 0;
-                            realDetRow = clip.SourceDetRow + sumOffset;
-                            realSubsumRow = clip.SourceSubsumRow + sumOffset;
-                            realTolsumRow = clip.SourceTolsumRow + sumOffset;
-                        }
-
-                        // 推导源明细块起始与结束行号 (通常 detRow - 3 到 tolsumRow + 3)
-                        int realDetStart = realDetRow - 3;
-                        if (realDetStart < 1) realDetStart = realDetRow;
-                        int realDetEnd = realTolsumRow + 3;
-                        int blockRowCount = realDetEnd - realDetStart + 1;
-
-                        // 插入对应总行数的空白物理行
-                        activeSheet.Rows[$"{insertDetailRow}:{insertDetailRow + blockRowCount - 1}"].Insert(-4121);
-
-                        // 若源工作表与目标工作表相同，且插入点在源区域上方，则源区域自动下移了 blockRowCount 行
-                        if (isSameSheet && insertDetailRow <= realDetStart)
-                        {
-                            realDetStart += blockRowCount;
-                            realDetEnd += blockRowCount;
-                            realDetRow += blockRowCount;
-                            realSubsumRow += blockRowCount;
-                            realTolsumRow += blockRowCount;
-                        }
-
-                        // 提取目标明细块写入区域
-                        dynamic dstDetailRange = activeSheet.Rows[$"{insertDetailRow}:{insertDetailRow + blockRowCount - 1}"];
-
-                        // 核心：优先使用 Excel 原生 Range.Copy 完整复刻边框线、背景底色、合并单元格、行高，并自动平移相对公式消除 #VALUE!
-                        bool copySucceeded = false;
-                        try
-                        {
-                            // 校验源行有效性
-                            if (realDetStart > 0 && realDetEnd >= realDetStart)
-                            {
-                                // 提取源明细块区域
-                                dynamic srcDetailRange = srcWs.Rows[$"{realDetStart}:{realDetEnd}"];
-                                // 原生 Copy 执行全量格式与公式平移克隆
-                                srcDetailRange.Copy(dstDetailRange);
-                                copySucceeded = true;
-                            }
-                        }
-                        catch (Exception exCopy)
-                        {
-                            // 记录 Range.Copy 异常日志
-                            LogHelper.WriteLog($"Range.Copy 明细块异常: {exCopy.Message}");
-                        }
-
-                        // 降级兜底：若原生 Copy 失败，回退写回内存二维数组并设置标准边框
-                        if (!copySucceeded)
-                        {
-                            // 提取写入范围
-                            dynamic detRange = activeSheet.Range[$"A{insertDetailRow}:Q{insertDetailRow + blockRowCount - 1}"];
-                            detRange.Value2 = clip.DetailBlockValues;
-                            detRange.Formula = clip.DetailBlockFormulas;
-                            try
-                            {
-                                // 设置标准细线连续边框
-                                detRange.Borders.LineStyle = 1; // xlContinuous
-                                detRange.Borders.Weight = 2;    // xlThin
-                            }
-                            catch { }
-                        }
-                        else
-                        {
-                            // 清洗复制公式中的外部工作簿或路径引用 (跳过 A 列)
-                            Tool.CleanRangeFormulas(dstDetailRange);
-                        }
-
-                        // 重新推算新明细块内部的关键行号并注册定义名称
-                        int newDetRow = insertDetailRow + (realDetRow - realDetStart);
-                        int newSubsumRow = insertDetailRow + (realSubsumRow - realDetStart);
-                        int newTolsumRow = insertDetailRow + (realTolsumRow - realDetStart);
-
-                        string newDetTag = $"{detPrefix}{newK}";
-                        string newSubsumTag = $"{subsumPrefix}{newK}";
-                        string newTolsumTag = $"{tolsumPrefix}{newK}";
-
-                        // 统一使用 SafeSetSheetName 注册工作表级别 3 个明细定义名称
-                        Tool.SafeSetSheetName(activeSheet, curSheet, newDetTag, newDetRow);
-                        Tool.SafeSetSheetName(activeSheet, curSheet, newSubsumTag, newSubsumRow);
-                        Tool.SafeSetSheetName(activeSheet, curSheet, newTolsumTag, newTolsumRow);
-
-                        // 建立双向超链接 (保护 A 列公式)
-                        try
-                        {
-                            // 汇总行 A 列设置超链接并指定屏幕提示
-                            activeSheet.Hyperlinks.Add(
-                                Anchor: sumAnchorCell,
-                                Address: "",
-                                SubAddress: $"'{curSheet}'!{newDetTag}",
-                                ScreenTip: "点击进入本箱柜明细表" // --硬编码: 屏幕提示文本--
-                            );
-                            // 保持 A 列为自适应动态序号公式 =ROW()-ROW(A$6)
-                            sumAnchorCell.Formula = "=ROW()-ROW(A$6)"; // --硬编码: 公式表达式--
-                            // 明细行 A 列超链接返回顶部汇总行
-                            activeSheet.Hyperlinks.Add(Anchor: activeSheet.Cells[newDetRow, 1], Address: "", SubAddress: $"'{curSheet}'!{newSumTag}", ScreenTip: "返回汇总行");
-                        }
-                        catch { }
-
-                        // 更新表头柜号文字与汇总公式联动
-                        activeSheet.Cells[newDetRow, 2].Value = newCabNo;
-
-                        // 计算元器件起始物理行号 (规则 6: Cab_Det + 2)
-                        int compStartRow = newDetRow + 2;
-                        // 刷新明细块元器件 A 列序号(=ROW()-ROW(A${detRow+1}))、小计行公式与计费区域公式
-                        RefreshCabinetFeeAreaFormulas(activeSheet, newDetRow, compStartRow, newSubsumRow, newTolsumRow);
-                        // 汇总行 G 列单价指向明细总计行单台单价 G 列 (方式 B 稳健绑定，避免数量二次相乘)
-                        activeSheet.Cells[insertSumRow, 7].Formula = $"=G{newTolsumRow}";
-                        activeSheet.Cells[insertSumRow, 8].Formula = $"=F{insertSumRow}*G{insertSumRow}";
-                        activeSheet.Cells[insertSumRow, 10].Formula = $"=K{newTolsumRow}";
-                        activeSheet.Cells[insertSumRow, 11].Formula = $"=H{insertSumRow}-J{insertSumRow}";
-                        activeSheet.Cells[insertSumRow, 12].Formula = $"=IF(H{insertSumRow}=0,0,K{insertSumRow}/H{insertSumRow})";
-                    }
-
-                    // 5. 若是剪切操作，后置安全物理删除原始箱柜 (实现真正移动)
-                    if (clip.IsCut && !string.IsNullOrWhiteSpace(clip.SourceSheetName))
-                    {
-                        try
-                        {
-                            srcWs = wb.Worksheets[clip.SourceSheetName];
-                            if (srcWs != null)
-                            {
-                                // 安全调用批量删除接口移除源箱柜
-                                DeleteCabinets(app, srcWs, new List<int> { clip.SourceCabinetK });
-                            }
-                        }
-                        catch (Exception exDel)
-                        {
-                            LogHelper.WriteLog($"剪切后删除原箱柜异常: {exDel.Message}");
-                        }
-
-                        // 剪切完成后彻底释放剪贴板
-                        _copiedCabinetContext = null;
-                    }
-
+                // 调度核心引擎 (keepName = true 保持名称不变，preferredCursorRow: cursorRow 在光标行上方插入)
+                var result = ExecuteCabinetInsertOrClone(
+                    app,
+                    wb,
+                    _copiedCabinetContext,
+                    activeSheet,
+                    keepName: true,
+                    appendToEnd: false,
+                    preferredCursorRow: cursorRow);
+                if (result != null)
+                {
                     // 激活新插入的箱柜
                     activeSheet.Activate();
-                    activeSheet.Cells[insertSumRow, 2].Select();
-
-                    System.Windows.Forms.MessageBox.Show($"箱柜【{newCabNo}】插入成功！", "操作成功", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
-                }
-                finally
-                {
-                    app.ScreenUpdating = true;
-                    app.DisplayAlerts = true;
-                    app.EnableEvents = true;
+                    if (result.DetRow > 0)
+                    {
+                        activeSheet.Cells[result.DetRow, 2].Select();
+                    }
+                    else if (result.SumRow > 0)
+                    {
+                        activeSheet.Cells[result.SumRow, 2].Select();
+                    }
+                    System.Windows.Forms.MessageBox.Show($"箱柜【{_copiedCabinetContext.CabinetNo}】插入成功！", "操作成功", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
                 }
             }
             catch (Exception ex)

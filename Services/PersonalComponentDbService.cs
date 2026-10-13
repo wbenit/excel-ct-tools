@@ -1039,10 +1039,11 @@ namespace ExcelAddInDemo.Services
                     using var conn = new SQLiteConnection(connStr);
                     conn.Open();
 
+                    // 新规范: 附件标记从扩展参数1移至极数(poles) --硬编码: 附件标识--
                     string sql = @"
                         SELECT id, brand, name, model, price, remark, param1, param2, current, poles, tripping 
                         FROM components 
-                        WHERE brand = @brand AND param1 = '附件' 
+                        WHERE brand = @brand AND poles = '附件' 
                         ORDER BY id DESC;
                     "; // --硬编码-- 附件筛选条件
 
@@ -1053,17 +1054,39 @@ namespace ExcelAddInDemo.Services
                     while (reader.Read())
                     {
                         var item = MapReaderToDto(reader);
-                        // 若指定了本体型号且附件 param2 声明了适用型号，则进行内存包含比对
-                        if (!string.IsNullOrWhiteSpace(model) && !string.IsNullOrWhiteSpace(item.Param2))
+                        // 新规范: 若指定了本体型号且附件 remark(备注列) 声明了适用型号，则进行内存包含比对
+                        if (!string.IsNullOrWhiteSpace(model) && !string.IsNullOrWhiteSpace(item.Remark))
                         {
-                            var allowedModels = item.Param2!.Split(new[] { ',', ';', '，', '；' }, StringSplitOptions.RemoveEmptyEntries);
-                            if (allowedModels.Any(m => model!.IndexOf(m.Trim(), StringComparison.OrdinalIgnoreCase) >= 0))
+                            // 提取主体型号文本并去除首尾空格
+                            string targetModel = model!.Trim();
+                            // 若当前型号已包含“+”累加附件标记 (如 "DZ47s-63 +MX3脱扣器")，剥离出核心主体型号
+                            if (targetModel.Contains("+"))
                             {
+                                // 截取加号之前的主体型号
+                                targetModel = targetModel.Substring(0, targetModel.IndexOf('+')).Trim();
+                            }
+
+                            // 拆分备注中用逗号或分号分隔的适用主体型号代号
+                            var allowedModels = item.Remark!.Split(new[] { ',', ';', '，', '；' }, StringSplitOptions.RemoveEmptyEntries);
+                            // 若主体型号与任一适用代号双向包含命中，则加入匹配结果列表
+                            if (allowedModels.Any(m => 
+                            {
+                                // 获取单条适用代号并剔除空白字符
+                                string trimM = m.Trim();
+                                // 空白项直接跳过
+                                if (string.IsNullOrEmpty(trimM)) return false;
+                                // 双向包含比对：主体型号包含代号 或 代号包含主体型号
+                                return targetModel.IndexOf(trimM, StringComparison.OrdinalIgnoreCase) >= 0
+                                    || trimM.IndexOf(targetModel, StringComparison.OrdinalIgnoreCase) >= 0;
+                            }))
+                            {
+                                // 命中则添加至结果集
                                 result.Add(item);
                             }
                         }
                         else
                         {
+                            // 若未指定主体型号或未限制适用型号，则直接加入结果集
                             result.Add(item);
                         }
                     }

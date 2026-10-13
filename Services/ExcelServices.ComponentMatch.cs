@@ -1704,7 +1704,54 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 4. 清除底色 (C 列与 D 列)
+                // 4. 处理扩展参数1与扩展参数2回填 (汇总表填入 X/Y 列，常规分类明细表填入 AA/AB 列)
+                // 确定参数1与参数2所在的目标列号 (汇总表 X/Y，分类明细表 AA/AB) --硬编码: 参数列位--
+                string colParam1 = isSummarySheet ? "X" : "AA";
+                string colParam2 = isSummarySheet ? "Y" : "AB";
+
+                // 处理扩展参数1: 若选中的附件具备 Param1，按“+”规则拼接写入参数1列
+                string attachParam1 = attachment.Param1?.Trim() ?? string.Empty;
+                if (!string.IsNullOrEmpty(attachParam1))
+                {
+                    // 获取当前行参数1列的原有单元格内容
+                    string oldParam1 = Convert.ToString(sheet.Range[$"{colParam1}{row}"].Value2)?.Trim() ?? string.Empty;
+                    if (string.IsNullOrEmpty(oldParam1))
+                    {
+                        // 原内容为空时直接写入附件扩展参数1
+                        sheet.Range[$"{colParam1}{row}"].Value2 = attachParam1;
+                    }
+                    else
+                    {
+                        // 原内容已有值时以“+”连接追加，并清洗两端多余加号
+                        string trimmedOldP1 = oldParam1.TrimEnd('+', '＋');
+                        string trimmedAttachP1 = attachParam1.TrimStart('+', '＋');
+                        // 组合写入拼接后的参数1文本
+                        sheet.Range[$"{colParam1}{row}"].Value2 = $"{trimmedOldP1}+{trimmedAttachP1}";
+                    }
+                }
+
+                // 处理扩展参数2: 若选中的附件具备 Param2，按“+”规则拼接写入参数2列
+                string attachParam2 = attachment.Param2?.Trim() ?? string.Empty;
+                if (!string.IsNullOrEmpty(attachParam2))
+                {
+                    // 获取当前行参数2列的原有单元格内容
+                    string oldParam2 = Convert.ToString(sheet.Range[$"{colParam2}{row}"].Value2)?.Trim() ?? string.Empty;
+                    if (string.IsNullOrEmpty(oldParam2))
+                    {
+                        // 原内容为空时直接写入附件扩展参数2
+                        sheet.Range[$"{colParam2}{row}"].Value2 = attachParam2;
+                    }
+                    else
+                    {
+                        // 原内容已有值时以“+”连接追加，并清洗两端多余加号
+                        string trimmedOldP2 = oldParam2.TrimEnd('+', '＋');
+                        string trimmedAttachP2 = attachParam2.TrimStart('+', '＋');
+                        // 组合写入拼接后的参数2文本
+                        sheet.Range[$"{colParam2}{row}"].Value2 = $"{trimmedOldP2}+{trimmedAttachP2}";
+                    }
+                }
+
+                // 5. 清除底色 (C 列与 D 列)
                 try
                 {
                     // 清除型号列底色

@@ -379,6 +379,19 @@
           <span class="item-shortcut">整柜复制</span>
         </div>
 
+        <!-- 6.1 复制当前箱柜到... (跨分类表二级菜单直发) -->
+        <div class="menu-item cabinet-only has-submenu" id="menuItemCopyCabinetTo" data-action="openCopyCabinetSubmenu">
+          <div class="item-icon-wrap">
+            <!-- 跨表复制外发 SVG 图标 -->
+            <svg viewBox="0 0 24 24"><path d="M14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3m-2 16H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7z"/></svg>
+          </div>
+          <span class="item-label">复制当前箱柜到...</span>
+          <span class="item-arrow">
+            <!-- 向右展开箭头 SVG -->
+            <svg viewBox="0 0 24 24"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/></svg>
+          </span>
+        </div>
+
         <!-- 7. 插入复制的箱柜 -->
         <div class="menu-item cabinet-only" data-action="insertCopiedCabinet">
           <div class="item-icon-wrap">
@@ -733,19 +746,24 @@
 
       // 二级子菜单宿主联动控制
       const searchPriceItem = document.getElementById('menuItemSearchPrice');
+      const copyCabinetToItem = document.getElementById('menuItemCopyCabinetTo');
 
-      // 展开二级子菜单并通知 C# 独立子窗体弹出
+      // 展开搜索价格二级子菜单
       function openSubmenu() {
         if (!searchPriceItem) return;
-        // 计算定位 top，传递给宿主进行屏幕对齐
         const rect = searchPriceItem.getBoundingClientRect();
-        // 通知 C# 唤起独立的轻量二级子菜单窗体，避免主窗体拓宽导致右上方大背景与外层边框阴影
         postToHost('openSubmenu', { top: rect.top, height: rect.height });
+      }
+
+      // 展开复制箱柜到其他分类表二级子菜单
+      function openCopyCabinetSubmenu() {
+        if (!copyCabinetToItem) return;
+        const rect = copyCabinetToItem.getBoundingClientRect();
+        postToHost('openCopyCabinetSubmenu', { top: rect.top, height: rect.height });
       }
 
       // 延时关闭二级子菜单并通知 C#
       function scheduleCloseSubmenu() {
-        // 通知 C# 调度二级子菜单延时隐藏 (支持移入子菜单防抖取消)
         postToHost('closeSubmenu');
       }
 
@@ -753,6 +771,10 @@
       if (searchPriceItem) {
         searchPriceItem.addEventListener('mouseenter', openSubmenu);
         searchPriceItem.addEventListener('mouseleave', scheduleCloseSubmenu);
+      }
+      if (copyCabinetToItem) {
+        copyCabinetToItem.addEventListener('mouseenter', openCopyCabinetSubmenu);
+        copyCabinetToItem.addEventListener('mouseleave', scheduleCloseSubmenu);
       }
 
       // 绑定全局键盘导航事件 (上下箭头选择、回车确认、ESC关闭)
@@ -772,6 +794,10 @@
               openSubmenu();
               return;
             }
+            if (activeItem.id === 'menuItemCopyCabinetTo') {
+              openCopyCabinetSubmenu();
+              return;
+            }
             const action = activeItem.getAttribute('data-action');
             if (action) triggerAction(action);
           }
@@ -780,6 +806,9 @@
           if (activeItem && activeItem.id === 'menuItemSearchPrice') {
             e.preventDefault();
             openSubmenu();
+          } else if (activeItem && activeItem.id === 'menuItemCopyCabinetTo') {
+            e.preventDefault();
+            openCopyCabinetSubmenu();
           }
         } else if (e.key === 'Escape') {
           e.preventDefault();

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Text.Json;
@@ -33,6 +34,9 @@ namespace ExcelAddInDemo.Forms
 
         // 记录鼠标连续检测处于外部的计数值
         private int _outOfMenuTicks = 0;
+
+        // 标记本次菜单弹出后鼠标是否已进入过菜单区域 (防止弹出时光标在外围导致瞬间误隐藏)
+        private bool _hasEnteredMenu = false;
 
         // JSON 序列化选项
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
@@ -149,31 +153,58 @@ namespace ExcelAddInDemo.Forms
                 {
                     _mouseTrackerTimer.Stop();
                     _outOfMenuTicks = 0;
+                    _hasEnteredMenu = false;
                     return;
                 }
 
                 // 获取鼠标屏幕绝对物理坐标
                 Point cur = Cursor.Position;
 
-                // 判断是否在主菜单内部
-                bool inMain = this.Bounds.Contains(cur);
+                // 给予主菜单外围适当的边缘吸附缓冲区 (四周向外扩展 10 像素)
+                // --硬编码: 鼠标检测吸附缓冲 10 像素--
+                Rectangle mainRectWithMargin = new Rectangle(
+                    this.Bounds.X - 10,
+                    this.Bounds.Y - 10,
+                    this.Bounds.Width + 20,
+                    this.Bounds.Height + 20
+                );
+                // 判断是否在主菜单内部 (含微小容差缓冲区)
+                bool inMain = mainRectWithMargin.Contains(cur);
                 // 判断是否在二级子菜单内部 (仅当子菜单可见时有效)
                 bool inSub = CustomContextSubmenuForm.Instance.Visible && CustomContextSubmenuForm.Instance.Bounds.Contains(cur);
 
                 if (inMain || inSub)
                 {
+                    // 鼠标一旦进入过菜单区域，点亮首次进入标记
+                    _hasEnteredMenu = true;
                     // 鼠标仍在主菜单或二级子菜单内，重置离开计数
                     _outOfMenuTicks = 0;
                 }
                 else
                 {
+                    // 若鼠标尚未曾进入过菜单区域，绝不短时间立即误杀，留出充足的人眼与操作反应时间
+                    if (!_hasEnteredMenu)
+                    {
+                        // 离开计数递增，但使用更宽松的初始静止超时 (如 40 次，约 4 秒未移入才关闭)
+                        _outOfMenuTicks++;
+                        if (_outOfMenuTicks >= 40) // --硬编码: 未移入时的静止安全超时 40 次 (约 4 秒)--
+                        {
+                            _mouseTrackerTimer.Stop();
+                            _outOfMenuTicks = 0;
+                            _hasEnteredMenu = false;
+                            this.Hide();
+                        }
+                        return;
+                    }
+
                     // 鼠标已移出菜单区域 (移回 Excel 单元格或其它窗口)
                     _outOfMenuTicks++;
-                    // 离开达到阈值 (连续检测 2 次，约 200ms)，触发自动隐藏
-                    if (_outOfMenuTicks >= 2) // --硬编码: 离开判定阈值 2 次 (约 200ms)--
+                    // 离开达到阈值 (连续检测 5 次，即 500ms)，触发自动隐藏
+                    if (_outOfMenuTicks >= 5) // --硬编码: 离开判定阈值 5 次 (约 500ms)--
                     {
                         _mouseTrackerTimer.Stop();
                         _outOfMenuTicks = 0;
+                        _hasEnteredMenu = false;
                         // 平滑隐藏主菜单
                         this.Hide();
                         // 联动隐藏二级子菜单
@@ -301,6 +332,75 @@ namespace ExcelAddInDemo.Forms
                             catch (Exception ex)
                             {
                                 LogHelper.WriteLog($"呼出二级子菜单异常: {ex.Message}");
+                            }
+                        });
+                        break;
+
+                    case "openCopyCabinetSubmenu":
+                        // 调度展示【复制当前箱柜到...】的二级分类表列表子菜单
+                        SafeInvoke(() =>
+                        {
+                            try
+                            {
+                                // 获取菜单项相对于视口顶部的相对距离
+                                double itemTop = root.TryGetProperty("top", out var tProp) ? tProp.GetDouble() : 0;
+                                // 提取窗体 DPI 缩放比例
+                                float dpiScale = this.GetDpiScale();
+                                // 计算屏幕贴合坐标：X 轴为主菜单右边缘内嵌 1 像素消除接缝，Y 轴为主菜单顶边加上项的相对坐标
+                                int anchorX = this.Left + this.Width - (int)Math.Ceiling(1 * dpiScale); // --硬编码: 子菜单贴合X偏移 1px--
+                                int anchorY = this.Top + (int)Math.Ceiling(itemTop * dpiScale);
+
+                                // 获取当前活动工作簿与工作表对象
+                                var app = ExcelDnaUtil.Application as dynamic;
+                                var wb = app?.ActiveWorkbook;
+                                // 读取当前工作表名称
+                                string currentSheetName = Convert.ToString(app?.ActiveSheet?.Name)?.Trim() ?? "";
+
+                                // 提取目标候选分类表名称列表 (自动排除当前表和系统保留表)
+                                var categorySheetNames = new List<string>();
+                                // 优先从项目白名单读取已登记分类表
+                                var projectSheets = Tool.GetProjectCategorySheetNames(wb);
+                                if (projectSheets != null && projectSheets.Count > 0)
+                                {
+                                    // 遍历白名单中的分类表
+                                    foreach (var sName in projectSheets)
+                                    {
+                                        // 排除当前表以及系统保留/报表
+                                        if (!string.Equals(sName, currentSheetName, StringComparison.OrdinalIgnoreCase) &&
+                                            !Tool.IsReservedOrReportSheet(sName))
+                                        {
+                                            categorySheetNames.Add(sName);
+                                        }
+                                    }
+                                }
+                                else if (wb?.Worksheets != null)
+                                {
+                                    // 兜底方案：遍历工作簿中的所有工作表
+                                    foreach (dynamic ws in wb.Worksheets)
+                                    {
+                                        try
+                                        {
+                                            // 读取工作表名称
+                                            string wsName = Convert.ToString(ws.Name)?.Trim() ?? "";
+                                            // 校验非空、非当前表且非保留表
+                                            if (!string.IsNullOrEmpty(wsName) &&
+                                                !string.Equals(wsName, currentSheetName, StringComparison.OrdinalIgnoreCase) &&
+                                                !Tool.IsReservedOrReportSheet(wsName))
+                                            {
+                                                categorySheetNames.Add(wsName);
+                                            }
+                                        }
+                                        catch { }
+                                    }
+                                }
+
+                                // 呼出动态分类表子菜单
+                                CustomContextSubmenuForm.Instance.ShowCabinetCopySubmenu(this, new Point(anchorX, anchorY), categorySheetNames);
+                            }
+                            catch (Exception ex)
+                            {
+                                // 记录呼出复制箱柜二级子菜单异常日志
+                                LogHelper.WriteLog($"呼出复制箱柜二级子菜单异常: {ex.Message}");
                             }
                         });
                         break;
@@ -833,7 +933,7 @@ namespace ExcelAddInDemo.Forms
                 // 2. 元件汇总表 (全局大单表)：215px
                 // 3. 分类表顶部箱柜汇总区 (isAboveFirstDet == true)：385px
                 // 4. 分类表明细元器件插槽区 (isAboveFirstDet == false)：445px (隐藏禁用的新建箱柜后紧凑自适应)
-                int standardHeight = isDistributionSheet ? 175 : (isSummarySheet ? 215 : (isAboveFirstDet ? 385 : 445)); // --硬编码: 右键菜单标准高度 (分布表 175px, 汇总表 215px, 顶部箱柜 385px, 明细表 445px)--
+                int standardHeight = isDistributionSheet ? 175 : (isSummarySheet ? 215 : (isAboveFirstDet ? 412 : 445)); // --硬编码: 右键菜单标准高度 (分布表 175px, 汇总表 215px, 顶部箱柜 412px, 明细表 445px)--
                 // 若工作区高度受限 (如低分辨率笔记本屏幕)，自适应贴合可用工作区
                 int targetHeight = Math.Min(standardHeight, workArea.Height - 10);
                 // 获取当前窗体 DPI 缩放比率并计算标准物理宽度
@@ -887,7 +987,9 @@ namespace ExcelAddInDemo.Forms
                 _instance.Activate();
 
                 // 每次显示前重置移出离开计数并启动巡检定时器 (提供初始 200ms 防误触缓冲期)
-                _instance._outOfMenuTicks = -2; // --硬编码: 初始唤醒缓冲计数--
+                // 每次显示前重置移出离开计数与首次进入标记
+                _instance._hasEnteredMenu = false;
+                _instance._outOfMenuTicks = 0;
                 _instance._mouseTrackerTimer.Start();
             }
             catch (Exception ex)

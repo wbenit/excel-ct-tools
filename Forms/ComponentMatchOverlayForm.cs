@@ -412,9 +412,13 @@ namespace ExcelAddInDemo.Forms
         /// </summary>
         private void TriggerLoadAttachments()
         {
-            // 准备待查询的品牌、名称与型号
-            string brandToQuery = _filterConfig.GetEffectiveBrands().FirstOrDefault() ?? _cellParams.Brands.FirstOrDefault() ?? string.Empty;
+            // 优先获取当前行识别出的品牌，若当前行无品牌再回退至全局过滤配置中的生效品牌
+            string brandToQuery = _cellParams.Brands.FirstOrDefault() 
+                ?? _filterConfig.GetEffectiveBrands().FirstOrDefault() 
+                ?? string.Empty;
+            // 获取当前行元器件名称
             string nameToQuery = _cellParams.Name ?? string.Empty;
+            // 获取当前行元器件规格型号
             string modelToQuery = _cellParams.CurrentModel ?? string.Empty;
 
             // 先通知前端进入 loading 状态
@@ -925,8 +929,13 @@ namespace ExcelAddInDemo.Forms
 
                     // 3.1 用户请求加载当前物料的配套附件列表 (支持个人库与云端分流)
                     case "getAttachments":
-                        string brandToQuery = _filterConfig.GetEffectiveBrands().FirstOrDefault() ?? _cellParams.Brands.FirstOrDefault() ?? string.Empty;
+                        // 优先获取当前行识别出的品牌，若当前行无品牌再回退至全局过滤配置中的生效品牌
+                        string brandToQuery = _cellParams.Brands.FirstOrDefault() 
+                            ?? _filterConfig.GetEffectiveBrands().FirstOrDefault() 
+                            ?? string.Empty;
+                        // 获取当前行元器件名称
                         string nameToQuery = _cellParams.Name ?? string.Empty;
+                        // 获取当前行元器件规格型号
                         string modelToQuery = _cellParams.CurrentModel ?? string.Empty;
 
                         Task.Run(async () =>

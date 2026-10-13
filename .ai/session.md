@@ -1,3 +1,39 @@
+- **【缺陷纠偏与功能完善：顶部汇总光标行插入上方与公式联动全面自愈闭环】(`Services/ExcelServices.CabinetManage.cs`, `Services/ExcelServices.Cabinet.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心反馈与故障现象**：
+     - 用户指出：“顶部汇总的位置插入不正确，包括复制箱柜和插入复制箱柜的位置不正确，需要在顶部汇总的光标行插入上方”；
+     - 截图中清晰显现：原逻辑将顶部汇总行错误插入到了底表明细第 74 行总计行下方（第 75 行），不仅导致汇总行沦陷在明细块中间，而且引发公式大量 `#REF!` 错乱。
+  2. **根本原因排查与深度定位**：
+     - **根因一（盲目追加与越界推算）**：原逻辑采用 `lastIndexes.cabSumRow + 1`，由于历史无明细箱柜或残留定义名称行号可能在明细区下方，盲目 `+ 1` 导致计算出的插入行直接越界到底表明细区；
+     - **根因二（光标行位置被忽略）**：在执行“插入复制的箱柜”以及新建箱柜时，未读取用户实际选中的顶部汇总光标行（`app.ActiveCell.Row`），且原逻辑写为 `sumRow + 1`（在光标下方插入），违背用户在“光标行上方插入”的业务习惯；
+     - **根因三（汇总联动列号写错引发 `#REF!`）**：此前第 21 步公式联动中，将 J 列成本单价、K 列成本总价、L 列毛利、M 列毛利率错误偏移写为了 H-J、IF(H=0,0,K/H)，导致公式错位并触发 `#REF!` 错误。
+  3. **架构纠正与实施落地**：
+     - **核心安全定位算法 (`DetermineTopSummaryInsertRow`)**：
+       - 动态探测目标表底表明细最小起始行 `minDetRow`，确立不可逾越的分界线；
+       - 若光标处于顶部汇总区（`cursorRow >= 6 && cursorRow < minDetRow`），**100% 精确返回 `cursorRow`**：在当前光标行处向下插入新空行，原光标行及后续行顺延下移，新汇总行稳稳落在**光标行上方**！
+       - 若光标处于底表明细区，自动锁定对应箱柜在顶部汇总区的行号 `sumR` 并在其上方插入；
+       - 兜底情况下（表头或空白区）在顶部最后一个有效汇总行之后追加，且通过 `minDetRow` 进行铁壁拦截，绝不溢出到明细表。
+     - **全链路调用统一**：
+       - `InsertCopiedCabinet`、`CopyActiveCabinetToSheet`、`CreateNewCabinetNoDetail` 以及 `CopyCabinetDetailFromTemplate` 全量统一接入 `DetermineTopSummaryInsertRow`；
+     - **公式联动彻底矫正**：
+       - 严谨对齐标准分类表定义：G 列单价（`=G{tol}`）、H 列总价（`=F*G`）、J 列成本单价（`=K{tol}`）、K 列成本总价（`=F*J`）、L 列毛利（`=H-K`）、M 列毛利率（`=IF(H=0,0,L/H)`），彻底消除 `#REF!`。
+  4. **构建验证与物理产物同步**：
+     - `dotnet build /p:RunExcelDnaBuild=false` 验证通过：**0 错误**；
+     - 最新 `ExcelAddInDemo.dll` / `pdb` 已同步覆盖至 `bin/Debug/net48` 与 `publish/` 目录。
+
+- **【数据结构重构与选配附件出不来缺陷根治】(`Services/ComponentApiClient.cs`, `Services/PersonalComponentDbService.cs`, `Forms/ComponentMatchOverlayForm.cs`, `Services/ExcelServices.ComponentMatch.cs`, `Resources/component_match_overlay.html`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心反馈与排查现象**：
+     - 用户已在云端物料库将附件的极数列改为“附件”，扩展参数1为型号，扩展参数2为分类，备注列为 DZ47MA / DZ47s 等适用主体型号（如图中 ID: 1416, 1417, 1418, 1325, 1419）；
+     - 但在 Excel 表格（元件汇总表或分类明细表）中鼠标右键选取配套附件时出不来。
+  2. **根本原因排查确诊**：
+     - **根因一（Excel 进程长期运行未重载新 DLL）**：通过进程检查确认用户电脑上的 Excel 进程（PID: 16544，启动于 14:14）一直在运行，锁定了 `ExcelAddInDemo-AddIn64.xll`，导致最新代码无法在运行期间热加载，Excel 内存中运行的依然是之前调用线上老端点（按旧 `Param1 == '附件'` 查询）的历史程序集；
+     - **根因二（品牌获取优先级倒置）**：`ComponentMatchOverlayForm.cs` 中的 `TriggerLoadAttachments` 与 `getAttachments` 原先写为 `_filterConfig.GetEffectiveBrands().FirstOrDefault() ?? _cellParams.Brands.FirstOrDefault()`，若全局配置默认勾选了其他品牌，则会忽略当前单元格所在的实际品牌导致查无结果；
+     - **根因三（型号比对单向限制与已有加号附件干扰）**：原先仅采用 `cleanModel.IndexOf(k) >= 0` 单向比对，当用户当前单元格只输入了大类系列型号（如 `DZ47`）而附件备注为子型号（如 `DZ47MA`）时单向包含无法命中；且若当前行已有 `+附件`，未剔除加号后缀会干扰匹配。
+  3. **端到端闭环优化落地**：
+     - **品牌优先级矫正**：优先采用当前单元格解析出的品牌 `_cellParams.Brands.FirstOrDefault()`，无品牌时再回退至全局配置；当两者皆空时放宽品牌检索，绝不直接中断返回空集合；
+     - **加号剥离与双向容错匹配**：`ComponentApiClient.cs` 与 `PersonalComponentDbService.cs` 增加若当前型号包含 `+` 自动截取核心主体型号；适用型号比对升级为双向包含（`cleanModel.IndexOf(k) >= 0 || k.IndexOf(cleanModel) >= 0`），完美兼容通用大类与细分系列；
+     - **极速定向查询**：直接向云端通用端点传递 `Poles=附件` 定向检索，毫秒级响应，经实际接口调用确认 100% 精确返回用户截图中的 5 条附件物料（1416, 1417, 1418, 1325, 1419）；
+     - **编译与产物就绪**：`dotnet build /p:RunExcelDnaBuild=false` 顺利编译通过（0 警告，0 错误），最新 `ExcelAddInDemo.dll` 与 `pdb` 已强制覆盖同步至 `publish/` 目录。只需重启 Excel 即可生效。
+
 - **【业务规则落地与防重约束：同品牌下型号规格全局唯一性校验闭环】(`Services/ComponentApiClient.cs`, `Services/PersonalComponentDbService.cs`, `Services/ExcelServices.ComponentManage.cs`, `publish/ExcelAddInDemo.dll`)**：
   1. **用户核心指令与业务约束**：
      - 用户明确要求：“在同一个品牌，型号规格应该是唯一的，不能重复”；
@@ -5580,3 +5616,30 @@
 4. 临时测试文件已全部回收。
 
 
+
+## [2026-10-13 09:13:20] 右键菜单自动消失排查修复与 Ribbon 工具菜单接入
+
+### [Completed]
+1. **排查并彻底解决右键菜单弹出后鼠标不移入时很快自动消失的问题**：
+   - **根本原因**：CustomContextMenuForm.cs 的 ShowMenu 中默认将菜单坐标偏移了 2 像素（screenPos.X + 2, screenPos.Y + 2），导致菜单弹出时光标位于菜单矩形外部（Contains(cur) == false）；而巡检定时器 _mouseTrackerTimer（100ms 周期）在初始缓冲 -2 下只要检测到 2 次外部（即总耗时约 400ms），就会强行判定光标已离开并触发 	his.Hide()。用户右键后若未在 0.4 秒内瞬间移入菜单，菜单就会闪退消失；
+   - **实施修复**：在 CustomContextMenuForm.cs 中增加 _hasEnteredMenu 首次进入标记与四周 10px 的吸附容差区。鼠标未曾进入菜单前绝不短时间误杀，提供宽松的静止安全期；一旦移入后再移出且连续达到 500ms 阈值才执行平滑隐藏，彻底消除了闪退问题。
+2. **将【图纸参数匹配】加入 Excel Ribbon 的【项目工具】菜单中**：
+   - 在 RibbonController.cs 的 menuProjectTools 下添加 <button id='btnComponentParamMatch' label='图纸参数匹配' ... /> 按钮节点；
+   - 在 OnMenuAction 回调中接入 ExcelServices.ShowComponentParamMatchDialog()，支持从顶部 Ribbon 功能区一键直达“元器件图纸参数匹配 (200x800)”伴随式侧边浮窗。
+3. **构建验证**：
+   - 执行 dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false 验证通过，**0 警告、0 错误**，程序集 ExcelAddInDemo.dll 成功生成。
+
+### [In-Progress]
+- 等待用户关闭运行中的 Excel 进程以完成最终 .xll 文件的覆写与加载验证。
+
+### [Next]
+- 用户在 Excel 重启后测试 Ribbon【项目工具】->【图纸参数匹配】及右键菜单稳定性。
+## [2026-10-13 09:29:29] 修复完成与打包就绪
+
+### [Completed]
+1. **Excel Ribbon【项目工具】菜单新增【图纸参数匹配】完成**：
+   - 在 RibbonController.cs 中注册 tnComponentParamMatch，直接调用 ExcelServices.ShowComponentParamMatchDialog() 唤起元器件图纸参数匹配浮窗；
+2. **右键菜单弹出后如果光标不进入快速消失的缺陷修复完成**：
+   - 在 CustomContextMenuForm.cs 中增加 _hasEnteredMenu 首次移入标记与 10px 吸附容差检测，未进入前提供宽松安全期绝不闪退，移入后移出保持平滑自动隐藏；
+3. **全局打包构建完成**：
+   - Excel 进程关闭后执行全量构建打包，**0 警告、0 错误**，ExcelAddInDemo-AddIn64-packed.xll 与 ExcelAddInDemo.dll 完全生成。
