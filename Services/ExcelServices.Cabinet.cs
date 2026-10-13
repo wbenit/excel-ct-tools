@@ -105,84 +105,63 @@ namespace ExcelAddInDemo
                     // 若未显式传入明细起始行，则智能计算
                     if (targetDetailStartRow <= 0)
                     {
-                        // 判断是否明确命中非末尾的中间箱柜
-                        bool isIntermediateCabinet = validCabinets.Count > 0 && activeCab != null && activeCab.Value.Key != validCabinets[validCabinets.Count - 1].Key;
-                        // 若为中间箱柜，优先定位其在中间明细的精准位置
-                        if (isIntermediateCabinet)
+                        // 核心对齐准则：顶部汇总统一在光标行上方插入，底表明细表必须保持严格一致，也在目标箱柜明细块的上方插入
+                        int targetDetRow = 0;
+                        // 判定是否命中有效箱柜且工作表中已有箱柜集合
+                        if (activeCab != null && validCabinets.Count > 0)
                         {
-                            // 1. 若当前源箱柜自身拥有有效明细块，紧随其落款之后 (Tolsum + 4)
-                            if (srcCabAnchor?.Tolsum != null)
+                            // 锁定当前选中箱柜在有效集合中的索引
+                            int activeIdx = -1;
+                            // 提取当前光标命中的箱柜序号
+                            int targetCabK = activeCab.Value.Key;
+                            // 循环遍历有效集合匹配当前序号
+                            for (int i = 0; i < validCabinets.Count; i++)
                             {
-                                // 动态读取源箱柜实时 Tolsum 行号并后移 4 行
-                                targetDetailStartRow = Convert.ToInt32(srcCabAnchor.Tolsum.Row) + 4;
+                                // 匹配箱柜序号
+                                if (validCabinets[i].Key == targetCabK)
+                                {
+                                    // 记录当前索引并跳出
+                                    activeIdx = i;
+                                    break;
+                                }
                             }
-                            else
+
+                            // 从当前箱柜向后寻找首个拥有有效明细的箱柜 (当前柜有明细则直接命中当前柜)
+                            for (int i = (activeIdx >= 0 ? activeIdx : 0); i < validCabinets.Count; i++)
                             {
-                                // 2. 当前为无明细箱柜：逆向向前寻找最近的一台拥有有效明细的箱柜
-                                int activeIdx = -1;
-                                int targetCabK = activeCab.Value.Key;
-                                // 循环遍历锁定当前箱柜索引
-                                for (int i = 0; i < validCabinets.Count; i++)
+                                // 获取候选箱柜锚点模型
+                                var anc = validCabinets[i].Value;
+                                if (anc != null)
                                 {
-                                    // 匹配箱柜序号
-                                    if (validCabinets[i].Key == targetCabK)
+                                    // 尝试从 COM Range 动态提取最新 Det 物理行号
+                                    if (anc.Det != null)
                                     {
-                                        activeIdx = i;
+                                        try { targetDetRow = Convert.ToInt32(anc.Det.Row); } catch { }
+                                    }
+                                    // 若 COM 读取失败但模型有缓存行号
+                                    if (targetDetRow <= 0 && anc.DetRow > 0)
+                                    {
+                                        // 若顶部汇总插行发生在明细之前，执行 1 行物理补偿
+                                        targetDetRow = anc.DetRow + (needInsertSumRow && insertSumRow <= anc.DetRow ? 1 : 0);
+                                    }
+                                    // 只要找到首个有明细的箱柜即停止扫描
+                                    if (targetDetRow > 0)
+                                    {
                                         break;
-                                    }
-                                }
-                                Models.CabinetAnchorModel? prevDetailAnchor = null;
-                                // 逆序查找前置明细锚点
-                                for (int i = activeIdx - 1; i >= 0; i--)
-                                {
-                                    // 检查前置箱柜是否包含总计行锚点
-                                    if (validCabinets[i].Value.Tolsum != null)
-                                    {
-                                        // 锁定前置有明细箱柜并跳出
-                                        prevDetailAnchor = validCabinets[i].Value;
-                                        break;
-                                    }
-                                }
-
-                                // 若找到了前置有明细箱柜，紧随其后插入
-                                if (prevDetailAnchor?.Tolsum != null)
-                                {
-                                    // 紧随前置有明细箱柜附注与落款之后 (Tolsum + 4)
-                                    targetDetailStartRow = Convert.ToInt32(prevDetailAnchor.Tolsum.Row) + 4;
-                                }
-                                else
-                                {
-                                    // 3. 前方全无明细箱柜，顺向向后查找第一台拥有明细的箱柜
-                                    Models.CabinetAnchorModel? nextDetailAnchor = null;
-                                    // 正序查找后置首个明细锚点
-                                    for (int i = activeIdx + 1; i < validCabinets.Count; i++)
-                                    {
-                                        // 检查后置箱柜是否包含明细行锚点
-                                        if (validCabinets[i].Value.Det != null)
-                                        {
-                                            // 锁定后置首台明细箱柜
-                                            nextDetailAnchor = validCabinets[i].Value;
-                                            break;
-                                        }
-                                    }
-
-                                    // 若找到了后置明细箱柜
-                                    if (nextDetailAnchor?.Det != null)
-                                    {
-                                        // 插在后方首台明细大标题行 (Det - 3) 上方，确保顺序在前 --硬编码: 模板大标题在Det前3行--
-                                        targetDetailStartRow = Math.Max(41, Convert.ToInt32(nextDetailAnchor.Det.Row) - 3);
-                                    }
-                                    else
-                                    {
-                                        // 全表现存箱柜均无明细，首个明细使用基准起始行 41 --硬编码: 基准起始行41--
-                                        targetDetailStartRow = 41;
                                     }
                                 }
                             }
                         }
+
+                        // 若找到了目标明细箱柜，插在其大标题行 (Det - 3) 的上方，确保新明细块排在该箱柜前方
+                        if (targetDetRow > 0)
+                        {
+                            // 模板大标题在 Det 前 3 行，最小受限于基准行 41 --硬编码: 模板大标题在Det前3行，首个明细基准行41--
+                            targetDetailStartRow = Math.Max(41, targetDetRow - 3);
+                        }
                         else
                         {
-                            // 全表末尾追加模式（选中末尾箱柜或未命中特定箱柜）：重新动态嗅探工作表最新行号
+                            // 全表末尾追加模式（全表现存箱柜均无明细、或光标未命中特定箱柜）：重新动态嗅探工作表最新行号
                             var curIndexes = Tool.FindStandardCategoryRowIndexes((object)activeSheet, -1);
                             // 消除汇总插行导致的 1 行物理下移偏差，紧随全表现存最后一个明细落款行后插入
                             targetDetailStartRow = curIndexes.cabTolsumRow > 0 ? curIndexes.cabTolsumRow + 4 : 41;

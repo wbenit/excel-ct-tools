@@ -1,3 +1,93 @@
+- **【缺陷深度根除与存量增量双轨自愈：跨工作表复制插入多余定义名称清洗与同单元格多重定义名称自动去重闭环】(`Tool.cs`, `Services/ExcelServices.CabinetManage.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心反馈与现场证据确诊**：
+     - 用户提问：“跨明细复制插入箱柜，为什么定义名称比实际的要多”；
+     - 截图中清晰显现：【分类3】工作表的名称管理器中，`Cab_Sum_2` 与 `Cab_Sum_31` 同时指向了同一个单元格 `=分类3!$A$8`（数值均为 2），且存在历史跨表遗留的 `Cab_Sum_3`（指向 `$A$9`）；
+     - 物理上仅有 10 个箱柜，但名称管理器却显示了 11 个以上的汇总定义名称，明细行同样翻倍冗余。
+  2. **根本原因排查确诊**：
+     - **根因一（Excel 原生 Range.Copy 跨表打包克隆定义名称）**：在执行汇总行与底表明细块整行整块 `Range.Copy` 时，Excel 自动将源工作表（如【分类1】）该区域绑定的局部定义名称（如 `Cab_Sum_2`、`Cab_Det_2`、`Cab_Subsum_2`、`Cab_Tolsum_2`）克隆注入到目标表【分类3】中，并重定向至目标行（$A$8）；
+     - **根因二（规则 6 递增分配新序号导致多重绑定叠加）**：插件为保证全局递增分配了 `newK = 31` 并注册了 `Cab_Sum_31`，旧名称与新名称同时指向目标行，导致同一箱柜多出整套定义名称；
+     - **根因三（历史存量清理盲区）**：`PurgeGhostNamesForSheet` 原仅检测空白行孤立名称，未对“同一物理单元格重复绑定多个定义名称”进行去重；`SafeDeleteName` 在 `wb` 为空时未自动推导 `sheet.Parent`。
+  3. **最小变动自愈修复落地**：
+     - **新插入行即时精准剔除 (`Tool.PurgeDuplicateNamesAtRow` & `ExecuteCabinetInsertOrClone`)**：
+       - 在复制插入完成后，立即扫描新插入的汇总行、明细行、小计行与总计行；
+       - 凡是指向当前新插入行且序号不等于 `newK` 的旧定义名称（无论源表带入多少个），100% 立即安全注销；
+     - **存量同位置重复定义名称自动去重自愈 (`Tool.PurgeGhostNamesForSheet`)**：
+       - 按物理行号聚合所有 `Cab_Sum_` 与 `Cab_Det_` 定义名称；
+       - 若同一单元格存在多个定义名称绑定（如第 8 行同时存在 `Cab_Sum_2` 与 `Cab_Sum_31`），优先根据 A 列超链接（`Hyperlinks` 指向的 `SubAddress`）或最新最大序号锁定合法主序号 `bestK`；
+       - 安全注销被淘汰的其余冗余名称（如 `Cab_Sum_2`），并同步清理对应的明细、小计与总计冗余名称；
+     - **工作簿句柄自适应增强 (`Tool.SafeDeleteName`)**：
+       - 入参 `wb` 为空时自动通过 `sheet.Parent` 补齐工作簿对象，确保工作表级别与工作簿级别全作用域双通道 100% 覆盖删除。
+  4. **构建验证与物理产物同步**：
+     - `dotnet build /p:RunExcelDnaBuild=false` 验证通过：**0 错误**；
+     - 编译产物 `ExcelAddInDemo.dll` 及 `pdb` 已同步更新至 `bin/Debug/net48` 与 `publish/` 目录。
+
+
+- **【缺陷根治与逻辑自愈：跨表复制粘贴箱柜按光标位置前置对齐插入、消除单价#REF!与调序窗口排除幽灵箱柜闭环】(`Services/ExcelServices.CabinetManage.cs`, `Tool.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心反馈与现场确诊**：
+     - 用户反馈：“从其他分类明细复制箱柜到另一个分类明细中，粘贴后，底部明细和顶部汇总顺序不一致，调序界面和实际也不一致，是什么原因”，以及“点击箭头从其他分类明细复制箱柜插入，依旧插入在最后面，没有按光标位置插入，需要修改”；
+     - 截图中清晰显现：光标选在 Row 8（序号 3 厂房照明配电箱 ALC1系统），右键点击【插入复制的箱柜】。
+  2. **根本原因排查确诊**：
+     - **根因一（跨表强制末尾追加抹除光标）**：原 `ExecuteCabinetInsertOrClone` 存在 `if (!isSameSheet) { appendToEnd = true; preferredCursorRow = 0; }` 硬编码，无条件将调用方传入的有效光标清零并锁死末尾追加；
+     - **根因二（插行后活动箱柜追踪漂移）**：原明细块计算在汇总行物理插行后才探测活动单元格，此时光标停留在新行，无法稳定逆向追踪目标前置箱柜；
+     - **根因三（跨表公式限定符残留导致 #REF! 与全局名称游离）**：跨表公式带源表名未彻底剥离；游离名称与孤立明细块未在调序前清洗过滤。
+  3. **最小变动自愈修复落地**：
+     - **解除跨表一刀切清零 (`ExecuteCabinetInsertOrClone`)**：
+       - 智能识别：仅当显式指定 `appendToEnd: true` 或光标未在有效区时才走末尾追加；若 `preferredCursorRow >= 6`（如 Row 8），无论同表跨表均 100% 尊重光标位置前置插入；
+     - **插行前预先锁定目标箱柜 (`targetCabinetK`)**：
+       - 在插行前根据 `preferredCursorRow` 精确锁定光标所在箱柜；
+       - 汇总行插在目标箱柜汇总行上方；底表明细行插在目标箱柜明细大标题行（`DetRow - 3`）上方，顺序绝对对齐；
+     - **跨表公式清洗与调序守门**：
+       - `Tool.CleanRangeFormulas` 正则剥离源表限定符，重写联动公式并防 `#REF!`；
+       - 调序窗口严格执行规则 8 自愈与规则 6 `sumRow >= 6` 过滤。
+  4. **构建验证与物理产物同步**：
+     - `dotnet build /p:RunExcelDnaBuild=false` 验证通过：**0 错误**；
+     - 编译产物 `ExcelAddInDemo.dll` 及 `pdb` 已同步覆盖至 `bin/Debug/net48` 与 `publish/` 目录。
+
+- **【缺陷深度排查与空行彻底根治：幽灵残留定义名称清洗与物理内容双轨核验闭环】(`Services/ExcelServices.CabinetManage.cs`, `Tool.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心反馈与现场证据确诊**：
+     - 用户反馈：“问题没有解决，如图，中间依旧有空行”；
+     - 截图中清晰显现：Row 7 为【箱柜1】（序号 1），Row 8 为【ALC1】（序号 2），Row 9~12 为 4 行带边框虚线的空白行（序号 3~6），Row 13 却突然出现了【ALC3】（序号 7）。
+  2. **深度反编译日志与物理工作簿排查（铁证确诊）**：
+     - 通过读取磁盘实际工作簿及 `debug.log` 运行轨迹发现：目标表【分类2】中曾残留着一个未清理的定义名称 `Cab_Sum_6 -> =分类2!$A$12`；
+     - 虽然第 12 行的物理单元格（柜号 B 列、箱柜名称 C 列）全为空白行，但原 `DetermineTopSummaryInsertRow` 仅仅读取了 `pair.Value.Sum.Row`，将其盲目误判为“已有最大有效汇总行（Row 12）”；
+     - 最终在末尾追加时计算出 `12 + 1 = 13`，将新箱柜写入 Row 13，跳过了第 9~12 行，留下 4 行大空行！
+  3. **端到端最小改动根治方案落地**：
+     - **真实物理单元格扫描 (`DetermineTopSummaryInsertRow`)**：
+       - 规则 7 一次性读取顶部汇总区（第 7 行至首个小计行/明细大标题前）的 A~C 列数据至内存二维数组；
+       - 逐行核验：只有 B 列（柜号）或 C 列（箱柜名称）非空且非表头非落款时，才认定为存在真实箱柜，精确定位出 `lastPhysicalCabinetRow`（截图中为 Row 8）；
+     - **定义名称有效性过滤 (Liveness Check)**：
+       - 对 `validCabinets` 中所有的 `Sum` 锚点进行真实内容核验：若单元格 B/C 列全空且底表无对应 Det，坚决不计入 `maxValidSumRow`，彻底防御幽灵名称推高行号；
+       - 双轨合并确定有效最后一行：`effectiveLastSumRow = Math.Max(lastPhysicalCabinetRow, maxValidSumRow)`，在截图中必然为 8，追加行严密锁定为 `8 + 1 = 9`；
+     - **幽灵定义名称自动清理 (`Tool.PurgeGhostNamesForSheet`)**：
+       - 在克隆/插入操作前，主动扫描目标表，凡是损坏的 `#REF!` 或指向空白预留行且无对应明细块的孤立 `Cab_Sum` 定义名称，全部使用 `Tool.SafeDeleteName` 彻底清理；
+       - 清理后即时失效短效内存缓存 `Tool.InvalidateSheetCabinetsCache`；
+     - **跨表强制无条件解绑光标 (`ExecuteCabinetInsertOrClone`)**：
+       - 凡是 `!isSameSheet`，彻底无视任何游离光标，100% 锁定 `appendToEnd = true` 与 `preferredCursorRow = 0`。
+  4. **构建验证与物理产物同步**：
+     - `dotnet build /p:RunExcelDnaBuild=false` 验证通过：**0 错误**；
+     - 程序集 `ExcelAddInDemo.dll` 及 `pdb` 已同步更新至 `bin/Debug/net48` 与 `publish/` 目录。
+
+
+- **【缺陷根治与逻辑自愈：解决新建及复制箱柜时底表明细顺序与顶部汇总相反颠倒缺陷】(`Services/ExcelServices.Cabinet.cs`, `Services/ExcelServices.CabinetManage.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心反馈与故障现象**：
+     - 用户反馈：“光标选中BXF2，新建箱柜，在BXF2上方插入了箱柜33，但是底部明细箱柜33却在BXF2的后面，是不是有问题”；
+     - 现象确诊：在分类表中，顶部汇总行【箱柜33】排在【BXF2】上方（前置），但底部明细块【箱柜33】却出现在【BXF2】的落款之后（后置），导致汇总表与明细表自上而下的箱柜先后顺序完全脱节颠倒。
+  2. **根本原因排查确诊**：
+     - 此前为了实现“在顶部汇总光标行上方插入”，将汇总表的插入逻辑统一升级为了光标行上方；
+     - 但在 `CopyCabinetDetailFromTemplate`（新建箱柜）与 `ExecuteCabinetInsertOrClone`（插入复制箱柜）中，底表明细块的插入行号计算仍旧沿用了旧的后置追加逻辑：`targetDetailStartRow = Convert.ToInt32(srcCabAnchor.Tolsum.Row) + 4` 或末尾追加，将新明细块插在了当前箱柜的下方，导致两表顺序不一致。
+  3. **最小变动自愈修复落地**：
+     - **明细前置对齐定位重构 (`targetDetailStartRow` / `insertDetailRow`)**：
+       - 智能识别当前光标或选区命中的箱柜；
+       - 若命中有效箱柜，向后寻找首个包含明细的箱柜（当前柜有明细则直接命中当前柜）；
+       - 获取目标箱柜大标题起始行（`Det.Row - 3`），在目标明细大标题行上方插入 34 行模板空间；
+       - 将目标箱柜及后续箱柜的明细块整体顺延下移 34 行；
+       - 兜底情况（全表无明细或未命中特定箱柜）平滑回退至全表明细末尾追加；
+       - 操作完成后显式调用 `Tool.InvalidateSheetCabinetsCache` 刷新内存行号分布短效缓存；
+     - **修复效果**：顶部汇总表（【箱柜33】在【BXF2】上方）与底部明细表（【箱柜33】明细块在【BXF2】明细块上方）物理排列顺序自上而下严格保持 100% 绝对一致。
+  4. **构建验证与物理产物同步**：
+     - `dotnet build /p:RunExcelDnaBuild=false` 验证通过：**0 错误**；
+     - 编译产物 `ExcelAddInDemo.dll` / `pdb` 已同步覆盖至 `bin/Debug/net48` 与 `publish/` 目录。
+
 - **【缺陷纠偏与功能完善：顶部汇总光标行插入上方与公式联动全面自愈闭环】(`Services/ExcelServices.CabinetManage.cs`, `Services/ExcelServices.Cabinet.cs`, `publish/ExcelAddInDemo.dll`)**：
   1. **用户核心反馈与故障现象**：
      - 用户指出：“顶部汇总的位置插入不正确，包括复制箱柜和插入复制箱柜的位置不正确，需要在顶部汇总的光标行插入上方”；
