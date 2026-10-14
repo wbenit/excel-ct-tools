@@ -921,7 +921,13 @@ namespace ExcelAddInDemo
         /// </summary>
         /// <param name="targetRange">需要执行公式清洗的 Excel 单元格 Range 区域</param>
         /// <param name="sourceSheetNameToStrip">可选的需要从公式中剔除的源工作表纯文本名称</param>
-        public static void CleanRangeFormulas(dynamic targetRange, string? sourceSheetNameToStrip = null)
+        /// <param name="oldCabinetK">可选待替换的源箱柜定义名称序号 (例如 70)</param>
+        /// <param name="newCabinetK">可选替换后的目标新箱柜序号 (例如 15)</param>
+        public static void CleanRangeFormulas(
+            dynamic targetRange,
+            string? sourceSheetNameToStrip = null,
+            int oldCabinetK = 0,
+            int newCabinetK = 0)
         {
             try
             {
@@ -942,6 +948,9 @@ namespace ExcelAddInDemo
                 {
                     formulaCells = targetRange;
                 }
+
+                // 读取配置定义名称前缀 (零堆分配)
+                var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
 
                 // 遍历包含公式的每一个单元格
                 foreach (dynamic cell in formulaCells)
@@ -986,6 +995,19 @@ namespace ExcelAddInDemo
                             string pattern = @"\'?" + System.Text.RegularExpressions.Regex.Escape(sourceSheetNameToStrip!) + @"\'?!";
                             // 执行正则替换抹去跨表前缀
                             cleanedFormula = System.Text.RegularExpressions.Regex.Replace(cleanedFormula, pattern, "");
+                        }
+
+                        // 3. 定义名称旧 Key 替换：若提供了有效且不同的新旧序号，将 Cab_Sum_oldK 等自动替换为 Cab_Sum_newK
+                        if (oldCabinetK > 0 && newCabinetK > 0 && oldCabinetK != newCabinetK)
+                        {
+                            // 构造匹配 4 种箱柜定义名称旧前缀的正则表达式 (边界匹配防止误伤数字子串)
+                            string prefixPattern = $@"\b({System.Text.RegularExpressions.Regex.Escape(sumPrefix)}|{System.Text.RegularExpressions.Regex.Escape(detPrefix)}|{System.Text.RegularExpressions.Regex.Escape(subsumPrefix)}|{System.Text.RegularExpressions.Regex.Escape(tolsumPrefix)}){oldCabinetK}\b";
+                            // 将公式中引用的源箱柜旧 Key 统一动态替换为目标新 Key
+                            cleanedFormula = System.Text.RegularExpressions.Regex.Replace(
+                                cleanedFormula,
+                                prefixPattern,
+                                $"${{1}}{newCabinetK}",
+                                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                         }
 
                         // 若清洗后的公式发生改变，强制写回单元格
@@ -1259,7 +1281,13 @@ namespace ExcelAddInDemo
         /// <param name="wb">目标工作簿 COM 对象 (可选)</param>
         /// <param name="sheet">目标工作表 COM 对象 (可选)</param>
         /// <param name="autoRebuildIfEmpty">若定义名称为空是否自动触发重新构建 (默认 false，纯查询安全)</param>
-        /// <returns>合并后的定义名称列表</returns>
+        /// <summary>
+        /// 收集属于指定工作表的全部定义名称 (支持工作表局部名称与工作簿全局名称，具备严格单表作用域隔离与去重)
+        /// </summary>
+        /// <param name="wb">目标工作簿 COM 对象 (可选)</param>
+        /// <param name="sheet">目标工作表 COM 对象 (可选)</param>
+        /// <param name="autoRebuildIfEmpty">若定义名称为空是否自动触发重新构建 (默认 false，纯查询安全)</param>
+        /// <returns>合并后的定义名称列表 (100% 仅包含属于当前表的定义名称，绝无重复)</returns>
         public static List<dynamic> CollectAllDefinedNames(
             dynamic? wb,
             dynamic? sheet,
@@ -1267,33 +1295,111 @@ namespace ExcelAddInDemo
         {
             // 创建定义名称列表容器
             var allNames = new List<dynamic>();
+            // 创建用于去重已收集定义名称标识的哈希集合 (防工作簿与工作表重复收集)
+            var seenCleanNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            // 内部辅助局部方法：执行双作用域扫描
+            // 提取目标工作表名称纯文本
+            string targetSheetName = string.Empty;
+            try { targetSheetName = Convert.ToString(sheet?.Name) ?? string.Empty; } catch { }
+
+            // 内部辅助局部方法：执行单表严格作用域与有效性扫描
             void ScanNames()
             {
-                // 1. 尝试遍历收集工作簿级定义名称
-                if (wb != null)
+                // 1. 优先遍历收集工作表级局部定义名称 (100% 绝对属于当前工作表)
+                if (sheet != null)
                 {
                     try
                     {
-                        // 遍历工作簿名称集合
-                        if (wb.Names != null)
+                        if (sheet.Names != null)
                         {
-                            foreach (dynamic n in wb.Names) allNames.Add(n);
+                            foreach (dynamic n in sheet.Names)
+                            {
+                                try
+                                {
+                                    string rawName = Convert.ToString(n.Name) ?? "";
+                                    string clean = ExtractCleanNameStr(rawName);
+                                    // 记录并加入列表
+                                    allNames.Add(n);
+                                    if (!string.IsNullOrEmpty(clean)) seenCleanNames.Add(clean);
+                                }
+                                catch { }
+                            }
                         }
                     }
                     catch { }
                 }
 
-                // 2. 尝试遍历收集工作表级定义名称
-                if (sheet != null)
+                // 2. 遍历收集工作簿级定义名称 (严格过滤：仅收录属于当前工作表的定义名称)
+                if (wb != null)
                 {
                     try
                     {
-                        // 遍历工作表名称集合
-                        if (sheet.Names != null)
+                        if (wb.Names != null)
                         {
-                            foreach (dynamic n in sheet.Names) allNames.Add(n);
+                            foreach (dynamic n in wb.Names)
+                            {
+                                try
+                                {
+                                    string rawName = Convert.ToString(n.Name) ?? "";
+                                    // 若指定了目标工作表，执行严格工作表归属校验
+                                    if (!string.IsNullOrEmpty(targetSheetName))
+                                    {
+                                        // 校验 A: 若为工作表级局部名称 (如 'Sheet1'!Cab_Det_1)，感叹号前必须匹配当前表名
+                                        if (rawName.Contains("!"))
+                                        {
+                                            string scopeSheet = rawName.Substring(0, rawName.IndexOf('!')).Trim('\'', ' ');
+                                            if (!string.Equals(scopeSheet, targetSheetName, StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                continue; // 属于其他工作表，坚决跳过
+                                            }
+                                        }
+                                        // 校验 B: 若为工作簿全局名称，检查公式 RefersTo 是否明确指向当前工作表
+                                        else
+                                        {
+                                            string refersTo = Convert.ToString(n.RefersTo) ?? string.Empty;
+                                            if (refersTo.Contains("!"))
+                                            {
+                                                int start = refersTo.StartsWith("=") ? 1 : 0;
+                                                int excl = refersTo.IndexOf('!');
+                                                string refSheet = refersTo.Substring(start, excl - start).Trim('\'', ' ');
+                                                if (!string.IsNullOrEmpty(refSheet) && !string.Equals(refSheet, targetSheetName, StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    continue; // 公式指向其他工作表，坚决跳过
+                                                }
+                                            }
+                                            else if (!refersTo.Contains("#REF"))
+                                            {
+                                                // 公式无感叹号且非坏链时尝试通过 COM RefersToRange 验证所属工作表
+                                                try
+                                                {
+                                                    dynamic? refR = n.RefersToRange;
+                                                    if (refR != null && refR.Worksheet != null)
+                                                    {
+                                                        string rSheet = Convert.ToString(refR.Worksheet.Name) ?? "";
+                                                        if (!string.IsNullOrEmpty(rSheet) && !string.Equals(rSheet, targetSheetName, StringComparison.OrdinalIgnoreCase))
+                                                        {
+                                                            continue; // 跨表引用，坚决跳过
+                                                        }
+                                                    }
+                                                }
+                                                catch { }
+                                            }
+                                        }
+                                    }
+
+                                    // 去重防护：若当前名称标识已在工作表级名称中收集过，跳过重复项
+                                    string cleanWb = ExtractCleanNameStr(rawName);
+                                    if (!string.IsNullOrEmpty(cleanWb) && seenCleanNames.Contains(cleanWb))
+                                    {
+                                        continue;
+                                    }
+
+                                    // 加入收集列表并记录去重标记
+                                    allNames.Add(n);
+                                    if (!string.IsNullOrEmpty(cleanWb)) seenCleanNames.Add(cleanWb);
+                                }
+                                catch { }
+                            }
                         }
                     }
                     catch { }
@@ -1314,6 +1420,7 @@ namespace ExcelAddInDemo
 
                     // 清空后重新执行名称扫描
                     allNames?.Clear();
+                    seenCleanNames.Clear();
                     ScanNames();
                 }
             }
@@ -2122,6 +2229,21 @@ namespace ExcelAddInDemo
                                     {
                                         // 明细行必须位于汇总行下方
                                         if (dRow <= sRow) { isHealthy = false; break; }
+
+                                        // 核心安全嗅探：检查明细表头行 (dRow + 1) A 列是否包含 #NAME? 或 #REF! 损坏
+                                        try
+                                        {
+                                            // 提取明细表头 A 列当前显示文本
+                                            string hText = Convert.ToString(sheet.Cells[dRow + 1, 1].Text) ?? "";
+                                            // 若表头序号单元格呈现 #NAME? 或 #REF! 错误，坚决判定不健康以唤醒自愈
+                                            if (hText.Contains("#NAME?") || hText.Contains("#REF!"))
+                                            {
+                                                // 标记为不健康状态，触发自愈修复
+                                                isHealthy = false;
+                                                break;
+                                            }
+                                        }
+                                        catch { }
 
                                         // 提取小计行物理行号 (若存在)
                                         int subRow = anchor.Subsum != null ? Convert.ToInt32(anchor.Subsum.Row) : anchor.SubsumRow;
@@ -3291,13 +3413,21 @@ namespace ExcelAddInDemo
                         // 判断是否为明细行前缀
                         if (clean.StartsWith(detPrefix, StringComparison.OrdinalIgnoreCase))
                         {
-                            // 记录存在的明细行箱柜编号
-                            existingDetK.Add(k);
                             // 安全提取所引用的行号
                             dynamic? refR = null;
                             try { refR = n.RefersToRange; } catch { }
                             if (refR != null)
                             {
+                                // 核心严格防护：确保引用的工作表名称必须等于当前工作表
+                                string refWsName = string.Empty;
+                                try { refWsName = Convert.ToString(refR.Worksheet?.Name) ?? ""; } catch { }
+                                if (!string.IsNullOrEmpty(refWsName) && !string.Equals(refWsName, sheetName, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    continue; // 跨表引用，坚决跳过
+                                }
+
+                                // 记录存在的明细行箱柜编号
+                                existingDetK.Add(k);
                                 // 记录明细行物理行号
                                 int r = Convert.ToInt32(refR.Row);
                                 if (!detNamesByRow.ContainsKey(r)) detNamesByRow[r] = new List<(string, int, dynamic)>();
@@ -3312,6 +3442,14 @@ namespace ExcelAddInDemo
                             try { refR = n.RefersToRange; } catch { }
                             if (refR != null)
                             {
+                                // 核心严格防护：确保引用的工作表名称必须等于当前工作表
+                                string refWsName = string.Empty;
+                                try { refWsName = Convert.ToString(refR.Worksheet?.Name) ?? ""; } catch { }
+                                if (!string.IsNullOrEmpty(refWsName) && !string.Equals(refWsName, sheetName, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    continue; // 跨表引用，坚决跳过
+                                }
+
                                 // 仅纳管合规的汇总行行号
                                 int r = Convert.ToInt32(refR.Row);
                                 if (r >= 6)
@@ -3357,6 +3495,14 @@ namespace ExcelAddInDemo
                                 try { refRange = n.RefersToRange; } catch { }
                                 if (refRange != null)
                                 {
+                                    // 核心严格防护：确保引用的工作表名称必须等于当前工作表
+                                    string refWsName = string.Empty;
+                                    try { refWsName = Convert.ToString(refRange.Worksheet?.Name) ?? ""; } catch { }
+                                    if (!string.IsNullOrEmpty(refWsName) && !string.Equals(refWsName, sheetName, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        continue; // 跨表引用，坚决跳过
+                                    }
+
                                     // 提取物理行号并校验文本内容
                                     int row = Convert.ToInt32(refRange.Row);
                                     string bVal = Convert.ToString(sheet.Cells[row, 2].Value2)?.Trim() ?? "";
@@ -3421,10 +3567,27 @@ namespace ExcelAddInDemo
                                 // 记录清理日志
                                 LogHelper.WriteLog($"[PurgeGhostNames] 自动去重清理多余汇总行名称: {item.Clean} (与箱柜{bestK}重复指向第{row}行)");
                                 SafeDeleteName(sheet, wb, item.Clean);
-                                // 同步清理关联的明细旧名称
-                                SafeDeleteName(sheet, wb, $"{detPrefix}{item.K}");
-                                SafeDeleteName(sheet, wb, $"{subsumPrefix}{item.K}");
-                                SafeDeleteName(sheet, wb, $"{tolsumPrefix}{item.K}");
+                                // 核心安全防线：仅当被淘汰的序号在底表没有独立的健康明细行时，才顺带清理其明细名称！
+                                bool hasIndependentDet = false;
+                                if (detNamesByRow != null)
+                                {
+                                    foreach (var dKvs in detNamesByRow)
+                                    {
+                                        // 若存在指向其他行号的明细块，认定为独立明细
+                                        if (dKvs.Value.Any(x => x.K == item.K))
+                                        {
+                                            hasIndependentDet = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (!hasIndependentDet)
+                                {
+                                    // 仅无独立明细时才清理关联明细名称
+                                    SafeDeleteName(sheet, wb, $"{detPrefix}{item.K}");
+                                    SafeDeleteName(sheet, wb, $"{subsumPrefix}{item.K}");
+                                    SafeDeleteName(sheet, wb, $"{tolsumPrefix}{item.K}");
+                                }
                             }
                         }
                     }
@@ -3477,6 +3640,10 @@ namespace ExcelAddInDemo
             if (sheet == null) return;
             try
             {
+                // 提取目标工作表名称纯文本
+                string sheetName = Convert.ToString(sheet.Name) ?? "";
+                if (string.IsNullOrWhiteSpace(sheetName)) return;
+
                 // 自动提取所属工作簿实例
                 if (wb == null)
                 {
@@ -3484,7 +3651,7 @@ namespace ExcelAddInDemo
                 }
                 // 获取箱柜标准名称前缀配置
                 var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = CabinetPrefixConfig.Current;
-                // 收集双作用域所有定义名称
+                // 收集当前表严格作用域内的定义名称
                 var allNames = CollectAllDefinedNames(wb, sheet, autoRebuildIfEmpty: false);
 
                 foreach (dynamic n in allNames)
@@ -3503,6 +3670,16 @@ namespace ExcelAddInDemo
                         dynamic? refRange = null;
                         try { refRange = n.RefersToRange; } catch { }
                         if (refRange == null) continue;
+
+                        // 核心严格防护：确保引用的物理区域必须百分之百属于当前目标表
+                        string refWsName = string.Empty;
+                        try { refWsName = Convert.ToString(refRange.Worksheet?.Name) ?? ""; } catch { }
+                        if (!string.IsNullOrEmpty(refWsName) && !string.Equals(refWsName, sheetName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue; // 跨表引用，坚决跳过，杜绝误杀其他工作表箱柜
+                        }
+
+                        // 提取目标物理行号
                         int r = Convert.ToInt32(refRange.Row);
 
                         // 汇总行重叠检测：若非 newK 的 Cab_Sum 指向了新插入的汇总行，强力注销

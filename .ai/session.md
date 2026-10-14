@@ -1,3 +1,26 @@
+- **【缺陷彻底排查与系统级根治：跨表复制箱柜光标点击顶部汇总中间定义名称丢失与跨表名称混淆误删闭环】(`Tool.cs`, `Services/ExcelServices.CabinetManage.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心反馈与现场证据确诊**：
+     - 用户提问：“跨类表复制箱柜，如果光标点击目标分类的顶部汇总的中间，没有添加定义名称，如图”；
+     - 截图中清晰显现：【分类2】名称管理器中，`Cab_Sum_1` 到 `Cab_Sum_5` 分别指向 `$A$7` 到 `$A$11`，随后直接跳跃至 `Cab_Sum_7`（指向 `$A$14`，数值为 8），中间新插入的箱柜（如箱柜 8）与原有的箱柜 6 定义名称完全丢失，未成功添加；
+     - `debug.log` 运行轨迹抓取到铁证：在 12:09:18~12:09:54 期间，`[PurgeDuplicateNamesAtRow]` 与 `[PurgeGhostNames]` 连续调用 `SafeDeleteName`，将刚创建的 `Cab_Sum_8`、`Cab_Det_8`、`Cab_Subsum_8`、`Cab_Tolsum_8` 以及原有的 `Cab_Sum_6` 整套名称全部当场物理删除！
+  2. **根本原因排查确诊（三大病灶链条）**：
+     - **根因一（`CollectAllDefinedNames` 跨工作表穿透与无差别收集）**：原 `CollectAllDefinedNames` 直接遍历了 `wb.Names`，由于【分类1】有 112 个箱柜，其全部 112 个箱柜定义名称（如【分类1】的 `Cab_Sum_6`、`Cab_Sum_8`）被一股脑混入了当前工作表【分类2】的名称集合，且属于本表的名称被重复收集了两次；
+     - **根因二（`PurgeDuplicateNamesAtRow` 缺乏工作表隔离与误杀现有箱柜）**：新箱柜在第 12 行插入后（`newK = 8`），`PurgeDuplicateNamesAtRow` 检测到【分类1】的 `Cab_Sum_6` 行号恰好也是 12，因未校验 `Worksheet.Name`，误将其判定为跨表复制带入的旧名称，直接调用 `SafeDeleteName` 将【分类2】原有的箱柜 6 连锅端误删；
+     - **根因三（`PurgeGhostNamesForSheet` 跨表同行号误撞与新箱柜定义名称覆灭）**：插入新行后，【分类2】原箱柜 7 下移至第 14 行（`Cab_Sum_7 -> $A$14`），而混入的【分类1】`Cab_Sum_8` 行号同样为 14！`PurgeGhostNamesForSheet` 误判第 14 行存在多重绑定，通过 A 列超链接选定 7 为合法主序号，将 8 判定为“淘汰冗余旧名称”，调用 `SafeDeleteName` 将【分类2】刚创建成功的新箱柜 8 整套名称彻底抹杀！
+  3. **工业级最小变动自愈修复落地**：
+     - **防线一：`Tool.CollectAllDefinedNames` 严格单表作用域隔离与去重**：
+       - 当传入有效 `sheet` 时，严格比对工作表级局部名称的前缀表名（`scopeSheet == targetSheetName`）与工作簿级全局名称的公式目标表（`refSheet == targetSheetName`）；
+       - 引入 `HashSet<string> seenCleanNames` 强力排重，杜绝本表名称被收集两次，100% 确保返回集合仅包含当前表的定义名称；
+     - **防线二：`Tool.PurgeGhostNamesForSheet` 与 `Tool.PurgeDuplicateNamesAtRow` 工作表强校验**：
+       - 提取 `RefersToRange` 后显式增加 `refRange.Worksheet.Name == sheetName` 铁壁校验，跨表引用坚决直接跳过；
+       - `PurgeGhostNames` 在同位置去重删除淘汰名称时，增加底表独立明细块守护，若存在独立有效明细行，严禁顺带删除明细、小计与总计名称；
+     - **防线三：`ExecuteCabinetInsertOrClone` 终极自愈保险（Self-Healing Final Guard）**：
+       - 在执行完所有清理和自愈逻辑后，对新创建的 `newK` 的 4 个定义名称执行最终校验重绑，确保新箱柜定义名称 100% 存在且指向正确行号；
+     - **存量受损表一键自愈**：用户只需重新插入复制箱柜，或在当前分类表点击 Ribbon【修复】按钮，系统即可全量自愈并补齐缺失的定义名称。
+  4. **构建验证与物理产物同步**：
+     - `dotnet build /p:RunExcelDnaBuild=false` 验证通过：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` 及 `pdb` 已同步覆盖至 `bin/Debug/net48` 与 `publish/` 目录。
+
 - **【缺陷深度根除与存量增量双轨自愈：跨工作表复制插入多余定义名称清洗与同单元格多重定义名称自动去重闭环】(`Tool.cs`, `Services/ExcelServices.CabinetManage.cs`, `publish/ExcelAddInDemo.dll`)**：
   1. **用户核心反馈与现场证据确诊**：
      - 用户提问：“跨明细复制插入箱柜，为什么定义名称比实际的要多”；
@@ -5733,3 +5756,23 @@
    - 在 CustomContextMenuForm.cs 中增加 _hasEnteredMenu 首次移入标记与 10px 吸附容差检测，未进入前提供宽松安全期绝不闪退，移入后移出保持平滑自动隐藏；
 3. **全局打包构建完成**：
    - Excel 进程关闭后执行全量构建打包，**0 警告、0 错误**，ExcelAddInDemo-AddIn64-packed.xll 与 ExcelAddInDemo.dll 完全生成。
+
+## [2026-10-14 10:13:00] 跨分类复制箱柜明细表头 Cab_Sum 定义名称残留旧 Key 缺陷修复闭环
+
+### [Completed]
+1. **跨分类复制与插入箱柜核心引擎显式绑定新定义名称** (`Services/ExcelServices.CabinetManage.cs`)：
+   - 在 `ExecuteCabinetInsertOrClone` 中新增步骤 19.5，显式重写明细表头行（`newDetRow + 1`）A 列公式为 `targetSheet.Cells[newDetRow + 1, 1].Formula = $"=\"序号\" & {newSumTag}";`，对齐规则 6 架构规范；
+   - 在汇总行与明细行 `CleanRangeFormulas` 调用中传入源箱柜序号 `clip.SourceCabinetK` 与新序号 `newK`。
+2. **公式旧 Key 扫描与自动成对替换增强** (`Tool.cs`)：
+   - 升级 `Tool.CleanRangeFormulas` 方法，增加 `oldCabinetK` 与 `newCabinetK` 参数，通过正则表达式 `\b(Cab_Sum_|Cab_Det_|Cab_Subsum_|Cab_Tolsum_){oldCabinetK}\b` 自动将复制区域公式内所有引用的旧 Key 成对替换为目标新 Key，彻底防御任何残留；
+3. **存量自愈守门闭环** (`Tool.cs`)：
+   - 在 `Tool.FixAndFillCabinetNamesForSheet` 的 `isHealthy` 快速嗅探中，增加对明细表头 A 列包含 `#NAME?` 或 `#REF!` 错误的探测，若损坏则标记为不健康，唤醒下方规则 6 表头公式自动恢复逻辑，实现存量错误表格在右键【修复】或常规操作时即时自愈。
+4. **编译与产物同步**：
+   - 执行 `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 验证通过：**0 错误**；
+   - 程序集 `ExcelAddInDemo.dll` 及 `pdb` 已同步复制覆盖至 `publish/` 目录。
+
+### [In-Progress]
+- 待用户在 Excel 中加载最新程序集，验证跨分类复制箱柜及右键修复。
+
+### [Next]
+- 用户重启 Excel 测试跨分类复制箱柜，确认 A 列表头不再显示 `#NAME?` 且正确联动到目标汇总行序号。

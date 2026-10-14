@@ -766,8 +766,8 @@ namespace ExcelAddInDemo
                         dynamic dstSumRange = targetSheet.Rows[$"{insertSumRow}:{insertSumRow}"];
                         // 复制源汇总行整行格式与样式
                         srcSumRange.Copy(dstSumRange);
-                        // 清洗复制带入的跨表外部工作表公式前缀 (如 '分类1'!)
-                        Tool.CleanRangeFormulas(dstSumRange, clip.SourceSheetName);
+                        // 清洗复制带入的跨表外部工作表公式前缀并自动将源箱柜定义名称 Key 替换为新 Key
+                        Tool.CleanRangeFormulas(dstSumRange, clip.SourceSheetName, clip.SourceCabinetK, newK);
                     }
                 }
                 catch (Exception exSumCopy)
@@ -972,11 +972,13 @@ namespace ExcelAddInDemo
                             detRange.Borders.Weight = 2;
                         }
                         catch { }
+                        // 清洗数组写入公式中残留的跨表前缀与旧箱柜定义名称 Key
+                        Tool.CleanRangeFormulas(detRange, clip.SourceSheetName, clip.SourceCabinetK, newK);
                     }
                     else
                     {
-                        // 清洗复制产生的跨表外部引用公式，恢复本地自适应，剥离源工作表限定名
-                        Tool.CleanRangeFormulas(dstDetailRange, clip.SourceSheetName);
+                        // 清洗复制产生的跨表外部引用公式，恢复本地自适应，剥离源工作表限定名并替换旧箱柜 Key
+                        Tool.CleanRangeFormulas(dstDetailRange, clip.SourceSheetName, clip.SourceCabinetK, newK);
                     }
 
                     // 16. 计算新明细块关键行号
@@ -1014,6 +1016,19 @@ namespace ExcelAddInDemo
 
                     // 19. 更新明细表头柜号文本 (名称保持不变)
                     targetSheet.Cells[newDetRow, 2].Value = newCabNo;
+
+                    // 19.5 核心关键修复：显式将明细表头行 (detRow + 1) A 列动态自适应绑定到新汇总行定义名称
+                    // 彻底解决跨分类复制或插入箱柜时表头公式残留旧 Key 并报 #NAME? 的缺陷 (规则 6 架构规范)
+                    try
+                    {
+                        // 明细表头行 (newDetRow + 1) A 列写入动态序号公式，对齐标准模板与规则 6
+                        targetSheet.Cells[newDetRow + 1, 1].Formula = $"=\"序号\" & {newSumTag}"; // --硬编码: 明细表头序号公式--
+                    }
+                    catch (Exception exHdrFormula)
+                    {
+                        // 记录表头公式重写容错日志
+                        LogHelper.WriteLog($"绑定新箱柜明细表头序号公式异常: {exHdrFormula.Message}");
+                    }
 
                     // 20. 刷新明细块元器件 A 列序号、小计求和公式与计费区域公式
                     int compStartRow = newDetRow + 2;
@@ -1078,6 +1093,32 @@ namespace ExcelAddInDemo
                 Tool.PurgeDuplicateNamesAtRow(targetSheet, wb, insertSumRow, createdInfo.DetRow, createdInfo.SubsumRow, createdInfo.TolsumRow, newK);
                 // 核心自愈闭环：执行一次全表幽灵名称与同位置重复定义名称安全自愈净化
                 Tool.PurgeGhostNamesForSheet(targetSheet);
+
+                // 21.6 终极自愈保险：确保新创建的箱柜 newK 的整套定义名称 100% 存在且指向正确行号 (规则 6 架构保障)
+                try
+                {
+                    if (insertSumRow > 0)
+                    {
+                        // 校验并回写汇总行定义名称
+                        Tool.SafeSetSheetName(targetSheet, curSheet, newSumTag, insertSumRow);
+                    }
+                    if (createdInfo.DetRow > 0)
+                    {
+                        // 校验并回写明细信息行定义名称
+                        Tool.SafeSetSheetName(targetSheet, curSheet, $"{detPrefix}{newK}", createdInfo.DetRow);
+                    }
+                    if (createdInfo.SubsumRow > 0)
+                    {
+                        // 校验并回写小计行定义名称
+                        Tool.SafeSetSheetName(targetSheet, curSheet, $"{subsumPrefix}{newK}", createdInfo.SubsumRow);
+                    }
+                    if (createdInfo.TolsumRow > 0)
+                    {
+                        // 校验并回写总计行定义名称
+                        Tool.SafeSetSheetName(targetSheet, curSheet, $"{tolsumPrefix}{newK}", createdInfo.TolsumRow);
+                    }
+                }
+                catch { }
 
                 // 22. 若为剪切模式，删除源工作表中的原始箱柜
                 if (clip.IsCut && !string.IsNullOrWhiteSpace(clip.SourceSheetName))
