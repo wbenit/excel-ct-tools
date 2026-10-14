@@ -1,3 +1,152 @@
+- **【WebView2 运行时缓存污染清理与 .gitignore 规范加固】(`.gitignore`, `data/`)**：
+  1. **排查与根因定位**：
+     - 用户反馈 Source Control 突发 1500+ 个文件变更；
+     - 经排查定位为 WebView2 初始化时在 `data/WebView2_*` 目录下生成的 Chromium 运行支持组件与本地缓存（包含 `hyphen-data` 断词词典、`ZxcvbnData` 密码强度字典、`WidevineCdm` DRM组件、`Trust Protection Lists` 防跟踪列表等）；
+     - 根因：原 `.gitignore` 未对 WebView2 产生的临时目录和运行时环境（`**/EBWebView/`、`**/WebView2_*/`、`data/dwg_thumbs/` 等）进行忽略。
+  2. **处置与收尾闭环**：
+     - 在 `.gitignore` 中完善补充忽略规则：`**/EBWebView/`、`**/WebView2_*/`、`data/dwg_thumbs/`、`*.tmp`；
+     - 彻底清理工作区 `data/` 下误生成的 `WebView2_*` 缓存子目录与临时文件，保留核心业务配置文件与 `personal_components.db` 本地库；
+     - 验证 `git status`，1581 个多余文件全部清除，代码树恢复清爽干净。
+
+- **【云物料工作台结构精简：彻底移除电小二选型与认证，物料库直连本地 SQLite 个人物料】(`Resources/cloud_material_hub.html`, `Forms/CloudMaterialHubForm.cs`, `Services/PersonalComponentDbService.CloudMaterial.cs`, `publish/`, `bin/`)**：
+  1. **用户核心指令与需求落地**：
+     - 用户指令：“不需要电小二选型tab和认证，物料库直接加载个人物料（sqlite中的数据）”；
+  2. **端到端极简与纯本地化改造**：
+     - **主导航精简**：彻底移除了顶部【电小二选型】Tab，主导航保留【物料库】与【计算器】两大核心 Tab；
+     - **去云端认证化**：
+       - 过滤栏彻底移除【认证：全部 / 企业物料【已认证】 / 个人物料【未认证】】单选行；
+       - 物料数据表格彻底移除【认证】状态列；
+       - 前后端移除 `cert` / `certFilter` 字段过滤，物料库 100% 直连本地 SQLite 数据库（`personal_components.db`）；
+     - **全物料分类与真实品牌接入**：
+       - 物料库分类子 Tab 扩展为【全部物料】、【元件库】、【母排库】、【柜体库】、【辅料库】，默认选中【全部物料】；
+       - `CloudMaterialHubForm.cs` 通过 `PersonalComponentDbService.GetBrandStats()` 提取本地数据库真实品牌列表，动态填充前端品牌下拉筛选；
+       - `PersonalComponentDbService.CloudMaterial.cs` 完善多分类模糊匹配逻辑与 SQLite 多路径自动回退探测，确保开发与发布环境均能直通本地数据库；
+  3. **编译构建与多端高保真验证**：
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 资源文件同步部署至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 通过 Browser Subagent 启动浏览器加载 `cloud_material_hub.html` 进行高保真截图校验，确认【电小二选型】Tab 与【认证】元素已完全去除，物料库直接展现个人物料，计算器各子 Tab 联动顺畅，无水平滚动条。
+
+- **【云物料一体化工作台交付：物料库四分类检索、柜体计算器整合、利驰同款母排计算器与国标载流量查询闭环】(`Forms/CloudMaterialHubForm.cs`, `Resources/cloud_material_hub.html`, `Services/ExcelServices.CloudMaterialHub.cs`, `Services/PersonalComponentDbService.CloudMaterial.cs`, `RibbonController.cs`, `publish/`, `bin/`)**：
+  1. **用户核心需求与确认决策落地**：
+     - 用户指令：“利驰的如图功能，其中壳体计算和个人物料库已经有了，你来整合，并且新增铜排计算器，你来设计方案”；
+     - 需求问询确认落地：
+       ① 弹窗组织：创建全新的【云物料】统一弹窗，Ribbon【云物料】主按钮升级为 SplitButton 大图标直达，下拉菜单保留高级配置项；
+       ② 插入与替换：点击【插入】插入到当前光标所在行的下方；点击【替换】直接覆盖当前选中行的名称、型号、单价等字段；
+       ③ 柜体物料回写：作为普通元器件行（B列=柜体，C列=外形尺寸型号，E列=台，M列=单价）插入分类表元器件清单中；
+       ④ 物料库数据源：展示本地个人物料库 SQLite 数据（`PersonalComponentDbService`），极速响应。
+  2. **端到端完整链路实现**：
+     - **数据模型层 (`Models/CloudMaterialHubModels.cs`)**：
+       - 定义 `HubMaterialDto`、`HubMaterialQueryParams` 与 `BusbarAmpacityItem` 等通用 DTO；
+     - **本地数据库层 (`Services/PersonalComponentDbService.CloudMaterial.cs`)**：
+       - 实现 `QueryHubMaterials` 多条件分页复合查询，支持元件、母排、柜体、辅料四分类与型号、名称、品牌检索；
+       - 实现 `SaveHubMaterial`，支持将柜体或母排计算结果一键持久化保存到本地 SQLite；
+       - 实现 `GetBusbarAmpacityTable`，内置 GB/T 5585 国标母线（TMY/LMY）载流量矩阵，根据大盘铜价与米重实时联动单价；
+     - **业务服务层 (`Services/ExcelServices.CloudMaterialHub.cs`)**：
+       - 严格遵循规则 8（`Tool.FixAndFillCabinetNamesForSheet` 预检）与规则 9；
+       - 遵循规则 6，通过 `Cab_Det_k` 与 `Cab_Subsum_k` 锚点定位元器件区域，光标行下方插行防覆盖；
+       - 遵循规则 7，通过二维数组一次性回写 A(自适应公式)、B(名称)、C(型号)、D(品牌)、E(单位)、F(数量)、M(单价) 列；
+     - **C# 窗体宿主层 (`Forms/CloudMaterialHubForm.cs`)**：
+       - 基于 WebView2 + WinForm 搭建 1180x760 现代无边框平滑拖拽弹窗，实现完整 WebMessage 消息路由；
+     - **前端一体化工作台 (`Resources/cloud_material_hub.html`)**：
+       - Vue 3 + Element Plus，主色调 `#009688` 绿蓝相间，纯弹性布局，零水平滚动条；
+       - 一级主 Tab：【电小二选型 (预留)】 | 【物料库 (图1)】 | 【计算器】；
+       - 计算器二级子 Tab：
+         ① 【柜体计算器 (图2)】：按面数/按系数、3D 透视柜体展开图、预留量调整、装配后缀、板材明细表格与单价面积指标；
+         ② 【母排计算器 (图3)】：铜排/铝排、基准铜价、多拼排组合行增减、米重公式精确联动计算、单价/小计实时重算；
+         ③ 【载流量查询 (图4)】：多温升多敷设方式速查、最大电流检索过滤高亮推荐，双击直接规格带入母排计算器；
+     - **Ribbon 入口适配 (`RibbonController.cs`, `ExcelAddInDemo.csproj`)**：
+       - 将原 `menuCloudMaterial` 升级为 `splitButton id='splitCloudMaterial'`，大图标一键直达，保留下拉项；
+  3. **构建验证与高保真浏览器测试**：
+     - `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 编译通过：**0 错误**；
+     - 产物全量镜像同步至 `publish/` 与 `bin/Debug/net48/`；
+     - 通过 Browser Subagent 进行高保真交互与计算联动测试，无水平滚动条，数值即时响应重算无延迟。
+
+- **【智能母排/铜排计算：规格格式化、M列公式输出与全链路构建验证闭环】(`ExcelServices.CopperBusbar.cs`, `copper_busbar_calc.html`, `publish/`, `bin/`)**：
+  1. **用户核心指令与需求落地**：
+     - 用户明确执行指令，锁定铜排物料明细行的全部字段规则：
+       - **A 列（序号）**：自适应序号公式 `=ROW()-ROW(A$6)`；
+       - **B 列（名称）**：`矩形铜母线`（接地排为 `接地铜母线`）；
+       - **C 列（型号）**：规范输出 `TMY-2*(120x10)`、`TMY-40x4`（多拼通过 `FormatBusbarModel` 格式化为 `TMY-拼数*(截面)`，单拼保持纯规格）；
+       - **D 列（生产厂家）**：`国优`；
+       - **E 列（单位）**：按重量填 `kg`，按长度填 `米`；
+       - **F 列（数量）**：按重量填重量数值，按长度填长度数值；
+       - **I 列（备注）**：精准区分 `矩形铜母线 (水平主排)` / `矩形铜母线 (分支引下)` / `接地铜母线 PE`；
+       - **M 列（单价）**：
+         - 模式 1【按重量】：纯数值（如 `82.5`）；
+         - 模式 2【按长度】：Excel 公式输出 `=每米重量*铜价`（如 `"=10.74*82.5"` 或 `"=1.42*82.5"`）；
+  2. **后端服务层重构升级 (`ExcelServices.CopperBusbar.cs`)**：
+     - 重构 `BuildCopperBomItemsForCabinet` 方法：
+       - 水平主排排除 PE 相，单独作为主排计算米重与拼数，精准生成型号与备注；
+       - 分支引下排计算回路平均展开米重并生成备注；
+       - 接地铜母线提取 PE 规格与长度（默认 `TMY-40x4`，米重 1.42），单独输出；
+     - 新增 `FormatBusbarModel` 规格格式化方法，规范生成国标图纸拼数符号；
+     - 严格遵守每 3 行至少 1 行中文注释规范；
+  3. **编译构建与产物同步闭环**：
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 将最新程序集 `ExcelAddInDemo.dll`、`ExcelAddInDemo.pdb` 及 `copper_busbar_calc.html` 镜像覆盖至 `publish/` 与 `bin/Debug/net48/` 目录；
+     - 通过 Browser Subagent 进行高保真交互与模式切换测试，双向联动正常。
+
+
+- **【利驰铜排计算界面高度 100% 父容器自适应与横向滚动条彻底消除】(`Resources/copper_busbar_calc.html`, `publish/`, `bin/`)**：
+  1. **用户核心指令与截图反馈**：
+     - 用户指令反馈：“这个高度是不是小了，应该100%父容器高度”，并截图框出中间明细表格下方大片空白以及表格底部的水平滚动条；
+  2. **根因剖析与闭环修复**：
+     - **高度坍缩根因**：Element Plus 的 `.el-tab-pane` 与 `el-table` 内部的 `.el-table__inner-wrapper` 默认没有贯穿 `height: 100%`，导致表格高度仅由当前数据行数撑起（3 行数据时仅占约 150px 高度），下方留出大片空白；
+     - **水平滚动条根因**：原 Tab 2 列宽写死且总和超过了中间可用视口宽度（约 770px），触发了内部滚动条；
+     - **闭环方案**：
+       ① 纵向样式链条全贯通：`.calc-tabs` -> `.el-tabs` -> `.el-tabs__content` -> `.el-tab-pane` -> `.tab-table-box` -> `.el-table` -> `.el-table__inner-wrapper` 全量配置 `height: 100% !important; flex: 1; min-height: 0;`，`.el-table__body-wrapper` 配置 `flex: 1; overflow-y: auto;`，确保表格 100% 铺满父容器；
+       ② 列宽弹性紧凑优化：采用 `min-width` 弹性分配与紧凑定宽结合，微调输入框内边距，配合 `.el-scrollbar__bar.is-horizontal { display: none !important; }`，彻底根除水平滚动条；
+  3. **测试验证与多端镜像同步**：
+     - 通过 Browser Subagent 进行高保真渲染复测与截图确认，表格已 100% 撑满父容器，零水平滚动条，视觉饱满工整；
+     - 资源文件同步覆盖 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`。
+
+- **【利驰铜排计算功能调研与现代化 HTML 原型界面交付】(`Resources/copper_busbar_calc.html`, `publish/`, `bin/`)**：
+  1. **用户核心指令与需求确认**：
+     - 用户指令：“学习利驰的铜排计算，有哪些功能，界面是如何布局的”；
+     - 用户指令：“你要做的界面用html类型展示”；
+  2. **利驰铜排计算核心功能与算法沉淀**：
+     - **业务场景划分**：深入分析利驰报价端（ExWinner / D-Hub 智能算排）与制造端（SuperPanel 三维母排设计与套料）；
+     - **核心计算引擎**：
+       - 母排分级：水平主母排（顶贯通/后贯通）、垂直分支引下排（断路器/抽屉回路）、零地排（N/PE）与辅材软连接；
+       - 国标 TMY 载流量速查与工况校核（允许温升、IP30/IP40/IP54 降额、多拼排系数）；
+       - 展开尺寸与工艺补偿（折弯伸长补偿、搭接裕量、切角损耗率）；
+       - 重量与成本联动（米重公式、电解铜大盘行情基准价、加工费与表面处理加价）；
+       - 报价闭环联动：一键回填分类表计费区（规则 6）或插入元器件 BOM 行；
+  3. **基于项目规范的现代化 HTML 原型界面落地 (`copper_busbar_calc.html`)**：
+     - 严格遵循 C# WebView2 + Vue 3 + Element Plus，主色调 `#009688` 绿蓝相间风格；
+     - 经典五段式弹性布局：
+       ① 顶部无边框渐变标题栏 + 全局行情与工艺配置栏；
+       ② 左侧箱柜与回路选择树（自动关联分类表箱柜）；
+       ③ 中间三标签页母排工作台（水平主母排、垂直分支排、零地辅材排）；
+       ④ 右侧智能电气校验看板（载流量/温升裕度仪表盘、相色走向示意、TMY速查）；
+       ⑤ 底部实时聚合看板（总长度、净重、毛重、均重、总成本）与回填写入 Excel 动作组；
+     - 严格遵守禁止自闭合标签规范，零水平滚动条，纯弹性自适应；
+  4. **测试验证与多端同步**：
+     - 通过 Browser Subagent 启动 Headless 浏览器完成渲染校验、Tab 切换与一键智能算排交互验证；
+     - 资源文件同步部署至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/`。
+
+- **【功能交付与规则闭环：Ribbon 分类菜单新增一键“删除无数量的箱柜”功能】(`RibbonController.cs`, `Services/ExcelServices.Category.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心需求与决策落地**：
+     - 用户指令：“在rabbion的分类下面，添加删除无数量的箱柜，如果顶部汇总行的数量为0，那么删除该汇总行和对应的底部明细”；
+     - 决策确认落地：
+       ① 放置在 Ribbon【分类】下拉菜单最下方，通过分割线区分；
+       ② 将单元格未填/空白、数值等于 0、小于等于 0 的数值均认定为“无数量箱柜”；
+       ③ 点击后弹出带待删箱柜清单的防呆二次确认对话框；
+       ④ 提示清单中将 `cabNo` 调整为 A 列（分类明细序号，唯一），`cabName` 调整为 B 列（箱柜名称），完美契合用户表格视觉认知。
+  2. **严守全局规则架构实施 (最小变动法则)**：
+     - **Ribbon 扩展 (`RibbonController.cs`)**：
+       - CustomUI XML 中在 `menuCategory` 下增加 `<menuSeparator id='sepCategoryCleanup' />` 与 `<button id='btnDeleteZeroQuantityCabinets' label='删除无数量的箱柜' imageMso='TableRowsDelete' ... />`；
+       - `OnMenuAction` 回调中路由调用 `ExcelServices.DeleteZeroQuantityCabinets()`；
+     - **业务实现 (`Services/ExcelServices.Category.cs`)**：
+       - **规则 9**：非分类表或异常情况直接报错阻拦，不写猜测性兼容代码；
+       - **规则 8**：操作前调用 `Tool.FixAndFillCabinetNamesForSheet` 预检自愈规则 6 架构；
+       - **规则 7**：通过二维数组一次性将 A~F 列读入内存，内存批量扫描判定；
+       - **防呆清单**：读取 A 列序号与 B 列名称，弹出带 `• 【序号 1: ALC1】` 样式清单的二次确认框；
+       - **底层引擎复用**：调用 `DeleteCabinets` 批量注销 4 个定义名称、自底向上删除底表明细块与顶部汇总行，并处理全表全删时的首台重置保护。
+  3. **构建验证与物理产物同步**：
+     - `dotnet build /p:RunExcelDnaBuild=false` 验证通过：**0 错误**；
+     - 程序集 `ExcelAddInDemo.dll` 及 `pdb` 已同步全量覆盖至 `bin/Debug/net48` 与 `publish/` 目录。
+
 - **【缺陷彻底排查与系统级根治：跨表复制箱柜光标点击顶部汇总中间定义名称丢失与跨表名称混淆误删闭环】(`Tool.cs`, `Services/ExcelServices.CabinetManage.cs`, `publish/ExcelAddInDemo.dll`)**：
   1. **用户核心反馈与现场证据确诊**：
      - 用户提问：“跨类表复制箱柜，如果光标点击目标分类的顶部汇总的中间，没有添加定义名称，如图”；

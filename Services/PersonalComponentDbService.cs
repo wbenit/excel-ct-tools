@@ -27,13 +27,39 @@ namespace ExcelAddInDemo.Services
         /// <summary>
         /// 获取或初始化本地个人物料库 SQLite 数据库文件的绝对物理路径 (纯粹使用 Tool.GetAppDataDirectory 统一规范)
         /// </summary>
+        /// <summary>
+        /// 获取或初始化本地个人物料库 SQLite 数据库文件的绝对物理路径
+        /// </summary>
         /// <returns>数据库文件全路径</returns>
         public static string GetDatabaseFilePath()
         {
-            // 调用公共工具类获取插件根运行目录下的 data 标准存储路径
+            // 优先检查标准数据目录路径
             string appDataDir = Tool.GetAppDataDirectory();
-            // 拼接并返回 data 目录下的 SQLite 数据库文件绝对路径
-            return Path.Combine(appDataDir, DefaultDbFileName);
+            string standardPath = Path.Combine(appDataDir, DefaultDbFileName);
+            if (File.Exists(standardPath)) return standardPath;
+
+            // 备选路径：避免在调试、发布或 IDE 开发环境中因相对路径差异找不到已有数据库
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string appDir = Tool.GetAppDirectory();
+            string[] candidatePaths = new string[]
+            {
+                Path.Combine(appDir, "data", DefaultDbFileName),
+                Path.Combine(baseDir, "data", DefaultDbFileName),
+                Path.Combine(baseDir, "..", "..", "data", DefaultDbFileName),
+                Path.Combine(baseDir, "publish", "data", DefaultDbFileName),
+                Path.Combine(Directory.GetCurrentDirectory(), "data", DefaultDbFileName)
+            };
+
+            // 循环遍历首个真实存在的目标文件
+            foreach (string candidate in candidatePaths)
+            {
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return standardPath;
         }
 
         /// <summary>

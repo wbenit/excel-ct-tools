@@ -1,0 +1,16 @@
+{
+  "SelectedBrand": "\u5FB7\u529B\u897F",
+  "MustContainRules": [],
+  "EnableSearchOverlay": true,
+  "ColumnConfig": {
+    "CurrentColumn": "S",
+    "PoleColumn": "T",
+    "TripModeColumn": "U",
+    "NameColumn": "B",
+    "ModelColumn": "D",
+    "PriceColumn": "G",
+    "RemarkColumn": "I",
+    "Param1Column": "V",
+    "Param2Column": "W"
+  }
+}

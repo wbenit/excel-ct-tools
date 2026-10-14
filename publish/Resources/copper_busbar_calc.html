@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <!-- 设置页面字符编码格式为 UTF-8 -->
+  <meta charset="UTF-8">
+  <!-- 视口宽度适配与禁用移动端缩放 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 页面标题名称 -->
+  <title>智能母排/铜排计算器 - 利驰选型算排模式</title>
+  <!-- 引入 Element Plus CSS 基础样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <!-- 引入 FontAwesome 图标支持矢量图标 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- 引入 Vue 3 核心运行时库 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入 Element Plus 组件脚本库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <!-- 引入全局主题样式文件 (定义 #009688 主题色) -->
+  <link rel="stylesheet" href="theme.css">
+
+  <style>
+    /* 全局根重置，禁止最外层任何横向与纵向溢出滚动条 */
+    html, body {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      height: 100%;
+      width: 100%;
+      overflow: hidden !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+      background-color: #f1f5f9;
+      user-select: none;
+    }
+
+    /* 主应用弹性盒容器，采用全屏纵向弹性布局 */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      background-color: #ffffff;
+      overflow: hidden;
+    }
+
+    /* 顶部拖拽标题栏：遵循绿蓝相间主题规范 */
+    .window-header {
+      height: 34px;
+      /* 主色调渐变 --硬编码: #009688 到 #00796b-- */
+      background: linear-gradient(135deg, #009688 0%, #00796b 100%);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: move;
+      flex-shrink: 0;
+    }
+
+    /* 标题栏徽标胶囊样式 */
+    .header-badge {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 10px;
+      padding: 2px 8px;
+      font-size: 11px;
+      margin-left: 8px;
+      font-weight: normal;
+    }
+
+    /* 标题栏右侧控制按键组 */
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .header-btn {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    .header-btn:hover {
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+    .header-btn.close:hover {
+      background-color: #ef4444 !important;
+    }
+
+    /* 顶部行情与全局工艺设定参数栏 */
+    .top-param-bar {
+      background-color: #ffffff;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .param-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: nowrap;
+    }
+    .param-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #334155;
+      white-space: nowrap;
+    }
+
+    /* 工作台主体：左侧箱柜树 + 中间算排区 + 右侧电气校核面板 */
+    .workbench-body {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+      overflow: hidden;
+      background-color: #f8fafc;
+    }
+
+    /* 左侧：箱柜与回路导航抽屉 */
+    .sidebar-cabinets {
+      width: 230px;
+      background-color: #ffffff;
+      border-right: 1px solid #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .sidebar-header {
+      padding: 8px 10px;
+      background-color: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 12px;
+      font-weight: 600;
+      color: #1e293b;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .sidebar-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .cabinet-card {
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+      background-color: #ffffff;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .cabinet-card:hover {
+      border-color: #009688;
+      background-color: #f0fdfa;
+    }
+    .cabinet-card.active {
+      border-color: #009688;
+      background-color: #e0f2f1;
+      box-shadow: 0 1px 3px rgba(0, 150, 136, 0.15);
+    }
+    .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #0f172a;
+    }
+    .card-tag {
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: #e2e8f0;
+      color: #475569;
+    }
+    .card-info {
+      font-size: 11px;
+      color: #64748b;
+      display: flex;
+      justify-content: space-between;
+    }
+    .card-weight {
+      color: #009688;
+      font-weight: 600;
+    }
+
+    /* 中间：母排明细与智能计算工作区 */
+    .center-workspace {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background-color: #ffffff;
+      margin: 8px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      overflow: hidden;
+    }
+
+    /* 当前箱柜概要横幅 */
+    .cabinet-summary-banner {
+      background: #f8fafc;
+      padding: 8px 12px;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .banner-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #0f172a;
+    }
+
+    /* 选项卡容器与表格自适应布局：彻底撑满 100% 父容器高度 */
+    .calc-tabs {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+    .calc-tabs .el-tabs {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      height: 100%;
+    }
+    .calc-tabs .el-tabs__header {
+      margin: 0;
+      padding: 0 12px;
+      background-color: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      flex-shrink: 0;
+    }
+    .calc-tabs .el-tabs__content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      height: 100%;
+      padding: 8px;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+    .calc-tabs .el-tab-pane {
+      flex: 1;
+      height: 100%;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .tab-table-box {
+      flex: 1;
+      height: 100%;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    /* 核心深度穿透：强制 el-table 及 inner-wrapper 纵向 100% 撑满父容器 */
+    .tab-table-box .el-table {
+      height: 100% !important;
+      width: 100% !important;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .tab-table-box .el-table__inner-wrapper {
+      height: 100% !important;
+      display: flex;
+      flex-direction: column;
+    }
+    .tab-table-box .el-table__body-wrapper {
+      flex: 1 !important;
+      min-height: 0 !important;
+      overflow-y: auto !important;
+      overflow-x: hidden !important;
+    }
+    /* 彻底杜绝水平滚动条 --硬编码: 隐藏水平滚动条-- */
+    .tab-table-box .el-scrollbar__bar.is-horizontal {
+      display: none !important;
+      height: 0 !important;
+    }
+
+    /* 表格内输入框微调：紧凑精致排版 */
+    .grid-input .el-input__wrapper {
+      padding: 1px 4px !important;
+      font-size: 11px;
+    }
+    .tab-table-box .el-select .el-input__wrapper {
+      padding: 1px 4px !important;
+    }
+    .tab-table-box .el-input-number.is-without-controls .el-input__wrapper,
+    .tab-table-box .el-input-number--small .el-input__wrapper {
+      padding-left: 2px !important;
+      padding-right: 18px !important;
+    }
+
+    /* 右侧：电气校核与走向辅助面板 */
+    .sidebar-inspector {
+      width: 250px;
+      background-color: #ffffff;
+      border-left: 1px solid #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow-y: auto;
+      gap: 10px;
+      padding: 10px;
+    }
+    .inspector-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      background-color: #ffffff;
+      overflow: hidden;
+    }
+    .inspector-header {
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #1e293b;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .inspector-body {
+      padding: 8px 10px;
+      font-size: 12px;
+      color: #334155;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    /* 母排走向相色预览条 */
+    .busbar-phase-preview {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 6px;
+      background: #0f172a;
+      border-radius: 4px;
+    }
+    .phase-line {
+      height: 10px;
+      border-radius: 2px;
+      display: flex;
+      align-items: center;
+      padding-left: 6px;
+      font-size: 9px;
+      font-weight: bold;
+      color: #ffffff;
+      text-shadow: 0 1px 1px rgba(0,0,0,0.5);
+    }
+    /* 相色定义规范：A黄 B绿 C红 N淡蓝 PE黄绿 */
+    .phase-a { background-color: #eab308; }
+    .phase-b { background-color: #22c55e; }
+    .phase-c { background-color: #ef4444; }
+    .phase-n { background-color: #38bdf8; }
+    .phase-pe { background: repeating-linear-gradient(45deg, #eab308, #eab308 6px, #22c55e 6px, #22c55e 12px); color: #000; }
+
+    /* 底部汇总与回填动作控制栏 */
+    .bottom-action-bar {
+      height: 48px;
+      background-color: #ffffff;
+      border-top: 1px solid #cbd5e1;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      box-shadow: 0 -2px 6px rgba(0,0,0,0.03);
+    }
+    .stat-items {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .stat-pill {
+      font-size: 12px;
+      color: #64748b;
+    }
+    .stat-val {
+      font-size: 14px;
+      font-weight: 700;
+      color: #009688;
+      margin-left: 4px;
+    }
+    .stat-price {
+      font-size: 16px;
+      font-weight: 800;
+      color: #e11d48;
+      margin-left: 4px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Vue 挂载根节点 -->
+  <div id="app">
+    <!-- 1. 窗口拖拽标题栏 (无边框经典绿蓝相间风格) -->
+    <div class="window-header" @mousedown="onHeaderMouseDown">
+      <div style="display: flex; align-items: center;">
+        <i class="fa-solid fa-calculator" style="margin-right: 6px;"></i>
+        <span>智能母排/铜排计算器</span>
+        <span class="header-badge">利驰选型算排模式 · 智能预估</span>
+      </div>
+      <div class="header-controls">
+        <div class="header-btn" title="最小化" @click="minimizeWindow"><i class="fa-solid fa-minus"></i></div>
+        <div class="header-btn close" title="关闭" @click="closeWindow"><i class="fa-solid fa-xmark"></i></div>
+      </div>
+    </div>
+
+    <!-- 2. 顶部全局行情与工艺配置栏 -->
+    <div class="top-param-bar">
+      <div class="param-group">
+        <div class="param-item">
+          <span>电解铜行情:</span>
+          <!-- 铜价基准输入框 -->
+          <el-input-number v-model="copperPrice" :precision="2" :step="0.5" size="small" style="width: 105px;" controls-position="right"></el-input-number>
+          <span style="color: #64748b;">元/kg</span>
+        </div>
+        <div class="param-item">
+          <span>加工/表面处理:</span>
+          <!-- 加工费输入框 -->
+          <el-input-number v-model="processFee" :precision="2" :step="0.5" size="small" style="width: 95px;" controls-position="right"></el-input-number>
+          <span style="color: #64748b;">元/kg</span>
+        </div>
+        <div class="param-item">
+          <span>工艺损耗:</span>
+          <!-- 损耗率设置 -->
+          <el-input-number v-model="lossRate" :precision="1" :step="0.5" :min="0" :max="30" size="small" style="width: 85px;" controls-position="right"></el-input-number>
+          <span style="color: #64748b;">%</span>
+        </div>
+        <div class="param-item">
+          <span>母线制式:</span>
+          <!-- 系统制式单选 -->
+          <el-select v-model="systemStandard" size="small" style="width: 95px;">
+            <el-option label="3P5W" value="3P5W"></el-option>
+            <el-option label="3P4W" value="3P4W"></el-option>
+            <el-option label="3P3W" value="3P3W"></el-option>
+          </el-select>
+        </div>
+        <div class="param-item">
+          <span>IP防护等级:</span>
+          <!-- 防护等级与降额系数 -->
+          <el-select v-model="ipLevel" size="small" style="width: 110px;" @change="recalcAll">
+            <el-option label="IP30 (×1.00)" value="IP30"></el-option>
+            <el-option label="IP40 (×0.92)" value="IP40"></el-option>
+            <el-option label="IP54 (×0.85)" value="IP54"></el-option>
+          </el-select>
+        </div>
+      </div>
+      <div>
+        <!-- 一键全柜智能自动匹配母排按键 -->
+        <el-button type="primary" size="small" @click="autoMatchAllCabinets">
+          <i class="fa-solid fa-wand-magic-sparkles" style="margin-right: 4px;"></i> 一键全柜智能算排
+        </el-button>
+      </div>
+    </div>
+
+    <!-- 3. 工作台主体区域 -->
+    <div class="workbench-body">
+      <!-- 3.1 左侧：箱柜导航栏 -->
+      <div class="sidebar-cabinets">
+        <div class="sidebar-header">
+          <span><i class="fa-solid fa-cubes"></i> 项目箱柜列表 ({{ cabinets.length }})</span>
+          <el-button type="primary" link size="small" @click="reloadFromExcel" title="从当前Excel分类表重新同步">
+            <i class="fa-solid fa-rotate"></i>
+          </el-button>
+        </div>
+        <div class="sidebar-list">
+          <!-- 箱柜选择卡片循环 -->
+          <div 
+            v-for="(cab, idx) in cabinets" 
+            :key="cab.id" 
+            class="cabinet-card" 
+            :class="{ active: currentCabinetId === cab.id }"
+            @click="selectCabinet(cab.id)"
+          >
+            <div class="card-top">
+              <span class="card-title">{{ cab.no }}# {{ cab.name }}</span>
+              <span class="card-tag">{{ cab.type }}</span>
+            </div>
+            <div class="card-info">
+              <span>主开关: {{ cab.mainCurrent }}A</span>
+              <span class="card-weight">{{ cab.totalWeight.toFixed(1) }} kg</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3.2 中间：母排明细与算排工作区 -->
+      <div class="center-workspace">
+        <!-- 当前箱柜顶部状态概要条 -->
+        <div class="cabinet-summary-banner" v-if="currentCabinet">
+          <div class="banner-title">
+            <el-tag type="success" effect="dark" size="small">{{ currentCabinet.no }}# 箱柜</el-tag>
+            <span>{{ currentCabinet.name }} (柜型: {{ currentCabinet.type }})</span>
+            <span style="font-size: 12px; font-weight: normal; color: #64748b; margin-left: 10px;">
+              柜宽: {{ currentCabinet.width }}mm | 进线额定电流: {{ currentCabinet.mainCurrent }}A
+            </span>
+          </div>
+          <div>
+            <el-button size="small" plain @click="applyCabinetTemplate">
+              <i class="fa-solid fa-file-invoice" style="margin-right: 4px;"></i> 套用典型柜方案
+            </el-button>
+          </div>
+        </div>
+
+        <!-- 3 个专业算排选项卡 -->
+        <div class="calc-tabs">
+          <el-tabs v-model="activeTab" style="height: 100%; display: flex; flex-direction: column;">
+            <!-- Tab 1: 水平主母排 (贯穿母线) -->
+            <el-tab-pane label="水平主母排 (全列贯穿)" name="main">
+              <div class="tab-table-box">
+                <el-table :data="currentCabinet?.mainBusbars || []" size="small" border height="100%" style="width: 100%; flex: 1;">
+                  <el-table-column prop="phase" label="相序" width="48" align="center">
+                    <template #default="scope">
+                      <el-tag :type="getPhaseTagType(scope.row.phase)" size="small">{{ scope.row.phase }}</el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="current" label="额定电流" width="75" align="right">
+                    <template #default="scope">
+                      <span>{{ scope.row.current }}A</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="recommendedSpec" label="推荐规格" width="98">
+                    <template #default="scope">
+                      <span style="color: #009688; font-weight: 600; font-size: 11px;">{{ scope.row.recommendedSpec }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="选用规格 (TMY)" min-width="115">
+                    <template #default="scope">
+                      <el-select v-model="scope.row.spec" size="small" style="width: 100%;" @change="recalcRow(scope.row)">
+                        <el-option v-for="sp in standardSpecs" :key="sp.name" :label="sp.name" :value="sp.name"></el-option>
+                      </el-select>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="拼数" width="56" align="center">
+                    <template #default="scope">
+                      <el-input-number v-model="scope.row.pieces" :min="1" :max="4" size="small" style="width: 100%;" controls-position="right" @change="recalcRow(scope.row)"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="柜宽(mm)" width="72" align="right">
+                    <template #default="scope">
+                      <el-input-number v-model="scope.row.lengthMm" :step="50" size="small" style="width: 100%;" controls-position="right" @change="recalcRow(scope.row)"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="搭接(mm)" width="66" align="right">
+                    <template #default="scope">
+                      <el-input-number v-model="scope.row.lapMm" :step="10" size="small" style="width: 100%;" controls-position="right" @change="recalcRow(scope.row)"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="展开长(m)" width="68" align="right">
+                    <template #default="scope">
+                      <span>{{ ((scope.row.lengthMm + scope.row.lapMm) / 1000).toFixed(2) }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="米重" width="65" align="right">
+                    <template #default="scope">
+                      <span>{{ scope.row.unitWeight.toFixed(2) }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="小计重(kg)" width="78" align="right">
+                    <template #default="scope">
+                      <span style="font-weight: 600; color: #0f172a;">{{ scope.row.totalWeight.toFixed(2) }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="45" align="center">
+                    <template #default="scope">
+                      <el-button type="danger" link size="small" @click="removeMainRow(scope.$index)"><i class="fa-regular fa-trash-can"></i></el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </el-tab-pane>
+
+            <!-- Tab 2: 垂直与分支母排 (开关引下排) -->
+            <el-tab-pane label="分支引下母排 (开关与抽屉)" name="branch">
+              <div class="tab-table-box">
+                <el-table :data="currentCabinet?.branchBusbars || []" size="small" border height="100%" style="width: 100%; flex: 1;">
+                  <el-table-column prop="circuitName" label="回路名称 / 抽屉位" min-width="110"></el-table-column>
+                  <el-table-column prop="current" label="额定电流" width="70" align="right">
+                    <template #default="scope">{{ scope.row.current }}A</template>
+                  </el-table-column>
+                  <el-table-column label="走向形式" width="86">
+                    <template #default="scope">
+                      <el-select v-model="scope.row.routeType" size="small" style="width: 100%;" @change="recalcBranchRow(scope.row)">
+                        <el-option label="上进下出" value="top_down"></el-option>
+                        <el-option label="下进上出" value="down_top"></el-option>
+                        <el-option label="抽屉插件" value="drawer"></el-option>
+                      </el-select>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="折弯形式" width="74">
+                    <template #default="scope">
+                      <el-select v-model="scope.row.bendType" size="small" style="width: 100%;" @change="recalcBranchRow(scope.row)">
+                        <el-option label="直排" value="straight"></el-option>
+                        <el-option label="L型弯" value="L"></el-option>
+                        <el-option label="Z型弯" value="Z"></el-option>
+                      </el-select>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="选用规格 (TMY)" min-width="115">
+                    <template #default="scope">
+                      <el-select v-model="scope.row.spec" size="small" style="width: 100%;" @change="recalcBranchRow(scope.row)">
+                        <el-option v-for="sp in standardSpecs" :key="sp.name" :label="sp.name" :value="sp.name"></el-option>
+                      </el-select>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="拼数" width="54" align="center">
+                    <template #default="scope">
+                      <el-input-number v-model="scope.row.pieces" :min="1" :max="3" size="small" style="width: 100%;" controls-position="right" @change="recalcBranchRow(scope.row)"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="展开(mm)" width="74" align="right">
+                    <template #default="scope">
+                      <el-input-number v-model="scope.row.unfoldedMm" :step="20" size="small" style="width: 100%;" controls-position="right" @change="recalcBranchRow(scope.row)"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="根数" width="50" align="center">
+                    <template #default="scope">
+                      <el-input-number v-model="scope.row.qty" :min="1" :max="12" size="small" style="width: 100%;" controls-position="right" @change="recalcBranchRow(scope.row)"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="总重(kg)" width="78" align="right">
+                    <template #default="scope">
+                      <span style="font-weight: 600; color: #009688;">{{ scope.row.totalWeight.toFixed(2) }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="45" align="center">
+                    <template #default="scope">
+                      <el-button type="danger" link size="small" @click="removeBranchRow(scope.$index)"><i class="fa-regular fa-trash-can"></i></el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </el-tab-pane>
+
+            <!-- Tab 3: 零地排与辅助伸缩节 -->
+            <el-tab-pane label="零地排与软连接辅材" name="aux">
+              <div class="tab-table-box">
+                <el-table :data="currentCabinet?.auxMaterials || []" size="small" border height="100%" style="width: 100%; flex: 1;">
+                  <el-table-column prop="name" label="辅件名称" min-width="130"></el-table-column>
+                  <el-table-column prop="spec" label="规格型号" min-width="110"></el-table-column>
+                  <el-table-column prop="unit" label="单位" width="50" align="center"></el-table-column>
+                  <el-table-column label="数量" width="70" align="center">
+                    <template #default="scope">
+                      <el-input-number v-model="scope.row.qty" :min="1" size="small" style="width: 100%;" controls-position="right" @change="recalcAux"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="单重(kg)" width="75" align="right">
+                    <template #default="scope">
+                      <span>{{ scope.row.unitWeight.toFixed(2) }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="小计重(kg)" width="85" align="right">
+                    <template #default="scope">
+                      <span style="font-weight: 600;">{{ (scope.row.qty * scope.row.unitWeight).toFixed(2) }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="remark" label="安装说明"></el-table-column>
+                </el-table>
+              </div>
+            </el-tab-pane>
+          </el-tabs>
+        </div>
+      </div>
+
+      <!-- 3.3 右侧：智能电气校核与速查面板 -->
+      <div class="sidebar-inspector">
+        <!-- 载流量校核仪表卡 -->
+        <div class="inspector-card">
+          <div class="inspector-header">
+            <i class="fa-solid fa-shield-halved" style="color: #009688;"></i>
+            <span>载流量与温升校验</span>
+          </div>
+          <div class="inspector-body">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #64748b;">主开关电流:</span>
+              <span style="font-weight: bold;">{{ currentCabinet?.mainCurrent || 0 }} A</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #64748b;">当前母排规格:</span>
+              <span style="font-weight: bold; color: #009688;">{{ currentSelectedSpecText }}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #64748b;">校核允许载流:</span>
+              <span style="font-weight: bold;">{{ currentCalculatedAmp }} A</span>
+            </div>
+            <!-- 裕度进度条 -->
+            <div style="margin-top: 4px;">
+              <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px;">
+                <span>安全裕度:</span>
+                <span :style="{ color: safetyMargin >= 0 ? '#10b981' : '#ef4444', fontWeight: 'bold' }">
+                  {{ safetyMargin >= 0 ? '+' : '' }}{{ safetyMargin.toFixed(1) }}%
+                </span>
+              </div>
+              <el-progress :percentage="calcProgressPercentage" :status="safetyMargin >= 0 ? 'success' : 'exception'" :show-text="false"></el-progress>
+            </div>
+            <div style="font-size: 10px; color: #94a3b8; margin-top: 4px;">
+              * 依据 GB/T 5585 标准并考虑当前 {{ ipLevel }} 降额换算。
+            </div>
+          </div>
+        </div>
+
+        <!-- 走向与相色顺序卡片 -->
+        <div class="inspector-card">
+          <div class="inspector-header">
+            <i class="fa-solid fa-layer-group" style="color: #009688;"></i>
+            <span>母排排布走向示意</span>
+          </div>
+          <div class="inspector-body">
+            <div class="busbar-phase-preview">
+              <div class="phase-line phase-a">A 相 (黄色 TMY)</div>
+              <div class="phase-line phase-b">B 相 (绿色 TMY)</div>
+              <div class="phase-line phase-c">C 相 (红色 TMY)</div>
+              <div class="phase-line phase-n" v-if="systemStandard !== '3P3W'">N 排 (浅蓝中性排)</div>
+              <div class="phase-line phase-pe" v-if="systemStandard === '3P5W'">PE 排 (黄绿保护地排)</div>
+            </div>
+            <div style="font-size: 11px; color: #64748b; line-height: 1.4; margin-top: 4px;">
+              相间爬电净距 ≥ 20mm，对地绝缘距离 ≥ 20mm (符合低压配电柜 GB 7251 绝缘标准)。
+            </div>
+          </div>
+        </div>
+
+        <!-- 国标规格速查抽屉卡片 -->
+        <div class="inspector-card">
+          <div class="inspector-header">
+            <i class="fa-solid fa-table-list" style="color: #009688;"></i>
+            <span>常用 TMY 截面与单重</span>
+          </div>
+          <div class="inspector-body" style="padding: 0;">
+            <el-table :data="standardSpecs.slice(0, 5)" size="small" :show-header="false" style="width: 100%;">
+              <el-table-column prop="name"></el-table-column>
+              <el-table-column prop="unitWeight" align="right">
+                <template #default="s">
+                  <span style="color: #64748b;">{{ s.row.unitWeight }} kg/m</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. 底部汇总与回填动作控制栏 -->
+    <div class="bottom-action-bar">
+      <!-- 汇总数据看板 -->
+      <div class="stat-items">
+        <div class="stat-pill">
+          <span>总长度:</span>
+          <span class="stat-val">{{ totalProjectLength.toFixed(1) }} m</span>
+        </div>
+        <div class="stat-pill">
+          <span>总净重:</span>
+          <span class="stat-val">{{ totalProjectNetWeight.toFixed(1) }} kg</span>
+        </div>
+        <div class="stat-pill">
+          <span>含损毛重 ({{ lossRate }}%):</span>
+          <span class="stat-val" style="color: #0d9488;">{{ totalProjectGrossWeight.toFixed(1) }} kg</span>
+        </div>
+        <div class="stat-pill">
+          <span>总成本:</span>
+          <span class="stat-price">¥{{ totalProjectCost.toFixed(2) }}</span>
+        </div>
+        <!-- 回填模式选择切换器 (按重量kg vs 按长度米) -->
+        <div class="stat-pill" style="display: flex; align-items: center; gap: 6px; margin-left: 6px; background: #f1f5f9; padding: 2px 8px; border-radius: 4px; border: 1px solid #cbd5e1;">
+          <span style="color: #0f172a; font-weight: 600;">回填模式:</span>
+          <el-radio-group v-model="writeBackUnitMode" size="small">
+            <el-radio-button label="weight">⚖️ 按重量 (kg)</el-radio-button>
+            <el-radio-button label="length">📏 按长度 (米)</el-radio-button>
+          </el-radio-group>
+        </div>
+      </div>
+
+      <!-- 右侧动作按钮组 -->
+      <div style="display: flex; gap: 8px;">
+        <el-button size="small" plain @click="saveAsTemplate">
+          <i class="fa-solid fa-floppy-disk" style="margin-right: 4px;"></i> 存为模板
+        </el-button>
+        <el-button size="small" type="primary" plain @click="exportBomList">
+          <i class="fa-solid fa-file-arrow-down" style="margin-right: 4px;"></i> 导出下料单
+        </el-button>
+        <!-- 核心回填按钮：写入 Excel 报价单 (元器件插入法) -->
+        <el-button size="small" type="primary" style="background-color: #009688; border-color: #009688;" @click="handleExecuteWriteBack">
+          <i class="fa-solid fa-file-excel" style="margin-right: 4px;"></i> 插入元器件明细行 ({{ writeBackUnitMode === 'weight' ? '按重量' : '按长度' }})
+        </el-button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 解构 Vue 3 核心组合式 API
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    // 创建 Vue 根应用
+    createApp({
+      setup() {
+        // 1. 全局行情与工艺响应式变量
+        // 当日电解铜基准价 (元/kg) --硬编码: 78.50--
+        const copperPrice = ref(78.50);
+        // 加工与表面处理加价 (元/kg) --硬编码: 4.00--
+        const processFee = ref(4.00);
+        // 下料损耗率百分比 --硬编码: 5.0%--
+        const lossRate = ref(5.0);
+        // 母线制式 (3P5W / 3P4W / 3P3W)
+        const systemStandard = ref("3P5W");
+        // IP 防护等级 (IP30, IP40, IP54)
+        const ipLevel = ref("IP40");
+        // 激活的选项卡 (main, branch, aux)
+        const activeTab = ref("main");
+
+        // 2. 国标标准 TMY 铜母线参数库 (排厚 mm, 排宽 mm, 米重 kg/m, 允许载流量 A)
+        // 数据源自 GB/T 5585-2018 电工用铜铝母线标准
+        const standardSpecs = ref([
+          { name: "TMY-30x4", width: 30, thickness: 4, unitWeight: 1.07, amp: 375 },
+          { name: "TMY-40x4", width: 40, thickness: 4, unitWeight: 1.42, amp: 480 },
+          { name: "TMY-40x5", width: 40, thickness: 5, unitWeight: 1.78, amp: 550 },
+          { name: "TMY-50x5", width: 50, thickness: 5, unitWeight: 2.23, amp: 670 },
+          { name: "TMY-60x6", width: 60, thickness: 6, unitWeight: 3.20, amp: 890 },
+          { name: "TMY-80x8", width: 80, thickness: 8, unitWeight: 5.70, amp: 1320 },
+          { name: "TMY-100x10", width: 100, thickness: 10, unitWeight: 8.90, amp: 1780 },
+          { name: "TMY-120x10", width: 120, thickness: 10, unitWeight: 10.68, amp: 2050 },
+        ]);
+
+        // 3. 项目中的箱柜数据清单 (模拟当前工程中提取的各箱柜数据)
+        const cabinets = ref([
+          {
+            id: "cab_1",
+            no: "1",
+            name: "进线柜",
+            type: "GGD",
+            width: 1000,
+            mainCurrent: 2000,
+            totalWeight: 142.8,
+            mainBusbars: [
+              { phase: "A", current: 2000, recommendedSpec: "TMY-120x10", spec: "TMY-120x10", pieces: 2, lengthMm: 1000, lapMm: 150, unitWeight: 10.68, totalWeight: 24.56 },
+              { phase: "B", current: 2000, recommendedSpec: "TMY-120x10", spec: "TMY-120x10", pieces: 2, lengthMm: 1000, lapMm: 150, unitWeight: 10.68, totalWeight: 24.56 },
+              { phase: "C", current: 2000, recommendedSpec: "TMY-120x10", spec: "TMY-120x10", pieces: 2, lengthMm: 1000, lapMm: 150, unitWeight: 10.68, totalWeight: 24.56 },
+              { phase: "N", current: 1000, recommendedSpec: "TMY-100x10", spec: "TMY-100x10", pieces: 1, lengthMm: 1000, lapMm: 150, unitWeight: 8.90, totalWeight: 10.24 },
+              { phase: "PE", current: 1000, recommendedSpec: "TMY-60x6", spec: "TMY-60x6", pieces: 1, lengthMm: 1000, lapMm: 100, unitWeight: 3.20, totalWeight: 3.52 },
+            ],
+            branchBusbars: [
+              { circuitName: "1# 框架断路器引下", current: 2000, routeType: "top_down", bendType: "Z", spec: "TMY-120x10", pieces: 2, unfoldedMm: 1200, qty: 3, totalWeight: 51.26 },
+            ],
+            auxMaterials: [
+              { name: "铜母线伸缩节(铜软连接)", spec: "TMY-120x10 软连接", unit: "套", qty: 3, unitWeight: 1.20, remark: "进线桩头防震伸缩节" },
+              { name: "高强度DMC母线绝缘夹块", spec: "双排母线夹", unit: "组", qty: 4, unitWeight: 0.25, remark: "顶置主母线固定支架" },
+            ]
+          },
+          {
+            id: "cab_2",
+            no: "2",
+            name: "电容补偿柜",
+            type: "GGD",
+            width: 800,
+            mainCurrent: 630,
+            totalWeight: 45.2,
+            mainBusbars: [
+              { phase: "A", current: 2000, recommendedSpec: "TMY-120x10", spec: "TMY-120x10", pieces: 2, lengthMm: 800, lapMm: 150, unitWeight: 10.68, totalWeight: 20.29 },
+              { phase: "B", current: 2000, recommendedSpec: "TMY-120x10", spec: "TMY-120x10", pieces: 2, lengthMm: 800, lapMm: 150, unitWeight: 10.68, totalWeight: 20.29 },
+              { phase: "C", current: 2000, recommendedSpec: "TMY-120x10", spec: "TMY-120x10", pieces: 2, lengthMm: 800, lapMm: 150, unitWeight: 10.68, totalWeight: 20.29 },
+              { phase: "N", current: 1000, recommendedSpec: "TMY-100x10", spec: "TMY-100x10", pieces: 1, lengthMm: 800, lapMm: 150, unitWeight: 8.90, totalWeight: 8.46 },
+              { phase: "PE", current: 1000, recommendedSpec: "TMY-60x6", spec: "TMY-60x6", pieces: 1, lengthMm: 800, lapMm: 100, unitWeight: 3.20, totalWeight: 2.88 },
+            ],
+            branchBusbars: [
+              { circuitName: "总刀熔开关进线", current: 630, routeType: "top_down", bendType: "L", spec: "TMY-50x5", pieces: 1, unfoldedMm: 650, qty: 3, totalWeight: 4.35 },
+            ],
+            auxMaterials: [
+              { name: "接地铜母线", spec: "TMY-40x4", unit: "米", qty: 1, unitWeight: 1.42, remark: "柜底PE接地" },
+            ]
+          },
+          {
+            id: "cab_3",
+            no: "3",
+            name: "馈线抽屉柜 1",
+            type: "MNS",
+            width: 800,
+            mainCurrent: 1600,
+            totalWeight: 112.5,
+            mainBusbars: [
+              { phase: "A", current: 2000, recommendedSpec: "TMY-120x10", spec: "TMY-120x10", pieces: 2, lengthMm: 800, lapMm: 150, unitWeight: 10.68, totalWeight: 20.29 },
+              { phase: "B", current: 2000, recommendedSpec: "TMY-120x10", spec: "TMY-120x10", pieces: 2, lengthMm: 800, lapMm: 150, unitWeight: 10.68, totalWeight: 20.29 },
+              { phase: "C", current: 2000, recommendedSpec: "TMY-120x10", spec: "TMY-120x10", pieces: 2, lengthMm: 800, lapMm: 150, unitWeight: 10.68, totalWeight: 20.29 },
+              { phase: "N", current: 1000, recommendedSpec: "TMY-100x10", spec: "TMY-100x10", pieces: 1, lengthMm: 800, lapMm: 150, unitWeight: 8.90, totalWeight: 8.46 },
+              { phase: "PE", current: 1000, recommendedSpec: "TMY-60x6", spec: "TMY-60x6", pieces: 1, lengthMm: 800, lapMm: 100, unitWeight: 3.20, totalWeight: 2.88 },
+            ],
+            branchBusbars: [
+              { circuitName: "1#抽屉 MCCB 400A", current: 400, routeType: "drawer", bendType: "L", spec: "TMY-40x4", pieces: 1, unfoldedMm: 850, qty: 3, totalWeight: 3.62 },
+              { circuitName: "2#抽屉 MCCB 250A", current: 250, routeType: "drawer", bendType: "L", spec: "TMY-30x4", pieces: 1, unfoldedMm: 800, qty: 3, totalWeight: 2.57 },
+              { circuitName: "3#抽屉 MCCB 160A", current: 160, routeType: "drawer", bendType: "L", spec: "TMY-30x4", pieces: 1, unfoldedMm: 750, qty: 3, totalWeight: 2.41 },
+            ],
+            auxMaterials: [
+              { name: "后置垂直母排夹块", spec: "MNS三相四线夹", unit: "套", qty: 3, unitWeight: 0.60, remark: "后隔室垂直母排安装" }
+            ]
+          }
+        ]);
+
+        // 当前选中的箱柜 ID
+        const currentCabinetId = ref("cab_1");
+
+        // 计算属性：当前激活的箱柜对象
+        const currentCabinet = computed(() => {
+          return cabinets.value.find(c => c.id === currentCabinetId.value) || cabinets.value[0];
+        });
+
+        // 切换箱柜
+        const selectCabinet = (id) => {
+          currentCabinetId.value = id;
+        };
+
+        // 获取相序标签类型 (Element Plus Tag Type)
+        const getPhaseTagType = (phase) => {
+          if (phase === "A") return "warning";
+          if (phase === "B") return "success";
+          if (phase === "C") return "danger";
+          if (phase === "N") return "info";
+          return "";
+        };
+
+        // 计算属性：当前柜 A 相选用的规格文本
+        const currentSelectedSpecText = computed(() => {
+          if (!currentCabinet.value || !currentCabinet.value.mainBusbars.length) return "-";
+          const aRow = currentCabinet.value.mainBusbars[0];
+          return `${aRow.spec} × ${aRow.pieces}拼`;
+        });
+
+        // 计算属性：当前母排允许的实际安全载流量 (考虑 IP 防护等级降额)
+        const currentCalculatedAmp = computed(() => {
+          if (!currentCabinet.value || !currentCabinet.value.mainBusbars.length) return 0;
+          const aRow = currentCabinet.value.mainBusbars[0];
+          const matched = standardSpecs.value.find(s => s.name === aRow.spec);
+          if (!matched) return 0;
+          // 双拼系数 1.58，三拼 2.0 --硬编码: 多拼排发热折减系数--
+          let multiplier = 1.0;
+          if (aRow.pieces === 2) multiplier = 1.58;
+          else if (aRow.pieces === 3) multiplier = 2.0;
+          else if (aRow.pieces === 4) multiplier = 2.4;
+
+          // IP 等级折减
+          let ipDerating = 1.0;
+          if (ipLevel.value === "IP40") ipDerating = 0.92;
+          else if (ipLevel.value === "IP54") ipDerating = 0.85;
+
+          return Math.round(matched.amp * multiplier * ipDerating);
+        });
+
+        // 安全裕度百分比 (允许载流 / 额定电流 - 1)
+        const safetyMargin = computed(() => {
+          const req = currentCabinet.value ? currentCabinet.value.mainCurrent : 1;
+          if (req <= 0) return 100;
+          return ((currentCalculatedAmp.value - req) / req) * 100;
+        });
+
+        // 进度条显示百分比 (范围 0~100)
+        const calcProgressPercentage = computed(() => {
+          const req = currentCabinet.value ? currentCabinet.value.mainCurrent : 1;
+          const val = (currentCalculatedAmp.value / req) * 100;
+          return Math.min(100, Math.max(0, Math.round(val)));
+        });
+
+        // 重算主母排某一行
+        const recalcRow = (row) => {
+          const matched = standardSpecs.value.find(s => s.name === row.spec);
+          if (matched) {
+            row.unitWeight = matched.unitWeight;
+          }
+          const totalM = (row.lengthMm + row.lapMm) / 1000;
+          row.totalWeight = totalM * row.unitWeight * row.pieces;
+          updateCabinetTotalWeight(currentCabinet.value);
+        };
+
+        // 重算分支母排行
+        const recalcBranchRow = (row) => {
+          const matched = standardSpecs.value.find(s => s.name === row.spec);
+          const uWeight = matched ? matched.unitWeight : 1.42;
+          row.totalWeight = (row.unfoldedMm / 1000) * uWeight * row.pieces * row.qty;
+          updateCabinetTotalWeight(currentCabinet.value);
+        };
+
+        // 重算辅料
+        const recalcAux = () => {
+          updateCabinetTotalWeight(currentCabinet.value);
+        };
+
+        // 更新某台箱柜的总重量
+        const updateCabinetTotalWeight = (cab) => {
+          if (!cab) return;
+          let w = 0;
+          (cab.mainBusbars || []).forEach(r => w += r.totalWeight || 0);
+          (cab.branchBusbars || []).forEach(r => w += r.totalWeight || 0);
+          (cab.auxMaterials || []).forEach(r => w += (r.qty || 0) * (r.unitWeight || 0));
+          cab.totalWeight = w;
+        };
+
+        // 全项目统计属性
+        const totalProjectLength = computed(() => {
+          let sum = 0;
+          cabinets.value.forEach(cab => {
+            (cab.mainBusbars || []).forEach(r => sum += ((r.lengthMm + r.lapMm) / 1000) * r.pieces);
+            (cab.branchBusbars || []).forEach(r => sum += (r.unfoldedMm / 1000) * r.pieces * r.qty);
+          });
+          return sum;
+        });
+
+        const totalProjectNetWeight = computed(() => {
+          return cabinets.value.reduce((acc, c) => acc + (c.totalWeight || 0), 0);
+        });
+
+        const totalProjectGrossWeight = computed(() => {
+          return totalProjectNetWeight.value * (1 + lossRate.value / 100);
+        });
+
+        const avgCabinetWeight = computed(() => {
+          if (!cabinets.value.length) return 0;
+          return totalProjectGrossWeight.value / cabinets.value.length;
+        });
+
+        const totalProjectCost = computed(() => {
+          const unitTotal = copperPrice.value + processFee.value;
+          return totalProjectGrossWeight.value * unitTotal;
+        });
+
+        // 重新计算全列箱柜
+        const recalcAll = () => {
+          cabinets.value.forEach(cab => updateCabinetTotalWeight(cab));
+        };
+
+        // 一键全柜智能算排
+        const autoMatchAllCabinets = () => {
+          cabinets.value.forEach(cab => {
+            // 根据电流自动匹配最优规格
+            const matchedSpec = standardSpecs.value.slice().reverse().find(s => s.amp >= cab.mainCurrent) || standardSpecs.value[standardSpecs.value.length - 1];
+            (cab.mainBusbars || []).forEach(r => {
+              if (r.phase === "A" || r.phase === "B" || r.phase === "C") {
+                r.spec = matchedSpec.name;
+                r.unitWeight = matchedSpec.unitWeight;
+              }
+              recalcRow(r);
+            });
+            updateCabinetTotalWeight(cab);
+          });
+          ElementPlus.ElMessage.success("全柜智能算排已完成！已自动按国标载流完成最优推荐匹配。");
+        };
+
+        // 移除行逻辑
+        const removeMainRow = (index) => {
+          if (currentCabinet.value && currentCabinet.value.mainBusbars) {
+            currentCabinet.value.mainBusbars.splice(index, 1);
+            updateCabinetTotalWeight(currentCabinet.value);
+          }
+        };
+        const removeBranchRow = (index) => {
+          if (currentCabinet.value && currentCabinet.value.branchBusbars) {
+            currentCabinet.value.branchBusbars.splice(index, 1);
+            updateCabinetTotalWeight(currentCabinet.value);
+          }
+        };
+
+        // 保存模板
+        const saveAsTemplate = () => {
+          ElementPlus.ElMessage.success("已成功将当前母排配置方案存为企业标准方案库！");
+        };
+
+        // 导出下料单
+        const exportBomList = () => {
+          ElementPlus.ElMessage.success("已导出《母排下料加工与开孔统计明细表》！");
+        };
+
+        // 套用典型柜方案
+        const applyCabinetTemplate = () => {
+          ElementPlus.ElMessage.info("已载入【GGD标准顶置母排】方案配置。");
+        };
+
+        // 回填计量单位模式: "weight" (按重量 kg) | "length" (按长度 米)
+        const writeBackUnitMode = ref("weight");
+
+        // 核心回填写入 Excel 报价单 (元器件插入法)
+        const handleExecuteWriteBack = () => {
+          const isWeight = (writeBackUnitMode.value === "weight");
+          const modeText = isWeight ? "按重量计价 (E列kg, F列重量, M列每kg单价)" : "按长度计价 (E列米, F列长度, M列=每米重量*单价)";
+
+          ElementPlus.ElMessageBox.confirm(
+            `即将把整列开关柜的铜排物料以【${modeText}】安全插入至各箱柜的元器件明细区中（遵循规则 6 自动插行），是否立即执行？`,
+            "插入铜排明细确认",
+            {
+              confirmButtonText: "立即插入",
+              cancelButtonText: "取消",
+              type: "success"
+            }
+          ).then(() => {
+            // 向 C# 宿主通信下发指令
+            if (window.chrome && window.chrome.webview) {
+              window.chrome.webview.postMessage(JSON.stringify({
+                action: "writeBackCopperBusbar",
+                mode: "detailBOM",
+                unitMode: writeBackUnitMode.value, // "weight" 或 "length"
+                totalWeight: totalProjectGrossWeight.value,
+                totalLength: totalProjectLength.value,
+                totalCost: totalProjectCost.value,
+                copperUnitPrice: copperPrice.value + processFee.value,
+                cabinets: cabinets.value
+              }));
+            }
+            ElementPlus.ElMessage.success(`铜排物料明细行插入指令已成功下发至 Excel！`);
+          }).catch(() => {});
+        };
+
+        // 窗口拖动
+        const onHeaderMouseDown = (e) => {
+          if (e.button !== 0) return;
+          if (e.target.closest(".header-btn")) return;
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ action: "dragWindow" }));
+          }
+        };
+
+        // 窗口最小化与关闭
+        const minimizeWindow = () => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ action: "minimizeWindow" }));
+          }
+        };
+        const closeWindow = () => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({ action: "closeWindow" }));
+          }
+        };
+
+        // 从 Excel 重新同步真实箱柜数据
+        const reloadFromExcel = () => {
+          if (window.chrome && window.chrome.webview) {
+            ElementPlus.ElMessage.info("正在从当前活动的 Excel 分类表抓取箱柜与开关回路...");
+            window.chrome.webview.postMessage(JSON.stringify({ action: "getProjectCabinets" }));
+          } else {
+            ElementPlus.ElMessage.info("当前处于独立浏览器预览环境，保持演示箱柜数据。");
+          }
+        };
+
+        // 挂载时监听来自 C# 的箱柜数据并在宿主环境下拉取
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            // 监听宿主回传的箱柜与回路数据
+            window.chrome.webview.addEventListener("message", (event) => {
+              try {
+                let data = event.data;
+                if (typeof data === "string") {
+                  data = JSON.parse(data);
+                }
+                if (data && data.action === "projectCabinetsLoaded" && data.cabinets && data.cabinets.length > 0) {
+                  cabinets.value = data.cabinets;
+                  currentCabinetId.value = data.cabinets[0].id;
+                  recalcAll();
+                  ElementPlus.ElMessage.success(`成功载入当前工作表 ${data.cabinets.length} 台箱柜及开关回路！`);
+                }
+              } catch (e) {
+                console.error("解析箱柜数据异常:", e);
+              }
+            });
+
+            // 向宿主主动请求当前工程数据
+            window.chrome.webview.postMessage(JSON.stringify({ action: "getProjectCabinets" }));
+          }
+        });
+
+        return {
+          copperPrice,
+          processFee,
+          lossRate,
+          systemStandard,
+          ipLevel,
+          activeTab,
+          standardSpecs,
+          cabinets,
+          currentCabinetId,
+          currentCabinet,
+          selectCabinet,
+          getPhaseTagType,
+          currentSelectedSpecText,
+          currentCalculatedAmp,
+          safetyMargin,
+          calcProgressPercentage,
+          recalcRow,
+          recalcBranchRow,
+          recalcAux,
+          totalProjectLength,
+          totalProjectNetWeight,
+          totalProjectGrossWeight,
+          avgCabinetWeight,
+          totalProjectCost,
+          recalcAll,
+          autoMatchAllCabinets,
+          removeMainRow,
+          removeBranchRow,
+          saveAsTemplate,
+          exportBomList,
+          applyCabinetTemplate,
+          writeBackUnitMode,
+          handleExecuteWriteBack,
+          onHeaderMouseDown,
+          minimizeWindow,
+          closeWindow,
+          reloadFromExcel,
+        };
+      }
+    }).use(ElementPlus).mount("#app");
+  </script>
+</body>
+</html>

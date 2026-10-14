@@ -216,6 +216,263 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 供 Ribbon 菜单直接调用的“删除无数量的箱柜”入口
+        /// 严格遵循规则 6 (4个定义名称拓扑)、规则 7 (数组一次性读入内存)、规则 8 (操作前预检自愈) 与规则 9 (不符合要求直接报错提醒)
+        /// </summary>
+        public static void DeleteZeroQuantityCabinets()
+        {
+            try
+            {
+                // 获取当前正在运行的 Excel 运行上下文 (安全调度)
+                var context = Tool.GetActiveExcelContext();
+                // 校验宿主上下文有效性
+                if (context == null) return;
+                // 提取 Excel Application COM 句柄
+                dynamic app = context.App;
+                // 提取活动工作簿与活动工作表
+                dynamic activeWb = context.Wb;
+                dynamic activeSheet = context.Sheet;
+
+                // 读取当前活动工作表名称
+                string sheetName = Convert.ToString(activeSheet.Name)?.Trim() ?? string.Empty;
+
+                // 规则 9: 不符合要求直接报错提醒，不写防御兼容代码
+                if (string.Equals(sheetName, "项目信息", StringComparison.OrdinalIgnoreCase) || Tool.IsReservedOrReportSheet(sheetName))
+                {
+                    // 弹出明确的不支持提示弹窗 --硬编码: 系统提示文本--
+                    System.Windows.Forms.MessageBox.Show(
+                        "当前工作表不是分类明细表，无法执行删除无数量箱柜操作！",
+                        "系统提示",
+                        System.Windows.Forms.MessageBoxButtons.OK,
+                        System.Windows.Forms.MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // 严格遵循规则 8：在操作 Excel 表格前，检查当前表格规则 6 的正确性，先纠正自愈后再操作
+                Tool.FixAndFillCabinetNamesForSheet(activeSheet, forceRebuild: false);
+
+                // 获取当前工作表经过规则 6 校验的全部有效箱柜映射字典
+                List<KeyValuePair<int, CabinetAnchorModel>> validCabinets = Tool.GetSheetValidCabinets(activeSheet, activeWb);
+                // 校验工作表中是否存在有效箱柜
+                if (validCabinets == null || validCabinets.Count == 0)
+                {
+                    // 规则 9: 未识别到箱柜直接报错提醒
+                    System.Windows.Forms.MessageBox.Show(
+                        "当前工作表未识别到任何箱柜，无法执行操作！",
+                        "系统提示",
+                        System.Windows.Forms.MessageBoxButtons.OK,
+                        System.Windows.Forms.MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // 严格遵守规则 7：读写多个区域，采用数组一次性读到内存
+                // 计算顶部汇总行的最小与最大物理行号范围
+                int minSumRow = int.MaxValue;
+                int maxSumRow = int.MinValue;
+                // 遍历搜集所有汇总行的行号
+                foreach (var cab in validCabinets)
+                {
+                    // 提取汇总行锚点
+                    if (cab.Value.Sum != null)
+                    {
+                        // 转换物理行号
+                        int r = Convert.ToInt32(cab.Value.Sum.Row);
+                        // 更新最小行号
+                        if (r < minSumRow) minSumRow = r;
+                        // 更新最大行号
+                        if (r > maxSumRow) maxSumRow = r;
+                    }
+                }
+
+                // 规则 9: 校验行号边界，异常则直接报错提示
+                if (minSumRow > maxSumRow || minSumRow < 1)
+                {
+                    // 弹出错误提示 --硬编码: 系统提示文本--
+                    System.Windows.Forms.MessageBox.Show(
+                        "未找到有效的箱柜顶部汇总行，无法执行操作！",
+                        "系统提示",
+                        System.Windows.Forms.MessageBoxButtons.OK,
+                        System.Windows.Forms.MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // 一次性读取顶部汇总行区域 (A列到F列，包含B列柜号、C列名称与F列数量)
+                dynamic sumRange = activeSheet.Range[$"A{minSumRow}:F{maxSumRow}"];
+                // 声明承载内存数据的二维数组
+                object[,] dataMatrix;
+                // 校验并接收 COM 区域的二维数组
+                if (sumRange.Value2 is object[,] arr)
+                {
+                    // 直接赋给内存矩阵
+                    dataMatrix = arr;
+                }
+                else
+                {
+                    // 单单元格场景保底构建 1 行 6 列数组
+                    dataMatrix = new object[2, 7];
+                    // 提取第 6 列数量
+                    dataMatrix[1, 6] = sumRange.Value2;
+                }
+
+                // 初始化待删除箱柜序号与展示文本集合
+                var zeroQtyKs = new List<int>();
+                var zeroQtyNames = new List<string>();
+
+                // 遍历所有箱柜判定其数量
+                foreach (var cab in validCabinets)
+                {
+                    // 获取当前箱柜序号 K
+                    int k = cab.Key;
+                    // 获取箱柜锚点数据
+                    var anchor = cab.Value;
+                    // 若无汇总锚点则跳过
+                    if (anchor.Sum == null) continue;
+
+                    // 计算在内存矩阵中的相对行号 (1-based)
+                    int sumRow = Convert.ToInt32(anchor.Sum.Row);
+                    int matrixRow = sumRow - minSumRow + 1;
+
+                    // 内存读取 A 列序号(第1列) 与 B 列箱柜名称(第2列)
+                    string cabNo = Convert.ToString(dataMatrix[matrixRow, 1])?.Trim() ?? string.Empty;
+                    string cabName = Convert.ToString(dataMatrix[matrixRow, 2])?.Trim() ?? string.Empty;
+                    // 内存读取 F 列数量对象
+                    object? qtyObj = dataMatrix[matrixRow, 6];
+
+                    // 判定是否为无数量箱柜：①未填/空白、②数值等于0、③小于0
+                    bool isZeroQty = false;
+                    // 检查单元格对象是否为空
+                    if (qtyObj == null)
+                    {
+                        // 单元格空即无数量
+                        isZeroQty = true;
+                    }
+                    else
+                    {
+                        // 转换为字符串进行文本与数值双重比对
+                        string qtyStr = Convert.ToString(qtyObj)?.Trim() ?? string.Empty;
+                        // 空字符串视为无数量
+                        if (string.IsNullOrEmpty(qtyStr))
+                        {
+                            isZeroQty = true;
+                        }
+                        // 尝试数值解析
+                        else if (double.TryParse(qtyStr, out double dQty))
+                        {
+                            // 小于或等于 0 均视为无数量
+                            if (dQty <= 0.000001)
+                            {
+                                isZeroQty = true;
+                            }
+                        }
+                        else
+                        {
+                            // 非法字符无法转为数值，按无数量处理
+                            isZeroQty = true;
+                        }
+                    }
+
+                    // 若判定为无数量箱柜，加入待删除队列
+                    if (isZeroQty)
+                    {
+                        // 记录箱柜序号
+                        zeroQtyKs.Add(k);
+                        // 拼接规范的显示名称 (例如: 序号 1: BXF1 或 序号 1)
+                        string displayName;
+                        if (!string.IsNullOrWhiteSpace(cabNo) && !string.IsNullOrWhiteSpace(cabName))
+                        {
+                            displayName = $"序号 {cabNo}: {cabName}";
+                        }
+                        else if (!string.IsNullOrWhiteSpace(cabName))
+                        {
+                            displayName = cabName;
+                        }
+                        else if (!string.IsNullOrWhiteSpace(cabNo))
+                        {
+                            displayName = $"序号 {cabNo}";
+                        }
+                        else
+                        {
+                            displayName = $"箱柜{k}";
+                        }
+                        // 添加至清单列表
+                        zeroQtyNames.Add($"• 【{displayName}】(定义序号: {k})");
+                    }
+                }
+
+                // 校验扫描结果：若没有无数量箱柜则提示并安全返回
+                if (zeroQtyKs.Count == 0)
+                {
+                    // 提示用户无需删除 --硬编码: 系统提示文本--
+                    System.Windows.Forms.MessageBox.Show(
+                        $"当前分类表【{sheetName}】中所有箱柜数量均大于 0，未发现无数量的箱柜。",
+                        "系统提示",
+                        System.Windows.Forms.MessageBoxButtons.OK,
+                        System.Windows.Forms.MessageBoxIcon.Information);
+                    return;
+                }
+
+                // 构建带箱柜清单的提示文本 (超过15台进行折叠)
+                string listText = zeroQtyNames.Count <= 15
+                    ? string.Join("\n", zeroQtyNames)
+                    : string.Join("\n", zeroQtyNames.Take(15)) + $"\n...等共 {zeroQtyNames.Count} 台箱柜";
+
+                // 组装二次确认消息文本
+                string confirmMsg;
+                // 区分全选所有箱柜与部分删除场景
+                if (zeroQtyKs.Count >= validCabinets.Count)
+                {
+                    // 全选场景：提醒首台重置保护
+                    confirmMsg = $"在当前分类表【{sheetName}】中，检测到全部 {zeroQtyKs.Count} 台箱柜的数量均为 0 或未填写：\n\n" +
+                                 $"{listText}\n\n" +
+                                 "⚠️ 注意：若删除全部箱柜，系统将重置保留首台初始空白箱柜。\n\n" +
+                                 "确定要执行删除并重置吗？";
+                }
+                else
+                {
+                    // 部分删除场景：提示将被物理删除的箱柜
+                    confirmMsg = $"在当前分类表【{sheetName}】中，共检测到 {zeroQtyKs.Count} 台数量为 0 或未填写的箱柜：\n\n" +
+                                 $"{listText}\n\n" +
+                                 "此操作将删除上述箱柜的顶部汇总行及对应的底表明细块，且不可恢复。\n\n" +
+                                 "确定要执行删除吗？";
+                }
+
+                // 弹出模态二次确认对话框
+                var dialogRes = System.Windows.Forms.MessageBox.Show(
+                    confirmMsg,
+                    "确认删除无数量箱柜",
+                    System.Windows.Forms.MessageBoxButtons.YesNo,
+                    System.Windows.Forms.MessageBoxIcon.Question);
+
+                // 若用户点击【否】或取消，直接终止退出
+                if (dialogRes != System.Windows.Forms.DialogResult.Yes) return;
+
+                // 调用公共删除引擎 DeleteCabinets 执行物理删除与定义名称注销
+                bool success = DeleteCabinets(app, activeSheet, zeroQtyKs);
+                // 校验删除执行结果
+                if (success)
+                {
+                    // 弹出成功提示报告 --硬编码: 成功提示文本--
+                    System.Windows.Forms.MessageBox.Show(
+                        $"已成功删除分类表【{sheetName}】中 {zeroQtyKs.Count} 台无数量箱柜！",
+                        "删除成功",
+                        System.Windows.Forms.MessageBoxButtons.OK,
+                        System.Windows.Forms.MessageBoxIcon.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录错误日志
+                LogHelper.WriteLog($"DeleteZeroQuantityCabinets 异常: {ex.Message}");
+                // 弹出异常错误弹窗 --硬编码: 异常提示文本--
+                System.Windows.Forms.MessageBox.Show(
+                    $"删除无数量箱柜失败: {ex.Message}",
+                    "系统提示",
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
         /// 扫描当前激活工作簿，探测已有分类列表并自动建议下一个可用分类名称
         /// </summary>
         /// <param name="mode">当前操作模式: create / edit / insertCopied</param>
@@ -961,7 +1218,7 @@ namespace ExcelAddInDemo
                         if (cellB.Contains("小计") || textB.Contains("小计")) break;
 
                         // 判定是否为破坏性的 #REF! 错误或底表已删除导致的断链行
-                        bool isRefError = cellB.Contains("#REF") || formulaB.Contains("#REF") || textB.Contains("#REF") 
+                        bool isRefError = cellB.Contains("#REF") || formulaB.Contains("#REF") || textB.Contains("#REF")
                             || cellC.Contains("#REF") || textC.Contains("#REF") || cellB.StartsWith("#") || cellB == "-2146826288" || cellC == "-2146826288";
 
                         // 若 B 列无值且无公式且无 #REF! 错误，说明到达未启用的预留空白行，跳过继续
@@ -1706,7 +1963,7 @@ namespace ExcelAddInDemo
                     if (cellBVal.Contains("小计") || cellBText.Contains("小计")) break;
 
                     // 判定是否为破坏性的 #REF! 错误或断链
-                    bool isRefError = cellBVal.Contains("#REF") || cellBFormula.Contains("#REF") || cellBText.Contains("#REF") 
+                    bool isRefError = cellBVal.Contains("#REF") || cellBFormula.Contains("#REF") || cellBText.Contains("#REF")
                         || cellCText.Contains("#REF") || cellBVal == "-2146826288" || cellBVal.StartsWith("#");
 
                     // 判断该行是否为有效分类行：尝试提取对应的分类表名

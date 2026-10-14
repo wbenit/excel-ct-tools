@@ -12,3 +12,9 @@ obj/
 
 # 忽略构建产物
 *.log
+
+# 忽略 WebView2 运行时组件、缓存与临时文件
+**/EBWebView/
+**/WebView2_*/
+data/dwg_thumbs/
+*.tmp

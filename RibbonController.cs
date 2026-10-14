@@ -107,6 +107,10 @@ namespace ExcelAddInDemo
               <button id='btnInsertCopiedCategory' label='插入复制的分类' imageMso='Paste' onAction='OnMenuAction' />
               <!-- 5. 删除分类 -->
               <button id='btnDeleteCategory' label='删除分类' imageMso='Delete' onAction='OnMenuAction' />
+              <!-- 分割线 -->
+              <menuSeparator id='sepCategoryCleanup' />
+              <!-- 6. 删除无数量的箱柜 -->
+              <button id='btnDeleteZeroQuantityCabinets' label='删除无数量的箱柜' imageMso='TableRowsDelete' screentip='删除无数量的箱柜' supertip='一键扫描当前分类表中顶部汇总行数量为 0 或未填写的箱柜，批量安全删除其汇总行、底表明细块及定义名称。' onAction='OnMenuAction' />
             </menu>
           </splitButton>
           <!-- 箱柜下拉菜单 -->
@@ -146,17 +150,22 @@ namespace ExcelAddInDemo
           </menu>
           <!-- 云方案按钮 -->
           <button id='btnCloudSolution' label='云方案' imageMso='ServerProperties' size='large' onAction='OnMenuAction' />
-          <!-- 云物料下拉菜单 (使用标准SQL企业物料数据库图标) -->
-          <menu id='menuCloudMaterial' label='云物料' imageMso='DatabaseSqlServer' size='large'>
-            <!-- 1. 物料匹配与品牌规则按钮 -->
-            <button id='btnCloudMatchSetting' label='物料匹配与品牌规则...' imageMso='ControlProperties' screentip='物料匹配与品牌规则' supertip='配置元器件型号识别解析管道及品牌优先匹配规则' onAction='OnMenuAction' />
-            <!-- 2. 在线查价按钮 (电气天下/天工) -->
-            <button id='btnCloudOnlinePriceSearch' label='在线查价 (电气天下/天工)...' imageMso='WebPagePreview' screentip='在线查价与静默回写' supertip='从电气天下或天工矩阵实时拉取元器件单价，支持一键批量回写' onAction='OnMenuAction' />
-            <!-- 3. 元器件数据管理按钮 -->
-            <button id='btnCloudComponentManage' label='元器件数据管理...' imageMso='TableInsertRowsAbove' screentip='元器件数据管理' supertip='直接在 Excel 中维护和批量管理元器件基础数据' onAction='OnMenuAction' />
-            <!-- 4. 选配配套附件按钮 (按用户要求排在最后一项) -->
-            <button id='btnCloudComponentAttachment' label='选配配套附件...' imageMso='AccessFormWizard' screentip='选配配套附件' supertip='打开当前元器件选配配套附件工作台' onAction='OnMenuAction' />
-          </menu>
+          <!-- 云物料功能按钮 (SplitButton 支持大图标一键直达与下拉菜单高级项，完整对齐 ExWinner 布局) -->
+          <splitButton id='splitCloudMaterial' size='large'>
+            <!-- 顶部大图标一键直接触发云物料一体化工作台 -->
+            <button id='btnCloudMaterialMain' label='云物料' imageMso='DatabaseSqlServer' onAction='OnMenuAction' screentip='云物料一体化工作台' supertip='打开集成了物料库、柜体计算器、母排计算器与载流量速查的云物料工作台' />
+            <!-- 下拉菜单列表 (使用标准SQL企业物料数据库图标) -->
+            <menu id='menuCloudMaterial' label='云物料' imageMso='DatabaseSqlServer'>
+              <!-- 1. 物料匹配与品牌规则按钮 -->
+              <button id='btnCloudMatchSetting' label='物料匹配与品牌规则...' imageMso='ControlProperties' screentip='物料匹配与品牌规则' supertip='配置元器件型号识别解析管道及品牌优先匹配规则' onAction='OnMenuAction' />
+              <!-- 2. 在线查价按钮 (电气天下/天工) -->
+              <button id='btnCloudOnlinePriceSearch' label='在线查价 (电气天下/天工)...' imageMso='WebPagePreview' screentip='在线查价与静默回写' supertip='从电气天下或天工矩阵实时拉取元器件单价，支持一键批量回写' onAction='OnMenuAction' />
+              <!-- 3. 元器件数据管理按钮 -->
+              <button id='btnCloudComponentManage' label='元器件数据管理...' imageMso='TableInsertRowsAbove' screentip='元器件数据管理' supertip='直接在 Excel 中维护和批量管理元器件基础数据' onAction='OnMenuAction' />
+              <!-- 4. 选配配套附件按钮 (按用户要求排在最后一项) -->
+              <button id='btnCloudComponentAttachment' label='选配配套附件...' imageMso='AccessFormWizard' screentip='选配配套附件' supertip='打开当前元器件选配配套附件工作台' onAction='OnMenuAction' />
+            </menu>
+          </splitButton>
           <!-- 型号识别(提取极数与电流) 按钮 (使用标准筛选过滤漏斗图标) -->
           <button id='btnModelParamParser' label='识别极数电流' imageMso='Filter' size='large' screentip='型号识别极数电流' supertip='自动从型号中识别并提取电流和极数，支持双通道顺位流水线与白名单过滤' onAction='OnMenuAction' />
           <!-- 二次元件组规则管道(生成二次) 按钮 -->
@@ -294,6 +303,8 @@ namespace ExcelAddInDemo
           <menu id='menuProjectTools' label='项目工具' imageMso='ControlToolboxOutlook' size='large'>
             <!-- 修复定义名称项 (在项目工具下拉菜单中同步提供快捷入口) -->
             <button id='btnRepairDefinedNamesSub' label='修复' imageMso='AutoCorrect' onAction='OnMenuAction' screentip='修复所有定义名称' supertip='一键检查并修复当前工作簿所有分类表中的箱柜定义名称、小计公式与双向超链接' />
+            <!-- 母排铜排计算按钮 (根据W列电流与X列极数计算并插入明细行) -->
+            <button id='btnCopperBusbarCalc' label='母排铜排计算' imageMso='ChartInsert' screentip='母排铜排智能计算' supertip='根据W列电流与X列级数智能计算各箱柜主母排与分支排用量，一键安全插入元器件明细行' onAction='OnMenuAction' />
             <!-- 智能输入按钮 -->
             <button id='btnSmartInput' label='智能输入' imageMso='SmartArtInsert' screentip='智能输入' supertip='配置元器件去重词库与C列输入智能联动选项' onAction='OnMenuAction' />
             <!-- 三箱型号添写按钮 (使用标准列/表格图标 TableProperties) -->
@@ -610,6 +621,12 @@ namespace ExcelAddInDemo
                 // 执行删除分类全流程 (含防呆二次确认与项目信息汇总行同步物理移除)
                 ExcelServices.DeleteCurrentCategory();
             }
+            // 响应“删除无数量的箱柜”按钮指令
+            else if (controlId == "btnDeleteZeroQuantityCabinets")
+            {
+                // 执行删除当前分类表中数量为0或空的箱柜
+                ExcelServices.DeleteZeroQuantityCabinets();
+            }
             // 响应“汇总调价”按钮指令
             else if (controlId == "btnSummaryAdjustPrice")
             {
@@ -627,6 +644,12 @@ namespace ExcelAddInDemo
             {
                 // 弹出基于 WebView2 + Vue 3 的“总价一键调整”窗口
                 ExcelServices.ShowTotalPriceAdjustDialog();
+            }
+            // 响应“母排铜排计算”按钮指令
+            else if (controlId == "btnCopperBusbarCalc")
+            {
+                // 弹出基于 WebView2 + Vue 3 的智能母排/铜排计算器工作台
+                ExcelServices.OpenCopperBusbarCalcDialog();
             }
             // 响应“智能输入”按钮指令
             else if (controlId == "btnSmartInput")
@@ -675,6 +698,14 @@ namespace ExcelAddInDemo
             {
                 // 弹出基于 WebView2 + Vue 3 的“云方案中心 (行业方案/企业方案)”窗口
                 ExcelServices.ShowCloudSolutionDialog();
+            }
+            // 响应“云物料”一体化工作台按钮指令 (大图标直达或母排预估入口)
+            else if (controlId == "btnCloudMaterialMain" || controlId == "btnEstimateBusbarUsage")
+            {
+                // 依据触发来源决定默认激活选项卡 ("copper" 或 "material")
+                string initialTab = controlId == "btnEstimateBusbarUsage" ? "copper" : "material";
+                // 弹出基于 WebView2 + Vue 3 的“云物料”一体化工作台
+                ExcelServices.ShowCloudMaterialHubDialog(initialTab);
             }
             // 响应“元器件管理”按钮指令 (支持大图标与云物料下拉菜单项)
             else if (controlId == "btnComponentManage" || controlId == "btnCloudComponentManage")

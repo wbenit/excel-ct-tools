@@ -1,0 +1,405 @@
+{
+  "sourceColumn": "C",
+  "categoryColumn": "B",
+  "categoryOverwriteMode": "OnlyEmpty",
+  "enableLeakageUpgrade": true,
+  "leakageKeywords": [
+    "LE",
+    "VIGI",
+    "L",
+    "GS",
+    "\u6F0F\u7535",
+    "\u6B8B\u6D41"
+  ],
+  "enableShortCodeBoundaryGuard": true,
+  "categoryDict": {
+    "\u5FAE\u578B\u65AD\u8DEF\u5668": [
+      "NXB",
+      "DZ47",
+      "IC65",
+      "IDPN",
+      "DPN",
+      "S20",
+      "CH1",
+      "CH2",
+      "CH3",
+      "C65",
+      "FTB",
+      "AEBB1",
+      "EA9AN",
+      "M20",
+      "NB1",
+      "IC60",
+      "MCB",
+      "SP4",
+      "NDB",
+      "HUM18",
+      "HSM8",
+      "HB45",
+      "XA10",
+      "XA5"
+    ],
+    "\u5FAE\u578B\u6F0F\u7535": [
+      "VIGI",
+      "GSH20",
+      "GS20",
+      "AEBB1L",
+      "NB1LE",
+      "BM65L",
+      "CH3L",
+      "CH2L",
+      "HSM8NL",
+      "RCCB",
+      "XA10L"
+    ],
+    "\u5851\u58F3\u65AD\u8DEF\u5668": [
+      "NM1",
+      "CM1",
+      "NSX",
+      "NS",
+      "CM3",
+      "XT1",
+      "XT2",
+      "XT3",
+      "XT4",
+      "EZD",
+      "GM1",
+      "FTM",
+      "AEBM1",
+      "XT",
+      "NM8",
+      "MCCB",
+      "TS",
+      "CKB",
+      "CVS",
+      "BM30",
+      "NDM",
+      "HUM8",
+      "HSM1",
+      "HM3",
+      "XAM",
+      "T1",
+      "T2",
+      "T3",
+      "T4",
+      "T5",
+      "T6",
+      "T7",
+      "MB50"
+    ],
+    "\u5851\u58F3\u6F0F\u7535": [
+      "BM30L",
+      "HSM1L"
+    ],
+    "\u5FAE\u578B\u9694\u79BB": [
+      "IINT",
+      "INT",
+      "EA9D",
+      "FTG11",
+      "E20",
+      "NH42",
+      "SD20",
+      "CH3G",
+      "HSM8D",
+      "XAHL"
+    ],
+    "\u9694\u79BB\u5F00\u5173": [
+      "INS",
+      "NH40",
+      "G",
+      "IINS",
+      "OT",
+      "WG",
+      "FTG2",
+      "AEB-GL",
+      "NDG",
+      "HUH",
+      "CM5G",
+      "HSG1"
+    ],
+    "\u53CC\u7535\u6E90": [
+      "WATSG",
+      "WATSN",
+      "XTS",
+      "ATS",
+      "OTM",
+      "FTQ",
+      "WTS",
+      "CAP",
+      "NDQ",
+      "HSQ1",
+      "WHKQ8"
+    ],
+    "\u53CC\u5934\u5200": [
+      "HS11",
+      "HZ10",
+      "HS13"
+    ],
+    "\u63A5\u89E6\u5668": [
+      "LC1",
+      "MC1",
+      "SC",
+      "AX",
+      "A",
+      "CJ",
+      "ESB",
+      "NDC"
+    ],
+    "\u70ED\u7EE7\u7535\u5668": [
+      "LR",
+      "MR1",
+      "TK",
+      "T",
+      "TA",
+      "NDR"
+    ],
+    "\u53D8\u9891\u5668": [
+      "ATV",
+      "ACS510"
+    ],
+    "\u667A\u80FD\u7167\u660E": [
+      "A1-MLC",
+      "HLC.PRL",
+      "ASL"
+    ],
+    "\u76F4\u63A5\u5F0F\u8868": [
+      "PMAC903",
+      "ACR",
+      "DD",
+      "DT"
+    ],
+    "\u591A\u529F\u80FD\u8868": [
+      "PD760",
+      "IM300"
+    ],
+    "\u6D88\u9632\u7535\u6E90\u76D1\u63A7": [
+      "HS-V",
+      "PMAC513A2",
+      "AFPM"
+    ],
+    "\u706B\u707E\u63A2\u6D4B\u5668": [
+      "PMAC503",
+      "HSAD",
+      "WEFPT",
+      "HS-L810",
+      "AcuRC",
+      "HS-L",
+      "TBF-T",
+      "ARCM"
+    ],
+    "\u4E92\u611F\u5668": [
+      "AHK",
+      "ASH",
+      "AKH"
+    ],
+    "\u7194\u65AD\u5668": [
+      "RT",
+      "NT"
+    ],
+    "\u63A7\u5236\u4FDD\u62A4\u5F00\u5173": [
+      "XCPS",
+      "KB0",
+      "KBO",
+      "LHC"
+    ],
+    "\u7535\u6D8C\u540E\u5907": [
+      "ISCB",
+      "CTR-SCB"
+    ],
+    "\u7535\u6D8C\u4FDD\u62A4\u5668": [
+      "TDXD",
+      "VB",
+      "VC",
+      "ARD"
+    ],
+    "\u96C6\u4E2D\u7535\u8868": [
+      "DFKS"
+    ]
+  },
+  "minCurrentColumn": "R",
+  "maxCurrentColumn": "",
+  "poleColumn": "T",
+  "tripModeColumn": "U",
+  "startRow": 2,
+  "processRangeMode": "AllValid",
+  "poleExcludeKeywords": [
+    "IP",
+    "DPN",
+    "PF",
+    "PT",
+    "PIN",
+    "PAGE",
+    "PRO"
+  ],
+  "poleAllowedValues": [
+    "1P",
+    "2P",
+    "3P",
+    "4P",
+    "1P\u002BN",
+    "3P\u002BN",
+    "1",
+    "2",
+    "3",
+    "4"
+  ],
+  "enableStrictPoleWhitelist": true,
+  "polePipeline": [
+    {
+      "id": "7df61e1cdf8e450aa9ec6d6645d7a734",
+      "title": "\u5BFB\u627E \u0027P\u0027 \u524D\u9762\u7684\u6570\u5B57 (\u5982 3P, 4P)",
+      "enabled": true,
+      "mode": "FindBeforeP",
+      "mapping": {},
+      "fixedValue": "",
+      "customRegex": ""
+    },
+    {
+      "id": "1c8620d9203e445397508758ef53bbbe",
+      "title": "\u8131\u6263\u4EE3\u53F7/\u7279\u5F81\u6620\u5C04 (\u5982 /3300-\u003E3P)",
+      "enabled": true,
+      "mode": "CodeMapping",
+      "mapping": {
+        "/3300": "3P",
+        "/4300": "4P",
+        "/3320": "3P",
+        "/4320": "4P",
+        "/33002": "3P",
+        "/43002": "4P",
+        "3P": "3P",
+        "4P": "4P"
+      },
+      "fixedValue": "",
+      "customRegex": ""
+    },
+    {
+      "id": "628f73d4b91a41edb600b6fad7b97903",
+      "title": "\u5BFB\u627E\u4E2D\u6587 \u0027\u6781\u0027 \u524D\u9762\u7684\u6570\u5B57 (\u5982 3\u6781)",
+      "enabled": true,
+      "mode": "FindBeforeJi",
+      "mapping": {},
+      "fixedValue": "",
+      "customRegex": ""
+    },
+    {
+      "id": "b87e84674aa84112931e94554a9cf45b",
+      "title": "\u5BFB\u627E\u659C\u6760\u540E\u6781\u6570 (\u5982 /3, /4)",
+      "enabled": true,
+      "mode": "FrameCode",
+      "mapping": {},
+      "fixedValue": "",
+      "customRegex": ""
+    }
+  ],
+  "poleFormat": "WithP",
+  "currentExcludeKeywords": [
+    "mA",
+    "\u6BEB\u5B89",
+    "kA",
+    "\u5343\u5B89",
+    "VAC",
+    "VDC",
+    "V",
+    "Hz",
+    "ms"
+  ],
+  "currentAllowedValues": [
+    "0.5",
+    "1",
+    "1.6",
+    "2",
+    "2.5",
+    "3",
+    "4",
+    "5",
+    "6",
+    "10",
+    "16",
+    "20",
+    "25",
+    "32",
+    "40",
+    "50",
+    "63",
+    "80",
+    "100",
+    "125",
+    "140",
+    "160",
+    "180",
+    "200",
+    "225",
+    "250",
+    "315",
+    "350",
+    "400",
+    "500",
+    "630",
+    "800",
+    "1000",
+    "1250",
+    "1600",
+    "2000",
+    "2500",
+    "3200",
+    "4000",
+    "6300"
+  ],
+  "enableStrictCurrentWhitelist": true,
+  "currentPipeline": [
+    {
+      "id": "bdebb4ab06b4418da5595422b779607b",
+      "title": "\u5BFB\u627E\u5E26\u5355\u4F4D \u0027A\u0027 \u7684\u6570\u5B57 (\u5982 100A)",
+      "enabled": true,
+      "mode": "NumberWithA",
+      "mapping": {},
+      "fixedValue": "",
+      "customRegex": ""
+    },
+    {
+      "id": "22fdf773215d4d869bd03834e1b75108",
+      "title": "\u5BFB\u627E\u8131\u6263\u66F2\u7EBF [C/D] \u540E\u7684\u6570\u5B57 (\u5982 C32)",
+      "enabled": true,
+      "mode": "CurveLetterNumber",
+      "mapping": {},
+      "fixedValue": "",
+      "customRegex": ""
+    },
+    {
+      "id": "f21d76839130436eb9615583a68d6e3c",
+      "title": "\u5BFB\u627E\u6574\u5B9A\u7535\u6D41\u533A\u95F4 (\u5982 2.5-4A)",
+      "enabled": true,
+      "mode": "CurrentRange",
+      "mapping": {},
+      "fixedValue": "",
+      "customRegex": ""
+    },
+    {
+      "id": "9a7279f3582248ff9aecd7cd1d1fa9b7",
+      "title": "\u5BFB\u627E\u672B\u5C3E\u7EAF\u6570\u5B57 (\u5982 NM1-125 100)",
+      "enabled": true,
+      "mode": "TrailingNumber",
+      "mapping": {},
+      "fixedValue": "",
+      "customRegex": ""
+    }
+  ],
+  "currentFormat": "NumberOnly",
+  "preferMaxCurrent": true,
+  "tripModeExcludeKeywords": [],
+  "tripModeAllowedValues": [
+    "TM",
+    "TMD",
+    "TMA",
+    "MA",
+    "Elec",
+    "C",
+    "D",
+    "B",
+    "K",
+    "Z",
+    "LE"
+  ],
+  "enableStrictTripModeWhitelist": false,
+  "tripModePipeline": []
+}

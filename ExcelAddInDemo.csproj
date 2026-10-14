@@ -205,6 +205,10 @@
     <None Include="Resources\app_settings.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将云物料一体化工作台前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\cloud_material_hub.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将 JSON 配置文件复制至构建输出路径中 -->
     <None Include="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
