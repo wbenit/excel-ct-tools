@@ -566,6 +566,8 @@ namespace ExcelAddInDemo
             int processedSheets = 0;
             // 记录成功校准并自愈的箱柜累计总数
             int totalFixedCabinets = 0;
+            // 记录修复的元器件行公式累计总数
+            int totalFixedComponentRows = 0;
             // 记录清理的断链与死链幽灵名称总数
             int cleanedDeadNames = 0;
 
@@ -648,7 +650,7 @@ namespace ExcelAddInDemo
                     // 3. 强制刷新【项目信息】白名单分类表名缓存
                     Tool.GetProjectCategorySheetNames(activeWb, forceRefresh: true);
 
-                    // 4. 遍历所有工作表执行箱柜定义名称全量自愈 (规则 6、7、8)
+                    // 4. 遍历所有工作表执行箱柜定义名称全量自愈与明细公式修复 (规则 6、7、8)
                     foreach (dynamic sheet in activeWb.Worksheets)
                     {
                         // 判定是否为当前工程中的标准分类明细表
@@ -658,6 +660,55 @@ namespace ExcelAddInDemo
                             int fixedCount = Tool.FixAndFillCabinetNamesForSheet(sheet, forceRebuild: true);
                             // 累加修复箱柜总数
                             totalFixedCabinets += fixedCount;
+
+                            // 规则 8: 提取当前分类表中所有有效的箱柜锚点字典 (规则 6 架构)
+                            var cabinets = Tool.GetSheetValidCabinets((object)sheet, (object)activeWb);
+                            // 若存在有效箱柜集合
+                            if (cabinets != null && cabinets.Count > 0)
+                            {
+                                // 逐台箱柜遍历修复底部明细区域元器件行公式及汇总行联动公式
+                                foreach (var kvp in cabinets)
+                                {
+                                    // 提取箱柜锚点数据
+                                    var cab = kvp.Value;
+                                    // 提取物理行号
+                                    int sumRow = cab.Sum != null ? Convert.ToInt32(cab.Sum.Row) : 0;
+                                    int detRow = cab.Det != null ? Convert.ToInt32(cab.Det.Row) : 0;
+                                    int subsumRow = cab.Subsum != null ? Convert.ToInt32(cab.Subsum.Row) : 0;
+                                    int tolsumRow = cab.Tolsum != null ? Convert.ToInt32(cab.Tolsum.Row) : 0;
+
+                                    // 校验明细块各行号合法性 (规则 6 架构)
+                                    if (detRow > 0 && subsumRow > detRow && tolsumRow >= subsumRow)
+                                    {
+                                        // 元器件起始行号 (规则 6: detRow + 2)
+                                        int compStartRow = detRow + 2;
+                                        // 规则 7: 内存 2D 数组批量自愈底部明细元器件行 A/G/H/J/K 列公式及小计求和公式
+                                        int fixedRows = RefreshCabinetFeeAreaFormulas(sheet, detRow, compStartRow, subsumRow, tolsumRow);
+                                        // 累加修复的元器件行公式总数
+                                        totalFixedComponentRows += fixedRows;
+
+                                        // 若存在顶部汇总行，确保汇总行公式与明细总计行联动完好
+                                        if (sumRow > 0)
+                                        {
+                                            try
+                                            {
+                                                // G 列单价公式绑定明细总计行 G 列
+                                                sheet.Cells[sumRow, 7].Formula = $"=G{tolsumRow}"; // --硬编码: 汇总单价公式--
+                                                // H 列总价公式 = 数量(F列) * 单价(G列)
+                                                sheet.Cells[sumRow, 8].Formula = $"=F{sumRow}*G{sumRow}"; // --硬编码: 汇总总价公式--
+                                                // J 列成本总价公式绑定明细总计行成本总价 K 列
+                                                sheet.Cells[sumRow, 10].Formula = $"=K{tolsumRow}"; // --硬编码: 汇总成本公式--
+                                                // K 列毛利公式 = 销售总价(H列) - 成本总价(J列)
+                                                sheet.Cells[sumRow, 11].Formula = $"=H{sumRow}-J{sumRow}"; // --硬编码: 汇总毛利公式--
+                                                // L 列毛利率公式 (防除以 0 保护)
+                                                sheet.Cells[sumRow, 12].Formula = $"=IF(H{sumRow}=0,0,K{sumRow}/H{sumRow})"; // --硬编码: 汇总毛利率公式--
+                                            }
+                                            catch { }
+                                        }
+                                    }
+                                }
+                            }
+
                             // 累加分类表数量
                             processedSheets++;
                         }
@@ -676,22 +727,23 @@ namespace ExcelAddInDemo
                 if (processedSheets > 0)
                 {
                     // 包含分类表时的标准报告 --硬编码: 报告文本--
-                    successMsg = $"✅ 定义名称修复完成！\n\n" +
+                    successMsg = $"✅ 项目工具修复完成！\n\n" +
                                  $"• 扫描并修复分类工作表：{processedSheets} 个\n" +
                                  $"• 校准成套箱柜定义名称：{totalFixedCabinets} 台套\n" +
+                                 $"• 修复底部明细元器件行公式：{totalFixedComponentRows} 行\n" +
                                  $"• 清理断链失效幽灵名称：{cleanedDeadNames} 个\n\n" +
-                                 $"已按规则 6 校准所有箱柜的 Cab_Sum / Cab_Det / Cab_Subsum / Cab_Tolsum 拓扑，并已重挂双向跳转超链接与小计公式。";
+                                 $"已按规则 6 校准所有箱柜的 Cab_Sum / Cab_Det / Cab_Subsum / Cab_Tolsum 拓扑，重挂双向超链接，并已全面恢复底部明细中元器件行序号、单价、总价、成本及小计求和公式。";
                 }
                 else
                 {
                     // 未检测到受纳管分类表时的说明 --硬编码: 报告文本--
                     successMsg = $"✅ 扫描完成！\n\n" +
                                  $"• 清理断链失效幽灵名称：{cleanedDeadNames} 个\n" +
-                                 $"• 当前工作簿中未检测到在【项目信息】中登记的标准分类明细表，未执行箱柜四元组名称注入。";
+                                 $"• 当前工作簿中未检测到在【项目信息】中登记的标准分类明细表，未执行箱柜四元组名称注入与公式修复。";
                 }
 
                 // 弹出修复报告弹窗 --硬编码: 弹窗标题--
-                System.Windows.Forms.MessageBox.Show(successMsg, "定义名称修复报告", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(successMsg, "项目工具修复报告", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {

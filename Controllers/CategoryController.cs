@@ -228,6 +228,54 @@ namespace ExcelAddInDemo.Controllers
                 return new CategoryOperationResult { Success = false, Message = $"批量删除分类失败: {ex.Message}" };
             }
         }
+
+        /// <summary>
+        /// WebAPI 接口: 获取合并分类界面初始化及各个分类摘要数据
+        /// </summary>
+        /// <returns>合并分类初始化响应模型</returns>
+        public MergeCategoryInitResponse GetMergeCategoriesData()
+        {
+            try
+            {
+                // 调度业务服务层扫描所有分类并提取简要统计信息
+                return ExcelServices.GetMergeCategoriesData();
+            }
+            catch (Exception ex)
+            {
+                // 记录控制器异常日志
+                LogHelper.WriteLog($"控制器获取合并分类数据异常: {ex.Message}");
+                return new MergeCategoryInitResponse();
+            }
+        }
+
+        /// <summary>
+        /// WebAPI 接口: 执行合并分类核心业务 (将源分类箱柜明细追加合并至目标分类)
+        /// </summary>
+        /// <param name="request">合并分类表单提交请求</param>
+        /// <param name="progressCallback">进度更新委托回调</param>
+        /// <returns>操作执行结果对象</returns>
+        public CategoryOperationResult MergeCategories(
+            MergeCategoryRequest request,
+            Action<int, string>? progressCallback = null)
+        {
+            // 入参非空校验
+            if (request == null)
+            {
+                return new CategoryOperationResult { Success = false, Message = "合并分类请求参数不能为空！" };
+            }
+
+            try
+            {
+                // 调度业务服务层执行合并操作并透传进度回调
+                return ExcelServices.MergeCategories(request, explicitApp: null, progressCallback: progressCallback);
+            }
+            catch (Exception ex)
+            {
+                // 记录控制器异常日志
+                LogHelper.WriteLog($"控制器合并分类异常: {ex.Message}");
+                return new CategoryOperationResult { Success = false, Message = $"合并分类异常: {ex.Message}" };
+            }
+        }
     }
 }
 

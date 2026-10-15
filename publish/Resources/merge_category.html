@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>合并分类</title>
+  <!-- 引入 Element Plus 样式库 (优先国内高速 npmmirror 镜像，失败回退 unpkg) -->
+  <link rel="stylesheet" href="https://registry.npmmirror.com/element-plus/2.3.14/files/dist/index.css" onerror="this.onerror=null;this.href='https://unpkg.com/element-plus/dist/index.css'">
+  <!-- 引入 Font Awesome 图标库 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- 引入 Vue 3 核心库 (优先国内高速 npmmirror 镜像，失败回退 unpkg) -->
+  <script src="https://registry.npmmirror.com/vue/3.3.4/files/dist/vue.global.prod.js" onerror="this.onerror=null;this.src='https://unpkg.com/vue@3/dist/vue.global.js'"></script>
+  <!-- 引入 Element Plus 组件库 (优先国内高速 npmmirror 镜像，失败回退 unpkg) -->
+  <script src="https://registry.npmmirror.com/element-plus/2.3.14/files/dist/index.full.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/element-plus'"></script>
+  <!-- 引入公共绿蓝相间主题样式 (主色调 #009688) -->
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    /* 全局重置与基础设定 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+      user-select: none;
+      background-color: #ffffff;
+      color: #333333;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      border: 1px solid #dcdfe6;
+      background-color: #ffffff;
+    }
+
+    /* 顶部拖拽标题栏 */
+    .window-header {
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px 0 12px;
+      background: var(--theme-gradient, linear-gradient(135deg, #009688 0%, #00796b 100%));
+      color: #ffffff;
+      cursor: move;
+      flex-shrink: 0;
+      touch-action: none;
+    }
+
+    .window-title-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .window-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .action-btn {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 3px;
+      color: #ffffff;
+      opacity: 0.85;
+      font-size: 13px;
+      transition: all 0.2s ease;
+    }
+
+    .action-btn:hover {
+      opacity: 1;
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .action-btn.close-btn:hover {
+      background-color: #ef4444;
+      color: #ffffff;
+    }
+
+    /* 中部内容区 */
+    .content-box {
+      flex: 1;
+      padding: 16px 20px 8px 20px;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    .tip-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      background: #e0f2f1;
+      border: 1px solid #b2dfdb;
+      border-radius: 4px;
+      padding: 8px 12px;
+      margin-bottom: 14px;
+      color: #00796b;
+      font-size: 12px;
+      line-height: 1.5;
+      flex-shrink: 0;
+    }
+
+    .tip-banner i {
+      font-size: 14px;
+      color: #009688;
+      margin-top: 2px;
+    }
+
+    /* 表单与选择器行 */
+    .select-grid {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-shrink: 0;
+    }
+
+    .select-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .select-item label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #374151;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .arrow-icon {
+      margin-top: 22px;
+      font-size: 18px;
+      color: #009688;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+    }
+
+    /* 预览对比卡片 */
+    .preview-card-wrap {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-shrink: 0;
+    }
+
+    .preview-card {
+      flex: 1;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .card-header {
+      font-size: 12px;
+      font-weight: 600;
+      color: #475569;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px dashed #cbd5e1;
+      padding-bottom: 4px;
+    }
+
+    .card-metric {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    .card-metric .val {
+      font-weight: 600;
+      color: #0f172a;
+    }
+
+    .card-metric .highlight {
+      color: #009688;
+    }
+
+    .card-cabs {
+      margin-top: 4px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      max-height: 56px;
+      overflow-y: auto;
+    }
+
+    .cab-tag {
+      font-size: 11px;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 3px;
+      padding: 1px 6px;
+      color: #334155;
+    }
+
+    /* 选项组 */
+    .options-box {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 10px;
+      flex-shrink: 0;
+    }
+
+    .option-tip {
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 4px;
+      padding-left: 24px;
+      line-height: 1.4;
+    }
+
+    /* 动态进度条区域 */
+    .progress-box {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex-shrink: 0;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .progress-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+    }
+
+    .progress-label {
+      font-weight: 600;
+      color: #00796b;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .progress-val {
+      font-weight: 700;
+      color: #009688;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 底部按钮栏 */
+    .footer-bar {
+      height: 48px;
+      padding: 0 20px;
+      background: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .footer-summary {
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    .footer-summary span {
+      font-weight: 600;
+      color: #009688;
+    }
+
+    .footer-btns {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* 统一覆盖 Element Plus 主题色与细节 */
+    .el-button--primary {
+      background-color: #009688 !important;
+      border-color: #009688 !important;
+    }
+
+    .el-button--primary:hover {
+      background-color: #00796b !important;
+      border-color: #00796b !important;
+    }
+
+    .el-checkbox__input.is-checked .el-checkbox__inner {
+      background-color: #009688 !important;
+      border-color: #009688 !important;
+    }
+
+    .el-checkbox__input.is-checked + .el-checkbox__label {
+      color: #009688 !important;
+      font-weight: 600;
+    }
+
+    .el-select .el-input__wrapper.is-focus {
+      box-shadow: 0 0 0 1px #009688 inset !important;
+    }
+
+    /* 防止 Vue 模板加载完成前闪烁原始插值语法 */
+    [v-cloak] {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="app" v-cloak>
+    <!-- 顶部拖拽标题栏 -->
+    <div class="window-header" @mousedown="onHeaderMouseDown">
+      <div class="window-title-box">
+        <i class="fa-solid fa-code-merge"></i>
+        <span>合并分类</span>
+      </div>
+      <div class="window-actions">
+        <div class="action-btn close-btn" title="关闭窗口" @click.stop="closeWindow" @mousedown.stop>
+          <i class="fa-solid fa-xmark"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- 中部内容区 -->
+    <div class="content-box">
+      <!-- 提示 Banner -->
+      <div class="tip-banner">
+        <i class="fa-solid fa-circle-info"></i>
+        <div>
+          将【源分类】的所有箱柜汇总行及底表明细完整迁移并追加到【目标分类】末尾，自动重排序号、重写定义名称并联动更新《项目信息》设备汇总。
+        </div>
+      </div>
+
+      <!-- 分类选择器网格 -->
+      <div class="select-grid">
+        <div class="select-item">
+          <label>
+            <i class="fa-solid fa-file-export" style="color: #f59e0b;"></i>
+            <span>被合并的源分类</span>
+          </label>
+          <el-select
+            v-model="sourceCategory"
+            placeholder="请选择源分类"
+            style="width: 100%;"
+            :disabled="submitting"
+            @change="onSourceChange">
+            <el-option
+              v-for="cat in availableSourceCategories"
+              :key="cat.categoryName"
+              :label="formatCategoryLabel(cat)"
+              :value="cat.categoryName">
+            </el-option>
+          </el-select>
+        </div>
+
+        <div class="arrow-icon">
+          <i class="fa-solid fa-arrow-right-long"></i>
+        </div>
+
+        <div class="select-item">
+          <label>
+            <i class="fa-solid fa-file-import" style="color: #009688;"></i>
+            <span>接收合并的目标分类</span>
+          </label>
+          <el-select
+            v-model="targetCategory"
+            placeholder="请选择目标分类"
+            style="width: 100%;"
+            :disabled="submitting"
+            @change="onTargetChange">
+            <el-option
+              v-for="cat in availableTargetCategories"
+              :key="cat.categoryName"
+              :label="formatCategoryLabel(cat)"
+              :value="cat.categoryName">
+            </el-option>
+          </el-select>
+        </div>
+      </div>
+
+      <!-- 预览对比看板 -->
+      <div class="preview-card-wrap">
+        <!-- 源分类卡片 -->
+        <div class="preview-card">
+          <div class="card-header">
+            <span>源分类: {{ sourceCategory || '未选择' }}</span>
+            <el-tag size="small" type="warning" effect="plain">
+              {{ sourceCatInfo.cabinetTypeCount || sourceCatInfo.cabinetCount }} 种 (共 {{ sourceCatInfo.totalQuantity || sourceCatInfo.cabinetCount }} 台)
+            </el-tag>
+          </div>
+          <div class="card-metric">
+            <span>销售总额:</span>
+            <span class="val">¥ {{ formatMoney(sourceCatInfo.totalPrice) }}</span>
+          </div>
+          <div class="card-metric">
+            <span>包含箱柜:</span>
+          </div>
+          <div class="card-cabs">
+            <span v-for="name in sourceCatInfo.cabinetNames" :key="name" class="cab-tag">{{ name }}</span>
+            <span v-if="sourceCatInfo.cabinetNames.length === 0" style="font-size: 11px; color: #94a3b8;">无箱柜</span>
+          </div>
+        </div>
+
+        <!-- 目标分类卡片 -->
+        <div class="preview-card">
+          <div class="card-header">
+            <span>目标分类: {{ targetCategory || '未选择' }}</span>
+            <el-tag size="small" type="success" effect="plain">
+              {{ targetCatInfo.cabinetTypeCount || targetCatInfo.cabinetCount }} 种 (共 {{ targetCatInfo.totalQuantity || targetCatInfo.cabinetCount }} 台)
+            </el-tag>
+          </div>
+          <div class="card-metric">
+            <span>现有金额:</span>
+            <span class="val">¥ {{ formatMoney(targetCatInfo.totalPrice) }}</span>
+          </div>
+          <div class="card-metric">
+            <span>合并后预估:</span>
+            <span class="val highlight">
+              {{ (sourceCatInfo.cabinetTypeCount || sourceCatInfo.cabinetCount) + (targetCatInfo.cabinetTypeCount || targetCatInfo.cabinetCount) }} 种 / 共 {{ (sourceCatInfo.totalQuantity || sourceCatInfo.cabinetCount) + (targetCatInfo.totalQuantity || targetCatInfo.cabinetCount) }} 台
+            </span>
+          </div>
+          <div class="card-metric">
+            <span>合并后总额:</span>
+            <span class="val highlight">¥ {{ formatMoney(sourceCatInfo.totalPrice + targetCatInfo.totalPrice) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 选项配置 -->
+      <div class="options-box">
+        <el-checkbox v-model="deleteSourceCategory" :disabled="submitting">
+          合并后彻底删除源分类工作表【{{ sourceCategory || '源分类' }}】
+        </el-checkbox>
+        <div class="option-tip">
+          勾选后，系统将自动从当前工作簿中注销并物理删除源分类工作表，同时在《项目信息》主表中移除对应的分类汇总行，防止遗留冗余表。
+        </div>
+      </div>
+
+      <!-- 动态进度条区域 (在合并过程中或有进度时展示) -->
+      <div v-if="submitting || progressPercent > 0" class="progress-box">
+        <div class="progress-header">
+          <span class="progress-label">
+            <i class="fa-solid fa-spinner fa-spin" v-if="submitting && progressPercent < 100"></i>
+            <i class="fa-solid fa-circle-check" style="color: #009688;" v-else-if="progressPercent >= 100"></i>
+            <span>{{ progressMessage || '正在处理中...' }}</span>
+          </span>
+          <span class="progress-val">{{ progressPercent }}%</span>
+        </div>
+        <el-progress
+          :percentage="progressPercent"
+          :show-text="false"
+          :stroke-width="8"
+          color="#009688"
+          striped
+          striped-flow>
+        </el-progress>
+      </div>
+    </div>
+
+    <!-- 底部状态与操作按钮栏 -->
+    <div class="footer-bar">
+      <div class="footer-summary">
+        待合并箱柜: <span>{{ sourceCatInfo.cabinetTypeCount || sourceCatInfo.cabinetCount }}</span> 种 / <span>{{ sourceCatInfo.totalQuantity || sourceCatInfo.cabinetCount }}</span> 台
+      </div>
+      <div class="footer-btns">
+        <el-button @click="closeWindow" :disabled="submitting" @mousedown.stop>取消</el-button>
+        <el-button
+          type="primary"
+          :loading="submitting"
+          :disabled="!canSubmit"
+          @click="submitMerge"
+          @mousedown.stop>
+          <i class="fa-solid fa-code-merge" style="margin-right: 6px;"></i>开始合并
+        </el-button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    const app = createApp({
+      setup() {
+        // 分类列表数据
+        const categories = ref([]);
+        // 当前选中的源分类与目标分类
+        const sourceCategory = ref('');
+        const targetCategory = ref('');
+        // 是否删除源分类
+        const deleteSourceCategory = ref(true);
+        // 提交加载中状态
+        const submitting = ref(false);
+        // 进度百分比与描述信息
+        const progressPercent = ref(0);
+        const progressMessage = ref('');
+
+        // 统一向 C# 宿主发送 JSON 消息
+        const postToCSharp = (obj) => {
+          if (window.chrome && window.chrome.webview) {
+            const payload = typeof obj === 'string' ? obj : JSON.stringify(obj);
+            window.chrome.webview.postMessage(payload);
+          }
+        };
+
+        // 格式化金额数值
+        const formatMoney = (val) => {
+          if (!val || isNaN(val)) return '0.00';
+          return Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        };
+
+        // 格式化分类下拉展示标签 (清晰呈现种类数与总台数)
+        const formatCategoryLabel = (cat) => {
+          if (!cat) return '';
+          const typeCount = cat.cabinetTypeCount || cat.cabinetCount || 0;
+          const totalQty = cat.totalQuantity || cat.cabinetCount || 0;
+          if (totalQty > 0 && totalQty !== typeCount) {
+            return `${cat.categoryName} (${typeCount}种, ${totalQty}台)`;
+          }
+          return `${cat.categoryName} (${typeCount}台)`;
+        };
+
+        // 可选源分类列表
+        const availableSourceCategories = computed(() => {
+          return categories.value;
+        });
+
+        // 可选目标分类列表 (排除当前选中的源分类)
+        const availableTargetCategories = computed(() => {
+          return categories.value.filter(c => c.categoryName !== sourceCategory.value);
+        });
+
+        // 获取源分类摘要信息
+        const sourceCatInfo = computed(() => {
+          const found = categories.value.find(c => c.categoryName === sourceCategory.value);
+          return found || { cabinetCount: 0, cabinetTypeCount: 0, totalQuantity: 0, totalPrice: 0, cabinetNames: [] };
+        });
+
+        // 获取目标分类摘要信息
+        const targetCatInfo = computed(() => {
+          const found = categories.value.find(c => c.categoryName === targetCategory.value);
+          return found || { cabinetCount: 0, cabinetTypeCount: 0, totalQuantity: 0, totalPrice: 0, cabinetNames: [] };
+        });
+
+        // 是否允许提交
+        const canSubmit = computed(() => {
+          return sourceCategory.value &&
+                 targetCategory.value &&
+                 sourceCategory.value !== targetCategory.value &&
+                 !submitting.value;
+        });
+
+        // 源分类变更回调
+        const onSourceChange = () => {
+          // 若目标分类与源分类相同，重置或自动挑选下一个可用目标
+          if (targetCategory.value === sourceCategory.value) {
+            const nextTarget = availableTargetCategories.value[0];
+            targetCategory.value = nextTarget ? nextTarget.categoryName : '';
+          }
+        };
+
+        // 目标分类变更回调
+        const onTargetChange = () => {
+          // 保留当前目标分类
+        };
+
+        // 提交合并操作
+        const submitMerge = () => {
+          if (!canSubmit.value) return;
+
+          const tipMsg = deleteSourceCategory.value
+            ? `确定将分类【${sourceCategory.value}】的所有箱柜合并至【${targetCategory.value}】并删除源工作表吗？`
+            : `确定将分类【${sourceCategory.value}】的所有箱柜合并复制至【${targetCategory.value}】吗？`;
+
+          ElementPlus.ElMessageBox.confirm(
+            tipMsg,
+            '确认合并分类',
+            {
+              confirmButtonText: '立即合并',
+              cancelButtonText: '取消',
+              type: 'warning'
+            }
+          ).then(() => {
+            submitting.value = true;
+            progressPercent.value = 5;
+            progressMessage.value = '正在准备合并...';
+            postToCSharp({
+              action: 'submitMergeCategories',
+              data: {
+                sourceCategoryName: sourceCategory.value,
+                targetCategoryName: targetCategory.value,
+                deleteSourceCategory: deleteSourceCategory.value
+              }
+            });
+          }).catch(() => {});
+        };
+
+        // 关闭窗口
+        const closeWindow = () => {
+          postToCSharp({ action: 'closeWindow' });
+        };
+
+        // 顶栏拖拽支持 (mousedown 物理检测与位移)
+        let isDragging = false;
+        let startX = 0;
+        let startY = 0;
+
+        const onHeaderMouseDown = (e) => {
+          if (e.button !== 0) return;
+          isDragging = true;
+          startX = e.screenX;
+          startY = e.screenY;
+
+          const onMouseMove = (moveEvent) => {
+            if (!isDragging) return;
+            const deltaX = moveEvent.screenX - startX;
+            const deltaY = moveEvent.screenY - startY;
+            if (deltaX !== 0 || deltaY !== 0) {
+              startX = moveEvent.screenX;
+              startY = moveEvent.screenY;
+              postToCSharp({
+                action: 'moveWindow',
+                data: { deltaX, deltaY }
+              });
+            }
+          };
+
+          const onMouseUp = () => {
+            isDragging = false;
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+          };
+
+          window.addEventListener('mousemove', onMouseMove);
+          window.addEventListener('mouseup', onMouseUp);
+        };
+
+        // 初始化加载数据
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (event) => {
+              try {
+                let msg = event.data;
+                if (typeof msg === 'string') {
+                  msg = JSON.parse(msg);
+                }
+                if (!msg || !msg.action) return;
+
+                if (msg.action === 'renderMergeCategoriesData') {
+                  const data = msg.data || {};
+                  categories.value = data.categories || [];
+                  sourceCategory.value = data.defaultSourceCategory || '';
+                  targetCategory.value = data.defaultTargetCategory || '';
+                } else if (msg.action === 'mergeProgress') {
+                  // 实时进度推送
+                  const pData = msg.data || {};
+                  progressPercent.value = pData.percent || 0;
+                  progressMessage.value = pData.message || '';
+                } else if (msg.action === 'mergeCategoriesResult') {
+                  submitting.value = false;
+                  const res = msg.data || {};
+                  if (res.success) {
+                    progressPercent.value = 100;
+                    progressMessage.value = res.message || '分类合并成功！';
+                    ElementPlus.ElMessage.success(res.message || '分类合并成功！');
+                  } else {
+                    ElementPlus.ElMessage.error(res.message || '分类合并失败！');
+                  }
+                }
+              } catch (err) {
+                console.error('解析 WebMessage 失败:', err);
+              }
+            });
+
+            // 请求获取合并分类初始数据
+            postToCSharp({ action: 'getMergeCategoriesData' });
+          }
+        });
+
+        return {
+          categories,
+          sourceCategory,
+          targetCategory,
+          deleteSourceCategory,
+          submitting,
+          progressPercent,
+          progressMessage,
+          availableSourceCategories,
+          availableTargetCategories,
+          sourceCatInfo,
+          targetCatInfo,
+          canSubmit,
+          formatMoney,
+          formatCategoryLabel,
+          onSourceChange,
+          onTargetChange,
+          submitMerge,
+          closeWindow,
+          onHeaderMouseDown
+        };
+      }
+    });
+
+    app.use(ElementPlus);
+    app.mount('#app');
+  </script>
+</body>
+</html>

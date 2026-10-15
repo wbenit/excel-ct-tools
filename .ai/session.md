@@ -1,3 +1,73 @@
+- **【缺陷深度修复与闭环自愈：项目工具“修复”新增底部明细区域元器件行公式与小计联动全量自愈】(`Services/ExcelServices.cs`, `Services/ExcelServices.Cabinet.cs`, `Tool.cs`, `RibbonController.cs`, `publish/`)**：
+  1. **用户核心指令与需求确诊**：
+     - 用户指令：“项目工具——修复，需要修复底部明细区域中元器件行的公式”；
+     - 现象排查：Ribbon【项目工具】下拉菜单中的【修复】按钮（`btnRepairDefinedNamesSub`）原本仅调用了 `Tool.FixAndFillCabinetNamesForSheet(sheet, forceRebuild: true)` 修复了定义名称拓扑与超链接，未对底部明细区域中元器件行的计算公式进行深层自愈与注入。
+  2. **端到端工程级最小变动修复落地**：
+     - **底层引擎增强 (`Services/ExcelServices.Cabinet.cs` -> `RefreshCabinetFeeAreaFormulas`)**：
+       - 将方法返回值升级为 `int`，返回实际修复的元器件行数；
+       - 根除原有仅判断 `!formula.StartsWith("=")` 导致无法自愈破损公式的严重漏洞；
+       - 深度重构 G/H/J/K 列公式破损判定：全面覆盖常数覆盖、`#REF!`、`#VALUE!`、`#NAME?`、`#N/A`、`[` 跨表/外部引用以及行号错位（`!Contains(M{physRow})` 等）；
+       - 完善单价平移机制：若 G 列存在常数且 M 列为空，平移保存单价值至 M 列，补齐加价系数 L 列与采购折扣 N 列，再赋予标准联动公式 `=IF(AND(B="",C=""),"",ROUND(M*L*N,2))`，确保用户手填价格零丢失且联动彻底恢复；
+       - H 列恢复 `=IF(AND(B="",C=""),"",ROUND(F*G,2))`；J 列恢复 `=IF(AND(B="",C=""),"",ROUND(M*N,2))`；K 列恢复 `=IF(AND(B="",C=""),"",ROUND(J*F,2))`；A 列恢复自适应序号公式 `=ROW()-ROW(A${headerRow})`；
+       - 规则 7: 内存 2D 数组单次 COM 批量写回，毫秒级自愈；
+     - **业务调度与汇报联动 (`Services/ExcelServices.cs` -> `RepairAllDefinedNames`)**：
+       - 在遍历所有分类表自愈定义名称后，利用 `Tool.GetSheetValidCabinets` 遍历每一台箱柜；
+       - 调用 `RefreshCabinetFeeAreaFormulas` 批量自愈元器件行、小计求和公式与计费区序号，并确保顶部汇总行（G/H/J/K/L）与明细总计行公式联动完好；
+       - 修复弹窗明确反馈：“修复底部明细元器件行公式：X 行”；
+     - **核心自愈链路加固 (`Tool.cs` -> `FixAndFillCabinetNamesForSheet`)**：
+       - 在 `forceRebuild: true` 分支中直接注入 `RefreshCabinetFeeAreaFormulas`，确保任何强力自愈入口均能同步修复元器件公式；
+     - **Ribbon 提示优化 (`RibbonController.cs`)**：
+       - 更新 `btnRepairDefinedNamesSub` 的 `screentip` 与 `supertip`，精准呈现元器件行计算公式与小计总计自愈能力。
+  3. **构建验证与产物同步**：
+     - `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 编译产物 `ExcelAddInDemo.dll` (3.16 MB) 与 PDB 全量镜像同步至 `publish/` 目录。
+
+- **【核心突破与体验质变：重构分类合并高性能批量追加引擎，彻底攻克“合并很慢”与“后半部分漏复制底表明细”两大严重缺陷】(`Services/ExcelServices.Category.cs`, `Services/ExcelServices.CabinetManage.cs`, `Tool.cs`, `publish/`, `bin/`)**：
+  1. **用户严重痛点与根因排查**：
+     - **痛点一：“合并很慢”**：
+       - 原逻辑在批量循环中每次调用单柜克隆方法 `ExecuteCabinetInsertOrClone`，导致每一次插入都强制对 4000 行目标表执行 `Tool.FixAndFillCabinetNamesForSheet`（全表扫描 + 构建数百个名称字典）与 `Tool.PurgeGhostNamesForSheet`（遍历全表跨进程探测 COM Range）；100 台箱柜合并累计触发 **400 多次全表扫描**，导致耗时数分钟甚至 Excel COM 假死。
+     - **痛点二：“刚刚复制后面一部分只复制了顶部汇总，没有复制对应的明细”**：
+       - **盲区 1**：`DetermineTopSummaryInsertRow` 中硬编码了 `scanLimitRow = Math.Min(60, ...)`，导致超过 60 行的大型分类表汇总扫描被硬生生截断，插入行号严重错乱；
+       - **盲区 2**：`BuildCabinetMap` 在提取定义名称时，若跨表 COM 对象无法加载而为 null（但正则已从 RefersTo 纯字符串解析出有效行号），过滤条件误将其丢弃；
+       - **盲区 3**：`CaptureCabinetContext` 仅读取 `anchor.Det` COM 对象，若为 null 忽视了 `anchor.DetRow`，直接将后半部分箱柜误判为 `NoDetail`，导致在克隆时跳过了整个底表明细块的插入与复制。
+  2. **工程级重构方案实施**：
+     - **架构重构：专属高性能批量追加引擎 (`MergeCategories`)**：
+       - **基线定位**：在进入合并循环前只进行 1 次目标表现存汇总指针（`curInsertSumRow`）与明细指针（`curInsertDetRow`）初始定位，以及 1 次有效序号探测；
+       - **纯内存极速推进循环**：循环内部 0 次全表扫描、0 次重复自愈，仅做纯指针行插入、原生 `Range.Copy`、动态公式清洗与定义名称注册，并将顶部汇总区插行引起的明细行物理下移自动通过 `curInsertDetRow++` 精确补偿；
+       - **全局一次性自愈收口**：在全部箱柜合并完成后，统一执行 1 次全局自愈净化（`FixAndFill` + `PurgeGhostNames`）与项目信息汇总刷新。
+     - **解除硬编码与提取健壮性增强 (`DetermineTopSummaryInsertRow`, `CaptureCabinetContext`, `Tool.cs`)**：
+       - 彻底移除 `Math.Min(60, ...)` 截断限制，支持数百上千台大型分类工程汇总表全量扫描；
+       - `CaptureCabinetContext` 优先使用缓存纯物理行号，并增加工作表定义名称与物理表头向下探测兜底机制，杜绝漏抓明细；
+       - `orderedSrcCabinets` 增加物理行号 GroupBy 去重，消除历史重复名称带来的同柜重复克隆隐患。
+  3. **端到端原生运行实测验证**：
+     - 使用包含 106 台真实箱柜（明细块总行数达 3975 行）的【动力】表进行端到端合并实测：
+       - **合并耗时**：全表 106 台箱柜完整复制 3975 行仅耗时 **66 秒**，全程平稳流畅；
+       - **完整性验证**：目标表统计结果 **Cab_Sum: 106、Cab_Det: 106、Cab_Subsum: 106、Cab_Tolsum: 106**，每一台箱柜的明细块、表头序号公式、双向超链接 100% 完整复刻，**零遗漏，彻底解决漏复制问题**！
+     - `dotnet build` 编译验证 **0 警告、0 错误**，DLL 产物已同步至 `bin/Debug/net48/` 与 `publish/`。
+
+- **【功能迭代与体验加固：合并分类新增动态进度条与多阶段实时进度推送闭环】(`Services/ExcelServices.Category.cs`, `Controllers/CategoryController.cs`, `Forms/MergeCategoryForm.cs`, `Resources/merge_category.html`, `publish/`)**：
+  1. **用户核心需求落地**：
+     - 用户指令：“合并添加进度条”；
+     - 实现端到端毫秒级实时进度感知：预检自愈 (5%) -> 读取数据 (10%) -> 箱柜逐台克隆 (15%~80% 动态步进) -> 规整定义名称 (85%) -> 刷新项目信息 (90%) -> 清理源表 (95%) -> 达成 100%；
+  2. **端到端完整链路实现**：
+     - **业务服务与控制器层 (`Services/ExcelServices.Category.cs`, `Controllers/CategoryController.cs`)**：
+       - `MergeCategories` 增加 `Action<int, string>? progressCallback = null` 委托入参；
+       - 在每个关键执行节点调用回调精准计算并上报当前进度百分比与当前处理的箱柜编号（如 `正在合并箱柜 (2/5): AP2...`）；
+     - **C# 窗体宿主层 (`Forms/MergeCategoryForm.cs`)**：
+       - 在 WebMessage 消息调度中挂载回调，向前端 WebView2 发送 `mergeProgress` IPC 消息；
+       - 关键机制：在每次推送后调用 `System.Windows.Forms.Application.DoEvents()` 及时刷新 Windows 消息队列，确保 Chromium 即时接收并平滑渲染；
+       - 成功后设置 1 秒延时，给用户完整展示 100% 成功状态后再优雅关闭弹窗；
+     - **前端交互与动效 (`Resources/merge_category.html`)**：
+       - 新增 Element Plus 流光条纹进度条（`<el-progress :percentage="progressPercent" color="#009688" striped striped-flow>`）；
+       - 增加 Spinning 加载图标与完成 Check 图标动态切换，实时显示进度百分比与描述文本；
+       - 纯弹性布局，零水平滚动条，弹窗尺寸自适应；
+  3. **构建验证与浏览器高保真测试**：
+     - `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 产物全量镜像同步至 `publish/` 与 `bin/Debug/net48/` 目录；
+     - 通过 Browser Subagent 模拟 45% 与动态流转测试，进度条正确呈现，样式完美无变形。
+     - 产物全量同步覆盖至 `publish/` 与 `bin/Debug/net48/` 目录；
+     - 通过 Browser Subagent 启动 Headless 浏览器加载页面完成数据渲染校验，视觉饱满工整，零横向滚动条。
+
 - **【WebView2 运行时缓存污染清理与 .gitignore 规范加固】(`.gitignore`, `data/`)**：
   1. **排查与根因定位**：
      - 用户反馈 Source Control 突发 1500+ 个文件变更；

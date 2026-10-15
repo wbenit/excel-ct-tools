@@ -105,11 +105,13 @@ namespace ExcelAddInDemo
               <button id='btnCopyCategory' label='复制分类' imageMso='Copy' onAction='OnMenuAction' />
               <!-- 4. 插入复制的分类 -->
               <button id='btnInsertCopiedCategory' label='插入复制的分类' imageMso='Paste' onAction='OnMenuAction' />
-              <!-- 5. 删除分类 -->
+              <!-- 5. 合并分类 -->
+              <button id='btnMergeCategory' label='合并分类' imageMso='MergeCells' screentip='合并分类' supertip='将指定分类的所有箱柜明细完整迁移合并到目标分类中，并自动更新项目汇总。' onAction='OnMenuAction' />
+              <!-- 6. 删除分类 -->
               <button id='btnDeleteCategory' label='删除分类' imageMso='Delete' onAction='OnMenuAction' />
               <!-- 分割线 -->
               <menuSeparator id='sepCategoryCleanup' />
-              <!-- 6. 删除无数量的箱柜 -->
+              <!-- 7. 删除无数量的箱柜 -->
               <button id='btnDeleteZeroQuantityCabinets' label='删除无数量的箱柜' imageMso='TableRowsDelete' screentip='删除无数量的箱柜' supertip='一键扫描当前分类表中顶部汇总行数量为 0 或未填写的箱柜，批量安全删除其汇总行、底表明细块及定义名称。' onAction='OnMenuAction' />
             </menu>
           </splitButton>
@@ -302,7 +304,7 @@ namespace ExcelAddInDemo
           <!-- 项目工具下拉菜单 (使用标准工具箱图标 ControlToolboxOutlook，解决大图标空白问题) -->
           <menu id='menuProjectTools' label='项目工具' imageMso='ControlToolboxOutlook' size='large'>
             <!-- 修复定义名称项 (在项目工具下拉菜单中同步提供快捷入口) -->
-            <button id='btnRepairDefinedNamesSub' label='修复' imageMso='AutoCorrect' onAction='OnMenuAction' screentip='修复所有定义名称' supertip='一键检查并修复当前工作簿所有分类表中的箱柜定义名称、小计公式与双向超链接' />
+            <button id='btnRepairDefinedNamesSub' label='修复' imageMso='AutoCorrect' onAction='OnMenuAction' screentip='修复定义名称与明细公式' supertip='一键检查并修复当前工作簿所有分类表中的箱柜定义名称、双向超链接、底部明细元器件行计算公式(A/G/H/J/K列)与小计总计公式' />
             <!-- 母排铜排计算按钮 (根据W列电流与X列极数计算并插入明细行) -->
             <button id='btnCopperBusbarCalc' label='母排铜排计算' imageMso='ChartInsert' screentip='母排铜排智能计算' supertip='根据W列电流与X列级数智能计算各箱柜主母排与分支排用量，一键安全插入元器件明细行' onAction='OnMenuAction' />
             <!-- 智能输入按钮 -->
@@ -614,6 +616,12 @@ namespace ExcelAddInDemo
             {
                 // 弹出插入复制分类确认窗口并执行克隆与项目信息联动
                 ExcelServices.ShowInsertCopiedCategoryDialog();
+            }
+            // 响应“合并分类”按钮指令
+            else if (controlId == "btnMergeCategory")
+            {
+                // 弹出基于 WebView2 + Vue 3 的合并分类窗口
+                ExcelServices.ShowMergeCategoryDialog();
             }
             // 响应“删除分类”按钮指令
             else if (controlId == "btnDeleteCategory")

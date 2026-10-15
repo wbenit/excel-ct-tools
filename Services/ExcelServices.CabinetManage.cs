@@ -238,24 +238,156 @@ namespace ExcelAddInDemo
                     return null;
                 }
 
-                // 3. 提取箱柜锚点与物理行号
+                // 3. 提取箱柜锚点与物理行号 (优先使用缓存的纯物理行号，兼顾 COM 属性读取)
                 int k = targetCab.Value.Key;
                 var anchor = targetCab.Value.Value;
-                int sumRow = anchor.Sum != null ? Convert.ToInt32(anchor.Sum.Row) : 0;
-                int detRow = anchor.Det != null ? Convert.ToInt32(anchor.Det.Row) : 0;
-                int subsumRow = anchor.Subsum != null ? Convert.ToInt32(anchor.Subsum.Row) : 0;
-                int tolsumRow = anchor.Tolsum != null ? Convert.ToInt32(anchor.Tolsum.Row) : 0;
+                int sumRow = anchor.SumRow > 0 ? anchor.SumRow : (anchor.Sum != null ? Convert.ToInt32(anchor.Sum.Row) : 0);
+                int detRow = anchor.DetRow > 0 ? anchor.DetRow : (anchor.Det != null ? Convert.ToInt32(anchor.Det.Row) : 0);
+                int subsumRow = anchor.SubsumRow > 0 ? anchor.SubsumRow : (anchor.Subsum != null ? Convert.ToInt32(anchor.Subsum.Row) : 0);
+                int tolsumRow = anchor.TolsumRow > 0 ? anchor.TolsumRow : (anchor.Tolsum != null ? Convert.ToInt32(anchor.Tolsum.Row) : 0);
 
-                // 判断是否为无明细箱柜 (规则 6: detRow <= 0 为无明细)
-                bool isNoDetail = (detRow <= 0);
-
-                // 4. 读取箱柜顶部汇总基本信息
+                // 4. 读取箱柜顶部汇总基本信息 (优先读取以便支持后续物理表头匹配)
                 string cabNo = Convert.ToString(activeSheet.Cells[sumRow, 2].Value)?.Trim() ?? $"箱柜{k}";
                 string cabName = Convert.ToString(activeSheet.Cells[sumRow, 3].Value)?.Trim() ?? string.Empty;
                 string cabModel = Convert.ToString(activeSheet.Cells[sumRow, 4].Value)?.Trim() ?? string.Empty;
                 string unit = Convert.ToString(activeSheet.Cells[sumRow, 5].Value)?.Trim() ?? "台"; // --硬编码: 默认箱柜单位--
                 double qty = 1.0;
                 try { qty = Convert.ToDouble(activeSheet.Cells[sumRow, 6].Value); } catch { }
+
+                // 健壮性保障 1：若 detRow 缺失，尝试通过定义名称精确提取
+                if (detRow <= 0)
+                {
+                    // 尝试通过定义名称直接查找
+                    var cfgPre = ConfigManager.Instance.Current?.Excel?.Prefixes ?? CabinetPrefixConfig.Default;
+                    dynamic? detNameObj = Tool.SafeGetSheetName(activeSheet, $"{cfgPre.DetPrefix}{k}");
+                    if (detNameObj != null)
+                    {
+                        try { detRow = Convert.ToInt32(detNameObj.RefersToRange.Row); } catch { }
+                    }
+                }
+
+                // 健壮性保障 2：若定义名称未查到，尝试从汇总行 A 列超链接解析底表明细行
+                if (detRow <= 0 && sumRow > 0)
+                {
+                    try
+                    {
+                        dynamic sumCell = activeSheet.Cells[sumRow, 1];
+                        if (sumCell.Hyperlinks != null && sumCell.Hyperlinks.Count > 0)
+                        {
+                            string subAddr = Convert.ToString(sumCell.Hyperlinks.Item(1).SubAddress) ?? "";
+                            if (!string.IsNullOrEmpty(subAddr))
+                            {
+                                // 清洗提取纯名称标识
+                                string cleanTarget = subAddr.Replace("'", "").Replace($"{Convert.ToString(activeSheet.Name)}!", "");
+                                dynamic? linkedName = Tool.SafeGetSheetName(activeSheet, cleanTarget);
+                                if (linkedName != null)
+                                {
+                                    try { detRow = Convert.ToInt32(linkedName.RefersToRange.Row); } catch { }
+                                }
+                                // 若超链接直接包含绝对单元格行号引用 (如 $A$3153)
+                                if (detRow <= 0)
+                                {
+                                    var m = System.Text.RegularExpressions.Regex.Match(subAddr, @"\$[A-Za-z]+\$(\d+)");
+                                    if (m.Success && int.TryParse(m.Groups[1].Value, out int pr))
+                                    {
+                                        detRow = pr;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                // 健壮性保障 3：若仍未获取，以柜号文本在底表物理检索匹配配电箱明细表头
+                if (detRow <= 0 && !string.IsNullOrWhiteSpace(cabNo))
+                {
+                    try
+                    {
+                        // 提取工作表已用区域下边界
+                        dynamic usedRange = activeSheet.UsedRange;
+                        int usedEndRow = Convert.ToInt32(usedRange.Row) + Convert.ToInt32(usedRange.Rows.Count) - 1;
+                        int scanStart = Math.Max(sumRow + 2, 35); // --硬编码: 底表最小起始扫描行--
+
+                        // 仅当底表区域存在可用行时执行快速检索
+                        if (usedEndRow >= scanStart)
+                        {
+                            dynamic searchArea = activeSheet.Range[$"A{scanStart}:C{usedEndRow}"];
+                            // 优先全字精确匹配柜号 (xlWhole = 1, xlValues = -4163)
+                            dynamic found = searchArea.Find(
+                                What: cabNo,
+                                LookIn: -4163,
+                                LookAt: 1,
+                                SearchOrder: 1,
+                                SearchDirection: 1,
+                                MatchCase: false);
+
+                            // 容错部分匹配
+                            if (found == null)
+                            {
+                                found = searchArea.Find(
+                                    What: cabNo,
+                                    LookIn: -4163,
+                                    LookAt: 2, // xlPart = 2
+                                    SearchOrder: 1,
+                                    SearchDirection: 1,
+                                    MatchCase: false);
+                            }
+
+                            if (found != null)
+                            {
+                                int foundRow = Convert.ToInt32(found.Row);
+                                // 校验下一行是否包含元器件明细表头特征
+                                string nA = Convert.ToString(activeSheet.Cells[foundRow + 1, 1].Value2)?.Trim() ?? "";
+                                string nB = Convert.ToString(activeSheet.Cells[foundRow + 1, 2].Value2)?.Trim() ?? "";
+                                string nC = Convert.ToString(activeSheet.Cells[foundRow + 1, 3].Value2)?.Trim() ?? "";
+                                if (nA.Contains("序号") || nA.Contains("项次") || nB.Contains("元件") || nB.Contains("名称") || nC.Contains("型号") || nC.Contains("规格") || nA.Contains("NO"))
+                                {
+                                    // 成功通过物理表头锁定明细行
+                                    detRow = foundRow;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                // 健壮性保障 4：若 detRow 有效但 tolsumRow 缺失，向下安全探测总计行
+                if (detRow > 0 && tolsumRow <= detRow)
+                {
+                    // 向下探测总计行 (通常位于 detRow + 5 至 detRow + 80 范围)
+                    for (int r = detRow + 5; r <= detRow + 80; r++)
+                    {
+                        string cA = Convert.ToString(activeSheet.Cells[r, 1].Value2)?.Trim() ?? "";
+                        string cB = Convert.ToString(activeSheet.Cells[r, 2].Value2)?.Trim() ?? "";
+                        if (cA.Contains("总计") || cB.Contains("总计") || cA.Contains("合计") || cB.Contains("合计"))
+                        {
+                            tolsumRow = r;
+                            break;
+                        }
+                    }
+                    if (tolsumRow <= detRow) tolsumRow = detRow + 30; // --硬编码: 默认总计偏移兜底30行--
+                }
+
+                // 健壮性保障 5：若 detRow 有效但 subsumRow 缺失，向上安全探测小计行
+                if (detRow > 0 && subsumRow <= detRow && tolsumRow > detRow)
+                {
+                    // 在 [detRow + 2, tolsumRow - 1] 范围内倒序探测小计行
+                    for (int r = tolsumRow - 1; r >= detRow + 2; r--)
+                    {
+                        string cA = Convert.ToString(activeSheet.Cells[r, 1].Value2)?.Trim() ?? "";
+                        string cB = Convert.ToString(activeSheet.Cells[r, 2].Value2)?.Trim() ?? "";
+                        if (cA.Contains("小计") || cB.Contains("小计"))
+                        {
+                            subsumRow = r;
+                            break;
+                        }
+                    }
+                    if (subsumRow <= detRow) subsumRow = tolsumRow - 7; // --硬编码: 默认小计偏移兜底7行--
+                }
+
+                // 判断是否为无明细箱柜 (规则 6: detRow <= 0 为无明细)
+                bool isNoDetail = (detRow <= 0);
 
                 // 5. 构造整柜复制上下文模型实体
                 var clip = new Models.CopiedCabinetContext
@@ -474,8 +606,8 @@ namespace ExcelAddInDemo
             int lastPhysicalCabinetRow = 0;
             try
             {
-                // 扫描上界：在明细行上方或前 60 行内截断
-                int scanLimitRow = Math.Min(60, minDetRow != int.MaxValue ? minDetRow - 1 : 45);
+                // 扫描上界：在明细行上方截断，支持数百台大型工程汇总表全量扫描
+                int scanLimitRow = minDetRow != int.MaxValue ? (minDetRow - 1) : 300;
                 if (scanLimitRow >= cabSumStartRow)
                 {
                     // 一次性读取顶部汇总区 A 列至 C 列单元格数据到二维数组
@@ -914,13 +1046,19 @@ namespace ExcelAddInDemo
                     }
                     catch { }
 
-                    // 兜底计算偏移
+                    // 兜底计算偏移 (若定义名称未解析到，优先使用快照中的真实物理行与明细区间)
                     if (realDetRow <= 0)
                     {
                         int sumOffset = (isSameSheet && insertSumRow <= clip.SourceDetStartRow) ? 1 : 0;
                         realDetRow = clip.SourceDetRow + sumOffset;
                         realSubsumRow = clip.SourceSubsumRow + sumOffset;
                         realTolsumRow = clip.SourceTolsumRow + sumOffset;
+                        if (realDetRow <= 0 && clip.SourceDetStartRow > 0)
+                        {
+                            realDetRow = clip.SourceDetStartRow + 3;
+                            realSubsumRow = clip.SourceDetEndRow - 8;
+                            realTolsumRow = clip.SourceDetEndRow - 3;
+                        }
                     }
 
                     // 推导源明细块起止行范围 (通常 detRow - 3 到 tolsumRow + 3)

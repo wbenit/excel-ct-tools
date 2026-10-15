@@ -20,6 +20,9 @@ namespace ExcelAddInDemo
         // 缓存批量删除分类窗体单例引用，避免重复打开
         private static Forms.DeleteCategoryForm? _deleteCategoryFormInstance;
 
+        // 缓存合并分类窗体单例引用，避免重复打开
+        private static Forms.MergeCategoryForm? _mergeCategoryFormInstance;
+
         // 剪贴板中暂存的被复制源分类工作表名称
         private static string _copiedCategorySheetName = string.Empty;
 
@@ -2144,6 +2147,662 @@ namespace ExcelAddInDemo
             {
                 // 记录反向超链接挂载异常日志
                 LogHelper.WriteLog($"绑定分类表【{categorySheetName}】A5 反向超链接异常: {exLink.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 供 Ribbon 菜单调用的“合并分类”弹窗入口 (基于 WebView2 + Vue 3 的非模态交互窗口)
+        /// </summary>
+        public static void ShowMergeCategoryDialog()
+        {
+            try
+            {
+                // 获取当前正在运行的 Excel Application 接口 (安全调用)
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                // 校验工作簿是否已打开
+                if (app == null || app.ActiveWorkbook == null)
+                {
+                    // 提示用户必须先打开工作簿
+                    System.Windows.Forms.MessageBox.Show(
+                        "请先打开或新建一个报价项目工作簿！",
+                        "系统提示",
+                        System.Windows.Forms.MessageBoxButtons.OK,
+                        System.Windows.Forms.MessageBoxIcon.Information);
+                    return;
+                }
+
+                // 统计工作簿中除系统主表外的分类表总数
+                dynamic wb = app.ActiveWorkbook;
+                int catCount = 0;
+                // 系统保留表黑名单 --硬编码: 系统保留表名--
+                var reservedSheets = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "项目信息", "封面", "元件汇总表", "材料分布表",
+                    "元件汇总分布表", "元件汇总调价清单", "屏柜汇总表", "屏柜分项表", "元器件数据管理"
+                };
+
+                // 遍历统计有效分类工作表
+                foreach (dynamic ws in wb.Worksheets)
+                {
+                    string wsName = Convert.ToString(ws.Name)?.Trim() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(wsName) && !reservedSheets.Contains(wsName))
+                    {
+                        catCount++;
+                    }
+                }
+
+                // 规则 9 守门：必须至少存在 2 个分类工作表才能进行合并
+                if (catCount < 2)
+                {
+                    // 弹出拦截提示
+                    System.Windows.Forms.MessageBox.Show(
+                        "当前项目至少需要存在 2 个有效的分类工作表才能进行合并！",
+                        "系统提示",
+                        System.Windows.Forms.MessageBoxButtons.OK,
+                        System.Windows.Forms.MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // 以统一非模态方式展示合并分类窗口
+                ShowModelessForm(ref _mergeCategoryFormInstance, () => new Forms.MergeCategoryForm());
+            }
+            catch (Exception ex)
+            {
+                // 记录打开合并分类窗口异常日志
+                LogHelper.WriteLog($"弹出合并分类窗口异常: {ex.Message}");
+                // 弹出异常提示
+                System.Windows.Forms.MessageBox.Show(
+                    $"弹出合并分类窗口失败: {ex.Message}",
+                    "系统提示",
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// 获取工作簿中所有有效分类的简要统计数据与推荐选项 (供前端合并界面渲染)
+        /// </summary>
+        /// <returns>合并分类初始化响应模型</returns>
+        public static MergeCategoryInitResponse GetMergeCategoriesData()
+        {
+            // 初始化返回响应对象
+            var response = new MergeCategoryInitResponse();
+
+            try
+            {
+                // 获取 Excel COM Application 接口实例
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                if (app == null || app.ActiveWorkbook == null) return response;
+
+                dynamic wb = app.ActiveWorkbook;
+                dynamic? activeSheet = app.ActiveSheet;
+                string activeSheetName = Convert.ToString(activeSheet?.Name)?.Trim() ?? string.Empty;
+
+                // 系统保留工作表黑名单 --硬编码: 系统保留表名--
+                var reservedSheets = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "项目信息", "封面", "元件汇总表", "材料分布表",
+                    "元件汇总分布表", "元件汇总调价清单", "屏柜汇总表", "屏柜分项表", "元器件数据管理"
+                };
+
+                // 遍历收集有效分类工作表
+                foreach (dynamic ws in wb.Worksheets)
+                {
+                    string wsName = Convert.ToString(ws.Name)?.Trim() ?? string.Empty;
+                    // 跳过空白表名与系统保留表
+                    if (string.IsNullOrWhiteSpace(wsName) || reservedSheets.Contains(wsName)) continue;
+
+                    // 实例化单分类摘要 DTO
+                    var item = new CategoryBriefSummaryDto
+                    {
+                        CategoryName = wsName
+                    };
+
+                    try
+                    {
+                        // 规则 8: 在操作/读取分类数据前，显式调用自愈函数纠正定义名称完整性
+                        try { Tool.FixAndFillCabinetNamesForSheet(ws); } catch { }
+
+                        // 获取工作表内所有有效箱柜分布集合
+                        var validCabinets = Tool.GetSheetValidCabinets((object)ws, (object)wb);
+
+                        // 规则 6 架构标准：直接从已识别的有效箱柜映射中提取物理汇总行号 (Cab_Sum_k 锚点)
+                        // 彻底杜绝 minDetRow 猜测与 500 行硬编码截断，实现 100% 精确与箱柜一一对应
+                        var orderedSumRows = validCabinets
+                            .Select(c => c.Value.SumRow > 0 ? c.Value.SumRow : (c.Value.Sum != null ? Convert.ToInt32(c.Value.Sum.Row) : 0))
+                            .Where(r => r >= 6)
+                            .Distinct()
+                            .OrderBy(r => r)
+                            .ToList();
+
+                        if (orderedSumRows.Count > 0)
+                        {
+                            // 确定顶部汇总物理行区间 (最小行至最大行)
+                            int minSumRow = orderedSumRows.First();
+                            int maxSumRow = orderedSumRows.Last();
+
+                            // 规则 7: 根据实际箱柜汇总区间，一次性将 A 列至 H 列加载入内存二维数组 (0 次单格 COM 往返)
+                            dynamic sumRange = ws.Range[$"A{minSumRow}:H{maxSumRow}"];
+                            object[,] vals = (object[,])sumRange.Value2;
+
+                            // 遍历每个箱柜的精准物理汇总行提取信息
+                            foreach (int sRow in orderedSumRows)
+                            {
+                                int rIdx = sRow - minSumRow + 1;
+
+                                // 提取 B 列(柜号) 与 C 列(设备名称)
+                                string cabNo = Convert.ToString(vals[rIdx, 2])?.Trim() ?? "";
+                                string cabName = Convert.ToString(vals[rIdx, 3])?.Trim() ?? "";
+
+                                // 累加箱柜种类数 (每行代表一种箱柜型号)
+                                item.CabinetTypeCount++;
+
+                                // 提取 F 列台数数量 (若为空或非法数值默认按 1 台计)
+                                double qty = 1.0;
+                                try
+                                {
+                                    if (vals[rIdx, 6] != null)
+                                    {
+                                        double parsedQty = Convert.ToDouble(vals[rIdx, 6]);
+                                        if (parsedQty > 0) qty = parsedQty;
+                                    }
+                                }
+                                catch { }
+                                // 累加设备总台数
+                                item.TotalQuantity += qty;
+
+                                // 提取柜号并追加至前端预览标签展示列表 (最多展示前 10 个)
+                                string displayName = !string.IsNullOrWhiteSpace(cabNo) ? cabNo : cabName;
+                                if (item.CabinetNames.Count < 10 && !string.IsNullOrWhiteSpace(displayName))
+                                {
+                                    item.CabinetNames.Add(displayName);
+                                }
+
+                                // 累计 H 列销售总价金额
+                                try
+                                {
+                                    if (vals[rIdx, 8] != null) item.TotalPrice += Convert.ToDouble(vals[rIdx, 8]);
+                                }
+                                catch { }
+                            }
+                        }
+                        else
+                        {
+                            // 兜底情况：若工作表尚未生成定义名称，从第 7 行开始向下扫描实质内容
+                            dynamic used = ws.UsedRange;
+                            int totalRows = used.Rows.Count;
+                            if (totalRows >= 7)
+                            {
+                                dynamic scanRange = ws.Range[$"A7:H{Math.Min(totalRows, 300)}"];
+                                object[,] vals = (object[,])scanRange.Value2;
+                                int rowCount = vals.GetLength(0);
+                                for (int r = 1; r <= rowCount; r++)
+                                {
+                                    string b = Convert.ToString(vals[r, 2])?.Trim() ?? "";
+                                    string c = Convert.ToString(vals[r, 3])?.Trim() ?? "";
+                                    if (string.IsNullOrWhiteSpace(b) && string.IsNullOrWhiteSpace(c)) continue;
+                                    if (b.Contains("小计") || b.Contains("总计") || b.Contains("合计")) break;
+
+                                    item.CabinetTypeCount++;
+                                    double qty = 1.0;
+                                    try { if (vals[r, 6] != null) qty = Convert.ToDouble(vals[r, 6]); } catch { }
+                                    item.TotalQuantity += (qty > 0 ? qty : 1.0);
+                                    if (item.CabinetNames.Count < 10) item.CabinetNames.Add(!string.IsNullOrWhiteSpace(b) ? b : c);
+                                    try { if (vals[r, 8] != null) item.TotalPrice += Convert.ToDouble(vals[r, 8]); } catch { }
+                                }
+                            }
+                        }
+
+                        // 赋值兼顾兼容字段：若已统计出总台数则使用总台数，否则回退种类数
+                        item.CabinetCount = item.TotalQuantity > 0 ? (int)Math.Round(item.TotalQuantity) : item.CabinetTypeCount;
+                    }
+                    catch (Exception exScan)
+                    {
+                        // 记录扫描单个分类异常容错日志
+                        LogHelper.WriteLog($"扫描分类【{wsName}】摘要异常: {exScan.Message}");
+                    }
+
+                    // 加入分类列表集合
+                    response.Categories.Add(item);
+                }
+
+                // 智能推导默认源分类与目标分类
+                if (response.Categories.Count >= 2)
+                {
+                    // 若当前激活工作表在候选列表中，优先将其作为源分类
+                    var matchedActive = response.Categories.FirstOrDefault(c => string.Equals(c.CategoryName, activeSheetName, StringComparison.OrdinalIgnoreCase));
+                    if (matchedActive != null)
+                    {
+                        response.DefaultSourceCategory = matchedActive.CategoryName;
+                        // 寻找除源分类外的第一个分类作为目标分类
+                        var other = response.Categories.FirstOrDefault(c => !string.Equals(c.CategoryName, matchedActive.CategoryName, StringComparison.OrdinalIgnoreCase));
+                        response.DefaultTargetCategory = other?.CategoryName ?? string.Empty;
+                    }
+                    else
+                    {
+                        // 默认取第 1 个作为源分类，第 2 个作为目标分类
+                        response.DefaultSourceCategory = response.Categories[0].CategoryName;
+                        response.DefaultTargetCategory = response.Categories[1].CategoryName;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录数据提取异常日志
+                LogHelper.WriteLog($"获取合并分类数据异常: {ex.Message}");
+            }
+
+            return response;
+        }
+
+        /// <summary>
+        /// 核心业务引擎：执行合并分类 (将源分类工作表的所有箱柜明细追加合并到目标分类工作表末尾，并联动更新项目信息)
+        /// </summary>
+        /// <param name="request">合并分类请求参数</param>
+        /// <param name="explicitApp">显式传递的 Excel COM Application 句柄 (可选)</param>
+        /// <param name="progressCallback">进度更新委托回调 (百分比 0-100, 描述信息)</param>
+        /// <returns>合并操作执行结果</returns>
+        public static CategoryOperationResult MergeCategories(
+            MergeCategoryRequest request,
+            dynamic? explicitApp = null,
+            Action<int, string>? progressCallback = null)
+        {
+            // 校验请求对象有效性
+            if (request == null)
+            {
+                return new CategoryOperationResult { Success = false, Message = "合并分类请求参数不能为空！" };
+            }
+
+            string srcName = request.SourceCategoryName?.Trim() ?? string.Empty;
+            string targetName = request.TargetCategoryName?.Trim() ?? string.Empty;
+
+            // 规则 9 守门：参数非空与非同表校验
+            if (string.IsNullOrWhiteSpace(srcName) || string.IsNullOrWhiteSpace(targetName))
+            {
+                return new CategoryOperationResult { Success = false, Message = "源分类与目标分类名称不能为空！" };
+            }
+            if (string.Equals(srcName, targetName, StringComparison.OrdinalIgnoreCase))
+            {
+                return new CategoryOperationResult { Success = false, Message = "源分类与目标分类不能是同一个工作表！" };
+            }
+
+            try
+            {
+                // 获取 Excel COM Application 接口实例
+                dynamic? app = explicitApp ?? ExcelDnaSafeAccessor.GetApplication();
+                if (app == null || app.ActiveWorkbook == null)
+                {
+                    return new CategoryOperationResult { Success = false, Message = "当前没有正在运行的项目工作簿！" };
+                }
+
+                dynamic wb = app.ActiveWorkbook;
+
+                // 定位源分类工作表与目标分类工作表
+                dynamic? srcSheet = null;
+                dynamic? targetSheet = null;
+                try { srcSheet = wb.Worksheets[srcName]; } catch { }
+                try { targetSheet = wb.Worksheets[targetName]; } catch { }
+
+                // 校验工作表真实存在性
+                if (srcSheet == null)
+                {
+                    return new CategoryOperationResult { Success = false, Message = $"未找到源分类工作表【{srcName}】！" };
+                }
+                if (targetSheet == null)
+                {
+                    return new CategoryOperationResult { Success = false, Message = $"未找到目标分类工作表【{targetName}】！" };
+                }
+
+                // 进度反馈：5% 开始预检
+                progressCallback?.Invoke(5, "正在校验分类工作表并执行规则自愈...");
+
+                // 1. 规则 8 守门：强制预检并自愈两表的定义名称与规则 6 架构完整性
+                Tool.FixAndFillCabinetNamesForSheet(srcSheet, forceRebuild: false);
+                Tool.FixAndFillCabinetNamesForSheet(targetSheet, forceRebuild: false);
+                // 清洗两表中的孤立幽灵定义名称
+                Tool.PurgeGhostNamesForSheet(srcSheet);
+                Tool.PurgeGhostNamesForSheet(targetSheet);
+                // 刷新内存缓存
+                Tool.InvalidateSheetCabinetsCache(srcName);
+                Tool.InvalidateSheetCabinetsCache(targetName);
+
+                // 2. 获取源分类表中的全部有效箱柜
+                var srcCabinets = Tool.GetSheetValidCabinets((object)srcSheet, (object)wb);
+                // 若源分类表完全为空 (无任何有效箱柜)
+                if (srcCabinets == null || srcCabinets.Count == 0)
+                {
+                    // 若用户选择合并后删除源表，则直接清理源表并返回
+                    if (request.DeleteSourceCategory)
+                    {
+                        // 移除项目信息汇总行
+                        RemoveProjectInfoCategorySummary(wb, srcName);
+                        // 删除工作表
+                        srcSheet.Delete();
+                        // 规整超链接
+                        NormalizeCategorySummaryLinks(wb);
+                        // 刷新白名单缓存
+                        Tool.InvalidateProjectCategorySheetCache();
+                    }
+                    progressCallback?.Invoke(100, "合并完成！");
+                    return new CategoryOperationResult
+                    {
+                        Success = true,
+                        Message = $"源分类【{srcName}】无任何箱柜明细，已完成合并处理！",
+                        CategoryName = targetName
+                    };
+                }
+
+                // 进度反馈：10% 读取数据
+                progressCallback?.Invoke(10, $"正在读取源分类【{srcName}】全部箱柜数据快照...");
+
+                // 3. 严格按源表物理汇总行顺序对箱柜进行物理行去重并排序 (自上而下保证顺序对齐且彻底杜绝重复合并)
+                var orderedSrcCabinets = srcCabinets
+                    .GroupBy(c => c.Value.SumRow > 0 ? c.Value.SumRow : (c.Value.Sum != null ? Convert.ToInt32(c.Value.Sum.Row) : 0))
+                    .Where(g => g.Key > 0)
+                    .Select(g => g.First())
+                    .OrderBy(c => c.Value.SumRow > 0 ? c.Value.SumRow : (c.Value.Sum != null ? Convert.ToInt32(c.Value.Sum.Row) : 0))
+                    .ToList();
+
+                // 4. 规则 7: 内存批量抓取源表所有箱柜的数据快照 (二维数组装载)
+                var clips = new List<Models.CopiedCabinetContext>();
+                foreach (var pair in orderedSrcCabinets)
+                {
+                    // 抓取单个箱柜的整柜上下文模型快照
+                    var clip = CaptureCabinetContext(app, srcSheet, wb, specificK: pair.Key, isCut: false);
+                    if (clip != null)
+                    {
+                        clips.Add(clip);
+                    }
+                }
+
+                // 校验提取到的有效箱柜快照数量
+                if (clips.Count == 0)
+                {
+                    return new CategoryOperationResult { Success = false, Message = $"从源分类【{srcName}】中未提取到有效的箱柜数据！" };
+                }
+
+                // 5. 暂停 Excel 视口渲染与系统告警，开启批量加速
+                bool prevUpdating = false;
+                bool prevAlerts = false;
+                bool prevEvents = false;
+                try
+                {
+                    prevUpdating = Convert.ToBoolean(app.ScreenUpdating);
+                    prevAlerts = Convert.ToBoolean(app.DisplayAlerts);
+                    prevEvents = Convert.ToBoolean(app.EnableEvents);
+                }
+                catch { }
+
+                app.ScreenUpdating = false;
+                app.DisplayAlerts = false;
+                app.EnableEvents = false;
+
+                int mergedCount = 0;
+                int totalClips = clips.Count;
+                try
+                {
+                    // 6. 批量追加基线初始化 (循环外部只计算一次，消除 O(N^2) 全表扫描瓶颈)
+                    progressCallback?.Invoke(12, "正在准备目标分类表批量追加基准...");
+
+                    // 提取定义名称前缀配置
+                    var cfg = ConfigManager.Instance.Current?.Excel;
+                    var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = cfg?.Prefixes ?? CabinetPrefixConfig.Default;
+
+                    // 获取目标表初始有效箱柜列表
+                    var targetValidCabinets = Tool.GetSheetValidCabinets((object)targetSheet, (object)wb);
+
+                    // 确定首个汇总行的插入物理行号 (末尾追加模式)
+                    int curInsertSumRow = DetermineTopSummaryInsertRow(app, targetSheet, targetValidCabinets, 0, appendToEnd: true);
+
+                    // 确定首个明细块的插入物理行号 (末尾追加模式)
+                    int curInsertDetRow = 41; // 默认兜底基准
+                    var targetIndexes = Tool.FindStandardCategoryRowIndexes((object)targetSheet, -1);
+                    if (targetIndexes.cabTolsumRow > 0 && targetIndexes.cabDetRow > 0)
+                    {
+                        // 紧贴现有最后一个明细块总计行后 + 4 行追加大标题
+                        curInsertDetRow = targetIndexes.cabTolsumRow + 4;
+                    }
+                    else
+                    {
+                        // 目标表当前尚无明细块，取默认基准行 38
+                        int defDetRow = ConfigManager.Instance.Current?.Excel?.CabDetRowIndex ?? 41;
+                        curInsertDetRow = Math.Max(38, defDetRow - 3);
+                    }
+
+                    // 提取目标表当前最大分配唯一序号 startK
+                    int startK = GetNextCabinetIndex(wb, targetSheet) - 1;
+
+                    // 7. 核心极速循环：依次批量追加每个箱柜 (0次重复全表扫描，0次重复自愈)
+                    for (int i = 0; i < totalClips; i++)
+                    {
+                        var clip = clips[i];
+                        int newK = ++startK;
+
+                        // 动态计算进度百分比 (15% ~ 80%)
+                        int progressVal = 15 + (int)Math.Round((double)i / totalClips * 65);
+                        progressCallback?.Invoke(progressVal, $"正在合并箱柜 ({i + 1}/{totalClips}): {clip.CabinetNo}...");
+
+                        // --- A. 顶部汇总行追加 ---
+                        // 在当前汇总追加指针处插入 1 行
+                        targetSheet.Rows[$"{curInsertSumRow}:{curInsertSumRow}"].Insert(-4121);
+                        dynamic dstSumRange = targetSheet.Rows[$"{curInsertSumRow}:{curInsertSumRow}"];
+
+                        // 从源表汇总行复制整行格式与样式
+                        try
+                        {
+                            if (clip.SourceSumRow > 0)
+                            {
+                                dynamic srcSumRange = srcSheet.Rows[$"{clip.SourceSumRow}:{clip.SourceSumRow}"];
+                                srcSumRange.Copy(dstSumRange);
+                                Tool.CleanRangeFormulas(dstSumRange, clip.SourceSheetName, clip.SourceCabinetK, newK);
+                            }
+                        }
+                        catch (Exception exSumCopy)
+                        {
+                            LogHelper.WriteLog($"[MergeCategories] 复制汇总行格式异常: {exSumCopy.Message}");
+                        }
+
+                        // 绑定新汇总定义名称 Cab_Sum_{newK}
+                        string newSumTag = $"{sumPrefix}{newK}";
+                        dynamic sumAnchorCell = targetSheet.Cells[curInsertSumRow, 1];
+                        Tool.SafeSetSheetName(targetSheet, targetName, newSumTag, curInsertSumRow);
+
+                        // 填充箱柜基本属性与自适应序号公式
+                        sumAnchorCell.Formula = "=ROW()-ROW(A$6)"; // --硬编码: 序号公式--
+                        targetSheet.Cells[curInsertSumRow, 2].Value = clip.CabinetNo;
+                        targetSheet.Cells[curInsertSumRow, 3].Value = clip.Name;
+                        targetSheet.Cells[curInsertSumRow, 4].Value = clip.Model;
+                        targetSheet.Cells[curInsertSumRow, 5].Value = clip.Unit;
+                        targetSheet.Cells[curInsertSumRow, 6].Value = clip.Quantity;
+
+                        // 推进汇总行指针
+                        curInsertSumRow++;
+                        // 关键物理联动：顶部汇总区每插入 1 行，底表明细区在物理上自动被推下 1 行
+                        curInsertDetRow++;
+
+                        // --- B. 底表明细块追加 ---
+                        if (clip.Kind == Models.CabinetKind.NoDetail || clip.DetailBlockRowCount <= 0)
+                        {
+                            // 无明细箱柜：回写单价与成本公式
+                            int currentCabSumRow = curInsertSumRow - 1;
+                            object rawUnitPrice = (clip.SumRowValues != null && clip.SumRowValues.GetLength(1) >= 7) ? clip.SumRowValues[1, 7] : 0;
+                            object rawCostPrice = (clip.SumRowValues != null && clip.SumRowValues.GetLength(1) >= 10) ? clip.SumRowValues[1, 10] : 0;
+
+                            targetSheet.Cells[currentCabSumRow, 7].Value = rawUnitPrice;
+                            targetSheet.Cells[currentCabSumRow, 8].Formula = $"=F{currentCabSumRow}*G{currentCabSumRow}";
+                            targetSheet.Cells[currentCabSumRow, 10].Value = rawCostPrice;
+                            targetSheet.Cells[currentCabSumRow, 11].Formula = $"=F{currentCabSumRow}*J{currentCabSumRow}";
+                            targetSheet.Cells[currentCabSumRow, 12].Formula = $"=H{currentCabSumRow}-K{currentCabSumRow}";
+                            targetSheet.Cells[currentCabSumRow, 13].Formula = $"=IF(H{currentCabSumRow}=0,0,L{currentCabSumRow}/H{currentCabSumRow})";
+                        }
+                        else
+                        {
+                            // 普通有明细箱柜：整块复制明细块
+                            int blockRowCount = clip.DetailBlockRowCount;
+                            int srcStart = clip.SourceDetStartRow;
+                            int srcEnd = clip.SourceDetEndRow;
+
+                            // 物理插入明细块空白行
+                            targetSheet.Rows[$"{curInsertDetRow}:{curInsertDetRow + blockRowCount - 1}"].Insert(-4121);
+                            dynamic dstDetailRange = targetSheet.Rows[$"{curInsertDetRow}:{curInsertDetRow + blockRowCount - 1}"];
+
+                            // 原生 Range.Copy 完整复刻边框、底色、合并单元格、公式与 CAD 句柄
+                            bool copyDetailOk = false;
+                            try
+                            {
+                                if (srcStart > 0 && srcEnd >= srcStart)
+                                {
+                                    dynamic srcDetailRange = srcSheet.Rows[$"{srcStart}:{srcEnd}"];
+                                    srcDetailRange.Copy(dstDetailRange);
+                                    copyDetailOk = true;
+                                }
+                            }
+                            catch (Exception exDetCopy)
+                            {
+                                LogHelper.WriteLog($"[MergeCategories] Range.Copy 明细块异常: {exDetCopy.Message}");
+                            }
+
+                            // 降级兜底数组写入
+                            if (!copyDetailOk && clip.DetailBlockValues != null)
+                            {
+                                dynamic detRange = targetSheet.Range[$"A{curInsertDetRow}:Q{curInsertDetRow + blockRowCount - 1}"];
+                                detRange.Value2 = clip.DetailBlockValues;
+                                detRange.Formula = clip.DetailBlockFormulas;
+                                Tool.CleanRangeFormulas(detRange, clip.SourceSheetName, clip.SourceCabinetK, newK);
+                            }
+                            else
+                            {
+                                Tool.CleanRangeFormulas(dstDetailRange, clip.SourceSheetName, clip.SourceCabinetK, newK);
+                            }
+
+                            // 计算新明细块关键行号
+                            int newDetRow = curInsertDetRow + (clip.SourceDetRow - srcStart);
+                            int newSubsumRow = curInsertDetRow + (clip.SourceSubsumRow - srcStart);
+                            int newTolsumRow = curInsertDetRow + (clip.SourceTolsumRow - srcStart);
+
+                            string newDetTag = $"{detPrefix}{newK}";
+                            string newSubsumTag = $"{subsumPrefix}{newK}";
+                            string newTolsumTag = $"{tolsumPrefix}{newK}";
+
+                            // 注册目标表 3 个明细定义名称 (规则 6 规范)
+                            Tool.SafeSetSheetName(targetSheet, targetName, newDetTag, newDetRow);
+                            Tool.SafeSetSheetName(targetSheet, targetName, newSubsumTag, newSubsumRow);
+                            Tool.SafeSetSheetName(targetSheet, targetName, newTolsumTag, newTolsumRow);
+
+                            // 重建双向跳转超链接
+                            try
+                            {
+                                int currentCabSumRow = curInsertSumRow - 1;
+                                dynamic currentSumAnchor = targetSheet.Cells[currentCabSumRow, 1];
+                                targetSheet.Hyperlinks.Add(
+                                    Anchor: currentSumAnchor,
+                                    Address: "",
+                                    SubAddress: $"'{targetName}'!{newDetTag}",
+                                    ScreenTip: "点击进入本箱柜明细表" // --硬编码: 屏幕提示文本--
+                                );
+                                currentSumAnchor.Formula = "=ROW()-ROW(A$6)"; // --硬编码: 序号公式--
+
+                                targetSheet.Hyperlinks.Add(
+                                    Anchor: targetSheet.Cells[newDetRow, 1],
+                                    Address: "",
+                                    SubAddress: $"'{targetName}'!{newSumTag}",
+                                    ScreenTip: "返回汇总行" // --硬编码: 屏幕提示文本--
+                                );
+                            }
+                            catch { }
+
+                            // 更新明细表头柜号与序号公式
+                            targetSheet.Cells[newDetRow, 2].Value = clip.CabinetNo;
+                            try
+                            {
+                                targetSheet.Cells[newDetRow + 1, 1].Formula = $"=\"序号\" & {newSumTag}"; // --硬编码: 明细表头序号公式--
+                            }
+                            catch { }
+
+                            // 推进底表明细追加指针
+                            curInsertDetRow += blockRowCount;
+                        }
+
+                        mergedCount++;
+                    }
+
+                    // 进度反馈：85% 统一全局自愈
+                    progressCallback?.Invoke(85, "正在规整目标分类结构并清理幽灵定义名称...");
+
+                    // 8. 统一全量自愈与幽灵定义名称净化 (在批量合并完成后只执行一次)
+                    Tool.FixAndFillCabinetNamesForSheet(targetSheet, forceRebuild: false);
+                    Tool.PurgeGhostNamesForSheet(targetSheet);
+                    Tool.InvalidateSheetCabinetsCache(targetName);
+
+                    // 进度反馈：90% 更新项目信息
+                    progressCallback?.Invoke(90, "正在联动刷新【项目信息】设备汇总与超链接...");
+
+                    // 8. 联动更新【项目信息】主表中关于目标分类的设备数量、总价与成本
+                    UpdateProjectInfoCategorySummary(wb, targetName);
+
+                    // 9. 处理源分类工作表生命周期 (根据用户勾选选项)
+                    if (request.DeleteSourceCategory)
+                    {
+                        progressCallback?.Invoke(95, $"正在安全移除源分类【{srcName}】工作表...");
+
+                        // 从【项目信息】表中物理删除源分类汇总行 (整行删除并规整超链接)
+                        RemoveProjectInfoCategorySummary(wb, srcName);
+
+                        // 物理静默删除源工作表
+                        srcSheet.Delete();
+
+                        // 若暂存的复制分类恰好是源表，清空暂存
+                        if (string.Equals(_copiedCategorySheetName, srcName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _copiedCategorySheetName = string.Empty;
+                        }
+
+                        // 规整【项目信息】表中所有分类的超链接
+                        NormalizeCategorySummaryLinks(wb);
+
+                        // 清空项目分类工作表白名单缓存
+                        Tool.InvalidateProjectCategorySheetCache();
+                    }
+
+                    // 进度反馈：100% 达成
+                    progressCallback?.Invoke(100, "合并操作完成！");
+                }
+                finally
+                {
+                    // 10. 恢复 Excel 视口渲染与事件系统
+                    try
+                    {
+                        app.ScreenUpdating = prevUpdating;
+                        app.DisplayAlerts = prevAlerts;
+                        app.EnableEvents = prevEvents;
+                    }
+                    catch { }
+                }
+
+                // 11. 激活目标分类工作表，提供平滑的视觉反馈
+                try
+                {
+                    targetSheet.Activate();
+                }
+                catch { }
+
+                // 返回成功执行结果
+                return new CategoryOperationResult
+                {
+                    Success = true,
+                    Message = $"已成功将分类【{srcName}】的 {mergedCount} 台箱柜明细合并至【{targetName}】！",
+                    CategoryName = targetName
+                };
+            }
+            catch (Exception ex)
+            {
+                // 记录合并异常日志
+                LogHelper.WriteLog($"[MergeCategories] 异常: {ex.Message}");
+                return new CategoryOperationResult
+                {
+                    Success = false,
+                    Message = $"合并分类失败: {ex.Message}"
+                };
             }
         }
     }

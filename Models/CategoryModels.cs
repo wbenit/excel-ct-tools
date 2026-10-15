@@ -158,6 +158,60 @@ namespace ExcelAddInDemo.Models
         // 待物理整行删除的【项目信息】表行号列表 (专门用于清理 #REF! 失效行)
         public List<int> RowIndices { get; set; } = new List<int>();
     }
+
+    /// <summary>
+    /// 合并分类请求数据传输模型
+    /// </summary>
+    public class MergeCategoryRequest
+    {
+        // 来源被合并的分类工作表名称
+        public string SourceCategoryName { get; set; } = string.Empty;
+
+        // 接收合并的目标分类工作表名称
+        public string TargetCategoryName { get; set; } = string.Empty;
+
+        // 合并完成后是否彻底安全删除源分类工作表 (默认勾选)
+        public bool DeleteSourceCategory { get; set; } = true;
+    }
+
+    /// <summary>
+    /// 单个分类简明摘要数据模型 (用于合并预览与核算)
+    /// </summary>
+    public class CategoryBriefSummaryDto
+    {
+        // 分类工作表名称
+        public string CategoryName { get; set; } = string.Empty;
+
+        // 该分类包含的箱柜种类数/型号数 (顶部汇总表物理行数)
+        public int CabinetTypeCount { get; set; } = 0;
+
+        // 该分类包含的箱柜总台数 (F列数量累加和)
+        public double TotalQuantity { get; set; } = 0.0;
+
+        // 兼容旧代码字段：箱柜总台数
+        public int CabinetCount { get; set; } = 0;
+
+        // 该分类的销售总价 (H列金额累加和)
+        public double TotalPrice { get; set; } = 0.0;
+
+        // 该分类下所有箱柜的柜号/名称列表 (用于界面标签预览展示)
+        public List<string> CabinetNames { get; set; } = new List<string>();
+    }
+
+    /// <summary>
+    /// 合并分类界面初始化及预览响应模型
+    /// </summary>
+    public class MergeCategoryInitResponse
+    {
+        // 当前工作簿中所有可选的有效分类工作表列表
+        public List<CategoryBriefSummaryDto> Categories { get; set; } = new List<CategoryBriefSummaryDto>();
+
+        // 默认推荐选中的源分类名称
+        public string DefaultSourceCategory { get; set; } = string.Empty;
+
+        // 默认推荐选中的目标分类名称
+        public string DefaultTargetCategory { get; set; } = string.Empty;
+    }
 }
 
 

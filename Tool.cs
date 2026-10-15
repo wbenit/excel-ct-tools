@@ -1237,8 +1237,9 @@ namespace ExcelAddInDemo
 
             // 兼容普通有明细箱柜 (同时具备 Sum 和 Det) 与纯汇总无明细箱柜 (仅具备 Sum 锚点)
             // 采用缓存的 SumRow 与 DetRow 进行纯内存排序，杜绝循环触发 COM 调用
+            // 同时支持纯行号解析成功的锚点，防止跨表 COM 对象无法加载时误剔除有效箱柜
             var resList = cabinetDict
-                .Where(x => x.Value.Sum != null || x.Value.Det != null)
+                .Where(x => x.Value.Sum != null || x.Value.SumRow > 0 || x.Value.Det != null || x.Value.DetRow > 0)
                 .OrderBy(x => x.Value.SumRow > 0 ? x.Value.SumRow : x.Value.DetRow)
                 .ToList();
 
@@ -2210,7 +2211,51 @@ namespace ExcelAddInDemo
                                 // 存在明细行缺失漏绑，不健康
                                 isHealthy = false;
                             }
-                            else
+                            // 规则 8: 校验顶部汇总区实际物理箱柜行数与现有定义名称数量是否一致
+                            // 若顶部汇总区物理存在更多箱柜（例如物理有 106 种，但定义名称中间断号仅剩 56 个），判定残缺唤醒自愈
+                            else if (isHealthy)
+                            {
+                                try
+                                {
+                                    // 规则 7: 一次性读取顶部汇总区（Row 7 到 500 行，A~C 列）
+                                    dynamic checkRange = sheet.Range[$"A{cabSumStartRow}:C500"];
+                                    object[,]? checkArr = checkRange.Value2 as object[,];
+                                    if (checkArr != null)
+                                    {
+                                        int physicalSumCount = 0;
+                                        int maxR = checkArr.GetLength(0);
+                                        // 遍历数组统计具有柜号或设备名称的物理箱柜行
+                                        for (int cr = 1; cr <= maxR; cr++)
+                                        {
+                                            string bVal = Convert.ToString(checkArr[cr, 2])?.Trim() ?? "";
+                                            string cVal = Convert.ToString(checkArr[cr, 3])?.Trim() ?? "";
+                                            if (bVal.Length > 0 || cVal.Length > 0)
+                                            {
+                                                // 遇汇总小计或总计行立即截断
+                                                if (bVal.Contains("小计") || bVal.Contains("总计") || cVal.Contains("小计") || cVal.Contains("总计"))
+                                                    break;
+                                                physicalSumCount++;
+                                            }
+                                            else
+                                            {
+                                                // 遇到明细表头大标题行截断
+                                                string aVal = Convert.ToString(checkArr[cr, 1])?.Trim() ?? "";
+                                                if (aVal.Contains("序号") || aVal.Contains("明细"))
+                                                    break;
+                                            }
+                                        }
+                                        // 若物理箱柜数大于现有定义名称数量，说明存在断号未绑箱柜，唤醒全量自愈
+                                        if (physicalSumCount > existingMap.Count)
+                                        {
+                                            LogHelper.WriteLog($"[PROBE-FixAndFill] 嗅探发现顶部物理箱柜数({physicalSumCount}) > 定义名称数({existingMap.Count})，判定残缺，触发全量自愈");
+                                            isHealthy = false;
+                                        }
+                                    }
+                                }
+                                catch { }
+                            }
+                            
+                            if (isHealthy)
                             {
                                 // 逐个箱柜校验锚点有效性
                                 foreach (var cab in existingMap)
@@ -3038,6 +3083,19 @@ namespace ExcelAddInDemo
                                 detHeaderAnchor.Formula = $"=\"序号\" & {sumPrefix}{k}";
                             }
                             catch { }
+
+                            // 规则 6、7、8：当为强制全量重建 (forceRebuild) 时，同步自愈修复底部明细区域元器件行公式与小计公式
+                            if (forceRebuild && curDetRow > 0 && curSubsumRow > curDetRow + 1 && curTolsumRow >= curSubsumRow)
+                            {
+                                try
+                                {
+                                    // 提取元器件起始行 (detRow + 2)
+                                    int compStartRow = curDetRow + 2;
+                                    // 调用公共业务服务自愈元器件行动态公式及小计求和公式 (规则 7 内存批量执行)
+                                    ExcelServices.RefreshCabinetFeeAreaFormulas(sheet, curDetRow, compStartRow, curSubsumRow, curTolsumRow);
+                                }
+                                catch { }
+                            }
                         }
                         catch { }
 
@@ -3593,20 +3651,74 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 【核心增强 2】明细行多重绑定去重自愈：同一物理明细行若绑定多个 Cab_Det 名称，仅保留最新合法序号
+                // 提取顶部汇总行中真实存在的全部合法箱柜序号集合
+                var existingSumKs = new HashSet<int>(sumNamesByRow.Values.SelectMany(list => list.Select(x => x.K)));
+
+                // 【核心增强 2】明细行多重绑定去重自愈：同一物理明细行若绑定多个 Cab_Det 名称，智能保留真正主箱柜序号
                 foreach (var detPair in detNamesByRow)
                 {
                     // 判定当前明细行是否存在重复绑定
                     if (detPair.Value.Count > 1)
                     {
                         int detRow = detPair.Key;
-                        // 优先保留序号最大者
-                        int bestDetK = detPair.Value.Max(x => x.K);
+                        int bestDetK = 0;
+
+                        // 策略 1 (最高优先级)：从候选名称中筛选出在顶部汇总行真实存在 Cab_Sum 的主序号
+                        var matchedSumCandidates = detPair.Value.Where(x => existingSumKs.Contains(x.K)).ToList();
+                        if (matchedSumCandidates.Count == 1)
+                        {
+                            // 唯一命中真实汇总箱柜，直接锁定为主序号
+                            bestDetK = matchedSumCandidates[0].K;
+                        }
+                        else if (matchedSumCandidates.Count > 1)
+                        {
+                            // 策略 2：若有多个候选序号在顶部都有汇总行，尝试通过明细行 A 列超链接嗅探
+                            try
+                            {
+                                dynamic aDetCell = sheet.Cells[detRow, 1];
+                                if (aDetCell.Hyperlinks != null && aDetCell.Hyperlinks.Count > 0)
+                                {
+                                    // 提取明细行超链接跳转目标
+                                    string subAddr = Convert.ToString(aDetCell.Hyperlinks.Item(1).SubAddress) ?? "";
+                                    foreach (var cand in matchedSumCandidates)
+                                    {
+                                        // 比对超链接是否指向对应汇总行
+                                        if (subAddr.IndexOf($"{sumPrefix}{cand.K}", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                            subAddr.EndsWith($"_{cand.K}", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            bestDetK = cand.K;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
+
+                            // 若超链接未能区分，优先选取最小序号 (保持与汇总区自上而下顺序一致)
+                            if (bestDetK <= 0)
+                            {
+                                bestDetK = matchedSumCandidates.Min(x => x.K);
+                            }
+                        }
+
+                        // 策略 3：若候选名称全都不在顶部汇总行中，才兜底选取最大序号
+                        if (bestDetK <= 0)
+                        {
+                            bestDetK = detPair.Value.Max(x => x.K);
+                        }
+
+                        // 清理确认为多余的旧明细定义名称
                         foreach (var item in detPair.Value)
                         {
-                            // 剔除多余的旧明细定义名称
+                            // 判定是否为被淘汰的非主序号
                             if (item.K != bestDetK)
                             {
+                                // 核心安全防线：若被淘汰的序号在顶部汇总区真实存在，坚决不删，避免将其误伤为无明细柜
+                                if (existingSumKs.Contains(item.K))
+                                {
+                                    continue;
+                                }
+
                                 // 记录明细行去重日志
                                 LogHelper.WriteLog($"[PurgeGhostNames] 自动去重清理多余明细行名称: {item.Clean} (与箱柜{bestDetK}重复指向第{detRow}行)");
                                 SafeDeleteName(sheet, wb, item.Clean);

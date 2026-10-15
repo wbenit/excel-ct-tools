@@ -2460,7 +2460,16 @@ namespace ExcelAddInDemo
         /// <param name="compStartRow">元器件起始物理行号</param>
         /// <param name="subsumRow">明细小计物理行号</param>
         /// <param name="tolsumRow">明细总计物理行号</param>
-        public static void RefreshCabinetFeeAreaFormulas(
+        /// <summary>
+        /// 规则 6、7 自愈刷新单台箱柜底部明细区域的元器件行公式、小计求和公式与计费区序号
+        /// </summary>
+        /// <param name="sheet">目标工作表 COM 句柄</param>
+        /// <param name="detRow">箱柜信息行号 (Cab_Det)</param>
+        /// <param name="compStartRow">元器件起始物理行号</param>
+        /// <param name="subsumRow">明细小计物理行号 (Cab_Subsum)</param>
+        /// <param name="tolsumRow">明细总计物理行号 (Cab_Tolsum)</param>
+        /// <returns>修复/刷新的元器件总行数</returns>
+        public static int RefreshCabinetFeeAreaFormulas(
             dynamic sheet,
             int detRow,
             int compStartRow,
@@ -2468,7 +2477,9 @@ namespace ExcelAddInDemo
             int tolsumRow)
         {
             // 校验工作表与行号有效性
-            if (sheet == null || tolsumRow <= subsumRow) return;
+            if (sheet == null || tolsumRow <= subsumRow) return 0;
+            // 记录当前箱柜修复的元器件总行数
+            int fixedCompCount = 0;
 
             try
             {
@@ -2480,6 +2491,8 @@ namespace ExcelAddInDemo
                 {
                     // 计算元器件区域总行数
                     int compRowCount = compEndRow - compStartRow + 1;
+                    // 标记本次处理的元器件行数
+                    fixedCompCount = compRowCount;
                     // 获取元器件区域 A 到 Q 列 (覆盖 17 列标准明细字段)
                     dynamic compRange = sheet.Range[$"A{compStartRow}:Q{compEndRow}"];
                     // 规则 7: 内存 2D 数组一次性读取既有公式与既有数值
@@ -2517,14 +2530,22 @@ namespace ExcelAddInDemo
                         // 提取当前行 G 列既有单价公式与数值
                         string gFormula = Convert.ToString(compMatrix[c, 6])?.Trim() ?? "";
 
-                        // G 列 (索引 6): 校验单价公式是否缺失 (非以 = 开头)
-                        if (!gFormula.StartsWith("="))
+                        // G 列 (索引 6): 校验单价公式是否缺失、损坏 (#REF!/#VALUE!)、跨表污染或引用错行
+                        bool isGBroken = !gFormula.StartsWith("=") ||
+                                         gFormula.Contains("#REF") ||
+                                         gFormula.Contains("#VALUE") ||
+                                         gFormula.Contains("#NAME?") ||
+                                         gFormula.Contains("#N/A") ||
+                                         gFormula.Contains("[") ||
+                                         !gFormula.Contains($"M{physRow}");
+
+                        if (isGBroken)
                         {
                             // 若 G 列存有静态单价数值，且 M 列表价 (索引 12) 为空，则自动将静态单价平移沉淀至 M 列表价
                             string mVal = Convert.ToString(compMatrix[c, 12])?.Trim() ?? "";
-                            if (!string.IsNullOrWhiteSpace(gFormula) && string.IsNullOrWhiteSpace(mVal))
+                            if (!gFormula.StartsWith("=") && !string.IsNullOrWhiteSpace(gFormula) && string.IsNullOrWhiteSpace(mVal))
                             {
-                                // 平移保存单价值至 M 列表价
+                                // 平移保存单价值至 M 列表价，确保手填价格不丢失
                                 compMatrix[c, 12] = gFormula;
                             }
 
@@ -2532,6 +2553,7 @@ namespace ExcelAddInDemo
                             string lVal = Convert.ToString(compMatrix[c, 11])?.Trim() ?? "";
                             if (string.IsNullOrWhiteSpace(lVal))
                             {
+                                // 默认赋予自适应系数公式: 判空则空，否则为 1 --硬编码: 加价系数公式--
                                 compMatrix[c, 11] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",1)";
                             }
 
@@ -2539,6 +2561,7 @@ namespace ExcelAddInDemo
                             string nVal = Convert.ToString(compMatrix[c, 13])?.Trim() ?? "";
                             if (string.IsNullOrWhiteSpace(nVal))
                             {
+                                // 默认赋予自适应折扣公式: 判空则空，否则为 1 --硬编码: 采购折扣公式--
                                 compMatrix[c, 13] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",1)";
                             }
 
@@ -2546,27 +2569,54 @@ namespace ExcelAddInDemo
                             compMatrix[c, 6] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",ROUND(M{physRow}*L{physRow}*N{physRow},2))";
                         }
 
-                        // H 列 (索引 7): 销售总价公式自愈 =ROUND(F*G, 2)
+                        // H 列 (索引 7): 销售总价公式自愈 =IF(AND(B="",C=""),"",ROUND(F*G, 2))
                         string hFormula = Convert.ToString(compMatrix[c, 7])?.Trim() ?? "";
-                        if (!hFormula.StartsWith("="))
+                        bool isHBroken = !hFormula.StartsWith("=") ||
+                                         hFormula.Contains("#REF") ||
+                                         hFormula.Contains("#VALUE") ||
+                                         hFormula.Contains("#NAME?") ||
+                                         hFormula.Contains("#N/A") ||
+                                         hFormula.Contains("[") ||
+                                         !hFormula.Contains($"F{physRow}") ||
+                                         !hFormula.Contains($"G{physRow}");
+
+                        if (isHBroken)
                         {
-                            // 恢复标准销售总价联动公式
+                            // 恢复标准销售总价联动公式 --硬编码: 销售总价公式--
                             compMatrix[c, 7] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",ROUND(F{physRow}*G{physRow},2))";
                         }
 
-                        // J 列 (索引 9): 成本单价公式自愈 =ROUND(M*N, 2)
+                        // J 列 (索引 9): 成本单价公式自愈 =IF(AND(B="",C=""),"",ROUND(M*N, 2))
                         string jFormula = Convert.ToString(compMatrix[c, 9])?.Trim() ?? "";
-                        if (!jFormula.StartsWith("="))
+                        bool isJBroken = !jFormula.StartsWith("=") ||
+                                         jFormula.Contains("#REF") ||
+                                         jFormula.Contains("#VALUE") ||
+                                         jFormula.Contains("#NAME?") ||
+                                         jFormula.Contains("#N/A") ||
+                                         jFormula.Contains("[") ||
+                                         !jFormula.Contains($"M{physRow}") ||
+                                         !jFormula.Contains($"N{physRow}");
+
+                        if (isJBroken)
                         {
-                            // 恢复标准成本单价联动公式
+                            // 恢复标准成本单价联动公式 --硬编码: 成本单价公式--
                             compMatrix[c, 9] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",ROUND(M{physRow}*N{physRow},2))";
                         }
 
-                        // K 列 (索引 10): 成本总价公式自愈 =ROUND(J*F, 2)
+                        // K 列 (索引 10): 成本总价公式自愈 =IF(AND(B="",C=""),"",ROUND(J*F, 2))
                         string kFormula = Convert.ToString(compMatrix[c, 10])?.Trim() ?? "";
-                        if (!kFormula.StartsWith("="))
+                        bool isKBroken = !kFormula.StartsWith("=") ||
+                                         kFormula.Contains("#REF") ||
+                                         kFormula.Contains("#VALUE") ||
+                                         kFormula.Contains("#NAME?") ||
+                                         kFormula.Contains("#N/A") ||
+                                         kFormula.Contains("[") ||
+                                         !kFormula.Contains($"J{physRow}") ||
+                                         !kFormula.Contains($"F{physRow}");
+
+                        if (isKBroken)
                         {
-                            // 恢复标准成本总价联动公式
+                            // 恢复标准成本总价联动公式 --硬编码: 成本总价公式--
                             compMatrix[c, 10] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",ROUND(J{physRow}*F{physRow},2))";
                         }
                     }
@@ -2644,11 +2694,15 @@ namespace ExcelAddInDemo
 
                 // 4. 确保总计行 A 列显式设为“总计”
                 sheet.Cells[tolsumRow, 1].Value2 = "总计"; // --硬编码: 总计行标签--
+
+                // 返回本次自愈修复的元器件行总数
+                return fixedCompCount;
             }
             catch (Exception ex)
             {
                 // 记录刷新计费区域公式异常日志
                 LogHelper.WriteLog($"RefreshCabinetFeeAreaFormulas 异常: {ex.Message}");
+                return 0;
             }
         }
 
