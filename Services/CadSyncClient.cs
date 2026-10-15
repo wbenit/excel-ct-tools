@@ -56,8 +56,19 @@ namespace ExcelAddInDemo.Services
 
             lock (_timerLock)
             {
-                // 暂存最新的句柄数据副本与对焦标志
-                _pendingHandles = handles != null ? new List<string>(handles) : new List<string>();
+                // 暂存最新的句柄数据副本与对焦标志 (兼容处理由 '-' 或分隔符拼接的复合句柄)
+                _pendingHandles = handles != null
+                    // 将可能混入的复合句柄进行扁平化拆分
+                    ? handles.SelectMany(h => h.Split(new[] { ',', ';', '-', ' ' }, StringSplitOptions.RemoveEmptyEntries))
+                             // 清洗首尾空白
+                             .Select(h => h.Trim())
+                             // 过滤空项
+                             .Where(h => !string.IsNullOrEmpty(h))
+                             // 忽略大小写去重
+                             .Distinct(StringComparer.OrdinalIgnoreCase)
+                             // 转换为纯净句柄列表
+                             .ToList()
+                    : new List<string>();
                 _pendingAutoZoom = autoZoom && AutoZoomEnabled;
                 // 暂存当前行关联的箱柜名称
                 _pendingCabinetName = cabinetName ?? string.Empty;

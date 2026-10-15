@@ -67,6 +67,13 @@ namespace ExcelAddInDemo
 
                 try
                 {
+                    // 3.1 前置清理工作表中残留的损坏与孤立幽灵定义名称 (防止空白预留行残留旧名称导致误匹配)
+                    Tool.PurgeGhostNamesForSheet(activeSheet);
+                    // 提取工作表名称以刷新缓存
+                    string sheetNameForCache = Convert.ToString(activeSheet.Name) ?? "";
+                    // 清空当前工作表在内存中的有效箱柜映射短效缓存
+                    Tool.InvalidateSheetCabinetsCache(sheetNameForCache);
+
                     // 4. 扫描当前工作表有效箱柜映射与末尾分布 (显式强类型接收，避免 dynamic 传染)
                     List<KeyValuePair<int, Models.CabinetAnchorModel>> validCabinets = Tool.GetSheetValidCabinets((object)activeSheet, (object)wb);
                     // 探测工作表基准/末尾行号分布
@@ -79,16 +86,58 @@ namespace ExcelAddInDemo
                         cabinetK = GetNextCabinetIndex(wb, activeSheet);
                     }
 
-                    // 6. 智能识别当前光标命中的箱柜实体 (显式强类型接收，避免 dynamic 运行时推导)
-                    KeyValuePair<int, Models.CabinetAnchorModel>? activeCab = Tool.GetActiveCabinet((object)app, validCabinets, fallbackSingle: true);
+                    // 5.1 准确提取当前活动单元格物理行号
+                    int cursorRow = 0;
+                    try
+                    {
+                        // 获取当前焦点活动单元格对象
+                        dynamic activeCell = app?.ActiveCell;
+                        // 提取活动单元格行号
+                        if (activeCell != null) cursorRow = Convert.ToInt32(activeCell.Row);
+                    }
+                    catch { }
+
+                    // 5.2 探测顶部汇总区已有箱柜的最大汇总物理行与最小明细行
+                    int maxValidSumRow = 0;
+                    // 初始化最小明细行
+                    int minDetRow = int.MaxValue;
+                    // 遍历所有已识别的有效箱柜
+                    if (validCabinets != null && validCabinets.Count > 0)
+                    {
+                        // 循环比对每个箱柜的物理行分布
+                        foreach (var pair in validCabinets)
+                        {
+                            // 优先读取缓存行号避免跨进程 COM 往返
+                            int sR = pair.Value.SumRow > 0 ? pair.Value.SumRow : (pair.Value.Sum != null ? Convert.ToInt32(pair.Value.Sum.Row) : 0);
+                            // 读取明细行物理行号
+                            int dR = pair.Value.DetRow > 0 ? pair.Value.DetRow : (pair.Value.Det != null ? Convert.ToInt32(pair.Value.Det.Row) : 0);
+                            // 记录有效最大汇总行号
+                            if (sR > maxValidSumRow) maxValidSumRow = sR;
+                            // 记录有效最小明细行号
+                            if (dR > 0 && dR < minDetRow) minDetRow = dR;
+                        }
+                    }
+
+                    // 5.3 核心状态判定：光标是否落在已有箱柜范围之外的空白行/表头区域 (判定是否属于末尾追加)
+                    // 当光标在表头(1-5行)、落在已有箱柜汇总行下方的空白区域(例如B9)、或全表尚无箱柜时，均为末尾追加
+                    bool isAppendToEnd = (validCabinets == null || validCabinets.Count == 0 ||
+                                          cursorRow < 6 ||
+                                          (cursorRow > maxValidSumRow && cursorRow < minDetRow));
+
+                    // 6. 智能识别当前光标命中的箱柜实体
+                    // 核心防御：当明确处于末尾追加模式时，坚决禁止 fallbackSingle 回退已有箱柜，彻底杜绝空白处点击误判为选中已有箱柜
+                    KeyValuePair<int, Models.CabinetAnchorModel>? activeCab = isAppendToEnd
+                        ? null
+                        : Tool.GetActiveCabinet((object)app, validCabinets, fallbackSingle: false);
                     // 提取源箱柜锚点
                     var srcCabAnchor = activeCab?.Value;
 
-                    // 7. 定位顶部汇总行目标插入位置：统一调用 DetermineTopSummaryInsertRow 实现光标行上方插入且绝不越界
-                    int insertSumRow = DetermineTopSummaryInsertRow(app, activeSheet, validCabinets);
+                    // 7. 定位顶部汇总行目标插入位置：统一调用 DetermineTopSummaryInsertRow 实现光标行上方插入或末尾追加且绝不越界
+                    int insertSumRow = DetermineTopSummaryInsertRow(app, activeSheet, validCabinets, cursorRow, appendToEnd: isAppendToEnd);
 
                     // 检查汇总目标行 A 列与 B 列是否包含内容，防止覆盖已有行
                     string checkSumA = Convert.ToString(activeSheet.Cells[insertSumRow, 2].Value)?.Trim() ?? "";
+                    // 获取目标行 C 列文本内容
                     string checkSumB = Convert.ToString(activeSheet.Cells[insertSumRow, 3].Value)?.Trim() ?? "";
                     // 判定是否需要物理向下插入汇总行
                     bool needInsertSumRow = !string.IsNullOrWhiteSpace(checkSumA) || !string.IsNullOrWhiteSpace(checkSumB);
@@ -101,26 +150,27 @@ namespace ExcelAddInDemo
 
                     // 8. 定位底部明细块目标起始插入行
                     int copyRowCount = 74 - 41 + 1; // 模板固定 41 行至 74 行，共 34 行 --硬编码: 模板行数34--
+                    // 默认使用传入的目标明细起始行号
                     int targetDetailStartRow = targetStartRow;
                     // 若未显式传入明细起始行，则智能计算
                     if (targetDetailStartRow <= 0)
                     {
-                        // 核心对齐准则：顶部汇总统一在光标行上方插入，底表明细表必须保持严格一致，也在目标箱柜明细块的上方插入
+                        // 目标箱柜明细行号初始置为 0
                         int targetDetRow = 0;
-                        // 判定是否命中有效箱柜且工作表中已有箱柜集合
-                        if (activeCab != null && validCabinets.Count > 0)
+                        // 核心对齐准则：仅当明确非末尾追加且命中了有效箱柜时，才执行目标箱柜上方插入
+                        if (!isAppendToEnd && activeCab != null && validCabinets != null && validCabinets.Count > 0)
                         {
                             // 锁定当前选中箱柜在有效集合中的索引
                             int activeIdx = -1;
-                            // 提取当前光标命中的箱柜序号
+                            // 提取当前命中的箱柜序号
                             int targetCabK = activeCab.Value.Key;
-                            // 循环遍历有效集合匹配当前序号
+                            // 遍历匹配索引位置
                             for (int i = 0; i < validCabinets.Count; i++)
                             {
-                                // 匹配箱柜序号
+                                // 匹配序号相同项
                                 if (validCabinets[i].Key == targetCabK)
                                 {
-                                    // 记录当前索引并跳出
+                                    // 记录索引并跳出循环
                                     activeIdx = i;
                                     break;
                                 }
@@ -161,7 +211,7 @@ namespace ExcelAddInDemo
                         }
                         else
                         {
-                            // 全表末尾追加模式（全表现存箱柜均无明细、或光标未命中特定箱柜）：重新动态嗅探工作表最新行号
+                            // 全表末尾追加模式（末尾追加、或全表现存箱柜均无明细、或光标未命中特定箱柜）：重新动态嗅探工作表最新行号
                             var curIndexes = Tool.FindStandardCategoryRowIndexes((object)activeSheet, -1);
                             // 消除汇总插行导致的 1 行物理下移偏差，紧随全表现存最后一个明细落款行后插入
                             targetDetailStartRow = curIndexes.cabTolsumRow > 0 ? curIndexes.cabTolsumRow + 4 : 41;

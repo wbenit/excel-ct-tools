@@ -1,3 +1,22 @@
+- **【缺陷深度修复与逻辑闭环：根治在已有箱柜下方空白预留行新建箱柜时底表明细错误前插在箱柜3前面的严重缺陷】(`Services/ExcelServices.Cabinet.cs`, `publish/`)**：
+  1. **用户核心痛点确诊**：
+     - 用户指令反馈：“鼠标放在B9单元格，右击新建箱柜，箱柜明细应该追加在最后，但是有时候会追加在箱柜3的前面，什么原因”并下达“修复”指令；
+     - 现象排查：Row 7 为【箱柜1】，Row 8 为【箱柜3】，Row 9 为空白行；用户在 B9 单元格右键点击新建箱柜时，顶部汇总虽然正确追加在 Row 9，但底表明细块却错误地插在了【箱柜3】明细块的前面（上方）；
+     - 根因分析：
+       ① 意图与计算割裂：`DetermineTopSummaryInsertRow` 虽在汇总行中识别出光标在已有箱柜下方空白行并走末尾追加，但底表明细计算时完全缺乏末尾追加联动标记，只要 `activeCab != null` 就强行向前插入；
+       ② 盲目单柜兜底误伤：当工作表仅有 1 台有效箱柜（如箱柜3）时，`Tool.GetActiveCabinet` 内部的 `fallbackSingle: true` 强行将空白单元格误判为选中了【箱柜3】；
+       ③ 幽灵名称与向后穿透：若表内箱柜1无明细或第 9 行曾残留历史定义名称，向后扫描与行号匹配同样会误撞箱柜3。
+  2. **工程级最小变动修复落地 (`Services/ExcelServices.Cabinet.cs` -> `CopyCabinetDetailFromTemplate`)**：
+     - **前置幽灵定义名称净化**：在进入箱柜构建前，主动调用 `Tool.PurgeGhostNamesForSheet(activeSheet)` 与 `Tool.InvalidateSheetCabinetsCache` 清理残留的 `#REF!` 及空白预留行孤立名称；
+     - **物理区域与末尾追加严密判定 (`isAppendToEnd`)**：
+       - 精确提取光标行号 `cursorRow`、有效最大汇总行 `maxValidSumRow` 与最小明细行 `minDetRow`；
+       - 当光标落在表头（`cursorRow < 6`）、全表无箱柜、或光标落在已有箱柜汇总行下方与明细行上方的空白区域（如 `cursorRow > maxValidSumRow && cursorRow < minDetRow`，即 B9）时，100% 确立为 `isAppendToEnd = true`；
+     - **禁用单箱柜盲目兜底**：当 `isAppendToEnd` 为 true 时，显式令 `activeCab = null`，非追加模式下才传入 `fallbackSingle: false`，彻底消除空白处点击强行选中箱柜3的隐患；
+     - **明细全表末尾追加统一对齐**：当 `isAppendToEnd == true` 时，底表明细坚决跳过前置插行分支，统一以全表最后一个总计行后 + 4 行（`curIndexes.cabTolsumRow + 4`）安全追加，确保汇总与明细严格按顺序对齐。
+  3. **构建验证与产物同步**：
+     - `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 编译产物 `ExcelAddInDemo.dll` (3.17 MB) 及 PDB 全量镜像同步至 `publish/` 目录。
+
 - **【缺陷深度修复与闭环自愈：项目工具“修复”新增底部明细区域元器件行公式与小计联动全量自愈】(`Services/ExcelServices.cs`, `Services/ExcelServices.Cabinet.cs`, `Tool.cs`, `RibbonController.cs`, `publish/`)**：
   1. **用户核心指令与需求确诊**：
      - 用户指令：“项目工具——修复，需要修复底部明细区域中元器件行的公式”；
@@ -5995,3 +6014,65 @@
 
 ### [Next]
 - 用户重启 Excel 测试跨分类复制箱柜，确认 A 列表头不再显示 `#NAME?` 且正确联动到目标汇总行序号。
+
+## [2026-10-15 18:45:00] 取消箱柜盲目容错配对，对齐规则 9 报警机制落地闭环
+
+### [Completed]
+1. **取消过度容错与盲目拉郎配逻辑** (`Tool.cs:FixAndFillCabinetNamesForSheet`)：
+   - 彻底移除原有的第 2 轮（G 列公式行号正则反推）、第 3 轮（拓扑顺序保底硬配）和第 4 轮（孤立底表明细强行塞入空槽位）逻辑；
+   - 彻底消除了因穿插纯汇总无明细箱柜（如外购设备、母线桥）或柜号手误导致的 Off-by-one 全量箱柜串行错位隐患。
+2. **遵守规则 9 增加未匹配明细显式报警** (`Tool.cs:FixAndFillCabinetNamesForSheet`)：
+   - 仅保留严格基于指纹与柜号的第 1 轮（A/B/C）规范双向对齐；
+   - 遍历检查 `detRows`，对未被任何汇总行认领的底表明细块调用 `AddCabinetWarning` 明确记录警告，提示用户排查图纸柜号是否一致，绝不做自以为是的防御猜测。
+3. **构建验证**：
+   - 运行 `dotnet build ExcelAddInDemo.csproj` 通过，**0 错误**。
+
+### [Next]
+- 用户在 Excel 中操作含有纯汇总柜或修改柜号的图纸，验证定义名称对齐精确度及未匹配预警提示。
+
+## [2026-10-15 20:35:00] FixAndFillCabinetNamesForSheet 六大性能与逻辑闭环优化实施完成
+
+### [Completed]
+1. **配对对象化预清洗投影 (优化点 1)** (`Tool.cs`)：
+   - 提取 `sumItems` 与 `detItems` 轻量元组数组，在循环前完成 `CleanCabStr` 与 Trim，消除 $O(N \times M \times 3)$ 次重复调用与大量临时字符串 GC 分配。
+2. **汇总未配对反向预警闭环 (优化点 2 & 规则 9)** (`Tool.cs`)：
+   - 对未匹配到底表明细且非纯汇总设备的汇总行，调用 `AddCabinetWarning` 记录反向报警，形成正反双向校验闭环。
+3. **消除现存定义名称二次重复读取 (优化点 3)** (`Tool.cs`)：
+   - 将 Lazy Check 阶段已收集的 `cachedExistingMap` 向下透传复用，仅当无缓存时才进行一次全量收集，避免二次遍历整个工作簿 Names 集合。
+4. **公式方案库 Lazy 延迟加载 (优化点 4)** (`Tool.cs`)：
+   - 封装 `GetFeeGroupsLazy`，仅在真正遇到某台箱柜缺失现成 `Cab_Subsum` 且具备总计行时才首次加载，消除常规自愈时无谓的磁盘 JSON 反序列化开销。
+5. **定义名称防重写入保护 (优化点 5)** (`Tool.cs`)：
+   - 提前提取 `existAnchor`，在绑定 `Cab_Sum_k` 和 `Cab_Det_k` 前进行行号比对（`existingSumRow != curSumRow`、`existingDetRow != curDetRow`），物理位置未变动时跳过 COM 写入。
+6. **超额名称与死链单遍合并清理 (优化点 6)** (`Tool.cs`)：
+   - 将原本各自独立的 2 次工作表级与 2 次工作簿级遍历合并为单遍循环（4 次 COM 遍历减半为 2 次），清理性能大幅提升。
+7. **构建验证**：
+   - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 验证通过：**0 警告、0 错误**。
+
+### [Next]
+- 待用户在 Excel 中测试包含多箱柜的大型分类表，体验自愈响应速度与正反双向预警机制。
+
+## [2026-10-15 20:58:00] 修复 Lazy Check 对无明细（纯汇总）箱柜的误判 Bug
+
+### [Completed]
+1. **重构 Lazy Check 明细完整性检查** (`Tool.cs:FixAndFillCabinetNamesForSheet`)：
+   - 彻底废除 `hasDetCount > 0 && hasDetCount < existingMap.Count` 的一刀切误杀逻辑；
+   - 遵照规则 7，将顶部汇总区预读扩展至 `A{cabSumStartRow}:G500`（同时载入 `Value2` 与 `Formula` 数组）；
+   - 对缺失 `Det` 锚点的箱柜，精准核实其汇总行在内存数组中的 G 列单价特征：若为纯数字或空白且无公式，判定为合法的纯汇总箱柜，健康通过并放行 0ms 机制；若包含复杂公式则判定为明细漏绑并唤醒自愈。
+2. **规则 8 断号校验逻辑解耦** (`Tool.cs:FixAndFillCabinetNamesForSheet`)：
+   - 移除 `else if` 耦合，使规则 8 能够独立、完备地覆盖所有表格场景。
+3. **构建验证**：
+   - 编译通过：**0 错误**。
+
+### [Next]
+- 待用户在 Excel 中打开同时含有标准成套柜与纯汇总设备（如母线桥、外购件）的表格，验证是否能直接享受 0ms 极速放行。
+
+## 2026-10-15T15:01:23.723Z - 元器件拆分工作台复合句柄 CAD 对焦修复
+
+### [Completed]
+1. **ComponentSplitForm 选定图元句柄切分** (ComponentSplitForm.cs)：
+   - 在 selectHandle 消息分支中，对传入的 handle 字符串补充 Split(new[] { '-', ',', ';', ' ' }) 切分清洗与过滤，将复合句柄（如 3685-361C）拆分为纯净十六进制句柄集合。
+2. **CadSyncClient 防御性扁平化** (CadSyncClient.cs)：
+   - 在 SendHandlesDebounced 暂存句柄副本时，执行 SelectMany 防御性切分去重，确保后续推送到 CAD 的均为纯十六进制句柄。
+3. **CAD 联动端双重容错防御** (cad-net_1/cad1/ClassLibrary3/CadExcelSyncServer.cs)：
+   - 在 ProcessReceivedMessage 中统一对 handles 扁平化拆分去重；
+   - 在 ExecuteHighlightInCad 中将直接遍历 handles 升级为遍历切分后的 latHandles，彻底杜绝 Convert.ToInt64(h, 16) 遇到连字符抛出 FormatException 导致的聚焦无响应。

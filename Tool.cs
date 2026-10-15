@@ -2178,6 +2178,9 @@ namespace ExcelAddInDemo
                 // 读取顶部汇总行基准起始物理行号配置项 (默认 7)
                 int cabSumStartRow = ConfigManager.Instance.Current.Excel.CabSumRowIndex;
 
+                // 优化 3: 预定义现存定义名称映射缓存，避免在自愈流程中重复遍历整个工作簿的 Names 集合
+                List<KeyValuePair<int, Models.CabinetAnchorModel>>? cachedExistingMap = null;
+
                 // 1. 【防御性快速嗅探守门（Lazy Check）】：若非强制重建，优先校验现有定义名称健康度
                 // 若本表已由代码或历史流程正确注册了完备的定义名称，耗时 0ms 直接跳过，彻底消灭性能损耗与启发式反噬
                 if (!forceRebuild)
@@ -2192,6 +2195,8 @@ namespace ExcelAddInDemo
                         var existingNames = CollectAllDefinedNames(parentWb, sheet, autoRebuildIfEmpty: false);
                         // 构建现有定义名称映射列表
                         var existingMap = BuildCabinetMap(existingNames, sheetName, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                        // 缓存已收集的映射结果，供后文步骤 4 直接复用，彻底杜绝二次遍历 COM 集合
+                        cachedExistingMap = existingMap as List<KeyValuePair<int, Models.CabinetAnchorModel>>;
 
                         // 校验现有定义名称的健康度与拓扑合法性
                         if (existingMap != null && existingMap.Count > 0)
@@ -2205,55 +2210,85 @@ namespace ExcelAddInDemo
                                 if (kv.Value?.Det != null) hasDetCount++;
                             }
 
-                            // 检查明细块完整性：若已存在具有明细块的箱柜，但同时存在缺失 Det 的箱柜，判定为残缺，强制自愈
-                            if (hasDetCount > 0 && hasDetCount < existingMap.Count)
+                            // 规则 7 & 8: 一次性读取顶部汇总区（Row 7 到 500 行，A~G 列涵盖序号、柜号、名称及单价公式）
+                            try
                             {
-                                // 存在明细行缺失漏绑，不健康
-                                isHealthy = false;
-                            }
-                            // 规则 8: 校验顶部汇总区实际物理箱柜行数与现有定义名称数量是否一致
-                            // 若顶部汇总区物理存在更多箱柜（例如物理有 106 种，但定义名称中间断号仅剩 56 个），判定残缺唤醒自愈
-                            else if (isHealthy)
-                            {
-                                try
+                                dynamic checkRange = sheet.Range[$"A{cabSumStartRow}:G500"];
+                                object[,]? checkArr = checkRange.Value2 as object[,];
+                                object[,]? checkFormulaArr = checkRange.Formula as object[,];
+                                if (checkArr != null)
                                 {
-                                    // 规则 7: 一次性读取顶部汇总区（Row 7 到 500 行，A~C 列）
-                                    dynamic checkRange = sheet.Range[$"A{cabSumStartRow}:C500"];
-                                    object[,]? checkArr = checkRange.Value2 as object[,];
-                                    if (checkArr != null)
+                                    int physicalSumCount = 0;
+                                    int maxR = checkArr.GetLength(0);
+                                    // 遍历数组统计具有柜号或设备名称的物理箱柜行
+                                    for (int cr = 1; cr <= maxR; cr++)
                                     {
-                                        int physicalSumCount = 0;
-                                        int maxR = checkArr.GetLength(0);
-                                        // 遍历数组统计具有柜号或设备名称的物理箱柜行
-                                        for (int cr = 1; cr <= maxR; cr++)
+                                        string bVal = Convert.ToString(checkArr[cr, 2])?.Trim() ?? "";
+                                        string cVal = Convert.ToString(checkArr[cr, 3])?.Trim() ?? "";
+                                        if (bVal.Length > 0 || cVal.Length > 0)
                                         {
-                                            string bVal = Convert.ToString(checkArr[cr, 2])?.Trim() ?? "";
-                                            string cVal = Convert.ToString(checkArr[cr, 3])?.Trim() ?? "";
-                                            if (bVal.Length > 0 || cVal.Length > 0)
-                                            {
-                                                // 遇汇总小计或总计行立即截断
-                                                if (bVal.Contains("小计") || bVal.Contains("总计") || cVal.Contains("小计") || cVal.Contains("总计"))
-                                                    break;
-                                                physicalSumCount++;
-                                            }
-                                            else
-                                            {
-                                                // 遇到明细表头大标题行截断
-                                                string aVal = Convert.ToString(checkArr[cr, 1])?.Trim() ?? "";
-                                                if (aVal.Contains("序号") || aVal.Contains("明细"))
-                                                    break;
-                                            }
+                                            // 遇汇总小计或总计行立即截断
+                                            if (bVal.Contains("小计") || bVal.Contains("总计") || cVal.Contains("小计") || cVal.Contains("总计"))
+                                                break;
+                                            physicalSumCount++;
                                         }
-                                        // 若物理箱柜数大于现有定义名称数量，说明存在断号未绑箱柜，唤醒全量自愈
-                                        if (physicalSumCount > existingMap.Count)
+                                        else
                                         {
-                                            LogHelper.WriteLog($"[PROBE-FixAndFill] 嗅探发现顶部物理箱柜数({physicalSumCount}) > 定义名称数({existingMap.Count})，判定残缺，触发全量自愈");
-                                            isHealthy = false;
+                                            // 遇到明细表头大标题行截断
+                                            string aVal = Convert.ToString(checkArr[cr, 1])?.Trim() ?? "";
+                                            if (aVal.Contains("序号") || aVal.Contains("明细"))
+                                                break;
+                                        }
+                                    }
+
+                                    // 若物理箱柜数大于现有定义名称数量，说明存在断号未绑箱柜，唤醒全量自愈
+                                    if (physicalSumCount > existingMap.Count)
+                                    {
+                                        LogHelper.WriteLog($"[PROBE-FixAndFill] 嗅探发现顶部物理箱柜数({physicalSumCount}) > 定义名称数({existingMap.Count})，判定残缺，触发全量自愈");
+                                        isHealthy = false;
+                                    }
+
+                                    // 完美支持纯汇总箱柜：若存在缺失 Det 的箱柜，核实其是否为合法的纯汇总箱柜
+                                    if (isHealthy && hasDetCount < existingMap.Count)
+                                    {
+                                        foreach (var kv in existingMap)
+                                        {
+                                            var anchor = kv.Value;
+                                            // 仅核验未绑定明细行 Det 的箱柜
+                                            if (anchor?.Det == null && anchor?.DetRow == 0)
+                                            {
+                                                int sRow = anchor?.Sum != null ? Convert.ToInt32(anchor.Sum.Row) : (anchor?.SumRow ?? 0);
+                                                int relRow = sRow - cabSumStartRow + 1;
+                                                // 校验汇总行是否落在预读数组范围内
+                                                if (relRow >= 1 && relRow <= maxR)
+                                                {
+                                                    string gVal = Convert.ToString(checkArr[relRow, 7])?.Trim() ?? "";
+                                                    string gFormula = checkFormulaArr != null ? (Convert.ToString(checkFormulaArr[relRow, 7])?.Trim() ?? "") : "";
+
+                                                    // 纯汇总箱柜特征：单价为直接手填纯数字或空白，且无计算公式
+                                                    bool isPureSummary = (double.TryParse(gVal, out _) || string.IsNullOrEmpty(gVal)) &&
+                                                                         (string.IsNullOrEmpty(gFormula) || !gFormula.StartsWith("="));
+
+                                                    // 若单价包含复杂公式，说明该箱柜本应有明细块却丢失了 Det，判定不健康唤醒自愈
+                                                    if (!isPureSummary)
+                                                    {
+                                                        LogHelper.WriteLog($"[PROBE-FixAndFill] 箱柜 [{kv.Key}] 缺失Det锚点且G列包含公式({gFormula})，判定明细漏绑触发自愈");
+                                                        isHealthy = false;
+                                                        break;
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    // 汇总行超出数组范围，判定不健康
+                                                    isHealthy = false;
+                                                    break;
+                                                }
+                                            }
                                         }
                                     }
                                 }
-                                catch { }
                             }
+                            catch { }
                             
                             if (isHealthy)
                             {
@@ -2493,51 +2528,55 @@ namespace ExcelAddInDemo
                     // 内部辅助规范化函数：去除常见前缀与标点空格以支持高容错双向比对
                     string CleanCabStr(string s) => s.Replace("柜号", "").Replace("箱柜", "").Replace("设备", "").Replace("名称", "").Replace(":", "").Replace("：", "").Replace(" ", "").Trim();
 
+                    // 优化 1: 预清洗并对象化投影，将 O(N*M*3) 次重复文本提取与 Replace 暴降为 O(N+M)
+                    var sumItems = new (int Row, string CleanNo, string CleanName, string Remark, string RawNo, string RawName)[sumRows.Count];
+                    for (int i = 0; i < sumRows.Count; i++)
+                    {
+                        // 提取原始柜号与名称
+                        string sNo = GetText(sumRows[i], 2);
+                        string sName = GetText(sumRows[i], 3);
+                        // 构造轻量只读元组供后续微秒级比对
+                        sumItems[i] = (sumRows[i], CleanCabStr(sNo), CleanCabStr(sName), GetText(sumRows[i], 9).Trim(), sNo, sName);
+                    }
+
+                    // 预清洗底表明细块特征
+                    var detItems = new (int Row, string CleanNo, string CleanA, string Remark)[detRows.Count];
+                    for (int j = 0; j < detRows.Count; j++)
+                    {
+                        // 提取底表原始信息并预清洗
+                        detItems[j] = (detRows[j], CleanCabStr(GetText(detRows[j], 2)), CleanCabStr(GetText(detRows[j], 1)), GetText(detRows[j], 9).Trim());
+                    }
+
                     // 第一轮 (A)：双维度指纹级强匹配（箱柜名称一致 + I 列非空备注/重名标记 100% 完全吻合）
                     // 彻底解决多台同名箱柜顺序被打乱时的错配问题，首选按 I 列标记精准 1 对 1 绑定
                     for (int i = 0; i < sumRows.Count; i++)
                     {
                         // 若已配对则跳过
                         if (matchedDetRows[i] > 0) continue;
-                        // 提取汇总行柜号与设备名称 (B 列与 C 列)
-                        string sumCabNo = GetText(sumRows[i], 2);
-                        string sumCabName = GetText(sumRows[i], 3);
-                        // 提取汇总行 I 列备注 (第 9 列，包含位置与 (2) 等重名区分标记)
-                        string sumRemark = GetText(sumRows[i], 9).Trim();
-                        // 若备注为空则本轮不参与强匹配，留待下一轮处理
-                        if (string.IsNullOrEmpty(sumRemark)) continue;
-
-                        string cleanSumNo = CleanCabStr(sumCabNo);
-                        string cleanSumName = CleanCabStr(sumCabName);
+                        // 若汇总行无备注则留待下一轮处理
+                        if (string.IsNullOrEmpty(sumItems[i].Remark)) continue;
                         // 若汇总行无有效柜号与名称则跳过
-                        if (string.IsNullOrEmpty(cleanSumNo) && string.IsNullOrEmpty(cleanSumName)) continue;
+                        if (string.IsNullOrEmpty(sumItems[i].CleanNo) && string.IsNullOrEmpty(sumItems[i].CleanName)) continue;
 
                         // 遍历底表明细块寻找双维度匹配的对应项
                         for (int j = 0; j < detRows.Count; j++)
                         {
                             if (detUsed[j]) continue;
-                            // 提取底表明细信息行柜号、A列文本及 I 列备注
-                            string detCabNo = GetText(detRows[j], 2);
-                            string detTextA = GetText(detRows[j], 1);
-                            string detRemark = GetText(detRows[j], 9).Trim();
-
                             // 校验 I 列备注是否完全一致 (不区分大小写)
-                            if (!string.Equals(sumRemark, detRemark, StringComparison.OrdinalIgnoreCase)) continue;
+                            if (!string.Equals(sumItems[i].Remark, detItems[j].Remark, StringComparison.OrdinalIgnoreCase)) continue;
 
-                            string cleanDetNo = CleanCabStr(detCabNo);
-                            string cleanDetA = CleanCabStr(detTextA);
                             // 判定柜号或设备名称是否完全吻合
-                            bool isMatchNo = !string.IsNullOrEmpty(cleanSumNo) && (
-                                             (!string.IsNullOrEmpty(cleanDetNo) && string.Equals(cleanDetNo, cleanSumNo, StringComparison.OrdinalIgnoreCase)) ||
-                                             (!string.IsNullOrEmpty(cleanDetA) && string.Equals(cleanDetA, cleanSumNo, StringComparison.OrdinalIgnoreCase)));
-                            bool isMatchName = !string.IsNullOrEmpty(cleanSumName) && (
-                                               (!string.IsNullOrEmpty(cleanDetNo) && string.Equals(cleanDetNo, cleanSumName, StringComparison.OrdinalIgnoreCase)) ||
-                                               (!string.IsNullOrEmpty(cleanDetA) && string.Equals(cleanDetA, cleanSumName, StringComparison.OrdinalIgnoreCase)));
+                            bool isMatchNo = !string.IsNullOrEmpty(sumItems[i].CleanNo) && (
+                                             (!string.IsNullOrEmpty(detItems[j].CleanNo) && string.Equals(detItems[j].CleanNo, sumItems[i].CleanNo, StringComparison.OrdinalIgnoreCase)) ||
+                                             (!string.IsNullOrEmpty(detItems[j].CleanA) && string.Equals(detItems[j].CleanA, sumItems[i].CleanNo, StringComparison.OrdinalIgnoreCase)));
+                            bool isMatchName = !string.IsNullOrEmpty(sumItems[i].CleanName) && (
+                                               (!string.IsNullOrEmpty(detItems[j].CleanNo) && string.Equals(detItems[j].CleanNo, sumItems[i].CleanName, StringComparison.OrdinalIgnoreCase)) ||
+                                               (!string.IsNullOrEmpty(detItems[j].CleanA) && string.Equals(detItems[j].CleanA, sumItems[i].CleanName, StringComparison.OrdinalIgnoreCase)));
 
                             // 名称与 I 列标记双维度同时吻合，建立指纹级精准锁定
                             if (isMatchNo || isMatchName)
                             {
-                                matchedDetRows[i] = detRows[j];
+                                matchedDetRows[i] = detItems[j].Row;
                                 detUsed[j] = true;
                                 break;
                             }
@@ -2549,35 +2588,26 @@ namespace ExcelAddInDemo
                     for (int i = 0; i < sumRows.Count; i++)
                     {
                         if (matchedDetRows[i] > 0) continue;
-                        string sumCabNo = GetText(sumRows[i], 2);
-                        string sumCabName = GetText(sumRows[i], 3);
-                        string sumRemark = GetText(sumRows[i], 9).Trim();
                         // 仅处理汇总行 I 列为空的箱柜
-                        if (!string.IsNullOrEmpty(sumRemark)) continue;
-
-                        string cleanSumNo = CleanCabStr(sumCabNo);
-                        string cleanSumName = CleanCabStr(sumCabName);
-                        if (string.IsNullOrEmpty(cleanSumNo) && string.IsNullOrEmpty(cleanSumName)) continue;
+                        if (!string.IsNullOrEmpty(sumItems[i].Remark)) continue;
+                        if (string.IsNullOrEmpty(sumItems[i].CleanNo) && string.IsNullOrEmpty(sumItems[i].CleanName)) continue;
 
                         for (int j = 0; j < detRows.Count; j++)
                         {
                             if (detUsed[j]) continue;
-                            string detRemark = GetText(detRows[j], 9).Trim();
                             // 优先且仅匹配底表同样备注为空的明细块
-                            if (!string.IsNullOrEmpty(detRemark)) continue;
+                            if (!string.IsNullOrEmpty(detItems[j].Remark)) continue;
 
-                            string cleanDetNo = CleanCabStr(GetText(detRows[j], 2));
-                            string cleanDetA = CleanCabStr(GetText(detRows[j], 1));
-                            bool isMatchNo = !string.IsNullOrEmpty(cleanSumNo) && (
-                                             (!string.IsNullOrEmpty(cleanDetNo) && string.Equals(cleanDetNo, cleanSumNo, StringComparison.OrdinalIgnoreCase)) ||
-                                             (!string.IsNullOrEmpty(cleanDetA) && string.Equals(cleanDetA, cleanSumNo, StringComparison.OrdinalIgnoreCase)));
-                            bool isMatchName = !string.IsNullOrEmpty(cleanSumName) && (
-                                               (!string.IsNullOrEmpty(cleanDetNo) && string.Equals(cleanDetNo, cleanSumName, StringComparison.OrdinalIgnoreCase)) ||
-                                               (!string.IsNullOrEmpty(cleanDetA) && string.Equals(cleanDetA, cleanSumName, StringComparison.OrdinalIgnoreCase)));
+                            bool isMatchNo = !string.IsNullOrEmpty(sumItems[i].CleanNo) && (
+                                             (!string.IsNullOrEmpty(detItems[j].CleanNo) && string.Equals(detItems[j].CleanNo, sumItems[i].CleanNo, StringComparison.OrdinalIgnoreCase)) ||
+                                             (!string.IsNullOrEmpty(detItems[j].CleanA) && string.Equals(detItems[j].CleanA, sumItems[i].CleanNo, StringComparison.OrdinalIgnoreCase)));
+                            bool isMatchName = !string.IsNullOrEmpty(sumItems[i].CleanName) && (
+                                               (!string.IsNullOrEmpty(detItems[j].CleanNo) && string.Equals(detItems[j].CleanNo, sumItems[i].CleanName, StringComparison.OrdinalIgnoreCase)) ||
+                                               (!string.IsNullOrEmpty(detItems[j].CleanA) && string.Equals(detItems[j].CleanA, sumItems[i].CleanName, StringComparison.OrdinalIgnoreCase)));
 
                             if (isMatchNo || isMatchName)
                             {
-                                matchedDetRows[i] = detRows[j];
+                                matchedDetRows[i] = detItems[j].Row;
                                 detUsed[j] = true;
                                 break;
                             }
@@ -2588,109 +2618,65 @@ namespace ExcelAddInDemo
                     for (int i = 0; i < sumRows.Count; i++)
                     {
                         if (matchedDetRows[i] > 0) continue;
-                        string sumCabNo = GetText(sumRows[i], 2);
-                        string sumCabName = GetText(sumRows[i], 3);
-
-                        string cleanSumNo = CleanCabStr(sumCabNo);
-                        string cleanSumName = CleanCabStr(sumCabName);
-                        if (string.IsNullOrEmpty(cleanSumNo) && string.IsNullOrEmpty(cleanSumName)) continue;
+                        if (string.IsNullOrEmpty(sumItems[i].CleanNo) && string.IsNullOrEmpty(sumItems[i].CleanName)) continue;
 
                         for (int j = 0; j < detRows.Count; j++)
                         {
                             if (detUsed[j]) continue;
-                            string cleanDetNo = CleanCabStr(GetText(detRows[j], 2));
-                            string cleanDetA = CleanCabStr(GetText(detRows[j], 1));
-                            bool isMatchNo = !string.IsNullOrEmpty(cleanSumNo) && (
-                                             (!string.IsNullOrEmpty(cleanDetNo) && string.Equals(cleanDetNo, cleanSumNo, StringComparison.OrdinalIgnoreCase)) ||
-                                             (!string.IsNullOrEmpty(cleanDetA) && string.Equals(cleanDetA, cleanSumNo, StringComparison.OrdinalIgnoreCase)));
-                            bool isMatchName = !string.IsNullOrEmpty(cleanSumName) && (
-                                               (!string.IsNullOrEmpty(cleanDetNo) && string.Equals(cleanDetNo, cleanSumName, StringComparison.OrdinalIgnoreCase)) ||
-                                               (!string.IsNullOrEmpty(cleanDetA) && string.Equals(cleanDetA, cleanSumName, StringComparison.OrdinalIgnoreCase)));
+                            bool isMatchNo = !string.IsNullOrEmpty(sumItems[i].CleanNo) && (
+                                             (!string.IsNullOrEmpty(detItems[j].CleanNo) && string.Equals(detItems[j].CleanNo, sumItems[i].CleanNo, StringComparison.OrdinalIgnoreCase)) ||
+                                             (!string.IsNullOrEmpty(detItems[j].CleanA) && string.Equals(detItems[j].CleanA, sumItems[i].CleanNo, StringComparison.OrdinalIgnoreCase)));
+                            bool isMatchName = !string.IsNullOrEmpty(sumItems[i].CleanName) && (
+                                               (!string.IsNullOrEmpty(detItems[j].CleanNo) && string.Equals(detItems[j].CleanNo, sumItems[i].CleanName, StringComparison.OrdinalIgnoreCase)) ||
+                                               (!string.IsNullOrEmpty(detItems[j].CleanA) && string.Equals(detItems[j].CleanA, sumItems[i].CleanName, StringComparison.OrdinalIgnoreCase)));
 
                             if (isMatchNo || isMatchName)
                             {
-                                matchedDetRows[i] = detRows[j];
+                                matchedDetRows[i] = detItems[j].Row;
                                 detUsed[j] = true;
                                 break;
                             }
                         }
                     }
 
-                    // 第二轮：通过汇总行 G 列单价公式引用进行底层关联匹配 (容错柜号名称不完全一致的情况)
-                    for (int i = 0; i < sumRows.Count; i++)
-                    {
-                        // 已通过柜号配对成功的箱柜直接跳过
-                        if (matchedDetRows[i] > 0) continue;
-                        // 提取汇总行 G 列单价公式
-                        string gFormula = GetFormula(sumRows[i], 7);
-                        // 校验公式是否为标准引用表达式
-                        if (!string.IsNullOrEmpty(gFormula) && gFormula.StartsWith("="))
-                        {
-                            // 检查公式引用的行号是否落在某个未使用的明细块范围内
-                            for (int j = 0; j < detRows.Count; j++)
-                            {
-                                if (detUsed[j]) continue;
-                                // 获取当前明细块起始与结束区间
-                                int detStart = detRows[j];
-                                int detNext = (j + 1 < detRows.Count) ? detRows[j + 1] : (usedEndRow + 1);
-                                // 探测公式中是否显式包含了当前明细块内部的行号引用
-                                bool matchRef = System.Text.RegularExpressions.Regex.Matches(gFormula, @"\d+")
-                                    .Cast<System.Text.RegularExpressions.Match>()
-                                    .Any(m => int.TryParse(m.Value, out int r) && r >= detStart && r < detNext);
-
-                                if (matchRef)
-                                {
-                                    // 容错匹配成功，锁定明细行
-                                    matchedDetRows[i] = detRows[j];
-                                    detUsed[j] = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    // 第三轮：剩余未匹配箱柜按拓扑顺序保底对齐 (精准排除纯数字单价或空白无公式的纯汇总柜)
-                    int nextDetIdx = 0;
-                    for (int i = 0; i < sumRows.Count; i++)
-                    {
-                        // 已经配对的箱柜跳过
-                        if (matchedDetRows[i] > 0) continue;
-                        // 寻找下一个尚未使用的底表明细行
-                        while (nextDetIdx < detRows.Count && detUsed[nextDetIdx]) nextDetIdx++;
-                        // 若所有底表明细行均已分配完毕则终止
-                        if (nextDetIdx >= detRows.Count) break;
-
-                        // 提取汇总行 G 列单价数值与公式特征
-                        string gVal = GetText(sumRows[i], 7);
-                        string gFormula = GetFormula(sumRows[i], 7);
-                        // 判断是否为纯数字直接录入或空白无公式 (纯汇总无明细箱柜的核心业务特征)
-                        bool isPureNumberOrBlank = (double.TryParse(gVal, out _) || string.IsNullOrEmpty(gVal)) && string.IsNullOrEmpty(gFormula);
-
-                        // 只有非纯数字且非空白单价的柜子才分配明细行；若存在多余的纯数字/空白单价且无对应底表，则视为纯汇总无明细柜保持为 0
-                        if (!isPureNumberOrBlank || detRows.Count == sumRows.Count)
-                        {
-                            // 按顺序分配明细行
-                            matchedDetRows[i] = detRows[nextDetIdx];
-                            detUsed[nextDetIdx] = true;
-                            nextDetIdx++;
-                        }
-                    }
-
-                    // 第四轮：兜底回填，将所有真实存在但未被顶部汇总行占用的底表明细块 (如 431 行)，
-                    // 自动按顺序回填至尚未分配明细的箱柜槽位中，确保底表每个箱柜必定能绑定 Cab_Det 定义名称
+                    // 规则 9: 取消自以为是的容错推测与拉郎配 (第二轮公式反推、第三轮顺序保底、第四轮孤立明细强塞)
+                    // 严格仅保留基于指纹与柜号的规范对齐。对于未能匹配到汇总行的底表明细块，直接记录警告提醒用户排查图纸
                     for (int j = 0; j < detRows.Count; j++)
                     {
-                        // 跳过已被配对的明细行
-                        if (detUsed[j]) continue;
-                        // 寻找 matchedDetRows 中首个尚未分配明细的槽位 (值为 0)
-                        for (int i = 0; i < cabCount; i++)
+                        // 若该底表明细块未被任何汇总行匹配认领
+                        if (!detUsed[j])
                         {
-                            if (matchedDetRows[i] == 0)
+                            // 提取底表未匹配箱柜的柜号与标识文本
+                            string unDetNo = GetText(detRows[j], 2);
+                            // 提取 A 列辅助文本 (如包含柜号或图号)
+                            string unDetA = GetText(detRows[j], 1);
+                            // 记录警告日志供排查诊断
+                            LogHelper.WriteLog($"[配对警告] 底表第 {detRows[j]} 行箱柜明细（柜号: '{unDetNo}', A列: '{unDetA}'）在顶部汇总表中未找到对应匹配项！");
+                            // 规则 9: 绝不做猜测兼容，直接将警告加入收集器以便提醒用户核对图纸柜号
+                            AddCabinetWarning($"【{sheetName}】底表第 {detRows[j]} 行箱柜（{unDetNo} {unDetA}）在顶部汇总表中未找到对应柜号，请核对柜号！");
+                        }
+                    }
+
+                    // 优化 2 & 规则 9: 反向校验未能匹配到底表的汇总行
+                    // 若某汇总行未配到明细，且其 G 列不是纯数字或空白（即本应有明细表），记录警告提醒用户
+                    for (int i = 0; i < sumRows.Count; i++)
+                    {
+                        // 若汇总行未分配到底表明细
+                        if (matchedDetRows[i] == 0)
+                        {
+                            // 提取汇总行 G 列单价数值与公式
+                            string gVal = GetText(sumRows[i], 7);
+                            string gFormula = GetFormula(sumRows[i], 7);
+                            // 判断是否为纯汇总设备（纯数字或空白且无公式）
+                            bool isPureSummary = (double.TryParse(gVal, out _) || string.IsNullOrEmpty(gVal)) && string.IsNullOrEmpty(gFormula);
+                            // 若不是纯汇总设备，说明存在遗漏或柜号拼写错误
+                            if (!isPureSummary)
                             {
-                                // 回填底表明细行
-                                matchedDetRows[i] = detRows[j];
-                                detUsed[j] = true;
-                                break;
+                                string sNo = sumItems[i].RawNo;
+                                string sName = sumItems[i].RawName;
+                                // 记录日志与提示警告
+                                LogHelper.WriteLog($"[配对警告] 汇总行第 {sumRows[i]} 行箱柜（柜号: '{sNo}', 名称: '{sName}'）在底表未找到对应明细！");
+                                AddCabinetWarning($"【{sheetName}】汇总行第 {sumRows[i]} 行箱柜（{sNo} {sName}）在底表未找到对应明细，请核对柜号！");
                             }
                         }
                     }
@@ -2701,19 +2687,27 @@ namespace ExcelAddInDemo
                     for (int i = 0; i < detRows.Count; i++) matchedDetRows[i] = detRows[i];
                 }
 
-                // 规则 7: 循环外预加载系统公式方案库并倒序排列，避免每台箱柜重复反序列化磁盘 JSON
+                // 优化 4: 方案库按需延迟加载标志位，绝大多数场景下定义名称完好，杜绝无谓反序列化磁盘 JSON
                 List<Controllers.FormulaGroupModel>? sortedFeeGroups = null;
-                try
+                bool feeGroupsLoaded = false;
+                List<Controllers.FormulaGroupModel>? GetFeeGroupsLazy()
                 {
-                    // 实例化公式控制器提取系统已登记的所有公式组方案
-                    var feeCtrl = new Controllers.FormulaAdjustFeeController();
-                    var allGroups = feeCtrl.GetFormulaGroups();
-                    // 优先按明细项数量倒序比对，确保优先匹配更具体更长且完全吻合的方案
-                    sortedFeeGroups = allGroups?.Where(g => g.Details != null && g.Details.Count >= 3)
-                                               .OrderByDescending(g => g.Details!.Count)
-                                               .ToList();
+                    // 若已加载过直接返回现有缓存
+                    if (feeGroupsLoaded) return sortedFeeGroups;
+                    feeGroupsLoaded = true;
+                    try
+                    {
+                        // 实例化公式控制器提取系统已登记的所有公式组方案
+                        var feeCtrl = new Controllers.FormulaAdjustFeeController();
+                        var allGroups = feeCtrl.GetFormulaGroups();
+                        // 优先按明细项数量倒序比对，确保优先匹配更具体更长且完全吻合的方案
+                        sortedFeeGroups = allGroups?.Where(g => g.Details != null && g.Details.Count >= 3)
+                                                   .OrderByDescending(g => g.Details!.Count)
+                                                   .ToList();
+                    }
+                    catch { }
+                    return sortedFeeGroups;
                 }
-                catch { }
 
                 // 本地辅助函数：验证指定方案在当前总计行下是否 100% 逐项完全吻合 (严禁模糊猜测)
                 bool TryMatchFormulaGroup(Controllers.FormulaGroupModel g, int tolsumRow, int detRow, out int feeStartRow)
@@ -2772,15 +2766,17 @@ namespace ExcelAddInDemo
                 // 维护最近命中方案缓存 (高速验证通道)，在多台箱柜连续匹配时实现微秒级瞬时命中
                 Controllers.FormulaGroupModel? lastMatchedGroup = null;
 
-                // 核心指示：不需要再去识别计费区域了，已有现成的定义名称了，直接使用即可
-                // 预先收集工作簿与工作表中现存的定义名称映射 (零推测，直接复用现成定义名称)
-                dynamic? curParentWb = null;
-                // 尝试提取工作簿句柄
-                try { curParentWb = sheet.Parent; } catch { }
-                // 收集当前表的双作用域所有定义名称 (不触发自动重建)
-                List<dynamic> existingNamesPre = (List<dynamic>)CollectAllDefinedNames(curParentWb, sheet, autoRebuildIfEmpty: false);
-                // 构建现有箱柜定义名称映射列表
-                List<KeyValuePair<int, Models.CabinetAnchorModel>> existingCabList = (List<KeyValuePair<int, Models.CabinetAnchorModel>>)BuildCabinetMap((IEnumerable<dynamic>)existingNamesPre, sheetName, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                // 优化 3: 直接复用前置嗅探阶段已收集的定义名称映射，杜绝二次全量遍历 COM 集合
+                List<KeyValuePair<int, Models.CabinetAnchorModel>>? existingCabList = cachedExistingMap;
+                if (existingCabList == null)
+                {
+                    dynamic? curParentWb = null;
+                    try { curParentWb = sheet.Parent; } catch { }
+                    // 仅当缓存为空（如 forceRebuild）时才按需执行一次收集
+                    var existingNamesPre = CollectAllDefinedNames(curParentWb, sheet, autoRebuildIfEmpty: false);
+                    existingCabList = BuildCabinetMap(existingNamesPre, sheetName, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
+                }
+
                 // 转换为以箱柜序号为键的强类型字典以便安全高效索引
                 var existingCabDict = new Dictionary<int, Models.CabinetAnchorModel>();
                 if (existingCabList != null)
@@ -2803,12 +2799,25 @@ namespace ExcelAddInDemo
                     // 箱柜序号从 1 开始递增
                     int k = i + 1;
 
+                    // 优化 5: 提前提取现存箱柜锚点，供各名称执行防重写入检查
+                    Models.CabinetAnchorModel? existAnchor = null;
+                    existingCabDict?.TryGetValue(k, out existAnchor);
+
+                    // 提取现存汇总行与明细行行号
+                    int existingSumRow = existAnchor?.Sum != null ? Convert.ToInt32(existAnchor.Sum.Row) : (existAnchor?.SumRow ?? 0);
+                    int existingDetRow = existAnchor?.Det != null ? Convert.ToInt32(existAnchor.Det.Row) : (existAnchor?.DetRow ?? 0);
+                    int existingSubsumRow = existAnchor?.Subsum != null ? Convert.ToInt32(existAnchor.Subsum.Row) : (existAnchor?.SubsumRow ?? 0);
+                    int existingTolsumRow = existAnchor?.Tolsum != null ? Convert.ToInt32(existAnchor.Tolsum.Row) : (existAnchor?.TolsumRow ?? 0);
+
                     // 确定当前箱柜对应的汇总行（只有真正存在有效汇总行时才获取，严禁越界盲目向下推算）
                     int curSumRow = (i < sumRows.Count) ? sumRows[i] : 0;
                     if (curSumRow > 0)
                     {
-                        // 只要存在真正有效的汇总行，才校准绑定 Cab_Sum_k
-                        SafeSetSheetName(sheet, sheetName, $"{sumPrefix}{k}", curSumRow);
+                        // 优化 5: 仅当行号发生改变时才校准绑定 Cab_Sum_k，避免无谓覆写与 COM 开销
+                        if (existingSumRow != curSumRow)
+                        {
+                            SafeSetSheetName(sheet, sheetName, $"{sumPrefix}{k}", curSumRow);
+                        }
                     }
                     else if (forceRebuild)
                     {
@@ -2830,26 +2839,6 @@ namespace ExcelAddInDemo
                             if (dr > curDetRow && dr < nextBoundaryRow)
                             {
                                 nextBoundaryRow = dr;
-                            }
-                        }
-
-                        // 提取当前箱柜现存的定义名称行号 (若存在合法定义名称，优先直接复用)
-                        int existingSubsumRow = 0;
-                        int existingTolsumRow = 0;
-                        // 预先声明定位模型变量避免未赋值编译警告
-                        Models.CabinetAnchorModel? existAnchor = null;
-                        // 从字典中安全检出现存箱柜的定位模型
-                        if (existingCabDict != null && existingCabDict.TryGetValue(k, out existAnchor) && existAnchor != null)
-                        {
-                            // 读取现存的小计/计费首行定义名称行号
-                            if (existAnchor.Subsum != null)
-                            {
-                                try { existingSubsumRow = Convert.ToInt32(existAnchor.Subsum.Row); } catch { }
-                            }
-                            // 读取现存的总计行定义名称行号
-                            if (existAnchor.Tolsum != null)
-                            {
-                                try { existingTolsumRow = Convert.ToInt32(existAnchor.Tolsum.Row); } catch { }
                             }
                         }
 
@@ -2917,36 +2906,40 @@ namespace ExcelAddInDemo
                             // 直接使用现存定义名称确立的计费起始行，彻底消除算法推测覆盖
                             curFeeStartRow = existingSubsumRow;
                         }
-                        else if (curTolsumRow > 0 && sortedFeeGroups != null && sortedFeeGroups.Count > 0)
+                        else if (curTolsumRow > 0)
                         {
-                            // 仅当当前箱柜完全缺失 Cab_Subsum 定义名称时，才走方案库或小计特征识别兜底
-                            try
+                            // 优化 4: 仅当真正缺失 Cab_Subsum 且具备总计行时，才触发 Lazy 方案库获取
+                            var activeFeeGroups = GetFeeGroupsLazy();
+                            if (activeFeeGroups != null && activeFeeGroups.Count > 0)
                             {
-                                // 高速通道：优先验证上一个箱柜命中的方案 (同一张图纸大多数箱柜方案完全一致)
-                                if (lastMatchedGroup != null && TryMatchFormulaGroup(lastMatchedGroup, curTolsumRow, curDetRow, out int fastFeeStart))
+                                try
                                 {
-                                    // 命中最近方案，直接采用
-                                    curFeeStartRow = fastFeeStart;
-                                }
-                                else
-                                {
-                                    // 高速通道未命中或首次匹配，遍历按项数倒序排列的方案库
-                                    foreach (var g in sortedFeeGroups)
+                                    // 高速通道：优先验证上一个箱柜命中的方案 (同一张图纸大多数箱柜方案完全一致)
+                                    if (lastMatchedGroup != null && TryMatchFormulaGroup(lastMatchedGroup, curTolsumRow, curDetRow, out int fastFeeStart))
                                     {
-                                        // 跳过已验证过的最近方案
-                                        if (g == lastMatchedGroup) continue;
-                                        // 逐项严格 100% 完全比对方案
-                                        if (TryMatchFormulaGroup(g, curTolsumRow, curDetRow, out int matchedFeeStart))
+                                        // 命中最近方案，直接采用
+                                        curFeeStartRow = fastFeeStart;
+                                    }
+                                    else
+                                    {
+                                        // 高速通道未命中或首次匹配，遍历按项数倒序排列的方案库
+                                        foreach (var g in activeFeeGroups)
                                         {
-                                            curFeeStartRow = matchedFeeStart;
-                                            // 成功命中，更新最近方案缓存
-                                            lastMatchedGroup = g;
-                                            break;
+                                            // 跳过已验证过的最近方案
+                                            if (g == lastMatchedGroup) continue;
+                                            // 逐项严格 100% 完全比对方案
+                                            if (TryMatchFormulaGroup(g, curTolsumRow, curDetRow, out int matchedFeeStart))
+                                            {
+                                                curFeeStartRow = matchedFeeStart;
+                                                // 成功命中，更新最近方案缓存
+                                                lastMatchedGroup = g;
+                                                break;
+                                            }
                                         }
                                     }
                                 }
+                                catch { }
                             }
-                            catch { }
 
                             // 用户指示：若未能匹配到预设公式方案，则在 ABC 列包含“小计”的行作为计费区的第一行
                             if (curFeeStartRow == 0)
@@ -2986,7 +2979,11 @@ namespace ExcelAddInDemo
                         }
 
                         // 3. 规范绑定定义名称与刷新公式
-                        SafeSetSheetName(sheet, sheetName, $"{detPrefix}{k}", curDetRow);
+                        // 优化 5: 防重写入保护，仅当明细行物理位置变动时才调用 COM 覆写
+                        if (existingDetRow != curDetRow)
+                        {
+                            SafeSetSheetName(sheet, sheetName, $"{detPrefix}{k}", curDetRow);
+                        }
                         if (curTolsumRow > 0 && existingTolsumRow != curTolsumRow)
                         {
                             // 仅当总计行定义名称缺失或改变时才校准，避免无谓覆写
@@ -3158,27 +3155,31 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 5. 【清理大于 cabCount 的多余旧箱柜定义名称与 #REF! 损坏失效名称，防止幽灵定义名称残留】
-                // 采用双作用域（工作表级与工作簿级）现存集合倒序遍历精准清理，彻底杜绝盲目大循环引发数百次 COM 异常
+                // 5. 【优化 6: 单遍合并清理：超额旧箱柜名称与 #REF! 损坏失效名称】
+                // 采用双作用域（工作表级与工作簿级）单遍倒序遍历，将 4 次 COM 遍历减半为 2 次，彻底消除循环冗余
                 try
                 {
-                    // 核心防护：若当前识别出的有效箱柜数量小于等于 0，或者当前非 forceRebuild 强制重建，绝对严禁删除任何未损坏的名称！
-                    // 因为有效箱柜为 0 极大概率是识别异常或外部表误入，坚决不能把现存定义名称清空！
-                    if (cabCount > 0 && forceRebuild)
+                    // 1. 单遍倒序遍历工作表自身的作用域名称集合
+                    dynamic sNames = sheet.Names;
+                    if (sNames != null)
                     {
-                        // 遍历工作表自身的作用域名称集合
-                        dynamic sNames = sheet.Names;
-                        if (sNames != null)
+                        for (int nIdx = sNames.Count; nIdx >= 1; nIdx--)
                         {
-                            // 倒序遍历删除避免索引偏移
-                            for (int nIdx = sNames.Count; nIdx >= 1; nIdx--)
+                            dynamic singleName = sNames.Item(nIdx);
+                            string sRef = Convert.ToString(singleName.RefersTo) ?? "";
+                            // 规则 A: 失效死链无论是否 forceRebuild 均安全删除
+                            if (sRef.Contains("#REF"))
                             {
-                                // 提取定义名称对象
-                                dynamic singleName = sNames.Item(nIdx);
+                                LogHelper.WriteLog($"[CleanDeadName] 清理工作表死链定义名称: {singleName.Name}");
+                                singleName.Delete();
+                                continue;
+                            }
+
+                            // 规则 B: 当为 forceRebuild 强制重建且识别到有效箱柜时，清理序号超额的旧箱柜名称
+                            if (cabCount > 0 && forceRebuild)
+                            {
                                 string nStr = ExtractCleanNameStr(Convert.ToString(singleName.Name) ?? "");
-                                // 提取箱柜序号
                                 int nK = ExtractIndexFromName(nStr, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
-                                // 若属于箱柜定义名称且序号大于当前实际箱柜总数，坚决删除
                                 if (nK > 0 && nK > cabCount)
                                 {
                                     LogHelper.WriteLog($"[CleanExtraName] 显式清理超额工作表名称: {nStr}, k={nK} > cabCount={cabCount}");
@@ -3186,23 +3187,32 @@ namespace ExcelAddInDemo
                                 }
                             }
                         }
+                    }
 
-                        // 检查并清理工作簿级别属于当前工作表的超额箱柜定义名称
-                        dynamic wbParent = sheet.Parent;
-                        if (wbParent != null && wbParent.Names != null)
+                    // 2. 单遍倒序遍历工作簿级别属于当前工作表的超额与死链定义名称
+                    dynamic wbParent = sheet.Parent;
+                    if (wbParent != null && wbParent.Names != null)
+                    {
+                        for (int wIdx = wbParent.Names.Count; wIdx >= 1; wIdx--)
                         {
-                            // 倒序遍历工作簿级定义名称
-                            for (int wIdx = wbParent.Names.Count; wIdx >= 1; wIdx--)
+                            dynamic wbName = wbParent.Names.Item(wIdx);
+                            string refers = Convert.ToString(wbName.RefersTo) ?? "";
+                            // 规则 A: 工作簿级失效死链直接删除
+                            if (refers.Contains("#REF"))
                             {
-                                // 提取工作簿级定义名称对象
-                                dynamic wbName = wbParent.Names.Item(wIdx);
+                                LogHelper.WriteLog($"[CleanDeadName] 清理工作簿死链定义名称: {wbName.Name}");
+                                wbName.Delete();
+                                continue;
+                            }
+
+                            // 规则 B: 属于当前工作表且超额的箱柜定义名称删除
+                            if (cabCount > 0 && forceRebuild)
+                            {
                                 string wnStr = ExtractCleanNameStr(Convert.ToString(wbName.Name) ?? "");
                                 int wK = ExtractIndexFromName(wnStr, sumPrefix, detPrefix, subsumPrefix, tolsumPrefix);
-                                string refers = Convert.ToString(wbName.RefersTo) ?? "";
-                                // 针对属于箱柜定义名称且序号超额的情况进行处理
                                 if (wK > 0 && wK > cabCount)
                                 {
-                                    // 判定该名称是否属于当前工作表
+                                    // 仅当定义名称引用指向当前工作表时才清理
                                     if (refers.Contains($"'{sheetName}'!") || refers.Contains($"{sheetName}!"))
                                     {
                                         LogHelper.WriteLog($"[CleanExtraName] 显式清理超额工作簿名称: {wnStr}, k={wK} > cabCount={cabCount}");
@@ -3212,43 +3222,6 @@ namespace ExcelAddInDemo
                             }
                         }
                     }
-
-                    // 独立安全清理失效死链 (#REF!) 名称，无论是否 forceRebuild 均安全执行
-                    try
-                    {
-                        // 清理工作表级死链
-                        dynamic sNames = sheet.Names;
-                        if (sNames != null)
-                        {
-                            for (int nIdx = sNames.Count; nIdx >= 1; nIdx--)
-                            {
-                                dynamic singleName = sNames.Item(nIdx);
-                                string sRef = Convert.ToString(singleName.RefersTo) ?? "";
-                                if (sRef.Contains("#REF"))
-                                {
-                                    LogHelper.WriteLog($"[CleanDeadName] 清理工作表死链定义名称: {singleName.Name}");
-                                    singleName.Delete();
-                                }
-                            }
-                        }
-
-                        // 清理工作簿级死链
-                        dynamic wbParent = sheet.Parent;
-                        if (wbParent != null && wbParent.Names != null)
-                        {
-                            for (int wIdx = wbParent.Names.Count; wIdx >= 1; wIdx--)
-                            {
-                                dynamic wbName = wbParent.Names.Item(wIdx);
-                                string refers = Convert.ToString(wbName.RefersTo) ?? "";
-                                if (refers.Contains("#REF"))
-                                {
-                                    LogHelper.WriteLog($"[CleanDeadName] 清理工作簿死链定义名称: {wbName.Name}");
-                                    wbName.Delete();
-                                }
-                            }
-                        }
-                    }
-                    catch { }
                 }
                 catch { }
 

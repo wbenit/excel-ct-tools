@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -169,8 +170,17 @@ namespace ExcelAddInDemo.Forms
                             string handleVal = hProp.GetString()?.Trim() ?? string.Empty;
                             if (!string.IsNullOrEmpty(handleVal))
                             {
-                                // 带有 50ms 防抖与自动缩放对焦推送到 CAD
-                                CadSyncClient.SendHandlesDebounced(new List<string> { handleVal }, true);
+                                // 兼容多图元复合句柄（以连字符 '-' 或分隔符拼接）：拆分为独立十六进制句柄
+                                var handleList = handleVal.Split(new[] { '-', ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                                    // 清洗并去除首尾空白字符
+                                    .Select(x => x.Trim())
+                                    // 过滤空项
+                                    .Where(x => !string.IsNullOrEmpty(x))
+                                    // 转换为纯净句柄列表
+                                    .ToList();
+
+                                // 带有 50ms 防抖与自动缩放对焦推送到 CAD 管道
+                                CadSyncClient.SendHandlesDebounced(handleList, true);
                             }
                         }
                         break;
