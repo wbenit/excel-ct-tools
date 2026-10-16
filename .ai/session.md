@@ -16,6 +16,100 @@
      - `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整编译：0 警告、0 错误；
      - 通过 Browser Subagent 启动 Chromium 实测“物料库”、“计算器（柜体/母排/载流量）”各视图，居中工整、切换丝滑、视觉高级、零水平滚动条。
 
+- **【体验细节优化：母排计算器拼排规格根数、宽度、厚度输入框加宽，根治数字被微调按钮遮挡缺陷】(`Resources/cloud_material_hub.html`, `publish/Resources/cloud_material_hub.html`)**：
+  1. **问题排查与根因确诊**：
+     - 用户截图反馈母排计算器“规格”行中，红框圈出的三个输入框数字被严重遮挡；
+     - 根因：Element Plus 的 `<el-input-number controls-position="right">` 右侧微调箭头占据了约 32px 宽度，原根数设为 60px、宽度 75px、厚度 70px，内部留给文字的可用区域极其狭窄，导致数字 `3` 被挤压变形，三位数 `100` 的末尾数字被直接遮挡类似 `10C`。
+  2. **最小改动工程修复落地**：
+     - 将根数输入框宽度从 `60px` 增宽至 `85px`；
+     - 将宽度输入框宽度从 `75px` 增宽至 `95px`，宽裕容纳三位数及以上排宽；
+     - 将厚度输入框宽度从 `70px` 增宽至 `85px`；
+     - 同步至 `publish/Resources/cloud_material_hub.html`。
+  3. **浏览器高保真验证**：
+     - 经 Browser Subagent 加载实机验证，数字 `3`、`100`、`5` 完整舒展呈现，与右侧微调按钮留有舒适呼吸边距，整行零换行、零横向滚动条。
+
+- **【云物料一体化工作台：柜体计算器全面升级图2工业级UI，方案1单价支持任意编辑且初始按持久化单价库填充闭环】(`Forms/CloudMaterialHubForm.cs`, `Resources/cloud_material_hub.html`, `publish/Resources/cloud_material_hub.html`, `publish/`, `bin/`)**：
+  1. **用户核心指令与决策落地**：
+     - 用户指令反馈：“如图1，已经持久化了价格，使用方案1，初始按持久化的数据填写。修改为使用图二的ui界面。理解表述需求”；决策点：“仅改动当前行，符合习惯”；
+     - 需求分析与目标确诊：
+       ① 彻底替换云物料原有简陋的柜体计算器，深度复刻图2（`cabinet_aux_calc.html` 工业原型）的完整界面；
+       ② 单价采用方案1：在结构展开表格中提供 `<el-input-number>` 数字输入框，用户直接自由编辑单价，且仅影响当前行；
+       ③ 初始单价：从系统持久化保存的规则文件 `quotation_rules.json`（`ShellPriceRules.MaterialPrices`，即图1中的单价库）中按材质与板厚动态匹配带出；
+       ④ 闭环配置：顶部新增【板材单价设置】入口，以图1风格弹窗呈现冷轧板、镀锌板、不锈钢等各材质厚度单价库，并支持修改持久化保存回磁盘。
+  2. **端到端工程级最小变动落地**：
+     - **后端规则联动与持久化支持 (`Forms/CloudMaterialHubForm.cs`)**：
+       - 在 `HandleInitHub` 中调用 `ExcelServices.LoadQuotationRules()`，将持久化的 `ShellPriceRules` 随同 `initHubResponse` 同步发送给前端；
+       - 在 `OnWebMessageReceived` 中新增 `saveShellPriceRules` 处理器，接收前端修改后的材质单价集合并写回 `quotation_rules.json`，形成双向闭环；
+     - **前端图2工业级UI与方案1单价联动重构 (`Resources/cloud_material_hub.html`)**：
+       - **3D 立体三维透视图**：增加彩色的立体 3D 盒子（顶板粉红、前门明黄、侧板淡蓝），动态标注顶板、前门、侧板厚度标签及长宽高尺寸；
+       - **纯高度推荐深度快捷胶囊**：提供 120~1200mm 快捷标签，点击即可一键秒切柜深；
+       - **规范化尺寸装配与型号生成**：提供尺寸排序下拉（W*H*D / H*W*D / D*W*H）、板厚/材质/安装/二层板/自定义复选框联动及实时型号展示框；
+       - **明细表格重构（对齐图2标准5部位）**：
+         - 部位：`顶板底板`、`面门板`、`后背板`、`左右侧板`、`二层安装板`；
+         - 单价列：`<el-input-number>` 数字微调输入框，方案1逻辑确保仅改动当前行；
+         - 小计列：新增“金额小计(元)”动态计算列；
+         - 面积与总价微调：底部提供展开总面积、综合平米单价与支持人工微调的壳体总价；
+       - **图1风格单价库弹窗**：新增 `materialDrawerVisible` 弹窗，支持增删厚度与保存持久化；
+     - 遵循每 3 行代码包含 1 行中文注释规范。
+  3. **构建验证与高保真浏览器测试**：
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 产物与前端资源全量镜像同步至 `publish/` 与 `bin/Debug/net48/`；
+     - 通过 Browser Subagent 启动 1180x760 浏览器进行真实交互实测：
+       ① 柜体计算器完整呈现图2的工业级界面，3D立体盒子与各组件优雅渲染；
+       ② 单价输入框初始自动填入持久化库的 `72.00` 元；
+       ③ 修改第一行单价为 `85.00`，其他行保持不变（仅改当前行），金额小计与整柜总价毫秒级自动联动重算；
+       ④ 点击【板材单价设置】成功打开图1单价库弹窗，所有功能闭环运转。
+
+- **【缺陷深度修复与逻辑解耦：解耦定义名称后缀K，优先读取汇总行A列业务序号，彻底根治同步属性表与云端推送跳号漏号（如跳过1-55）缺陷】(`Services/ExcelServices.CloudProject.cs`, `publish/`)**：
+  1. **用户核心痛点确诊**：
+     - 用户指令反馈：“同步属性表，生成的云端箱柜属性，为什么会跳过序号1-55”并下达“执行此项修复”；
+     - 现象排查：【消防】工作表共有 61 台有效箱柜，行 60 为 54 号（`rt-APXZ-PY3`），行 61 为 55 号（`AP-PY`），但同步属性表生成的云端序号在 `1-54` 之后直接跳到了 `1-56`，末尾排到了 `1-62`，漏掉了 `1-55`；
+     - 根因分析：
+       ① 历史代码 `ExtractAllCabinetsForCloudSync` 中直接使用 `int cabKey = cabPair.Key; finalOrder = $"{categoryIndex}-{cabKey}";`，直接取了底层定义名称的后缀数字 K；
+       ② 用户在 Excel 中删减或插入箱柜时，A 列公式计算出的序号始终动态连续（54, 55, 56...），但 Excel 内部定义名称（`Cab_Sum_56`）不会自动重编号，造成底层定义名称断号（缺失 55）；
+       ③ 代码将定义名称技术标识误当业务序号，导致行 61 的 `AP-PY` 被命名为 `1-56`，从而跳过了 `1-55` 并引发后续所有箱柜序号与 A 列错位。
+  2. **工程级最小变动修复落地 (`Services/ExcelServices.CloudProject.cs`)**：
+     - **业务明细序号解耦**：优先从汇总行（`anchor.SumRow`）A 列读取单元格实际显示内容；
+     - **智能解析与物理自增双重对齐**：若 A 列成功解析为正整数（如 55），直接赋为 `businessSeq`；若 A 列未填则回退至该分类表中自上而下的物理自增次序（`cabIdx + 1`）；
+     - **实体与 Order 闭环同步**：将 `finalOrder` 统一生成为 `${categoryIndex}-${businessSeq}`，`CabinetIndex` 也同步更新为 `businessSeq`，彻底根除跳空与脱节；
+     - 遵循每 3 行包含 1 行中文注释，最小改动原则。
+  3. **构建验证与产物同步**：
+     - `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 编译产物 `ExcelAddInDemo.dll` (3.17 MB) 及 PDB 全量镜像同步至 `publish/` 目录。
+
+- **【功能加固与门控校验：推送云端箱柜前强校验柜号/图纸代号长度，超过40个字符立即拦截报错】(`Resources/ebox_sync.html`, `publish/Resources/ebox_sync.html`, `Forms/CloudEBoxSyncForm.cs`, `publish/`)**：
+  1. **用户核心指令与需求确诊**：
+     - 用户指令反馈：“点击推送的时候，检查柜号/图纸代号长度，如果超过40需要报错，理解表述需求”并下达“执行”指令；
+     - 现象与需求分析：【推送箱柜至 DrawCode 云端系统图库】列表中的“柜号 / 图纸代号”（对应 `systemDrawName`）直接同步到云端数据库。若存在过长合并代号（>40字），直接提交会导致云端写入报错。需在推送前进行前置拦截报错，引导用户缩减。
+  2. **端到端工程级最小变动落地**：
+     - **前端即时拦截 (`Resources/ebox_sync.html` -> `handleSyncClick`)**：
+       - 在确认弹窗前即时遍历 `cabinets`，过滤出 `(c.systemDrawName || '').trim().length > 40` 的所有超限箱柜；
+       - 若存在超限项，立即阻断后续覆盖确认与提交，弹出 `ElMessageBox.alert` 错误弹窗，详细列出序号、超限代号内容及当前字符长度（如 `[2-5]: "rt-AP-KT1..." (长度: 46)`），提示在协同表或分类表中缩减修改；
+       - 全量同步至 `publish/Resources/ebox_sync.html`；
+     - **C# 后端防线守卫 (`Forms/CloudEBoxSyncForm.cs` -> `syncToCloud`)**：
+       - 在调用 `DrawCodeApiClient.ImportExcelDataAsync` 推送前，再次遍历 `cabinets` 执行 `maxCabinetNameLen = 40` 校验；
+       - 命中超限直接中断并向前端返回友好错误反馈，彻底杜绝越过前端发送超长数据；
+     - 遵循每 3 行代码包含 1 行中文注释，标注 `--硬编码: 柜号图纸代号最大长度阈值40--`。
+  3. **构建验证与产物同步**：
+     - `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 编译产物 `ExcelAddInDemo.dll` (3.17 MB) 及 PDB 全量镜像同步至 `publish/` 目录。
+
+- **【缺陷深度修复与逻辑根治：彻底拔除箱柜序号与 DateTime 误绑，修复 2-100 之后箱柜在云端推送与属性同步中扫描遗漏的严重缺陷】(`Services/ExcelServices.CloudProject.cs`, `publish/`)**：
+  1. **用户核心痛点确诊**：
+     - 用户指令反馈：“为什么2-100以后扫描遗漏”与“'分类-序号'是字符串，为什么要和datetime联系起来”并下达“修改”指令；
+     - 现象排查：在【推送箱柜至 DrawCode 云端系统图库】弹窗中，【动力】分类表明明拥有 107 台箱柜，但前端列表展示 `2-99` 后，`2-100` 至 `2-107` 全部消失遗漏，直接跳到了 `1-1`；
+     - 根因分析：
+       ① 历史冗余防御逻辑违背规则 9：`ExcelServices.CloudProject.cs`（第 517 行与第 755 行）自作聪明地使用了 `DateTime.TryParse(order, out var dt)` 试图兼容反解 Excel 日期；
+       ② .NET 日期解析器误判：由于纯文本 `"2-100"`（以及 `"2-101"` ~ `"2-107"`）被 .NET 解析为公元 100 年 2 月 1 日（`dt.Month = 2, dt.Day = 1`），执行 `order = $"{dt.Month}-{dt.Day}"` 后，`2-100`~`2-107` 全部被错误篡改成了 `"2-1"`；
+       ③ 属性字典键脱节导致误删：篡改后属性字典中缺失 `2-100`~`2-107`，触发了“在属性表中已删除”逻辑被全部强行剔除。
+  2. **工程级最小变动修复落地 (`Services/ExcelServices.CloudProject.cs`)**：
+     - 彻底删除第 517 行和第 755 行的 `DateTime.TryParse` 容错转换代码；
+     - A 列“分类-序号”坚决遵循业务本质，作为纯字符串 `Trim()` 提取，严禁与 `DateTime` 进行任何绑定；
+     - 配合写表时已预设的 `NumberFormatLocal = "@"` 文本格式，从源头彻底杜绝 Excel 自动转日期与 .NET 误判风险。
+  3. **构建验证与产物同步**：
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 编译产物 `ExcelAddInDemo.dll` (3.17 MB) 与 PDB 全量镜像同步至 `publish/` 目录。
+
 - **【缺陷深度修复与逻辑闭环：根治在已有箱柜下方空白预留行新建箱柜时底表明细错误前插在箱柜3前面的严重缺陷】(`Services/ExcelServices.Cabinet.cs`, `publish/`)**：
   1. **用户核心痛点确诊**：
      - 用户指令反馈：“鼠标放在B9单元格，右击新建箱柜，箱柜明细应该追加在最后，但是有时候会追加在箱柜3的前面，什么原因”并下达“修复”指令；
