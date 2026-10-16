@@ -601,7 +601,7 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
-        /// 扫描指定一次方案图纸根目录下的所有子文件夹及各自的 DWG 数量
+        /// 扫描指定一次方案图纸根目录下的所有子文件夹及各自的 DWG 数量，并聚合数据库自建方案
         /// </summary>
         public List<PrimaryFolderItemDto> ScanPrimaryFolders(string? rootDir = null)
         {
@@ -617,6 +617,7 @@ namespace ExcelAddInDemo.Controllers
                 // 枚举根目录下所有直接子目录
                 var subDirs = System.IO.Directory.GetDirectories(targetDir);
                 Array.Sort(subDirs, StringComparer.OrdinalIgnoreCase);
+                var folderDict = new Dictionary<string, PrimaryFolderItemDto>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var dir in subDirs)
                 {
@@ -628,16 +629,46 @@ namespace ExcelAddInDemo.Controllers
                         // 统计子目录下的 .dwg 数量
                         int dwgCount = System.IO.Directory.GetFiles(dir, "*.dwg", System.IO.SearchOption.TopDirectoryOnly).Length;
 
-                        result.Add(new PrimaryFolderItemDto
+                        var folderItem = new PrimaryFolderItemDto
                         {
                             Name = di.Name,
                             FullPath = di.FullName,
                             DwgCount = dwgCount
-                        });
+                        };
+                        folderDict[di.Name] = folderItem;
+                        result.Add(folderItem);
                     }
                     catch (Exception exSub)
                     {
                         LogHelper.WriteLog($"[CloudSolutionController] ScanPrimaryFolders 读取子目录 {dir} 异常: {exSub.Message}");
+                    }
+                }
+
+                // 2. 统计数据库中所有一次方案，将纯 BOM 方案数量计入对应分类，并对物理不存在的分类做虚拟补齐
+                var allDbSchemes = Services.PersonalComponentDbService.GetAllPrimarySchemes(null, null, null);
+
+                foreach (var s in allDbSchemes)
+                {
+                    string groupName = !string.IsNullOrWhiteSpace(s.GroupName) ? s.GroupName.Trim() : "自建方案";
+                    if (folderDict.TryGetValue(groupName, out var existingItem))
+                    {
+                        string expectedDwg = System.IO.Path.Combine(existingItem.FullPath, (!string.IsNullOrWhiteSpace(s.CadDrawingName) ? s.CadDrawingName : s.SchemeName) + ".dwg");
+                        if (!System.IO.File.Exists(expectedDwg))
+                        {
+                            existingItem.DwgCount += 1;
+                        }
+                    }
+                    else
+                    {
+                        string virtualSubDir = System.IO.Path.Combine(targetDir, groupName);
+                        var newItem = new PrimaryFolderItemDto
+                        {
+                            Name = groupName,
+                            FullPath = virtualSubDir,
+                            DwgCount = 1
+                        };
+                        folderDict[groupName] = newItem;
+                        result.Add(newItem);
                     }
                 }
             }
@@ -650,7 +681,7 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
-        /// 扫描指定子文件夹内的所有 DWG 文件并到 personal_components 数据库匹配一次方案参数组装卡片列表
+        /// 扫描指定子文件夹内的所有 DWG 文件并到 personal_components 数据库匹配一次方案参数组装卡片列表 (包含纯 BOM 方案)
         /// </summary>
         public List<PrimaryFolderDwgCardDto> GetPrimaryFolderDwgCards(string folderPath, string folderName, string? keyword = null, string? cabinetModel = null, bool forceRefresh = false)
         {
@@ -689,6 +720,9 @@ namespace ExcelAddInDemo.Controllers
                         }
                     }
                 }
+
+                // 3. 追加数据库中尚未关联物理 DWG 的自建/纯 BOM 方案，实现“即存即显”闭环
+                AppendVirtualPrimaryCards(folderName, cleanKw, cleanModel, cards);
             }
             catch (Exception ex)
             {
@@ -834,6 +868,38 @@ namespace ExcelAddInDemo.Controllers
                     scheme.ApplicableCodes = new List<string> { scheme.SchemeName.Trim() };
                 }
 
+                // 若在编辑弹窗中选取了新的本地 DWG 图纸，执行安全归档复制
+                if (!string.IsNullOrWhiteSpace(scheme.SelectedDwgFilePath) && System.IO.File.Exists(scheme.SelectedDwgFilePath))
+                {
+                    try
+                    {
+                        string rootDir = GetPrimaryCircuitDwgDir();
+                        if (!string.IsNullOrWhiteSpace(rootDir) && System.IO.Directory.Exists(rootDir))
+                        {
+                            string targetDirName = !string.IsNullOrWhiteSpace(scheme.GroupName) ? scheme.GroupName : "自建方案";
+                            string destDir = System.IO.Path.Combine(rootDir, targetDirName);
+                            if (!System.IO.Directory.Exists(destDir)) System.IO.Directory.CreateDirectory(destDir);
+
+                            string safeName = string.Join("_", scheme.SchemeName.Split(System.IO.Path.GetInvalidFileNameChars())).Trim();
+                            if (string.IsNullOrEmpty(safeName)) safeName = "一次方案_" + DateTime.Now.ToString("yyyyMMddHHmmss");
+                            string destPath = System.IO.Path.Combine(destDir, safeName + ".dwg");
+
+                            System.IO.File.Copy(scheme.SelectedDwgFilePath, destPath, true);
+                            scheme.CadDrawingName = safeName;
+                            if (scheme.ApplicableCodes == null) scheme.ApplicableCodes = new List<string>();
+                            if (!scheme.ApplicableCodes.Contains(safeName, StringComparer.OrdinalIgnoreCase))
+                            {
+                                scheme.ApplicableCodes.Add(safeName);
+                            }
+                            Services.DwgPreviewService.GetDwgPreview(destPath, forceRefresh: true);
+                        }
+                    }
+                    catch (Exception exCopy)
+                    {
+                        LogHelper.WriteLog($"[CloudSolutionController] SavePrimaryScheme 归档图纸异常: {exCopy.Message}");
+                    }
+                }
+
                 int id = Services.PersonalComponentDbService.SavePrimaryScheme(scheme);
                 if (id > 0)
                 {
@@ -868,9 +934,9 @@ namespace ExcelAddInDemo.Controllers
         /// <summary>
         /// 从活动 Excel 当前光标所在的箱柜中提取一次方案数据并保存为企业一次方案 (遵循规则 3: 委托 ExcelServices 执行)
         /// </summary>
-        public (bool Success, string Message, PrimarySchemeEntity? Scheme) CaptureActiveCabinetToPrimaryScheme(string targetFolder, string customSchemeName, string? cabinetModel)
+        public (bool Success, string Message, PrimarySchemeEntity? Scheme) CaptureActiveCabinetToPrimaryScheme(string targetFolder, string customSchemeName, string? cabinetModel, string? dwgFilePath = null)
         {
-            return ExcelServices.CaptureActiveCabinetToPrimaryScheme(targetFolder, customSchemeName, cabinetModel);
+            return ExcelServices.CaptureActiveCabinetToPrimaryScheme(targetFolder, customSchemeName, cabinetModel, dwgFilePath);
         }
 
         #endregion
@@ -951,6 +1017,201 @@ namespace ExcelAddInDemo.Controllers
         }
 
         #endregion
+
+
+        /// <summary>
+        /// 扫描并追加数据库中尚未关联物理 DWG 文件的一次自建方案（支持纯 BOM 方案展示）
+        /// </summary>
+        private void AppendVirtualPrimaryCards(string folderName, string cleanKw, string cleanModel, List<PrimaryFolderDwgCardDto> cards)
+        {
+            try
+            {
+                // 提取已在本地 DWG 文件扫描中命中的方案 ID 集合
+                var matchedSchemeIds = new HashSet<int>(cards.Where(c => c.IsMatched && c.SchemeId > 0).Select(c => c.SchemeId));
+
+                // 判定是否处于具体分类子目录
+                string? filterGroup = (!string.IsNullOrWhiteSpace(folderName) && !string.Equals(folderName, "全部方案分类", StringComparison.OrdinalIgnoreCase))
+                    ? folderName.Trim()
+                    : null;
+
+                // 从 personal_components 数据库检索匹配分类、柜型及关键字的一次方案列表
+                var dbSchemes = Services.PersonalComponentDbService.GetAllPrimarySchemes(keyword: string.IsNullOrEmpty(cleanKw) ? null : cleanKw, groupName: filterGroup, cabinetModel: string.IsNullOrEmpty(cleanModel) ? null : cleanModel);
+
+                // 遍历数据库方案，将未绑定或物理 DWG 不存在的方案作为纯 BOM 方案追加展示
+                foreach (var s in dbSchemes)
+                {
+                    // 若已在前面的 DWG 扫描中被精准命中，则跳过避免重复卡片
+                    if (matchedSchemeIds.Contains(s.Id)) continue;
+
+                    // 组装纯 BOM 方案卡片展示实体
+                    string rootDwgDir = GetPrimaryCircuitDwgDir();
+                    string safeFolderName = !string.IsNullOrWhiteSpace(s.GroupName) ? s.GroupName : "自建方案";
+                    string expectedFileName = (!string.IsNullOrWhiteSpace(s.CadDrawingName) ? s.CadDrawingName : s.SchemeName) + ".dwg";
+                    string virtualFullPath = !string.IsNullOrWhiteSpace(rootDwgDir) ? System.IO.Path.Combine(rootDwgDir, safeFolderName, expectedFileName) : expectedFileName;
+
+                    var virtualCard = new PrimaryFolderDwgCardDto
+                    {
+                        FileName = expectedFileName,
+                        DwgName = !string.IsNullOrWhiteSpace(s.CadDrawingName) ? s.CadDrawingName : s.SchemeName,
+                        SchemeName = s.SchemeName,
+                        FolderName = safeFolderName,
+                        FolderPath = !string.IsNullOrWhiteSpace(rootDwgDir) ? System.IO.Path.Combine(rootDwgDir, safeFolderName) : string.Empty,
+                        FullPath = virtualFullPath,
+                        CabinetModel = s.CabinetModel ?? string.Empty,
+                        Dimensions = s.Dimensions ?? string.Empty,
+                        RatedCurrent = s.RatedCurrent,
+                        BusbarSpec = s.BusbarSpec ?? string.Empty,
+                        Brand = s.Brand ?? string.Empty,
+                        Description = s.Description ?? string.Empty,
+                        LaborCost = s.LaborCost,
+                        CopperCost = s.CopperCost,
+                        MaterialCost = s.TotalMaterialCost,
+                        TotalCost = s.TotalCost,
+                        PreviewBase64 = string.Empty,
+                        IsMatched = true,
+                        SchemeId = s.Id,
+                        UpdateTime = !string.IsNullOrWhiteSpace(s.UpdatedAt) ? s.UpdatedAt : s.CreatedAt,
+                        SchemeData = s,
+                        HasDwg = false
+                    };
+
+                    cards.Add(virtualCard);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[CloudSolutionController] AppendVirtualPrimaryCards 异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 为一次成套方案绑定或替换 CAD DWG 图纸文件并安全复制到对应子目录
+        /// </summary>
+        
+        /// <summary>
+        /// 弹出系统 Windows 文件选择框让用户选取本地 AutoCAD DWG 文件并返回绝对物理全路径
+        /// </summary>
+        public string ChooseDwgFile(string? title = null)
+        {
+            string selectedPath = string.Empty;
+            try
+            {
+                var thread = new System.Threading.Thread(() =>
+                {
+                    using var ofd = new System.Windows.Forms.OpenFileDialog
+                    {
+                        Title = !string.IsNullOrWhiteSpace(title) ? title : "请选择 AutoCAD 图纸文件 (*.dwg)",
+                        Filter = "AutoCAD 图纸 (*.dwg)|*.dwg|所有文件 (*.*)|*.*",
+                        Multiselect = false,
+                        CheckFileExists = true
+                    };
+                    if (ofd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                    {
+                        selectedPath = ofd.FileName;
+                    }
+                });
+                thread.SetApartmentState(System.Threading.ApartmentState.STA);
+                thread.Start();
+                thread.Join();
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[CloudSolutionController] ChooseDwgFile 异常: {ex.Message}");
+            }
+            return selectedPath;
+        }
+
+        public (bool Success, string Message, string DestPath) BindPrimarySchemeDwg(int schemeId, string? folderName, string? schemeName)
+        {
+            try
+            {
+                // 1. 检索目标方案实体
+                PrimarySchemeEntity? scheme = null;
+                if (schemeId > 0)
+                {
+                    scheme = Services.PersonalComponentDbService.GetPrimarySchemeById(schemeId);
+                }
+                if (scheme == null && !string.IsNullOrWhiteSpace(schemeName))
+                {
+                    scheme = Services.PersonalComponentDbService.FindPrimarySchemeByDwgName(schemeName);
+                }
+                if (scheme == null)
+                {
+                    return (false, "未能在数据库中找到该方案数据！", string.Empty);
+                }
+
+                // 2. 弹出系统 Windows 文件选择框让用户选取本地 DWG 文件 (STA 线程安全调度)
+                string selectedSourcePath = string.Empty;
+                var thread = new System.Threading.Thread(() =>
+                {
+                    using var ofd = new System.Windows.Forms.OpenFileDialog
+                    {
+                        Title = $"请选择方案【{scheme.SchemeName}】对应的 CAD 一次系统图纸",
+                        Filter = "AutoCAD 图纸 (*.dwg)|*.dwg|所有文件 (*.*)|*.*",
+                        Multiselect = false,
+                        CheckFileExists = true
+                    };
+                    if (ofd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                    {
+                        selectedSourcePath = ofd.FileName;
+                    }
+                });
+                thread.SetApartmentState(System.Threading.ApartmentState.STA);
+                thread.Start();
+                thread.Join();
+
+                if (string.IsNullOrWhiteSpace(selectedSourcePath) || !System.IO.File.Exists(selectedSourcePath))
+                {
+                    return (false, "已取消选择图纸文件", string.Empty);
+                }
+
+                // 3. 计算方案所属子目录及目标完整物理路径
+                string rootDir = GetPrimaryCircuitDwgDir();
+                if (string.IsNullOrWhiteSpace(rootDir))
+                {
+                    return (false, "尚未配置一次方案图纸根目录，请先在左侧齿轮设置中指定根目录！", string.Empty);
+                }
+
+                // 优先使用方案已有的 GroupName，次之取前端传入的 folderName，最后兜底“一次进线柜”
+                string targetDirName = !string.IsNullOrWhiteSpace(scheme.GroupName) 
+                    ? scheme.GroupName 
+                    : (!string.IsNullOrWhiteSpace(folderName) ? folderName : "一次进线柜");
+                string destDir = System.IO.Path.Combine(rootDir, targetDirName);
+                if (!System.IO.Directory.Exists(destDir))
+                {
+                    System.IO.Directory.CreateDirectory(destDir);
+                }
+
+                // 目标图纸名称规范化（安全过滤 Windows 非法文件名字符）
+                string rawName = !string.IsNullOrWhiteSpace(scheme.SchemeName) ? scheme.SchemeName : System.IO.Path.GetFileNameWithoutExtension(selectedSourcePath);
+                string safeName = string.Join("_", rawName.Split(System.IO.Path.GetInvalidFileNameChars())).Trim();
+                if (string.IsNullOrEmpty(safeName)) safeName = "一次方案_" + DateTime.Now.ToString("yyyyMMddHHmmss");
+
+                string destFilePath = System.IO.Path.Combine(destDir, safeName + ".dwg");
+
+                // 4. 将选中的 DWG 图纸安全拷贝覆盖至标准资产库目录
+                System.IO.File.Copy(selectedSourcePath, destFilePath, true);
+
+                // 5. 同步更新数据库中图纸名称及适用代码
+                scheme.CadDrawingName = safeName;
+                if (scheme.ApplicableCodes == null) scheme.ApplicableCodes = new List<string>();
+                if (!scheme.ApplicableCodes.Contains(safeName, StringComparer.OrdinalIgnoreCase))
+                {
+                    scheme.ApplicableCodes.Add(safeName);
+                }
+                Services.PersonalComponentDbService.SavePrimaryScheme(scheme);
+
+                // 6. 即刻调用缩略图生成器预热矢量缓存
+                Services.DwgPreviewService.GetDwgPreview(destFilePath, forceRefresh: true);
+
+                return (true, $"已成功为方案【{scheme.SchemeName}】绑定并归档图纸：{safeName}.dwg", destFilePath);
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"[CloudSolutionController] BindPrimarySchemeDwg 异常: {ex.Message}");
+                return (false, $"绑定图纸异常: {ex.Message}", string.Empty);
+            }
+        }
+
     }
 }
-

@@ -135,4 +135,33 @@ namespace ExcelAddInDemo.Models
         // 动态计算单价 (元/米，基于当前铜价联动)
         public decimal UnitPrice { get; set; }
     }
+
+    /// <summary>
+    /// 当日大盘有色金属 (铜/铝) 市场行情结果传输模型
+    /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+    /// </summary>
+    public class MarketPriceResult
+    {
+        // 接口调用成功标识
+        public bool Success { get; set; } = true;
+
+        // 当日大盘最新铜价 (元/吨) --硬编码: 离线备选基准铜价 78500--
+        public double CopperPrice { get; set; } = 78500.0;
+
+        // 当日大盘最新铝价 (元/吨) --硬编码: 离线备选基准铝价 19800--
+        public double AluminumPrice { get; set; } = 19800.0;
+
+        // 行情数据源名称 (如: 上海期货交易所/上期所主力)
+        public string Source { get; set; } = "上海期货交易所 (上期所主力)";
+
+        // 数据更新时间格式化文本 (如: 2026-10-16 15:00:00)
+        public string UpdateTime { get; set; } = string.Empty;
+
+        // 是否为断网或异常时的离线兜底数据
+        public bool IsFallback { get; set; } = false;
+
+        // 界面状态与友好反馈消息
+        public string Message { get; set; } = string.Empty;
+    }
 }
+

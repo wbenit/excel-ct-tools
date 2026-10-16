@@ -874,7 +874,7 @@ namespace ExcelAddInDemo
         /// 遵循规则 6: 从 Cab_Det + 2 到 Cab_Subsum - 1 提取元器件
         /// 遵循规则 7: 采用内存数组一次性批量读入
         /// </summary>
-        public static (bool Success, string Message, PrimarySchemeEntity? Scheme) CaptureActiveCabinetToPrimaryScheme(string targetFolder, string customSchemeName, string? cabinetModel)
+        public static (bool Success, string Message, PrimarySchemeEntity? Scheme) CaptureActiveCabinetToPrimaryScheme(string targetFolder, string customSchemeName, string? cabinetModel, string? dwgFilePath = null)
         {
             try
             {
@@ -966,14 +966,43 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 组装新一次方案实体
+                // 检查并归档用户选择的 DWG 图纸文件
+                string assignedCadName = string.Empty;
+                string rootDwgDir = ConfigManager.Instance.Current?.PrimaryCircuit?.CircuitDwgDirectory ?? string.Empty;
+                string subFolderName = !string.IsNullOrWhiteSpace(targetFolder) ? targetFolder.Trim() : "自建方案";
+
+                if (!string.IsNullOrWhiteSpace(dwgFilePath) && System.IO.File.Exists(dwgFilePath))
+                {
+                    try
+                    {
+                        if (!string.IsNullOrWhiteSpace(rootDwgDir) && System.IO.Directory.Exists(rootDwgDir))
+                        {
+                            string targetSubDir = System.IO.Path.Combine(rootDwgDir, subFolderName);
+                            if (!System.IO.Directory.Exists(targetSubDir)) System.IO.Directory.CreateDirectory(targetSubDir);
+
+                            string safeDwgName = string.Join("_", finalSchemeName.Split(System.IO.Path.GetInvalidFileNameChars())).Trim();
+                            if (string.IsNullOrEmpty(safeDwgName)) safeDwgName = "方案图纸_" + DateTime.Now.ToString("yyyyMMddHHmmss");
+                            string destDwgPath = System.IO.Path.Combine(targetSubDir, safeDwgName + ".dwg");
+
+                            System.IO.File.Copy(dwgFilePath, destDwgPath, true);
+                            assignedCadName = safeDwgName;
+                            DwgPreviewService.GetDwgPreview(destDwgPath, forceRefresh: true);
+                        }
+                    }
+                    catch (Exception exDwg)
+                    {
+                        LogHelper.WriteLog($"[CloudSolution] 复制归档 DWG 异常: {exDwg.Message}");
+                    }
+                }
+
+                // 组装新一次方案实体 (若未关联图纸则 CadDrawingName 保持为空，作为纯 BOM 方案展示)
                 var newScheme = new PrimarySchemeEntity
                 {
-                    GroupName = !string.IsNullOrWhiteSpace(targetFolder) ? targetFolder.Trim() : "自建方案",
+                    GroupName = subFolderName,
                     SchemeName = finalSchemeName,
                     CabinetModel = finalModel,
                     ApplicableCodes = new List<string> { finalSchemeName },
-                    CadDrawingName = finalSchemeName,
+                    CadDrawingName = assignedCadName,
                     BomItems = bomItems,
                     Description = $"由活动 Excel 工作表 [{ws.Name}] 箱柜【{excelCabName}】一键抓取存入"
                 };

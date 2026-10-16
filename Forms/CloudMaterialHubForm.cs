@@ -145,6 +145,8 @@ namespace ExcelAddInDemo.Forms
                 // 导航至目标 HTML 资源
                 if (!string.IsNullOrEmpty(htmlPath) && File.Exists(htmlPath))
                 {
+                    // 采用绝对文件物理路径直接构造标准 Uri 导航
+                    // 杜绝本地 file 协议携带 query 参数引发 ERR_FILE_NOT_FOUND
                     _webView.Source = new Uri(htmlPath);
                 }
                 else
@@ -243,6 +245,11 @@ namespace ExcelAddInDemo.Forms
                         HandleSaveToDb(root);
                         break;
 
+                    case "getMarketPrice":
+                        // 异步拉取当日大盘实时铜价与铝价行情
+                        _ = HandleGetMarketPriceAsync(root);
+                        break;
+
                     case "saveShellPriceRules":
                         // 持久化保存柜体板材材质与各厚度单价库配置
                         HandleSaveShellPriceRules(root);
@@ -272,9 +279,9 @@ namespace ExcelAddInDemo.Forms
         }
 
         /// <summary>
-        /// 处理初始化指令，通知前端激活选项卡并回传库内品牌、铜价参数及持久化的板材单价库
+        /// 处理初始化指令，通知前端激活选项卡并回传库内品牌、实时大盘行情及持久化的板材单价库
         /// </summary>
-        private void HandleInitHub()
+        private async void HandleInitHub()
         {
             // 获取本地个人物料库的真实品牌统计列表
             var brandStats = PersonalComponentDbService.GetBrandStats();
@@ -289,16 +296,70 @@ namespace ExcelAddInDemo.Forms
             // 提取板材价格与厚度梯度配置
             var shellPriceConfig = quotationRules?.ShellPriceRules;
 
+            // 异步获取当日大盘铜价与铝价行情 (优先读取短周期缓存)
+            var marketPrice = await MarketPriceService.FetchMarketPricesAsync(forceRefresh: false);
+
             var initData = new
             {
                 action = "initHubResponse",
                 initialTab = _initialTab,
-                copperPrice = 111465.0, // --硬编码: 默认基准铜价--
+                copperPrice = marketPrice.CopperPrice,
+                aluminumPrice = marketPrice.AluminumPrice,
+                marketPriceSource = marketPrice.Source,
+                marketPriceUpdateTime = marketPrice.UpdateTime,
                 processingFee = 0.0,
                 brands = brandList,
                 shellPriceRules = shellPriceConfig
             };
             PostMessageToWeb(initData);
+        }
+
+        /// <summary>
+        /// 异步处理前端拉取最新大盘铜价/铝价行情请求，通过 WebMessage 及时响应
+        /// </summary>
+        private async Task HandleGetMarketPriceAsync(JsonElement root)
+        {
+            try
+            {
+                // 提取请求中指定的材质类别 ("copper" | "aluminum")
+                string matType = "copper";
+                if (root.TryGetProperty("materialType", out var matElem))
+                {
+                    matType = matElem.GetString() ?? "copper";
+                }
+
+                // 强制跳过本地短周期缓存，直接拉取上期所主力最新盘面价
+                var result = await MarketPriceService.FetchMarketPricesAsync(forceRefresh: true);
+
+                // 组装回传前端的数据响应包
+                var response = new
+                {
+                    action = "marketPriceResponse",
+                    success = result.Success,
+                    materialType = matType,
+                    copperPrice = result.CopperPrice,
+                    aluminumPrice = result.AluminumPrice,
+                    price = matType == "copper" ? result.CopperPrice : result.AluminumPrice,
+                    source = result.Source,
+                    updateTime = result.UpdateTime,
+                    isFallback = result.IsFallback,
+                    message = result.Message
+                };
+
+                // 向前端分发回传消息
+                PostMessageToWeb(response);
+            }
+            catch (Exception ex)
+            {
+                // 异常记录与友好反馈
+                LogHelper.WriteLog($"[CloudMaterialHubForm] HandleGetMarketPriceAsync 异常: {ex.Message}");
+                PostMessageToWeb(new
+                {
+                    action = "marketPriceResponse",
+                    success = false,
+                    message = $"拉取大盘行情失败: {ex.Message}"
+                });
+            }
         }
 
         /// <summary>
@@ -371,7 +432,8 @@ namespace ExcelAddInDemo.Forms
         /// </summary>
         private void HandleGetAmpacityTable(JsonElement root)
         {
-            decimal copperPrice = root.TryGetProperty("copperPrice", out var cp) ? cp.GetDecimal() : 111465m;
+            // --硬编码: 离线备用基准铜价 78500--
+            decimal copperPrice = root.TryGetProperty("copperPrice", out var cp) ? cp.GetDecimal() : 78500m;
             bool isCopper = !root.TryGetProperty("materialType", out var mt) || mt.GetString() == "copper";
 
             // 获取国标载流量矩阵
@@ -385,24 +447,46 @@ namespace ExcelAddInDemo.Forms
         }
 
         /// <summary>
-        /// 处理插入物料到 Excel
+        /// 处理插入物料到 Excel (支持单行物料与多行明细批量插入)
         /// </summary>
         private void HandleInsertToExcel(JsonElement root)
         {
-            if (!root.TryGetProperty("item", out var itemElem)) return;
+            // 初始化物料列表集合
+            var itemsToInsert = new List<HubMaterialDto>();
+            // 优先检查是否传入 items 多行明细列表
+            if (root.TryGetProperty("items", out var itemsElem) && itemsElem.ValueKind == JsonValueKind.Array)
+            {
+                // 反序列化物料明细数组
+                var list = JsonSerializer.Deserialize<List<HubMaterialDto>>(itemsElem.GetRawText(), JsonOptions);
+                // 有效集合追加进待插入列表
+                if (list != null && list.Count > 0) itemsToInsert.AddRange(list);
+            }
+            // 兼容支持单条 item 物料对象
+            else if (root.TryGetProperty("item", out var itemElem))
+            {
+                // 反序列化单条物料 DTO
+                var single = JsonSerializer.Deserialize<HubMaterialDto>(itemElem.GetRawText(), JsonOptions);
+                // 添加到待插入列表
+                if (single != null) itemsToInsert.Add(single);
+            }
 
-            var item = JsonSerializer.Deserialize<HubMaterialDto>(itemElem.GetRawText(), JsonOptions);
-            if (item == null) return;
+            // 若无任何有效物料则返回
+            if (itemsToInsert.Count == 0) return;
 
             // 在 Excel 主线程调度插入
             this.BeginInvoke(new Action(() =>
             {
-                bool success = ExcelServices.InsertMaterialFromHub(item);
+                // 调用批量物料插入引擎
+                bool success = ExcelServices.InsertMaterialsFromHub(itemsToInsert);
+                // 向前端 WebView2 回传插入结果
                 PostMessageToWeb(new
                 {
+                    // 动作响应标识
                     action = "insertToExcelResponse",
+                    // 成功状态
                     success = success,
-                    message = success ? "物料已成功插入到 Excel！" : "插入失败，请确保位于分类表明细区"
+                    // 友好反馈文本
+                    message = success ? $"已成功插入 {itemsToInsert.Count} 行物料到 Excel！" : "插入失败，请确保光标位于分类表明细区"
                 });
             }));
         }
@@ -461,20 +545,55 @@ namespace ExcelAddInDemo.Forms
         }
 
         /// <summary>
-        /// 安全向前端发送 JSON 消息
+        /// 线程安全地向前端 WebView2 发送 JSON 格式业务数据
+        /// 严格遵循 WinForms UI 线程模型，支持跨线程自动 BeginInvoke 调度
         /// </summary>
+        /// <param name="data">待序列化的响应业务对象</param>
         private void PostMessageToWeb(object data)
         {
             try
             {
-                if (_webView.CoreWebView2 != null && !this.IsDisposed && !this.Disposing)
+                // 窗体已释放则直接退出
+                if (this.IsDisposed || this.Disposing) return;
+
+                // 序列化消息为 JSON 字符串
+                string json = JsonSerializer.Serialize(data, JsonOptions);
+
+                // 判定是否需要跨线程调度回 UI 线程
+                if (this.InvokeRequired)
                 {
-                    string json = JsonSerializer.Serialize(data, JsonOptions);
-                    _webView.CoreWebView2.PostWebMessageAsString(json);
+                    // 异步分发至 UI 消息循环
+                    this.BeginInvoke(new Action(() =>
+                    {
+                        try
+                        {
+                            // 在 UI 线程核验 WebView 控件有效性
+                            if (!this.IsDisposed && !this.Disposing && _webView != null && _webView.CoreWebView2 != null)
+                            {
+                                // 安全分发 Web 消息
+                                _webView.CoreWebView2.PostWebMessageAsString(json);
+                            }
+                        }
+                        catch (Exception innerEx)
+                        {
+                            // 记录 UI 线程发送异常
+                            LogHelper.WriteLog($"[CloudMaterialHubForm] UI线程派发 PostWebMessage 异常: {innerEx.Message}");
+                        }
+                    }));
+                }
+                else
+                {
+                    // 当前已在 UI 线程直接分发
+                    if (_webView != null && _webView.CoreWebView2 != null)
+                    {
+                        // 派发消息字符串
+                        _webView.CoreWebView2.PostWebMessageAsString(json);
+                    }
                 }
             }
             catch (Exception ex)
             {
+                // 记录跨线程派发异常日志
                 LogHelper.WriteLog($"[CloudMaterialHubForm] PostMessageToWeb 异常: {ex.Message}");
             }
         }

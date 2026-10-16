@@ -2719,6 +2719,30 @@ namespace ExcelAddInDemo
                             }
                             catch { }
 
+                            // 刷新明细块元器件 A 列序号(=ROW()-ROW(A${headerRow}))、小计求和公式与计费区域公式 (规则 6 架构规范)
+                            int compStartRow = newDetRow + 2;
+                            RefreshCabinetFeeAreaFormulas(targetSheet, newDetRow, compStartRow, newSubsumRow, newTolsumRow);
+
+                            // 联动绑定明细总计行与顶部汇总行的单价、总价与成本公式，消除 #REF!
+                            try
+                            {
+                                // 计算当前追加箱柜对应的顶部汇总物理行号
+                                int currentCabSumRow = curInsertSumRow - 1;
+                                // 在明细总计行 F 列自动绑定联动公式指向汇总行 F 列 (台数同步)
+                                targetSheet.Cells[newTolsumRow, 6].Formula = $"=F{currentCabSumRow}";
+                                // G 列单价公式指向明细总计行单台单价 G 列
+                                targetSheet.Cells[currentCabSumRow, 7].Formula = $"=G{newTolsumRow}";
+                                // H 列总价公式 = 数量(F列) * 单价(G列)
+                                targetSheet.Cells[currentCabSumRow, 8].Formula = $"=F{currentCabSumRow}*G{currentCabSumRow}";
+                                // J 列成本总价公式指向明细总计行的成本总价 (K 列)
+                                targetSheet.Cells[currentCabSumRow, 10].Formula = $"=K{newTolsumRow}";
+                                // K 列毛利公式 = 总价(H列) - 成本总价(J列)
+                                targetSheet.Cells[currentCabSumRow, 11].Formula = $"=H{currentCabSumRow}-J{currentCabSumRow}";
+                                // L 列毛利率公式
+                                targetSheet.Cells[currentCabSumRow, 12].Formula = $"=IF(H{currentCabSumRow}=0,0,K{currentCabSumRow}/H{currentCabSumRow})";
+                            }
+                            catch { }
+
                             // 推进底表明细追加指针
                             curInsertDetRow += blockRowCount;
                         }

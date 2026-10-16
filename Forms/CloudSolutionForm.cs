@@ -616,7 +616,8 @@ namespace ExcelAddInDemo.Forms
                         string capFolder = GetStringProp("folderName");
                         string capSchemeName = GetStringProp("schemeName");
                         string capCabModel = GetStringProp("cabinetModel");
-                        var (capOk, capMsg, capScheme) = _controller.CaptureActiveCabinetToPrimaryScheme(capFolder, capSchemeName, capCabModel);
+                        string capDwgPath = GetStringProp("dwgFilePath");
+                        var (capOk, capMsg, capScheme) = _controller.CaptureActiveCabinetToPrimaryScheme(capFolder, capSchemeName, capCabModel, capDwgPath);
                         PostMessageSafe("captureActiveCabinetToPrimarySchemeResult", new { success = capOk, message = capMsg, scheme = capScheme });
                         break;
                 }

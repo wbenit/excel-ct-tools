@@ -31,6 +31,10 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("cadDrawingName")]
         public string CadDrawingName { get; set; } = string.Empty;
 
+        // 新选取的待归档本地 DWG 物理全路径 (编辑或抓取时若指定，保存时自动安全复制归档)
+        [JsonPropertyName("selectedDwgFilePath")]
+        public string? SelectedDwgFilePath { get; set; }
+
         // 柜型型号 (如: "MNS", "KYN28-12", "GGD", "PZ30")
         [JsonPropertyName("cabinetModel")]
         public string CabinetModel { get; set; } = string.Empty;
@@ -176,5 +180,8 @@ namespace ExcelAddInDemo.Models
 
         // 关联的完整一次方案实体 (供编辑弹窗直接反显)
         public PrimarySchemeEntity? SchemeData { get; set; }
+
+        // 是否已关联并存在物理 DWG 图纸文件 (为 false 时表示纯 BOM 自建方案)
+        public bool HasDwg { get; set; } = true;
     }
 }

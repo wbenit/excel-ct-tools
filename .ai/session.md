@@ -1,3 +1,165 @@
+- **【云方案中心：存当前柜弹窗直选DWG图纸与编辑弹窗支持修改更换/清空DWG路径】(`Models/PrimaryCircuitModels.cs`, `Services/ExcelServices.CloudSolution.cs`, `Controllers/CloudSolutionController.cs`, `Forms/CloudSolutionForm.cs`, `Resources/cloud_solution.html`, `publish/`, `bin/`)**：
+  1. **用户核心指令与需求确诊**：
+     - 用户指令反馈：“没有选择dwg文件的入口吗”、“不需要入口2，另外编辑的弹窗需要能编辑修改dwg文件路径”；
+     - 痛点确诊：
+       ① 之前“存当前活动箱柜为一次企业方案”弹窗中仅有目录、名称、柜型，缺少选取本地 DWG 图纸的入口；
+       ② “编辑一次成套方案与 BOM”弹窗中的“当前DWG”为只读禁用文本框，无法直接修改路径或更换/绑定图纸。
+  2. **工程级最小改动闭环落地**：
+     - **存柜弹窗集成图纸选取 (`cloud_solution.html`, `ExcelServices.CloudSolution.cs`)**：
+       - 在存箱柜弹窗中增加“关联图纸(可选)”字段，附带【浏览...】按钮与可清除输入框；
+       - 点击调用 Windows 原生 OpenFileDialog 选取 DWG，保存时自动提取 BOM 并将选中的 DWG 复制归档到对应子目录下，一步到位生成完整带图纸卡片；
+     - **编辑弹窗支持 DWG 路径修改与更换 (`cloud_solution.html`, `CloudSolutionController.cs`)**：
+       - 将原只读的“当前DWG”升级为“关联DWG图纸”，显示图纸路径，右侧提供【更换】按钮与 clearable 清除能力；
+       - 保存方案时，若选取了新图纸则自动安全复制归档到子目录并更新数据库 `cad_drawing_name` 与缩略图；若清空则解绑图纸转为纯 BOM 方案；
+     - 严格遵循每 3 行新增代码包含 1 行中文注释规范。
+  3. **构建验证与多端产物同步**：
+     - `dotnet build` 编译完整通过：0 错误；
+     - 程序集 `ExcelAddInDemo.dll` 及 PDB 全量同步覆盖至 `publish/` 与 `bin/Debug/net48/`；
+     - 前端资源全量同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`。
+
+- **【极速排错：彻底拔除 file 协议非法 query 参数，根治 ERR_FILE_NOT_FOUND 报错并无缝上线双滚动自适应】(`Forms/CloudMaterialHubForm.cs`, `publish/`, `bin/Debug/net48/`)**：
+  1. **问题确诊**：
+     - 用户截图反馈 WebView2 出现 Chromium 原生灰色错误页：`ERR_FILE_NOT_FOUND`；
+     - 根因：Windows 本地 `file:///` 协议不支持携带 HTTP 式查询参数（如 `?v=...`）。底层文件系统将包含 `?` 的整串当成了本地文件名，由于文件名中包含非法字符问号导致文件系统判定文件不存在并抛出 `ERR_FILE_NOT_FOUND`；
+  2. **工程级最小改动闭环修复**：
+     - 立即将 `CloudMaterialHubForm.cs` 中的导航赋值恢复为干净合法的本地文件绝对路径 Uri：`_webView.Source = new Uri(htmlPath);`；
+     - 前端保持母排计算器最新双滚动紧凑设计（规格列表最大 150px 内部滚动，下方测算表格、总金额汇总行直接全屏可见，底部操作按钮固定吸底）；
+     - 每 3 行代码严格包含中文注释。
+  3. **构建验证与产物同步**：
+     - `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：0 警告、0 错误；
+     - 最新 DLL、PDB 及所有相关 HTML 资源已全量镜像同步至 `publish/` 与 `bin/Debug/net48/`。
+
+- **【云方案中心：一次方案纯BOM自建方案即存即显与补传/绑定CAD图纸自动归档交付】(`Controllers/CloudSolutionController.cs`, `Models/PrimaryCircuitModels.cs`, `Forms/CloudSolutionForm.cs`, `Services/ExcelServices.CloudSolution.cs`, `Resources/cloud_solution.html`, `publish/`, `bin/`)**：
+  1. **用户核心需求与架构闭环确认**：
+     - 用户提问反馈：“箭头添加一次方案是否功能没实现”、“点击存当前箱柜后，新建方案名称.dwg文件，再把当前箱柜的bom加入，这个思路有什么问题”、“按这个思路实施”；
+     - 痛点确诊：原一次方案列表完全依赖扫描本地物理 DWG 文件，Excel 抓取的自建方案存入 SQLite 数据库后因无物理 DWG 图纸无法被扫描，导致保存后卡片仍为 0 个；强行建立空壳 DWG 会导致 CAD 视口报错或图纸空白；
+     - 正解落地：解耦“图纸资产”与“方案”，纯 BOM 自建方案作为一等公民即存即显，支持随时通过系统文件框选取真实 DWG 并安全归档复制到对应子目录下。
+  2. **工程级最小改动闭环落地**：
+     - **DTO 与纯 BOM 卡片无缝追加 (`Models/PrimaryCircuitModels.cs`, `Controllers/CloudSolutionController.cs`)**：
+       - 为 `PrimaryFolderDwgCardDto` 增加 `HasDwg` 字段；
+       - 在 `GetPrimaryFolderDwgCards` 中新增 `AppendVirtualPrimaryCards`，将数据库中未绑定物理 DWG 的自建方案合并追加为卡片，前端自动降级呈现电气 SVG 矢量图；
+       - 在 `ScanPrimaryFolders` 中将纯 BOM 方案计入各分类总数，并对磁盘上物理尚未创建的子目录做虚拟补齐；
+     - **DWG 补传与自动归档复制 (`Controllers/CloudSolutionController.cs`, `Forms/CloudSolutionForm.cs`)**：
+       - 实现 `BindPrimarySchemeDwg` 接口：STA 线程呼出 Windows OpenFileDialog，安全将选中的 DWG 复制至 `一次方案根目录\{分类子目录}\{方案名}.dwg`，同步更新数据库 `cad_drawing_name` 与 `applicable_codes`，即刻预热缩略图缓存；
+       - `CloudSolutionForm.cs` 增加 `bindPrimarySchemeDwg` 消息派发；
+     - **前端交互与视口联动 (`Resources/cloud_solution.html`)**：
+       - 一次方案卡片无图纸时在 SVG 上方呈现【绑定DWG图纸】快捷按钮；大视口操作栏增加【绑定/更换DWG图纸】；
+       - 点击触发 `onBindPrimaryDwg`，回传后自动刷新目录树与卡片网格，大视口无缝加载矢量图；
+     - 严格遵循每 3 行新增代码包含 1 行中文注释。
+  3. **构建验证与产物同步**：
+     - `dotnet build` 编译完整通过（0 错误）；
+     - 程序集 `ExcelAddInDemo.dll` 及 PDB、前端 HTML 全量同步至 `publish/` 与 `bin/Debug/net48/`。
+
+- **【UI/UX 深度加固：母排计算器规格输入区与测算表格紧凑双滚动自适应、高对比度滚动条与 WebView2 动态时间戳防缓存闭环】(`Resources/cloud_material_hub.html`, `Forms/CloudMaterialHubForm.cs`, `publish/`, `bin/Debug/net48/`)**：
+  1. **用户痛点与二次确诊**：
+     - 用户反馈：“没有垂直滚动，部分下面内容还是看不到”；
+     - 现象与根因深度确诊：
+       ① **WebView2 磁盘缓存污染**：WinForm 中 WebView2 默认加载同一 `file:///` 协议时未加防缓存机制，直接复用了旧版 HTML，导致页面未真正加载最新样式；
+       ② **规格输入行过度占据纵向空间**：当用户添加 8~10 行规格时，规格输入列表单独占用了 300px+ 垂直高度，在 631px 常见笔记本/中小型视口下，把下方的【规格明细与单价测算】表格完全挤到了视野之外；
+       ③ **滚动条视觉不显眼**：原默认滚动条对比度低，且用户光标落在众多 `<el-input-number>` 数字微调控件上时滚轮被截胡，造成“没有滚动”的错觉。
+  2. **端到端工程级深度加固与最小变动落地**：
+     - **后端强制跳过缓存 (`Forms/CloudMaterialHubForm.cs`)**：
+       - 在 `_webView.Source` 导航赋值中自动追加动态时间戳参数 `?v={DateTime.Now.Ticks}`，每次弹窗 100% 强制从本地磁盘拉取最新资源，彻底消除缓存滞后；
+     - **规格列表自适应紧凑滚动 (`Resources/cloud_material_hub.html`)**：
+       - 新增 `.copper-combo-scroll`，对规格输入行动态列表限制最大高度为 150px（约 4 行高）；当规格超过 4 行时在内部优雅滚动，直接为下方释放出 150px+ 宝贵视口高度；
+       - 下方【规格明细与单价测算】表格（`max-height="240"`）、总金额汇总条和底部操作按钮在初始视口下即可全部一眼可见；
+     - **显式高对比度美观 Webkit 滚动条**：
+       - 为 `.copper-scroll-body` 和 `.copper-combo-scroll` 定制 7px 宽深灰色滑块与浅灰轨道，对比强烈，指引清晰；
+     - 修复 `CloudSolutionController.cs` 中误残留的多余闭合大括号语法错误，恢复项目 0 错误编译通过。
+  3. **端到端实测验证与产物全量同步**：
+     - 产物全量部署覆盖至 `publish/` 与 `bin/Debug/net48/`；
+     - `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整编译验证：0 错误；
+     - 通过 Browser Subagent 在 `1164x631` 真实模拟视口下验证：规格添加 8 行后内部滚动正常，下方表格、总金额汇总条与吸底操作按钮全部一眼可见，零水平滚动条。
+
+- **【核心修复：分类合并与云物料插入 A 列序号公式错乱及计费区 #REF! 彻底治愈】(`Services/ExcelServices.Category.cs`, `Services/ExcelServices.CloudMaterialHub.cs`, `publish/`, `bin/`)**：
+  1. **用户核心指令与缺陷根因确诊**：
+     - 用户指令反馈：“分类合并的时候和图2插入的时候，A列的公式不正确，如图1，先查原因”，并在原因确诊后下达“修复”指令；
+     - 现象与根因确诊：
+       ① **分类合并场景**：`MergeCategories` 跨表整行复制明细块时，源表元器件 A 列序号带有绝对表头行引用（如 `=ROW()-ROW(A$80)`）。复制到目标表第 1254 行之后，Excel 原生 Copy 不会自动平移带 $ 的绝对行号，且后续漏掉了调用系统标准的 `RefreshCabinetFeeAreaFormulas`，导致目标表第 1256 行计算结果为 `1256 - 80 = 1176`，序号严重错位；
+       ② **云物料/母排计算器插入场景**：`InsertMaterialsFromHub` 第 310 行直接硬编码了 `writeBuffer[i, 0] = "=ROW()-ROW(A$6)"`（A$6 为顶部汇总表头行，而非明细表头行），导致插入物料 A 列计算出 1250+；且插入或删减空白行后未执行自愈刷新，删减行破坏了小计求和公式终点边界，直接触发辅材与小计行 #REF! 连锁报错。
+  2. **工程级最小改动闭环落地**：
+     - **分类合并公式自愈与汇总联动绑定 (`Services/ExcelServices.Category.cs`)**：
+       - 在每个追加箱柜明细复制及表头序号公式设置后，显式调用 `RefreshCabinetFeeAreaFormulas(targetSheet, newDetRow, compStartRow, newSubsumRow, newTolsumRow)`；
+       - 自动将目标表该箱柜元器件 A 列序号统一重置为规范动态公式 `=ROW()-ROW(A${newDetRow + 1})`（从 1 开始自然连续递增），并自愈小计与费用区公式；
+       - 补齐明细总计行 (`newTolsumRow`) 与顶部汇总行 (`currentCabSumRow`) 的 F/G/H/J/K/L 列公式联动绑定，彻底杜绝数据脱节与 #REF! 隐患；
+     - **云物料插入表头对准与整柜自愈校准 (`Services/ExcelServices.CloudMaterialHub.cs`)**：
+       - 将 A 列序号公式纠正为当前箱柜明细表头行：`writeBuffer[i, 0] = "=ROW()-ROW(A${targetDetRow + 1})"`；
+       - 批量回写后，动态重新嗅探当前箱柜小计行与总计行最新物理行号，联动调度 `RefreshCabinetFeeAreaFormulas` 刷新整柜元器件 A 列序号、单价总价联动及小计求和公式；
+       - 若产生过物理插删行，自愈校准全表定义名称拓扑；
+     - 严格遵循每 3 行新增代码包含 1 行中文注释规范。
+  3. **构建验证与产物同步**：
+     - `dotnet build` 编译完整通过：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` (3.18 MB) 及 PDB 全量同步覆盖至 `publish/` 与 `bin/Debug/net48/`。
+
+
+﻿- **【型号参数解析流水线强化：识别出主代号后自动安全遮蔽防误判 + 分类胶囊末尾快捷新建分类】(Services/ExcelServices.ModelParse.cs, Resources/model_param_parser.html, publish/, in/)**：
+  1. **用户核心指令与需求确诊**：
+     - 用户提问反馈：“没有添加分类的功能吗？如果CJ20-160A 3P,通过CJ20识别出来是接触器，后面识别级数和电流的时候，CJ20还参与计算吗”；用户发出“实施”指令；
+     - 现象与隐患确诊：
+       ① 之前各解析通道独立传入 rawModel，未对命中的系列代号（如 CJ20, DZ47）进行隔离遮蔽。若遇无单位电流（如 CJ20-160 3P）或通用数字规则，代号内的数字（如 20）极易被误提取为电流候选值（误判为 20A）；
+       ② 原分类管理仅在通道标题栏右上角提供“新建分类”按钮，下方的分类胶囊池末尾缺乏直观的“+ 新建分类”快捷胶囊。
+  2. **工程级算法优化与最小改动落地**：
+     - **主代号自动安全遮蔽机制 (Services/ExcelServices.ModelParse.cs)**：
+       - ParseCategory 扩展支持 out string matchedCode，记录命中的具体特征代号（如 CJ20, C65）；
+       - 新增 MaskMatchedCategoryCode(string rawModel, string matchedCode) 辅助方法，将命中代号切片替换为等长空格，保持原文本其余部分位置不变；
+       - ParseSingleModel 与 ExecuteBatchModelParse 中，在识别出类别后，极数、电流与脱扣流水线均基于遮蔽后的安全文本执行，使 CJ20 的 20、DZ47 的 47、C65 的 65 彻底不参与计算，从源头上杜绝误判；
+       - 严格遵循每 3 行包含 1 行中文注释规范。
+     - **前端胶囊快捷新建交互 (Resources/model_param_parser.html)**：
+       - 在分类胶囊列表末尾增加 .cat-pill.add-cat-pill 快捷胶囊按钮，点击直接呼出新建分类弹窗；
+       - 添加浅绿背景（#f0fdf4）与青绿虚线边框（#009688），hover 变实线，与“+ 添加代号”风格统一。
+  3. **构建验证与多端产物同步**：
+     - dotnet build 编译：0 错误、0 警告新增；
+     - 程序集 ExcelAddInDemo.dll 及 PDB 全量同步覆盖至 publish/ 与 in/Debug/net48/；
+     - 前端资源同步至 publish/Resources/ 与 in/Debug/net48/Resources/。
+- **【规则6精益落地：云物料物料插入严格在光标行插入，且仅当行数超过元器件区域空白行时插入相差行】(`Services/ExcelServices.CloudMaterialHub.cs`, `publish/`, `bin/`)**：
+  1. **用户核心指令与需求确诊**：
+     - 用户指令反馈：“添加到excel的时候，在光标的下一行插入了，应该在光标行插入；如果行数超过元器件区域的空白行数，需要插入相差行”；
+     - 现象确诊：
+       ① 之前代码逻辑死写为 `int insertRow = cursorRow + 1`，导致物料总是落在光标的下一行；
+       ② 之前无论元器件区域是否已留有足够空白行，只要目标行有文字就盲目整行 Insert，导致底部的空白行永远无法消耗，表格不断无限膨胀。
+  2. **工程级算法重构与严密落地 (`ExcelServices.CloudMaterialHub.cs`)**：
+     - **光标行精准定位**：将插入起始行严格绑定为当前光标物理行号（`insertRow = cursorRow`），仅当光标在元器件区域外时智能回退有效区域；
+     - **规则 7 内存扫描空白行**：一次性读取 `B{compStartRow}:C{compEndRow}` 到内存 2D 数组，精准统计当前箱柜元器件区域总空白行数 `emptyRowCount` 以及光标行起连续空行数；
+     - **规则 6 差额平衡算法**：
+       - 计算相差行数：`diffRows = Math.Max(0, count - emptyRowCount)`；
+       - 若光标行本身是空行且后续连续空行足够，直接在现有空白行写入，净增加 0 行；
+       - 若光标行已有物料需让位下移，在光标行插入 `count` 行让原内容顺延下移后，从小计行上方扣除对应的多余空行 `Math.Min(count, emptyRowCount)`；
+       - 确保全表净增加行数**严格精确等于相差行 `diffRows`**，完美复用现有空白行，杜绝表格无节制膨胀；
+     - 遵循每 3 行包含 1 行中文注释规范。
+  3. **构建验证与产物同步**：
+     - `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` (3.17 MB) 及 PDB 全量同步覆盖至 `publish/` 与 `bin/Debug/net48/` 目录。
+
+- **【业务与交互重构：云物料母排计算器按米计量、分规格重量与每米价格测算、多行明细与单行kg双模插入交付】(`Resources/cloud_material_hub.html`, `Forms/CloudMaterialHubForm.cs`, `Services/ExcelServices.CloudMaterialHub.cs`, `publish/`, `bin/`)**：
+  1. **用户核心指令与需求确诊**：
+     - 用户指令反馈：“方框内的根需要改为米；取消重长比，单价，数量，小计；品牌移动到加工费后面；下面展示每个规格对应的重量，每米的价格；插入可以选择多行明细插入，也可以单行kg插入；下拉框是直接去除；去除加入母排库功能”；
+     - 需求分析与架构确立：
+       ① 计量维度转变：将“按根”买排彻底转为“按米”下料，去除规格前缀旁的“按根”下拉框，输入框单位由“根”改为“米”（支持浮点步长）；
+       ② 布局紧凑规整：将“品牌”字段移动到“加工费(元/吨)”同一行右侧；
+       ③ 移除冗余孤立表单：取消原底部的“重长比”、“单价”、“数量”、“小计” 4 项孤立输入框；
+       ④ 规格明细与单价测算表格：在规格配置行下方嵌入轻量级表格与底栏，实时展示每个规格的长度(米)、单米重量(kg/m)、每米单价(元/米)、总重(kg)、分项金额(元)以及总长度、总重量、总金额；
+       ⑤ 插入模式双模支持：提供【多行明细(米)插入】与【单行(kg)插入】双按钮，彻底移除无用的【加入母排库】功能。
+  2. **端到端工程级最小变动落地**：
+     - **底层 Excel 批量插入引擎 (`Services/ExcelServices.CloudMaterialHub.cs`)**：
+       - 实现 `InsertMaterialsFromHub(List<HubMaterialDto> items)` 批量物料插入引擎；
+       - 规则 6: 光标行下方插行防覆盖，多行一次性下移留出对应空间；
+       - 规则 7: 采用 `object[count, 13]` 二维数组一次性在内存中格式化 A~M 列（A自适应序号、B名称、C规格、D品牌、E单位、F数量/米数、I备注、M单价），单次批量写回 Excel；
+       - 规则 8: 严格预检并纠正规则 6 定义名称拓扑；
+       - `InsertMaterialFromHub` 转发兼容调用，每 3 行代码包含 1 行中文注释；
+     - **C# 窗体宿主通信层 (`Forms/CloudMaterialHubForm.cs`)**：
+       - `HandleInsertToExcel` 同时支持反序列化 `items`（多行明细数组）和单条 `item`，无缝对接前端双模插入；
+     - **前端 Vue 3 + Element Plus 表单与表格联动 (`Resources/cloud_material_hub.html`)**：
+       - 品牌移动到加工费后；规格输入框单位由“根”改为“米”，去除下拉框；
+       - 增加 `computedComboDetails` 响应式计算属性，毫秒级实时联动米重、每米单价与分项金额；
+       - 嵌入现代化 Element Plus 紧凑明细表格与汇总状态栏，绿蓝相间（`#009688`），零横向滚动条；
+       - 实现 `insertCopperDetailRowsToExcel`（多行明细按米插入）与 `insertCopperSingleKgToExcel`（单行按总重量 kg 插入）；
+       - 彻底移除“加入母排库”按钮。
+  3. **构建验证与白屏报错排查彻底修复**：
+     - **白屏根因排查**：初次加载时控制台报 `ReferenceError: computedUnitWeight is not defined`，定位为 Vue `setup()` 的 `return` 对象中残留了已移除的旧版变量名，导致 Vue 挂载前异常中断产生白屏；
+     - **极速修复落地**：将 `setup()` 返回对象中的旧变量名清洗同步为新响应式属性 `computedPricePerKg`, `computedComboDetails`, `totalBusbarLength`, `totalBusbarWeight`, `totalBusbarAmount` 与双模插入函数；
+     - **编译与多端同步**：`dotnet build` 编译 0 错误，资源全量同步至 `publish/` 与 `bin/Debug/net48/`；
+     - **浏览器端到端实测验证**：通过 Browser Subagent 实测页面，控制台 0 错误，母排计算器完整正常呈现，分规格测算表格与汇总栏清晰展现，双模插入按钮正常就绪，白屏问题彻底根治。
+
 - **【UI 交互与美感质跃：云物料工作台一级主导航胶囊化重构至顶部标题栏】(`Resources/cloud_material_hub.html`, `publish/`, `bin/`)**：
   1. **问题确诊与美感优化目标**：
      - 用户指令反馈：“方框处2个tab按钮放这里有点突兀，放在什么位置更加合理美观”，指出原有独立通栏 50%/50% 平分全宽的【物料库】与【计算器】Tab 颜色突兀刺眼且产生“两层 Tab 叠罗汉”压迫感；
@@ -6188,3 +6350,44 @@
 3. **CAD 联动端双重容错防御** (cad-net_1/cad1/ClassLibrary3/CadExcelSyncServer.cs)：
    - 在 ProcessReceivedMessage 中统一对 handles 扁平化拆分去重；
    - 在 ExecuteHighlightInCad 中将直接遍历 handles 升级为遍历切分后的 latHandles，彻底杜绝 Convert.ToInt64(h, 16) 遇到连字符抛出 FormatException 导致的聚焦无响应。
+
+
+## [2026-10-16 22:28:00] 云物料一体化工作台当日大盘金属行情 (铜/铝) 实时拉取全套功能落地交付
+
+### [Completed]
+1. **行情数据传输模型 (Models/CloudMaterialHubModels.cs)**：新增 MarketPriceResult 模型，涵盖 Success, CopperPrice, AluminumPrice, Source, UpdateTime, IsFallback, Message，标明离线备选基准铜价 78500，铝价 19800。
+2. **大盘行情服务层 (Services/MarketPriceService.cs)**：基于 HttpClient 单例拉取上期所主力连续数据源 (新浪期货行情 API)，带 Referer 头、4秒超时防护、10分钟内存缓存与安全兜底。
+3. **C# 宿主窗体双向 IPC (Forms/CloudMaterialHubForm.cs)**：HandleInitHub 初始化下发行情，HandleGetMarketPriceAsync 响应 getMarketPrice 强制刷新指令并回传。
+4. **前端交互与界面层 (Resources/cloud_material_hub.html)**：母排计算器与载流量模块新增行情行、刷新按钮、来源徽章；材质切换自动联动价格；setup return 正确导出响应式变量并展示 ElMessage 提示。
+5. **多端同步与工程构建**：同步覆盖至 publish/ 与 bin/，dotnet build 编译 0 警告 0 错误。
+6. **浏览器自动化测试**：通过 browser_subagent 验证通过。
+
+### [Next]
+- 用户在 ExcelAddInCTtools 插件端体验当日真实行情自动带出与刷新。
+
+
+## [2026-10-16 22:42:00] 修复母排计算器刷新铜价“一直转圈”与跨线程异常 (CoreWebView2 UI Thread)
+
+### [Problem & Root Cause]
+1. **CoreWebView2 跨线程派发异常**：
+   - 用户在界面上点击刷新铜价后，按钮一直转圈（Loading 不结束）且铜价停留在旧值 111465；
+   - 查阅 %AppData%/ExcelAddInDemo/debug.log 发现报错：`[CloudMaterialHubForm] PostMessageToWeb 异常: CoreWebView2 can only be accessed from the UI thread`；
+   - 根因：`HandleInitHub` 与 `HandleGetMarketPriceAsync` 在异步等待 (`await`) 第三方网络请求后，执行流恢复在后台线程池线程（Thread Pool Worker Thread）上；原 `PostMessageToWeb` 直接访问 `_webView.CoreWebView2.PostWebMessageAsString`，违反了 WebView2 必须在 UI 线程访问的约束，导致报文被底层拦截并抛出异常，前端永远收不到响应报文。
+2. **前端缺乏超时看门狗**：
+   - 前端点击刷新后激活了 `isMarketPriceLoading = true`，完全依赖后端的 `marketPriceResponse` 回包，在异常情况下无看门狗机制恢复状态。
+3. **残留旧基准单价 111465**：
+   - 初始静态值使用了旧硬编码 111465，初始化报文因跨线程异常丢包后未能被新行情覆盖。
+
+### [Completed]
+1. **重构 C# 跨线程安全派发 (`Forms/CloudMaterialHubForm.cs`)**：
+   - 在 `PostMessageToWeb` 中引入 WinForms 经典 `this.InvokeRequired` 校验，遇跨线程时自动使用 `this.BeginInvoke` 调度回 UI 消息泵安全执行，彻底根除跨线程崩溃；
+   - 将默认兜底铜价修正为当前行业大盘基准 78,500 元/吨（标明 `--硬编码: 离线备用基准铜价 78500--`）。
+2. **前端看门狗与调试自愈 (`Resources/cloud_material_hub.html`)**：
+   - 将 `copperModel.marketPrice` 初始静态值统一为 78,500；
+   - 在 `fetchTodayMarketPrice` 中植入 6 秒超时防卡看门狗（`marketPriceTimeoutTimer`），若超时自动停止 Loading 并提示用户，彻底终结“一直转圈”；
+   - 收到 `marketPriceResponse` 时自动清理看门狗。
+3. **多端同步与工程构建**：
+   - 同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+   - 执行 `dotnet build /t:Compile /p:DebugType=none`，**0 错误**；同步新 DLL 至 `publish/`；
+4. **端到端浏览器自动化验证**：
+   - 经 `browser_subagent` 实测验证：页面初始铜价精准显示为 78,500；点击刷新按钮后 Loading 动效正常触发并在回包后顺利结束，提示框正常弹出，无任何卡顿转圈。

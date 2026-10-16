@@ -290,6 +290,19 @@
         opacity: 0.85;
       }
 
+      /* 快捷新建分类胶囊样式 */
+      .cat-pill.add-cat-pill {
+        border: 1px dashed #009688;
+        color: #009688;
+        background: #f0fdf4;
+      }
+
+      .cat-pill.add-cat-pill:hover {
+        background: #009688;
+        color: #ffffff;
+        border-style: solid;
+      }
+
       .cat-detail-panel {
         margin-top: 10px;
         background: #ffffff;
@@ -659,6 +672,15 @@
               >
                 <span>{{ catName }}</span>
                 <span class="badge">({{ codes ? codes.length : 0 }})</span>
+              </div>
+              <!-- 快捷新建分类胶囊按钮 -->
+              <div
+                class="cat-pill add-cat-pill"
+                title="新建元器件分类"
+                @click="promptAddCategory"
+              >
+                <i class="fa-solid fa-plus" style="margin-right: 4px"></i>
+                <span>新建分类</span>
               </div>
             </div>
 

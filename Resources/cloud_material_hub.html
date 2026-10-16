@@ -216,9 +216,14 @@
 
     /* 主体视口容器 */
     .main-viewport {
+      /* 充满垂直可用空间 */
       flex: 1;
+      /* 关键：允许弹性盒收缩至内容高度以下，激活滚动机制 */
+      min-height: 0;
+      /* 纵向弹性排列 */
       display: flex;
       flex-direction: column;
+      /* 防止外溢 */
       overflow: hidden;
       background: #f8fafc;
     }
@@ -286,10 +291,16 @@
 
     /* 模块面板通用容器 */
     .view-panel {
+      /* 填充可用空间 */
       flex: 1;
+      /* 关键：允许面板收缩，使内部可滚动容器正常计算高度 */
+      min-height: 0;
+      /* 纵向弹性布局 */
       display: flex;
       flex-direction: column;
+      /* 溢出隐藏 */
       overflow: hidden;
+      /* 内边距与组件间距 */
       padding: 10px 14px;
       gap: 10px;
     }
@@ -494,19 +505,6 @@
       font-weight: bold;
     }
 
-    /* 规格型号实时展示框 */
-    .cs-spec-box {
-      background: #ffffff;
-      border: 1px solid #cbd5e1;
-      border-radius: 4px;
-      padding: 4px 8px;
-      font-family: monospace;
-      font-size: 12px;
-      color: #0f766e;
-      font-weight: 600;
-      word-break: break-all;
-    }
-
     /* 紧凑明细表格 */
     .cs-table-compact {
       width: 100%;
@@ -541,16 +539,91 @@
       align-items: center;
     }
 
-    /* 母排计算器表单样式 */
+    /* 母排计算器表单样式：满高弹性容器，杜绝撑破视口 */
     .copper-form-card {
+      /* 白色卡片底色 */
       background: #ffffff;
+      /* 统一精致边框 */
       border: 1px solid var(--border);
+      /* 圆角 4px 保持工整质感 */
       border-radius: 4px;
-      padding: 14px 18px;
+      /* 内边距上右下左 */
+      padding: 12px 16px 12px 16px;
+      /* 纵向弹性盒排布 */
+      display: flex;
+      /* 纵向主轴排列 */
+      flex-direction: column;
+      /* 填满父容器垂直剩余视口 */
+      flex: 1;
+      /* 允许弹性收缩，防止超高溢出窗口 */
+      min-height: 0;
+      /* 隐藏卡片外层溢出 */
+      overflow: hidden;
+    }
+
+    /* 图二红框区域：母排主内容区（输入参数 + 规格列表 + 测算表格），自适应纵向平滑滚动 */
+    .copper-scroll-body {
+      /* 纵向弹性拉伸占满空间 */
+      flex: 1;
+      /* 尺寸收缩阈值归零，触发滚动 */
+      min-height: 0;
+      /* 垂直方向超出内容自动出现平滑滚动条 */
+      overflow-y: auto;
+      /* 水平方向严格禁止任何滚动条 */
+      overflow-x: hidden;
+      /* 纵向排列内部表单项与表格 */
+      display: flex;
+      /* 纵向布局 */
+      flex-direction: column;
+      /* 元素间距 10px */
+      gap: 10px;
+      /* 右侧留出呼吸边距，避免滚动条遮贴输入控件 */
+      padding-right: 6px;
+    }
+
+    /* 规格拼排输入行滚动容器：超过 4 行时内部滚动，释放下方测算表格纵向空间 */
+    .copper-combo-scroll {
+      /* 弹性拉伸 */
+      flex: 1;
+      /* 最大高度限制约 4 行 (每行约 36px) */
+      max-height: 150px;
+      /* 超过时内部滚动 */
+      overflow-y: auto;
+      /* 禁止水平滚动 */
+      overflow-x: hidden;
+      /* 纵向紧凑排列 */
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      flex-shrink: 0;
+      gap: 6px;
+      /* 右侧预留边距 */
+      padding-right: 6px;
+    }
+
+    /* 显式高对比度美观滚动条样式，防止用户觉得没有滚动条 */
+    .copper-scroll-body::-webkit-scrollbar,
+    .copper-combo-scroll::-webkit-scrollbar {
+      /* 滚动条宽度 7px，兼顾辨识度与精致感 */
+      width: 7px;
+    }
+
+    .copper-scroll-body::-webkit-scrollbar-track,
+    .copper-combo-scroll::-webkit-scrollbar-track {
+      /* 浅灰微蓝轨道衬底 */
+      background: #f1f5f9;
+      border-radius: 4px;
+    }
+
+    .copper-scroll-body::-webkit-scrollbar-thumb,
+    .copper-combo-scroll::-webkit-scrollbar-thumb {
+      /* 深灰中性滑块，视觉对比清晰强烈 */
+      background: #94a3b8;
+      border-radius: 4px;
+    }
+
+    .copper-scroll-body::-webkit-scrollbar-thumb:hover,
+    .copper-combo-scroll::-webkit-scrollbar-thumb:hover {
+      /* 悬停更深灰，交互动效 */
+      background: #64748b;
     }
 
     .form-item-row {
@@ -776,25 +849,8 @@
                 </div>
               </div>
               <!-- 尺寸数值标注 -->
-              <div style="font-size: 12px; font-family: monospace; color: #00796b; font-weight: bold; margin-bottom: 8px;">
+              <div style="font-size: 12px; font-family: monospace; color: #00796b; font-weight: bold;">
                 {{ cabinetModel.w }} × {{ cabinetModel.h }} × {{ cabinetModel.d }} mm
-              </div>
-              <!-- 安装位置与方式 -->
-              <div style="display: flex; flex-direction: column; gap: 6px; width: 100%; border-top: 1px dashed #e2e8f0; padding-top: 8px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11.5px;">
-                  <span style="color: #64748b;">安装位置:</span>
-                  <el-radio-group v-model="cabinetModel.installLocation" size="small">
-                    <el-radio label="indoor">户内</el-radio>
-                    <el-radio label="outdoor">户外</el-radio>
-                  </el-radio-group>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11.5px;">
-                  <span style="color: #64748b;">安装方式:</span>
-                  <el-radio-group v-model="cabinetModel.installMethod" size="small">
-                    <el-radio label="surface">明装</el-radio>
-                    <el-radio label="flush">暗装</el-radio>
-                  </el-radio-group>
-                </div>
               </div>
             </div>
 
@@ -846,31 +902,6 @@
                 </span>
               </div>
 
-              <!-- 规格型号装配多选配置行 -->
-              <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px; padding: 6px 10px; display: flex; flex-direction: column; gap: 6px;">
-                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11.5px;">
-                  <span style="color: #64748b;">尺寸:</span>
-                  <el-select v-model="cabinetModel.dimOrder" size="small" style="width: 105px;">
-                    <el-option label="宽*高*深" value="W*H*D"></el-option>
-                    <el-option label="高*宽*深" value="H*W*D"></el-option>
-                    <el-option label="深*宽*高" value="D*W*H"></el-option>
-                  </el-select>
-                  <el-checkbox v-model="cabinetModel.includeThickness" size="small">板厚</el-checkbox>
-                  <el-checkbox v-model="cabinetModel.includeMaterial" size="small">材质</el-checkbox>
-                  <el-checkbox v-model="cabinetModel.includeInstall" size="small">位置与安装</el-checkbox>
-                  <el-checkbox v-model="cabinetModel.hasSecondPlate" size="small" @change="onSecondPlateChange">带二层板</el-checkbox>
-                  <el-checkbox v-model="cabinetModel.hasCustomSuffix" size="small">自定义</el-checkbox>
-                  <el-input v-if="cabinetModel.hasCustomSuffix" v-model="cabinetModel.customSuffix" size="small" placeholder="后缀" style="width: 100px;"></el-input>
-                </div>
-
-                <!-- 实时生成的规格型号框 -->
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <span style="font-size: 11.5px; color: #64748b; font-weight: 500; white-space: nowrap;">生成型号:</span>
-                  <div class="cs-spec-box" style="flex: 1;">
-                    {{ computedCabinetFullModel }}
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
 
@@ -1116,114 +1147,144 @@
 
         <!-- 2.2 母排计算器 (图 3 风格) -->
         <div v-show="currentCalcSubTab === 'copper'" class="copper-form-card">
-          <!-- 材质单选与铜价行情 -->
-          <div class="form-item-row" style="justify-content: space-between;">
-            <div style="display: flex; align-items: center; gap: 14px;">
-              <el-radio-group v-model="copperModel.materialType" size="small" @change="onBusbarMaterialChange">
-                <el-radio label="copper">铜排 TMY</el-radio>
-                <el-radio label="aluminum">铝排 LMY</el-radio>
-              </el-radio-group>
+          <!-- 图二红框区域：母排主内容区（输入参数 + 规格列表 + 测算表格），自适应纵向平滑滚动 -->
+          <div class="copper-scroll-body">
+            <!-- 材质单选与铜价行情 -->
+            <div class="form-item-row" style="justify-content: space-between;">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <el-radio-group v-model="copperModel.materialType" size="small" @change="onBusbarMaterialChange">
+                  <el-radio label="copper">铜排 TMY</el-radio>
+                  <el-radio label="aluminum">铝排 LMY</el-radio>
+                </el-radio-group>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px; font-size: 12px;">
+                <span>当前{{ copperModel.materialType === 'copper' ? '铜' : '铝' }}价(元/吨):</span>
+                <el-input-number v-model="copperModel.marketPrice" :min="1000" :step="500" size="small" controls-position="right" style="width: 105px;"></el-input-number>
+                <!-- 实时行情拉取刷新按钮 -->
+                <el-button size="small" circle :loading="isMarketPriceLoading" title="拉取当日大盘最新真实行情" @click="fetchTodayMarketPrice">
+                  <i class="fa-solid fa-rotate-right"></i>
+                </el-button>
+                <!-- 行情数据源标签提示 -->
+                <span v-if="marketPriceInfo.source" style="font-size: 11px; color: #00796b; background: #e0f2f1; padding: 2px 6px; border-radius: 4px; border: 1px solid #b2dfdb;" :title="'更新时间: ' + marketPriceInfo.updateTime">
+                  {{ marketPriceInfo.source }}
+                </span>
+              </div>
             </div>
-            <div style="display: flex; align-items: center; gap: 8px; font-size: 12px;">
-              <span>当前{{ copperModel.materialType === 'copper' ? '铜' : '铝' }}价(元/吨):</span>
-              <el-input-number v-model="copperModel.marketPrice" :min="10000" :step="1000" size="small" controls-position="right" style="width: 110px;"></el-input-number>
-              <el-button size="small" circle title="重置基准价" @click="resetCopperMarketPrice">
-                <i class="fa-solid fa-rotate-right"></i>
-              </el-button>
-            </div>
-          </div>
 
-          <!-- 名称与加工费 -->
-          <div class="form-item-row">
-            <span class="form-item-label">名 称:</span>
-            <el-input v-model="copperModel.name" size="small" style="width: 200px;"></el-input>
-            <span style="margin-left: 20px; color: #475569;">加工费(元/吨):</span>
-            <el-input-number v-model="copperModel.processingFee" :min="0" :step="500" size="small" controls-position="right" style="width: 100px;"></el-input-number>
-          </div>
-
-          <!-- 规格与拼排配置行 -->
-          <div class="form-item-row" style="align-items: flex-start;">
-            <span class="form-item-label" style="margin-top: 4px;">规 格:</span>
-            <div style="display: flex; flex-direction: column; gap: 6px; flex: 1;">
-              <!-- 动态拼排行列表 -->
-              <div v-for="(combo, cIdx) in copperModel.combos" :key="cIdx" style="display: flex; align-items: center; gap: 8px;">
-                <el-input v-if="cIdx === 0" v-model="copperModel.specPrefix" size="small" style="width: 70px;"></el-input>
-                <el-select v-if="cIdx === 0" v-model="copperModel.mode" size="small" style="width: 75px;">
-                  <el-option label="按根" value="root"></el-option>
+            <!-- 名称、加工费与品牌 -->
+            <div class="form-item-row" style="flex-wrap: wrap; gap: 14px; align-items: center;">
+              <div style="display: flex; align-items: center;">
+                <span class="form-item-label">名 称:</span>
+                <el-input v-model="copperModel.name" size="small" style="width: 140px;"></el-input>
+              </div>
+              <div style="display: flex; align-items: center;">
+                <span style="color: #475569; font-size: 13px; margin-right: 6px;">加工费(元/吨):</span>
+                <el-input-number v-model="copperModel.processingFee" :min="0" :step="500" size="small" controls-position="right" style="width: 100px;"></el-input-number>
+              </div>
+              <div style="display: flex; align-items: center;">
+                <span style="color: #475569; font-size: 13px; margin-right: 6px;">品 牌:</span>
+                <el-select v-model="copperModel.brand" size="small" style="width: 120px;">
+                  <el-option label="国优" value="国优"></el-option>
+                  <el-option label="金龙" value="金龙"></el-option>
+                  <el-option label="江铜" value="江铜"></el-option>
                 </el-select>
-                <div v-else style="width: 153px;"></div>
-                <!-- 根数输入框 (加宽至85px防右侧按钮遮挡数字) -->
-                <el-input-number v-model="combo.count" :min="0" :max="10" size="small" controls-position="right" style="width: 85px;"></el-input-number>
-                <span style="font-size: 12px; color: #64748b;">根</span>
-                <!-- 宽度输入框 (加宽至95px满足三位数如100完整显示) -->
-                <el-input-number v-model="combo.width" :min="10" :max="200" :step="5" size="small" controls-position="right" style="width: 95px;"></el-input-number>
-                <span style="font-size: 12px; color: #64748b;">*</span>
-                <!-- 厚度输入框 (加宽至85px数字清晰居中) -->
-                <el-input-number v-model="combo.thickness" :min="2" :max="30" :step="1" size="small" controls-position="right" style="width: 85px;"></el-input-number>
-                <span style="font-size: 12px; color: #64748b;">mm</span>
-                <!-- 增减组合按钮 -->
-                <el-button v-if="copperModel.combos.length > 1" size="small" type="danger" circle plain @click="removeCopperCombo(cIdx)">
-                  <i class="fa-solid fa-minus"></i>
-                </el-button>
-                <el-button v-if="cIdx === copperModel.combos.length - 1" size="small" type="primary" circle plain @click="addCopperCombo">
-                  <i class="fa-solid fa-plus"></i>
-                </el-button>
+              </div>
+            </div>
+
+            <!-- 规格与拼排配置行 -->
+            <div class="form-item-row" style="align-items: flex-start;">
+              <span class="form-item-label" style="margin-top: 4px;">规 格:</span>
+              <!-- 规格拼排动态列表：超过4行时内部自适应滚动，释放下方测算表格与总金额空间 -->
+              <div class="copper-combo-scroll">
+                <!-- 动态拼排行列表 -->
+                <div v-for="(combo, cIdx) in copperModel.combos" :key="cIdx" style="display: flex; align-items: center; gap: 8px;">
+                  <!-- 规格前缀 (TMY / LMY) -->
+                  <el-input v-if="cIdx === 0" v-model="copperModel.specPrefix" size="small" style="width: 70px;"></el-input>
+                  <div v-else style="width: 70px;"></div>
+                  <!-- 长度 (米) 输入框 (原“根”改为“米”，支持小数) -->
+                  <el-input-number v-model="combo.length" :min="0.01" :step="0.5" :precision="2" size="small" controls-position="right" style="width: 90px;"></el-input-number>
+                  <span style="font-size: 12px; color: #475569; font-weight: 500;">米</span>
+                  <!-- 宽度输入框 -->
+                  <el-input-number v-model="combo.width" :min="10" :max="200" :step="5" size="small" controls-position="right" style="width: 95px;"></el-input-number>
+                  <span style="font-size: 12px; color: #64748b;">*</span>
+                  <!-- 厚度输入框 -->
+                  <el-input-number v-model="combo.thickness" :min="2" :max="30" :step="1" size="small" controls-position="right" style="width: 85px;"></el-input-number>
+                  <span style="font-size: 12px; color: #64748b;">mm</span>
+                  <!-- 增减组合按钮 -->
+                  <el-button v-if="copperModel.combos.length > 1" size="small" type="danger" circle plain @click="removeCopperCombo(cIdx)">
+                    <i class="fa-solid fa-minus"></i>
+                  </el-button>
+                  <el-button v-if="cIdx === copperModel.combos.length - 1" size="small" type="primary" circle plain @click="addCopperCombo">
+                    <i class="fa-solid fa-plus"></i>
+                  </el-button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 每个规格对应的重量、每米价格明细展示 -->
+            <div style="margin-top: 6px; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; background: #ffffff;">
+              <div style="background: #f8fafc; padding: 6px 12px; font-size: 12.5px; font-weight: 600; color: #334155; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0;">
+                <span><i class="fa-solid fa-table-list" style="color: #009688; margin-right: 6px;"></i>规格明细与单价测算</span>
+                <span style="font-size: 12px; color: #64748b; font-weight: normal;">
+                  材料合每公斤价: <strong style="color: #009688;">{{ computedPricePerKg.toFixed(2) }}</strong> 元/kg
+                </span>
+              </div>
+              <el-table :data="computedComboDetails" max-height="240" size="small" border stripe style="width: 100%;">
+                <el-table-column type="index" label="序号" width="50" align="center"></el-table-column>
+                <el-table-column prop="specName" label="规格" min-width="110">
+                  <template #default="{ row }">
+                    <span style="font-weight: 600; color: #0f172a;">{{ row.specName }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="length" label="长度(米)" width="90" align="right">
+                  <template #default="{ row }">
+                    <span>{{ row.length.toFixed(2) }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="unitWeight" label="米重(kg/m)" width="100" align="right">
+                  <template #default="{ row }">
+                    <span style="font-family: monospace; color: #0284c7;">{{ row.unitWeight.toFixed(4) }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="unitPrice" label="每米单价(元/米)" width="125" align="right">
+                  <template #default="{ row }">
+                    <span style="font-family: monospace; font-weight: 600; color: #009688;">{{ row.unitPrice.toFixed(2) }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="subtotalWeight" label="重量(kg)" width="95" align="right">
+                  <template #default="{ row }">
+                    <span style="font-family: monospace; color: #0369a1; font-weight: 600;">{{ row.subtotalWeight.toFixed(2) }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="subtotalPrice" label="分项金额(元)" width="115" align="right">
+                  <template #default="{ row }">
+                    <span style="font-family: monospace; font-weight: bold; color: #e11d48;">{{ row.subtotalPrice.toFixed(2) }}</span>
+                  </template>
+                </el-table-column>
+              </el-table>
+
+              <!-- 汇总统计条 -->
+              <div style="display: flex; justify-content: flex-end; gap: 20px; padding: 8px 14px; background: #f8fafc; font-size: 12.5px; border-top: 1px solid #e2e8f0;">
+                <div>总长度: <strong style="color: #1e293b;">{{ totalBusbarLength.toFixed(2) }}</strong> 米</div>
+                <div>总重量: <strong style="color: #0284c7;">{{ totalBusbarWeight.toFixed(2) }}</strong> kg</div>
+                <div>总金额: <strong style="color: #dc2626; font-size: 13.5px;">{{ totalBusbarAmount.toFixed(2) }}</strong> 元</div>
               </div>
             </div>
           </div>
 
-          <!-- 品牌 -->
-          <div class="form-item-row">
-            <span class="form-item-label">品 牌:</span>
-            <el-select v-model="copperModel.brand" size="small" style="width: 200px;">
-              <el-option label="国优" value="国优"></el-option>
-              <el-option label="金龙" value="金龙"></el-option>
-              <el-option label="江铜" value="江铜"></el-option>
-            </el-select>
-          </div>
-
-          <!-- 重长比 (米重) -->
-          <div class="form-item-row">
-            <span class="form-item-label">重长比:</span>
-            <el-input :model-value="computedUnitWeight.toFixed(4)" size="small" readonly style="width: 120px; font-family: monospace; font-weight: bold; color: #0284c7;"></el-input>
-            <span style="font-size: 12px; color: #475569;">公斤/米</span>
-          </div>
-
-          <!-- 单价 -->
-          <div class="form-item-row">
-            <span class="form-item-label">单 价:</span>
-            <el-input :model-value="computedUnitPrice.toFixed(2)" size="small" readonly style="width: 120px; font-family: monospace; font-weight: bold; color: #0f766e;"></el-input>
-            <span style="font-size: 12px; color: #475569;">元/米</span>
-          </div>
-
-          <!-- 数量与单位选择 -->
-          <div class="form-item-row">
-            <span class="form-item-label">数 量:</span>
-            <el-input-number v-model="copperModel.quantity" :min="0.001" :step="0.1" :precision="3" size="small" controls-position="right" style="width: 120px;"></el-input-number>
-            <el-radio-group v-model="copperModel.unit" size="small" style="margin-left: 8px;">
-              <el-radio label="米">米</el-radio>
-              <el-radio label="公斤">公斤</el-radio>
-            </el-radio-group>
-            <el-checkbox v-model="copperModel.syncQuantityOnReplace" size="small" style="margin-left: 24px; color: #dc2626;">替换后一并更改数量</el-checkbox>
-          </div>
-
-          <!-- 小计金额 -->
-          <div class="form-item-row">
-            <span class="form-item-label">小 计:</span>
-            <el-input :model-value="computedSubtotalPrice.toFixed(2)" size="small" readonly style="width: 120px; font-family: monospace; font-weight: bold; color: #dc2626; font-size: 14px;"></el-input>
-            <span style="font-size: 12px; color: #475569;">元</span>
-          </div>
-
-          <!-- 底部操作按钮 -->
-          <div class="action-btn-bar" style="border-top: 1px solid #e2e8f0; padding-top: 14px;">
-            <el-button size="small" type="primary" class="btn-brand-primary" @click="insertCopperToExcel">
-              <i class="fa-solid fa-arrow-down"></i> 插入
+          <!-- 底部操作按钮：常驻固定在卡片底部，设置 flex-shrink: 0 杜绝被挤出视口 -->
+          <div class="action-btn-bar" style="border-top: 1px solid #e2e8f0; padding-top: 10px; margin-top: 6px; flex-shrink: 0; display: flex; justify-content: flex-end; gap: 10px;">
+            <!-- 多行明细插入按钮 -->
+            <el-button size="small" type="primary" class="btn-brand-primary" @click="insertCopperDetailRowsToExcel">
+              <i class="fa-solid fa-list-ol"></i> 多行明细插入
             </el-button>
+            <!-- 单行kg插入按钮 -->
+            <el-button size="small" type="success" @click="insertCopperSingleKgToExcel">
+              <i class="fa-solid fa-weight-scale"></i> 单行(kg)插入
+            </el-button>
+            <!-- 替换当前行按钮 -->
             <el-button size="small" type="warning" class="btn-brand-accent" @click="replaceCopperInExcel">
               <i class="fa-solid fa-arrows-rotate"></i> 替换
-            </el-button>
-            <el-button size="small" type="success" @click="saveCopperToDb">
-              <i class="fa-solid fa-floppy-disk"></i> 加入母排库
             </el-button>
           </div>
         </div>
@@ -1406,26 +1467,21 @@
 
         // 柜体算料核心模型
         const cabinetModel = reactive({
+          // 计算模式：按面数展开或按表面积系数
           calcMode: 'faces',
           sheetAllowanceCoef: 1.2,
+          // 柜体基础信息与品牌
           unit: '台',
           name: '柜体',
           brand: '国优',
-          dimOrder: 'W*H*D',
-          includeThickness: true,
-          includeMaterial: true,
-          includeInstall: false,
-          hasSecondPlate: false,
-          hasCustomSuffix: false,
-          customSuffix: '',
+          // 尺寸与加工预留放量
           w: 800,
           wAllowance: 0,
           h: 2200,
           hAllowance: 0,
           d: 400,
           dAllowance: 0,
-          installLocation: 'indoor',
-          installMethod: 'surface',
+          // 统一材质与板厚设置
           thicknessUnified: true,
           unifiedMaterial: '镀锌板',
           unifiedThickness: 1.5,
@@ -1484,14 +1540,6 @@
             item.thickness = cabinetModel.unifiedThickness;
             item.unitPrice = p;
           });
-        };
-
-        // 二层板勾选联动面数
-        const onSecondPlateChange = (val) => {
-          const secItem = cabinetStructures.value.find(s => s.partName === "二层安装板");
-          if (secItem) {
-            secItem.coef = val ? 1 : 0;
-          }
         };
 
         // 单个结构部件材质修改 (非统一模式)
@@ -1570,38 +1618,10 @@
           return price / area;
         });
 
-        // 实时生成规格型号字符串 (图2标准装配格式)
+        // 柜体规格型号计算属性 (标准尺寸宽*高*深)
         const computedCabinetFullModel = computed(() => {
-          const w = cabinetModel.w;
-          const h = cabinetModel.h;
-          const d = cabinetModel.d;
-
-          let dimStr = `${w}*${h}*${d}`;
-          if (cabinetModel.dimOrder === "H*W*D") {
-            dimStr = `${h}*${w}*${d}`;
-          } else if (cabinetModel.dimOrder === "D*W*H") {
-            dimStr = `${d}*${w}*${h}`;
-          }
-
-          let res = dimStr;
-          if (cabinetModel.includeThickness) {
-            res += `-${cabinetModel.unifiedThickness}mm`;
-          }
-          if (cabinetModel.includeMaterial && cabinetModel.unifiedMaterial) {
-            res += ` ${cabinetModel.unifiedMaterial}`;
-          }
-          if (cabinetModel.includeInstall) {
-            const loc = cabinetModel.installLocation === "indoor" ? "户内" : "户外";
-            const met = cabinetModel.installMethod === "surface" ? "明装" : "暗装";
-            res += ` ${loc}${met}`;
-          }
-          if (cabinetModel.hasSecondPlate) {
-            res += " (带二层板)";
-          }
-          if (cabinetModel.hasCustomSuffix && cabinetModel.customSuffix && cabinetModel.customSuffix.trim()) {
-            res += ` ${cabinetModel.customSuffix.trim()}`;
-          }
-          return res;
+          // 直接返回柜体尺寸拼接型号规格
+          return `${cabinetModel.w}*${cabinetModel.h}*${cabinetModel.d}`;
         });
 
         // 重置柜体为默认初始值 (标准封闭箱体、取消放量)
@@ -1617,7 +1637,6 @@
           cabinetModel.unifiedMaterial = "镀锌板";
           cabinetModel.unifiedThickness = 1.5;
           cabinetModel.manualTotalPrice = null;
-          cabinetModel.hasSecondPlate = false;
           cabinetStructures.value.forEach(s => {
             if (s.partName === "顶板底板") s.coef = 2;
             else if (s.partName === "面门板") s.coef = 1;
@@ -1674,87 +1693,145 @@
         // ------------------ 3. 母排计算器模型 ------------------
         const copperModel = reactive({
           materialType: 'copper', // 'copper' | 'aluminum'
-          marketPrice: 111465,
+          // 基准大盘铜价 (元/吨) --硬编码: 默认备选基准 78500--
+          marketPrice: 78500,
           processingFee: 0,
           name: '铜排',
           specPrefix: 'TMY',
-          mode: 'root',
           brand: '国优',
-          quantity: 0.075,
-          unit: '米',
-          syncQuantityOnReplace: true,
           combos: [
-            { count: 3, width: 100, thickness: 5 }
+            { length: 1.0, width: 100, thickness: 10 }
           ]
         });
 
-        // 增加拼排组合行
+        // 增加拼排组合行 (默认 1 米，排宽 80，排厚 8)
         const addCopperCombo = () => {
-          copperModel.combos.push({ count: 0, width: 0, thickness: 0 });
+          copperModel.combos.push({ length: 1.0, width: 80, thickness: 8 });
         };
-        // 删除拼排组合行
+        // 删除拼排组合行 (至少保留 1 行)
         const removeCopperCombo = (idx) => {
           if (copperModel.combos.length > 1) {
             copperModel.combos.splice(idx, 1);
           }
         };
 
-        // 重长比 (米重，kg/m) 计算: 截面 * 密度 * 10^-3
-        const computedUnitWeight = computed(() => {
+        // 每公斤材料基价 (元/kg): (铜/铝大盘基价 + 加工费) / 1000
+        const computedPricePerKg = computed(() => {
+          return (copperModel.marketPrice + copperModel.processingFee) / 1000.0;
+        });
+
+        // 计算每个规格组合的详细参数 (重量、每米价格、分项小计等)
+        const computedComboDetails = computed(() => {
+          // 铜密度 0.0089，铝密度 0.0027 (kg/(mm*mm*m))
           const density = copperModel.materialType === 'copper' ? 0.0089 : 0.0027;
-          let totalArea = 0;
-          copperModel.combos.forEach(c => {
-            totalArea += (c.count * c.width * c.thickness);
+          const pricePerKg = computedPricePerKg.value;
+
+          return copperModel.combos.map((c, idx) => {
+            const length = Number(c.length) || 0;
+            const width = Number(c.width) || 0;
+            const thickness = Number(c.thickness) || 0;
+            // 单米理论重量 (kg/m) = 宽 * 厚 * 密度
+            const unitWeight = width * thickness * density;
+            // 每米单价 (元/米) = 单米理论重量 * 每公斤基价
+            const unitPrice = unitWeight * pricePerKg;
+            // 该项总重量 (kg) = 长度(米) * 单米重量
+            const subtotalWeight = length * unitWeight;
+            // 该项分项金额 (元) = 长度(米) * 每米单价
+            const subtotalPrice = length * unitPrice;
+            // 规格名称
+            const specName = `${copperModel.specPrefix}-${width}x${thickness}`;
+
+            return {
+              index: idx + 1,
+              specName,
+              width,
+              thickness,
+              length,
+              unitWeight,
+              unitPrice,
+              subtotalWeight,
+              subtotalPrice
+            };
           });
-          return totalArea * density;
         });
 
-        // 单价 (元/米): 米重 * (铜价 + 加工费) / 1000
-        const computedUnitPrice = computed(() => {
-          const basePricePerKg = (copperModel.marketPrice + copperModel.processingFee) / 1000.0;
-          return computedUnitWeight.value * basePricePerKg;
+        // 母排总长度 (米)
+        const totalBusbarLength = computed(() => {
+          return computedComboDetails.value.reduce((acc, d) => acc + d.length, 0);
         });
 
-        // 小计金额 (元)
-        const computedSubtotalPrice = computed(() => {
-          if (copperModel.unit === '米') {
-            return computedUnitPrice.value * copperModel.quantity;
-          } else {
-            // 按公斤计价: (单价/米重) * 公斤数
-            const pricePerKg = (copperModel.marketPrice + copperModel.processingFee) / 1000.0;
-            return pricePerKg * copperModel.quantity;
-          }
+        // 母排总理论重量 (kg)
+        const totalBusbarWeight = computed(() => {
+          return computedComboDetails.value.reduce((acc, d) => acc + d.subtotalWeight, 0);
         });
 
-        // 生成规范母排型号 (如 TMY-3*(100x5))
-        const computedCopperFullModel = computed(() => {
-          let specParts = [];
-          copperModel.combos.forEach(c => {
-            if (c.count > 0 && c.width > 0 && c.thickness > 0) {
-              specParts.push(c.count > 1 ? `${c.count}*(${c.width}x${c.thickness})` : `${c.width}x${c.thickness}`);
-            }
-          });
-          const prefix = copperModel.materialType === 'copper' ? 'TMY' : 'LMY';
-          return `${prefix}-${specParts.join('+')}`;
+        // 母排总金额 (元)
+        const totalBusbarAmount = computed(() => {
+          return computedComboDetails.value.reduce((acc, d) => acc + d.subtotalPrice, 0);
         });
 
-        // 切换母排排材时自动同步名称与规格前缀
+        // ------------------ 3.1 大盘金属实时行情状态 ------------------
+        // 行情加载状态标记
+        const isMarketPriceLoading = ref(false);
+        // 大盘行情元数据对象 (数据源、更新时间与价格缓存)
+        const marketPriceInfo = reactive({
+          // 数据源名称
+          source: '上期所主力',
+          // 更新时间戳
+          updateTime: '',
+          // 沪铜主力基准价 (元/吨) --硬编码: 离线备用基准 78500--
+          copperPrice: 78500,
+          // 沪铝主力基准价 (元/吨) --硬编码: 离线备用基准 19800--
+          aluminumPrice: 19800
+        });
+
+        // 切换母排材质 (铜排 TMY ↔ 铝排 LMY) 自动同步最新大盘行情与规格型号
         const onBusbarMaterialChange = (val) => {
           if (val === 'copper') {
             copperModel.name = '铜排';
             copperModel.specPrefix = 'TMY';
-            copperModel.marketPrice = 111465;
+            // 自动填入当前大盘铜价
+            copperModel.marketPrice = marketPriceInfo.copperPrice || 78500;
           } else {
             copperModel.name = '铝排';
             copperModel.specPrefix = 'LMY';
-            copperModel.marketPrice = 28000;
+            // 自动填入当前大盘铝价
+            copperModel.marketPrice = marketPriceInfo.aluminumPrice || 19800;
           }
           loadAmpacityTable();
         };
 
-        const resetCopperMarketPrice = () => {
-          copperModel.marketPrice = copperModel.materialType === 'copper' ? 111465 : 28000;
-          copperModel.processingFee = 0;
+        // 行情刷新超时计时器句柄
+        let marketPriceTimeoutTimer = null;
+
+        // 点击右上角刷新按钮拉取当日大盘最新真实行情
+        const fetchTodayMarketPrice = () => {
+          // 激活按钮 Loading 动效
+          isMarketPriceLoading.value = true;
+          // 若存在旧的超时监控则及时清理
+          if (marketPriceTimeoutTimer) clearTimeout(marketPriceTimeoutTimer);
+          // 6 秒看门狗超时防卡死保护：杜绝任何未决状态导致“一直转圈”
+          marketPriceTimeoutTimer = setTimeout(() => {
+            if (isMarketPriceLoading.value) {
+              isMarketPriceLoading.value = false;
+              ElementPlus.ElMessage.warning('拉取最新大盘行情超时，已保持当前基准价格');
+            }
+          }, 6000);
+          // 检查是否处于真实 C# WebView2 宿主环境
+          if (window.chrome && window.chrome.webview) {
+            // 向 C# 后端发送行情请求
+            sendAction('getMarketPrice', {
+              materialType: copperModel.materialType
+            });
+          } else {
+            // 纯浏览器离线调试模拟通道 (500ms 模拟网络回包)
+            setTimeout(() => {
+              if (marketPriceTimeoutTimer) clearTimeout(marketPriceTimeoutTimer);
+              isMarketPriceLoading.value = false;
+              copperModel.marketPrice = copperModel.materialType === 'copper' ? 78500 : 19800;
+              ElementPlus.ElMessage.success(`[本地调试] 已同步最新${copperModel.materialType === 'copper' ? '铜' : '铝'}价: ${copperModel.marketPrice} 元/吨`);
+            }, 500);
+          }
         };
 
         // ------------------ 4. 载流量速查模型 ------------------
@@ -1823,7 +1900,7 @@
         // 双击或点击带入规格到母排计算器
         const applySpecToCopperCalc = (row) => {
           copperModel.materialType = ampacityFilter.materialType;
-          copperModel.combos = [{ count: 1, width: row.width, thickness: row.thickness }];
+          copperModel.combos = [{ length: 1.0, width: row.width, thickness: row.thickness }];
           currentCalcSubTab.value = 'copper';
           ElementPlus.ElMessage.success(`已将规格 ${row.spec} 带入母排计算器！`);
         };
@@ -1886,46 +1963,68 @@
           sendAction('saveToDb', { item });
         };
 
-        // 母排计算器操作
-        const insertCopperToExcel = () => {
-          const item = {
+        // 母排计算器操作 1: 多行明细插入 (每个规格作为独立一行插入到 Excel)
+        const insertCopperDetailRowsToExcel = () => {
+          const validRows = computedComboDetails.value.filter(d => d.length > 0 && d.width > 0 && d.thickness > 0);
+          if (validRows.length === 0) {
+            ElementPlus.ElMessage.warning('请至少配置一行有效的母排规格与长度(米)！');
+            return;
+          }
+          const items = validRows.map(d => ({
             name: copperModel.name,
-            model: computedCopperFullModel.value,
+            model: d.specName,
             brand: copperModel.brand,
-            unit: copperModel.unit,
-            quantity: copperModel.quantity,
-            price: Number(computedUnitPrice.value.toFixed(2)),
+            unit: '米',
+            quantity: Number(d.length.toFixed(2)),
+            price: Number(d.unitPrice.toFixed(2)),
             category: '母排',
-            remark: `米重:${computedUnitWeight.value.toFixed(4)}kg/m`
-          };
-          sendAction('insertToExcel', { item });
+            remark: `米重:${d.unitWeight.toFixed(4)}kg/m, 重:${d.subtotalWeight.toFixed(2)}kg`
+          }));
+          sendAction('insertToExcel', { items });
         };
 
+        // 母排计算器操作 2: 单行 (kg) 插入 (按总重量汇总为一行插入到 Excel)
+        const insertCopperSingleKgToExcel = () => {
+          const validRows = computedComboDetails.value.filter(d => d.length > 0 && d.width > 0 && d.thickness > 0);
+          if (validRows.length === 0) {
+            ElementPlus.ElMessage.warning('请至少配置一行有效的母排规格与长度(米)！');
+            return;
+          }
+          const modelParts = validRows.map(d => `${d.width}x${d.thickness}(${d.length}m)`).join('+');
+          const fullModel = `${copperModel.specPrefix}-${modelParts}`;
+          const item = {
+            name: copperModel.name,
+            model: fullModel,
+            brand: copperModel.brand,
+            unit: 'kg',
+            quantity: Number(totalBusbarWeight.value.toFixed(2)),
+            price: Number(computedPricePerKg.value.toFixed(2)),
+            category: '母排',
+            remark: `总长:${totalBusbarLength.value.toFixed(2)}米, 合计:${totalBusbarAmount.value.toFixed(2)}元`
+          };
+          sendAction('insertToExcel', { items: [item] });
+        };
+
+        // 母排计算器操作 3: 替换 Excel 当前选中行 (以单行 kg 汇总物料格式替换)
         const replaceCopperInExcel = () => {
+          const validRows = computedComboDetails.value.filter(d => d.length > 0 && d.width > 0 && d.thickness > 0);
+          if (validRows.length === 0) {
+            ElementPlus.ElMessage.warning('请至少配置一行有效的母排规格与长度(米)！');
+            return;
+          }
+          const modelParts = validRows.map(d => `${d.width}x${d.thickness}(${d.length}m)`).join('+');
+          const fullModel = `${copperModel.specPrefix}-${modelParts}`;
           const item = {
             name: copperModel.name,
-            model: computedCopperFullModel.value,
+            model: fullModel,
             brand: copperModel.brand,
-            unit: copperModel.unit,
-            quantity: copperModel.quantity,
-            price: Number(computedUnitPrice.value.toFixed(2)),
+            unit: 'kg',
+            quantity: Number(totalBusbarWeight.value.toFixed(2)),
+            price: Number(computedPricePerKg.value.toFixed(2)),
             category: '母排',
-            remark: `米重:${computedUnitWeight.value.toFixed(4)}kg/m`
+            remark: `总长:${totalBusbarLength.value.toFixed(2)}米, 合计:${totalBusbarAmount.value.toFixed(2)}元`
           };
-          sendAction('replaceInExcel', { item, updateQuantity: copperModel.syncQuantityOnReplace });
-        };
-
-        const saveCopperToDb = () => {
-          const item = {
-            name: copperModel.name,
-            model: computedCopperFullModel.value,
-            brand: copperModel.brand,
-            unit: copperModel.unit,
-            price: Number(computedUnitPrice.value.toFixed(2)),
-            category: '母排',
-            remark: `米重:${computedUnitWeight.value.toFixed(4)}kg/m`
-          };
-          sendAction('saveToDb', { item });
+          sendAction('replaceInExcel', { item, updateQuantity: true });
         };
 
         // 标题栏拖拽与窗体控制
@@ -1972,9 +2071,46 @@
                   }
                   // 刷新应用单价设置到各结构面 (初始按持久化数据填写)
                   applyUnifiedSettings();
-                  if (data.copperPrice) copperModel.marketPrice = data.copperPrice;
+                  // 读取后端回传的实时大盘行情
+                  if (data.copperPrice) marketPriceInfo.copperPrice = data.copperPrice;
+                  if (data.aluminumPrice) marketPriceInfo.aluminumPrice = data.aluminumPrice;
+                  if (data.marketPriceSource) marketPriceInfo.source = data.marketPriceSource;
+                  if (data.marketPriceUpdateTime) marketPriceInfo.updateTime = data.marketPriceUpdateTime;
+                  // 根据初始材质设置当前输入框数值
+                  copperModel.marketPrice = copperModel.materialType === 'copper'
+                    ? (marketPriceInfo.copperPrice || 78500)
+                    : (marketPriceInfo.aluminumPrice || 19800);
                   loadMaterials();
                   loadAmpacityTable();
+                  break;
+
+                case 'marketPriceResponse':
+                  // 清除未触发的看门狗超时定时器
+                  if (marketPriceTimeoutTimer) {
+                    clearTimeout(marketPriceTimeoutTimer);
+                    marketPriceTimeoutTimer = null;
+                  }
+                  // 结束按钮 Loading 动效
+                  isMarketPriceLoading.value = false;
+                  if (data.success) {
+                    // 同步大盘行情元数据
+                    if (data.copperPrice) marketPriceInfo.copperPrice = data.copperPrice;
+                    if (data.aluminumPrice) marketPriceInfo.aluminumPrice = data.aluminumPrice;
+                    if (data.source) marketPriceInfo.source = data.source;
+                    if (data.updateTime) marketPriceInfo.updateTime = data.updateTime;
+                    // 同步到当前界面输入框
+                    copperModel.marketPrice = copperModel.materialType === 'copper'
+                      ? marketPriceInfo.copperPrice
+                      : marketPriceInfo.aluminumPrice;
+                    // 弹出成功轻提示
+                    ElementPlus.ElMessage.success({
+                      message: data.message || `已同步当日大盘最新${copperModel.materialType === 'copper' ? '铜' : '铝'}价: ${copperModel.marketPrice} 元/吨`,
+                      duration: 3000
+                    });
+                  } else {
+                    // 异常提示
+                    ElementPlus.ElMessage.warning(data.message || '获取大盘行情失败，已保持当前价格');
+                  }
                   break;
 
                 case 'queryMaterialsResponse':
@@ -2065,7 +2201,6 @@
           getPartThickness,
           onUnifiedThicknessModeChange,
           applyUnifiedSettings,
-          onSecondPlateChange,
           onStructureItemMaterialChange,
           onStructureItemThicknessChange,
           resetCabinetDefaults,
@@ -2077,12 +2212,15 @@
           copperModel,
           addCopperCombo,
           removeCopperCombo,
-          computedUnitWeight,
-          computedUnitPrice,
-          computedSubtotalPrice,
-          computedCopperFullModel,
+          computedPricePerKg,
+          computedComboDetails,
+          totalBusbarLength,
+          totalBusbarWeight,
+          totalBusbarAmount,
           onBusbarMaterialChange,
-          resetCopperMarketPrice,
+          isMarketPriceLoading,
+          marketPriceInfo,
+          fetchTodayMarketPrice,
           ampacityFilter,
           ampacityTableData,
           isTargetAmpacityRow,
@@ -2099,9 +2237,9 @@
           insertCabinetToExcel,
           replaceCabinetInExcel,
           saveCabinetToDb,
-          insertCopperToExcel,
+          insertCopperDetailRowsToExcel,
+          insertCopperSingleKgToExcel,
           replaceCopperInExcel,
-          saveCopperToDb,
           onHeaderMouseDown,
           minimizeWindow,
           closeWindow

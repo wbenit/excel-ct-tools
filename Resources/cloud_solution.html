@@ -3431,7 +3431,7 @@
           <div class="card-grid-container" v-loading="loading">
             <!-- 【板块 A：二次方案 DWG 图纸与参数卡片】 -->
             <template v-if="currentSchemeType === 'secondary'">
-              <div v-for="card in secondaryDwgCards" :key="card.fullPath" class="secondary-card"
+              <div v-for="card in secondaryDwgCards" :key="card.fullPath || ('prim_card_' + card.schemeId)" class="secondary-card"
                 @click="openSecondaryDetail(card)">
                 <!-- 略缩图上方：标题 + 分类 + 品牌 + 工艺描述 (对齐图 2 紧凑布局) -->
                 <div class="sec-card-header">
@@ -4730,10 +4730,20 @@
             <div class="sec-field-label" title="方案所属子目录">方案目录:</div>
             <el-input v-model="editingPrimScheme.folderName" readonly disabled size="default"></el-input>
           </div>
-          <!-- 第 1 行第 2 列: 当前DWG (只读) -->
+          <!-- 第 1 行第 2 列: 关联DWG图纸 (支持查看、选择更换与清空) -->
           <div>
-            <div class="sec-field-label" title="当前DWG图纸文件名">当前DWG:</div>
-            <el-input v-model="editingPrimScheme.dwgName" readonly disabled size="default"></el-input>
+            <div class="sec-field-label" title="关联的 CAD DWG 图纸文件">关联DWG图纸:</div>
+            <div style="display: flex; gap: 6px; width: 100%">
+              <el-input v-model="editingPrimScheme.dwgDisplayPath" placeholder="暂未关联DWG图纸" clearable size="default" style="flex: 1"
+                @clear="onClearPrimEditDwg">
+                <template #prefix>
+                  <i class="fa-solid fa-file-lines" style="color: #059669"></i>
+                </template>
+              </el-input>
+              <el-button type="success" plain size="default" @click="chooseDwgForEdit" title="浏览本地 CAD 图纸进行绑定替换">
+                <i class="fa-solid fa-folder-open" style="margin-right: 2px"></i> 更换
+              </el-button>
+            </div>
           </div>
           <!-- 第 1 行第 3 列: 方案名称 -->
           <div>
@@ -5020,6 +5030,19 @@
               <el-option label="XL-21" value="XL-21"></el-option>
               <el-option label="箱变" value="箱变"></el-option>
             </el-select>
+          </el-form-item>
+
+          <el-form-item label="关联图纸:">
+            <div style="display: flex; gap: 8px; width: 100%">
+              <el-input v-model="captureCabinetForm.dwgFilePath" placeholder="可选: 选择本地 CAD 图纸 (.dwg)" clearable size="default" style="flex: 1">
+                <template #prefix>
+                  <i class="fa-solid fa-file-lines" style="color: #059669"></i>
+                </template>
+              </el-input>
+              <el-button type="success" plain size="default" @click="chooseDwgForCapture">
+                <i class="fa-solid fa-folder-open" style="margin-right: 4px"></i> 浏览...
+              </el-button>
+            </div>
           </el-form-item>
         </el-form>
       </div>
@@ -6671,6 +6694,31 @@
           }
         };
 
+        // 打开文件对话框选取本地 DWG 图纸 (供抓取弹窗调用)
+        const chooseDwgForCapture = () => {
+          postToHost("chooseDwgFile", {
+            title: "请选择要关联的一次成套 CAD 系统图纸 (*.dwg)",
+            source: "capture"
+          });
+        };
+
+        // 打开文件对话框选取本地 DWG 图纸 (供编辑弹窗调用)
+        const chooseDwgForEdit = () => {
+          postToHost("chooseDwgFile", {
+            title: "请选择新的 CAD 图纸进行更换绑定 (*.dwg)",
+            source: "edit"
+          });
+        };
+
+        // 清空编辑弹窗中的 DWG 图纸关联
+        const onClearPrimEditDwg = () => {
+          if (editingPrimScheme.value) {
+            editingPrimScheme.value.dwgName = "";
+            editingPrimScheme.value.dwgDisplayPath = "";
+            editingPrimScheme.value.selectedDwgFilePath = "";
+          }
+        };
+
         // 打开“存当前柜为方案”对话框
         const openCaptureCabinetDialog = () => {
           // 提取当前默认归属子目录名称
@@ -6680,6 +6728,7 @@
             folderName: currentFolderName,
             schemeName: "",
             cabinetModel: primaryCabinetModel.value || "GGD",
+            dwgFilePath: "",
           };
           // 展现弹窗
           captureCabinetDialogVisible.value = true;
@@ -6697,6 +6746,7 @@
             folderName: captureCabinetForm.value.folderName,
             schemeName: captureCabinetForm.value.schemeName,
             cabinetModel: captureCabinetForm.value.cabinetModel,
+            dwgFilePath: captureCabinetForm.value.dwgFilePath || "",
           });
           // 关闭提取弹窗
           captureCabinetDialogVisible.value = false;

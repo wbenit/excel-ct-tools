@@ -42,10 +42,12 @@ namespace ExcelAddInDemo
         /// <param name="config">配置对象</param>
         /// <param name="hitRuleTitle">命中的规则说明或决策轨迹</param>
         /// <returns>提取出的元器件分类名称 (如微型断路器、塑壳断路器、微型漏电)</returns>
-        public static string ParseCategory(string rawModel, ModelParserConfig config, out string hitRuleTitle)
+        public static string ParseCategory(string rawModel, ModelParserConfig config, out string hitRuleTitle, out string matchedCode)
         {
             // 初始化输出命中规则说明
             hitRuleTitle = string.Empty;
+            // 初始化输出命中的代号
+            matchedCode = string.Empty;
             // 校验输入字符串是否为空
             if (string.IsNullOrWhiteSpace(rawModel)) return string.Empty;
 
@@ -69,6 +71,8 @@ namespace ExcelAddInDemo
                 {
                     // 记录直接命中中文品名
                     hitRuleTitle = $"直接命中中文品名 [{catName}]";
+                    // 记录命中的中文品名
+                    matchedCode = catName;
                     // 检查是否需要漏电升格
                     return CheckLeakageUpgrade(catName, trimmedModel, config, ref hitRuleTitle);
                 }
@@ -117,6 +121,8 @@ namespace ExcelAddInDemo
                 {
                     // 记录命中的代号
                     hitRuleTitle = $"命中代号 [{code}] ➔ 归类为 [{category}]";
+                    // 记录命中的特征代号 (如 CJ20)
+                    matchedCode = code;
 
                     // ==================== 4. 漏电自动升格机制 (规则 4) ====================
                     if (config.EnableLeakageUpgrade && hasLeakage)
@@ -143,6 +149,61 @@ namespace ExcelAddInDemo
             // 未命中任何分类代号
             hitRuleTitle = "未匹配到已知元器件代号";
             return string.Empty;
+        }
+
+        /// <summary>
+        /// 兼容保留原有单输出 ParseCategory 接口签名
+        /// </summary>
+        public static string ParseCategory(string rawModel, ModelParserConfig config, out string hitRuleTitle)
+        {
+            // 转发调用完整方法并忽略命中代号输出
+            return ParseCategory(rawModel, config, out hitRuleTitle, out _);
+        }
+
+        /// <summary>
+        /// 对原始型号文本中已识别出的元器件代号或中文品名执行安全遮蔽（替换为等长空格），
+        /// 确保系列型号代号中包含的数字（如 CJ20 的 20、DZ47 的 47、NM1 的 1、C65 的 65 等）
+        /// 彻底不参与后续极数与电流流水线的计算与提取，从根本上杜绝误判干扰
+        /// </summary>
+        /// <param name="rawModel">原始型号字符串</param>
+        /// <param name="matchedCode">类别通道命中的特征代号或中文品名</param>
+        /// <returns>代号安全遮蔽后的型号字符串</returns>
+        public static string MaskMatchedCategoryCode(string rawModel, string matchedCode)
+        {
+            // 校验原始型号与命中的代号是否有效
+            if (string.IsNullOrWhiteSpace(rawModel) || string.IsNullOrWhiteSpace(matchedCode))
+            {
+                // 无有效代号时直接返回原始文本
+                return rawModel ?? string.Empty;
+            }
+
+            // 获取规整后的代号文本
+            string code = matchedCode.Trim();
+
+            // 1. 针对 2 个字符及以上的代号或中文（如 CJ20, DZ47, NM1, C65, 接触器等）
+            if (code.Length >= 2)
+            {
+                // 查找该代号在原始型号中第一次出现的位置（不区分大小写）
+                int idx = rawModel.IndexOf(code, StringComparison.OrdinalIgnoreCase);
+                if (idx >= 0)
+                {
+                    // 构造等长度的占位空格字符串，保持其他文本位置不产生粘连
+                    string padSpaces = new string(' ', code.Length);
+                    // 将命中的代号切片替换为等长空格
+                    return rawModel.Substring(0, idx) + padSpaces + rawModel.Substring(idx + code.Length);
+                }
+            }
+            // 2. 针对单字符短代号（如单字母 A 接触器、G 隔离开关）
+            else if (code.Length == 1)
+            {
+                // 单字母必须严格限制在开头或带分隔符的位置，防止将 16A 的 A 误遮蔽
+                string pattern = $@"(^|[\s\-_/]){Regex.Escape(code)}(?=[0-9\-_/])";
+                // 使用 Regex 进行安全首个替换为相同长度空格
+                return Regex.Replace(rawModel, pattern, m => m.Groups[1].Value + " ", RegexOptions.IgnoreCase);
+            }
+
+            // 兜底返回原文本
+            return rawModel;
         }
 
         /// <summary>
@@ -611,24 +672,28 @@ namespace ExcelAddInDemo
                 return result;
             }
 
-            // 0. 执行元器件名称/类别解析 (新通道)
-            result.Category = ParseCategory(rawModel ?? string.Empty, config, out string hitCat);
+            // 0. 执行元器件名称/类别解析 (同时提取命中的系列特征代号)
+            result.Category = ParseCategory(rawModel ?? string.Empty, config, out string hitCat, out string matchedCode);
             result.HitCategoryRule = hitCat;
 
-            // 1. 执行极数流水线解析
-            result.Pole = ParsePoles(rawModel ?? string.Empty, config, out string hitPole);
+            // 0.1 核心防护：对原始型号中已识别命中的系列代号（如 CJ20, DZ47）进行安全遮蔽
+            // 使 CJ20 中的数字 20 彻底不参与后续极数与电流流水线的提取计算，彻底根治误判
+            string textForParams = MaskMatchedCategoryCode(rawModel ?? string.Empty, matchedCode);
+
+            // 1. 执行极数流水线解析 (使用遮蔽后的安全文本)
+            result.Pole = ParsePoles(textForParams, config, out string hitPole);
             result.HitPoleRule = hitPole;
 
-            // 2. 执行电流流水线解析 (分别提取最小电流与最大电流，同时获取所有合法候选列表)
-            var (minCur, maxCur) = ParseCurrentMinMax(rawModel ?? string.Empty, config, out string hitCurrent, out var candidateList);
+            // 2. 执行电流流水线解析 (使用遮蔽后的安全文本，分别提取最小电流与最大电流)
+            var (minCur, maxCur) = ParseCurrentMinMax(textForParams, config, out string hitCurrent, out var candidateList);
             result.MinCurrent = minCur;
             result.MaxCurrent = maxCur;
             result.Current = minCur; // 兼容旧字段
             result.HitCurrentRule = hitCurrent;
             result.CandidateCurrents = candidateList;
 
-            // 3. 执行脱扣方式流水线解析
-            result.TripMode = ParseTripMode(rawModel ?? string.Empty, config, out string hitTrip);
+            // 3. 执行脱扣方式流水线解析 (使用遮蔽后的安全文本)
+            result.TripMode = ParseTripMode(textForParams, config, out string hitTrip);
             result.HitTripModeRule = hitTrip;
 
             // 综合评估解析结果状态
@@ -781,11 +846,16 @@ namespace ExcelAddInDemo
                             continue;
                         }
 
-                        // 调用多通道流水线解析名称、极数、最小/最大电流与脱扣方式
-                        string category = ParseCategory(rawModel, config, out _);
-                        string pole = ParsePoles(rawModel, config, out _);
-                        var (minCurrent, maxCurrent) = ParseCurrentMinMax(rawModel, config, out _, out _);
-                        string tripMode = ParseTripMode(rawModel, config, out _);
+                        // 调用多通道流水线解析名称 (同时提取命中的系列特征代号)
+                        string category = ParseCategory(rawModel, config, out _, out string matchedCode);
+                        // 对原始型号中已识别命中的系列代号（如 CJ20, DZ47）进行安全遮蔽，防止代号内数字干扰极数与电流
+                        string textForParams = MaskMatchedCategoryCode(rawModel, matchedCode);
+                        // 基于遮蔽后的安全文本解析极数
+                        string pole = ParsePoles(textForParams, config, out _);
+                        // 基于遮蔽后的安全文本解析最小与最大电流
+                        var (minCurrent, maxCurrent) = ParseCurrentMinMax(textForParams, config, out _, out _);
+                        // 基于遮蔽后的安全文本解析脱扣方式
+                        string tripMode = ParseTripMode(textForParams, config, out _);
 
                         // 填充名称二维数组 (根据覆盖策略判断)
                         if (onlyEmptyCat && existCatArray != null)
