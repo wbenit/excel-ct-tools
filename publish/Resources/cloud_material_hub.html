@@ -290,56 +290,151 @@
 
     .cabinet-mid-grid {
       display: grid;
-      grid-template-columns: 260px 1fr;
+      grid-template-columns: 240px 1fr;
       gap: 10px;
     }
 
-    /* 3D 箱体透视示意图卡片 */
-    .cube-3d-stage {
-      background: #f1f5f9;
+    /* 图2风格：3D 立体箱体透视图卡片 */
+    .cs-3d-box-card {
+      background: #f8fafc;
       border: 1px solid var(--border);
       border-radius: 4px;
-      padding: 14px;
+      padding: 10px 12px;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      min-height: 200px;
     }
 
-    .cube-box-graphic {
-      width: 140px;
-      height: 140px;
-      position: relative;
+    .cs-cube-stage {
+      width: 170px;
+      height: 150px;
       perspective: 600px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 6px 0 10px 0;
     }
 
-    .cube-wireframe {
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(135deg, #fef08a 0%, #facc15 100%);
-      border: 2px solid #ca8a04;
-      border-radius: 4px;
-      box-shadow: 6px 8px 16px rgba(0, 0, 0, 0.12);
+    .cs-cube {
+      width: 86px;
+      height: 106px;
+      position: relative;
+      transform-style: preserve-3d;
+      transform: rotateX(-20deg) rotateY(-32deg);
+      transition: transform 0.3s;
+    }
+
+    .cs-cube-face {
+      position: absolute;
+      box-sizing: border-box;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
-      font-weight: bold;
-      color: #713f12;
-      position: relative;
+      font-size: 11px;
+      font-weight: 700;
+      border: 1.5px solid rgba(0, 150, 136, 0.85);
+      box-shadow: inset 0 0 8px rgba(0, 150, 136, 0.15);
     }
 
-    .dim-tag {
-      position: absolute;
-      background: rgba(255, 255, 255, 0.95);
-      border: 1px solid #94a3b8;
-      border-radius: 3px;
+    .cs-face-front {
+      width: 86px;
+      height: 106px;
+      background: rgba(251, 191, 36, 0.88);
+      color: #78350f;
+      transform: translateZ(32px);
+    }
+
+    .cs-face-top {
+      width: 86px;
+      height: 64px;
+      background: rgba(253, 164, 175, 0.88);
+      color: #9f1239;
+      transform: rotateX(90deg) translateZ(32px);
+    }
+
+    .cs-face-right {
+      width: 64px;
+      height: 106px;
+      background: rgba(125, 211, 252, 0.88);
+      color: #0369a1;
+      transform: rotateY(90deg) translateZ(54px);
+    }
+
+    /* 纯高度推荐深度快捷胶囊标签 */
+    .cs-capsule-tag {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 10px;
       font-size: 11px;
-      padding: 1px 4px;
-      color: #0f172a;
       font-family: monospace;
+      background: #ffffff;
+      color: #475569;
+      border: 1px solid #cbd5e1;
+      cursor: pointer;
+      transition: all 0.15s;
+      user-select: none;
+    }
+
+    .cs-capsule-tag:hover {
+      background: #e0f2f1;
+      color: #00796b;
+      border-color: #009688;
+    }
+
+    .cs-capsule-tag.active {
+      background: #009688;
+      color: #ffffff;
+      border-color: #00796b;
+      font-weight: bold;
+    }
+
+    /* 规格型号实时展示框 */
+    .cs-spec-box {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-family: monospace;
+      font-size: 12px;
+      color: #0f766e;
+      font-weight: 600;
+      word-break: break-all;
+    }
+
+    /* 紧凑明细表格 */
+    .cs-table-compact {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11.5px;
+    }
+
+    .cs-table-compact th {
+      background: #f1f5f9;
+      color: #334155;
+      padding: 6px 4px;
+      border: 1px solid #e2e8f0;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .cs-table-compact td {
+      padding: 4px 4px;
+      border: 1px solid #e2e8f0;
+      text-align: center;
+    }
+
+    /* 底部汇总核算栏 */
+    .cs-summary-bar {
+      margin-top: 8px;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
 
     /* 母排计算器表单样式 */
@@ -507,111 +602,80 @@
           </div>
         </div>
 
-        <!-- 2.1 柜体计算器 (图 2 风格) -->
+        <!-- 2.1 柜体计算器 (图 2 工业级风格) -->
         <div v-show="currentCalcSubTab === 'cabinet'" class="cabinet-calc-layout">
-          <!-- 基础信息配置 -->
-          <div class="cabinet-top-config">
-            <div style="display: flex; align-items: center; justify-content: space-between;">
+          <!-- 顶栏：计算模式切换与单价配置抽屉入口 -->
+          <div style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; border: 1px solid var(--border); border-radius: 4px; padding: 6px 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="font-weight: 600; color: #00796b; font-size: 12.5px;">计算模式:</span>
               <el-radio-group v-model="cabinetModel.calcMode" size="small">
-                <el-radio label="faces">按面数</el-radio>
-                <el-radio label="coef">按系数</el-radio>
+                <el-radio-button label="faces">按面数展开 (推荐)</el-radio-button>
+                <el-radio-button label="coef">按表面积系数</el-radio-button>
               </el-radio-group>
-              <div style="font-size: 12px; color: #64748b;">
-                单位: <el-input v-model="cabinetModel.unit" size="small" style="width: 50px;"></el-input>
-              </div>
             </div>
-
-            <!-- 名称、品牌、型号展示 -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 10px; align-items: center;">
-              <div style="display: flex; align-items: center; gap: 6px; font-size: 12px;">
-                <span>名称:</span>
-                <el-input v-model="cabinetModel.name" size="small" style="flex: 1;"></el-input>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div style="display: flex; align-items: center; gap: 4px; font-size: 12px;">
+                <span style="color: #64748b;">名称:</span>
+                <el-input v-model="cabinetModel.name" size="small" style="width: 90px;"></el-input>
               </div>
-              <div style="display: flex; align-items: center; gap: 6px; font-size: 12px;">
-                <span>品牌:</span>
-                <el-select v-model="cabinetModel.brand" size="small" style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 4px; font-size: 12px;">
+                <span style="color: #64748b;">品牌:</span>
+                <el-select v-model="cabinetModel.brand" size="small" style="width: 85px;">
                   <el-option label="国优" value="国优"></el-option>
                   <el-option label="施耐德" value="施耐德"></el-option>
                   <el-option label="正泰" value="正泰"></el-option>
                 </el-select>
               </div>
-              <div style="display: flex; align-items: center; gap: 6px; font-size: 12px;">
-                <span>型号:</span>
-                <el-input v-model="computedCabinetModel" size="small" readonly style="flex: 1; font-family: monospace; font-weight: bold; color: #00796b;"></el-input>
-              </div>
-            </div>
-
-            <!-- 型号装配勾选项 -->
-            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; background: #f8fafc; padding: 6px 10px; border-radius: 4px;">
-              <el-checkbox v-model="cabinetModel.useBoxType">箱柜型号</el-checkbox>
-              <el-select v-if="cabinetModel.useBoxType" v-model="cabinetModel.boxType" size="small" style="width: 80px;">
-                <el-option label="XM" value="XM"></el-option>
-                <el-option label="PZ30" value="PZ30"></el-option>
-                <el-option label="XL-21" value="XL-21"></el-option>
-                <el-option label="GGD" value="GGD"></el-option>
-              </el-select>
-              <span style="color: #64748b;">尺寸:</span>
-              <el-select v-model="cabinetModel.dimOrder" size="small" style="width: 100px;">
-                <el-option label="宽*高*深" value="W*H*D"></el-option>
-                <el-option label="高*宽*深" value="H*W*D"></el-option>
-              </el-select>
-              <el-checkbox v-model="cabinetModel.includeThickness">板厚</el-checkbox>
-              <el-checkbox v-model="cabinetModel.includeMaterial">板材</el-checkbox>
-              <el-checkbox v-model="cabinetModel.isIndoor">户内</el-checkbox>
-              <el-checkbox v-model="cabinetModel.isSurface">明装</el-checkbox>
-              <el-checkbox v-model="cabinetModel.hasSecondPlate">带二层板</el-checkbox>
-              <el-checkbox v-model="cabinetModel.hasCustomSuffix">自定义</el-checkbox>
-              <el-input v-if="cabinetModel.hasCustomSuffix" v-model="cabinetModel.customSuffix" size="small" placeholder="后缀" style="width: 90px;"></el-input>
+              <el-button size="small" type="primary" plain @click="openMaterialDrawer">
+                <i class="fa-solid fa-gear"></i> 板材单价设置
+              </el-button>
+              <el-button size="small" @click="resetCabinetDefaults">
+                <i class="fa-solid fa-rotate-left"></i> 重置默认
+              </el-button>
             </div>
           </div>
 
-          <!-- 中部网格：左侧 3D 透视 + 右侧尺寸加工预留 -->
+          <!-- 中部网格：左侧 3D 箱体三维透视图 + 右侧尺寸加工预留与装配 -->
           <div class="cabinet-mid-grid">
-            <!-- 3D 柜体透视图 -->
-            <div class="cube-3d-stage">
-              <div class="cube-box-graphic">
-                <div class="cube-wireframe">
-                  <span>柜 体</span>
-                  <span style="font-size: 10px; margin-top: 4px;">{{ cabinetModel.w }}×{{ cabinetModel.h }}×{{ cabinetModel.d }}</span>
-                  <div class="dim-tag" style="top: -12px; left: 10px;">厚 {{ cabinetStructures[0].thickness }}mm</div>
-                  <div class="dim-tag" style="bottom: -12px; right: 10px;">W: {{ cabinetModel.w }}</div>
+            <!-- 3D 箱体三维透视图卡片 -->
+            <div class="cs-3d-box-card">
+              <div style="font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 2px;">
+                📦 箱体三维透视图
+              </div>
+              <div class="cs-cube-stage">
+                <div class="cs-cube">
+                  <!-- 顶盖粉色面 -->
+                  <div class="cs-cube-face cs-face-top">
+                    <span>顶板</span>
+                    <span style="font-size: 10px;">{{ getPartThickness('顶板底板') }}mm</span>
+                  </div>
+                  <!-- 前门明黄面 -->
+                  <div class="cs-cube-face cs-face-front">
+                    <span style="font-size: 12px;">前门</span>
+                    <span style="font-size: 11px;">{{ getPartThickness('面门板') }}mm</span>
+                  </div>
+                  <!-- 右侧淡蓝面 -->
+                  <div class="cs-cube-face cs-face-right">
+                    <span>右侧</span>
+                    <span style="font-size: 10px;">{{ getPartThickness('左右侧板') }}mm</span>
+                  </div>
                 </div>
               </div>
-            </div>
-
-            <!-- 右侧尺寸预留与安装环境 -->
-            <div style="background: #ffffff; border: 1px solid var(--border); border-radius: 4px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px; align-items: center;">
-                <span>宽 W(mm) + 加工预留:</span>
-                <div style="display: flex; gap: 4px;">
-                  <el-input-number v-model="cabinetModel.w" :min="100" :step="50" size="small" controls-position="right" style="flex: 1.2;"></el-input-number>
-                  <el-input-number v-model="cabinetModel.wAllowance" :min="0" :step="10" size="small" controls-position="right" style="flex: 1;"></el-input-number>
-                </div>
+              <!-- 尺寸数值标注 -->
+              <div style="font-size: 12px; font-family: monospace; color: #00796b; font-weight: bold; margin-bottom: 8px;">
+                {{ cabinetModel.w }} × {{ cabinetModel.h }} × {{ cabinetModel.d }} mm
               </div>
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px; align-items: center;">
-                <span>高 H(mm) + 加工预留:</span>
-                <div style="display: flex; gap: 4px;">
-                  <el-input-number v-model="cabinetModel.h" :min="100" :step="50" size="small" controls-position="right" style="flex: 1.2;"></el-input-number>
-                  <el-input-number v-model="cabinetModel.hAllowance" :min="0" :step="10" size="small" controls-position="right" style="flex: 1;"></el-input-number>
-                </div>
-              </div>
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px; align-items: center;">
-                <span>深 D(mm) + 加工预留:</span>
-                <div style="display: flex; gap: 4px;">
-                  <el-input-number v-model="cabinetModel.d" :min="50" :step="50" size="small" controls-position="right" style="flex: 1.2;"></el-input-number>
-                  <el-input-number v-model="cabinetModel.dAllowance" :min="0" :step="10" size="small" controls-position="right" style="flex: 1;"></el-input-number>
-                </div>
-              </div>
-              <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed #cbd5e1; padding-top: 6px; font-size: 12px;">
-                <div style="display: flex; align-items: center; gap: 6px;">
-                  <span>安装位置:</span>
+              <!-- 安装位置与方式 -->
+              <div style="display: flex; flex-direction: column; gap: 6px; width: 100%; border-top: 1px dashed #e2e8f0; padding-top: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11.5px;">
+                  <span style="color: #64748b;">安装位置:</span>
                   <el-radio-group v-model="cabinetModel.installLocation" size="small">
                     <el-radio label="indoor">户内</el-radio>
                     <el-radio label="outdoor">户外</el-radio>
                   </el-radio-group>
                 </div>
-                <div style="display: flex; align-items: center; gap: 6px;">
-                  <span>方式:</span>
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11.5px;">
+                  <span style="color: #64748b;">安装方式:</span>
                   <el-radio-group v-model="cabinetModel.installMethod" size="small">
                     <el-radio label="surface">明装</el-radio>
                     <el-radio label="flush">暗装</el-radio>
@@ -619,83 +683,322 @@
                 </div>
               </div>
             </div>
+
+            <!-- 右侧尺寸微调与规格型号装配器 -->
+            <div style="background: #ffffff; border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;">
+              <!-- 宽宽高深微调行 -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+                <div>
+                  <div style="font-size: 11.5px; color: #475569; margin-bottom: 3px; font-weight: 500;">
+                    宽 W(mm) + 预留
+                  </div>
+                  <div style="display: flex; gap: 4px;">
+                    <el-input-number v-model="cabinetModel.w" :min="100" :max="4000" :step="50" size="small" controls-position="right" style="flex: 1.3;"></el-input-number>
+                    <el-input-number v-model="cabinetModel.wAllowance" :min="0" :max="300" :step="10" size="small" controls-position="right" style="flex: 1;" title="宽加工预留折弯放量"></el-input-number>
+                  </div>
+                </div>
+                <div>
+                  <div style="font-size: 11.5px; color: #475569; margin-bottom: 3px; font-weight: 500;">
+                    高 H(mm) + 预留
+                  </div>
+                  <div style="display: flex; gap: 4px;">
+                    <el-input-number v-model="cabinetModel.h" :min="100" :max="4000" :step="50" size="small" controls-position="right" style="flex: 1.3;"></el-input-number>
+                    <el-input-number v-model="cabinetModel.hAllowance" :min="0" :max="300" :step="10" size="small" controls-position="right" style="flex: 1;" title="高加工预留折弯放量"></el-input-number>
+                  </div>
+                </div>
+                <div>
+                  <div style="font-size: 11.5px; color: #475569; margin-bottom: 3px; font-weight: 500;">
+                    深 D(mm) + 预留
+                  </div>
+                  <div style="display: flex; gap: 4px;">
+                    <el-input-number v-model="cabinetModel.d" :min="50" :max="2500" :step="50" size="small" controls-position="right" style="flex: 1.3;"></el-input-number>
+                    <el-input-number v-model="cabinetModel.dAllowance" :min="0" :max="200" :step="10" size="small" controls-position="right" style="flex: 1;" title="深加工预留折弯放量"></el-input-number>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 纯高度推荐深度快捷胶囊组 -->
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; background: #f1f5f9; padding: 4px 8px; border-radius: 4px;">
+                <span style="font-size: 11px; color: #64748b; font-weight: 600;">纯高度推荐深度:</span>
+                <span
+                  v-for="dVal in [120, 140, 160, 180, 200, 220, 250, 300, 350, 400, 500, 600, 800, 1000, 1200]"
+                  :key="dVal"
+                  class="cs-capsule-tag"
+                  :class="{ active: cabinetModel.d === dVal }"
+                  @click="cabinetModel.d = dVal"
+                  :title="'一键切换深度为 ' + dVal + ' mm'"
+                >
+                  {{ dVal }}
+                </span>
+              </div>
+
+              <!-- 规格型号装配多选配置行 -->
+              <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px; padding: 6px 10px; display: flex; flex-direction: column; gap: 6px;">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11.5px;">
+                  <span style="color: #64748b;">尺寸:</span>
+                  <el-select v-model="cabinetModel.dimOrder" size="small" style="width: 105px;">
+                    <el-option label="宽*高*深" value="W*H*D"></el-option>
+                    <el-option label="高*宽*深" value="H*W*D"></el-option>
+                    <el-option label="深*宽*高" value="D*W*H"></el-option>
+                  </el-select>
+                  <el-checkbox v-model="cabinetModel.includeThickness" size="small">板厚</el-checkbox>
+                  <el-checkbox v-model="cabinetModel.includeMaterial" size="small">材质</el-checkbox>
+                  <el-checkbox v-model="cabinetModel.includeInstall" size="small">位置与安装</el-checkbox>
+                  <el-checkbox v-model="cabinetModel.hasSecondPlate" size="small" @change="onSecondPlateChange">带二层板</el-checkbox>
+                  <el-checkbox v-model="cabinetModel.hasCustomSuffix" size="small">自定义</el-checkbox>
+                  <el-input v-if="cabinetModel.hasCustomSuffix" v-model="cabinetModel.customSuffix" size="small" placeholder="后缀" style="width: 100px;"></el-input>
+                </div>
+
+                <!-- 实时生成的规格型号框 -->
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 11.5px; color: #64748b; font-weight: 500; white-space: nowrap;">生成型号:</span>
+                  <div class="cs-spec-box" style="flex: 1;">
+                    {{ computedCabinetFullModel }}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- 下部：箱体结构展开表格 (按面数模式) -->
-          <div style="background: #ffffff; border: 1px solid var(--border); border-radius: 4px; padding: 10px;">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 12px;">
-              <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-weight: 600; color: #00796b;">箱体结构明细:</span>
-                <span>板材厚度:</span>
-                <el-radio-group v-model="cabinetModel.thicknessUnified" size="small">
+          <div v-if="cabinetModel.calcMode === 'faces'" style="background: #ffffff; border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <div style="display: flex; align-items: center; gap: 10px; font-size: 12px;">
+                <span style="font-weight: 600; color: #00796b;">箱体结构展开明细:</span>
+                <span style="color: #64748b;">板材厚度:</span>
+                <el-radio-group v-model="cabinetModel.thicknessUnified" size="small" @change="onUnifiedThicknessModeChange">
                   <el-radio :label="true">统一</el-radio>
                   <el-radio :label="false">不统一</el-radio>
                 </el-radio-group>
+                <!-- 统一厚度时的全局选择器 -->
+                <div v-if="cabinetModel.thicknessUnified" style="display: flex; align-items: center; gap: 6px;">
+                  <span style="color: #64748b;">统一材质:</span>
+                  <el-select v-model="cabinetModel.unifiedMaterial" size="small" style="width: 105px;" @change="applyUnifiedSettings">
+                    <el-option v-for="m in sheetMaterialList" :key="m.materialName" :label="m.materialName" :value="m.materialName"></el-option>
+                  </el-select>
+                  <span style="color: #64748b;">板厚:</span>
+                  <el-select v-model="cabinetModel.unifiedThickness" size="small" style="width: 85px;" @change="applyUnifiedSettings">
+                    <el-option v-for="th in currentMaterialThicknesses" :key="th.thickness" :label="th.thickness + ' mm'" :value="th.thickness"></el-option>
+                  </el-select>
+                  <span style="font-family: monospace; color: #0f766e; font-weight: bold;">
+                    ¥{{ getPricePerSq(cabinetModel.unifiedMaterial, cabinetModel.unifiedThickness) }}/m²
+                  </span>
+                </div>
               </div>
-              <span style="color: #64748b; font-size: 11.5px;">* 面积按实际尺寸加预留放量后乘系数展开</span>
+              <span style="font-size: 11px; color: #94a3b8;">* 面积按实际尺寸加预留放量后乘系数展开</span>
             </div>
 
-            <!-- 结构展开表格 -->
-            <el-table :data="cabinetStructures" size="small" border stripe style="width: 100%;">
-              <el-table-column prop="partName" label="部位" width="90"></el-table-column>
-              <el-table-column label="材质" width="110">
-                <template #default="{ row }">
-                  <el-select v-model="row.material" size="small" :disabled="cabinetModel.thicknessUnified">
-                    <el-option label="冷轧钢" value="冷轧钢"></el-option>
-                    <el-option label="镀锌板" value="镀锌板"></el-option>
-                    <el-option label="不锈钢" value="不锈钢"></el-option>
-                  </el-select>
-                </template>
-              </el-table-column>
-              <el-table-column label="板厚(mm)" width="90">
-                <template #default="{ row }">
-                  <el-select v-model="row.thickness" size="small" :disabled="cabinetModel.thicknessUnified">
-                    <el-option :label="1.0" :value="1.0"></el-option>
-                    <el-option :label="1.2" :value="1.2"></el-option>
-                    <el-option :label="1.5" :value="1.5"></el-option>
-                    <el-option :label="2.0" :value="2.0"></el-option>
-                  </el-select>
-                </template>
-              </el-table-column>
-              <el-table-column label="单价(元/㎡)" width="95" align="right">
-                <template #default="{ row }">
-                  <span style="font-family: monospace;">{{ row.unitPrice.toFixed(2) }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="系数" width="80">
-                <template #default="{ row }">
-                  <el-input-number v-model="row.coef" :min="0" :max="10" size="small" controls-position="right" style="width: 65px;"></el-input-number>
-                </template>
-              </el-table-column>
-              <el-table-column prop="formulaText" label="计算公式" min-width="120"></el-table-column>
-              <el-table-column label="展开面积(㎡)" width="110" align="right">
-                <template #default="{ row }">
-                  <span style="font-weight: 600; color: #0284c7; font-family: monospace;">{{ calcStructureArea(row).toFixed(4) }}</span>
-                </template>
-              </el-table-column>
-            </el-table>
+            <!-- 结构展开紧凑表格 -->
+            <table class="cs-table-compact">
+              <thead>
+                <tr>
+                  <th style="width: 90px;">结构部位</th>
+                  <th style="width: 110px;">材质</th>
+                  <th style="width: 85px;">板厚(mm)</th>
+                  <th style="width: 100px;">单价(元/m²)</th>
+                  <th style="width: 75px;">系数(面数)</th>
+                  <th style="min-width: 90px;">计算公式</th>
+                  <th style="width: 95px;">展开面积(m²)</th>
+                  <th style="width: 95px;">金额小计(元)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(item, sIdx) in cabinetStructures" :key="sIdx">
+                  <td style="font-weight: 500; color: #1e293b;">{{ item.partName }}</td>
+                  <td>
+                    <el-select v-model="item.material" size="small" :disabled="cabinetModel.thicknessUnified" style="width: 100px;" @change="onStructureItemMaterialChange(item)">
+                      <el-option v-for="m in sheetMaterialList" :key="m.materialName" :label="m.materialName" :value="m.materialName"></el-option>
+                    </el-select>
+                  </td>
+                  <td>
+                    <el-select v-model="item.thickness" size="small" :disabled="cabinetModel.thicknessUnified" style="width: 80px;" @change="onStructureItemThicknessChange(item)">
+                      <el-option v-for="th in getThicknessOptionsForMaterial(item.material)" :key="th.thickness" :label="th.thickness" :value="th.thickness"></el-option>
+                    </el-select>
+                  </td>
+                  <td>
+                    <!-- 方案1：直接支持可编辑单价，初始按持久化数据填写，仅修改当前行 -->
+                    <el-input-number
+                      v-model="item.unitPrice"
+                      :min="0"
+                      :precision="2"
+                      :step="1"
+                      size="small"
+                      controls-position="right"
+                      style="width: 95px;"
+                      title="直接修改该部位单价 (方案1：仅生效于当前行)"
+                    ></el-input-number>
+                  </td>
+                  <td>
+                    <el-input-number v-model="item.coef" :min="0" :max="10" size="small" controls-position="right" style="width: 65px;"></el-input-number>
+                  </td>
+                  <td style="font-family: monospace; color: #475569;">{{ item.formulaText }}</td>
+                  <td style="font-family: monospace; color: #0284c7; font-weight: 600;">
+                    {{ calcStructureArea(item).toFixed(4) }}
+                  </td>
+                  <td style="font-family: monospace; color: #d97706; font-weight: 600;">
+                    ¥{{ (calcStructureArea(item) * item.unitPrice).toFixed(2) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
-            <!-- 统计指标与操作按钮 -->
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding: 6px 0; border-top: 1px solid #e2e8f0; font-size: 12.5px;">
+          <!-- 按系数模式展开卡片 (备选模式) -->
+          <div v-else style="background: #ffffff; border: 1px solid var(--border); border-radius: 4px; padding: 12px;">
+            <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 8px;">
+              <span style="font-size: 12px; font-weight: 600; color: #00796b;">选择综合材质:</span>
+              <el-select v-model="cabinetModel.unifiedMaterial" size="small" style="width: 120px;">
+                <el-option v-for="m in sheetMaterialList" :key="m.materialName" :label="m.materialName" :value="m.materialName"></el-option>
+              </el-select>
+              <span style="font-size: 12px; color: #64748b;">基准板厚:</span>
+              <el-select v-model="cabinetModel.unifiedThickness" size="small" style="width: 90px;">
+                <el-option v-for="th in currentMaterialThicknesses" :key="th.thickness" :label="th.thickness + ' mm'" :value="th.thickness"></el-option>
+              </el-select>
+              <span style="font-size: 12px; color: #64748b;">综合放量系数:</span>
+              <el-input-number v-model="cabinetModel.sheetAllowanceCoef" :min="1.0" :max="2.5" :step="0.05" size="small" controls-position="right" style="width: 100px;"></el-input-number>
+            </div>
+            <div style="font-size: 12px; color: #64748b;">
+              表面积公式: 2 × (宽×高 + 宽×深 + 高×深) × 放量系数 {{ cabinetModel.sheetAllowanceCoef }} = <b>{{ totalCabinetArea.toFixed(4) }} m²</b>
+            </div>
+          </div>
+
+          <!-- 底部汇总核算栏与操作按钮 -->
+          <div class="cs-summary-bar">
+            <!-- 面积与单价统计 -->
+            <div style="display: flex; align-items: center; gap: 16px;">
               <div>
-                <span>展开面积: <strong style="color: #0284c7;">{{ totalCabinetArea.toFixed(4) }}</strong> ㎡</span>
-                <span style="margin: 0 14px;">总价格: <strong style="color: #dc2626; font-size: 15px;">{{ totalCabinetPrice.toFixed(2) }}</strong> 元</span>
-                <span>面积单价: <strong style="color: #0f766e;">{{ avgCabinetAreaPrice.toFixed(2) }}</strong> 元/㎡</span>
+                <span style="color: #64748b; font-size: 12px;">展开总面积: </span>
+                <b style="color: #0284c7; font-size: 14px; font-family: monospace;">{{ totalCabinetArea.toFixed(4) }} m²</b>
               </div>
-              <div style="display: flex; gap: 8px;">
-                <el-button size="small" type="primary" class="btn-brand-primary" @click="insertCabinetToExcel">
-                  <i class="fa-solid fa-arrow-down"></i> 插入
-                </el-button>
-                <el-button size="small" type="warning" class="btn-brand-accent" @click="replaceCabinetInExcel">
-                  <i class="fa-solid fa-arrows-rotate"></i> 替换
-                </el-button>
-                <el-button size="small" type="success" @click="saveCabinetToDb">
-                  <i class="fa-solid fa-floppy-disk"></i> 加入柜体库
+              <div>
+                <span style="color: #64748b; font-size: 12px;">综合面积单价: </span>
+                <b style="color: #475569; font-size: 13px; font-family: monospace;">¥ {{ avgCabinetAreaPrice.toFixed(2) }} /m²</b>
+              </div>
+              <!-- 壳体总价格与人工微调 -->
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="color: #64748b; font-size: 12.5px; font-weight: 600;">壳体总价:</span>
+                <span style="color: #e11d48; font-size: 14px; font-weight: bold;">¥</span>
+                <el-input-number
+                  v-model="cabinetModel.manualTotalPrice"
+                  :placeholder="computedFormulaTotalPrice"
+                  :precision="2"
+                  :step="10"
+                  :min="0"
+                  size="small"
+                  controls-position="right"
+                  style="width: 120px; font-weight: bold;"
+                ></el-input-number>
+                <el-button v-if="cabinetModel.manualTotalPrice !== null" size="small" link @click="cabinetModel.manualTotalPrice = null" title="恢复公式自动计算价格">
+                  重置
                 </el-button>
               </div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div style="display: flex; gap: 8px;">
+              <el-button size="small" type="primary" class="btn-brand-primary" @click="insertCabinetToExcel">
+                <i class="fa-solid fa-arrow-down"></i> 插入
+              </el-button>
+              <el-button size="small" type="warning" class="btn-brand-accent" @click="replaceCabinetInExcel">
+                <i class="fa-solid fa-arrows-rotate"></i> 替换
+              </el-button>
+              <el-button size="small" type="success" @click="saveCabinetToDb">
+                <i class="fa-solid fa-floppy-disk"></i> 加入柜体库
+              </el-button>
             </div>
           </div>
         </div>
+
+        <!-- 板材单价设置弹窗 (图1风格：各材质与板厚平方单价库) -->
+        <el-dialog
+          v-model="materialDrawerVisible"
+          title="⚙️ 板材材质与各板厚每平方单价库 (元/m²)"
+          width="780px"
+          append-to-body
+          :close-on-click-modal="false"
+        >
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 12px; color: #64748b;">(批量计算与初始核算时根据识别出的材质与厚度阶梯自动匹配平方单价)</span>
+              <el-button type="success" size="small" plain @click="addMaterialThickness(activeMaterialTab)">
+                + 添加厚度规格
+              </el-button>
+            </div>
+            <!-- 材质切换 Tabs -->
+            <el-tabs v-model="activeMaterialTab" type="border-card">
+              <el-tab-pane
+                v-for="mat in sheetMaterialList"
+                :key="mat.materialName"
+                :label="mat.materialName"
+                :name="mat.materialName"
+              >
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12px;">
+                  <span>
+                    材质名称: <b style="color: #00796b;">{{ mat.materialName }}</b> | 材料密度: <b>{{ mat.density || 7.85 }} g/cm³</b>
+                  </span>
+                  <span style="font-size: 11px; color: #94a3b8;">
+                    * 修改单价后点击右下角【💾 保存当前单价配置】即可永久持久化保存
+                  </span>
+                </div>
+                <table class="cs-table-compact">
+                  <thead>
+                    <tr>
+                      <th style="width: 140px;">板材厚度 (mm)</th>
+                      <th style="width: 170px;">每平米单价 (元/m²)</th>
+                      <th>规格描述</th>
+                      <th style="width: 80px;">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(th, tIdx) in mat.thicknessPrices" :key="tIdx">
+                      <td>
+                        <el-input-number
+                          v-model="th.thickness"
+                          :min="0.5"
+                          :max="10.0"
+                          :step="0.1"
+                          :precision="1"
+                          size="small"
+                          controls-position="right"
+                          style="width: 110px;"
+                        ></el-input-number>
+                      </td>
+                      <td>
+                        <el-input-number
+                          v-model="th.pricePerSqMeter"
+                          :min="0"
+                          :max="9999"
+                          :step="1"
+                          :precision="2"
+                          size="small"
+                          controls-position="right"
+                          style="width: 130px;"
+                        ></el-input-number>
+                      </td>
+                      <td style="color: #64748b; font-size: 11.5px;">
+                        {{ mat.materialName }} {{ th.thickness }}mm 标准钣金板
+                      </td>
+                      <td>
+                        <el-button type="danger" size="small" link @click="removeMaterialThickness(mat, tIdx)">删除</el-button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </el-tab-pane>
+            </el-tabs>
+          </div>
+          <template #footer>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <el-button size="small" @click="restoreDefaultMaterialPrices">恢复默认价格</el-button>
+              <div style="display: flex; gap: 8px;">
+                <el-button size="small" @click="materialDrawerVisible = false">取消</el-button>
+                <el-button size="small" type="primary" class="btn-brand-primary" @click="saveMaterialSettingsToCSharp">
+                  <i class="fa-solid fa-floppy-disk"></i> 保存当前单价配置
+                </el-button>
+              </div>
+            </div>
+          </template>
+        </el-dialog>
 
         <!-- 2.2 母排计算器 (图 3 风格) -->
         <div v-show="currentCalcSubTab === 'copper'" class="copper-form-card">
@@ -735,14 +1038,14 @@
                   <el-option label="按根" value="root"></el-option>
                 </el-select>
                 <div v-else style="width: 153px;"></div>
-                <!-- 根数 -->
-                <el-input-number v-model="combo.count" :min="0" :max="10" size="small" controls-position="right" style="width: 60px;"></el-input-number>
+                <!-- 根数输入框 (加宽至85px防右侧按钮遮挡数字) -->
+                <el-input-number v-model="combo.count" :min="0" :max="10" size="small" controls-position="right" style="width: 85px;"></el-input-number>
                 <span style="font-size: 12px; color: #64748b;">根</span>
-                <!-- 宽度 -->
-                <el-input-number v-model="combo.width" :min="10" :max="200" :step="5" size="small" controls-position="right" style="width: 75px;"></el-input-number>
+                <!-- 宽度输入框 (加宽至95px满足三位数如100完整显示) -->
+                <el-input-number v-model="combo.width" :min="10" :max="200" :step="5" size="small" controls-position="right" style="width: 95px;"></el-input-number>
                 <span style="font-size: 12px; color: #64748b;">*</span>
-                <!-- 厚度 -->
-                <el-input-number v-model="combo.thickness" :min="2" :max="30" :step="1" size="small" controls-position="right" style="width: 70px;"></el-input-number>
+                <!-- 厚度输入框 (加宽至85px数字清晰居中) -->
+                <el-input-number v-model="combo.thickness" :min="2" :max="30" :step="1" size="small" controls-position="right" style="width: 85px;"></el-input-number>
                 <span style="font-size: 12px; color: #64748b;">mm</span>
                 <!-- 增减组合按钮 -->
                 <el-button v-if="copperModel.combos.length > 1" size="small" type="danger" circle plain @click="removeCopperCombo(cIdx)">
@@ -928,79 +1231,331 @@
         const materialTotalCount = ref(0);
         const selectedMaterialRow = ref(null);
 
-        // ------------------ 2. 柜体计算器模型 ------------------
+        // ------------------ 2. 柜体计算器模型 (图2工业级标准与持久化单价库) ------------------
+        // 默认板材单价与厚度梯度库兜底 (结构与 quotation_rules.json 完全对齐) --硬编码: 默认单价库--
+        const defaultMaterialPrices = [
+          {
+            materialName: "冷轧板",
+            density: 7.85,
+            thicknessPrices: [
+              { thickness: 1.0, pricePerSqMeter: 45.0 },
+              { thickness: 1.2, pricePerSqMeter: 54.0 },
+              { thickness: 1.5, pricePerSqMeter: 67.5 },
+              { thickness: 2.0, pricePerSqMeter: 90.0 },
+              { thickness: 2.5, pricePerSqMeter: 112.5 },
+              { thickness: 3.0, pricePerSqMeter: 135.0 }
+            ]
+          },
+          {
+            materialName: "不锈钢201",
+            density: 7.93,
+            thicknessPrices: [
+              { thickness: 1.0, pricePerSqMeter: 71.37 },
+              { thickness: 1.2, pricePerSqMeter: 85.6 },
+              { thickness: 1.5, pricePerSqMeter: 107.0 },
+              { thickness: 2.0, pricePerSqMeter: 142.8 },
+              { thickness: 2.5, pricePerSqMeter: 178.5 },
+              { thickness: 3.0, pricePerSqMeter: 214.0 }
+            ]
+          },
+          {
+            materialName: "不锈钢304",
+            density: 7.93,
+            thicknessPrices: [
+              { thickness: 1.0, pricePerSqMeter: 95.0 },
+              { thickness: 1.2, pricePerSqMeter: 114.0 },
+              { thickness: 1.5, pricePerSqMeter: 142.5 },
+              { thickness: 2.0, pricePerSqMeter: 190.0 },
+              { thickness: 2.5, pricePerSqMeter: 237.5 },
+              { thickness: 3.0, pricePerSqMeter: 285.0 }
+            ]
+          },
+          {
+            materialName: "镀锌板",
+            density: 7.85,
+            thicknessPrices: [
+              { thickness: 1.0, pricePerSqMeter: 48.0 },
+              { thickness: 1.2, pricePerSqMeter: 58.0 },
+              { thickness: 1.5, pricePerSqMeter: 72.0 },
+              { thickness: 2.0, pricePerSqMeter: 96.0 },
+              { thickness: 2.5, pricePerSqMeter: 120.0 },
+              { thickness: 3.0, pricePerSqMeter: 144.0 }
+            ]
+          }
+        ];
+
+        // 响应式板材单价库 (优先由后端持久化数据填充)
+        const sheetMaterialList = ref(JSON.parse(JSON.stringify(defaultMaterialPrices)));
+        // 板材单价配置弹窗显隐与当前激活的材质 Tab
+        const materialDrawerVisible = ref(false);
+        const activeMaterialTab = ref('镀锌板');
+
+        // 柜体算料核心模型
         const cabinetModel = reactive({
           calcMode: 'faces',
+          sheetAllowanceCoef: 1.2,
           unit: '台',
           name: '柜体',
           brand: '国优',
-          useBoxType: true,
-          boxType: 'XM',
           dimOrder: 'W*H*D',
-          includeThickness: false,
-          includeMaterial: false,
-          isIndoor: true,
-          isSurface: true,
+          includeThickness: true,
+          includeMaterial: true,
+          includeInstall: false,
           hasSecondPlate: false,
           hasCustomSuffix: false,
           customSuffix: '',
           w: 800,
-          wAllowance: 50,
+          wAllowance: 0,
           h: 2200,
-          hAllowance: 50,
-          d: 1000,
-          dAllowance: 20,
+          hAllowance: 0,
+          d: 400,
+          dAllowance: 0,
           installLocation: 'indoor',
           installMethod: 'surface',
-          thicknessUnified: true
+          thicknessUnified: true,
+          unifiedMaterial: '镀锌板',
+          unifiedThickness: 1.5,
+          manualTotalPrice: null
         });
 
-        // 柜体各部位结构展开配置明细
-        const cabinetStructures = ref([
-          { partName: '底壳', material: '冷轧钢', thickness: 1.0, unitPrice: 39.25, coef: 1, formulaText: '*(H*W)', isHW: true },
-          { partName: '面盖', material: '冷轧钢', thickness: 1.0, unitPrice: 39.25, coef: 1, formulaText: '*(H*W)', isHW: true },
-          { partName: '底板', material: '冷轧钢', thickness: 1.0, unitPrice: 39.25, coef: 0, formulaText: '*(H*W)', isHW: true },
-          { partName: '左右侧板', material: '冷轧钢', thickness: 1.0, unitPrice: 39.25, coef: 2, formulaText: '*(H*D)', isHD: true },
-          { partName: '顶底封板', material: '冷轧钢', thickness: 1.0, unitPrice: 39.25, coef: 2, formulaText: '*(W*D)', isWD: true }
-        ]);
-
-        // 动态计算结构展开面积 (㎡)
-        const calcStructureArea = (item) => {
-          const w = (cabinetModel.w + cabinetModel.wAllowance) / 1000.0;
-          const h = (cabinetModel.h + cabinetModel.hAllowance) / 1000.0;
-          const d = (cabinetModel.d + cabinetModel.dAllowance) / 1000.0;
-          let area = 0.0;
-          if (item.isHW) area = h * w;
-          else if (item.isHD) area = h * d;
-          else if (item.isWD) area = w * d;
-          return area * item.coef;
+        // 依据材质与板厚从持久化单价库中查找平米单价 (初始自动匹配填入)
+        const getPricePerSq = (matName, thk) => {
+          const mat = (sheetMaterialList.value || []).find(m => m.materialName === matName);
+          if (!mat || !Array.isArray(mat.thicknessPrices)) return 72.0;
+          const exact = mat.thicknessPrices.find(t => Math.abs(t.thickness - thk) < 0.05);
+          if (exact) return exact.pricePerSqMeter;
+          const sorted = [...mat.thicknessPrices].sort((a, b) => Math.abs(a.thickness - thk) - Math.abs(b.thickness - thk));
+          return sorted.length > 0 ? sorted[0].pricePerSqMeter : 72.0;
         };
 
-        // 柜体总展开面积与总价格计算
-        const totalCabinetArea = computed(() => {
-          return cabinetStructures.value.reduce((acc, cur) => acc + calcStructureArea(cur), 0);
-        });
-        const totalCabinetPrice = computed(() => {
-          return cabinetStructures.value.reduce((acc, cur) => acc + calcStructureArea(cur) * cur.unitPrice, 0);
-        });
-        const avgCabinetAreaPrice = computed(() => {
-          return totalCabinetArea.value > 0 ? totalCabinetPrice.value / totalCabinetArea.value : 39.25;
+        // 获取指定材质的所有可用厚度选项集合
+        const getThicknessOptionsForMaterial = (matName) => {
+          const mat = (sheetMaterialList.value || []).find(m => m.materialName === matName);
+          return mat && Array.isArray(mat.thicknessPrices) ? mat.thicknessPrices : [];
+        };
+
+        // 当前统一材质的所有可选厚度集合 (用于下拉选项渲染)
+        const currentMaterialThicknesses = computed(() => {
+          return getThicknessOptionsForMaterial(cabinetModel.unifiedMaterial);
         });
 
-        // 柜体型号动态拼装
-        const computedCabinetModel = computed(() => {
-          let parts = [];
-          if (cabinetModel.useBoxType && cabinetModel.boxType) parts.push(cabinetModel.boxType);
-          if (cabinetModel.dimOrder === 'W*H*D') {
-            parts.push(`${cabinetModel.w}*${cabinetModel.h}*${cabinetModel.d}`);
+        // 柜体各部位结构展开配置明细 (图2工业规范 5 部位)
+        const cabinetStructures = ref([
+          { partName: "顶板底板", material: "镀锌板", thickness: 1.5, unitPrice: 72.0, formulaCode: "WD", formulaText: "*(W*D)", coef: 2 },
+          { partName: "面门板", material: "镀锌板", thickness: 1.5, unitPrice: 72.0, formulaCode: "HW", formulaText: "*(H*W)", coef: 1 },
+          { partName: "后背板", material: "镀锌板", thickness: 1.5, unitPrice: 72.0, formulaCode: "HW", formulaText: "*(H*W)", coef: 1 },
+          { partName: "左右侧板", material: "镀锌板", thickness: 1.5, unitPrice: 72.0, formulaCode: "HD", formulaText: "*(H*D)", coef: 2 },
+          { partName: "二层安装板", material: "镀锌板", thickness: 1.5, unitPrice: 72.0, formulaCode: "HW", formulaText: "*(H*W)", coef: 0 }
+        ]);
+
+        // 获取指定部位当前的板厚 (供 3D 轴测图顶/前/右标签展示)
+        const getPartThickness = (partName) => {
+          const item = cabinetStructures.value.find(s => s.partName === partName);
+          if (item) return Number(item.thickness).toFixed(1);
+          return cabinetModel.thicknessUnified ? cabinetModel.unifiedThickness.toFixed(1) : "1.5";
+        };
+
+        // 统一厚度开关切换处理
+        const onUnifiedThicknessModeChange = (val) => {
+          if (val) {
+            applyUnifiedSettings();
+          }
+        };
+
+        // 统一设置应用到各行 (带出持久化库基准单价)
+        const applyUnifiedSettings = () => {
+          const p = getPricePerSq(cabinetModel.unifiedMaterial, cabinetModel.unifiedThickness);
+          cabinetStructures.value.forEach(item => {
+            item.material = cabinetModel.unifiedMaterial;
+            item.thickness = cabinetModel.unifiedThickness;
+            item.unitPrice = p;
+          });
+        };
+
+        // 二层板勾选联动面数
+        const onSecondPlateChange = (val) => {
+          const secItem = cabinetStructures.value.find(s => s.partName === "二层安装板");
+          if (secItem) {
+            secItem.coef = val ? 1 : 0;
+          }
+        };
+
+        // 单个结构部件材质修改 (非统一模式)
+        const onStructureItemMaterialChange = (item) => {
+          const thList = getThicknessOptionsForMaterial(item.material);
+          if (thList.length > 0 && !thList.some(t => Math.abs(t.thickness - item.thickness) < 0.05)) {
+            item.thickness = thList[0].thickness;
+          }
+          item.unitPrice = getPricePerSq(item.material, item.thickness);
+        };
+
+        // 单个结构部件板厚修改 (非统一模式)
+        const onStructureItemThicknessChange = (item) => {
+          item.unitPrice = getPricePerSq(item.material, item.thickness);
+        };
+
+        // 计算单面结构的展开面积 (m²)
+        const calcStructureArea = (item) => {
+          const wReal = (Number(cabinetModel.w) || 0) + (Number(cabinetModel.wAllowance) || 0);
+          const hReal = (Number(cabinetModel.h) || 0) + (Number(cabinetModel.hAllowance) || 0);
+          const dReal = (Number(cabinetModel.d) || 0) + (Number(cabinetModel.dAllowance) || 0);
+          const coef = Number(item.coef) || 0;
+          if (coef <= 0) return 0.0;
+
+          let areaMm2 = 0;
+          if (item.formulaCode === "WD") {
+            areaMm2 = wReal * dReal * coef;
+          } else if (item.formulaCode === "HD") {
+            areaMm2 = hReal * dReal * coef;
           } else {
-            parts.push(`${cabinetModel.h}*${cabinetModel.w}*${cabinetModel.d}`);
+            areaMm2 = hReal * wReal * coef;
           }
-          if (cabinetModel.hasCustomSuffix && cabinetModel.customSuffix) {
-            parts.push(cabinetModel.customSuffix);
+          return areaMm2 / 1000000.0;
+        };
+
+        // 动态计算总展开面积 (m²)
+        const totalCabinetArea = computed(() => {
+          if (cabinetModel.calcMode === "faces") {
+            return cabinetStructures.value.reduce((acc, cur) => acc + calcStructureArea(cur), 0.0);
+          } else {
+            const w = Number(cabinetModel.w) || 0;
+            const h = Number(cabinetModel.h) || 0;
+            const d = Number(cabinetModel.d) || 0;
+            const coef = Number(cabinetModel.sheetAllowanceCoef) || 1.2;
+            return (2 * (w * h + w * d + h * d) / 1000000.0) * coef;
           }
-          return parts.join('-');
         });
+
+        // 公式自动计算出的总价格 (元)
+        const computedFormulaTotalPrice = computed(() => {
+          if (cabinetModel.calcMode === "faces") {
+            const total = cabinetStructures.value.reduce((acc, cur) => {
+              return acc + calcStructureArea(cur) * cur.unitPrice;
+            }, 0.0);
+            return Number(total.toFixed(2));
+          } else {
+            const area = totalCabinetArea.value || 0;
+            const p = getPricePerSq(cabinetModel.unifiedMaterial, cabinetModel.unifiedThickness);
+            return Number((area * p).toFixed(2));
+          }
+        });
+
+        // 最终结算价格 (方案1：优先采用人工微调价格，否则取公式计算值)
+        const finalCabinetPrice = computed(() => {
+          if (cabinetModel.manualTotalPrice !== null && cabinetModel.manualTotalPrice !== undefined && cabinetModel.manualTotalPrice >= 0) {
+            return Number(cabinetModel.manualTotalPrice);
+          }
+          return computedFormulaTotalPrice.value || 0.0;
+        });
+
+        // 综合面积单价 (元/m²)
+        const avgCabinetAreaPrice = computed(() => {
+          const area = totalCabinetArea.value || 0;
+          const price = finalCabinetPrice.value || 0;
+          if (area <= 0) return 72.0;
+          return price / area;
+        });
+
+        // 实时生成规格型号字符串 (图2标准装配格式)
+        const computedCabinetFullModel = computed(() => {
+          const w = cabinetModel.w;
+          const h = cabinetModel.h;
+          const d = cabinetModel.d;
+
+          let dimStr = `${w}*${h}*${d}`;
+          if (cabinetModel.dimOrder === "H*W*D") {
+            dimStr = `${h}*${w}*${d}`;
+          } else if (cabinetModel.dimOrder === "D*W*H") {
+            dimStr = `${d}*${w}*${h}`;
+          }
+
+          let res = dimStr;
+          if (cabinetModel.includeThickness) {
+            res += `-${cabinetModel.unifiedThickness}mm`;
+          }
+          if (cabinetModel.includeMaterial && cabinetModel.unifiedMaterial) {
+            res += ` ${cabinetModel.unifiedMaterial}`;
+          }
+          if (cabinetModel.includeInstall) {
+            const loc = cabinetModel.installLocation === "indoor" ? "户内" : "户外";
+            const met = cabinetModel.installMethod === "surface" ? "明装" : "暗装";
+            res += ` ${loc}${met}`;
+          }
+          if (cabinetModel.hasSecondPlate) {
+            res += " (带二层板)";
+          }
+          if (cabinetModel.hasCustomSuffix && cabinetModel.customSuffix && cabinetModel.customSuffix.trim()) {
+            res += ` ${cabinetModel.customSuffix.trim()}`;
+          }
+          return res;
+        });
+
+        // 重置柜体为默认初始值 (标准封闭箱体、取消放量)
+        const resetCabinetDefaults = () => {
+          cabinetModel.calcMode = "faces";
+          cabinetModel.w = 800;
+          cabinetModel.h = 2200;
+          cabinetModel.d = 400;
+          cabinetModel.wAllowance = 0;
+          cabinetModel.hAllowance = 0;
+          cabinetModel.dAllowance = 0;
+          cabinetModel.thicknessUnified = true;
+          cabinetModel.unifiedMaterial = "镀锌板";
+          cabinetModel.unifiedThickness = 1.5;
+          cabinetModel.manualTotalPrice = null;
+          cabinetModel.hasSecondPlate = false;
+          cabinetStructures.value.forEach(s => {
+            if (s.partName === "顶板底板") s.coef = 2;
+            else if (s.partName === "面门板") s.coef = 1;
+            else if (s.partName === "后背板") s.coef = 1;
+            else if (s.partName === "左右侧板") s.coef = 2;
+            else if (s.partName === "二层安装板") s.coef = 0;
+          });
+          applyUnifiedSettings();
+          ElementPlus.ElMessage.info("已重置钣金算料参数为默认状态 (封闭箱体标准，已取消放量)");
+        };
+
+        // 打开板材单价设置弹窗
+        const openMaterialDrawer = () => {
+          activeMaterialTab.value = cabinetModel.unifiedMaterial || "镀锌板";
+          materialDrawerVisible.value = true;
+        };
+
+        // 为指定材质新增一种厚度规格单价
+        const addMaterialThickness = (matName) => {
+          const mat = sheetMaterialList.value.find(m => m.materialName === matName);
+          if (!mat) return;
+          if (!Array.isArray(mat.thicknessPrices)) mat.thicknessPrices = [];
+          const maxTh = mat.thicknessPrices.reduce((max, cur) => Math.max(max, cur.thickness || 0), 0);
+          const nextTh = Number((maxTh + 0.5).toFixed(1));
+          mat.thicknessPrices.push({
+            thickness: nextTh,
+            pricePerSqMeter: 100.0
+          });
+        };
+
+        // 删除指定厚度规格
+        const removeMaterialThickness = (mat, idx) => {
+          if (mat.thicknessPrices && mat.thicknessPrices.length > 1) {
+            mat.thicknessPrices.splice(idx, 1);
+          } else {
+            ElementPlus.ElMessage.warning("至少保留一种厚度规格！");
+          }
+        };
+
+        // 恢复默认单价库
+        const restoreDefaultMaterialPrices = () => {
+          sheetMaterialList.value = JSON.parse(JSON.stringify(defaultMaterialPrices));
+          applyUnifiedSettings();
+          ElementPlus.ElMessage.info("已恢复为系统默认板材单价库");
+        };
+
+        // 保存板材单价设置到 C# 并持久化保存到磁盘
+        const saveMaterialSettingsToCSharp = () => {
+          sendAction('saveShellPriceRules', {
+            materialPrices: sheetMaterialList.value
+          });
+        };
 
         // ------------------ 3. 母排计算器模型 ------------------
         const copperModel = reactive({
@@ -1175,17 +1730,17 @@
           sendAction('replaceInExcel', { item: selectedMaterialRow.value, updateQuantity: false });
         };
 
-        // 柜体计算器操作
+        // 柜体计算器操作 (图2工业规范回写与持久化入库)
         const insertCabinetToExcel = () => {
           const item = {
             name: cabinetModel.name,
-            model: computedCabinetModel.value,
+            model: computedCabinetFullModel.value,
             brand: cabinetModel.brand,
             unit: cabinetModel.unit,
             quantity: 1.0,
-            price: Number(totalCabinetPrice.value.toFixed(2)),
+            price: Number(finalCabinetPrice.value.toFixed(2)),
             category: '柜体',
-            remark: `展开面积:${totalCabinetArea.value.toFixed(2)}㎡`
+            remark: `展开面积:${totalCabinetArea.value.toFixed(2)}㎡ 单价:${avgCabinetAreaPrice.value.toFixed(2)}元/㎡`
           };
           sendAction('insertToExcel', { item });
         };
@@ -1193,12 +1748,13 @@
         const replaceCabinetInExcel = () => {
           const item = {
             name: cabinetModel.name,
-            model: computedCabinetModel.value,
+            model: computedCabinetFullModel.value,
             brand: cabinetModel.brand,
             unit: cabinetModel.unit,
             quantity: 1.0,
-            price: Number(totalCabinetPrice.value.toFixed(2)),
-            category: '柜体'
+            price: Number(finalCabinetPrice.value.toFixed(2)),
+            category: '柜体',
+            remark: `展开面积:${totalCabinetArea.value.toFixed(2)}㎡ 单价:${avgCabinetAreaPrice.value.toFixed(2)}元/㎡`
           };
           sendAction('replaceInExcel', { item, updateQuantity: false });
         };
@@ -1206,12 +1762,12 @@
         const saveCabinetToDb = () => {
           const item = {
             name: cabinetModel.name,
-            model: computedCabinetModel.value,
+            model: computedCabinetFullModel.value,
             brand: cabinetModel.brand,
             unit: cabinetModel.unit,
-            price: Number(totalCabinetPrice.value.toFixed(2)),
+            price: Number(finalCabinetPrice.value.toFixed(2)),
             category: '柜体',
-            remark: `展开面积:${totalCabinetArea.value.toFixed(2)}㎡`
+            remark: `展开面积:${totalCabinetArea.value.toFixed(2)}㎡ 单价:${avgCabinetAreaPrice.value.toFixed(2)}元/㎡`
           };
           sendAction('saveToDb', { item });
         };
@@ -1292,6 +1848,16 @@
                   if (data.brands && Array.isArray(data.brands) && data.brands.length > 0) {
                     brandList.value = data.brands;
                   }
+                  // 读取后端持久化保存的板材单价库
+                  if (data.shellPriceRules && Array.isArray(data.shellPriceRules.materialPrices) && data.shellPriceRules.materialPrices.length > 0) {
+                    sheetMaterialList.value = JSON.parse(JSON.stringify(data.shellPriceRules.materialPrices));
+                  }
+                  // 读取持久化默认基准材质
+                  if (data.shellPriceRules && data.shellPriceRules.defaultMaterial) {
+                    cabinetModel.unifiedMaterial = data.shellPriceRules.defaultMaterial;
+                  }
+                  // 刷新应用单价设置到各结构面 (初始按持久化数据填写)
+                  applyUnifiedSettings();
                   if (data.copperPrice) copperModel.marketPrice = data.copperPrice;
                   loadMaterials();
                   loadAmpacityTable();
@@ -1304,6 +1870,17 @@
 
                 case 'getAmpacityTableResponse':
                   ampacityTableData.value = data.items || [];
+                  break;
+
+                case 'saveShellPriceRulesResponse':
+                  // 保存板材单价库配置反馈
+                  if (data.success) {
+                    ElementPlus.ElMessage.success(data.message || '板材单价库已成功保存！');
+                    materialDrawerVisible.value = false;
+                    applyUnifiedSettings();
+                  } else {
+                    ElementPlus.ElMessage.error(data.message || '保存单价库失败');
+                  }
                   break;
 
                 case 'insertToExcelResponse':
@@ -1359,9 +1936,30 @@
           cabinetStructures,
           calcStructureArea,
           totalCabinetArea,
-          totalCabinetPrice,
+          computedFormulaTotalPrice,
+          finalCabinetPrice,
+          totalCabinetPrice: finalCabinetPrice,
           avgCabinetAreaPrice,
-          computedCabinetModel,
+          computedCabinetFullModel,
+          computedCabinetModel: computedCabinetFullModel,
+          sheetMaterialList,
+          materialDrawerVisible,
+          activeMaterialTab,
+          getPricePerSq,
+          getThicknessOptionsForMaterial,
+          currentMaterialThicknesses,
+          getPartThickness,
+          onUnifiedThicknessModeChange,
+          applyUnifiedSettings,
+          onSecondPlateChange,
+          onStructureItemMaterialChange,
+          onStructureItemThicknessChange,
+          resetCabinetDefaults,
+          openMaterialDrawer,
+          addMaterialThickness,
+          removeMaterialThickness,
+          restoreDefaultMaterialPrices,
+          saveMaterialSettingsToCSharp,
           copperModel,
           addCopperCombo,
           removeCopperCombo,

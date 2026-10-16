@@ -243,6 +243,11 @@ namespace ExcelAddInDemo.Forms
                         HandleSaveToDb(root);
                         break;
 
+                    case "saveShellPriceRules":
+                        // 持久化保存柜体板材材质与各厚度单价库配置
+                        HandleSaveShellPriceRules(root);
+                        break;
+
                     case "dragWindow":
                         // 标题栏拖拽移动
                         HandleDragWindow();
@@ -267,7 +272,7 @@ namespace ExcelAddInDemo.Forms
         }
 
         /// <summary>
-        /// 处理初始化指令，通知前端激活选项卡并回传库内品牌与铜价参数
+        /// 处理初始化指令，通知前端激活选项卡并回传库内品牌、铜价参数及持久化的板材单价库
         /// </summary>
         private void HandleInitHub()
         {
@@ -279,15 +284,58 @@ namespace ExcelAddInDemo.Forms
                 if (!string.IsNullOrWhiteSpace(b.Brand)) brandList.Add(b.Brand);
             }
 
+            // 读取已持久化的计算定额与板材单价规则配置
+            var quotationRules = ExcelServices.LoadQuotationRules();
+            // 提取板材价格与厚度梯度配置
+            var shellPriceConfig = quotationRules?.ShellPriceRules;
+
             var initData = new
             {
                 action = "initHubResponse",
                 initialTab = _initialTab,
                 copperPrice = 111465.0, // --硬编码: 默认基准铜价--
                 processingFee = 0.0,
-                brands = brandList
+                brands = brandList,
+                shellPriceRules = shellPriceConfig
             };
             PostMessageToWeb(initData);
+        }
+
+        /// <summary>
+        /// 保存前端修改的柜体板材材质与各板厚每平方单价库至持久化 JSON 配置文件
+        /// </summary>
+        /// <param name="root">前端发送的 JSON 数据根元素</param>
+        private void HandleSaveShellPriceRules(JsonElement root)
+        {
+            try
+            {
+                // 读取当前全局报价与定额配置
+                var rules = ExcelServices.LoadQuotationRules() ?? new QuotationRules();
+                // 提取前端回传的板材单价数组
+                if (root.TryGetProperty("materialPrices", out var pricesElem))
+                {
+                    // 反序列化为材质单价集合
+                    var list = JsonSerializer.Deserialize<List<MaterialPriceItem>>(pricesElem.GetRawText(), JsonOptions);
+                    if (list != null && list.Count > 0)
+                    {
+                        // 更新板材单价配置
+                        rules.ShellPriceRules.MaterialPrices = list;
+                        // 持久化保存到 quotation_rules.json
+                        ExcelServices.SaveQuotationRules(rules);
+                        // 向前端发送保存成功响应
+                        PostMessageToWeb(new { action = "saveShellPriceRulesResponse", success = true, message = "板材单价库已成功持久化保存！" });
+                        return;
+                    }
+                }
+                // 未能获取有效数据时响应失败
+                PostMessageToWeb(new { action = "saveShellPriceRulesResponse", success = false, message = "未解析到有效的板材单价数据" });
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志并通知前端
+                LogHelper.WriteLog($"[CloudMaterialHubForm] 保存板材单价异常: {ex.Message}");
+                PostMessageToWeb(new { action = "saveShellPriceRulesResponse", success = false, message = $"保存失败: {ex.Message}" });
+            }
         }
 
         /// <summary>

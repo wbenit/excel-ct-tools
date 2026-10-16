@@ -301,6 +301,31 @@ namespace ExcelAddInDemo.Forms
                         return;
                     }
 
+                    // 核心校验：检查待推送箱柜的柜号/图纸代号长度是否超过 40 个字符
+                    const int maxCabinetNameLen = 40; // --硬编码: 柜号图纸代号最大长度阈值40--
+                    // 过滤出所有超出 40 字符的箱柜实体
+                    var overLengthCabinets = cabinets
+                        .Where(c => !string.IsNullOrEmpty(c.SystemDrawName?.Trim()) && c.SystemDrawName.Trim().Length > maxCabinetNameLen)
+                        .ToList();
+
+                    // 若存在柜号长度超限项，彻底阻断向云端 WebAPI 推送
+                    if (overLengthCabinets.Count > 0)
+                    {
+                        // 组装前 3 项超限明细用于反馈提示
+                        string previewDetails = string.Join("；", overLengthCabinets.Take(3).Select(c => $"[{c.Order}]「{c.SystemDrawName?.Trim()}」(长度: {c.SystemDrawName?.Trim().Length})"));
+                        // 若超限项多于 3 项追加统计
+                        if (overLengthCabinets.Count > 3) previewDetails += $" 等共 {overLengthCabinets.Count} 台箱柜";
+
+                        // 回传失败信息给前端弹窗
+                        PostWebMessageSafe(JsonSerializer.Serialize(new
+                        {
+                            action = "syncResult",
+                            success = false,
+                            message = $"推送拦截：检测到以下箱柜的【柜号/图纸代号】长度超过 40 个字符限制：{previewDetails}。请修改缩减后再推送！"
+                        }));
+                        return;
+                    }
+
                     // 注入统一项目 ID
                     foreach (var c in cabinets)
                     {

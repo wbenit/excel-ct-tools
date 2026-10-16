@@ -728,6 +728,46 @@
         return;
       }
 
+      // 核心校验：检查柜号/图纸代号长度是否超过 40 个字符
+      const maxNameLen = 40; // --硬编码: 柜号图纸代号最大长度阈值40--
+      // 过滤出所有柜号长度超过 40 的超限箱柜项
+      const overLengthItems = cabinets.value.filter(c => {
+        // 提取去除首尾空格后的真实柜号文本
+        const name = (c.systemDrawName || '').trim();
+        // 判定字符长度是否超出 40
+        return name.length > maxNameLen;
+      });
+
+      // 若存在超限箱柜，立即阻断推送并弹窗报错
+      if (overLengthItems.length > 0) {
+        // 格式化前 5 项超限箱柜详细信息供用户定位
+        const errorDetails = overLengthItems.slice(0, 5).map(c => {
+          // 提取超限名称
+          const name = (c.systemDrawName || '').trim();
+          // 返回列表项 HTML
+          return `<li>序号 <b>${c.order || '未知'}</b>: 「${name}」 (当前长度: <b style="color:#ef4444;">${name.length}</b>)</li>`;
+        }).join('');
+        // 若超出 5 项展示更多提示
+        const moreTip = overLengthItems.length > 5 ? `<p style="margin-top:6px; color:#94a3b8;">等共 <b>${overLengthItems.length}</b> 台箱柜超限...</p>` : '';
+
+        // 弹出错误警告提示框
+        ElementPlus.ElMessageBox.alert(
+          `<div style="font-size:13px; line-height:1.6;">
+            <p style="color:#ef4444; font-weight:bold; margin-bottom:8px;">❌ 检测到以下箱柜的【柜号 / 图纸代号】长度超过 40 个字符限制，无法推送到云端：</p>
+            <ul style="padding-left:18px; margin:0; color:#334155;">${errorDetails}</ul>
+            ${moreTip}
+            <p style="margin-top:10px; color:#64748b; font-size:12px;">提示：请在【云端箱柜属性】协同表或对应分类表中缩减柜号后再执行推送。</p>
+          </div>`,
+          '柜号长度超限报错',
+          {
+            dangerouslyUseHTMLString: true,
+            confirmButtonText: '知道了',
+            type: 'error'
+          }
+        );
+        return;
+      }
+
       // 允许确认后覆盖
       if (isCover.value) {
         ElementPlus.ElMessageBox.confirm(

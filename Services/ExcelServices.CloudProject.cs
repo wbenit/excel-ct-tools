@@ -405,28 +405,53 @@ namespace ExcelAddInDemo
                     var validCabinets = Tool.GetSheetValidCabinets((object)sheet, (object)activeWb);
                     if (validCabinets == null || validCabinets.Count == 0) continue;
 
-                    // 5. 遍历每个箱柜提取核心属性与序号
-                    foreach (var cabPair in validCabinets)
+                    // 5. 遍历每个箱柜提取核心属性与序号 (解耦底层定义名称后缀 K，彻底杜绝断号与跳号)
+                    for (int cabIdx = 0; cabIdx < validCabinets.Count; cabIdx++)
                     {
-                        int cabKey = cabPair.Key; // 汇总序号 K
+                        // 提取当前箱柜锚点对
+                        var cabPair = validCabinets[cabIdx];
+                        // 底层定义名称后缀 K (仅作为极端回退兜底)
+                        int cabKey = cabPair.Key;
+                        // 提取锚点对象
                         var anchor = cabPair.Value;
 
-                        // 提取柜号与属性 (优先从顶部汇总行 Cab_Sum)
+                        // 柜号与型号规格变量
                         string cabinetNo = "";
                         string model = "";
+                        // 箱柜台数默认 1
                         int count = 1;
+                        // 汇总行号
+                        int sumRow = 0;
+                        // 默认业务序号：采用当前分类表内自上而下的物理自然排位序号 (从 1 开始连续递增)
+                        int businessSeq = cabIdx + 1;
 
                         try
                         {
-                            int sumRow = anchor.Sum != null ? Convert.ToInt32(anchor.Sum.Row) : (anchor.SumRow > 0 ? anchor.SumRow : 0);
+                            // 优先读取内存缓存的物理汇总行号
+                            sumRow = anchor.Sum != null ? Convert.ToInt32(anchor.Sum.Row) : (anchor.SumRow > 0 ? anchor.SumRow : 0);
+                            // 若存在有效汇总行
                             if (sumRow > 0)
                             {
+                                // 核心业务对齐：优先从汇总行 A 列读取实际单元格显示的业务序号 (与用户在 Excel 汇总表肉眼所见 100% 保持完全一致)
+                                string cellAVal = Convert.ToString(sheet.Cells[sumRow, 1].Value2)?.Trim() ?? "";
+                                // 若成功解析出正整数业务序号
+                                if (int.TryParse(cellAVal, out int parsedSeq) && parsedSeq > 0)
+                                {
+                                    // 赋予 A 列实际业务序号
+                                    businessSeq = parsedSeq;
+                                }
+
+                                // 提取 B 列柜号
                                 cabinetNo = Convert.ToString(sheet.Cells[sumRow, 2].Value2)?.Trim() ?? "";
+                                // 提取 C 列箱柜名称
                                 string cName = Convert.ToString(sheet.Cells[sumRow, 3].Value2)?.Trim() ?? "";
+                                // 提取 D 列型号规格
                                 model = Convert.ToString(sheet.Cells[sumRow, 4].Value2)?.Trim() ?? "";
                                 try
                                 {
+                                    // 提取 F 列数量
                                     double qVal = Convert.ToDouble(sheet.Cells[sumRow, 6].Value2);
+                                    // 若大于 0 则取整
                                     if (qVal > 0) count = (int)Math.Round(qVal);
                                 }
                                 catch { }
@@ -440,26 +465,37 @@ namespace ExcelAddInDemo
                         // 兜底容错：若未提取到柜号，采用规范格式
                         if (string.IsNullOrWhiteSpace(cabinetNo))
                         {
-                            cabinetNo = $"{sName}-{cabKey}#柜";
+                            // 构造规范兜底柜号
+                            cabinetNo = $"{sName}-{businessSeq}#柜";
                         }
 
-                        // 💡 核心序号算法：分类序号 - 汇总序号（例如：2-1）
-                        string finalOrder = $"{categoryIndex}-{cabKey}";
+                        // 💡 核心序号算法：分类序号 - 业务汇总序号（例如：2-1，彻底根治底层定义名称断号导致的跳空缺陷）
+                        string finalOrder = $"{categoryIndex}-{businessSeq}";
 
                         // 组装云端箱柜实体
                         var cloudItem = new CloudEBoxItemDto
                         {
+                            // 赋值最终 Order 纯字符串
                             Order = finalOrder,
+                            // 系统图代号/柜号
                             SystemDrawName = cabinetNo,
+                            // 数量
                             Count = count,
+                            // 绑定项目 ID
                             ProjectId = boundProjId,
+                            // 型号规格
                             Model = model,
+                            // 分类名称
                             CategoryName = sName,
+                            // 分类序号
                             CategoryIndex = categoryIndex,
-                            CabinetIndex = cabKey,
+                            // 箱柜明细序号 (与业务 Order 保持对齐)
+                            CabinetIndex = businessSeq,
+                            // 位置
                             EboxPositon = sName
                         };
 
+                        // 加入候选推送集合
                         resultList.Add(cloudItem);
                     }
                 }
@@ -510,14 +546,10 @@ namespace ExcelAddInDemo
                                     var propsMap = new Dictionary<string, (string Position, string DrawName, int Count, string Model, string CustomFields)>(StringComparer.OrdinalIgnoreCase);
                                     for (int r = 2; r <= mRows; r++)
                                     {
+                                        // 提取 A 列箱柜序号纯文本 (分类序号-明细序号，如 2-100，坚决作为纯字符串处理)
                                         string order = Convert.ToString(pMatrix[r, 1])?.Trim() ?? "";
+                                        // 若序号为空则跳过无效行
                                         if (string.IsNullOrEmpty(order)) continue;
-
-                                        // 容错：若不幸仍有被 Excel 自动转换为日期的，兼容反解为 "1-1"
-                                        if (DateTime.TryParse(order, out var dt))
-                                        {
-                                            order = $"{dt.Month}-{dt.Day}";
-                                        }
 
                                         // 提取位置 (第 2 列)
                                         string pos = mCols >= 2 ? (Convert.ToString(pMatrix[r, 2])?.Trim() ?? "") : "";
@@ -748,14 +780,10 @@ namespace ExcelAddInDemo
                                 // 遍历数据行暂存旧数据: key 为箱柜序号 (如 "1-1")
                                 for (int r = 2; r <= oRows; r++)
                                 {
+                                    // 提取 A 列箱柜序号纯文本 (分类-序号如 2-100，遵循纯字符串标准，绝不绑定 DateTime)
                                     string orderKey = Convert.ToString(oldMatrix[r, 1])?.Trim() ?? "";
+                                    // 若序号为空跳过
                                     if (string.IsNullOrEmpty(orderKey)) continue;
-
-                                    // 容错：若旧表中之前不幸已被 Excel 自动识别为日期（如 "1月1日" 或 "2026/1/1"），智能还原为 "1-1"
-                                    if (DateTime.TryParse(orderKey, out var dt))
-                                    {
-                                        orderKey = $"{dt.Month}-{dt.Day}";
-                                    }
 
                                     if (!existingValues.TryGetValue(orderKey, out var fieldMap))
                                     {
