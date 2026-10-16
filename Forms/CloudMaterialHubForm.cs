@@ -432,8 +432,8 @@ namespace ExcelAddInDemo.Forms
         /// </summary>
         private void HandleGetAmpacityTable(JsonElement root)
         {
-            // --硬编码: 离线备用基准铜价 78500--
-            decimal copperPrice = root.TryGetProperty("copperPrice", out var cp) ? cp.GetDecimal() : 78500m;
+            // --硬编码: 离线备用基准 1#电解铜现货价 110625--
+            decimal copperPrice = root.TryGetProperty("copperPrice", out var cp) ? cp.GetDecimal() : 110625m;
             bool isCopper = !root.TryGetProperty("materialType", out var mt) || mt.GetString() == "copper";
 
             // 获取国标载流量矩阵

@@ -145,14 +145,14 @@ namespace ExcelAddInDemo.Models
         // 接口调用成功标识
         public bool Success { get; set; } = true;
 
-        // 当日大盘最新铜价 (元/吨) --硬编码: 离线备选基准铜价 78500--
-        public double CopperPrice { get; set; } = 78500.0;
+        // 当日大盘最新 1#电解铜现货价 (元/吨) --硬编码: 离线备选基准铜价 110625--
+        public double CopperPrice { get; set; } = 110625.0;
 
-        // 当日大盘最新铝价 (元/吨) --硬编码: 离线备选基准铝价 19800--
-        public double AluminumPrice { get; set; } = 19800.0;
+        // 当日大盘最新铝价 (元/吨) --硬编码: 离线备选基准铝价 23075--
+        public double AluminumPrice { get; set; } = 23075.0;
 
-        // 行情数据源名称 (如: 上海期货交易所/上期所主力)
-        public string Source { get; set; } = "上海期货交易所 (上期所主力)";
+        // 行情数据源名称 (如: 1#电解铜现货 (长江/上海有色))
+        public string Source { get; set; } = "1#电解铜现货 (长江/上海有色)";
 
         // 数据更新时间格式化文本 (如: 2026-10-16 15:00:00)
         public string UpdateTime { get; set; } = string.Empty;

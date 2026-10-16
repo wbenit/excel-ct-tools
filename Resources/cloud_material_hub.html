@@ -1158,7 +1158,7 @@
                 </el-radio-group>
               </div>
               <div style="display: flex; align-items: center; gap: 8px; font-size: 12px;">
-                <span>当前{{ copperModel.materialType === 'copper' ? '铜' : '铝' }}价(元/吨):</span>
+                <span>当前{{ copperModel.materialType === 'copper' ? '1#电解铜' : '铝' }}价(元/吨):</span>
                 <el-input-number v-model="copperModel.marketPrice" :min="1000" :step="500" size="small" controls-position="right" style="width: 105px;"></el-input-number>
                 <!-- 实时行情拉取刷新按钮 -->
                 <el-button size="small" circle :loading="isMarketPriceLoading" title="拉取当日大盘最新真实行情" @click="fetchTodayMarketPrice">
@@ -1298,7 +1298,7 @@
                 <el-radio label="copper">铜排 TMY</el-radio>
                 <el-radio label="aluminum">铝排 LMY</el-radio>
               </el-radio-group>
-              <span>当前{{ ampacityFilter.materialType === 'copper' ? '铜' : '铝' }}价: <strong style="color: #00796b;">{{ copperModel.marketPrice }}</strong> 元/吨</span>
+              <span>当前{{ ampacityFilter.materialType === 'copper' ? '1#电解铜' : '铝' }}价: <strong style="color: #00796b;">{{ copperModel.marketPrice }}</strong> 元/吨</span>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
               <span>最大电流(A):</span>
@@ -1693,8 +1693,8 @@
         // ------------------ 3. 母排计算器模型 ------------------
         const copperModel = reactive({
           materialType: 'copper', // 'copper' | 'aluminum'
-          // 基准大盘铜价 (元/吨) --硬编码: 默认备选基准 78500--
-          marketPrice: 78500,
+          // 基准大盘 1#电解铜现货价 (元/吨) --硬编码: 默认备选基准 110625--
+          marketPrice: 110625,
           processingFee: 0,
           name: '铜排',
           specPrefix: 'TMY',
@@ -1776,13 +1776,13 @@
         // 大盘行情元数据对象 (数据源、更新时间与价格缓存)
         const marketPriceInfo = reactive({
           // 数据源名称
-          source: '上期所主力',
+          source: '1#电解铜现货',
           // 更新时间戳
           updateTime: '',
-          // 沪铜主力基准价 (元/吨) --硬编码: 离线备用基准 78500--
-          copperPrice: 78500,
-          // 沪铝主力基准价 (元/吨) --硬编码: 离线备用基准 19800--
-          aluminumPrice: 19800
+          // 1#电解铜现货基准价 (元/吨) --硬编码: 离线备用基准 110625--
+          copperPrice: 110625,
+          // 铝排基准价 (元/吨) --硬编码: 离线备用基准 23075--
+          aluminumPrice: 23075
         });
 
         // 切换母排材质 (铜排 TMY ↔ 铝排 LMY) 自动同步最新大盘行情与规格型号
@@ -1790,13 +1790,13 @@
           if (val === 'copper') {
             copperModel.name = '铜排';
             copperModel.specPrefix = 'TMY';
-            // 自动填入当前大盘铜价
-            copperModel.marketPrice = marketPriceInfo.copperPrice || 78500;
+            // 自动填入当前 1#电解铜现货价
+            copperModel.marketPrice = marketPriceInfo.copperPrice || 110625;
           } else {
             copperModel.name = '铝排';
             copperModel.specPrefix = 'LMY';
             // 自动填入当前大盘铝价
-            copperModel.marketPrice = marketPriceInfo.aluminumPrice || 19800;
+            copperModel.marketPrice = marketPriceInfo.aluminumPrice || 23075;
           }
           loadAmpacityTable();
         };
@@ -1828,8 +1828,8 @@
             setTimeout(() => {
               if (marketPriceTimeoutTimer) clearTimeout(marketPriceTimeoutTimer);
               isMarketPriceLoading.value = false;
-              copperModel.marketPrice = copperModel.materialType === 'copper' ? 78500 : 19800;
-              ElementPlus.ElMessage.success(`[本地调试] 已同步最新${copperModel.materialType === 'copper' ? '铜' : '铝'}价: ${copperModel.marketPrice} 元/吨`);
+              copperModel.marketPrice = copperModel.materialType === 'copper' ? 110625 : 23075;
+              ElementPlus.ElMessage.success(`[本地调试] 已同步最新${copperModel.materialType === 'copper' ? '1#电解铜' : '铝'}价: ${copperModel.marketPrice} 元/吨`);
             }, 500);
           }
         };
@@ -2078,8 +2078,8 @@
                   if (data.marketPriceUpdateTime) marketPriceInfo.updateTime = data.marketPriceUpdateTime;
                   // 根据初始材质设置当前输入框数值
                   copperModel.marketPrice = copperModel.materialType === 'copper'
-                    ? (marketPriceInfo.copperPrice || 78500)
-                    : (marketPriceInfo.aluminumPrice || 19800);
+                    ? (marketPriceInfo.copperPrice || 110625)
+                    : (marketPriceInfo.aluminumPrice || 23075);
                   loadMaterials();
                   loadAmpacityTable();
                   break;
