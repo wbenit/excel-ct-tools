@@ -55,91 +55,163 @@
 
     /* 顶部无边框拖拽标题栏 */
     .app-header {
-      height: 38px;
+      /* 标题栏高度微增至 40px，便于胶囊操作 */
+      height: 40px;
+      /* 采用品牌主题绿蓝渐变主色调 #009688 */
       background: linear-gradient(135deg, #009688 0%, #00796b 100%);
+      /* 标题栏文字颜色统一为白 */
       color: #ffffff;
+      /* 弹性盒居中与两端对齐 */
       display: flex;
+      /* 垂直居中对齐 */
       align-items: center;
+      /* 两端对齐左右工具项 */
       justify-content: space-between;
+      /* 两侧预留内边距 */
       padding: 0 14px;
+      /* 保持拖拽手势 */
       cursor: move;
+      /* 防止标题栏被挤压收缩 */
       flex-shrink: 0;
+      /* 相对定位供居中胶囊绝对居中对齐 */
+      position: relative;
+      /* 禁止文字被划词选中 */
+      user-select: none;
+      /* 底部微边框增强层次感 */
+      border-bottom: 1px solid rgba(0, 0, 0, 0.08);
     }
 
     .app-title {
+      /* 标题字号 */
       font-size: 14px;
+      /* 字体半粗 */
       font-weight: 600;
+      /* 弹性排列图标与标题文字 */
       display: flex;
+      /* 垂直居中 */
       align-items: center;
+      /* 图标与文字间距 */
       gap: 8px;
+      /* 字间距微调 */
       letter-spacing: 0.5px;
     }
 
     .window-tools {
+      /* 窗口操作工具栏弹性布局 */
       display: flex;
+      /* 垂直居中对齐 */
       align-items: center;
+      /* 工具按钮之间间距 */
       gap: 12px;
     }
 
     .tool-btn {
+      /* 背景透明无边框 */
       background: transparent;
+      /* 移除原生边框 */
       border: none;
+      /* 按钮文字白色 */
       color: #ffffff;
+      /* 按钮字号 */
       font-size: 13px;
+      /* 手势指针 */
       cursor: pointer;
+      /* 初始轻微透明度 */
       opacity: 0.85;
+      /* 按钮内边距 */
       padding: 4px;
+      /* 动画平滑过渡 */
       transition: all 0.2s;
     }
 
     .tool-btn:hover {
+      /* 悬停完全不透明 */
       opacity: 1;
+      /* 悬停微放大动效 */
       transform: scale(1.1);
     }
 
     .tool-btn.close:hover {
+      /* 关闭按钮悬停呈现危险红 */
       color: #ff5252;
     }
 
-    /* 一级主导航 Tab 栏 (对齐利驰三段式主导航) */
-    .primary-nav-bar {
-      display: flex;
-      align-items: stretch;
-      background: #c7d2fe;
-      background: linear-gradient(to right, #bfdbfe, #c7d2fe);
-      border-bottom: 1px solid #94a3b8;
-      height: 36px;
-      flex-shrink: 0;
-    }
-
-    .nav-item {
-      flex: 1;
-      display: flex;
+    /* 标题栏居中一级主导航胶囊切换器 (物料库 / 计算器) */
+    .header-tab-group {
+      /* 绝对定位居中于标题栏正中心 */
+      position: absolute;
+      /* 水平居中基准 50% */
+      left: 50%;
+      /* 居中偏移修正 */
+      transform: translateX(-50%);
+      /* 行内弹性盒布局 */
+      display: inline-flex;
+      /* 垂直居中 */
       align-items: center;
+      /* 半透明暗色胶囊底壳 */
+      background: rgba(0, 0, 0, 0.18);
+      /* 内间距 */
+      padding: 3px;
+      /* 胶囊圆角 */
+      border-radius: 6px;
+      /* 选项之间间距 */
+      gap: 3px;
+      /* 内阴影增强立体感 */
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
+      /* 胶囊外轮廓微发光边框 */
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      /* 确保处于顶层避免事件遮挡 */
+      z-index: 10;
+    }
+
+    /* 胶囊单项切换按钮 */
+    .header-tab-btn {
+      /* 左右内边距，紧凑精致 */
+      padding: 3px 18px;
+      /* 固定高度 */
+      height: 24px;
+      /* 弹性盒居中对齐 */
+      display: flex;
+      /* 水平居中 */
+      align-items: center;
+      /* 垂直居中 */
       justify-content: center;
-      font-size: 13.5px;
-      font-weight: 600;
-      color: #334155;
+      /* 适中字号 */
+      font-size: 12.5px;
+      /* 基础字重 */
+      font-weight: 500;
+      /* 未激活态浅白半透明 */
+      color: rgba(255, 255, 255, 0.85);
+      /* 选项圆角 */
+      border-radius: 4px;
+      /* 手势鼠标 */
       cursor: pointer;
-      border-right: 1px solid rgba(255, 255, 255, 0.4);
-      transition: all 0.2s ease;
-      background: rgba(255, 255, 255, 0.25);
+      /* 平滑切换动效 */
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      /* 禁用文本选中 */
+      user-select: none;
+      /* 字母间距 */
+      letter-spacing: 0.3px;
     }
 
-    .nav-item:hover {
-      background: rgba(255, 255, 255, 0.45);
-    }
-
-    .nav-item.active {
-      background: var(--accent-orange);
+    /* 胶囊单项悬停状态 */
+    .header-tab-btn:hover {
+      /* 悬停纯白提亮 */
       color: #ffffff;
-      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.15);
+      /* 悬停半透明高亮 */
+      background: rgba(255, 255, 255, 0.14);
     }
 
-    .nav-item.disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      background: rgba(200, 200, 200, 0.2);
+    /* 胶囊单项激活高亮状态 */
+    .header-tab-btn.active {
+      /* 激活项采用纯白卡片底色 */
+      background: #ffffff;
+      /* 激活项文字采用品牌主色深青绿 */
+      color: #00796b;
+      /* 加粗字体提高辨识度 */
+      font-weight: 600;
+      /* 浮雕微阴影 */
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
     }
 
     /* 主体视口容器 */
@@ -153,31 +225,63 @@
 
     /* 二级子 Tab 栏 (计算器模块专属子导航) */
     .calc-sub-bar {
+      /* 弹性盒水平排列 */
       display: flex;
+      /* 浅灰微蓝衬底色 */
       background: #e2e8f0;
-      border-bottom: 1px solid #cbd5e1;
-      height: 32px;
-      padding: 0 10px;
+      /* 规整细边框提升卡片精致感 */
+      border: 1px solid #cbd5e1;
+      /* 柔和圆角 */
+      border-radius: 6px;
+      /* 控制栏高度为 34px */
+      height: 34px;
+      /* 左右内边距 */
+      padding: 0 6px;
+      /* 选项之间间隙 */
       gap: 6px;
+      /* 垂直居中对齐 */
       align-items: center;
+      /* 防止被父容器压缩 */
       flex-shrink: 0;
     }
 
     .sub-tab-btn {
+      /* 适中按钮内边距 */
       padding: 4px 18px;
+      /* 按钮圆角 */
       border-radius: 4px;
+      /* 标准字号 */
       font-size: 12.5px;
+      /* 中等字重 */
       font-weight: 500;
+      /* 手势鼠标 */
       cursor: pointer;
+      /* 沉稳深灰文字 */
       color: #475569;
-      background: #cbd5e1;
-      transition: all 0.2s;
+      /* 未激活项透明背景融入外壳 */
+      background: transparent;
+      /* 平滑过渡动效 */
+      transition: all 0.2s ease;
+      /* 禁止划词选中 */
+      user-select: none;
+    }
+
+    .sub-tab-btn:hover {
+      /* 悬停浅白高亮衬底 */
+      background: rgba(255, 255, 255, 0.6);
+      /* 悬停深色字体 */
+      color: #1e293b;
     }
 
     .sub-tab-btn.active {
+      /* 激活项采用鲜明强调橙色 */
       background: var(--accent-orange);
+      /* 激活项纯白高亮字 */
       color: #ffffff;
+      /* 加粗字体增强可辨别性 */
       font-weight: 600;
+      /* 悬浮微投影增强立体感 */
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
     }
 
     /* 模块面板通用容器 */
@@ -399,27 +503,37 @@
   <div id="app">
     <!-- 顶部拖拽标题栏 -->
     <div class="app-header" @mousedown="onHeaderMouseDown">
+      <!-- 左侧图标与窗口主标题 -->
       <div class="app-title">
         <i class="fa-solid fa-cloud-bolt"></i>
         <span>云物料</span>
       </div>
+
+      <!-- 居中一级主导航胶囊切换器 (物料库 / 计算器) -->
+      <!-- 增加 @mousedown.stop 防止点击切换时误触窗口拖拽 -->
+      <div class="header-tab-group" @mousedown.stop>
+        <!-- 物料库胶囊按钮 -->
+        <div class="header-tab-btn" :class="{ active: currentPrimaryTab === 'material' }" @click="currentPrimaryTab = 'material'">
+          <!-- 物料库图标与文字 -->
+          <i class="fa-solid fa-boxes-stacked" style="margin-right: 5px; font-size: 11px;"></i>物料库
+        </div>
+        <!-- 计算器胶囊按钮 -->
+        <div class="header-tab-btn" :class="{ active: currentPrimaryTab === 'calculator' }" @click="currentPrimaryTab = 'calculator'">
+          <!-- 计算器图标与文字 -->
+          <i class="fa-solid fa-calculator" style="margin-right: 5px; font-size: 11px;"></i>计算器
+        </div>
+      </div>
+
+      <!-- 右侧窗口控制工具 (最小化与关闭) -->
       <div class="window-tools">
+        <!-- 最小化窗体按钮 -->
         <button class="tool-btn" title="最小化" @click="minimizeWindow">
           <i class="fa-solid fa-minus"></i>
         </button>
+        <!-- 关闭窗体按钮 -->
         <button class="tool-btn close" title="关闭" @click="closeWindow">
           <i class="fa-solid fa-xmark"></i>
         </button>
-      </div>
-    </div>
-
-    <!-- 一级主导航 (两大主 Tab: 物料库 / 计算器) -->
-    <div class="primary-nav-bar">
-      <div class="nav-item" :class="{ active: currentPrimaryTab === 'material' }" @click="currentPrimaryTab = 'material'">
-        物料库
-      </div>
-      <div class="nav-item" :class="{ active: currentPrimaryTab === 'calculator' }" @click="currentPrimaryTab = 'calculator'">
-        计算器
       </div>
     </div>
 
