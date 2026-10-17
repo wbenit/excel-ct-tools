@@ -620,6 +620,60 @@ namespace ExcelAddInDemo.Forms
                         var (capOk, capMsg, capScheme) = _controller.CaptureActiveCabinetToPrimaryScheme(capFolder, capSchemeName, capCabModel, capDwgPath);
                         PostMessageSafe("captureActiveCabinetToPrimarySchemeResult", new { success = capOk, message = capMsg, scheme = capScheme });
                         break;
+
+                    // 29. 弹窗选择本地 AutoCAD DWG 图纸文件 (独立后台 STA 线程解耦，杜绝 Chromium IPC 模态死锁)
+                    case "chooseDwgFile":
+                        {
+                            // 提取前端传入的对话框标题
+                            string dlgTitle = GetStringProp("title");
+                            // 提取调用来源标识 ('capture' 抓取弹窗 或 'edit' 编辑弹窗)
+                            string source = GetStringProp("source");
+                            // 启动独立 STA 后台线程弹出文件选择框
+                            var ofdThread = new System.Threading.Thread(() =>
+                            {
+                                try
+                                {
+                                    // 创建 Windows 原生文件选择对话框
+                                    using var ofd = new OpenFileDialog
+                                    {
+                                        // 设置对话框标题
+                                        Title = !string.IsNullOrWhiteSpace(dlgTitle) ? dlgTitle : "请选择 AutoCAD 图纸文件 (*.dwg)",
+                                        // 过滤仅限 DWG 图纸或所有文件
+                                        Filter = "AutoCAD 图纸 (*.dwg)|*.dwg|所有文件 (*.*)|*.*",
+                                        // 单选模式
+                                        Multiselect = false,
+                                        // 必须存在物理文件
+                                        CheckFileExists = true
+                                    };
+
+                                    // 显示文件选择对话框并判定用户是否点击确认
+                                    if (ofd.ShowDialog() == DialogResult.OK && !string.IsNullOrWhiteSpace(ofd.FileName))
+                                    {
+                                        // 提取用户选中的 DWG 物理绝对全路径
+                                        string chosenFile = ofd.FileName;
+                                        // 线程安全回传选择结果给前端 WebView2 页面
+                                        PostMessageSafe("chooseDwgFileResult", new
+                                        {
+                                            success = true,
+                                            filePath = chosenFile,
+                                            source = source
+                                        });
+                                    }
+                                }
+                                catch (Exception exDialog)
+                                {
+                                    // 记录弹窗异常日志
+                                    LogHelper.WriteLog($"[CloudSolutionForm] chooseDwgFile 线程异常: {exDialog.Message}");
+                                }
+                            });
+                            // 设置线程单元状态为 STA
+                            ofdThread.SetApartmentState(System.Threading.ApartmentState.STA);
+                            // 设为后台线程
+                            ofdThread.IsBackground = true;
+                            // 启动线程
+                            ofdThread.Start();
+                            break;
+                        }
                 }
             }
             catch (Exception ex)

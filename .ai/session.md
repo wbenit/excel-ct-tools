@@ -1,3 +1,107 @@
+- **【云方案中心：扁平化顶层架构重构与方案B彻底落地】(`Resources/cloud_solution.html`, `publish/Resources/`, `bin/Debug/net48/Resources/`)**：
+  1. **用户核心指令与需求确诊**：
+     - 用户指令反馈：“初始设计行业方案是云端方案，现在取消这个功能，直接是 一次方案 ，二次方案，自动组价（利驰方案）修改为云方案”；并明确确认：“使用方案B，符合预期”；
+     - 需求确诊：
+       ① 取消原有“行业方案 vs 企业方案”双层导航及外层 `currentScope` 作用域切换，取消“我的收藏”独立 Tab，释放纵向视口高度；
+       ② 主导航重构为单层 42px 精致药丸胶囊导航，仅保留 3 项核心业务板块：【一次方案】、【二次方案】、【云方案】（原“自动组价 (利驰方案)”直接更名为“云方案”）；
+       ③ 切换到【云方案】时直接呈现利驰 ExWinner 多级分类树与 BOM 自动组价工作台；
+       ④ 彻底清理模板中废弃的行业方案工具栏、行业方案卡片列表 `schemeList`、行业方案底栏以及 JS 首屏 `fetchSchemes()` 调用；
+       ⑤ 遵循主题绿蓝相间（主色调 `#009688`），弹性布局零水平滚动条，每 3 行新增代码包含 1 行中文注释。
+  2. **工程级最小改动闭环落地**：
+     - **单层胶囊主导航栏重构 (`Resources/cloud_solution.html`)**：
+       - 将原 `.top-tabs-bar` 与 `.sub-tabs-bar` 样式彻底精简为 `.main-nav-bar`（42px 高度，背景 `#f8fafc`，底部柔和分割线）与 `.nav-pill-item`；
+       - 模板中替换为三大胶囊：【一次方案】(`'primary'`)、【二次方案】(`'secondary'`)、【云方案】(`'auto_pricing'`)；
+       - 左侧侧边栏只展示一次方案目录树或二次方案目录树，当处于云方案时自动隐藏并展示利驰多级分类树；
+     - **右侧主视图代码精炼 (`Resources/cloud_solution.html`)**：
+       - 工具栏精简为只有二次方案与一次方案分支，移除废弃的行业方案工具栏分支；
+       - 卡片网格精简为只有二次方案与一次方案卡片分支，移除废弃的 `template v-else` 行业方案标准卡片列表；
+       - 底部栏精简为二次方案底栏与一次方案底栏，移除废弃的行业方案分页底栏；
+     - **Vue 3 组合式 API 逻辑精炼 (`Resources/cloud_solution.html`)**：
+       - `currentScope` 默认固定为 `"enterprise"`，`currentSchemeType` 默认初始化为 `"primary"`；
+       - 优化 `switchSchemeType(type)`：针对 `'auto_pricing'` 按需拉取分类树；针对 `'secondary'` 读取二次图纸根目录或拉取卡片；针对 `'primary'` 读取一次图纸根目录或拉取卡片；
+       - 在 `onMounted` 钩子中移除废弃的 `fetchSchemes()` 调用，首屏只按需读取本地一次与二次方案配置；
+     - 严格遵循每 3 行新增代码包含 1 行中文注释规范，杜绝硬编码。
+  3. **构建验证与端到端实测**：
+     - `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 警告、0 错误**；
+     - 前端静态 HTML 全量镜像同步覆盖至 `publish/Resources/cloud_solution.html` 与 `bin/Debug/net48/Resources/cloud_solution.html`；
+     - 通过 Browser Subagent 启动 Chromium 实测并录制完整验证视频与高精截图：
+       ① 初始状态：单层导航默认选中【一次方案】，左侧一次方案目录树，右侧一次方案工具栏与卡片列表，无水平滚动条；
+       ② 二次方案状态：点击【二次方案】平滑切换为二次方案目录树、工具条与二次 DWG 卡片列表；
+       ③ 云方案状态：点击【云方案】平滑呈现利驰多级分类树与 BOM 自动组价工作台；
+       三者切换流畅丝滑，界面排版整洁美观，零水平滚动条。
+
+- **【云方案中心：修复存活动箱柜弹窗“浏览...”与编辑方案“更换/清除”DWG图纸按钮无效缺陷】(`Forms/CloudSolutionForm.cs`, `Resources/cloud_solution.html`, `publish/Resources/`, `publish/`, `bin/`)**：
+   1. **用户核心指令与缺陷确诊**：
+      - 用户指令反馈：“此处的浏览文件无效，编辑的浏览文件也无效”；
+      - 深度根因排查：
+        ① **前端方法未暴露给模板**：在 Vue 3 的 `setup()` 中定义了 `chooseDwgForCapture`、`chooseDwgForEdit` 与 `onClearPrimEditDwg`，但在底部的 `return { ... }` 中漏写了这三个方法，导致模板中的 `@click` 与 `@clear` 无法触发；
+        ② **C# WinForm IPC 消息未派发**：`CloudSolutionForm.cs` 的 `OnWebMessageReceived` 消息循环中缺失 `case "chooseDwgFile"` 路由，前端发出的请求被直接丢弃；
+        ③ **前端消息监听中心缺失响应**：`initWebMessageListener` 中未监听 `chooseDwgFileResult` 回调，选图后无法反显至输入框与表单模型；
+        ④ **编辑弹窗初始值与保存 Payload 缺失**：打开编辑弹窗时未初始化 `dwgDisplayPath`，保存时 payload 遗漏了 `selectedDwgFilePath`、`groupName` 与清空图纸解绑逻辑。
+   2. **工程级最小变动修复落地**：
+      - **C# 后端 STA 独立线程解耦弹窗 (`Forms/CloudSolutionForm.cs`)**：
+        - 新增 `case "chooseDwgFile"` 分支，在独立 STA 后台线程中创建 `OpenFileDialog`，杜绝 Chromium IPC 模态死锁，选择完成后通过 `PostMessageSafe("chooseDwgFileResult", ...)` 线程安全回传路径与调用源；
+      - **前端模板暴露与数据双向闭环 (`Resources/cloud_solution.html`)**：
+        - 在 `return { ... }` 中补全暴露 `chooseDwgForCapture`、`chooseDwgForEdit`、`onClearPrimEditDwg`；
+        - 在 `initWebMessageListener` 中新增 `chooseDwgFileResult` 处理器：`capture` 模式下自动反显路径且若方案名称为空时自动提取图纸名为推荐方案名；`edit` 模式下同步更新 `dwgDisplayPath` 与 `selectedDwgFilePath`；
+        - `openEditPrimSchemeModal` 中补全 `dwgDisplayPath` 和 `selectedDwgFilePath` 的初始化；
+        - `savePrimarySchemeForm` 组装 payload 时补全 `selectedDwgFilePath`、`groupName` 以及清空图纸解绑判断；
+      - 严格遵循每 3 行新增代码包含 1 行中文注释规范。
+   3. **构建验证与端到端实测**：
+      - `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+      - 最新 DLL、PDB 及静态 HTML 资源全量镜像同步至 `publish/` 与 `bin/Debug/net48/`；
+      - 通过 Browser Subagent 实测页面交互：存当前柜弹窗正常弹出，DWG 关联图纸选择与方案名称自动填充完美闭环运转。
+
+
+- **【智能辅材与壳体计算中心：水平主排常规加长0.4m与双电源加长0.8m动态推导与定额配置闭环】(`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`, `publish/`, `bin/`)**：
+  1. **用户核心指令与需求确诊**：
+     - 用户指令反馈：“每根水平主排需要加0.4米，如果箱柜内还有双电源每根水平主排需要加0.8米”；
+     - 需求确诊：
+       ① 澄清条件替代关系：无双电源时每根水平主排加长 0.4 米；若箱柜内含有双电源（ATS）开关，则单根加长 0.8 米（替代常规加长，总增量为 0.8 米，非累加 1.2 米）；
+       ② 参数配置化并在后台配置与前端定额规则库中均开放编辑（默认 0.4 米 / 0.8 米），杜绝硬编码；
+       ③ 结构化输出与透明算式联动：计算说明与结构化回写明细中必须清晰体现单根加长后的实际长度（如 水平主排1.08m / 水平主排1.48m 等）；
+       ④ 严格遵循每 3 行新增代码包含 1 行中文注释规范。
+  2. **工程级最小改动闭环落地**：
+     - **定额模型配置化扩展 (`Models/CabinetAuxCalcModels.cs`)**：
+       - 在 `CopperConfig` 中新增 `HorizontalExtraLength`（常规加长，默认 0.4 米）与 `HorizontalDualPowerExtraLength`（双电源加长，默认 0.8 米），带 `--硬编码--` 标注及 JSON 序列化映射；
+     - **推导计算与双电源识别 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+       - 精确判定箱柜是否含双电源：`hasAts || scanData.Components.Any(c => c.IsAts || ...)`；
+       - 根据判定动态选取单根增量 `extraMeters`（双电源取 0.8m，常规取 0.4m），换算 `extraMm`；
+       - 单根水平排展开长调整为 `singleHorizontalBusLenMm = effectiveWidth + extraMm`（柜宽 - 120 + 增量）；
+       - 总展开长 `horizontalBusLen = singleHorizontalBusLenMm * horizontalPoleCount`；
+       - 公式说明自动追加 `(含常规加长0.4m)` 或 `(含双电源加长0.8m)`；
+       - 回写明细 `Remark` 动态输出 `水平主排{horizSingleLenMeters:0.##}m`；
+     - **前端配置界面与规则绑定 (`Resources/cabinet_aux_calc.html`)**：
+       - 在【⚡ 铜排母线定额】->【📏 结构尺寸扣除量与垂直排工艺系数】卡片中新增“水平排常规加长(米)”与“双电源主排加长(米)”输入项；
+       - 更新判定流程提示说明，在 `rules.copperRules` 与 `initContext` 深度合并中增加这两个字段的双向同步与默认兜底；
+  3. **构建验证与端到端实测**：
+     - `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 程序集 `ExcelAddInDemo.dll` 及 PDB 全量覆盖同步至 `publish/` 与 `bin/Debug/net48/`；
+     - 前端静态资源全量同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 通过 Browser Subagent 实测：定额配置界面正确展示“水平排常规加长：0.4 米（无双电源）”与“双电源主排加长：0.8 米（含双电源）”，数据流双向绑定通畅，排版整洁美观无横向滚动条。
+
+- **【智能辅材与壳体计算中心：铜排价格右侧集成大盘行情刷新按钮与自动折算联动】(`Forms/CabinetAuxCalcForm.cs`, `Resources/cabinet_aux_calc.html`, `Services/MarketPriceService.cs`, `publish/`, `bin/`)**：
+  1. **用户核心指令与需求确诊**：
+     - 用户指令反馈：“铜排价格 右侧添加刷新按钮，可以获取当日铜价，获取当日铜价的方法利用现有代码”；
+     - 需求确诊：
+       ① 在“智能辅材与壳体计算中心”界面的“铜排价格”输入框右侧新增小巧圆形的行情刷新按钮；
+       ② 复用现有的 `MarketPriceService.FetchMarketPricesAsync(forceRefresh: true)` 异步接口拉取大盘最新行情；
+       ③ 将大盘元/吨价格换算为元/KG，自动填充前端铜排价格输入框并联动触发推导计算。
+  2. **工程级最小改动闭环落地**：
+     - **后端行情服务与接口路由 (`Services/MarketPriceService.cs`, `Forms/CabinetAuxCalcForm.cs`)**：
+       - `MarketPriceService.cs` 优化大盘期货价格区间判定，确保常规电解铜大盘行情（40000~150000 元/吨）正常提取并累加基差升水；
+       - `CabinetAuxCalcForm.cs` 在 `OnWebMessageReceived` 中新增 `getMarketPrice` 异步处理分支，调用 `MarketPriceService.FetchMarketPricesAsync` 并将 `CopperPrice` 换算为 元/KG（`Math.Round(CopperPrice / 1000.0, 1)`），回传 `marketPriceResponse`；
+     - **前端交互与联动 (`Resources/cabinet_aux_calc.html`)**：
+       - 在铜排价格右侧添加绿色圆形 `<el-button size="small" circle :loading="isCopperPriceLoading">`，内嵌纯 SVG 旋转图标；
+       - 实现 `fetchTodayCopperPrice` 方法，点击激活 loading 动效，配置 6 秒超时防卡死看门狗保护，并在离线调试环境下提供本地模拟；
+       - 监听 `marketPriceResponse`，自动更新 `rules.general.copperPricePerKg` 并弹出 Element Plus Toast 提示，自动联动触发 `triggerAutoAnalyze()`；
+       - 严格遵循每 3 行代码包含 1 行中文注释规范。
+  3. **构建验证与端到端实测**：
+     - `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 程序集 `ExcelAddInDemo.dll` (3.18 MB) 及 PDB 全量镜像同步覆盖至 `publish/` 与 `bin/Debug/net48/`；
+     - 前端静态资源全量同步至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+     - 通过 Browser Subagent 启动 Chromium 实测：刷新按钮优雅呈现，点击后成功触发行情获取并将铜排价格更新为最新价格，自动联动推导，界面整洁无水平滚动条。
+
 - **【云方案中心：存当前柜弹窗直选DWG图纸与编辑弹窗支持修改更换/清空DWG路径】(`Models/PrimaryCircuitModels.cs`, `Services/ExcelServices.CloudSolution.cs`, `Controllers/CloudSolutionController.cs`, `Forms/CloudSolutionForm.cs`, `Resources/cloud_solution.html`, `publish/`, `bin/`)**：
   1. **用户核心指令与需求确诊**：
      - 用户指令反馈：“没有选择dwg文件的入口吗”、“不需要入口2，另外编辑的弹窗需要能编辑修改dwg文件路径”；

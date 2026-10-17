@@ -848,6 +848,48 @@ namespace ExcelAddInDemo.Forms
                         });
                     }
                 }
+                // 响应获取大盘当日铜价行情 (利用现有 MarketPriceService 异步拉取)
+                else if (action == "getMarketPrice")
+                {
+                    // 调度后台线程异步拉取，避免阻塞 WinForms 消息循环与 Chromium IPC
+                    System.Threading.Tasks.Task.Run(async () =>
+                    {
+                        try
+                        {
+                            // 强制跳过本地短周期缓存，直接拉取上期所主力期货最新盘面价
+                            var result = await MarketPriceService.FetchMarketPricesAsync(forceRefresh: true);
+                            // 将元/吨换算为元/KG (除以 1000.0，保留 1 位小数)
+                            double copperPricePerKg = Math.Round(result.CopperPrice / 1000.0, 1);
+                            // 组装回传前端的数据响应包
+                            var response = new
+                            {
+                                action = "marketPriceResponse",
+                                success = result.Success,
+                                copperPrice = result.CopperPrice,
+                                copperPricePerTon = result.CopperPrice,
+                                copperPricePerKg = copperPricePerKg,
+                                source = result.Source,
+                                updateTime = result.UpdateTime,
+                                isFallback = result.IsFallback,
+                                message = $"已成功获取当日大盘铜价: {copperPricePerKg:0.0} 元/KG ({result.CopperPrice:N0} 元/吨)"
+                            };
+                            // 线程安全向前端 WebView2 投递报文
+                            PostWebMessageSafe(JsonSerializer.Serialize(response, JsonOptions));
+                        }
+                        catch (Exception exMarket)
+                        {
+                            // 异常日志记录
+                            LogHelper.WriteLog($"[CabinetAuxCalcForm] getMarketPrice 异常: {exMarket.Message}");
+                            // 向前端分发失败提示报文
+                            PostWebMessageSafe(JsonSerializer.Serialize(new
+                            {
+                                action = "marketPriceResponse",
+                                success = false,
+                                message = $"获取大盘铜价失败: {exMarket.Message}"
+                            }, JsonOptions));
+                        }
+                    });
+                }
             }
             catch (Exception ex)
             {

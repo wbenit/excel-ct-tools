@@ -160,7 +160,7 @@ namespace ExcelAddInDemo.Services
                         {
                             // 盘面期货价加上现货基差升水 (现货升水 625 元/吨，或基准 110625)
                             // --硬编码: 1#电解铜现货升水 625 元/吨--
-                            copperPrice = (curVal >= 100000 && curVal <= 120000) ? curVal + 625.0 : 110625.0;
+                            copperPrice = (curVal >= 40000 && curVal <= 150000) ? curVal + 625.0 : 110625.0;
                         }
                         else if (symbol.Contains("AL"))
                         {

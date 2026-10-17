@@ -147,174 +147,106 @@
       background: #ef4444;
     }
 
-    /* 一级顶级 Tab 栏 (行业方案 vs 企业方案 - 40px紧凑白底) */
-    .top-tabs-bar {
+    /* 单层主业务导航栏 (一次方案 / 二次方案 / 云方案 - 42px白底精致胶囊，彻底释放纵向视口) */
+    .main-nav-bar {
+      /* 白色纯净背景与浅灰下边框 */
       background: #ffffff;
       border-bottom: 1px solid #e2e8f0;
+      /* 弹性居中两端对齐 */
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 20px;
-      height: 40px;
+      /* 内边距与固定高度控制 */
+      padding: 0 16px;
+      height: 42px;
       flex-shrink: 0;
-    }
-
-    .top-tabs-left {
-      display: flex;
-      gap: 28px;
-      height: 100%;
-    }
-
-    /* 一级 Tab 项 (由16px瘦身至13.5px，去除笨重感) */
-    .top-tab-item {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      font-size: 13.5px;
-      font-weight: 500;
-      color: #64748b;
-      cursor: pointer;
-      position: relative;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      height: 100%;
-      padding: 0 4px;
-    }
-
-    .top-tab-item i {
-      font-size: 13.5px;
-      transition: color 0.2s;
-    }
-
-    .top-tab-item:hover {
-      color: var(--primary-color);
-    }
-
-    .top-tab-item.active {
-      color: #00796b;
-      font-weight: 600;
-    }
-
-    /* 激活态底部指示线：居中圆角小滑块，彻底取代3px硬直粗线 */
-    .top-tab-item.active::after {
-      content: "";
-      position: absolute;
-      bottom: -1px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 28px;
-      height: 2.5px;
-      background: var(--primary-color);
-      border-radius: 2px;
-      box-shadow: 0 1px 2px rgba(0, 150, 136, 0.35);
-    }
-
-    /* 一级右侧状态微徽章 (Micro Pill Badge) */
-    .top-tabs-right {
-      display: flex;
-      align-items: center;
-    }
-
-    .micro-status-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      height: 24px;
-      padding: 0 10px;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: 500;
-      line-height: 1;
-      transition: all 0.2s;
-    }
-
-    /* 行业方案：标准只读浅青胶囊 */
-    .micro-status-badge.badge-industry {
-      background: #f0fdfa;
-      color: #0d9488;
-      border: 1px solid #ccfbf1;
-    }
-
-    /* 企业方案：私有资产浅绿胶囊 */
-    .micro-status-badge.badge-enterprise {
-      background: #ecfdf5;
-      color: #047857;
-      border: 1px solid #a7f3d0;
-    }
-
-    /* 二级业务 Tab 栏 (一次方案 / 二次方案 / 我的收藏 - 高级浅灰底色38px) */
-    .sub-tabs-bar {
-      /* 彻底消除原本粗暴的大深绿满铺色块，升级为高级浅灰白过渡底色 */
-      background: #f8fafc;
-      border-bottom: 1px solid #e2e8f0;
-      display: flex;
-      align-items: center;
-      padding: 0 18px;
-      height: 38px;
-      flex-shrink: 0;
+      /* 极简底部微投影 */
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
     }
 
     /* 现代微浮动卡片药丸容器 */
-    .sub-tabs-pills {
+    .main-nav-pills {
+      /* 弹性行内排列 */
       display: flex;
       align-items: center;
-      gap: 6px;
+      /* 胶囊项间距 */
+      gap: 8px;
     }
 
-    /* 二级选项卡微药丸 */
-    .sub-tab-item {
+    /* 主选项卡微药丸 */
+    .nav-pill-item {
+      /* 图标与文本水平排列 */
       display: flex;
       align-items: center;
-      gap: 6px;
-      padding: 4px 12px;
+      gap: 7px;
+      /* 适中内边距与圆角 */
+      padding: 6px 16px;
       border-radius: 6px;
-      font-size: 12.5px;
+      /* 字号与字体粗细 */
+      font-size: 13px;
       font-weight: 500;
       color: #64748b;
+      /* 鼠标手型与动画 */
       cursor: pointer;
       border: 1px solid transparent;
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      background: transparent;
+      /* 未激活态浅灰背景 */
+      background: #f8fafc;
     }
 
-    .sub-tab-item i {
-      font-size: 12px;
+    .nav-pill-item i {
+      /* 选项卡图标大小与颜色过渡 */
+      font-size: 13px;
       color: #94a3b8;
       transition: color 0.2s;
     }
 
-    .sub-tab-item:hover {
+    .nav-pill-item:hover {
+      /* 鼠标悬停微提亮底色 */
       background: #f1f5f9;
       color: #1e293b;
     }
 
-    .sub-tab-item:hover i {
+    .nav-pill-item:hover i {
+      /* 悬停时图标同步加深 */
       color: #64748b;
     }
 
-    /* 激活态：白底微浮雕微投影卡片药丸 */
-    .sub-tab-item.active {
-      background: #ffffff;
+    /* 激活态：主色背景浅底与微投影 */
+    .nav-pill-item.active {
+      /* 浅青绿微润背景 */
+      background: #e6f4f2;
+      /* 品牌深青绿文字 */
       color: #00796b;
       font-weight: 600;
-      border-color: #cbd5e1;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.03);
+      /* 浅绿细描边 */
+      border-color: #a7f3d0;
+      /* 柔和阴影 */
+      box-shadow: 0 1px 2px rgba(0, 150, 136, 0.1);
     }
 
-    /* 激活态下各个分类图标的精致点睛色 */
-    .sub-tab-item.active i.icon-primary {
+    /* 激活态下方案图标点睛色 (统一工程绿 #009688) */
+    .nav-pill-item.active i.icon-primary {
       color: #009688;
     }
 
-    .sub-tab-item.active i.icon-secondary {
+    .nav-pill-item.active i.icon-secondary {
       color: #009688;
     }
 
-    .sub-tab-item.active i.icon-favorite {
-      color: #f59e0b;
+    .nav-pill-item.active i.icon-cloud {
+      color: #009688;
     }
 
-    .sub-tab-item.active i.icon-autopricing {
-      color: #009688;
+    /* 导航栏右侧品牌副标题提示区 */
+    .main-nav-right {
+      /* 弹性居中对齐 */
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      /* 浅灰文字排版 */
+      font-size: 12px;
+      color: #94a3b8;
     }
 
     /* ==================== 自动组价 (利驰方案) 专属工程级样式规范 ==================== */
@@ -2805,56 +2737,33 @@
       </div>
     </div>
 
-    <!-- 2. 一级顶级 Tab 栏 (行业方案 vs 企业方案 - 40px白底秀气适中) -->
-    <div class="top-tabs-bar">
-      <!-- 左侧范围切换项 (字号13.5px配合居中圆角滑块) -->
-      <div class="top-tabs-left">
-        <div class="top-tab-item" :class="{ active: currentScope === 'industry' }" @click="switchScope('industry')">
-          <i class="fa-solid fa-building-shield"></i>
-          <span>行业方案</span>
-        </div>
-        <div class="top-tab-item" :class="{ active: currentScope === 'enterprise' }" @click="switchScope('enterprise')">
-          <i class="fa-solid fa-shield-halved"></i>
-          <span>企业方案</span>
-        </div>
-      </div>
-      <!-- 右侧资产库属性微胶囊状态条 (Micro Pill Badge) -->
-      <div class="top-tabs-right">
-        <div class="micro-status-badge badge-industry" v-if="currentScope === 'industry'">
-          <i class="fa-solid fa-lock"></i>
-          <span>官方标准母版库 (只读)</span>
-        </div>
-        <div class="micro-status-badge badge-enterprise" v-else>
-          <i class="fa-solid fa-users"></i>
-          <span>企业私有资产库 (支持自建与修改)</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- 3. 二级业务 Tab 栏 (一次方案 / 二次方案 / 我的收藏 / 自动组价 - 高级浅灰微浮雕药丸) -->
-    <div class="sub-tabs-bar">
-      <div class="sub-tabs-pills">
-        <div class="sub-tab-item" :class="{ active: currentSchemeType === 'primary' }"
+    <!-- 2. 主业务导航栏 (一次方案 / 二次方案 / 云方案 - 扁平单层高质感设计) -->
+    <div class="main-nav-bar">
+      <!-- 方案主选项卡药丸组 -->
+      <div class="main-nav-pills">
+        <!-- 一次方案选项卡 -->
+        <div class="nav-pill-item" :class="{ active: currentSchemeType === 'primary' }"
           @click="switchSchemeType('primary')">
           <i class="fa-solid fa-bolt icon-primary"></i>
           <span>一次方案</span>
         </div>
-        <div class="sub-tab-item" :class="{ active: currentSchemeType === 'secondary' }"
+        <!-- 二次方案选项卡 -->
+        <div class="nav-pill-item" :class="{ active: currentSchemeType === 'secondary' }"
           @click="switchSchemeType('secondary')">
           <i class="fa-solid fa-diagram-project icon-secondary"></i>
           <span>二次方案</span>
         </div>
-        <div class="sub-tab-item" :class="{ active: currentSchemeType === 'favorite' }"
-          @click="switchSchemeType('favorite')">
-          <i class="fa-solid fa-star icon-favorite"></i>
-          <span>我的收藏</span>
-        </div>
-        <!-- 新增利驰自动组价专属 Tab -->
-        <div class="sub-tab-item" :class="{ active: currentSchemeType === 'auto_pricing' }"
+        <!-- 云方案选项卡 (由原自动组价升级命名为云方案) -->
+        <div class="nav-pill-item" :class="{ active: currentSchemeType === 'auto_pricing' }"
           @click="switchSchemeType('auto_pricing')">
-          <i class="fa-solid fa-calculator icon-autopricing"></i>
-          <span>自动组价 (利驰方案)</span>
+          <i class="fa-solid fa-cloud icon-cloud"></i>
+          <span>云方案</span>
         </div>
+      </div>
+      <!-- 右侧成套方案数字化中心标签提示 -->
+      <div class="main-nav-right">
+        <i class="fa-solid fa-layer-group" style="color: #009688"></i>
+        <span>成套电气方案数字化中心</span>
       </div>
     </div>
 
@@ -3140,12 +3049,12 @@
 
       <!-- 现有一二方案容器包裹在 v-else 中 -->
       <template v-else>
-        <!-- 企业方案专属：左侧分类文件夹树 -->
-        <div class="left-category-sidebar" v-if="currentScope === 'enterprise'">
+        <!-- 左侧分类文件夹树 (一次方案与二次方案) -->
+        <div class="left-category-sidebar">
           <!-- 侧边栏标题栏 -->
           <div class="category-header">
-            <span><i class="fa-regular fa-folder-open"></i> {{ currentSchemeType
-              === 'secondary' ? '二次方案目录树' : (currentSchemeType === 'primary' ? '一次方案目录树' : '分类目录') }}</span>
+            <!-- 方案目录树标题指示 -->
+            <span><i class="fa-regular fa-folder-open"></i> {{ currentSchemeType === 'secondary' ? '二次方案目录树' : '一次方案目录树' }}</span>
             <!-- 当处于二次方案时：显示目录设置齿轮按钮 -->
             <button v-if="currentSchemeType === 'secondary'" class="btn-gear-setting" title="设置二次回路图纸根目录"
               @click="openDirSettingDialog">
@@ -3156,10 +3065,6 @@
               @click="openPrimDirSettingDialog">
               <i class="fa-solid fa-gear"></i>
             </button>
-            <!-- 其他类型：保留原有一键新建分类按钮 -->
-            <el-button v-else link type="primary" size="small" @click="onAddCategoryPrompt">
-              <i class="fa-solid fa-plus"></i> 新建
-            </el-button>
           </div>
 
           <!-- ① 二次方案模式：展示二次 DWG 图纸子文件夹树 -->
@@ -3291,19 +3196,6 @@
               </div>
             </div>
           </div>
-
-          <!-- ③ 其他模式：保留原有分类树 -->
-          <div class="category-list" v-else>
-            <div class="category-item" :class="{ active: selectedCategoryId === '' }" @click="onSelectCategory('')">
-              <i class="fa-solid fa-layer-group"></i>
-              <span>全部分类</span>
-            </div>
-            <div v-for="cat in enterpriseCategories" :key="cat.id" class="category-item"
-              :class="{ active: selectedCategoryId === cat.id }" @click="onSelectCategory(cat.id)">
-              <i class="fa-regular fa-folder"></i>
-              <span>{{ cat.name }}</span>
-            </div>
-          </div>
         </div>
 
         <!-- 右侧卡片网格与检索栏 -->
@@ -3342,15 +3234,18 @@
               </div>
             </template>
 
-            <!-- ② 企业一次方案工具栏 -->
-            <template v-else-if="currentScope === 'enterprise' && currentSchemeType === 'primary'">
+            <!-- ② 一次方案专属工具条 (检索、柜型筛选与存活动柜) -->
+            <template v-else>
+              <!-- 左侧检索与过滤控制区 -->
               <div class="filter-left">
+                <!-- 显示当前选中的一次方案子目录徽标 -->
                 <el-tag type="primary" effect="light" size="small">
                   <i class="fa-regular fa-folder-open"></i> 当前子目录: {{
                   selectedPrimaryFolder ? selectedPrimaryFolder.name :
                   '全部方案分类' }}
                 </el-tag>
 
+                <!-- 一次方案开关柜型下拉筛选器 -->
                 <el-select v-model="primaryCabinetModel" placeholder="柜型过滤" size="small" style="width: 130px" clearable
                   @change="onPrimarySearch">
                   <el-option label="全部柜型" value=""></el-option>
@@ -3363,6 +3258,7 @@
                   <el-option label="箱变" value="箱变"></el-option>
                 </el-select>
 
+                <!-- 一次方案图纸名称与参数关键字搜索框 -->
                 <el-input v-model="primarySearchKw" placeholder="搜索一次图名、方案名、柜型、母排或描述..." size="small"
                   style="width: 260px" clearable @keyup.enter="onPrimarySearch" @clear="onPrimarySearch">
                   <template #prefix>
@@ -3370,57 +3266,21 @@
                   </template>
                 </el-input>
 
+                <!-- 触发检索按钮 -->
                 <el-button type="primary" size="small" @click="onPrimarySearch">
                   搜索
                 </el-button>
               </div>
 
+              <!-- 右侧刷新与存柜操作按钮组 -->
               <div class="filter-right">
+                <!-- 重新读取当前目录 DWG 卡片与配置 -->
                 <el-button size="small" plain @click="refreshPrimaryCards">
                   <i class="fa-solid fa-arrows-rotate"></i> 刷新图纸
                 </el-button>
 
-                <!-- 一键将当前 Excel 柜体抓取另存为一次方案 -->
+                <!-- 一键将当前活动 Excel 柜体抓取另存为一次方案 -->
                 <el-button type="success" size="small" plain @click="openCaptureCabinetDialog">
-                  <i class="fa-solid fa-file-import"></i> 存当前柜为方案
-                </el-button>
-              </div>
-            </template>
-
-            <!-- ③ 行业方案与通用工具栏 -->
-            <template v-else>
-              <div class="filter-left">
-                <el-select v-model="filterCabinetModel" placeholder="柜型过滤" size="small" style="width: 130px" clearable
-                  @change="onSearch">
-                  <el-option label="全部柜型" value=""></el-option>
-                  <el-option label="KYN28-12" value="KYN28-12"></el-option>
-                  <el-option label="MNS" value="MNS"></el-option>
-                  <el-option label="GGD" value="GGD"></el-option>
-                  <el-option label="PZ30" value="PZ30"></el-option>
-                  <el-option label="XL-21" value="XL-21"></el-option>
-                </el-select>
-
-                <el-input v-model="searchKeyword" placeholder="搜索方案名称、柜型、作者或关键字..." size="small" style="width: 260px"
-                  clearable @keyup.enter="onSearch">
-                  <template #prefix>
-                    <i class="fa-solid fa-magnifying-glass"></i>
-                  </template>
-                </el-input>
-
-                <el-button type="primary" size="small" @click="onSearch">
-                  搜索
-                </el-button>
-              </div>
-
-              <div class="filter-right">
-                <el-select v-model="sortBy" size="small" style="width: 110px" @change="onSearch">
-                  <el-option label="热门排序" value="hot"></el-option>
-                  <el-option label="最新发布" value="latest"></el-option>
-                </el-select>
-
-                <!-- 企业方案下支持一键新建或从当前 Excel 柜体抓取另存为 -->
-                <el-button v-if="currentScope === 'enterprise'" type="success" size="small" plain
-                  @click="onCaptureCabinetPrompt">
                   <i class="fa-solid fa-file-import"></i> 存当前柜为方案
                 </el-button>
               </div>
@@ -3597,8 +3457,8 @@
                 style="grid-column: span 4; margin: 40px auto"></el-empty>
             </template>
 
-            <!-- 【板块 B：企业一次成套方案 DWG 图纸与参数卡片 (对齐二次方案做法)】 -->
-            <template v-else-if="currentScope === 'enterprise' && currentSchemeType === 'primary'">
+            <!-- 【板块 B：一次成套方案 DWG 图纸与参数卡片】 -->
+            <template v-else>
               <div v-for="card in primaryDwgCards" :key="card.fullPath" class="primary-card"
                 @click="openPrimaryDetail(card)">
                 <!-- 略缩图上方：方案标题 + 分类标签 + 柜型 + 工艺描述 -->
@@ -3752,65 +3612,6 @@
                 description="当前文件夹下暂未检索到一次方案 DWG 图纸，请点击左侧子文件夹或检查目录设置"
                 style="grid-column: span 4; margin: 40px auto"></el-empty>
             </template>
-
-            <!-- 【板块 C：行业与公共方案标准卡片】 -->
-            <template v-else>
-              <div v-for="scheme in schemeList" :key="scheme.id" class="scheme-card" @click="openSchemeDetail(scheme)">
-                <!-- 卡片封面图片视口 -->
-                <div class="card-img-wrapper">
-                  <!-- 左上角勾选框 -->
-                  <div class="card-checkbox" @click.stop>
-                    <el-checkbox v-model="scheme.checked"></el-checkbox>
-                  </div>
-                  <!-- 右上角多图徽标 (DrawingUrls 支持) -->
-                  <div class="multi-img-badge" v-if="scheme.drawingUrls && scheme.drawingUrls.length > 1">
-                    <i class="fa-regular fa-images"></i>
-                    <span>{{ scheme.drawingUrls.length }} 张图</span>
-                  </div>
-                  <!-- 封面图 -->
-                  <img
-                    :src="(scheme.drawingUrls && scheme.drawingUrls.length > 0) ? scheme.drawingUrls[0] : (scheme.thumbnailUrl || defaultCover)"
-                    class="card-img" loading="lazy" @error="onImgError" />
-                  <!-- 数据统计栏 (浏览量、收藏量) -->
-                  <div class="card-stats-bar">
-                    <div class="stat-item">
-                      <i class="fa-regular fa-eye"></i>
-                      <span>{{ formatNumber(scheme.viewCount) }}</span>
-                    </div>
-                    <div class="stat-item">
-                      <i class="fa-solid fa-star" :style="{ color: scheme.isFavorite ? '#fbbf24' : '#e2e8f0' }"></i>
-                      <span>{{ formatNumber(scheme.favCount) }}</span>
-                    </div>
-                    <div class="stat-item">
-                      <i class="fa-regular fa-comment-dots"></i>
-                      <span>5</span>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- 卡片主体内容 -->
-                <div class="card-content">
-                  <div class="card-title" :title="scheme.schemeName">
-                    {{ scheme.schemeName }}
-                  </div>
-                  <div class="card-meta">
-                    <span>柜型: {{ scheme.cabinetModel || '通用' }}</span>
-                    <span>{{ scheme.dimensions || '标准尺寸' }}</span>
-                  </div>
-                  <div class="card-footer">
-                    <span><i class="fa-regular fa-user"></i> {{ scheme.creatorName
-                      || '系统' }}</span>
-                    <span class="tag-badge" :class="{ ent: scheme.scope === 'enterprise' }" v-if="scheme.tag">
-                      {{ scheme.tag }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 空状态提示 -->
-              <el-empty v-if="!loading && schemeList.length === 0" description="暂未找到匹配的方案，请调整过滤条件或自建方案"
-                style="grid-column: span 4; margin: 40px auto"></el-empty>
-            </template>
           </div>
 
           <!-- 底部批量插入与分页栏 -->
@@ -3835,8 +3636,8 @@
               </div>
             </template>
 
-            <!-- 企业一次方案底栏 -->
-            <template v-else-if="currentScope === 'enterprise' && currentSchemeType === 'primary'">
+            <!-- 一次成套方案专属底栏 (统计与本地目录路径提示) -->
+            <template v-else>
               <div style="display: flex; align-items: center; gap: 8px">
                 <span style="font-size: 13px; color: #475569">
                   当前子分类:
@@ -3852,19 +3653,6 @@
               <div style="font-size: 12px; color: #94a3b8; font-family: monospace">
                 目录: {{ primaryDwgRootDir || '未设置' }}
               </div>
-            </template>
-
-            <!-- 行业与公共方案底栏 -->
-            <template v-else>
-              <div>
-                <el-button type="primary" size="default" :disabled="selectedCount === 0" @click="onBatchInsert">
-                  <i class="fa-solid fa-download"></i> 批量插入已选方案 ({{
-                  selectedCount }})
-                </el-button>
-              </div>
-              <el-pagination v-model:current-page="pageIndex" v-model:page-size="pageSize" :page-sizes="[12, 24, 36]"
-                layout="total, sizes, prev, pager, next, jumper" :total="totalCount" @size-change="onPageChange"
-                @current-change="onPageChange"></el-pagination>
             </template>
           </div>
         </div>
@@ -5063,9 +4851,10 @@
 
     const app = createApp({
       setup() {
-        // 状态定义
-        const currentScope = ref("industry"); // 'industry' | 'enterprise'
-        const currentSchemeType = ref("primary"); // 'primary' | 'secondary' | 'favorite'
+        // 方案中心业务作用域 (方案B架构下聚焦本地方案库与云方案)
+        const currentScope = ref("enterprise");
+        // 当前主导航选中的方案板块 ('primary' 一次方案 | 'secondary' 二次方案 | 'auto_pricing' 云方案)
+        const currentSchemeType = ref("primary");
         const selectedCategoryId = ref("");
         const filterCabinetModel = ref("");
         const searchKeyword = ref("");
@@ -5707,31 +5496,36 @@
           postToHost("insertSchemeToExcel", dto);
         };
 
-        // 切换二级 Tab
+        // 切换主导航方案类型 ('primary' 一次方案 | 'secondary' 二次方案 | 'auto_pricing' 云方案)
         const switchSchemeType = (type) => {
+          // 更新当前激活的方案类型
           currentSchemeType.value = type;
+          // 重置分页页码
           pageIndex.value = 1;
+          // 板块一：云方案 (原利驰方案)
           if (type === "auto_pricing") {
-            // 切换到利驰自动组价方案时自动拉取分类树
+            // 若多级分类树为空，主动拉取利驰方案树数据
             if (!apCategoryTreeData.value || apCategoryTreeData.value.length === 0) {
               loadAutoPricingCategoryTree();
             }
-          } else if (type === "secondary") {
-            // 切换到二次回路方案时自动初始化
+          }
+          // 板块二：二次方案
+          else if (type === "secondary") {
+            // 若尚未读取图纸根目录则拉取配置，否则直接加载 DWG 卡片
             if (!secondaryDwgRootDir.value) {
               loadSecondaryCircuitConfig();
             } else {
               loadFolderDwgCards();
             }
-          } else if (type === "primary" && currentScope.value === "enterprise") {
-            // 切换到企业一次方案时自动初始化
+          }
+          // 板块三：一次方案 (默认主业务)
+          else {
+            // 若尚未读取一次图纸根目录则拉取配置，否则直接加载一次 DWG 卡片
             if (!primaryDwgRootDir.value) {
               loadPrimaryCircuitConfig();
             } else {
               loadPrimaryFolderDwgCards();
             }
-          } else {
-            fetchSchemes();
           }
         };
 
@@ -6487,6 +6281,10 @@
             dwgName: dwgNameStr,
             schemeName: card.schemeName || dwgNameStr || "一次成套方案",
             cadDrawingName: card.cadDrawingName || (card.schemeData ? card.schemeData.cadDrawingName : "") || (dwgNameStr ? dwgNameStr + ".dwg" : ""),
+            // 关联图纸显示路径 (优先取物理路径或带.dwg后缀的图纸文件名)
+            dwgDisplayPath: card.fullPath || (card.cadDrawingName ? (card.cadDrawingName.toLowerCase().endsWith(".dwg") ? card.cadDrawingName : card.cadDrawingName + ".dwg") : (dwgNameStr ? dwgNameStr + ".dwg" : "")),
+            // 本次新选取的本地 DWG 文件路径 (初始为空)
+            selectedDwgFilePath: "",
             cabinetModel: card.cabinetModel || (card.schemeData ? card.schemeData.cabinetModel : "") || "GGD",
             ratedCurrent: typeof card.ratedCurrent === "number" ? card.ratedCurrent : (card.schemeData ? Number(card.schemeData.ratedCurrent) || 630 : 630),
             dimensions: card.dimensions || (card.schemeData ? card.schemeData.dimensions : "") || "800*1000*2200",
@@ -6587,8 +6385,13 @@
           const payload = {
             id: Number(editingPrimScheme.value.id) || 0,
             folderName: editingPrimScheme.value.folderName || (selectedPrimaryFolder.value ? selectedPrimaryFolder.value.name : "一次方案"),
+            // 关联子目录名称 (对应后台 groupName 归档目录)
+            groupName: editingPrimScheme.value.folderName || (selectedPrimaryFolder.value ? selectedPrimaryFolder.value.name : "一次方案"),
             schemeName: editingPrimScheme.value.schemeName || editingPrimScheme.value.dwgName || "一次成套方案",
-            cadDrawingName: editingPrimScheme.value.cadDrawingName || (editingPrimScheme.value.dwgName ? editingPrimScheme.value.dwgName + ".dwg" : ""),
+            // 若清空了图纸关联则置空 cadDrawingName，否则保留或追加后缀
+            cadDrawingName: editingPrimScheme.value.dwgDisplayPath ? (editingPrimScheme.value.cadDrawingName || (editingPrimScheme.value.dwgName ? editingPrimScheme.value.dwgName + ".dwg" : "")) : "",
+            // 本次新选取的本地 DWG 待归档路径
+            selectedDwgFilePath: editingPrimScheme.value.selectedDwgFilePath || "",
             cabinetModel: editingPrimScheme.value.cabinetModel || "GGD",
             ratedCurrent: Number(editingPrimScheme.value.ratedCurrent) || 0,
             dimensions: editingPrimScheme.value.dimensions || "",
@@ -7720,6 +7523,43 @@
                   ElementPlus.ElMessage.error(data.message || "抓取箱柜失败！");
                 }
               }
+              // 13.8 选取本地 DWG 图纸文件结果回传
+              else if (action === "chooseDwgFileResult") {
+                // 提取成功标志
+                const isSuccess = Boolean(data?.success);
+                // 提取选中的本地 DWG 物理路径
+                const chosenPath = (data?.filePath || "").trim();
+                // 提取调用源 ('capture' 抓取弹窗 或 'edit' 编辑弹窗)
+                const source = data?.source || "";
+                if (isSuccess && chosenPath) {
+                  // 来源: 存活动箱柜弹窗
+                  if (source === "capture") {
+                    // 同步反显至关联图纸输入框
+                    captureCabinetForm.value.dwgFilePath = chosenPath;
+                    // 若方案名称为空，自动提取 DWG 文件名填入作为推荐方案名称
+                    if (!captureCabinetForm.value.schemeName) {
+                      const fileNameWithExt = chosenPath.split(/[\\/]/).pop() || "";
+                      const pureName = fileNameWithExt.replace(/\.dwg$/i, "");
+                      if (pureName) {
+                        captureCabinetForm.value.schemeName = pureName;
+                      }
+                    }
+                    // 弹出成功提示消息
+                    ElementPlus.ElMessage.success("已成功选取关联图纸：" + (chosenPath.split(/[\\/]/).pop() || chosenPath));
+                  }
+                  // 来源: 编辑一次成套方案弹窗
+                  else if (source === "edit") {
+                    if (editingPrimScheme.value) {
+                      // 更新编辑弹窗中的关联图纸显示路径
+                      editingPrimScheme.value.dwgDisplayPath = chosenPath;
+                      // 记录新选取的待归档本地 DWG 文件路径
+                      editingPrimScheme.value.selectedDwgFilePath = chosenPath;
+                      // 弹出成功提示消息
+                      ElementPlus.ElMessage.success("已选择新图纸进行关联更换：" + (chosenPath.split(/[\\/]/).pop() || chosenPath));
+                    }
+                  }
+                }
+              }
               // 14. 接收 DWG 原始二进制 Base64 数据并交给纯前端 cad-view 矢量视口渲染
               else if (action === "dwgBinaryLoaded") {
                 if (data && data.success && data.base64Data) {
@@ -7904,16 +7744,14 @@
         // 尝试在 setup 初始化时直接执行初次注册
         initWebMessageListener();
 
-        // 挂载 Vue 3 生命周期钩子 (彻底摆脱失效的 DOMContentLoaded)
+        // 挂载 Vue 3 生命周期钩子 (首屏初始化)
         onMounted(() => {
-          // 防御性再次确保消息监听器就绪
+          // 防御性再次确保 WebView2 消息监听器就绪
           initWebMessageListener();
-          // 首次启动拉取方案列表数据
-          fetchSchemes();
-          // 读取已持久化的二次方案本地图纸根目录
-          loadSecondaryCircuitConfig();
-          // 读取已持久化的一次方案本地图纸根目录
+          // 读取已持久化的一次方案本地图纸根目录 (首屏默认呈现一次成套方案)
           loadPrimaryCircuitConfig();
+          // 预读取已持久化的二次方案本地图纸根目录 (便于无缝切换)
+          loadSecondaryCircuitConfig();
           // 监听窗口获焦事件，当用户从系统文件夹选择窗口切回时主动同步一次配置
           window.addEventListener("focus", () => {
             // 仅当目录设置弹窗处于展示状态时执行探测同步
@@ -8093,6 +7931,10 @@
           applyCopiedPrimScheme,
           openCaptureCabinetDialog,
           confirmCaptureCabinet,
+          // 关联 DWG 图纸选择与清空方法暴露给模板
+          chooseDwgForCapture,
+          chooseDwgForEdit,
+          onClearPrimEditDwg,
           // 自动组价 (利驰方案) 专属状态与方法导出
           apCategoryTreeData,
           apSearchKeyword,

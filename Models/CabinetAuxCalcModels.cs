@@ -442,6 +442,14 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("widthDeduction")]
         public int WidthDeduction { get; set; } = 120;
 
+        // 每根水平主排常规加长量 (单位: 米，默认 0.4) --硬编码--
+        [JsonPropertyName("horizontalExtraLength")]
+        public double HorizontalExtraLength { get; set; } = 0.4;
+
+        // 箱柜含双电源时每根水平主排加长量 (单位: 米，默认 0.8) --硬编码--
+        [JsonPropertyName("horizontalDualPowerExtraLength")]
+        public double HorizontalDualPowerExtraLength { get; set; } = 0.8;
+
         // 柜高扣除边距 (单位: mm，默认 300) --硬编码--
         [JsonPropertyName("heightDeduction")]
         public int HeightDeduction { get; set; } = 300;

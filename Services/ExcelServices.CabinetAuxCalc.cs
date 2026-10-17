@@ -1132,17 +1132,35 @@ namespace ExcelAddInDemo
                     hasHorizontalBus = true;
                     // 判断 4 极塑壳数量是否达到门限 (节点 42: true 采用 4 根水平排，false 采用 3 根)
                     int horizontalPoleCount = (branch4PoleMccbCount >= rules.CopperRules.FourPoleMccbThreshold) ? 4 : 3;
-                    // 水平排总展开长度 (mm) = (柜宽 - 边距) × 排数
-                    int horizontalBusLen = effectiveWidth * horizontalPoleCount;
+
+                    // 判断当前箱柜内是否含有双电源 (ATS) 切换开关
+                    bool hasDualPower = hasAts || scanData.Components.Any(c => c.IsAts ||
+                        (!string.IsNullOrEmpty(c.Name) && c.Name.Contains("双电源")) ||
+                        (!string.IsNullOrEmpty(c.Model) && (c.Model.Contains("双电源") || c.Model.IndexOf("ATS", StringComparison.OrdinalIgnoreCase) >= 0)));
+
+                    // 确定单根水平主排预留加长量 (无双电源每根加 0.4 米，有双电源每根加 0.8 米)
+                    // --硬编码: 默认常规加长 0.4m，双电源加长 0.8m--
+                    double extraMeters = hasDualPower
+                        ? (rules.CopperRules.HorizontalDualPowerExtraLength > 0 ? rules.CopperRules.HorizontalDualPowerExtraLength : 0.8)
+                        : (rules.CopperRules.HorizontalExtraLength > 0 ? rules.CopperRules.HorizontalExtraLength : 0.4);
+                    int extraMm = (int)Math.Round(extraMeters * 1000.0);
+
+                    // 单根水平排展开长 (mm) = 柜宽 - 边距 + 单根预留加长量
+                    int singleHorizontalBusLenMm = effectiveWidth + extraMm;
+                    // 水平排总展开长度 (mm) = 单根展开长 × 排数
+                    int horizontalBusLen = singleHorizontalBusLenMm * horizontalPoleCount;
                     // 计算水平排理论重量 (kg)
                     double horizWeight = (mainBusWeightPerMeter * horizontalBusLen) / 1000.0;
                     // 累加铜排总重量
                     copperWeight += horizWeight;
+
+                    // 组装透明描述文字 (区分常规加长 0.4m 或双电源加长 0.8m)
+                    string extraDesc = hasDualPower ? $"含双电源加长{extraMeters:0.##}m" : $"含常规加长{extraMeters:0.##}m";
                     // 记录透明的水平主排计算明细
-                    copperFormulaDetails.Add($"水平主排 ({horizontalPoleCount}根 | {mainBusSpecItem.Spec} | {mainBusWeightPerMeter:F3}kg/m): {mainBusWeightPerMeter:F3} × [({shellWidth}-{rules.CopperRules.WidthDeduction}) × {horizontalPoleCount}] / 1000 = {horizWeight:F2} KG");
+                    copperFormulaDetails.Add($"水平主排 ({horizontalPoleCount}根 | {mainBusSpecItem.Spec} | {mainBusWeightPerMeter:F3}kg/m): {mainBusWeightPerMeter:F3} × [({shellWidth}-{rules.CopperRules.WidthDeduction} + {extraMm}) × {horizontalPoleCount}] / 1000 = {horizWeight:F2} KG ({extraDesc})");
                     // 水平主排单根展开长度 (单位: 米)
-                    double horizSingleLenMeters = Math.Round(effectiveWidth / 1000.0, 2);
-                    // 记录结构化水平主排明细供回写元器件明细区 (用户指示: 加上长度，如 水平主排0.65m)
+                    double horizSingleLenMeters = Math.Round(singleHorizontalBusLenMm / 1000.0, 2);
+                    // 记录结构化水平主排明细供回写元器件明细区 (用户指示: 加上长度，如 水平主排1.08m)
                     copperDetails.Add(new CopperUsageDetailItem
                     {
                         PartName = "水平主排",

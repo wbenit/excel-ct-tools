@@ -1048,12 +1048,38 @@
                 v-model="rules.general.copperPricePerKg"
                 :step="1"
                 :min="10"
-                :max="200"
+                :max="300"
                 size="small"
                 style="width: 110px"
                 @change="onAnalyze"
               ></el-input-number>
               <span class="param-unit">元/KG</span>
+              <!-- 刷新获取当日大盘真实铜价按钮 -->
+              <el-button
+                size="small"
+                circle
+                :loading="isCopperPriceLoading"
+                title="获取当日大盘铜价 (上期所主力期货/长江现货)"
+                @click="fetchTodayCopperPrice"
+                style="margin-left: 2px; border-color: #009688; color: #009688;"
+              >
+                <!-- 纯 SVG 旋转刷新图标 (零外部图标库依赖) -->
+                <svg
+                  v-if="!isCopperPriceLoading"
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <polyline points="1 20 1 14 7 14"></polyline>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+              </el-button>
             </div>
           </div>
         </div>
@@ -2991,13 +3017,14 @@
                       ≥ {{ rules.copperRules.mccbCurrentSumThreshold }}A
                       时触发（4极塑壳 ≥ {{
                       rules.copperRules.fourPoleMccbThreshold
-                      }}台为4根排，否则为3根排；排长 = (柜宽 - {{
-                      rules.copperRules.widthDeduction }}) × 排数）。
+                      }}台为4根排，否则为3根排；单根排长 = 柜宽 - {{
+                      rules.copperRules.widthDeduction }}mm + 常规加长{{
+                      rules.copperRules.horizontalExtraLength || 0.4 }}m / 双电源加长{{
+                      rules.copperRules.horizontalDualPowerExtraLength || 0.8 }}m）。
                     </div>
                     <div>
                       •
-                      <b>垂直母排判定</b
-                      >：未满足水平排时（塑壳台数不足或电流和不足），若分路总电流之和
+                      <b>垂直母排判定</b>：未满足水平排时（塑壳台数不足或电流和不足），若分路总电流之和
                       ≥ {{ rules.copperRules.branchTotalCurrentThreshold }}A 且
                       主进线电流 &gt; {{
                       rules.copperRules.mainSwitchCurrentThreshold }}A
@@ -3024,6 +3051,34 @@
                         controls-position="right"
                       ></el-input-number>
                       <span class="param-unit">mm</span>
+                    </div>
+                    <!-- 每根水平主排常规加长量 (无双电源时默认 +0.4米) -->
+                    <div class="param-row-item">
+                      <span class="param-label">水平排常规加长:</span>
+                      <el-input-number
+                        v-model="rules.copperRules.horizontalExtraLength"
+                        :step="0.1"
+                        :min="0"
+                        :max="5"
+                        size="small"
+                        style="width: 100px"
+                        controls-position="right"
+                      ></el-input-number>
+                      <span class="param-unit">米 (无双电源)</span>
+                    </div>
+                    <!-- 箱柜内含双电源时每根水平主排加长量 (默认 +0.8米) -->
+                    <div class="param-row-item">
+                      <span class="param-label">双电源主排加长:</span>
+                      <el-input-number
+                        v-model="rules.copperRules.horizontalDualPowerExtraLength"
+                        :step="0.1"
+                        :min="0"
+                        :max="5"
+                        size="small"
+                        style="width: 100px"
+                        controls-position="right"
+                      ></el-input-number>
+                      <span class="param-unit">米 (含双电源)</span>
                     </div>
                     <div class="param-row-item">
                       <span class="param-label">柜高扣除边距:</span>
@@ -5298,6 +5353,10 @@
           const isUpdatingCurrentCategory = ref(false);
           const isUpdatingAllCategories = ref(false);
           const isSavingRules = ref(false);
+          // 获取大盘当日铜价 loading 状态
+          const isCopperPriceLoading = ref(false);
+          // 获取铜价超时看门狗定时器句柄
+          let copperPriceTimeoutTimer = null;
 
           // 批量更新全局动态进度条状态 (绿蓝相间主题驱动)
           const isBatchProcessing = ref(false);
@@ -6196,6 +6255,10 @@
                 "电气火灾",
               ],
               widthDeduction: 120,
+              // 每根水平主排常规加长量(米) --硬编码--
+              horizontalExtraLength: 0.4,
+              // 箱柜含双电源时每根水平主排加长量(米) --硬编码--
+              horizontalDualPowerExtraLength: 0.8,
               heightDeduction: 300,
               verticalBaseLength: 1.2,
               loadExtensionRatio: 0.1,
@@ -6653,6 +6716,20 @@
                       cr.widthDeduction > 0
                         ? cr.widthDeduction
                         : 120;
+                    // 每根水平主排常规加长量(米)合并与兜底(默认0.4m) --硬编码--
+                    rules.copperRules.horizontalExtraLength =
+                      cr.horizontalExtraLength !== undefined &&
+                      cr.horizontalExtraLength !== null &&
+                      cr.horizontalExtraLength >= 0
+                        ? cr.horizontalExtraLength
+                        : 0.4;
+                    // 箱柜内含双电源时每根水平主排加长量(米)合并与兜底(默认0.8m) --硬编码--
+                    rules.copperRules.horizontalDualPowerExtraLength =
+                      cr.horizontalDualPowerExtraLength !== undefined &&
+                      cr.horizontalDualPowerExtraLength !== null &&
+                      cr.horizontalDualPowerExtraLength >= 0
+                        ? cr.horizontalDualPowerExtraLength
+                        : 0.8;
                     rules.copperRules.heightDeduction =
                       cr.heightDeduction !== undefined &&
                       cr.heightDeduction !== null &&
@@ -6750,6 +6827,35 @@
                   selectedCabinetDet.value = "";
                 }
                 triggerAutoAnalyze();
+              } else if (msg.action === "marketPriceResponse") {
+                // 清除未触发的看门狗超时定时器
+                if (copperPriceTimeoutTimer) {
+                  clearTimeout(copperPriceTimeoutTimer);
+                  copperPriceTimeoutTimer = null;
+                }
+                // 结束按钮 Loading 动效
+                isCopperPriceLoading.value = false;
+                if (msg.success) {
+                  // 同步当日大盘铜价至前端输入框 (优先读取换算好的元/KG)
+                  if (msg.copperPricePerKg) {
+                    rules.general.copperPricePerKg = msg.copperPricePerKg;
+                  } else if (msg.copperPrice) {
+                    rules.general.copperPricePerKg =
+                      Math.round((msg.copperPrice / 1000.0) * 10) / 10;
+                  }
+                  // 弹出成功提示
+                  ElementPlus.ElMessage.success(
+                    msg.message ||
+                      `已同步当日大盘最新铜价: ${rules.general.copperPricePerKg} 元/KG`,
+                  );
+                  // 联动触发自动推导分析
+                  triggerAutoAnalyze();
+                } else {
+                  // 异常友好提示
+                  ElementPlus.ElMessage.warning(
+                    msg.message || "获取大盘行情失败，已保持当前价格",
+                  );
+                }
               } else if (msg.action === "analyzeResult") {
                 isAnalyzing.value = false;
                 if (msg.success && msg.data) {
@@ -7113,6 +7219,42 @@
           const onRefreshContext = () => {
             if (window.chrome && window.chrome.webview) {
               window.chrome.webview.postMessage({ action: "getContext" });
+            }
+          };
+
+          // 点击铜排价格右侧刷新按钮拉取当日大盘最新真实行情
+          const fetchTodayCopperPrice = () => {
+            // 激活按钮 Loading 动效
+            isCopperPriceLoading.value = true;
+            // 若存在旧的超时监控则及时清理
+            if (copperPriceTimeoutTimer) clearTimeout(copperPriceTimeoutTimer);
+            // 6 秒看门狗超时防卡死保护：杜绝任何未决状态导致“一直转圈”
+            copperPriceTimeoutTimer = setTimeout(() => {
+              if (isCopperPriceLoading.value) {
+                isCopperPriceLoading.value = false;
+                ElementPlus.ElMessage.warning(
+                  "拉取最新大盘铜价超时，已保持当前价格",
+                );
+              }
+            }, 6000);
+            // 检查是否处于真实 C# WebView2 宿主环境
+            if (window.chrome && window.chrome.webview) {
+              // 向 C# 后端发送获取当日大盘铜价请求
+              window.chrome.webview.postMessage({
+                action: "getMarketPrice",
+                materialType: "copper",
+              });
+            } else {
+              // 纯浏览器离线调试模拟通道 (500ms 模拟网络回包)
+              setTimeout(() => {
+                if (copperPriceTimeoutTimer) clearTimeout(copperPriceTimeoutTimer);
+                isCopperPriceLoading.value = false;
+                rules.general.copperPricePerKg = 109.4;
+                ElementPlus.ElMessage.success(
+                  "[本地调试] 已同步当日大盘最新铜价: 109.4 元/KG (109,420 元/吨)",
+                );
+                triggerAutoAnalyze();
+              }, 500);
             }
           };
 
@@ -8500,6 +8642,11 @@
             progressPercent,
             progressTitle,
             progressMessage,
+            // ==================== 铜排大盘价格刷新能力导出 ====================
+            // 获取大盘当日铜价 loading 状态
+            isCopperPriceLoading,
+            // 获取大盘当日铜价刷新函数
+            fetchTodayCopperPrice,
           };
         },
       });
