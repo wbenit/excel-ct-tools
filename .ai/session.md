@@ -1,3 +1,34 @@
+- **【云方案中心：一次方案与二次方案删除功能落地 & 存活动箱柜BOM价格为0修复】(`Controllers/CloudSolutionController.cs`, `Forms/CloudSolutionForm.cs`, `Resources/cloud_solution.html`, `publish/Resources/`, `Services/ExcelServices.CloudSolution.cs`, `ExcelAddInDemo.csproj`)**：
+  1. **用户核心指令与需求背景**：
+     - 用户指令反馈：“把箱柜保持到一次方案，价格都是为0，没能录入，如图”、“在一次方案和二次方案添加删除功能，你怎么设计”；并在设计方案汇报后明确指令：“认可，执行”；
+     - 需求确诊：
+       ① 修复从当前活动 Excel 抓取箱柜为一次方案时，BOM 清单中的表价、单价、总价均为 0 的缺陷；
+       ② 在一次方案和二次方案中，无论是卡片态还是大视口详情态，均提供醒目而优雅的【删除】按钮；
+       ③ 针对带本地物理 DWG 图纸的方案，二次确认弹窗中必须列出关联图纸路径，并提供【同时将本地 DWG 图纸文件移入系统回收站】勾选框；
+       ④ 纯本地未入库 DWG 默认勾选送入回收站；物理文件删除必须调用 Windows Shell API 送入系统回收站（可随时还原），并配置根目录路径白名单防穿越安全防线；
+       ⑤ 纯数据库虚拟方案清除 SQLite 记录；删除完成后自动关闭详情大视口（若正打开该方案），自动重新加载卡片列表并刷新左侧分类树角标计数；
+       ⑥ 严格遵循每 3 行新增代码包含 1 行中文注释，主色调 `#009688`，弹性布局无水平滚动条，最小变动法则。
+  2. **工程级闭环落地**：
+     - **价格读取与自愈补齐 (`Services/ExcelServices.CloudSolution.cs`)**：
+       - 在 `ExcelServices.CloudSolution.cs` 中增加健壮的 `SafeParseDecimal` 和 `SafeParseDouble`；
+       - 读取当前活动箱柜元器件行时，精确抓取 M 列（表价）、L 列（报出折扣）、N 列（采购折扣）、G 列（单价）、H 列（总价）、J 列（成本单价）；
+       - 实现双向自愈互推机制：当单价为空时自动按 `表价 * 采购折扣 * 报出折扣` 补齐；若表价为空而单价存在时自动以单价补全表价，彻底消灭价格为 0 的 Bug；
+     - **后端删除接口与防穿越回收站机制 (`ExcelAddInDemo.csproj`, `Controllers/CloudSolutionController.cs`, `Forms/CloudSolutionForm.cs`)**：
+       - `ExcelAddInDemo.csproj` 引入 `Microsoft.VisualBasic`；
+       - `CloudSolutionController.cs` 实现 `SafeDeleteFileToRecycleBin(filePath, allowedRootDir)`，校验图纸根目录安全边界，调用 `FileSystem.DeleteFile(..., RecycleOption.SendToRecycleBin)` 安全移入回收站；
+       - 实现 `DeletePrimaryScheme` 与 `DeleteSecondaryScheme` 接口，联动 `PersonalComponentDbService` 清理 SQLite 方案及 BOM 记录；
+       - `CloudSolutionForm.cs` 实现 `GetIntProp`、`GetBoolProp`，在 WebMessage 路由中挂接 `deletePrimaryScheme` 与 `deleteSecondaryScheme`，并回送 `deletePrimarySchemeResult` 与 `deleteSecondarySchemeResult`；
+     - **前端 UI 与交互联动 (`Resources/cloud_solution.html`)**：
+       - 添加 `.sec-btn-delete` 与 `.prim-btn-delete` 危险操作微按钮样式（红白柔和底色，hover 鲜明警示）；
+       - 一次方案与二次方案卡片操作栏增加【删除】按钮；
+       - 大视口详情顶栏操作区在【编辑方案与BOM】旁增加【删除此方案】按钮；
+       - 实现 `handleDeleteScheme(card, schemeType)` 方法，利用 `ElementPlus.ElMessageBox.confirm` 弹出优雅直观的确认框，展示方案标题、DWG 图纸路径与回收站勾选框；
+       - WebMessage 监听处理删除结果：删除成功时自动关闭详情大视口、重新拉取方案列表并重新扫描左侧子分类角标数量；
+       - `setup()` 正确导出 `handleDeleteScheme`。
+  3. **构建验证与多端资源同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 完整构建：**0 错误**；
+     - `Resources/cloud_solution.html` 镜像同步复制至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`。
+
 - **【云方案中心：扁平化顶层架构重构与方案B彻底落地】(`Resources/cloud_solution.html`, `publish/Resources/`, `bin/Debug/net48/Resources/`)**：
   1. **用户核心指令与需求确诊**：
      - 用户指令反馈：“初始设计行业方案是云端方案，现在取消这个功能，直接是 一次方案 ，二次方案，自动组价（利驰方案）修改为云方案”；并明确确认：“使用方案B，符合预期”；
@@ -6517,3 +6548,34 @@
    - 执行 dotnet build /t:Compile /p:DebugType=none 编译通过：0 错误；同步 DLL 至 publish/。
 5. **端到端浏览器自动化验证**：
    - 经 browser_subagent 实测验证：输入框精准显示“当前1#电解铜价(元/吨): 110625”，点击刷新动效与轻提示流畅，铜排/铝排材质与价格联动无缝。
+
+---
+
+## [2026-10-17 18:24:00] 修复活动箱柜保存至一次方案时价格为0的问题全链路交付
+
+### [Completed]
+1. **Excel 元器件价格抓取底层升级 (`Services/ExcelServices.CloudSolution.cs`)**：
+   - 遵循规则 8：在提取前显式调用 `Tool.FixAndFillCabinetNamesForSheet(ws)` 保证规则 6 结构正确，并调用 `ws.Calculate()` 确保当前表格所有公式运算生效；
+   - 新增 `SafeParseDecimal` 与 `SafeParseDouble`：过滤货币符号（¥、￥、$）、千分位逗号与空格，防范 NaN/无穷大异常，杜绝文本型数字导致解析抛错降级为 0；
+   - 完整读取 Excel 明细表所有核心价格列：
+     - M 列 (13): 官方表价 / 目录面价 (`CatalogPrice / MarkedPrice`)
+     - L 列 (12): 报价加价系数 / 报出系数 (`QuotationFactor / QuoteDiscount`)
+     - N 列 (14): 采购折扣系数 (`Discount`)
+     - G 列 (7): 销售单价 (`QuotePrice`)
+     - H 列 (8): 销售总价 (`TotalPrice`)
+     - J 列 (10): 成本单价 (`CostPrice`)
+   - 实现**双向价格智能互推自愈**：
+     - 若用户在 Excel 中录入了表价 (M列) 但单价 (G列) 为0/公式未触发，依据电气报价标准公式 `单价 = 表价 * 折扣 * 报出` 自动推导补齐；
+     - 若用户在 Excel 中直接维护单价但表价为空，依据 `单价 / (折扣 * 报出)` 自动反推补齐表价；
+     - 若销售总价或成本单价为0，自动依据数量与折扣率补齐。
+   - 提取首选元器件有效品牌，自动回填至方案级 `Brand`，消除通用品牌显示缺失；
+   - 严格遵循注释规范：新增代码每 3 行包含一行中文注释。
+2. **前端数据映射与回显自愈 (`Resources/cloud_solution.html`)**：
+   - 封装 `mapBomItemSafely` 工具函数，集中接管一次方案与二次方案的 BOM 映射；
+   - 彻底修复 `openPrimaryDetail` 点击卡片时将表价降级并硬编码折扣为 1.0 的缺陷，全面保留 `catalogPrice`、`discount`、`quoteDiscount`、`quotePrice`、`totalPrice`、`materialCode`、`origin`、`remark` 等全量字段；
+   - 彻底修复 `savePrimarySchemeForm` 保存方案时丢弃价格属性的缺陷，持久化全字段；
+   - 修复编辑弹窗 `normalizePrimBomItem` 与保存成功后大视口更新的数据结构。
+3. **多端同步与工程构建**：
+   - 同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
+   - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**。
+

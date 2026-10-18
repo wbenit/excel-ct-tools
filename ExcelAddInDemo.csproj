@@ -27,6 +27,8 @@
     <Reference Include="System.Net.Http" />
     <!-- 引入 System.Security 支持 Windows DPAPI ProtectedData 数据加密保护 -->
     <Reference Include="System.Security" />
+    <!-- 引入 Microsoft.VisualBasic 支持将物理文件安全移入 Windows 回收站 -->
+    <Reference Include="Microsoft.VisualBasic" />
     <!-- 引入 Excel-DNA 核心整合包，用于支持 C# 与 Excel COM 及函数交互 -->
     <PackageReference Include="ExcelDna.Integration" Version="1.6.0" />
     <!-- 引入 Microsoft.Office.Interop.Excel 强类型 COM 支持包 -->

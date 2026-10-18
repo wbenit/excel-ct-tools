@@ -870,6 +870,63 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 安全提取数值为 decimal (支持货币符号、千分位、空格与类型转换容错)
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+        /// </summary>
+        private static decimal SafeParseDecimal(object? val, decimal fallback = 0m)
+        {
+            // 空值直接返回兜底默认值
+            if (val == null) return fallback;
+            // 若原生为 decimal 类型直接返回
+            if (val is decimal d) return d;
+            // 若为 double 需防范 NaN 与无穷大异常
+            if (val is double db) return double.IsNaN(db) || double.IsInfinity(db) ? fallback : Convert.ToDecimal(db);
+            // 若为 float 需防范 NaN 与无穷大异常
+            if (val is float f) return float.IsNaN(f) || float.IsInfinity(f) ? fallback : Convert.ToDecimal(f);
+            // 整数类型安全转换
+            if (val is int i) return i;
+            if (val is long l) return l;
+            // 文本类型清洗与尝试解析
+            string s = val.ToString()?.Trim() ?? string.Empty;
+            if (string.IsNullOrEmpty(s)) return fallback;
+            // 清洗货币符号、千分位逗号与空格
+            s = s.Replace("¥", "").Replace("￥", "").Replace("$", "").Replace(",", "").Trim();
+            // 尝试标准浮点解析
+            if (decimal.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out decimal res))
+            {
+                return res;
+            }
+            return fallback;
+        }
+
+        /// <summary>
+        /// 安全提取数值为 double (支持空格与千分位容错)
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+        /// </summary>
+        private static double SafeParseDouble(object? val, double fallback = 1.0)
+        {
+            // 空值直接返回兜底默认值
+            if (val == null) return fallback;
+            // 若原生为 double 需防范非法浮点
+            if (val is double db) return double.IsNaN(db) || double.IsInfinity(db) ? fallback : db;
+            // decimal 转 double
+            if (val is decimal d) return (double)d;
+            // 整型安全提升
+            if (val is int i) return i;
+            if (val is long l) return l;
+            // 字符串清洗与解析
+            string s = val.ToString()?.Trim() ?? string.Empty;
+            if (string.IsNullOrEmpty(s)) return fallback;
+            // 过滤货币符号与千分位
+            s = s.Replace("¥", "").Replace("￥", "").Replace("$", "").Replace(",", "").Trim();
+            if (double.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double res))
+            {
+                return res;
+            }
+            return fallback;
+        }
+
+        /// <summary>
         /// 从活动 Excel 当前光标所在的箱柜中提取一次方案数据并保存为企业一次方案 (遵循规则 3: 所有对 Excel 内容操作统一写入公共文件 ExcelServices)
         /// 遵循规则 6: 从 Cab_Det + 2 到 Cab_Subsum - 1 提取元器件
         /// 遵循规则 7: 采用内存数组一次性批量读入
@@ -888,6 +945,12 @@ namespace ExcelAddInDemo
                 dynamic app = context.App;
                 dynamic wb = context.Wb;
                 dynamic ws = context.Sheet;
+
+                // 遵循规则 8: 在操作前先检查并纠正当前工作表箱柜结构与定义名称
+                Tool.FixAndFillCabinetNamesForSheet(ws);
+
+                // 强制触发一次公式刷新，确保所有单价公式计算结果最新生效
+                try { ws.Calculate(); } catch { }
 
                 // 检索当前工作表有效箱柜
                 var validCabinets = Tool.GetSheetValidCabinets(ws, wb);
@@ -940,15 +1003,58 @@ namespace ExcelAddInDemo
 
                         string brand = matrix[r, 4]?.ToString()?.Trim() ?? "";  // D 列: 品牌
                         string unit = matrix[r, 5]?.ToString()?.Trim() ?? "只"; // E 列: 单位
-                        double qty = 1.0;
-                        try { qty = Convert.ToDouble(matrix[r, 6]); } catch { } // F 列: 数量
-                        decimal price = 0m;
-                        try { price = Convert.ToDecimal(matrix[r, 7]); } catch { } // G 列: 单价
-                        decimal total = 0m;
-                        try { total = Convert.ToDecimal(matrix[r, 8]); } catch { } // H 列: 总价
-                        string remark = matrix[r, 9]?.ToString()?.Trim() ?? ""; // I 列: 备注
-                        string category = matrix[r, 17]?.ToString()?.Trim() ?? "元件"; // Q 列: 类别
+                        // F 列: 数量 (安全容错提取)
+                        double qty = SafeParseDouble(matrix[r, 6], 1.0);
+                        // G 列: 销售单价 (报出单价)
+                        decimal price = SafeParseDecimal(matrix[r, 7], 0m);
+                        // H 列: 销售总价 (合价)
+                        decimal total = SafeParseDecimal(matrix[r, 8], 0m);
+                        // I 列: 备注说明
+                        string remark = matrix[r, 9]?.ToString()?.Trim() ?? "";
+                        // J 列: 成本单价
+                        decimal costPrice = SafeParseDecimal(matrix[r, 10], 0m);
+                        // L 列: 报出系数 (默认 1.0)
+                        decimal quoteDiscount = SafeParseDecimal(matrix[r, 12], 1.0m);
+                        if (quoteDiscount <= 0m) quoteDiscount = 1.0m;
+                        // M 列: 官方表价 / 目录面价
+                        decimal catalogPrice = SafeParseDecimal(matrix[r, 13], 0m);
+                        // N 列: 采购折扣系数 (默认 1.0)
+                        decimal discount = SafeParseDecimal(matrix[r, 14], 1.0m);
+                        if (discount <= 0m) discount = 1.0m;
+                        // Q 列: 元件分类
+                        string category = matrix[r, 17]?.ToString()?.Trim() ?? "元件";
 
+                        // 智能价格互推与自愈保障：若单价为0但表价存在，依据公式 单价 = 表价 * 折扣 * 报出 计算
+                        if (price == 0m && catalogPrice > 0m)
+                        {
+                            price = Math.Round(catalogPrice * discount * quoteDiscount, 2);
+                        }
+                        // 反之若有单价但表价为空，则反推表价或对齐单价
+                        else if (catalogPrice == 0m && price > 0m)
+                        {
+                            if (discount != 1.0m || quoteDiscount != 1.0m)
+                            {
+                                catalogPrice = Math.Round(price / (discount * quoteDiscount), 2);
+                            }
+                            else
+                            {
+                                catalogPrice = price;
+                            }
+                        }
+
+                        // 若总价为0，按 数量 * 单价 自动补全
+                        if (total <= 0m && price > 0m)
+                        {
+                            total = Math.Round((decimal)qty * price, 2);
+                        }
+
+                        // 若成本单价为0但表价存在，按 表价 * 折扣 自动补全
+                        if (costPrice <= 0m && catalogPrice > 0m)
+                        {
+                            costPrice = Math.Round(catalogPrice * discount, 2);
+                        }
+
+                        // 组装完整的 BOM 项实体并赋予所有价格属性
                         bomItems.Add(new CloudSchemeBomItem
                         {
                             SortOrder = bomItems.Count + 1,
@@ -957,9 +1063,17 @@ namespace ExcelAddInDemo
                             Brand = brand,
                             Unit = unit,
                             Quantity = qty,
+                            IsWlDoubled = false,
+                            CatalogPrice = catalogPrice,
+                            MarkedPrice = catalogPrice,
+                            Discount = discount,
+                            QuoteDiscount = quoteDiscount,
+                            QuotationFactor = quoteDiscount,
+                            CostPrice = costPrice,
                             QuotePrice = price,
-                            TotalPrice = total > 0 ? total : (decimal)qty * price,
-                            Category = category,
+                            TotalPrice = total,
+                            Subtotal = total,
+                            Category = string.IsNullOrWhiteSpace(category) ? "元件" : category,
                             Remark = remark,
                             Selected = true
                         });
@@ -995,6 +1109,9 @@ namespace ExcelAddInDemo
                     }
                 }
 
+                // 提取首选有效品牌，作为方案的主品牌显示
+                string mainBrand = bomItems.FirstOrDefault(b => !string.IsNullOrWhiteSpace(b.Brand))?.Brand ?? string.Empty;
+
                 // 组装新一次方案实体 (若未关联图纸则 CadDrawingName 保持为空，作为纯 BOM 方案展示)
                 var newScheme = new PrimarySchemeEntity
                 {
@@ -1004,6 +1121,7 @@ namespace ExcelAddInDemo
                     ApplicableCodes = new List<string> { finalSchemeName },
                     CadDrawingName = assignedCadName,
                     BomItems = bomItems,
+                    Brand = mainBrand,
                     Description = $"由活动 Excel 工作表 [{ws.Name}] 箱柜【{excelCabName}】一键抓取存入"
                 };
 

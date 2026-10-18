@@ -2011,6 +2011,30 @@
       border-color: var(--primary-hover);
     }
 
+    /* 二次与一次方案删除危险操作小按钮 */
+    .sec-btn-delete,
+    .prim-btn-delete {
+      padding: 2px 6px;
+      font-size: 11px;
+      line-height: 1.25;
+      white-space: nowrap;
+      font-weight: 500;
+      color: #ef4444;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .sec-btn-delete:hover,
+    .prim-btn-delete:hover {
+      color: #ffffff;
+      background: #dc2626;
+      border-color: #dc2626;
+      box-shadow: 0 2px 5px rgba(220, 38, 38, 0.25);
+    }
+
     /* ========================================================
          一次成套方案专属样式：DWG卡片、主接线图、参数网格与弹窗
          ======================================================== */
@@ -3447,6 +3471,11 @@
                       @click.stop="openSecondaryEditModal(card)">
                       编辑
                     </button>
+                    <!-- 二次方案卡片轻量删除按钮 -->
+                    <button class="sec-btn-delete" type="button" title="删除此二次回路方案"
+                      @click.stop="handleDeleteScheme(card, 'secondary')">
+                      删除
+                    </button>
                   </div>
                 </div>
               </div>
@@ -3603,6 +3632,11 @@
                       @click.stop="openPrimaryEditModal(card)">
                       编辑
                     </button>
+                    <!-- 一次方案卡片轻量删除按钮 -->
+                    <button class="prim-btn-delete" type="button" title="删除此一次成套方案"
+                      @click.stop="handleDeleteScheme(card, 'primary')">
+                      删除
+                    </button>
                   </div>
                 </div>
               </div>
@@ -3685,17 +3719,27 @@
           </span>
         </div>
 
-        <!-- 右侧操作工具 (编辑、关闭) -->
+        <!-- 右侧操作工具 (编辑、删除、关闭) -->
         <div class="detail-header-right">
           <!-- 二次方案下可直接呼出编辑弹窗 -->
           <el-button v-if="isSecondaryDetail" type="primary" size="small" plain
             @click="openSecondaryEditModal(currentSecondaryCard)">
             <i class="fa-regular fa-pen-to-square" style="margin-right: 4px"></i> 编辑方案与BOM
           </el-button>
+          <!-- 二次方案大视口删除按钮 -->
+          <el-button v-if="isSecondaryDetail" type="danger" size="small" plain
+            @click="handleDeleteScheme(currentSecondaryCard, 'secondary')">
+            <i class="fa-regular fa-trash-can" style="margin-right: 4px"></i> 删除此方案
+          </el-button>
           <!-- 一次方案下可直接呼出编辑弹窗 -->
           <el-button v-else-if="isPrimaryDetail" type="primary" size="small" plain
             @click="openPrimaryEditModal(currentPrimaryCard)">
             <i class="fa-regular fa-pen-to-square" style="margin-right: 4px"></i> 编辑方案与BOM
+          </el-button>
+          <!-- 一次方案大视口删除按钮 -->
+          <el-button v-else-if="isPrimaryDetail" type="danger" size="small" plain
+            @click="handleDeleteScheme(currentPrimaryCard, 'primary')">
+            <i class="fa-regular fa-trash-can" style="margin-right: 4px"></i> 删除此方案
           </el-button>
           <!-- 顶部快捷关闭叉号 -->
           <div class="detail-close-icon" @click="closeDetail" title="关闭详情大视口">
@@ -6124,6 +6168,80 @@
           loadPrimaryFolderDwgCards(true);
         };
 
+        // 安全转换与规范化 BOM 物料记录 (支持表价、采购折扣、报出系数、销售单价与总价的智能互推自愈)
+        const mapBomItemSafely = (b, idx, defaultCat = "一次成套") => {
+          // 基础用量数量提取 (默认 1)
+          const quantity = Number(b.quantity ?? b.Quantity ?? b.qty) || 1;
+          // WL 随回路翻倍标志
+          const isWlDoubled = Boolean(b.isWlDoubled ?? b.IsWlDoubled);
+
+          // 1. 采购折扣率提取 (默认 1.0)
+          let discount = Number(b.discount ?? b.Discount ?? 1.0);
+          if (isNaN(discount) || discount <= 0) discount = 1.0;
+
+          // 2. 报出系数/销售折扣率提取 (默认 1.0)
+          let quoteDiscount = Number(b.quoteDiscount ?? b.QuoteDiscount ?? b.quotationFactor ?? b.QuotationFactor ?? 1.0);
+          if (isNaN(quoteDiscount) || quoteDiscount <= 0) quoteDiscount = 1.0;
+
+          // 3. 官方表价/面价提取
+          let catalogPrice = Number(b.catalogPrice ?? b.CatalogPrice ?? b.markedPrice ?? b.MarkedPrice ?? 0);
+          if (isNaN(catalogPrice) || catalogPrice < 0) catalogPrice = 0;
+
+          // 4. 销售单价提取
+          let quotePrice = Number(b.quotePrice ?? b.QuotePrice ?? b.unitPrice ?? b.UnitPrice ?? b.price ?? b.Price ?? 0);
+          if (isNaN(quotePrice) || quotePrice < 0) quotePrice = 0;
+
+          // 5. 智能价格互推自愈闭环保障
+          // 若销售单价为 0 但表价大于 0：按 单价 = 表价 * 折扣 * 报出 计算
+          if (quotePrice === 0 && catalogPrice > 0) {
+            quotePrice = Number((catalogPrice * discount * quoteDiscount).toFixed(2));
+          }
+          // 反之若有单价但表价为空：反推表价
+          else if (catalogPrice === 0 && quotePrice > 0) {
+            if (discount !== 1.0 || quoteDiscount !== 1.0) {
+              catalogPrice = Number((quotePrice / (discount * quoteDiscount)).toFixed(2));
+            } else {
+              catalogPrice = quotePrice;
+            }
+          }
+
+          // 6. 行销售总价提取与兜底
+          let totalPrice = Number(b.totalPrice ?? b.TotalPrice ?? b.subtotal ?? b.Subtotal ?? 0);
+          if (isNaN(totalPrice) || totalPrice <= 0) {
+            totalPrice = Number((quantity * quotePrice).toFixed(2));
+          }
+
+          // 7. 成本单价提取与兜底
+          let costPrice = Number(b.costPrice ?? b.CostPrice ?? (catalogPrice * discount)) || 0;
+
+          return {
+            id: b.id || (Date.now() + idx),
+            selected: b.selected !== false,
+            sortOrder: Number(b.sortOrder ?? b.SortOrder) || (idx + 1),
+            name: b.name || b.Name || "元器件",
+            model: b.model || b.Model || "",
+            brand: b.brand || b.Brand || "通用",
+            unit: b.unit || b.Unit || "台",
+            quantity: quantity,
+            isWlDoubled: isWlDoubled,
+            catalogPrice: catalogPrice,
+            markedPrice: catalogPrice,
+            discount: discount,
+            quoteDiscount: quoteDiscount,
+            quotationFactor: quoteDiscount,
+            quotePrice: quotePrice,
+            unitPrice: quotePrice,
+            price: quotePrice,
+            totalPrice: totalPrice,
+            subtotal: totalPrice,
+            costPrice: costPrice,
+            remark: b.remark || b.Remark || "",
+            materialCode: b.materialCode || b.MaterialCode || "",
+            origin: b.origin || b.Origin || "",
+            category: b.category || b.Category || defaultCat,
+          };
+        };
+
         // 打开一次成套方案详情大视口 (全面对齐二次方案大视口，支持 CAD 真实矢量开图与 BOM 联动)
         const openPrimaryDetail = (card) => {
           // 防御性校验目标卡片有效性
@@ -6139,69 +6257,18 @@
           // 解析卡片的 BOM 明细列表 (优先读取 schemeData，次之读取 bomJson 与 bomItems)
           let parsedBom = [];
           if (card.schemeData && Array.isArray(card.schemeData.bomItems) && card.schemeData.bomItems.length > 0) {
-            parsedBom = card.schemeData.bomItems.map((b, idx) => ({
-              id: Date.now() + idx,
-              selected: true,
-              sortOrder: idx + 1,
-              name: b.name || "一次元件",
-              model: b.model || "",
-              brand: b.brand || "通用",
-              unit: b.unit || "台",
-              quantity: Number(b.quantity) || 1,
-              isWlDoubled: false,
-              catalogPrice: Number(b.price ?? b.unitPrice ?? b.quotePrice ?? 0),
-              discount: 1.0,
-              quoteDiscount: 1.0,
-              quotePrice: Number(b.price ?? b.unitPrice ?? b.quotePrice ?? 0),
-              materialCode: "",
-              origin: "",
-              category: "一次成套",
-            }));
+            parsedBom = card.schemeData.bomItems.map((b, idx) => mapBomItemSafely(b, idx, "一次成套"));
           } else if (card.bomJson) {
             try {
-              const list = JSON.parse(card.bomJson);
+              const list = typeof card.bomJson === "string" ? JSON.parse(card.bomJson) : card.bomJson;
               if (Array.isArray(list)) {
-                parsedBom = list.map((b, idx) => ({
-                  id: Date.now() + idx,
-                  selected: true,
-                  sortOrder: idx + 1,
-                  name: b.name || "一次元件",
-                  model: b.model || "",
-                  brand: b.brand || "通用",
-                  unit: b.unit || "台",
-                  quantity: Number(b.quantity) || 1,
-                  isWlDoubled: false,
-                  catalogPrice: Number(b.price ?? b.unitPrice ?? b.quotePrice ?? 0),
-                  discount: 1.0,
-                  quoteDiscount: 1.0,
-                  quotePrice: Number(b.price ?? b.unitPrice ?? b.quotePrice ?? 0),
-                  materialCode: "",
-                  origin: "",
-                  category: "一次成套",
-                }));
+                parsedBom = list.map((b, idx) => mapBomItemSafely(b, idx, "一次成套"));
               }
             } catch (e) {
               parsedBom = [];
             }
           } else if (Array.isArray(card.bomItems)) {
-            parsedBom = card.bomItems.map((b, idx) => ({
-              id: Date.now() + idx,
-              selected: true,
-              sortOrder: idx + 1,
-              name: b.name || "一次元件",
-              model: b.model || "",
-              brand: b.brand || "通用",
-              unit: b.unit || "台",
-              quantity: Number(b.quantity) || 1,
-              isWlDoubled: false,
-              catalogPrice: Number(b.price ?? b.unitPrice ?? b.quotePrice ?? 0),
-              discount: 1.0,
-              quoteDiscount: 1.0,
-              quotePrice: Number(b.price ?? b.unitPrice ?? b.quotePrice ?? 0),
-              materialCode: "",
-              origin: "",
-              category: "一次成套",
-            }));
+            parsedBom = card.bomItems.map((b, idx) => mapBomItemSafely(b, idx, "一次成套"));
           }
 
           // 6. 一次成套方案 6 项核心关键参数规范化自适应兜底 (确保工程技术描述 100% 完整呈现)
@@ -6296,25 +6363,7 @@
           // 解析一次方案 BOM 清单
           let parsedBom = [];
           // 标准化一次 BOM 记录对象
-          const normalizePrimBomItem = (b, idx) => {
-            // 提取元件名称
-            const name = b.name || "一次元件";
-            // 提取规格型号
-            const model = b.model || "";
-            // 提取单价
-            const price = Number(b.price ?? b.unitPrice ?? b.quotePrice ?? 0);
-            return {
-              id: b.id || (Date.now() + idx),
-              name: name,
-              model: model,
-              brand: b.brand || "",
-              quantity: Number(b.quantity) || 1,
-              unit: b.unit || "台",
-              price: price,
-              unitPrice: price,
-              quotePrice: price,
-            };
-          };
+          const normalizePrimBomItem = (b, idx) => mapBomItemSafely(b, idx, "一次成套");
 
           // 优先从 schemeData.bomItems 提取
           if (card.schemeData && Array.isArray(card.schemeData.bomItems) && card.schemeData.bomItems.length > 0) {
@@ -6371,14 +6420,29 @@
 
         // 保存一次成套方案表单
         const savePrimarySchemeForm = () => {
-          // 格式化 BOM 明细清单
-          const bomArray = (primBomList.value || []).map((item) => ({
+          // 格式化 BOM 明细清单 (完整保留表价、折扣、报出、单价、编码等全部字段)
+          const bomArray = (primBomList.value || []).map((item, idx) => ({
+            sortOrder: idx + 1,
             name: item.name || "一次元件",
             model: item.model || "",
             brand: item.brand || "",
             quantity: Number(item.quantity) || 1,
             unit: item.unit || "台",
-            unitPrice: Number(item.price ?? item.unitPrice ?? item.quotePrice ?? 0),
+            isWlDoubled: Boolean(item.isWlDoubled),
+            catalogPrice: Number(item.catalogPrice ?? item.markedPrice ?? item.quotePrice ?? 0),
+            markedPrice: Number(item.markedPrice ?? item.catalogPrice ?? item.quotePrice ?? 0),
+            discount: Number(item.discount ?? 1.0),
+            quoteDiscount: Number(item.quoteDiscount ?? item.quotationFactor ?? 1.0),
+            quotationFactor: Number(item.quotationFactor ?? item.quoteDiscount ?? 1.0),
+            quotePrice: Number(item.quotePrice ?? item.unitPrice ?? item.price ?? 0),
+            unitPrice: Number(item.quotePrice ?? item.unitPrice ?? item.price ?? 0),
+            costPrice: Number(item.costPrice ?? 0),
+            totalPrice: Number((item.quantity || 1) * (item.quotePrice || 0)),
+            subtotal: Number((item.quantity || 1) * (item.quotePrice || 0)),
+            remark: item.remark || "",
+            materialCode: item.materialCode || "",
+            origin: item.origin || "",
+            category: item.category || "一次成套",
           }));
 
           // 组装标准一次方案数据负载
@@ -6611,69 +6675,18 @@
           // 解析卡片的 BOM 明细列表 (优先读取 schemeData，次之读取 bomJson 与 bomItems)
           let parsedBom = [];
           if (card.schemeData && Array.isArray(card.schemeData.bomItems) && card.schemeData.bomItems.length > 0) {
-            parsedBom = card.schemeData.bomItems.map((b, idx) => ({
-              id: Date.now() + idx,
-              selected: true,
-              sortOrder: idx + 1,
-              name: b.name || "二次元件",
-              model: b.model || "",
-              brand: b.brand || card.brand || "通用",
-              unit: b.unit || "只",
-              quantity: Number(b.quantity) || 1,
-              isWlDoubled: false,
-              catalogPrice: Number(b.catalogPrice ?? b.unitPrice ?? 0),
-              discount: 1.0,
-              quoteDiscount: 1.0,
-              quotePrice: Number(b.unitPrice ?? b.quotePrice ?? 0),
-              materialCode: b.materialCode || "",
-              origin: b.origin || "",
-              category: b.category || "二次元件",
-            }));
+            parsedBom = card.schemeData.bomItems.map((b, idx) => mapBomItemSafely(b, idx, "二次元件"));
           } else if (card.bomJson) {
             try {
-              const list = JSON.parse(card.bomJson);
+              const list = typeof card.bomJson === "string" ? JSON.parse(card.bomJson) : card.bomJson;
               if (Array.isArray(list)) {
-                parsedBom = list.map((b, idx) => ({
-                  id: Date.now() + idx,
-                  selected: true,
-                  sortOrder: idx + 1,
-                  name: b.name || "二次元件",
-                  model: b.model || "",
-                  brand: b.brand || card.brand || "通用",
-                  unit: b.unit || "只",
-                  quantity: Number(b.quantity) || 1,
-                  isWlDoubled: false,
-                  catalogPrice: Number(b.catalogPrice ?? b.unitPrice ?? 0),
-                  discount: 1.0,
-                  quoteDiscount: 1.0,
-                  quotePrice: Number(b.unitPrice ?? b.quotePrice ?? 0),
-                  materialCode: b.materialCode || "",
-                  origin: b.origin || "",
-                  category: b.category || "二次元件",
-                }));
+                parsedBom = list.map((b, idx) => mapBomItemSafely(b, idx, "二次元件"));
               }
             } catch (e) {
               parsedBom = [];
             }
           } else if (Array.isArray(card.bomItems)) {
-            parsedBom = card.bomItems.map((b, idx) => ({
-              id: Date.now() + idx,
-              selected: true,
-              sortOrder: idx + 1,
-              name: b.name || "二次元件",
-              model: b.model || "",
-              brand: b.brand || card.brand || "通用",
-              unit: b.unit || "只",
-              quantity: Number(b.quantity) || 1,
-              isWlDoubled: false,
-              catalogPrice: Number(b.catalogPrice ?? b.unitPrice ?? 0),
-              discount: 1.0,
-              quoteDiscount: 1.0,
-              quotePrice: Number(b.unitPrice ?? b.quotePrice ?? 0),
-              materialCode: b.materialCode || "",
-              origin: b.origin || "",
-              category: b.category || "二次元件",
-            }));
+            parsedBom = card.bomItems.map((b, idx) => mapBomItemSafely(b, idx, "二次元件"));
           }
 
           // 构造 currentDetail 对象供详情三大 Tab 渲染
@@ -6716,6 +6729,97 @@
           currentSecondaryCard.value = null;
           currentPrimaryCard.value = null;
           vectorCadLoading.value = false;
+        };
+
+        // 删除方案 (支持一次成套方案与二次回路方案，带物理 DWG 图纸安全移入回收站选项)
+        // 遵循规范：每 3 行代码至少包含 1 行中文注释
+        const handleDeleteScheme = (card, schemeType) => {
+          // 提取目标卡片实体引用 (优先使用传入卡片，次之取大视口卡片)
+          const target = card || (schemeType === "primary" ? currentPrimaryCard.value : currentSecondaryCard.value);
+          // 若目标卡片不存在则中断
+          if (!target) return;
+
+          // 提取方案数字 ID 主键 (兼容 schemeId 与 schemeData.id)
+          const schemeIdNum = Number(target.schemeId) || (target.schemeData ? Number(target.schemeData.id) : 0) || 0;
+          // 提取方案显示名称
+          const schemeTitle = target.schemeName || target.dwgName || (schemeType === "primary" ? "一次成套方案" : "二次回路方案");
+          // 提取关联的本地物理 DWG 文件路径
+          const dwgFilePath = (target.fullPath || "").trim();
+          // 判断是否存在本地关联 DWG 文件
+          const hasPhysicalDwg = Boolean(dwgFilePath && dwgFilePath.toLowerCase().endsWith(".dwg"));
+          // 确定方案类型中文名称
+          const typeLabel = schemeType === "primary" ? "一次成套方案" : "二次回路方案";
+          // 若为未入库图纸(schemeIdNum <= 0 且带物理DWG)，默认勾选送入回收站，提升操作便利性
+          const defaultCheckRecycle = schemeIdNum <= 0 && hasPhysicalDwg;
+
+          // 组装 ElementPlus 确认弹窗 HTML 内容
+          let confirmHtml = "";
+          if (hasPhysicalDwg) {
+            // 带本地物理 DWG 文件的安全警示与回收站勾选项
+            confirmHtml = `
+              <div style="font-size: 13.5px; color: #334155; line-height: 1.6;">
+                确定要删除${typeLabel} <b>【${schemeTitle}】</b> 吗？
+                <div style="margin-top: 8px; font-size: 12px; color: #64748b; background: #f8fafc; padding: 6px 10px; border-radius: 4px; border: 1px solid #e2e8f0;">
+                  关联图纸文件: <span style="color: #0284c7; word-break: break-all;">${dwgFilePath}</span>
+                </div>
+                <div style="margin-top: 12px; padding: 8px 10px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px;">
+                  <label style="display: flex; align-items: center; cursor: pointer; color: #b91c1c; font-size: 12.5px; font-weight: 500;">
+                    <input type="checkbox" id="chkDeleteDwgToRecycle" ${defaultCheckRecycle ? "checked" : ""} style="margin-right: 8px; width: 15px; height: 15px; accent-color: #ef4444; cursor: pointer;" />
+                    同时将本地 DWG 图纸文件移入系统回收站 (可随时还原)
+                  </label>
+                </div>
+              </div>
+            `;
+          } else {
+            // 纯数据库方案的清除警告
+            confirmHtml = `
+              <div style="font-size: 13.5px; color: #334155; line-height: 1.6;">
+                确定要删除${typeLabel} <b>【${schemeTitle}】</b> 吗？<br/>
+                <span style="font-size: 12px; color: #ef4444;">该操作将从本地数据库中永久清除该方案配置与物料 BOM 清单！</span>
+              </div>
+            `;
+          }
+
+          // 呼出 ElementPlus 确认弹窗
+          ElementPlus.ElMessageBox.confirm(confirmHtml, `删除${typeLabel}`, {
+            dangerouslyUseHTMLString: true,
+            confirmButtonText: "确认删除",
+            cancelButtonText: "取消",
+            type: "warning",
+            confirmButtonClass: "el-button--danger",
+            beforeClose: (action, instance, done) => {
+              // 响应点击确认删除按键
+              if (action === "confirm") {
+                // 读取是否勾选送入回收站
+                const chk = document.getElementById("chkDeleteDwgToRecycle");
+                // 提取勾选布尔状态
+                const deletePhysical = chk ? Boolean(chk.checked) : false;
+                // 关闭确认消息框
+                done();
+                // 派发 IPC 消息给后台 C# 执行物理或数据库删除
+                if (schemeType === "primary") {
+                  // 执行删除一次方案
+                  postToHost("deletePrimaryScheme", {
+                    id: schemeIdNum,
+                    dwgFilePath: dwgFilePath,
+                    deletePhysicalDwg: deletePhysical,
+                  });
+                } else {
+                  // 执行删除二次回路方案
+                  postToHost("deleteSecondaryScheme", {
+                    id: schemeIdNum,
+                    dwgFilePath: dwgFilePath,
+                    deletePhysicalDwg: deletePhysical,
+                  });
+                }
+              } else {
+                // 取消操作关闭弹窗
+                done();
+              }
+            },
+          }).catch(() => {
+            // 捕获并忽略取消操作异常
+          });
         };
 
         // 初始化 cad-view 真实矢量视口实例 (基于 WebGL + WebAssembly 矢量引擎)
@@ -7467,40 +7571,7 @@
                         // 同步大视口方案描述
                         currentDetail.value.description = primForm.description || currentDetail.value.description;
                         // 映射最新的 BOM 清单至详情大视口
-                        currentDetail.value.bomItems = (primBomList.value || []).map((item, idx) => ({
-                          // 保持唯一 ID
-                          id: item.id || Date.now() + idx,
-                          // 默认处于勾选状态
-                          selected: true,
-                          // 序号自增
-                          sortOrder: idx + 1,
-                          // 元件名称
-                          name: item.name || "一次元件",
-                          // 规格型号
-                          model: item.model || "",
-                          // 元器件品牌
-                          brand: item.brand || "通用",
-                          // 计量单位
-                          unit: item.unit || "台",
-                          // 用量数量
-                          quantity: Number(item.quantity) || 1,
-                          // 物料倍增标志
-                          isWlDoubled: false,
-                          // 目录面价
-                          catalogPrice: Number(item.unitPrice ?? item.price ?? 0),
-                          // 采购折扣
-                          discount: 1.0,
-                          // 销售折扣
-                          quoteDiscount: 1.0,
-                          // 销售单价
-                          quotePrice: Number(item.unitPrice ?? item.price ?? 0),
-                          // 物料编码
-                          materialCode: "",
-                          // 产地
-                          origin: "",
-                          // 元件大类
-                          category: "一次成套",
-                        }));
+                        currentDetail.value.bomItems = (primBomList.value || []).map((item, idx) => mapBomItemSafely(item, idx, "一次成套"));
                       }
                     }
                   }
@@ -7731,6 +7802,50 @@
                   apActiveBomList.value = items;
                 }
               }
+              // 18. 删除一次成套方案结果回传
+              else if (action === "deletePrimarySchemeResult") {
+                // 判定后端返回的操作是否成功
+                if (data && data.success) {
+                  // 弹出成功提示消息
+                  ElementPlus.ElMessage.success(data.message || "一次成套方案已成功删除！");
+                  // 若当前正在大视口浏览该被删除方案，自动关闭大视口并返回列表
+                  if (isPrimaryDetail.value && currentPrimaryCard.value) {
+                    const curId = Number(currentPrimaryCard.value.schemeId) || (currentPrimaryCard.value.schemeData ? Number(currentPrimaryCard.value.schemeData.id) : 0);
+                    if (curId === data.id || !curId) {
+                      closeDetail();
+                    }
+                  }
+                  // 重新加载一次成套方案卡片列表
+                  loadPrimaryFolderDwgCards();
+                  // 重新扫描一次子文件夹角标计数
+                  scanPrimaryFolders();
+                } else {
+                  // 弹出删除失败错误提示
+                  ElementPlus.ElMessage.error(data?.message || "删除一次方案失败！");
+                }
+              }
+              // 19. 删除二次回路方案结果回传
+              else if (action === "deleteSecondarySchemeResult") {
+                // 判定后端返回的操作是否成功
+                if (data && data.success) {
+                  // 弹出成功提示消息
+                  ElementPlus.ElMessage.success(data.message || "二次回路方案已成功删除！");
+                  // 若当前正在大视口浏览该被删除方案，自动关闭大视口并返回列表
+                  if (isSecondaryDetail.value && currentSecondaryCard.value) {
+                    const curId = Number(currentSecondaryCard.value.schemeId) || (currentSecondaryCard.value.schemeData ? Number(currentSecondaryCard.value.schemeData.id) : 0);
+                    if (curId === data.id || !curId) {
+                      closeDetail();
+                    }
+                  }
+                  // 重新加载二次回路卡片列表
+                  loadFolderDwgCards();
+                  // 重新扫描二次方案子文件夹角标计数
+                  scanSecondaryFolders();
+                } else {
+                  // 弹出删除失败错误提示
+                  ElementPlus.ElMessage.error(data?.message || "删除二次方案失败！");
+                }
+              }
             } catch (msgErr) {
               // 记录接收处理异常
               console.error("[WebMessage] 处理异常:", msgErr);
@@ -7931,6 +8046,8 @@
           applyCopiedPrimScheme,
           openCaptureCabinetDialog,
           confirmCaptureCabinet,
+          // 方案删除统一处理方法暴露给模板与卡片
+          handleDeleteScheme,
           // 关联 DWG 图纸选择与清空方法暴露给模板
           chooseDwgForCapture,
           chooseDwgForEdit,

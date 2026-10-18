@@ -939,6 +939,147 @@ namespace ExcelAddInDemo.Controllers
             return ExcelServices.CaptureActiveCabinetToPrimaryScheme(targetFolder, customSchemeName, cabinetModel, dwgFilePath);
         }
 
+        /// <summary>
+        /// 安全删除物理文件 (移入 Windows 回收站，支持用户随时找回)
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+        /// </summary>
+        private static bool SafeDeleteFileToRecycleBin(string filePath, string allowedRootDir)
+        {
+            try
+            {
+                // 空路径或文件不存在视作成功
+                if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath)) return true;
+
+                // 越权安全防线：校验待删除文件必须严格位于配置的根目录内
+                if (!string.IsNullOrWhiteSpace(allowedRootDir))
+                {
+                    // 获取文件与根目录的规范化绝对路径
+                    string fullFilePath = System.IO.Path.GetFullPath(filePath);
+                    // 确保根目录末尾携带路径分隔符
+                    string fullAllowedDir = System.IO.Path.GetFullPath(allowedRootDir).TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar;
+                    // 若不在根目录范围内则拒绝执行删除以防误伤系统文件
+                    if (!fullFilePath.StartsWith(fullAllowedDir, StringComparison.OrdinalIgnoreCase))
+                    {
+                        LogHelper.WriteLog($"[CloudSolutionController] 拒绝删除越界文件: {filePath}，允许目录: {allowedRootDir}");
+                        return false;
+                    }
+                }
+
+                // 调度 VB 运行时外壳接口将文件安全移入 Windows 回收站
+                Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(
+                    filePath,
+                    Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                    Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+
+                return true;
+            }
+            catch (Exception exRecycle)
+            {
+                // 移入回收站失败时记录日志并平滑降级为普通删除
+                LogHelper.WriteLog($"[CloudSolutionController] 移入回收站异常，降级普通删除: {exRecycle.Message}");
+                try
+                {
+                    // 降级尝试标准物理删除
+                    System.IO.File.Delete(filePath);
+                    return true;
+                }
+                catch (Exception exDel)
+                {
+                    // 物理删除仍失败记录异常日志
+                    LogHelper.WriteLog($"[CloudSolutionController] 普通删除文件异常: {exDel.Message}");
+                    return false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 删除指定的一次成套方案 (支持同时安全清理本地物理 DWG 文件至回收站)
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+        /// </summary>
+        public (bool Success, string Message) DeletePrimaryScheme(int schemeId, string? dwgFilePath, bool deletePhysicalDwg)
+        {
+            try
+            {
+                // 数据库记录删除标志
+                bool dbDeleted = false;
+                // 1. 若具有有效数据库主键，从 SQLite 执行删除
+                if (schemeId > 0)
+                {
+                    // 调用 SQLite 删除方法
+                    dbDeleted = Services.PersonalComponentDbService.DeletePrimaryScheme(schemeId);
+                }
+
+                // 2. 若用户勾选了同时删除本地 DWG 物理图纸且路径有效
+                bool fileDeleted = true;
+                if (deletePhysicalDwg && !string.IsNullOrWhiteSpace(dwgFilePath) && System.IO.File.Exists(dwgFilePath))
+                {
+                    // 获取配置的一次方案图纸根目录作为安全边界
+                    string rootDwgDir = GetPrimaryCircuitDwgDir();
+                    // 安全送入回收站
+                    fileDeleted = SafeDeleteFileToRecycleBin(dwgFilePath, rootDwgDir);
+                }
+
+                // 3. 若两者皆失败则给出失败提醒
+                if (schemeId > 0 && !dbDeleted && !fileDeleted)
+                {
+                    return (false, "一次方案删除失败，请检查数据库与文件权限！");
+                }
+
+                // 成功返回提示信息
+                return (true, deletePhysicalDwg ? "一次成套方案及本地图纸已成功删除(图纸已放入回收站)！" : "一次成套方案配置已成功删除！");
+            }
+            catch (Exception ex)
+            {
+                // 记录删除异常日志
+                LogHelper.WriteLog($"[CloudSolutionController] DeletePrimaryScheme 异常: {ex.Message}");
+                return (false, $"删除异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 删除指定的二次回路方案 (支持同时安全清理本地物理 DWG 文件至回收站)
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+        /// </summary>
+        public (bool Success, string Message) DeleteSecondaryScheme(int schemeId, string? dwgFilePath, bool deletePhysicalDwg)
+        {
+            try
+            {
+                // 数据库记录删除标志
+                bool dbDeleted = false;
+                // 1. 若具有有效数据库主键，从 SQLite 执行删除
+                if (schemeId > 0)
+                {
+                    // 调用二次方案 SQLite 删除接口
+                    dbDeleted = Services.PersonalComponentDbService.DeleteSecondaryScheme(schemeId);
+                }
+
+                // 2. 若用户勾选了同时删除本地 DWG 物理图纸且路径有效
+                bool fileDeleted = true;
+                if (deletePhysicalDwg && !string.IsNullOrWhiteSpace(dwgFilePath) && System.IO.File.Exists(dwgFilePath))
+                {
+                    // 获取二次回路图纸配置根目录
+                    string rootDwgDir = GetSecondaryCircuitDwgDir();
+                    // 安全送入回收站
+                    fileDeleted = SafeDeleteFileToRecycleBin(dwgFilePath, rootDwgDir);
+                }
+
+                // 3. 若删除皆失败提示错误
+                if (schemeId > 0 && !dbDeleted && !fileDeleted)
+                {
+                    return (false, "二次回路方案删除失败，请检查数据库与文件权限！");
+                }
+
+                // 成功返回提示信息
+                return (true, deletePhysicalDwg ? "二次方案配置及本地图纸已成功删除(图纸已放入回收站)！" : "二次方案配置已成功删除！");
+            }
+            catch (Exception ex)
+            {
+                // 记录二次方案删除异常
+                LogHelper.WriteLog($"[CloudSolutionController] DeleteSecondaryScheme 异常: {ex.Message}");
+                return (false, $"删除异常: {ex.Message}");
+            }
+        }
+
         #endregion
 
         #region 自动组价方案管理 (利驰方案库)

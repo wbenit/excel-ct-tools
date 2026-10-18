@@ -251,6 +251,22 @@ namespace ExcelAddInDemo.Forms
                     return string.Empty;
                 }
 
+                // 辅助安全读取整型参数函数
+                int GetIntProp(string propName, int fallback = 0)
+                {
+                    if (dataEl.TryGetProperty(propName, out var p1) && p1.TryGetInt32(out int val1)) return val1;
+                    if (root.TryGetProperty(propName, out var p2) && p2.TryGetInt32(out int val2)) return val2;
+                    return fallback;
+                }
+
+                // 辅助安全读取布尔参数函数
+                bool GetBoolProp(string propName, bool fallback = false)
+                {
+                    if (dataEl.TryGetProperty(propName, out var p1) && (p1.ValueKind == JsonValueKind.True || p1.ValueKind == JsonValueKind.False)) return p1.GetBoolean();
+                    if (root.TryGetProperty(propName, out var p2) && (p2.ValueKind == JsonValueKind.True || p2.ValueKind == JsonValueKind.False)) return p2.GetBoolean();
+                    return fallback;
+                }
+
                 switch (action)
                 {
                     // 1. 无边框拖拽移动窗体 (带物理鼠标状态检测，杜绝幽灵捕获死锁)
@@ -674,6 +690,34 @@ namespace ExcelAddInDemo.Forms
                             ofdThread.Start();
                             break;
                         }
+
+                    // 30. 删除一次成套方案 (支持同时送入 Windows 回收站)
+                    case "deletePrimaryScheme":
+                        // 提取方案主键 ID
+                        int pDelId = GetIntProp("id");
+                        // 提取图纸文件路径
+                        string pDwgPath = GetStringProp("dwgFilePath");
+                        // 提取是否删除物理图纸标志
+                        bool pDelDwg = GetBoolProp("deletePhysicalDwg");
+                        // 调度控制器执行删除
+                        var (pDelOk, pDelMsg) = _controller.DeletePrimaryScheme(pDelId, pDwgPath, pDelDwg);
+                        // 向前端回送删除执行结果
+                        PostMessageSafe("deletePrimarySchemeResult", new { success = pDelOk, message = pDelMsg, id = pDelId });
+                        break;
+
+                    // 31. 删除二次回路方案 (支持同时送入 Windows 回收站)
+                    case "deleteSecondaryScheme":
+                        // 提取二次方案主键 ID
+                        int sDelId = GetIntProp("id");
+                        // 提取二次图纸文件路径
+                        string sDwgPath = GetStringProp("dwgFilePath");
+                        // 提取是否删除物理图纸标志
+                        bool sDelDwg = GetBoolProp("deletePhysicalDwg");
+                        // 调度控制器执行删除
+                        var (sDelOk, sDelMsg) = _controller.DeleteSecondaryScheme(sDelId, sDwgPath, sDelDwg);
+                        // 向前端回送删除执行结果
+                        PostMessageSafe("deleteSecondarySchemeResult", new { success = sDelOk, message = sDelMsg, id = sDelId });
+                        break;
                 }
             }
             catch (Exception ex)
