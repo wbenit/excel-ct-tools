@@ -1,4 +1,67 @@
-- **【云方案中心：一次方案与二次方案删除功能落地 & 存活动箱柜BOM价格为0修复】(`Controllers/CloudSolutionController.cs`, `Forms/CloudSolutionForm.cs`, `Resources/cloud_solution.html`, `publish/Resources/`, `Services/ExcelServices.CloudSolution.cs`, `ExcelAddInDemo.csproj`)**：
+- **【核心修复：彻底根除复制状态（虚线框）下右键筛选导致状态机挂起与焦点丢失无法输入缺陷】(`Services/ExcelServices.ComponentFilter.cs`, `ExcelEventManager.cs`, `Forms/CustomContextMenuForm.cs`, `Services/ExcelServices.DistributedAdjustPrice.cs`, `publish/`)**：
+  1. **用户核心指令与缺陷确诊**：
+     - 用户提问反馈：“右键筛选后，为什么很多时候会卡住，无法输入”；并明确指示：“修复避免在复制状态（有虚线框）时直接右键筛选”；
+     - 现象与根因深度确诊：
+       ① **CutCopyMode 挂起与状态机冲突**：单元格执行过复制（Ctrl+C 或右键复制）后，四周处于跑马灯虚线框状态（`CutCopyMode != 0`）。此时若直接右键执行筛选，Excel 内部状态机卡在“等待粘贴目标”与“筛选行折叠重绘”的交叉状态中，普通字符按键被拦截，导致无法就地输入；
+       ② **右键菜单销毁与系统焦点悬空**：自定义右键菜单基于 WebView2，菜单销毁/隐藏后，Windows 系统焦点未能自动、稳定地归还给 Excel 工作表编辑窗口（`EXCEL7`），导致按键无宿主响应；
+       ③ **筛选瞬间折叠行与聚光灯重叠**：筛选瞬间大批量隐藏行引起视口突变，若未重新激活 `ActiveCell`，Excel 单元格处于失焦非编辑态。
+  2. **工程级四层严密防御闭环落地**：
+     - **第一层：源头右键事件智能防御 (`ExcelEventManager.cs`)**：
+       - 在 `OnSheetBeforeRightClick` 入口处检测：若当前处于复制模式（`CutCopyMode != 0`）且用户右键点击的目标单元格属于当前被选中的选区（即在被复制的源单元格自身上右键准备筛选），判定用户绝非要粘贴至自身，立即提前清空 `CutCopyMode = 0`，平滑消除跑马灯虚线框，彻底消除“带虚线框右键”；
+     - **第二层：菜单指令分发层防御 (`Forms/CustomContextMenuForm.cs`)**：
+       - 在 `ExecuteMenuAction` 入口处对所有筛选类动作（`excelFilterByValueNative`、`excelFilterByValue`、`filterDistributionRows`）强制前置解除 `CutCopyMode`；
+     - **第三层：业务服务层清空与前台焦点强制归还 (`Services/ExcelServices.ComponentFilter.cs`, `DistributedAdjustPrice.cs`)**：
+       - 在 `ExecuteNativeFilterBySelection`、`FilterComponentsBySelection` 与 `FocusFilterDistributionRows` 入口处显式检测并强制清空 `app.CutCopyMode`；
+       - 在筛选执行完毕后，显式调用 `activeCell.Select()` 并调用 Win32 API `Win32Interop.SetForegroundWindow(excelHwnd)`，强制将系统输入焦点稳稳切回 Excel 主窗口，保证光标立即可输入；
+     - **第四层：折叠行选区自愈清空 (`ExcelEventManager.cs`)**：
+       - 在 `OnSheetSelectionChange` 中，当工作表处于筛选激活模式（`FilterMode == true`）且仍有残留虚线框时，自动自愈清除 `CutCopyMode`；
+     - 严格遵循每 3 行新增代码包含 1 行中文注释规范。
+  3. **构建验证与产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false` 完整编译：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 已全量同步覆盖至 `publish/` 目录。
+
+- **【核心修复：解决新建箱柜无法立即删除与连续删除报 0x800A01A8 异常】(`Services/ExcelServices.Cabinet.cs`, `Tool.cs`, `publish/`)**：
+  1. **用户核心指令与缺陷确诊**：
+     - 用户提问反馈：“新建的箱柜不能立即删除，如图1，定义名称都是正确的。再新建一个可以删除第一次新建的，删除第二次新建的报错如图2”；
+     - 现象与根因确诊：
+       ① **根因一（图1新建后不能立即删除）**：`Tool._sheetValidCabinetsCache` 缓存机制设有 60 秒有效期。新建箱柜在进入创建前执行了 `GetSheetValidCabinets` 扫描，将“尚未包含新箱柜”的旧列表写入了内存缓存；新建箱柜成功写入后未调用 `InvalidateSheetCabinetsCache`，导致用户立即点击删除时，命中旧缓存，被系统判定为“未选中任何箱柜”；
+       ② **根因二（图2连续删除报 0x800A01A8）**：删除第一个箱柜后，未主动刷新缓存，缓存中仍残留已被物理整行删除的旧箱柜及其无效 COM Range 对象。紧接着删除第二个箱柜时，`DeleteCabinetFromSelection` 读入含有已删除对象的脏缓存，在执行 `resultList.Sort` 或范围比对时裸调 `a.Value.Sum.Row` 访问已被释放的 Excel COM 对象，触发 Excel 底层 `0x800A01A8 (Object required)` 异常。
+  2. **工程级最小改动闭环落地**：
+     - **新建箱柜后主动失效缓存 (`Services/ExcelServices.Cabinet.cs`)**：
+       - 在 `CopyCabinetDetailFromTemplate` 返回前显式调用 `Tool.InvalidateSheetCabinetsCache(curSheetName)`，确保新建完成后缓存立即刷新；
+     - **删除逻辑前后全生命周期缓存失效与安全整型行号 (`Services/ExcelServices.Cabinet.cs`)**：
+       - 在 `DeleteCabinets` 入口处清空缓存；物理删除行后立即清空缓存；`finally` 兜底清空缓存；
+       - `DeleteCabinetFromSelection` 提取首个箱柜汇总行与比对时，优先使用纯整数 `SumRow`/`DetRow`，对 COM 属性访问包裹 `try-catch` 安全捕获；
+     - **底层箱柜检索与排序安全化 (`Tool.cs`)**：
+       - 在 `FindCabinetByRow` 与 `GetSelectedCabinets` 中，全面优先使用纯整数 `SumRow` / `DetRow` / `TolsumRow`，并在 COM 访问处增加防御捕获，彻底杜绝悬空 Range 引发 `0x800A01A8`；
+     - 严格遵循每 3 行新增代码包含 1 行中文注释规范。
+  3. **构建验证与产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 编译通过：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 已全量同步覆盖至 `publish/` 目录。
+
+- **【核心修复：动态读取模板 Cab_Subsum_1 实际行号，彻底根除新建箱柜将辅材与箱体误划入元器件区及序号冲刷缺陷】(`Services/ExcelServices.Cabinet.cs`, `Tool.cs`, `Resources/CabinetTemplate.xlsx`, `publish/Resources/CabinetTemplate.xlsx`, `publish/`)**：
+  1. **用户核心指令与需求确诊**：
+     - 用户提问反馈：“模板中的格式是图二，新建箱柜却是图一，辅材箱体应该在计费区域，实际新建箱柜算到元器件区域了，什么原因”；并在分析后明确指示：“可以读取模板中 Cab_Subsum_1 的实际行号（第 64 行），不能由上至下寻找首个计费项行（[1] 辅材，偏移为 23），因为这个是灵活的计费区域，不是写死的。”；
+     - 现象与根因深度确诊：
+       ① 历史代码在 `CopyCabinetDetailFromTemplate` 中对模板行号严重硬编码（死写 `66 - 41`，即 `newSubsumRow = targetDetailStartRow + 25`），直接将新箱柜的 `Cab_Subsum` 注册在了 `[3] 小计` 行；
+       ② 规则 6 明确规定“元器件终止行 = Cab_Subsum.row - 1”，由于 `Cab_Subsum` 落在小计行，导致小计行上方的 `[1] 辅材` 与 `[2] 箱体` 被错误划入元器件区域；
+       ③ `RefreshCabinetFeeAreaFormulas` 随后将元器件区间内所有行的 A 列强制刷成自适应递增公式 `=ROW()-ROW(...)`，将原本的 `[1]`、`[2]` 粗暴覆盖为了数字 `19`、`20`；
+       ④ 计费区域是灵活可配置的，绝不能通过由上至下扫描特定文本（如“辅材”或“[1]”）来猜测行号，唯有直接读取模板中 `Cab_Subsum_1` 的实际行号，才是最规范、通用的工程解法。
+  2. **工程级最小改动闭环落地**：
+     - **模板定义名称行号动态提取助手 (`Tool.cs`)**：
+       - 实现 `Tool.GetDefinedNameRowFromTemplate(sheet, wb, tagName, fallbackRow)`；
+       - 遵循工作表作用域优先原则（优先检查 `sheet.Names`，后备 `wb.Names`）；
+       - 支持正则直接从 `RefersTo` 公式（如 `='分类1'!$A$64`）秒级解析出物理行号，备用 `RefersToRange.Row`，彻底规避跨表与 COM 拒绝异常；
+     - **新建箱柜动态相对偏移重构 (`Services/ExcelServices.Cabinet.cs`)**：
+       - 重构 `CopyCabinetDetailFromTemplate`：打开模板工作簿后，动态提取 `tmplDetRow`（Cab_Det_1，44）、`tmplSubsumRow`（Cab_Subsum_1，64）及 `tmplTolsumRow`（Cab_Tolsum_1，71）；
+       - 动态计算模板明细块起止行 `tmplStartRow = tmplDetRow - 3`、`tmplEndRow = tmplTolsumRow + 3` 与总行数 `copyRowCount`；
+       - 动态计算新箱柜映射行号：`newDetRow = targetDetailStartRow + (tmplDetRow - tmplStartRow)`、`newSubsumRow = targetDetailStartRow + (tmplSubsumRow - tmplStartRow)`、`newTolsumRow = targetDetailStartRow + (tmplTolsumRow - tmplStartRow)`，彻底消除写死行号硬编码；
+       - 同步优化 `InsertCabinetWithBOM` 中的定义名称提取逻辑；
+       - 遵循每 3 行新增代码包含 1 行中文注释规范。
+     - **多端模板与二进制产物全量同步**：
+       - 校准模板定义名称，并全量镜像同步至 `Resources/CabinetTemplate.xlsx` 与 `publish/Resources/CabinetTemplate.xlsx`；
+       - `dotnet build` 编译验证：**0 错误**；最新 `ExcelAddInDemo.dll` 与 PDB 全量覆盖至 `publish/`。
+
   1. **用户核心指令与需求背景**：
      - 用户指令反馈：“把箱柜保持到一次方案，价格都是为0，没能录入，如图”、“在一次方案和二次方案添加删除功能，你怎么设计”；并在设计方案汇报后明确指令：“认可，执行”；
      - 需求确诊：

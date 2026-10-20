@@ -125,6 +125,19 @@ namespace ExcelAddInDemo
                 // 获取当前工作簿选区 Selection
                 dynamic? selection = app.Selection;
 
+                // 核心修复：若当前处于复制或剪切状态 (有跑马灯虚线框)，立即解除 CutCopyMode
+                // 彻底消除虚线框，避免 Excel 状态机处于等待粘贴挂起模式导致筛选后卡住、无法输入
+                try
+                {
+                    // 检测是否处于复制或剪切模式
+                    if (app.CutCopyMode != 0)
+                    {
+                        // 强制解除挂起的复制剪切状态，消除跑马灯虚线
+                        app.CutCopyMode = (Microsoft.Office.Interop.Excel.XlCutCopyMode)0;
+                    }
+                }
+                catch { }
+
                 // 若未检测到有效活动单元格，友好提示并返回
                 if (activeCell == null || activeSheet == null)
                 {
@@ -315,6 +328,24 @@ namespace ExcelAddInDemo
                     () => ClearComponentFilter(activeSheet),
                     () => ExecuteNativeFilterBySelection()
                 ));
+
+                // 核心加固：筛选执行完毕后，重新激活当前单元格，确保输入焦点稳定对齐
+                try
+                {
+                    // 重新选中当前活动单元格
+                    if (activeCell != null)
+                    {
+                        // 显式调用 Select 确保键盘输入焦点回落到当前单元格
+                        activeCell.Select();
+                        // 提取主窗口句柄并唤醒 Excel 宿主，确保键盘输入焦点畅通无阻
+                        IntPtr excelHwnd = new IntPtr((int)app.Hwnd);
+                        if (excelHwnd != IntPtr.Zero)
+                        {
+                            Win32Interop.SetForegroundWindow(excelHwnd);
+                        }
+                    }
+                }
+                catch { }
             }
             catch (Exception ex)
             {
@@ -536,6 +567,19 @@ namespace ExcelAddInDemo
                 // 获取当前活动工作表 ActiveSheet
                 dynamic? activeSheet = app.ActiveSheet;
 
+                // 核心修复：若当前处于复制或剪切状态 (有跑马灯虚线框)，立即解除 CutCopyMode
+                // 彻底消除虚线框，避免 Excel 状态机处于等待粘贴挂起模式导致筛选后卡住、无法输入
+                try
+                {
+                    // 检测是否处于复制或剪切模式
+                    if (app.CutCopyMode != 0)
+                    {
+                        // 强制解除挂起的复制剪切状态，消除跑马灯虚线
+                        app.CutCopyMode = (Microsoft.Office.Interop.Excel.XlCutCopyMode)0;
+                    }
+                }
+                catch { }
+
                 // 若选区或工作表为空，直接退出
                 if (selection == null || activeSheet == null)
                 {
@@ -593,6 +637,24 @@ namespace ExcelAddInDemo
                     () => ClearComponentFilter(activeSheet),
                     () => FilterComponentsBySelection()
                 ));
+
+                // 核心加固：筛选执行完毕后，重新激活当前单元格，确保输入焦点稳定对齐
+                try
+                {
+                    // 重新选中当前活动单元格
+                    if (activeCell != null)
+                    {
+                        // 显式调用 Select 确保键盘输入焦点回落到当前单元格
+                        activeCell.Select();
+                        // 提取主窗口句柄并唤醒 Excel 宿主，确保键盘输入焦点畅通无阻
+                        IntPtr excelHwnd = new IntPtr((int)app.Hwnd);
+                        if (excelHwnd != IntPtr.Zero)
+                        {
+                            Win32Interop.SetForegroundWindow(excelHwnd);
+                        }
+                    }
+                }
+                catch { }
             }
             catch (Exception ex)
             {

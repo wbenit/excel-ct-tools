@@ -1570,10 +1570,14 @@ namespace ExcelAddInDemo
             // 遍历所有有效箱柜进行区间命中判定
             foreach (var cab in validCabinets)
             {
-                // 优先读取模型中缓存的行号，零跨进程 COM 调用
-                int sumR = cab.Value.SumRow > 0 ? cab.Value.SumRow : (cab.Value.Sum != null ? Convert.ToInt32(cab.Value.Sum.Row) : 0);
-                int detR = cab.Value.DetRow > 0 ? cab.Value.DetRow : (cab.Value.Det != null ? Convert.ToInt32(cab.Value.Det.Row) : 0);
-                int tolR = cab.Value.TolsumRow > 0 ? cab.Value.TolsumRow : (cab.Value.Tolsum != null ? Convert.ToInt32(cab.Value.Tolsum.Row) : (detR + 27));
+                // 核心防护：优先读取纯内存整数行号，若回退 COM 则增加 try-catch 保护，彻底杜绝 0x800A01A8 异常
+                int sumR = cab.Value.SumRow;
+                if (sumR <= 0 && cab.Value.Sum != null) { try { sumR = Convert.ToInt32(cab.Value.Sum.Row); } catch { } }
+                int detR = cab.Value.DetRow;
+                if (detR <= 0 && cab.Value.Det != null) { try { detR = Convert.ToInt32(cab.Value.Det.Row); } catch { } }
+                int tolR = cab.Value.TolsumRow;
+                if (tolR <= 0 && cab.Value.Tolsum != null) { try { tolR = Convert.ToInt32(cab.Value.Tolsum.Row); } catch { } }
+                if (tolR <= 0) tolR = detR > 0 ? detR + 27 : 0;
 
                 // 判定行号是否命中汇总行，或落在明细大标题至总计行下方3行报价人信息完整区间 (规则 6 扩展)
                 if (row == sumR || (detR > 0 && row >= (detR - 3) && row <= (tolR + 3)))
@@ -1698,8 +1702,11 @@ namespace ExcelAddInDemo
             var resultList = new List<KeyValuePair<int, Models.CabinetAnchorModel>>(matchedDict.Values);
             resultList.Sort((a, b) =>
             {
-                int rowA = a.Value.Sum != null ? Convert.ToInt32(a.Value.Sum.Row) : 0;
-                int rowB = b.Value.Sum != null ? Convert.ToInt32(b.Value.Sum.Row) : 0;
+                // 核心防护：优先使用纯整数缓存行号，并在 COM 访问时添加安全捕获，彻底杜绝 0x800A01A8 报错
+                int rowA = a.Value.SumRow;
+                if (rowA <= 0 && a.Value.Sum != null) { try { rowA = Convert.ToInt32(a.Value.Sum.Row); } catch { } }
+                int rowB = b.Value.SumRow;
+                if (rowB <= 0 && b.Value.Sum != null) { try { rowB = Convert.ToInt32(b.Value.Sum.Row); } catch { } }
                 return rowA.CompareTo(rowB);
             });
 
@@ -3311,6 +3318,60 @@ namespace ExcelAddInDemo
                 // 找不到或异常时安全回退 null
                 return null;
             }
+        }
+
+        /// <summary>
+        /// 从模板工作表或工作簿中动态安全提取指定定义名称的实际物理行号
+        /// 遵循工作表作用域优先原则（优先读取工作表级名称，后备工作簿全局名称）
+        /// </summary>
+        /// <param name="sheet">模板工作表 COM 对象</param>
+        /// <param name="wb">模板工作簿 COM 对象 (可选)</param>
+        /// <param name="tagName">定义名称（如 Cab_Subsum_1）</param>
+        /// <param name="fallbackRow">未能提取时的安全兜底行号</param>
+        /// <returns>提取到的物理行号</returns>
+        public static int GetDefinedNameRowFromTemplate(dynamic sheet, dynamic? wb, string tagName, int fallbackRow)
+        {
+            try
+            {
+                // 1. 优先从工作表级名称提取 (本地局部作用域优先)
+                dynamic? nameObj = null;
+                try { nameObj = sheet?.Names?.Item(tagName); } catch { }
+                // 2. 若工作表级未找到且提供了工作簿，从工作簿级全局名称查找
+                if (nameObj == null && wb != null)
+                {
+                    try { nameObj = wb.Names?.Item(tagName); } catch { }
+                }
+
+                if (nameObj != null)
+                {
+                    // 优先通过 RefersTo 正则快速解析物理行号 (0ms 纯字符串，避免 COM 上下文切换异常)
+                    string refersTo = Convert.ToString(nameObj.RefersTo) ?? string.Empty;
+                    if (!string.IsNullOrEmpty(refersTo))
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(refersTo, @"\$[A-Za-z]+\$(\d+)");
+                        if (match.Success && int.TryParse(match.Groups[1].Value, out int parsedRow) && parsedRow > 0)
+                        {
+                            return parsedRow;
+                        }
+                    }
+
+                    // 备用通过 COM RefersToRange 读取物理行号
+                    try
+                    {
+                        dynamic? refRange = nameObj.RefersToRange;
+                        if (refRange != null)
+                        {
+                            int r = Convert.ToInt32(refRange.Row);
+                            if (r > 0) return r;
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+
+            // 未能成功提取时返回安全兜底行号
+            return fallbackRow;
         }
 
         /// <summary>

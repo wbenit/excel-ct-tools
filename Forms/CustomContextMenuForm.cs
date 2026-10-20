@@ -530,6 +530,24 @@ namespace ExcelAddInDemo.Forms
                 _lastActionName = actionName;
                 _lastActionTime = now;
 
+                // 核心修复：执行筛选类动作前，强制解除挂起的复制剪切状态 (清除跑马灯虚线框)
+                // 彻底避免用户在复制状态下直接筛选导致 Excel 状态机处于等待粘贴挂起模式、卡住无法输入
+                if (actionName == "excelFilterByValueNative" || actionName == "excelFilterByValue" || actionName == "filterDistributionRows")
+                {
+                    try
+                    {
+                        // 获取 Excel Application 实例
+                        dynamic? app = ExcelDnaUtil.Application;
+                        // 若处于复制或剪切模式
+                        if (app != null && app.CutCopyMode != 0)
+                        {
+                            // 强制清除复制剪切状态
+                            app.CutCopyMode = (Microsoft.Office.Interop.Excel.XlCutCopyMode)0;
+                        }
+                    }
+                    catch { }
+                }
+
                 switch (actionName)
                 {
                     case "undoAction":

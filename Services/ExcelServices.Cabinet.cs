@@ -218,12 +218,15 @@ namespace ExcelAddInDemo
                         }
                     }
 
-                    // 9. 物理向下插入 34 行空间 (-4121 对应 xlShiftDown)，确保后续内容与定义名称安全平移
-                    activeSheet.Rows[$"{targetDetailStartRow}:{targetDetailStartRow + copyRowCount - 1}"].Insert(-4121);
-
-                    // 10. 只读方式打开 CabinetTemplate.xlsx 模板工作簿并复制 41:74 行
+                    // 9. 打开 CabinetTemplate.xlsx 模板工作簿并动态读取 Cab_Det_1、Cab_Subsum_1、Cab_Tolsum_1 实际行号
                     // 显式指定 UpdateLinks: 0 杜绝外部源链接安全警告弹窗
                     dynamic templateWb = app.Workbooks.Open(templatePath, UpdateLinks: 0, ReadOnly: true);
+                    // 模板内关键行号初始兜底 (Det:44, Subsum:64, Tolsum:71) --硬编码: 兜底物理行号--
+                    int tmplDetRow = 44;
+                    int tmplSubsumRow = 64;
+                    int tmplTolsumRow = 71;
+                    int tmplStartRow = 41;
+                    int tmplEndRow = 74;
                     try
                     {
                         // 获取模板中的源工作表
@@ -239,8 +242,23 @@ namespace ExcelAddInDemo
                             templateSheet = templateWb.Sheets.Count >= 2 ? templateWb.Sheets[2] : templateWb.Sheets[1];
                         }
 
-                        // 提取模板 41 行至 74 行源区域 (完整箱柜明细块)
-                        dynamic srcRange = templateSheet.Rows["41:74"];
+                        // 核心：动态读取模板中 Cab_Det_1 的实际行号 (兜底 44)
+                        tmplDetRow = Tool.GetDefinedNameRowFromTemplate(templateSheet, templateWb, "Cab_Det_1", 44);
+                        // 核心：动态读取模板中 Cab_Subsum_1 计费区起始行的实际行号 (读取实际行号，绝不硬编码与写死)
+                        tmplSubsumRow = Tool.GetDefinedNameRowFromTemplate(templateSheet, templateWb, "Cab_Subsum_1", 64);
+                        // 核心：动态读取模板中 Cab_Tolsum_1 总计行的实际行号 (兜底 71)
+                        tmplTolsumRow = Tool.GetDefinedNameRowFromTemplate(templateSheet, templateWb, "Cab_Tolsum_1", 71);
+
+                        // 动态计算模板明细块在模板中的起止行号与行数
+                        tmplStartRow = Math.Max(1, tmplDetRow - 3); // 模板大标题在 Det 前 3 行
+                        tmplEndRow = tmplTolsumRow + 3;             // 模板总计行后附带 3 行报价人与落款签名
+                        copyRowCount = tmplEndRow - tmplStartRow + 1;
+
+                        // 物理向下插入 copyRowCount 行空间 (-4121 对应 xlShiftDown)，确保后续内容与定义名称安全平移
+                        activeSheet.Rows[$"{targetDetailStartRow}:{targetDetailStartRow + copyRowCount - 1}"].Insert(-4121);
+
+                        // 提取模板源区域 (完整箱柜明细块，动态起止行)
+                        dynamic srcRange = templateSheet.Rows[$"{tmplStartRow}:{tmplEndRow}"];
                         // 提取当前表目标写入区域
                         dynamic dstRange = activeSheet.Rows[$"{targetDetailStartRow}:{targetDetailStartRow + copyRowCount - 1}"];
 
@@ -253,13 +271,10 @@ namespace ExcelAddInDemo
                         templateWb.Close(false);
                     }
 
-                    // 11. 计算新复制箱柜明细的关键物理行号映射
-                    // 模板中 44 行对应 Cab_Det (箱柜信息行)，相对起始行 41 的偏移为 3 行 --硬编码--
-                    int newDetRow = targetDetailStartRow + (44 - 41);
-                    // 模板中 66 行对应 Cab_Subsum (小计行)，相对起始行 41 的真实偏移为 25 行 --硬编码--
-                    int newSubsumRow = targetDetailStartRow + (66 - 41);
-                    // 模板中 71 行对应 Cab_Tolsum (总计行)，相对起始行 41 的偏移为 30 行 --硬编码--
-                    int newTolsumRow = targetDetailStartRow + (71 - 41);
+                    // 11. 动态计算新复制箱柜明细的关键物理行号映射 (依据模板定义名称实际行号动态推导相对偏移，彻底消除硬编码)
+                    int newDetRow = targetDetailStartRow + (tmplDetRow - tmplStartRow);
+                    int newSubsumRow = targetDetailStartRow + (tmplSubsumRow - tmplStartRow);
+                    int newTolsumRow = targetDetailStartRow + (tmplTolsumRow - tmplStartRow);
 
                     // 12. 注册当前工作表的 4 个定义名称 (规则 6)
                     string curSheetName = Convert.ToString(activeSheet.Name) ?? "";
@@ -343,6 +358,10 @@ namespace ExcelAddInDemo
                     // 15. 激活当前工作表并聚焦光标至新汇总行 B 列
                     activeSheet.Activate();
                     activeSheet.Cells[insertSumRow, 2].Select();
+
+                    // 核心修复：新建箱柜成功后立即失效当前工作表箱柜映射缓存
+                    // 彻底清除之前缓存的不含新箱柜的旧映射，确保后续立即删除、调价等操作能立即识别到新箱柜
+                    Tool.InvalidateSheetCabinetsCache(curSheetName);
 
                     // 16. 返回新建箱柜的关键信息实体
                     return new Models.CabinetCreatedInfo
@@ -449,8 +468,11 @@ namespace ExcelAddInDemo
                     int targetK = targetCab.Key;
                     targetKs.Add(targetK);
                     var anchor = targetCab.Value;
-                    int sumRow = anchor.Sum != null ? Convert.ToInt32(anchor.Sum.Row) : 0;
-                    int detRow = anchor.Det != null ? Convert.ToInt32(anchor.Det.Row) : 0;
+                    // 核心防护：优先使用纯整数缓存行号，并在访问 COM 时增加安全保护，杜绝 0x800A01A8 异常
+                    int sumRow = anchor.SumRow;
+                    if (sumRow <= 0 && anchor.Sum != null) { try { sumRow = Convert.ToInt32(anchor.Sum.Row); } catch { } }
+                    int detRow = anchor.DetRow;
+                    if (detRow <= 0 && anchor.Det != null) { try { detRow = Convert.ToInt32(anchor.Det.Row); } catch { } }
 
                     // 读取箱柜名称 (优先从汇总行 B 列获取，回退从明细行 B 列获取)
                     string cabName = string.Empty;
@@ -476,8 +498,11 @@ namespace ExcelAddInDemo
                     foreach (var cab in selectedCabinets)
                     {
                         targetKs.Add(cab.Key);
-                        int sumRow = cab.Value.Sum != null ? Convert.ToInt32(cab.Value.Sum.Row) : 0;
-                        int detRow = cab.Value.Det != null ? Convert.ToInt32(cab.Value.Det.Row) : 0;
+                        // 核心防护：优先使用纯整数缓存行号，杜绝 COM 悬空指针引发 0x800A01A8 报错
+                        int sumRow = cab.Value.SumRow;
+                        if (sumRow <= 0 && cab.Value.Sum != null) { try { sumRow = Convert.ToInt32(cab.Value.Sum.Row); } catch { } }
+                        int detRow = cab.Value.DetRow;
+                        if (detRow <= 0 && cab.Value.Det != null) { try { detRow = Convert.ToInt32(cab.Value.Det.Row); } catch { } }
                         string cabName = string.Empty;
                         if (sumRow > 0)
                         {
@@ -562,6 +587,11 @@ namespace ExcelAddInDemo
                 app.ScreenUpdating = false;
                 app.DisplayAlerts = false;
                 app.EnableEvents = false;
+
+                // 提取当前工作表名称
+                string sheetName = Convert.ToString(activeSheet.Name) ?? "";
+                // 核心修复：在进入删除逻辑前，立即清空当前工作表缓存，确保读取到最新真实的箱柜映射
+                Tool.InvalidateSheetCabinetsCache(sheetName);
 
                 try
                 {
@@ -651,9 +681,14 @@ namespace ExcelAddInDemo
                     foreach (var cab in toDeleteList)
                     {
                         var anchor = cab.Value;
-                        int sumRow = anchor.Sum != null ? Convert.ToInt32(anchor.Sum.Row) : 0;
-                        int detRow = anchor.Det != null ? Convert.ToInt32(anchor.Det.Row) : 0;
-                        int tolsumRow = anchor.Tolsum != null ? Convert.ToInt32(anchor.Tolsum.Row) : (detRow + 27);
+                        // 核心防护：优先使用内存纯整数行号，并在 COM 访问时添加安全捕获，杜绝 0x800A01A8 异常
+                        int sumRow = anchor.SumRow;
+                        if (sumRow <= 0 && anchor.Sum != null) { try { sumRow = Convert.ToInt32(anchor.Sum.Row); } catch { } }
+                        int detRow = anchor.DetRow;
+                        if (detRow <= 0 && anchor.Det != null) { try { detRow = Convert.ToInt32(anchor.Det.Row); } catch { } }
+                        int tolsumRow = anchor.TolsumRow;
+                        if (tolsumRow <= 0 && anchor.Tolsum != null) { try { tolsumRow = Convert.ToInt32(anchor.Tolsum.Row); } catch { } }
+                        if (tolsumRow <= 0) tolsumRow = detRow + 27;
 
                         // 校验是否存在明细行 (针对无明细箱柜，detRow 为 0，跳过明细块删除)
                         int detailStartRow = 0;
@@ -733,16 +768,24 @@ namespace ExcelAddInDemo
                         }
                     }
 
-                    // 7. 激活当前工作表并聚焦光标至合理的汇总区域 (无需执行全表自愈，保障毫秒级极速响应)
+                    // 7. 物理删除完成后，立即清空当前工作表的箱柜内存缓存 (彻底销毁已删除行的无效 COM 引用)
+                    Tool.InvalidateSheetCabinetsCache(sheetName);
+
+                    // 8. 激活当前工作表并聚焦光标至合理的汇总区域 (无需执行全表自愈，保障毫秒级极速响应)
                     activeSheet.Activate();
                     try
                     {
-                        // 尝试重新扫描剩余的首个箱柜汇总行并选中
+                        // 重新扫描剩余的首个箱柜汇总行并选中
                         var remaining = Tool.GetSheetValidCabinets(activeSheet, wb);
-                        if (remaining.Count > 0 && remaining[0].Value.Sum != null)
+                        if (remaining.Count > 0)
                         {
-                            int firstSumR = Convert.ToInt32(remaining[0].Value.Sum.Row);
-                            activeSheet.Cells[firstSumR, 2].Select();
+                            // 优先使用纯整数缓存行号，杜绝 COM 访问报错
+                            int firstSumR = remaining[0].Value.SumRow;
+                            if (firstSumR <= 0 && remaining[0].Value.Sum != null)
+                            {
+                                try { firstSumR = Convert.ToInt32(remaining[0].Value.Sum.Row); } catch { }
+                            }
+                            if (firstSumR > 0) activeSheet.Cells[firstSumR, 2].Select();
                         }
                     }
                     catch { }
@@ -751,6 +794,9 @@ namespace ExcelAddInDemo
                 }
                 finally
                 {
+                    // 兜底保障：无论成功还是异常，均强力失效当前工作表箱柜映射缓存
+                    Tool.InvalidateSheetCabinetsCache(sheetName);
+
                     // 恢复屏幕刷新与系统事件响应
                     app.ScreenUpdating = true;
                     app.DisplayAlerts = true;
@@ -1456,28 +1502,12 @@ namespace ExcelAddInDemo
                     dynamic? tmplSheet = EnsureHiddenCabinetTemplateSheet(app, activeWb);
                     if (tmplSheet != null)
                     {
-                        try
-                        {
-                            dynamic d1 = tmplSheet.Names["Cab_Det_1"];
-                            if (d1 != null) srcDetRow = Convert.ToInt32(d1.RefersToRange.Row);
-                            dynamic s1 = tmplSheet.Names["Cab_Subsum_1"];
-                            if (s1 != null) srcSubsumRow = Convert.ToInt32(s1.RefersToRange.Row);
-                            dynamic t1 = tmplSheet.Names["Cab_Tolsum_1"];
-                            if (t1 != null) srcTolsumRow = Convert.ToInt32(t1.RefersToRange.Row);
-                        }
-                        catch
-                        {
-                            try
-                            {
-                                dynamic dWb = activeWb.Names["Cab_Det_1"];
-                                if (dWb != null) srcDetRow = Convert.ToInt32(dWb.RefersToRange.Row);
-                                dynamic sWb = activeWb.Names["Cab_Subsum_1"];
-                                if (sWb != null) srcSubsumRow = Convert.ToInt32(sWb.RefersToRange.Row);
-                                dynamic tWb = activeWb.Names["Cab_Tolsum_1"];
-                                if (tWb != null) srcTolsumRow = Convert.ToInt32(tWb.RefersToRange.Row);
-                            }
-                            catch { }
-                        }
+                        // 动态安全提取模板中的 Cab_Det_1 行号 (兜底 44)
+                        srcDetRow = Tool.GetDefinedNameRowFromTemplate(tmplSheet, activeWb, "Cab_Det_1", 44);
+                        // 动态安全提取模板中的 Cab_Subsum_1 行号 (计费区起始行，兜底 64)
+                        srcSubsumRow = Tool.GetDefinedNameRowFromTemplate(tmplSheet, activeWb, "Cab_Subsum_1", 64);
+                        // 动态安全提取模板中的 Cab_Tolsum_1 行号 (兜底 71)
+                        srcTolsumRow = Tool.GetDefinedNameRowFromTemplate(tmplSheet, activeWb, "Cab_Tolsum_1", 71);
                     }
                 }
 

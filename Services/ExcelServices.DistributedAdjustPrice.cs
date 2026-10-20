@@ -2350,6 +2350,19 @@ namespace ExcelAddInDemo
                 dynamic activeSheet = app.ActiveSheet;
                 if (activeSheet == null) return;
 
+                // 核心修复：若当前处于复制或剪切状态 (有跑马灯虚线框)，立即解除 CutCopyMode
+                // 彻底消除虚线框，避免 Excel 状态机处于等待粘贴挂起模式导致筛选后卡住、无法输入
+                try
+                {
+                    // 检测是否处于复制或剪切模式
+                    if (app.CutCopyMode != 0)
+                    {
+                        // 强制解除挂起的复制剪切状态，消除跑马灯虚线
+                        app.CutCopyMode = (Microsoft.Office.Interop.Excel.XlCutCopyMode)0;
+                    }
+                }
+                catch { }
+
                 // 校验工作表名称
                 string sName = Convert.ToString(activeSheet.Name)?.Trim() ?? "";
                 if (!string.Equals(sName, DistributionSheetName, StringComparison.OrdinalIgnoreCase))

@@ -186,6 +186,25 @@ namespace ExcelAddInDemo
                 // 校验目标单元格与全局 Application
                 if (target == null || _excelApp == null) return;
 
+                // 核心加固：若工作表已处于筛选激活状态 (FilterMode == true) 且仍残留 CutCopyMode 跑马灯虚线框
+                // 说明用户刚刚执行了筛选，自动自愈清除挂起的复制剪切状态，防止输入卡死
+                try
+                {
+                    // 检测是否处于复制剪切状态
+                    if (_excelApp.CutCopyMode != 0)
+                    {
+                        // 提取所属工作表强类型对象
+                        var activeWs = (shObj as Microsoft.Office.Interop.Excel.Worksheet) ?? target.Worksheet;
+                        // 若工作表处于筛选激活模式
+                        if (activeWs != null && activeWs.FilterMode)
+                        {
+                            // 自动清除挂起的复制状态，彻底消灭残留虚线框
+                            _excelApp.CutCopyMode = (Microsoft.Office.Interop.Excel.XlCutCopyMode)0;
+                        }
+                    }
+                }
+                catch { }
+
                 // 0. 若开启了聚光灯高亮功能，即时计算并更新当前选中单元格的行列十字高亮区域
                 if (ExcelServices.IsSpotlightEnabled)
                 {
@@ -1059,6 +1078,26 @@ namespace ExcelAddInDemo
             {
                 // 校验全局 _excelApp 与 target 句柄有效性
                 if (_excelApp == null || target == null) return;
+
+                // 核心修复：若当前处于复制或剪切模式 (单元格四周带虚线框)，且用户右击的单元格落在当前被选中的选区内部
+                // 说明用户在被复制的源单元格自身上点击右键 (例如准备按当前值进行右键筛选)，绝非要在自身上执行粘贴
+                // 此时提前清除挂起的 CutCopyMode，消除跑马灯虚线框，避免带着虚线框触发右键筛选导致状态机挂起、卡死无法输入
+                try
+                {
+                    // 检测是否处于复制或剪切状态
+                    if (_excelApp.CutCopyMode != 0)
+                    {
+                        // 提取当前选区对象
+                        Microsoft.Office.Interop.Excel.Range? currentSel = _excelApp.Selection as Microsoft.Office.Interop.Excel.Range;
+                        // 若右击目标单元格落在当前选区交集内部，判定为源单元格自身操作
+                        if (currentSel != null && _excelApp.Intersect(currentSel, target) != null)
+                        {
+                            // 清除挂起的复制剪切状态，平滑消除虚线框
+                            _excelApp.CutCopyMode = (Microsoft.Office.Interop.Excel.XlCutCopyMode)0;
+                        }
+                    }
+                }
+                catch { }
 
                 // 读取当前配置：是否启用自定义业务右键菜单
                 bool useCustomMenu = ConfigManager.Instance.Current.Excel.UseCustomContextMenu;
