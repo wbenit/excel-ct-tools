@@ -96,8 +96,9 @@ namespace ExcelAddInDemo.Forms
             }
             else if (_mode == "reorder")
             {
+                // 调序模式：适度拓宽以优雅容纳柜号与备注列并杜绝水平滚动条
                 this.Text = "箱柜调序";
-                this.ClientSize = new Size(680, 560);
+                this.ClientSize = new Size(760, 580);
             }
             else
             {
@@ -302,23 +303,42 @@ namespace ExcelAddInDemo.Forms
                         }
                         break;
 
+                    // 前端安全请求 Windows 系统剪贴板内容 (原生系统接口，100% 杜绝浏览器 Document is not focused 异常)
+                    case "getClipboardText":
+                        string clipContent = string.Empty;
+                        try
+                        {
+                            // 检查系统剪贴板是否包含文本
+                            if (Clipboard.ContainsText())
+                            {
+                                // 读取系统原生剪贴板纯文本
+                                clipContent = Clipboard.GetText();
+                            }
+                        }
+                        catch { }
+                        // 将剪贴板内容回传给前端
+                        PostMessageSafe(new
+                        {
+                            action = "clipboardTextResult",
+                            text = clipContent
+                        });
+                        break;
+
                     // 提交箱柜调序指令
                     case "applyReorder":
                         if (root.TryGetProperty("newOrder", out var orderEl))
                         {
-                            var orderList = JsonSerializer.Deserialize<List<int>>(orderEl.GetRawText(), JsonOptions);
-                            bool reorderOk = _controller.ApplyCabinetReorder(orderList ?? new List<int>());
+                            var orderList = JsonSerializer.Deserialize<List<int>>(orderEl.GetRawText(), JsonOptions) ?? new List<int>();
+                            // 调度业务控制器执行物理重排并获取明确提示
+                            string resultMsg = "";
+                            bool reorderOk = _controller.ApplyCabinetReorder(orderList, out resultMsg);
+                            // 将处理结果广播给前端展示，严禁直接闪退关闭窗口
                             PostMessageSafe(new
                             {
                                 action = "applyReorderResult",
                                 success = reorderOk,
-                                message = reorderOk ? "箱柜排序已成功应用并更新表格！" : "应用调序失败。"
+                                message = !string.IsNullOrEmpty(resultMsg) ? resultMsg : (reorderOk ? "箱柜排序已成功应用并更新表格！" : "应用调序失败。")
                             });
-                            if (reorderOk)
-                            {
-                                this.DialogResult = DialogResult.OK;
-                                this.Close();
-                            }
                         }
                         break;
                 }

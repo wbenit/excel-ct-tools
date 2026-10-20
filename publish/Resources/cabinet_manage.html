@@ -415,18 +415,25 @@
       <div v-show="currentTab === 'reorder'" style="display: flex; flex-direction: column; height: 100%;">
         <div style="margin-bottom: 8px; font-size: 12px; color: #475569; display: flex; align-items: center; gap: 6px;">
           <i class="fa-solid fa-lightbulb" style="color: #eab308;"></i>
-          <span>选择箱柜后通过右侧按钮上移/下移；调序采用“内存整块重排重建”算法，100% 杜绝公式损坏。</span>
+          <span>在 Excel 复制【柜号】与【备注(I列)】两列后点击【粘贴两列调序】或按 Ctrl+V 快速重排；严格双键吻合校验，不符直接拦截。</span>
         </div>
 
         <div class="reorder-wrap">
           <div class="reorder-list">
             <el-table :data="reorderTable" height="100%" stripe highlight-current-row @current-change="onReorderSelect" size="small" style="width: 100%;">
               <el-table-column type="index" label="顺位" width="55" align="center"></el-table-column>
-              <el-table-column prop="cabinetNo" label="柜号" min-width="120"></el-table-column>
-              <el-table-column prop="name" label="箱柜名称" min-width="120"></el-table-column>
-              <el-table-column prop="model" label="型号" min-width="100"></el-table-column>
-              <el-table-column prop="quantity" label="数量" width="70" align="center"></el-table-column>
-              <el-table-column label="类型" width="90" align="center">
+              <el-table-column prop="cabinetNo" label="柜号" min-width="120" show-overflow-tooltip></el-table-column>
+              <el-table-column prop="name" label="箱柜名称" min-width="120" show-overflow-tooltip></el-table-column>
+              <el-table-column prop="remark" label="备注" min-width="110" show-overflow-tooltip>
+                <template #default="scope">
+                  <span :style="{ color: scope.row.remark ? '#334155' : '#94a3b8' }">
+                    {{ scope.row.remark || '(空)' }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="model" label="型号" min-width="90" show-overflow-tooltip></el-table-column>
+              <el-table-column prop="quantity" label="数量" width="60" align="center"></el-table-column>
+              <el-table-column label="类型" width="75" align="center">
                 <template #default="scope">
                   <span class="badge-kind" :class="scope.row.isNoDetail ? 'badge-nodetail' : 'badge-normal'">
                     {{ scope.row.isNoDetail ? '无明细' : '标准柜' }}
@@ -437,6 +444,10 @@
           </div>
 
           <div class="reorder-actions">
+            <!-- 剪贴板快速粘贴两列调序按钮 -->
+            <el-button size="small" type="primary" plain @click="pasteReorderFromClipboard" style="color: #009688; border-color: #009688; margin-bottom: 6px;" title="从 Excel 复制柜号和备注两列直接粘贴调序">
+              <i class="fa-solid fa-paste" style="margin-right: 4px;"></i>粘贴调序
+            </el-button>
             <el-button size="small" :disabled="!selectedReorderRow || selectedReorderIndex <= 0" @click="moveRowTop">
               <i class="fa-solid fa-angles-up" style="margin-right: 4px;"></i>置顶
             </el-button>
@@ -635,6 +646,109 @@
           }
         };
 
+        // 从剪贴板读取两列数据并按【柜号 + 备注(I列)】双键完全吻合严密调序
+        // 触发从剪贴板读取并调序（优先使用 C# 原生系统接口，彻底免疫失焦与权限限制）
+        const pasteReorderFromClipboard = async () => {
+          // 优先请求 C# 原生读取系统剪贴板
+          if (window.chrome && window.chrome.webview) {
+            postToCSharp({ action: 'getClipboardText' });
+            return;
+          }
+          // 纯浏览器降级尝试
+          try {
+            const text = await navigator.clipboard.readText();
+            processPastedReorderText(text);
+          } catch (err) {
+            ElementPlus.ElMessage.error('无法读取剪贴板，请检查权限。');
+          }
+        };
+
+        // 核心解析与校验调序文本
+        const processPastedReorderText = (text) => {
+          if (!text || !text.trim()) {
+            ElementPlus.ElMessage.error('剪贴板中未找到文本内容，请先在 Excel 中复制【柜号】与【备注】两列数据！');
+            return;
+          }
+
+          // 按换行符切分为多行文本，切勿整行 trim()，避免吃掉行尾代表空列的制表符 \t
+          const rawLines = text.split(/\r?\n/);
+          const lines = [];
+          for (let i = 0; i < rawLines.length; i++) {
+            const l = rawLines[i].replace(/[\r\n]/g, '');
+            // 忽略文本末尾的多余空行
+            if (i === rawLines.length - 1 && !l.trim()) continue;
+            if (l.trim().length > 0) {
+              lines.push(l);
+            }
+          }
+
+          if (lines.length === 0) {
+            ElementPlus.ElMessage.error('未识别到有效的行内容！');
+            return;
+          }
+
+          // 规则强校验 1: 行数必须与当前工程箱柜总数 1:1 完全相等
+          if (lines.length !== reorderTable.value.length) {
+            ElementPlus.ElMessage.error(`粘贴行数(${lines.length})与当前箱柜总数(${reorderTable.value.length})不一致，禁止调序！`);
+            return;
+          }
+
+          // 规则强校验 2: 逐行提取柜号与备注（允许第二列备注为空字符串）
+          const targetPairs = [];
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            // 制表符拆分列
+            const cols = line.split('\t');
+            // 提取柜号与备注（若只有单列则备注视为空字符串）
+            const targetCabNo = (cols[0] || '').trim();
+            const targetRemark = (cols.length >= 2 ? (cols[1] || '') : '').trim();
+
+            // 柜号非空校验
+            if (!targetCabNo) {
+              ElementPlus.ElMessage.error(`第 ${i + 1} 行柜号不能为空！`);
+              return;
+            }
+
+            targetPairs.push({ lineIndex: i + 1, cabNo: targetCabNo, remark: targetRemark });
+          }
+
+          // 规则强校验 3: 双键完全吻合匹配（绝不降级，绝不容错）
+          const newOrderList = [];
+          const matchedIndexSet = new Set();
+
+          for (const pair of targetPairs) {
+            // 在当前箱柜列表中精确查找双键完全吻合且未被占用的项
+            const matchedCab = reorderTable.value.find(row => 
+              !matchedIndexSet.has(row.cabinetIndex) &&
+              (row.cabinetNo || '').trim() === pair.cabNo &&
+              (row.remark || '').trim() === pair.remark
+            );
+
+            // 若未匹配到完全吻合项，直接报错拦截并中止调序
+            if (!matchedCab) {
+              const remarkPrompt = pair.remark ? `备注="${pair.remark}"` : '备注为空';
+              ElementPlus.ElMessage.error(`第 ${pair.lineIndex} 行【柜号="${pair.cabNo}", ${remarkPrompt}】未在当前工程中找到完全吻合的未占用箱柜，调序已中止！`);
+              return;
+            }
+
+            // 登记已占用箱柜索引并加入新顺序列表
+            matchedIndexSet.add(matchedCab.cabinetIndex);
+            newOrderList.push(matchedCab);
+          }
+
+          // 校验完整性确保无遗漏
+          if (newOrderList.length !== reorderTable.value.length) {
+            ElementPlus.ElMessage.error('未能 100% 映射全部箱柜，调序已中止！');
+            return;
+          }
+
+          // 校验完全通过，应用最新前台排列
+          reorderTable.value = newOrderList;
+          selectedReorderRow.value = null;
+          selectedReorderIndex.value = -1;
+          ElementPlus.ElMessage.success(`成功按剪贴板顺序重排全部 ${newOrderList.length} 台箱柜！请核对后点击【应用最新排序】写回 Excel。`);
+        };
+
         // 跨进程通信向 C# 发送指令
         const postToCSharp = (data) => {
           if (window.chrome && window.chrome.webview) {
@@ -679,9 +793,19 @@
           });
         };
 
+        // 记录初始化载入时的箱柜物理顺位
+        const initialOrderList = ref([]);
+
         // 提交调序
         const submitReorder = () => {
           const newOrderList = reorderTable.value.map(item => item.cabinetIndex);
+          // 校验顺位是否有实质改动
+          if (initialOrderList.value.length > 0 && 
+              newOrderList.length === initialOrderList.value.length && 
+              newOrderList.every((k, i) => k === initialOrderList.value[i])) {
+            ElementPlus.ElMessage.warning('当前箱柜顺位未发生任何调整，请先通过【粘贴调序】或右侧按钮调序后再应用！');
+            return;
+          }
           submitting.value = true;
           postToCSharp({
             action: 'applyReorder',
@@ -689,8 +813,23 @@
           });
         };
 
-        // 挂载消息监听器
+        // 挂载消息监听器与全局快捷键
         onMounted(() => {
+          // 监听全局 Ctrl+V 快捷键快速粘贴调序
+          const handleKeyDown = (e) => {
+            // 仅在当前选项卡为调序时生效
+            if (currentTab.value === 'reorder' && (e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
+              // 若当前焦点在可编辑表单元素内则不予拦截
+              const tagName = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
+              if (tagName !== 'INPUT' && tagName !== 'TEXTAREA') {
+                // 拦截默认事件并触发两列调序
+                e.preventDefault();
+                pasteReorderFromClipboard();
+              }
+            }
+          };
+          window.addEventListener('keydown', handleKeyDown);
+
           if (window.chrome && window.chrome.webview) {
             window.chrome.webview.addEventListener('message', (event) => {
               try {
@@ -707,13 +846,27 @@
                   }
                   if (msg.reorderList && Array.isArray(msg.reorderList)) {
                     reorderTable.value = msg.reorderList;
+                    initialOrderList.value = msg.reorderList.map(item => item.cabinetIndex);
                   }
                 } else if (msg.action === 'editCabinetChanged') {
                   if (msg.editInfo) {
                     Object.assign(editForm, msg.editInfo);
                     ElementPlus.ElMessage.info(`已切换至【${msg.editInfo.cabinetNo || '箱柜'}】！`);
                   }
-                } else if (msg.action === 'batchCreateResult' || msg.action === 'saveCabinetInfoResult' || msg.action === 'applyReorderResult') {
+                } else if (msg.action === 'clipboardTextResult') {
+                  processPastedReorderText(msg.text);
+                } else if (msg.action === 'applyReorderResult') {
+                  submitting.value = false;
+                  if (msg.success) {
+                    ElementPlus.ElMessage.success(msg.message || '箱柜排序已成功应用并更新表格！');
+                    // 延迟 1 秒让用户清晰看到完成提示，再优雅关闭
+                    setTimeout(() => {
+                      closeWindow();
+                    }, 1000);
+                  } else {
+                    ElementPlus.ElMessage.warning(msg.message || '应用调序未执行。');
+                  }
+                } else if (msg.action === 'batchCreateResult' || msg.action === 'saveCabinetInfoResult') {
                   submitting.value = false;
                   if (msg.success) {
                     ElementPlus.ElMessage.success(msg.message || '操作成功！');
@@ -754,6 +907,7 @@
           moveRowDown,
           moveRowTop,
           moveRowBottom,
+          pasteReorderFromClipboard,
           onHeaderMouseDown,
           closeWindow,
           submitBatchCreate,

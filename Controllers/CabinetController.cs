@@ -99,10 +99,25 @@ namespace ExcelAddInDemo.Controllers
         /// <param name="newOrderKList">新排序的箱柜序号列表</param>
         public bool ApplyCabinetReorder(List<int> newOrderKList)
         {
+            // 调度带消息回传的重载接口
+            return ApplyCabinetReorder(newOrderKList, out _);
+        }
+
+        /// <summary>
+        /// WebAPI 接口: 应用用户排列好的箱柜新顺序 (带消息回传)
+        /// </summary>
+        /// <param name="newOrderKList">新排序的箱柜序号列表</param>
+        /// <param name="resultMessage">业务处理结果提示信息</param>
+        public bool ApplyCabinetReorder(List<int> newOrderKList, out string resultMessage)
+        {
             // 校验序号集合有效性
-            if (newOrderKList == null || newOrderKList.Count <= 1) return true;
+            if (newOrderKList == null || newOrderKList.Count <= 1)
+            {
+                resultMessage = "箱柜数量不足，无需重排。";
+                return true;
+            }
             // 调度内存整块重排算法写回表格
-            return ExcelServices.ApplyCabinetReorder(newOrderKList);
+            return ExcelServices.ApplyCabinetReorder(newOrderKList, out resultMessage);
         }
     }
 }

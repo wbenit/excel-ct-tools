@@ -796,6 +796,8 @@ namespace ExcelAddInDemo.Models
         public string CabinetNo { get; set; } = string.Empty;
         // 箱柜名称
         public string Name { get; set; } = string.Empty;
+        // 箱柜备注 (对应汇总行 I 列与明细 det-1 行 I 列)
+        public string Remark { get; set; } = string.Empty;
         // 箱柜型号
         public string Model { get; set; } = string.Empty;
         // 数量

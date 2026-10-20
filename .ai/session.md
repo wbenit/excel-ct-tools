@@ -1,3 +1,29 @@
+- **【核心新增：箱柜调序支持从 Excel 复制【柜号】+【备注(I列)】双列数据直接粘贴调序】(`Models/CabinetModels.cs`, `Services/ExcelServices.CabinetManage.cs`, `Forms/CabinetManageForm.cs`, `Resources/cabinet_manage.html`, `publish/`)**：
+  1. **用户核心指令与需求确认**：
+     - 用户提问需求：“调序中，添加可以直接把在excel中的单列多行复制粘贴进去，理解表述需求”；
+     - 进一步澄清并指定：“应该复制两列，一列和柜号匹配一列和备注匹配，可以避免柜号一致的情况，你觉得呢”；
+     - 明确强约束：“必须双键完全吻合，不能降级和兼容容错。所指的‘备注’是：sum行的i列和det-1行的i列。备注是可以为空，实施”；
+     - 需求分析与架构确诊：
+       ① 柜号+备注双键唯一定位：成套电气工程中常见同名柜号（如多个“AL”或“AP”），通过【柜号】与【备注】双键组合可彻底消除重名冲突；
+       ② 物理映射绑定：备注列来源与 Excel 分类表严格对齐：优先从汇总行（`Cab_Sum_k.Row`）第 9 列（I 列）读取，若为空且存在明细行则从明细表上方行（`Cab_Det_k.Row - 1`）第 9 列（I 列）补充读取；允许备注为空；
+       ③ 零容错强校验门禁（契合全局规则第9条）：粘贴数据必须严格为包含制表符 Tab 分隔的两列；有效行数必须与现有箱柜总数 1:1 相等；每一行必须在当前工程中找到完全吻合（`cabinetNo == col1 && remark == col2`）且未被占用的箱柜；任何不符直接报错拦截并中止调序，绝不进行擅自猜测或降级。
+  2. **工程级最小改动闭环落地**：
+     - **数据模型层 (`Models/CabinetModels.cs`)**：
+       - `CabinetOrderItemDto` 中新增 `Remark` 字符串属性，对应汇总行与明细行 I 列备注；
+     - **业务服务层 (`Services/ExcelServices.CabinetManage.cs`)**：
+       - 在 `GetCategoryCabinetsForReorder` 扫描箱柜时，读取 `activeSheet.Cells[sumRow, 9].Value` 并自愈检查 `activeSheet.Cells[detRow - 1, 9].Value`，注入 `Remark` 字段返回前端；
+     - **前端交互与算法层 (`Resources/cabinet_manage.html`, `publish/Resources/cabinet_manage.html`)**：
+       - 调序表格新增展示【备注】列（空值灰度提示 `(空)`，带 overflow-tooltip）；
+       - 右侧操作区新增显式【📋 粘贴调序】按钮（#009688 风格）；
+       - 实现 `pasteReorderFromClipboard` 算法：读取剪贴板、行数强匹配、双列制表符解析、双键完全吻合单次占用映射；校验全部通过后实时更新表格顺序；
+       - 全局键盘事件监听：调序 Tab 下支持按 `Ctrl + V` 快速调序（表单 input/textarea 内输入不拦截）；
+     - **窗口尺寸自适应优化 (`Forms/CabinetManageForm.cs`)**：
+       - 调序模式窗口尺寸从 `680x560` 优化为 `760x580`，确保新增备注列后绝无水平滚动条，弹性布局完美适配；
+     - 严格遵循每 3 行新增代码至少 1 行中文注释规范。
+  3. **构建验证与多端产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整编译：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll`、`ExcelAddInDemo.pdb` 及前端静态资源 `Resources/cabinet_manage.html` 已全量覆盖同步至 `publish/`。
+
 - **【核心修复：彻底根除复制状态（虚线框）下右键筛选导致状态机挂起与焦点丢失无法输入缺陷】(`Services/ExcelServices.ComponentFilter.cs`, `ExcelEventManager.cs`, `Forms/CustomContextMenuForm.cs`, `Services/ExcelServices.DistributedAdjustPrice.cs`, `publish/`)**：
   1. **用户核心指令与缺陷确诊**：
      - 用户提问反馈：“右键筛选后，为什么很多时候会卡住，无法输入”；并明确指示：“修复避免在复制状态（有虚线框）时直接右键筛选”；

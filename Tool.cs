@@ -3310,8 +3310,25 @@ namespace ExcelAddInDemo
             if (sheet == null || string.IsNullOrWhiteSpace(tagName)) return null;
             try
             {
-                // 尝试从工作表名称集合中提取
-                return sheet.Names.Item(tagName);
+                // 1. 优先尝试从工作表局部名称集合中提取
+                try { return sheet.Names.Item(tagName); } catch { }
+
+                // 2. 向上追溯所属工作簿查找全局名称或带表名前缀名称
+                dynamic? wb = null;
+                try { wb = sheet.Parent; } catch { }
+                if (wb != null)
+                {
+                    // 尝试直接提取工作簿级名称
+                    try { return wb.Names.Item(tagName); } catch { }
+                    // 尝试带表名限定前缀提取 (如 '分类1'!Cab_Sum_1)
+                    string sName = Convert.ToString(sheet.Name) ?? "";
+                    if (!string.IsNullOrEmpty(sName))
+                    {
+                        try { return wb.Names.Item($"'{sName}'!{tagName}"); } catch { }
+                        try { return wb.Names.Item($"{sName}!{tagName}"); } catch { }
+                    }
+                }
+                return null;
             }
             catch
             {

@@ -1709,6 +1709,15 @@ namespace ExcelAddInDemo
                     string name = Convert.ToString(activeSheet.Cells[sumRow, 3].Value)?.Trim() ?? "";
                     string model = Convert.ToString(activeSheet.Cells[sumRow, 4].Value)?.Trim() ?? "";
 
+                    // 读取汇总行第 9 列 (I 列) 备注
+                    string remark = Convert.ToString(activeSheet.Cells[sumRow, 9].Value)?.Trim() ?? "";
+                    // 若汇总行备注为空且拥有明细行，则读取明细表上方行 (detRow - 1) 第 9 列 (I 列) 备注
+                    if (string.IsNullOrEmpty(remark) && detRow > 1)
+                    {
+                        // 异常安全捕获单元格访问
+                        try { remark = Convert.ToString(activeSheet.Cells[detRow - 1, 9].Value)?.Trim() ?? ""; } catch { }
+                    }
+
                     // 若柜号、名称、型号均为空，说明属于空白行或游离名称，跳过
                     if (string.IsNullOrEmpty(cabNo) && string.IsNullOrEmpty(name) && string.IsNullOrEmpty(model)) continue;
 
@@ -1729,6 +1738,7 @@ namespace ExcelAddInDemo
                         CabinetIndex = k,
                         CabinetNo = cabNo,
                         Name = name,
+                        Remark = remark,
                         Model = model,
                         Quantity = qty,
                         Unit = "台", // --硬编码--
@@ -1745,21 +1755,40 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 应用箱柜调序（单参数兼容重载）
+        /// </summary>
+        public static bool ApplyCabinetReorder(List<int> newOrderKList)
+        {
+            // 调度带消息输出的主方法
+            return ApplyCabinetReorder(newOrderKList, out _);
+        }
+
+        /// <summary>
         /// 应用箱柜调序（ExWinner 核心内存整块物理重排算法）
         /// 完整双向联动：同步按用户指定新顺序对顶部汇总表与底部分类明细表进行零公式撕裂重排
         /// </summary>
         /// <param name="newOrderKList">用户排列好的箱柜序号顺序列表</param>
+        /// <param name="resultMessage">操作结果提示信息</param>
         /// <returns>调序是否成功</returns>
-        public static bool ApplyCabinetReorder(List<int> newOrderKList)
+        public static bool ApplyCabinetReorder(List<int> newOrderKList, out string resultMessage)
         {
+            resultMessage = string.Empty;
             // 校验输入序号列表有效性
-            if (newOrderKList == null || newOrderKList.Count <= 1) return true;
+            if (newOrderKList == null || newOrderKList.Count <= 1)
+            {
+                resultMessage = "箱柜数量不足，无需重排。";
+                return true;
+            }
 
             try
             {
                 // 获取当前活动 Excel 运行环境上下文
                 var context = Tool.GetActiveExcelContext();
-                if (context == null) return false;
+                if (context == null)
+                {
+                    resultMessage = "未检测到活动的 Excel 工作簿。";
+                    return false;
+                }
                 dynamic app = context.App;
                 dynamic wb = context.Wb;
                 dynamic activeSheet = context.Sheet;
@@ -1779,12 +1808,24 @@ namespace ExcelAddInDemo
                 List<KeyValuePair<int, Models.CabinetAnchorModel>> validCabinets = rawCabinets
                     .Where(c => (c.Value.Sum != null ? Convert.ToInt32(c.Value.Sum.Row) : c.Value.SumRow) >= 6)
                     .ToList();
-                if (validCabinets.Count <= 1) return true;
+                if (validCabinets.Count <= 1)
+                {
+                    resultMessage = "有效箱柜数量小于等于1，无需重排。";
+                    return true;
+                }
 
                 // 提取当前物理排列顺序并与用户指定顺序对比
                 var currentOrder = validCabinets.Select(c => c.Key).ToList();
+                // 记录调序诊断日志
+                LogHelper.WriteLog($"[ApplyCabinetReorder] 当前物理顺序: [{string.Join(",", currentOrder)}], 传入新顺序: [{string.Join(",", newOrderKList)}]");
                 // 若新旧顺序完全一致则无需任何物理行变动
-                if (currentOrder.SequenceEqual(newOrderKList)) return true;
+                if (currentOrder.SequenceEqual(newOrderKList))
+                {
+                    // 顺序未变直接退出
+                    LogHelper.WriteLog($"[ApplyCabinetReorder] 目标排序与当前物理排序完全一致，无需重排。");
+                    resultMessage = "当前箱柜顺位未发生任何调整，与现有物理顺序完全一致。";
+                    return false;
+                }
 
                 // 构造有效箱柜序号哈希集合进行存在性过滤
                 var validKSet = new HashSet<int>(validCabinets.Select(c => c.Key));
