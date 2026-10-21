@@ -1208,25 +1208,79 @@ namespace ExcelAddInDemo
                     // 1. 核心业务升级 (方案 A)：若存在第 1 行虚拟表头快照，无损还原原始行高、内容、样式与窗口冻结
                     bool headerRestored = RestoreVirtualHeaderForSheet(targetSheet, app);
 
-                    // 2. 双轨联动：若当前工作表处于 Excel 系统原生 AutoFilter 筛选状态
+                    // 2. 核心修复：无论是否通过快照还原虚拟表头，右键取消筛选时必须彻底关闭原生自动筛选模式
+                    // 彻底消除所有的 AutoFilter 下拉箭头（杜绝小三角箭头残留在第 1 行或中间汇总数据行）
                     try
                     {
-                        // 若成功还原了虚拟表头，彻底退出原生 AutoFilter 筛选模式，消除残留箭头并让表格回到未筛选原貌
-                        if (headerRestored)
+                        // 检查当前工作表是否开启了自动筛选模式
+                        if (targetSheet.AutoFilterMode == true)
                         {
-                            // 彻底关闭自动筛选模式
+                            // 强制彻底退出 AutoFilter 自动筛选，拔除所有下拉小箭头
                             targetSheet.AutoFilterMode = false;
-                        }
-                        else if (targetSheet.FilterMode == true)
-                        {
-                            // 若为普通平铺表，清除系统筛选条件，显示全部数据并恢复漏斗箭头
-                            targetSheet.ShowAllData();
                         }
                     }
                     catch (Exception filterEx)
                     {
-                        // 记录清除系统原生 AutoFilter 异常日志
-                        LogHelper.WriteLog($"清除原生 AutoFilter 异常: {filterEx.Message}");
+                        // 记录关闭原生 AutoFilter 异常日志
+                        LogHelper.WriteLog($"关闭原生 AutoFilter 异常: {filterEx.Message}");
+                    }
+
+                    // 3. 核心修复：若未能命中快照但窗口仍处于冻结状态，彻底解除冻结，杜绝中间行吸顶固定残留
+                    try
+                    {
+                        // 提取 Excel 活动窗口实例
+                        dynamic win = app.ActiveWindow;
+                        // 校验活动窗口且处于冻结窗格状态
+                        if (win != null && win.FreezePanes == true)
+                        {
+                            // 彻底关闭窗口冻结窗格
+                            win.FreezePanes = false;
+                            // 重置拆分行
+                            win.SplitRow = 0;
+                            // 重置拆分列
+                            win.SplitColumn = 0;
+                        }
+                    }
+                    catch (Exception freezeEx)
+                    {
+                        // 记录解除冻结窗格异常日志
+                        LogHelper.WriteLog($"解除冻结窗格异常: {freezeEx.Message}");
+                    }
+
+                    // 4. 兜底清理：检查第 1 行是否残留虚拟表头内容 (未命中快照时的强壮兜底)
+                    try
+                    {
+                        // 读取第 1 行 A 列与 B 列内容
+                        string a1Text = Convert.ToString(targetSheet.Cells[1, 1].Value2)?.Trim() ?? "";
+                        string b1Text = Convert.ToString(targetSheet.Cells[1, 2].Value2)?.Trim() ?? "";
+                        // 若 A 列为“序号”且 B 列为“名称”或“元件”，判定为残留虚拟表头
+                        if (a1Text == "序号" && (b1Text.Contains("名称") || b1Text.Contains("元件")))
+                        {
+                            // 计算整表最大列数
+                            int maxCols = 25;
+                            try
+                            {
+                                // 获取已用区域
+                                dynamic used = targetSheet.UsedRange;
+                                // 提取已用区域列数
+                                if (used != null) maxCols = Math.Max(maxCols, (int)used.Column + (int)used.Columns.Count - 1);
+                            }
+                            catch { }
+                            // 选取第 1 行单元格区域
+                            dynamic row1Range = targetSheet.Range[targetSheet.Cells[1, 1], targetSheet.Cells[1, maxCols]];
+                            // 清空虚拟表头文本
+                            row1Range.ClearContents();
+                            // 恢复无填充底色
+                            row1Range.Interior.ColorIndex = XlNoneColorIndex;
+                            // 恢复分类表第 1 行默认极窄留白行高 (6.0pt)
+                            // --硬编码: 分类表第 1 行极窄留白行高 6.0pt--
+                            targetSheet.Rows[1].RowHeight = 6.0;
+                        }
+                    }
+                    catch (Exception clearR1Ex)
+                    {
+                        // 记录兜底清除虚拟表头异常日志
+                        LogHelper.WriteLog($"兜底清除第 1 行虚拟表头残留异常: {clearR1Ex.Message}");
                     }
 
                     // 2. 解除可能由成套查件产生的整表隐藏状态 (安全容错包装，杜绝因 AutoFilter 冲突抛出 1004 阻断后续流程)
@@ -1473,6 +1527,25 @@ namespace ExcelAddInDemo
         {
             try
             {
+                // 核心增强 1：若当前工作表为受纳管的成套分类表或存在合规箱柜，100% 必须挂载虚拟表头
+                // 绝不误入平铺表 CurrentRegion 逻辑，杜绝跨越到汇总表将普通数据行 (如 119 行) 错挂为 AutoFilter 表头
+                dynamic? wb = null;
+                try { wb = sheet.Parent; } catch { }
+                // 判定是否属于项目信息白名单纳管的分类明细表
+                if (Tool.IsProjectCategorySheet((object)sheet, (object?)wb))
+                {
+                    // 分类明细表 100% 必须启用虚拟表头吸顶
+                    return true;
+                }
+                // 扫描工作表中有效箱柜列表
+                var validCabinets = Tool.GetSheetValidCabinets((object)sheet, (object?)wb);
+                // 若存在合规箱柜定义名称，同样 100% 属于分类表
+                if (validCabinets != null && validCabinets.Count > 0)
+                {
+                    // 确认需要虚拟表头
+                    return true;
+                }
+
                 // 1. 若第 1 行行高小于 18.0pt (典型如 0~6pt 压扁留白行)，必然需要展开表头
                 double r1Height = 0;
                 try { r1Height = Convert.ToDouble(sheet.Rows[1].RowHeight); } catch { }

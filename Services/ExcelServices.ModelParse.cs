@@ -676,7 +676,31 @@ namespace ExcelAddInDemo
             result.Category = ParseCategory(rawModel ?? string.Empty, config, out string hitCat, out string matchedCode);
             result.HitCategoryRule = hitCat;
 
-            // 0.1 核心防护：对原始型号中已识别命中的系列代号（如 CJ20, DZ47）进行安全遮蔽
+            // 0.1 判断当前命中的分类是否属于“仅匹配名称 (免提取极数与电流)”分类
+            bool isNameOnly = !string.IsNullOrWhiteSpace(result.Category) &&
+                config.NameOnlyCategories != null &&
+                config.NameOnlyCategories.Exists(c => string.Equals(c, result.Category, StringComparison.OrdinalIgnoreCase));
+            result.IsNameOnly = isNameOnly;
+
+            // 若属于纯名称分类，短路阻断后续极数、电流与脱扣流水线，确保型号内的数字不被误判为电流与极数
+            if (isNameOnly)
+            {
+                // 极数与电流等参数全部保持空白
+                result.Pole = string.Empty;
+                result.MinCurrent = string.Empty;
+                result.MaxCurrent = string.Empty;
+                result.Current = string.Empty;
+                result.TripMode = string.Empty;
+                result.HitPoleRule = "免提取 (仅匹配名称)";
+                result.HitCurrentRule = "免提取 (仅匹配名称)";
+                result.HitTripModeRule = "免提取 (仅匹配名称)";
+                result.CandidateCurrents = new List<string>();
+                // 纯名称元器件识别出名称即视为完全成功
+                result.Status = "Success";
+                return result;
+            }
+
+            // 0.2 核心防护：对原始型号中已识别命中的系列代号（如 CJ20, DZ47）进行安全遮蔽
             // 使 CJ20 中的数字 20 彻底不参与后续极数与电流流水线的提取计算，彻底根治误判
             string textForParams = MaskMatchedCategoryCode(rawModel ?? string.Empty, matchedCode);
 
@@ -809,17 +833,31 @@ namespace ExcelAddInDemo
                     if (rowCount <= 0) continue;
                     totalRows += rowCount;
 
-                    // ==================== 1. 一次性将选中区域对应源型号整块读入二维数组 ====================
+                    // ==================== 1. 一次性将选中区域对应源型号及已有目标列整块读入二维数组 ====================
                     dynamic srcRange = activeSheet.Range[$"{colSrc}{startRow}:{colSrc}{endRow}"];
                     object[,] rawArray = ConvertTo2DArray(srcRange.Value2, rowCount);
 
-                    // 若开启仅填空白模式且配置了名称输出列，提前整块读入已有名称数据
+                    // 若配置了名称输出列，提前整块读入已有名称数据 (供覆盖模式判断)
                     object[,]? existCatArray = null;
-                    if (!string.IsNullOrWhiteSpace(colCat) && onlyEmptyCat)
+                    if (!string.IsNullOrWhiteSpace(colCat))
                     {
                         dynamic catRange = activeSheet.Range[$"{colCat}{startRow}:{colCat}{endRow}"];
                         existCatArray = ConvertTo2DArray(catRange.Value2, rowCount);
                     }
+
+                    // 预先整块读入各参数列原有数据 (针对“仅匹配名称”元器件，严格遵循【内容不变】原则保留原有单元格值)
+                    object[,]? existMinCurArray = !string.IsNullOrWhiteSpace(colMinCur)
+                        ? ConvertTo2DArray(activeSheet.Range[$"{colMinCur}{startRow}:{colMinCur}{endRow}"].Value2, rowCount)
+                        : null;
+                    object[,]? existMaxCurArray = (!string.IsNullOrWhiteSpace(colMaxCur) && colMaxCur != colMinCur)
+                        ? ConvertTo2DArray(activeSheet.Range[$"{colMaxCur}{startRow}:{colMaxCur}{endRow}"].Value2, rowCount)
+                        : null;
+                    object[,]? existPoleArray = !string.IsNullOrWhiteSpace(colPole)
+                        ? ConvertTo2DArray(activeSheet.Range[$"{colPole}{startRow}:{colPole}{endRow}"].Value2, rowCount)
+                        : null;
+                    object[,]? existTripArray = !string.IsNullOrWhiteSpace(colTrip)
+                        ? ConvertTo2DArray(activeSheet.Range[$"{colTrip}{startRow}:{colTrip}{endRow}"].Value2, rowCount)
+                        : null;
 
                     // ==================== 2. 在内存中创建当前选区对应的目标二维数组 ====================
                     object[,] categoryArray = new object[rowCount, 1];
@@ -835,29 +873,26 @@ namespace ExcelAddInDemo
                         object val = rawArray[i + 1, 1];
                         string rawModel = val?.ToString()?.Trim() ?? string.Empty;
 
-                        // 若为空行则置空保留
+                        // 若为空行则继承并保留各列原有单元格内容，绝不盲目清空
                         if (string.IsNullOrWhiteSpace(rawModel))
                         {
-                            categoryArray[i, 0] = string.Empty;
-                            minCurrentArray[i, 0] = string.Empty;
-                            maxCurrentArray[i, 0] = string.Empty;
-                            poleArray[i, 0] = string.Empty;
-                            tripArray[i, 0] = string.Empty;
+                            categoryArray[i, 0] = existCatArray != null ? (existCatArray[i + 1, 1] ?? string.Empty) : string.Empty;
+                            minCurrentArray[i, 0] = existMinCurArray != null ? (existMinCurArray[i + 1, 1] ?? string.Empty) : string.Empty;
+                            maxCurrentArray[i, 0] = existMaxCurArray != null ? (existMaxCurArray[i + 1, 1] ?? string.Empty) : string.Empty;
+                            poleArray[i, 0] = existPoleArray != null ? (existPoleArray[i + 1, 1] ?? string.Empty) : string.Empty;
+                            tripArray[i, 0] = existTripArray != null ? (existTripArray[i + 1, 1] ?? string.Empty) : string.Empty;
                             continue;
                         }
 
                         // 调用多通道流水线解析名称 (同时提取命中的系列特征代号)
                         string category = ParseCategory(rawModel, config, out _, out string matchedCode);
-                        // 对原始型号中已识别命中的系列代号（如 CJ20, DZ47）进行安全遮蔽，防止代号内数字干扰极数与电流
-                        string textForParams = MaskMatchedCategoryCode(rawModel, matchedCode);
-                        // 基于遮蔽后的安全文本解析极数
-                        string pole = ParsePoles(textForParams, config, out _);
-                        // 基于遮蔽后的安全文本解析最小与最大电流
-                        var (minCurrent, maxCurrent) = ParseCurrentMinMax(textForParams, config, out _, out _);
-                        // 基于遮蔽后的安全文本解析脱扣方式
-                        string tripMode = ParseTripMode(textForParams, config, out _);
 
-                        // 填充名称二维数组 (根据覆盖策略判断)
+                        // 核心判断：当前命中的分类是否属于“仅匹配名称 (免提取极数与电流)”分类
+                        bool isNameOnly = !string.IsNullOrWhiteSpace(category) &&
+                            config.NameOnlyCategories != null &&
+                            config.NameOnlyCategories.Exists(c => string.Equals(c, category, StringComparison.OrdinalIgnoreCase));
+
+                        // 填充名称二维数组 (根据覆盖策略判断: 仅填空白或强制覆盖)
                         if (onlyEmptyCat && existCatArray != null)
                         {
                             object existVal = existCatArray[i + 1, 1];
@@ -867,11 +902,44 @@ namespace ExcelAddInDemo
                         }
                         else
                         {
-                            // 强制覆盖模式
+                            // 强制覆盖模式直接填入识别分类
                             categoryArray[i, 0] = category;
                         }
 
-                        // 填充其余参数内存二维数组
+                        // 分支处理：若属于“仅匹配名称”分类，极数与电流严格保持原有内容不变
+                        if (isNameOnly)
+                        {
+                            // 继承原有最小电流内容
+                            minCurrentArray[i, 0] = existMinCurArray != null ? (existMinCurArray[i + 1, 1] ?? string.Empty) : string.Empty;
+                            // 继承原有最大电流内容
+                            maxCurrentArray[i, 0] = existMaxCurArray != null ? (existMaxCurArray[i + 1, 1] ?? string.Empty) : string.Empty;
+                            // 继承原有极数内容
+                            poleArray[i, 0] = existPoleArray != null ? (existPoleArray[i + 1, 1] ?? string.Empty) : string.Empty;
+                            // 继承原有脱扣方式内容
+                            tripArray[i, 0] = existTripArray != null ? (existTripArray[i + 1, 1] ?? string.Empty) : string.Empty;
+
+                            // 纯名称元器件识别出名称即视为成功
+                            if (!string.IsNullOrWhiteSpace(category))
+                            {
+                                successCount++;
+                            }
+                            else
+                            {
+                                failedCount++;
+                            }
+                            continue;
+                        }
+
+                        // 常规有参元器件处理：对原始型号中已识别命中的系列代号进行安全遮蔽
+                        string textForParams = MaskMatchedCategoryCode(rawModel, matchedCode);
+                        // 基于遮蔽后的安全文本解析极数
+                        string pole = ParsePoles(textForParams, config, out _);
+                        // 基于遮蔽后的安全文本解析最小与最大电流
+                        var (minCurrent, maxCurrent) = ParseCurrentMinMax(textForParams, config, out _, out _);
+                        // 基于遮蔽后的安全文本解析脱扣方式
+                        string tripMode = ParseTripMode(textForParams, config, out _);
+
+                        // 填充常规参数内存二维数组
                         minCurrentArray[i, 0] = minCurrent;
                         maxCurrentArray[i, 0] = maxCurrent;
                         poleArray[i, 0] = pole;

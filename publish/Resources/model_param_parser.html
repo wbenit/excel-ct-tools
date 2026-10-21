@@ -285,6 +285,19 @@
         box-shadow: 0 2px 4px rgba(0, 150, 136, 0.25);
       }
 
+      /* 仅匹配名称(免提取参数)胶囊特色样式 */
+      .cat-pill.name-only {
+        border-color: #7dd3fc;
+        background: #f0f9ff;
+        color: #0369a1;
+      }
+
+      .cat-pill.name-only.active {
+        background: #009688;
+        border-color: #009688;
+        color: #ffffff;
+      }
+
       .cat-pill .badge {
         font-size: 10px;
         opacity: 0.85;
@@ -667,10 +680,19 @@
                 v-for="(codes, catName) in (config.categoryDict || {})"
                 :key="catName"
                 class="cat-pill"
-                :class="{ active: currentCategoryTab === catName }"
+                :class="{ 
+                  active: currentCategoryTab === catName,
+                  'name-only': isNameOnlyCategory(catName)
+                }"
                 @click="currentCategoryTab = catName"
               >
                 <span>{{ catName }}</span>
+                <span
+                  v-if="isNameOnlyCategory(catName)"
+                  style="font-size: 10px; margin-left: 2px"
+                  title="仅匹配名称 (免提取极数与电流，原内容不变)"
+                  >🔤</span
+                >
                 <span class="badge">({{ codes ? codes.length : 0 }})</span>
               </div>
               <!-- 快捷新建分类胶囊按钮 -->
@@ -697,11 +719,21 @@
                   margin-bottom: 8px;
                 "
               >
-                <div style="display: flex; align-items: center; gap: 6px">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                   <span
                     style="font-size: 13px; font-weight: 700; color: #0f766e"
                     >【{{ currentCategoryTab }}】</span
                   >
+                  <!-- 仅匹配名称专属开关：跳过极数/电流提取且Excel原内容不变 -->
+                  <el-checkbox
+                    :model-value="isNameOnlyCategory(currentCategoryTab)"
+                    @change="(val) => toggleNameOnlyCategory(currentCategoryTab, val)"
+                    size="small"
+                  >
+                    <span style="font-size: 12px; font-weight: 600; color: #009688;">
+                      仅匹配名称 (免提取极数与电流，Excel 原内容不变)
+                    </span>
+                  </el-checkbox>
                   <span style="font-size: 11px; color: #64748b"
                     >识别代号池 (包含即匹配，长词优先):</span
                   >
@@ -1616,6 +1648,24 @@
               <strong>{{ testResult.minCurrent }}</strong>，最大电流:
               <strong>{{ testResult.maxCurrent }}</strong>
             </div>
+
+            <!-- 纯名称免提取提示条 -->
+            <div
+              v-if="testResult.isNameOnly"
+              style="
+                font-size: 11px;
+                color: #0284c7;
+                background-color: #f0f9ff;
+                border: 1px solid #bae6fd;
+                padding: 4px 10px;
+                border-radius: 4px;
+                width: 95%;
+                text-align: center;
+              "
+            >
+              <i class="fa-solid fa-font" style="margin-right: 4px"></i>
+              <strong>【{{ testResult.category }}】属于仅匹配名称分类</strong>：已短路跳过极数、电流与脱扣提取，向 Excel 回填时将<strong>严格保持极数与电流原内容不变</strong>！
+            </div>
           </div>
         </div>
       </div>
@@ -1717,6 +1767,14 @@
             leakageKeywords: ["LE", "VIGI", "L", "GS", "漏电", "残流"],
             enableShortCodeBoundaryGuard: true,
             categoryDict: {},
+            // 仅匹配名称分类名单
+            nameOnlyCategories: [
+              "多功能表",
+              "消防电源监控",
+              "电气火灾探测器",
+              "互感器",
+              "集中电表"
+            ],
             minCurrentColumn: "W",
             maxCurrentColumn: "",
             poleColumn: "X",
@@ -1922,6 +1980,11 @@
               .then(() => {
                 if (config.categoryDict && config.categoryDict[catName]) {
                   delete config.categoryDict[catName];
+                  // 同步从仅匹配名称名单中移除
+                  if (config.nameOnlyCategories) {
+                    const nameIdx = config.nameOnlyCategories.indexOf(catName);
+                    if (nameIdx >= 0) config.nameOnlyCategories.splice(nameIdx, 1);
+                  }
                   const keys = Object.keys(config.categoryDict);
                   currentCategoryTab.value = keys.length > 0 ? keys[0] : "";
                   ElementPlus.ElMessage.success(`已删除分类 [${catName}]`);
@@ -1929,6 +1992,25 @@
                 }
               })
               .catch(() => {});
+          };
+
+          // 判断指定分类是否属于“仅匹配名称”
+          const isNameOnlyCategory = (catName) => {
+            if (!catName || !config.nameOnlyCategories) return false;
+            return config.nameOnlyCategories.includes(catName);
+          };
+
+          // 切换指定分类是否“仅匹配名称”
+          const toggleNameOnlyCategory = (catName, val) => {
+            if (!catName) return;
+            if (!config.nameOnlyCategories) config.nameOnlyCategories = [];
+            const idx = config.nameOnlyCategories.indexOf(catName);
+            if (val) {
+              if (idx < 0) config.nameOnlyCategories.push(catName);
+            } else {
+              if (idx >= 0) config.nameOnlyCategories.splice(idx, 1);
+            }
+            runTestParse();
           };
 
           // 发送消息给宿主 C# 后端
@@ -2553,6 +2635,8 @@
             isCollapsed,
             toggleCollapse,
             onFooterMouseDown,
+            isNameOnlyCategory,
+            toggleNameOnlyCategory,
           };
         },
       })

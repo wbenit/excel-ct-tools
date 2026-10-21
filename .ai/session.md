@@ -1,3 +1,59 @@
+- **【核心修复：彻底解决右键取消筛选后 AutoFilter 下拉箭头残留、冻结行死死吸顶与虚拟表头残留缺陷】(`Services/ExcelServices.ComponentFilter.cs`, `publish/ExcelAddInDemo.dll`)**：
+  1. **用户核心指令与缺陷确诊**：
+     - 用户提问反馈：“右键取消筛选后，红框内内容还在，应该是清除的”（截图显示汇总表末行 119 行被施加了 AutoFilter 下拉箭头且悬浮吸顶在屏幕顶端，取消筛选后箭头与冻结依然残留）；
+     - 现象与根因深度确诊：
+       ① **根因一（ClearComponentFilter 退出机制缺陷）**：原代码在 `RestoreVirtualHeaderForSheet` 未返回 true 时，仅调用了 `targetSheet.ShowAllData()`，未执行 `targetSheet.AutoFilterMode = false`，导致 Excel 自动筛选模式依然保持开启，AutoFilter 下拉小三角箭头无法被清除；
+       ② **根因二（冻结窗格残留未解除）**：未命中快照时缺少对 `win.FreezePanes` 的强力重置，导致顶端行被死死钉在屏幕视口最顶部；
+       ③ **根因三（NeedsVirtualHeader 识别盲区与跨界误挂）**：在分类明细表中，`NeedsVirtualHeader` 未将分类表纳管判定置顶；一旦返回 false，原生筛选退化至场景 B 并读取 `activeCell.CurrentRegion`，将向上连通的汇总表末行（如 119 行）错误当成表头行并开启 AutoFilter；
+  2. **工程级最小改动闭环落地**：
+     - **强力关闭 AutoFilter 模式 (`ClearComponentFilter`)**：
+       - 无论是否命中快照，只要 `targetSheet.AutoFilterMode == true`，强行执行 `targetSheet.AutoFilterMode = false`，100% 消除所有下拉小三角箭头；
+     - **强力重置冻结窗格与兜底清理虚拟表头 (`ClearComponentFilter`)**：
+       - 兜底检测 `app.ActiveWindow.FreezePanes`，若存在冻结直接清零（`SplitRow = 0, SplitColumn = 0`）；
+       - 兜底检测第 1 行若残留“序号”等虚拟表头内容，清空单元格内容、恢复无填充底色并还原极窄留白行高（6.0pt）；
+     - **分类表明细区强制启用虚拟表头 (`NeedsVirtualHeader`)**：
+       - 优先调用 `Tool.IsProjectCategorySheet` 与 `Tool.GetSheetValidCabinets`，只要是分类表 100% 判定为需要虚拟表头，绝不进入平铺表 CurrentRegion 跨界误挂模式；
+     - 严格遵循新增代码每 3 行至少 1 行中文注释规范。
+  3. **构建验证与产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 编译通过：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 已全量同步覆盖至 `publish/` 目录。
+
+- **【核心排查与修复：补全 Vue setup 导出 isNameOnlyCategory / toggleNameOnlyCategory，彻底根治前端假死与数据显示为空缺陷】(`Resources/model_param_parser.html`, `publish/Resources/`, `bin/Debug/net48/Resources/`)**：
+  1. **用户核心反馈与故障确诊**：
+     - 用户提问反馈：“怎么旧数据都丢失，添加的管道也没了，点击添加也添加不了”；
+     - 现象排查与根因确诊：
+       ① **旧数据其实完好无损**：经核对磁盘配置文件（`bin/Debug/net48/data/ModelParserConfig.json` 465 行），微断、塑壳、隔离开关等 22 个元器件分类、所有代号池以及极数、电流、脱扣等管道顺位全部完好，未发生任何数据丢失；
+       ② **Vue 模板调用未导出函数抛出致命异常**：在 `model_param_parser.html` 模板中引入了 `isNameOnlyCategory(...)` 与 `toggleNameOnlyCategory(...)`，但在 Vue 3 `setup()` 的 `return { ... }` 语句中遗漏了这两个方法；
+       ③ **前端状态机瘫痪连锁反应**：页面加载初次渲染分类胶囊列表时，由于在严格模式下直接触发 `TypeError: isNameOnlyCategory is not a function`，导致 Vue 运行态直接崩溃抛锚，后续所有的管道 DOM 停止渲染、接收到的后端 `renderConfig` 无法应用，且所有“+ 添加顺位”、“+ 新建分类”点击事件完全失效。
+  2. **工程级最小改动闭环落地**：
+     - 在 `Resources/model_param_parser.html` 的 `return { ... }` 中补全导出 `isNameOnlyCategory` 与 `toggleNameOnlyCategory`；
+     - 全量镜像同步至 `bin/Debug/net48/Resources/model_param_parser.html` 与 `publish/Resources/model_param_parser.html`；
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整编译：**0 错误**，DLL 同步至 `publish/`。
+
+- **【核心新增：元器件型号参数识别支持“仅匹配名称 (免提取极数/电流，Excel 原内容不变)”分类配置与短路回填】(`Models/ModelParserConfig.cs`, `Services/ExcelServices.ModelParse.cs`, `Resources/model_param_parser.html`, `publish/`)**：
+  1. **用户核心指令与需求确诊**：
+     - 用户指令反馈：“有部分元器件只需要匹配名称，应该怎么设计”；并在方案确认时明确指示：“按推荐，内容不变”；
+     - 需求确诊：
+       ① 痛点分析：电气 BOM 中存在大量纯名称/附件仪表类元器件（如互感器、多功能表、直接表、火灾探测器、电涌后备、加热器、按钮等），若进入极数与电流流水线，型号中的变比数字或代号会被误识别为电流/极数回填到参数列造成脏数据；
+       ② 解决方案采用【分类级属性控制】：在每个分类上支持标记为“仅匹配名称 (免提取极数与电流)”；
+       ③ 严格遵循用户指令【内容不变】：当命中纯名称分类时，向 Excel 回填名称（按覆盖策略），而极数、电流、脱扣列单元格**严格保留原工作表内容不变**，不进行覆盖或清空；
+       ④ 沙盒测试与状态机：纯名称元器件识别出类别后直接标记为 `Success` 完全匹配。
+  2. **工程级最小改动闭环落地**：
+     - **数据模型层 (`Models/ModelParserConfig.cs`)**：
+       - `ModelParserConfig` 新增 `NameOnlyCategories: List<string>`，出厂默认收录仪表、互感器、探测器、智能照明、电涌后备等；
+       - `ParseResultDto` 新增 `IsNameOnly: bool` 标识；
+     - **业务与解析服务层 (`Services/ExcelServices.ModelParse.cs`)**：
+       - `ParseSingleModel`：识别出类别后检测 `isNameOnly`，若为真则短路阻断后续极数、电流与脱扣流水线，直接返回 `Success`；
+       - `ExecuteBatchModelParse`：预先使用二维数组一次性读入各参数列原有数据；若当前行命中 `isNameOnly`，极数、电流与脱扣直接继承原有单元格内容，实现 100% “内容不变”回填，同时符合规则 7 内存二维数组批读批写；
+     - **前端 UI 与交互层 (`Resources/model_param_parser.html`, `publish/Resources/model_param_parser.html`)**：
+       - 分类胶囊增加 `.cat-pill.name-only` 柔和浅蓝高亮，带 `🔤` 专属标识；
+       - 当前选中分类面板顶部增加醒目的【仅匹配名称 (免提取极数与电流，Excel 原内容不变)】复选框；
+       - 沙盒测试区在命中纯名称元器件时弹出蓝色专属提示条；
+       - 严格遵循每 3 行新增代码至少 1 行中文注释规范。
+  3. **构建验证与多端产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整编译：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll`、`ExcelAddInDemo.pdb` 及前端静态资源 `Resources/model_param_parser.html` 已全量覆盖同步至 `publish/`。
+
 - **【核心新增：箱柜调序支持从 Excel 复制【柜号】+【备注(I列)】双列数据直接粘贴调序】(`Models/CabinetModels.cs`, `Services/ExcelServices.CabinetManage.cs`, `Forms/CabinetManageForm.cs`, `Resources/cabinet_manage.html`, `publish/`)**：
   1. **用户核心指令与需求确认**：
      - 用户提问需求：“调序中，添加可以直接把在excel中的单列多行复制粘贴进去，理解表述需求”；

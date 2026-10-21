@@ -59,6 +59,13 @@ namespace ExcelAddInDemo.Models
         // 核心元器件类别特征词典库 (类别名称 -> 型号前缀/特征字母集合)
         public Dictionary<string, List<string>> CategoryDict { get; set; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
+        // 仅匹配名称/免提取极数与电流的元器件分类名单集合 (如 "直接式表", "多功能表", "互感器", "电涌后备" 等)
+        // 属于该集合的分类在识别出类别后短路跳过极数、电流与脱扣提取，且回填 Excel 时保持参数列原有内容不变
+        public List<string> NameOnlyCategories { get; set; } = new List<string>
+        {
+            "直接式表", "多功能表", "消防电源监控", "电气火灾探测器", "互感器", "智能照明", "电涌后备", "集中电表"
+        }; // --硬编码-- 默认仅匹配名称的分类库
+
         // 默认提取后最小电流输出的目标列 (分类明细表标准: W 列 Current)
         public string MinCurrentColumn { get; set; } = "W"; // --硬编码-- 默认最小电流输出列
 
@@ -224,6 +231,12 @@ namespace ExcelAddInDemo.Models
                 { "集中电表", new List<string> { "DFKS" } }
             };
 
+            // 0.1 初始化出厂默认“仅匹配名称(免提取参数)”分类列表
+            cfg.NameOnlyCategories = new List<string>
+            {
+                "直接式表", "多功能表", "消防电源监控", "电气火灾探测器", "互感器", "智能照明", "电涌后备", "集中电表"
+            }; // --硬编码-- 出厂默认免提取参数分类
+
             // 1. 初始化极数多级顺位流水线
             cfg.PolePipeline.Add(new PipelineRuleItem
             {
@@ -360,6 +373,9 @@ namespace ExcelAddInDemo.Models
 
         // 解析提取出的元器件名称/类别 (如 微型断路器、塑壳断路器、微型漏电)
         public string Category { get; set; } = string.Empty;
+
+        // 当前命中的分类是否被标记为“仅匹配名称 (免提取极数与电流)”
+        public bool IsNameOnly { get; set; } = false;
 
         // 命中的元器件类别规则标题或推导轨迹
         public string HitCategoryRule { get; set; } = string.Empty;
