@@ -1034,7 +1034,8 @@ namespace ExcelAddInDemo
                         Accessory = g.Select(x => x.Accessory).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
                         Param1 = g.Select(x => x.Param1).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
                         Param2 = g.Select(x => x.Param2).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
-                        Handle = g.Select(x => x.Handle).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty,
+                        // 聚合该型号所有来源行的 CAD 图元句柄 (去重并以逗号拼接，防止丢失后续图元)
+                        Handle = string.Join(",", g.Select(x => x.Handle).Where(h => !string.IsNullOrWhiteSpace(h)).Distinct()),
                         Remark = string.Join(";", g.Select(x => x.Remark).Where(r => !string.IsNullOrWhiteSpace(r)).Distinct()),
                         Category = string.IsNullOrWhiteSpace(first.Category) ? "元件" : first.Category,
                         SheetName = first.SheetName

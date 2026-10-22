@@ -39,6 +39,9 @@ namespace ExcelAddInDemo.Services
         // 待发送的所属箱柜名称暂存区
         private static string _pendingCabinetName = string.Empty;
 
+        // 待发送的规格型号文本暂存区 (用于双轨联动定位)
+        private static string _pendingModel = string.Empty;
+
         // 同步锁
         private static readonly object _timerLock = new object();
 
@@ -49,7 +52,8 @@ namespace ExcelAddInDemo.Services
         /// <param name="autoZoom">是否开启视角自动缩放对焦，默认 true</param>
         /// <param name="delayMs">防抖延时毫秒数，默认 50ms</param>
         /// <param name="cabinetName">当前选中的箱柜名称 (柜号)，用于联动 TuFan 面板同步选择</param>
-        public static void SendHandlesDebounced(List<string>? handles, bool autoZoom = true, int delayMs = 50, string? cabinetName = null)
+        /// <param name="model">当前选中的元器件型号文本 (用于句柄缺失时的型号智能定位兜底)</param>
+        public static void SendHandlesDebounced(List<string>? handles, bool autoZoom = true, int delayMs = 50, string? cabinetName = null, string? model = null)
         {
             // 若联动开关未开启，直接忽略
             if (!SyncToCadEnabled) return;
@@ -72,6 +76,8 @@ namespace ExcelAddInDemo.Services
                 _pendingAutoZoom = autoZoom && AutoZoomEnabled;
                 // 暂存当前行关联的箱柜名称
                 _pendingCabinetName = cabinetName ?? string.Empty;
+                // 暂存当前行关联的型号文本
+                _pendingModel = model ?? string.Empty;
 
                 // 若计时器已存在则重置触发时间，否则新建一次性计时器
                 if (_debounceTimer == null)
@@ -93,6 +99,7 @@ namespace ExcelAddInDemo.Services
             List<string> handlesToSend;
             bool autoZoomToSend;
             string cabinetNameToSend;
+            string modelToSend;
             lock (_timerLock)
             {
                 // 复制出待发送的句柄集合与缩放标志
@@ -100,10 +107,12 @@ namespace ExcelAddInDemo.Services
                 autoZoomToSend = _pendingAutoZoom;
                 // 复制出待发送的箱柜名称
                 cabinetNameToSend = _pendingCabinetName;
+                // 复制出待发送的型号文本
+                modelToSend = _pendingModel;
             }
 
             // 启动后台异步任务发送数据至 CAD
-            Task.Run(() => SendToPipeAsync(handlesToSend, autoZoomToSend, cabinetNameToSend));
+            Task.Run(() => SendToPipeAsync(handlesToSend, autoZoomToSend, cabinetNameToSend, modelToSend));
         }
 
         /// <summary>
@@ -112,7 +121,8 @@ namespace ExcelAddInDemo.Services
         /// <param name="handles">句柄列表</param>
         /// <param name="autoZoom">是否自动聚焦缩放</param>
         /// <param name="cabinetName">当前选中的箱柜名称</param>
-        private static async Task SendToPipeAsync(List<string> handles, bool autoZoom, string? cabinetName = null)
+        /// <param name="model">当前选中的规格型号</param>
+        private static async Task SendToPipeAsync(List<string> handles, bool autoZoom, string? cabinetName = null, string? model = null)
         {
             try
             {
@@ -128,7 +138,8 @@ namespace ExcelAddInDemo.Services
                         action = "selectHandles",
                         handles = handles,
                         autoZoom = autoZoom,
-                        cabinetName = cabinetName ?? string.Empty
+                        cabinetName = cabinetName ?? string.Empty,
+                        model = model ?? string.Empty
                     };
 
                     // 序列化为 JSON 字符串并在尾部添加换行符以契合服务端按行读取协议
@@ -138,6 +149,9 @@ namespace ExcelAddInDemo.Services
                     // 写入管道并刷新缓冲区
                     await pipeClient.WriteAsync(buffer, 0, buffer.Length);
                     await pipeClient.FlushAsync();
+
+                    // 给予服务端微小时间缓冲确保整行 JSON 完整读取，防止客户端过快释放导致管道已中断
+                    await Task.Delay(30);
                 }
             }
             catch

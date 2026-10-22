@@ -228,11 +228,17 @@ namespace ExcelAddInDemo
                 }
 
 
-                // 1. 若开启了 CAD 联动，只要选区触及常规核心列 (A~G 列) 且 AD/AA 列存在句柄，即时向 CAD 发起联动
+                // 1. 若开启了 CAD 联动，只要选区触及常规核心列且具备联动价值，即时向 CAD 发起联动
                 int startCol = target.Column;
                 int endCol = startCol + target.Columns.Count - 1;
-                // 选区覆盖 A~G 列 (第 1~7 列: 序号/名称/型号/厂家/单位/数量/单价) 或包含 C 列或整行
-                bool isComponentRowArea = (startCol <= 7 && endCol >= 1) || (3 >= startCol && 3 <= endCol);
+                // 获取当前活动工作表名称
+                string sheetTitle = Convert.ToString(ws?.Name)?.Trim() ?? string.Empty;
+                // 判断当前活动工作表是否为元件汇总表 (重命名为 isSummaryWorksheet 避免与后续局部变量冲突)
+                bool isSummaryWorksheet = string.Equals(sheetTitle, Models.ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase);
+                // 选区列判断：汇总表中点击 A~Z 任意数据列均触发，普通分类表中覆盖 A~G 列或包含 C 列或整行
+                bool isComponentRowArea = isSummaryWorksheet
+                    ? (startCol <= 26 && endCol >= 1)
+                    : ((startCol <= 7 && endCol >= 1) || (3 >= startCol && 3 <= endCol));
 
                 // 若处于有效列范围且全局开启了 CAD 联动：提取选区内所有行的 AD 列 (第 30 列) / AA 列 (第 27 列兼容) 句柄并防抖推送
                 if (isComponentRowArea && Services.CadSyncClient.SyncToCadEnabled)
@@ -276,8 +282,32 @@ namespace ExcelAddInDemo
                             // 智能解析提取当前选区行所属的箱柜名称 (柜号)
                             string activeCabinetName = ExcelServices.GetActiveCabinetName(ws, startRow);
 
-                            // 带有 50ms 防抖与自动缩放视角（autoZoom=true）推送至 CAD 管道，并附带箱柜名称以联动 TuFan 面板同步
-                            Services.CadSyncClient.SendHandlesDebounced(handleList, true, cabinetName: activeCabinetName);
+                            // 提取当前选中行的规格型号 (支持普通分类表 C 列与元件汇总表 D/C/R 列)
+                            string selectedModel = string.Empty;
+                            // 校验是否为元件汇总表
+                            if (isSummaryWorksheet)
+                            {
+                                // 元件汇总表：优先提取 D 列型号规格，若为空回退提取 C 列原型号，再回退 R 列原始型号
+                                selectedModel = Convert.ToString(ws.Range[$"D{startRow}"].Value2)?.Trim() ?? string.Empty;
+                                if (string.IsNullOrEmpty(selectedModel))
+                                {
+                                    // 兜底读取 C 列原型号规格
+                                    selectedModel = Convert.ToString(ws.Range[$"C{startRow}"].Value2)?.Trim() ?? string.Empty;
+                                }
+                                if (string.IsNullOrEmpty(selectedModel))
+                                {
+                                    // 再次兜底读取 R 列原始型号 (可能包含多型号)
+                                    selectedModel = Convert.ToString(ws.Range[$"R{startRow}"].Value2)?.Trim() ?? string.Empty;
+                                }
+                            }
+                            else
+                            {
+                                // 分类明细表：提取 C 列型号规格
+                                selectedModel = Convert.ToString(ws.Range[$"C{startRow}"].Value2)?.Trim() ?? string.Empty;
+                            }
+
+                            // 带有 50ms 防抖与自动缩放视角推送至 CAD 管道 (附带箱柜名称与型号以实现句柄优先+型号兜底双轨联动)
+                            Services.CadSyncClient.SendHandlesDebounced(handleList, true, cabinetName: activeCabinetName, model: selectedModel);
                         }
                     }
                     catch { }
