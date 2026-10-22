@@ -23,6 +23,15 @@ namespace ExcelAddInDemo.Forms
         // 延时关闭防抖定时器
         private readonly WinFormsTimer _hideTimer;
 
+        // 独立高频鼠标位置巡检定时器 (周期 50ms)
+        private readonly WinFormsTimer _mouseTrackerTimer;
+
+        // 鼠标离开子菜单与触发项热区的累计检测次数
+        private int _outOfHoverTicks = 0;
+
+        // 触发呼出当前子菜单的主菜单项屏幕物理热区 (含两窗体间微小接缝走廊)
+        private Rectangle _triggerBounds = Rectangle.Empty;
+
         // 当前悬浮菜单项索引 (-1 表示未悬浮)
         private int _hoverIndex = -1;
 
@@ -103,6 +112,11 @@ namespace ExcelAddInDemo.Forms
             _hideTimer = new WinFormsTimer { Interval = 180 }; // --硬编码: 防抖时间 180ms--
             // 订阅定时器超时事件
             _hideTimer.Tick += OnHideTimerTick;
+
+            // 初始化独立高频鼠标巡检定时器 (周期 50ms)
+            _mouseTrackerTimer = new WinFormsTimer { Interval = 50 }; // --硬编码: 巡检定时器周期 50ms--
+            // 订阅定时器巡检事件
+            _mouseTrackerTimer.Tick += OnSubmenuTrackerTick;
 
             // 订阅鼠标移动事件更新高亮项
             this.MouseMove += OnSubmenuMouseMove;
@@ -239,7 +253,7 @@ namespace ExcelAddInDemo.Forms
         {
             // 绑定主菜单父引用
             _parentMenu = parent;
-            // 停止正在运行的隐藏定时器
+            // 停止正在运行的隐藏防抖定时器
             _hideTimer.Stop();
             // 重置悬浮高亮项
             _hoverIndex = -1;
@@ -286,6 +300,26 @@ namespace ExcelAddInDemo.Forms
             // 设置物理坐标
             this.Location = new Point(x, y);
 
+            // 记录主菜单中触发项在屏幕上的热区走廊 (供巡检判定防误关)
+            if (parent != null)
+            {
+                // 触发项高度预估 30px * dpiScale
+                int triggerH = (int)Math.Ceiling(30 * dpiScale); // --硬编码: 触发项高度基准--
+                // 覆盖主菜单触发项水平宽度，并在两窗体接缝处延伸 10px 走廊
+                int left = Math.Min(parent.Left, x - 10);
+                int width = Math.Max(parent.Right, x) - left + 10;
+                _triggerBounds = new Rectangle(left, screenAnchor.Y - 4, width, triggerH + 8);
+            }
+            else
+            {
+                _triggerBounds = Rectangle.Empty;
+            }
+
+            // 重置离开计数并启动独立高频鼠标巡检定时器
+            _outOfHoverTicks = 0;
+            _mouseTrackerTimer.Stop();
+            _mouseTrackerTimer.Start();
+
             // 显示并置顶窗体
             if (!this.Visible)
             {
@@ -298,58 +332,107 @@ namespace ExcelAddInDemo.Forms
         }
 
         /// <summary>
-        /// 启动防抖延迟隐藏 (供主菜单项离开时调用)
+        /// 窗体可见性变化时重置定时器与悬浮状态
         /// </summary>
-        public void ScheduleHide()
+        protected override void OnVisibleChanged(EventArgs e)
         {
-            // 启动 180ms 定时器
-            _hideTimer.Stop();
-            _hideTimer.Start();
-        }
-
-        /// <summary>
-        /// 取消延迟隐藏 (供鼠标移入子菜单时调用)
-        /// </summary>
-        public void CancelHide()
-        {
-            // 停止定时器
-            _hideTimer.Stop();
-        }
-
-        /// <summary>
-        /// 定时器触发执行隐藏
-        /// </summary>
-        private void OnHideTimerTick(object? sender, EventArgs e)
-        {
-            // 停止定时器
-            _hideTimer.Stop();
-            // 若主菜单已不存在或已关闭，立即强制隐藏子菜单，彻底杜绝子菜单独自残留
-            if (_parentMenu == null || !_parentMenu.Visible)
+            base.OnVisibleChanged(e);
+            // 窗体隐藏时停止巡检定时器并重置所有悬浮状态
+            if (!this.Visible)
             {
-                this.Hide();
+                _mouseTrackerTimer.Stop();
+                _hideTimer.Stop();
+                _outOfHoverTicks = 0;
                 _hoverIndex = -1;
-                return;
             }
-
-            // 校验鼠标当前是否仍在子菜单或主菜单内部
-            Point cur = Cursor.Position;
-            if (this.Bounds.Contains(cur)) return;
-            if (_parentMenu.Bounds.Contains(cur)) return;
-
-            // 彻底隐藏子菜单
-            this.Hide();
-            _hoverIndex = -1;
         }
 
         /// <summary>
-        /// 鼠标移动更新悬浮项索引并重绘
+        /// 独立高频巡检鼠标屏幕绝对位置：离开子菜单一定时间后自动隐藏，杜绝孤立残留
         /// </summary>
-        private void OnSubmenuMouseMove(object? sender, MouseEventArgs e)
+        private void OnSubmenuTrackerTick(object? sender, EventArgs e)
         {
-            // 取消延迟隐藏
-            CancelHide();
+            try
+            {
+                // 1. 若当前子菜单窗体已不可见，立即停用巡检定时器
+                if (!this.Visible)
+                {
+                    _mouseTrackerTimer.Stop();
+                    _outOfHoverTicks = 0;
+                    return;
+                }
 
-            // 计算物理项目行高与分割线高度
+                // 2. 若父级主菜单已关闭或不可见，立即强制隐藏子菜单并清除高亮
+                if (_parentMenu == null || !_parentMenu.Visible)
+                {
+                    _mouseTrackerTimer.Stop();
+                    _outOfHoverTicks = 0;
+                    _hoverIndex = -1;
+                    this.Hide();
+                    return;
+                }
+
+                // 3. 读取当前鼠标屏幕绝对全局坐标
+                Point cur = Cursor.Position;
+
+                // 4. 判定鼠标是否在子菜单窗体边界内 (给予 3 像素微小贴边容差)
+                Rectangle subRectWithMargin = new Rectangle(this.Left - 3, this.Top - 3, this.Width + 6, this.Height + 6);
+                bool inSubmenu = subRectWithMargin.Contains(cur);
+
+                // 5. 判定鼠标是否在主菜单对应的触发项热区走廊内
+                bool inTrigger = !_triggerBounds.IsEmpty && _triggerBounds.Contains(cur);
+
+                if (inSubmenu)
+                {
+                    // 鼠标正停留在子菜单上面，重置离开计数
+                    _outOfHoverTicks = 0;
+
+                    // 转换为窗体客户区物理坐标
+                    Point clientPt = this.PointToClient(cur);
+                    // 动态更新当前高亮悬浮项索引
+                    UpdateHoverIndexByPoint(clientPt);
+                }
+                else
+                {
+                    // 鼠标已不在子菜单上面：立即清除子菜单项的悬停灰底高亮并重绘 (解决离开后项依然残留高亮缺陷)
+                    if (_hoverIndex != -1)
+                    {
+                        _hoverIndex = -1;
+                        this.Invalidate();
+                    }
+
+                    if (inTrigger)
+                    {
+                        // 鼠标停留在父菜单触发项上，保持显示并重置离开计数
+                        _outOfHoverTicks = 0;
+                    }
+                    else
+                    {
+                        // 鼠标既不在子菜单上面，也不在触发项上：离开计数递增
+                        _outOfHoverTicks++;
+                        // 离开达到阈值 (按 50ms 周期累加 8 次，约 400ms 即 0.4 秒)，平滑自动隐藏
+                        // --硬编码: 离开子菜单后自动隐藏延迟 400ms--
+                        if (_outOfHoverTicks >= 8)
+                        {
+                            _mouseTrackerTimer.Stop();
+                            _outOfHoverTicks = 0;
+                            _hoverIndex = -1;
+                            this.Hide();
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // 异常安全保护
+            }
+        }
+
+        /// <summary>
+        /// 根据客户区坐标更新当前悬浮高亮项
+        /// </summary>
+        private void UpdateHoverIndexByPoint(Point clientPt)
+        {
             float dpiScale = GetDpiScale();
             int itemH = (int)Math.Ceiling(25 * dpiScale); // --硬编码: 项高度--
             int divH = (int)Math.Ceiling(6 * dpiScale);   // --硬编码: 分割线高度--
@@ -361,7 +444,7 @@ namespace ExcelAddInDemo.Forms
             // 遍历各个项检测命中区域
             for (int i = 0; i < _items.Length; i++)
             {
-                if (e.Y >= curY && e.Y < curY + itemH)
+                if (clientPt.Y >= curY && clientPt.Y < curY + itemH && clientPt.X >= 0 && clientPt.X <= this.Width)
                 {
                     newHover = i;
                     break;
@@ -382,11 +465,69 @@ namespace ExcelAddInDemo.Forms
         }
 
         /// <summary>
+        /// 启动防抖延迟隐藏 (供主菜单项离开时调用)
+        /// </summary>
+        public void ScheduleHide()
+        {
+            // 启动 180ms 定时器
+            _hideTimer.Stop();
+            _hideTimer.Start();
+        }
+
+        /// <summary>
+        /// 取消延迟隐藏 (供鼠标移入子菜单时调用)
+        /// </summary>
+        public void CancelHide()
+        {
+            // 停止定时器并重置离开计数
+            _hideTimer.Stop();
+            _outOfHoverTicks = 0;
+        }
+
+        /// <summary>
+        /// 定时器触发执行隐藏
+        /// </summary>
+        private void OnHideTimerTick(object? sender, EventArgs e)
+        {
+            // 停止定时器
+            _hideTimer.Stop();
+            // 若主菜单已不存在或已关闭，立即强制隐藏子菜单，彻底杜绝子菜单独自残留
+            if (_parentMenu == null || !_parentMenu.Visible)
+            {
+                this.Hide();
+                _hoverIndex = -1;
+                return;
+            }
+
+            // 校验鼠标当前是否仍在子菜单或触发项走廊内部
+            Point cur = Cursor.Position;
+            if (this.Bounds.Contains(cur)) return;
+            if (!_triggerBounds.IsEmpty && _triggerBounds.Contains(cur)) return;
+
+            // 彻底隐藏子菜单
+            this.Hide();
+            _hoverIndex = -1;
+        }
+
+        /// <summary>
+        /// 鼠标移动更新悬浮项索引并重绘
+        /// </summary>
+        private void OnSubmenuMouseMove(object? sender, MouseEventArgs e)
+        {
+            // 取消延迟隐藏并重置离开计数
+            CancelHide();
+            _outOfHoverTicks = 0;
+
+            // 更新悬浮高亮项
+            UpdateHoverIndexByPoint(e.Location);
+        }
+
+        /// <summary>
         /// 鼠标移出子菜单窗体触发延迟隐藏
         /// </summary>
         private void OnSubmenuMouseLeave(object? sender, EventArgs e)
         {
-            // 重置悬浮索引
+            // 立即重置悬浮索引并重绘消除灰底
             _hoverIndex = -1;
             this.Invalidate();
             // 启动延迟隐藏

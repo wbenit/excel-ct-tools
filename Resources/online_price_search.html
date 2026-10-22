@@ -396,7 +396,7 @@
         <i class="fa-solid fa-bolt-lightning" style="color: #80cbc4;"></i>
         <span>在线查价与一键静默回写</span>
         <span style="background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-left: 6px;">
-          电气天下 / 天工矩阵
+          电气天下 / 天工矩阵 / 电小二
         </span>
       </div>
       <div class="title-actions" @mousedown.stop>
@@ -427,6 +427,9 @@
               </el-radio-button>
               <el-radio-button :label="1">
                 <i class="fa-solid fa-network-wired" style="margin-right: 4px;"></i>天工矩阵 (TitanMatrix)
+              </el-radio-button>
+              <el-radio-button :label="2">
+                <i class="fa-solid fa-bolt" style="margin-right: 4px;"></i>电小二 (Dx2)
               </el-radio-button>
             </el-radio-group>
           </div>
@@ -816,7 +819,10 @@
           progress.percent = 0;
           progress.logText = '任务启动中...';
 
-          appendLog(`开始执行批量查价，数据源: ${config.platform === 1 ? '天工矩阵' : '电气天下'}，指定品牌: ${config.brand}`);
+          // 格式化当前选中的查询平台名称
+          const platformName = config.platform === 2 ? '电小二' : (config.platform === 1 ? '天工矩阵' : '电气天下');
+          // 打印启动日志
+          appendLog(`开始执行批量查价，数据源: ${platformName}，指定品牌: ${config.brand}`);
           const brandColDesc = (!config.brandTargetCol || config.brandTargetCol === 'NONE') ? '不回填' : `${config.brandTargetCol} 列`;
           const modelColDesc = (!config.modelTargetCol || config.modelTargetCol === 'NONE') ? '不回填' : `${config.modelTargetCol} 列`;
           appendLog(`回填列设置: 型号 -> ${modelColDesc}，价格 -> ${config.priceTargetCol} 列，品牌 -> ${brandColDesc}`);

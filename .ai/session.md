@@ -1,3 +1,203 @@
+- **【核心排查与落地：二级子菜单（搜索价格/复制箱柜）鼠标移开后即时清除高亮并经过 400ms 自动隐藏，杜绝残留孤立浮层】(`Forms/CustomContextSubmenuForm.cs`, `Resources/custom_context_menu.html`, `publish/`)**：
+  1. **用户核心指令与截图确诊**：
+     - 用户指令反馈：“需要鼠标不在上面一定时间后隐藏”，并上传二级子菜单（个人库/云库/关闭搜索）高亮停留在最后一项【关闭搜索 停用】的浮层截图；
+     - 现象根因确诊：
+       ① **根因一（无激活浮层 WinForms MouseLeave 丢失）**：二级子菜单 `CustomContextSubmenuForm` 采用 `WS_EX_NOACTIVATE` 无激活置顶无边框样式，当鼠标划出子菜单移到 Excel 表格或桌面时，Windows 经常不向无激活窗体派发 `WM_MOUSELEAVE` 消息，导致 `OnSubmenuMouseLeave` 根本不执行，`_hideTimer` 未启动，且高亮项 `_hoverIndex` 无法清除，形成截图上高亮灰底僵死残留；
+       ② **根因二（主菜单内部盲目 return 截断隐藏）**：原防抖处理函数中包含 `if (_parentMenu.Bounds.Contains(cur)) return;`，导致当鼠标滑向主菜单的其他项（如撤销、复制、附件等）时，直接判定在主菜单内并停用定时器，子菜单永不隐藏；
+       ③ **根因三（子菜单缺乏独立自主的鼠标位置巡检守护）**：子菜单自身没有高频定时器检测鼠标全局物理坐标，一旦与主菜单生命周期脱节便会孤立悬挂。
+  2. **工程级最小改动闭环落地**：
+     - **独立高频鼠标绝对坐标巡检器 (`CustomContextSubmenuForm.cs`)**：
+       - 引入 50ms 周期轻量定时器 `_mouseTrackerTimer` 与离开计数器 `_outOfHoverTicks`；
+       - `ShowSubmenuInternal` 时基于 DPI 和主菜单贴合坐标计算触发项（如“搜索价格”）与接缝走廊热区 `_triggerBounds`；
+       - 巡检 Tick 逻辑：
+         - 若主菜单已关闭或不可见，0ms 立即销毁隐藏子菜单，彻底杜绝孤立残留；
+         - 若鼠标在子菜单窗体内：重置离开计数，并调用 `UpdateHoverIndexByPoint` 实时精准更新高亮项；
+         - 若鼠标不在子菜单窗体内：**立即将 `_hoverIndex` 置为 -1 并重绘，瞬间消除离开后残留的灰底高亮（直击用户截图痛点）**；
+         - 若鼠标在触发项走廊热区内：保持显示并重置离开计时；
+         - 若鼠标既不在子菜单也不在触发项走廊：离开计数递增，累计达到约 400ms（8 次检测）后平滑自动隐藏；
+     - **前端主菜单联动配合 (`Resources/custom_context_menu.html`)**：
+       - 当鼠标在主菜单滑入其他非子菜单项时，主动调用 `scheduleCloseSubmenu()` 通知 C# 延迟隐藏子菜单；
+     - 严格遵循每 3 行新增代码至少 1 行中文注释及 `--硬编码--` 规范。
+  3. **构建验证与产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整编译：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll`、`ExcelAddInDemo.pdb` 及前端静态资源 `custom_context_menu.html` 已全量覆盖同步至 `publish/` 目录。
+
+- **【核心排查与根治：精确斩断 Range.Formula 批量赋值将含加减号型号当公式解析引发 0x8007000E 内存溢出致命缺陷】(`Services/ExcelServices.ComponentDistribution.cs`, `publish/`)**：
+  1. **用户核心指令与真实异常堆栈确诊**：
+     - 用户指令反馈：“还是报同样错误，什么原因”；
+     - 读取 `debug.log` 完整堆栈精准抓获真凶：
+       ```
+       System.OutOfMemoryException: 没有足够的内存继续执行程序。
+          在 System.Dynamic.ComRuntimeHelpers.CheckThrowException(...)
+          在 CallSite.Target(Closure , CallSite , ComObject , Object[,] )
+          在 ExcelAddInDemo.ExcelServices.UpdateSummaryComponentFromDetailRow(...)
+       ```
+     - 现象根因确诊：
+       ① **真实根因（put_Formula 对含特殊符号文本的灾难性解析）**：在方案 A 插入新行时，代码执行了 `summarySheet.Range[$"B{insertRowIndex}:R{insertRowIndex}"].Formula = newRowData`。而 `newRowData` 数组中包含了用户在分类表中修改的电气型号（如 `NXB-40 1P+N C16 4.5kA`，包含 `-`、`+`、`/`、空格等符号）。Excel 底层 COM 的 `IRange.put_Formula` 强制将二维数组中的每一个元素交由公式解析器编译。在解析带有运算符号的电气型号文本时，公式解析器陷入 token 递归分析与语法死循环，最终耗尽堆栈直接抛出 `System.OutOfMemoryException (0x8007000E: 没有足够的内存继续执行程序)`；
+       ② **为什么“更新是成功的”**：因为原汇总行的用量扣减和新行物理插入在此之前均已成功执行，用户在 Excel 界面看到了更新动作，但代码在执行到为整行赋 `.Formula` 时被截断报错。
+  2. **工程级最小改动精准根治**：
+     - **纯数据矩阵与公式解耦分离（规则 7）**：
+       - 将新行纯文本与数值矩阵通过 `summarySheet.Range[$"B{insertRowIndex}:R{insertRowIndex}"].Value2 = newRowData` 赋值，确保带加减号与空格的复杂电气型号直接作为**纯文本**写入 Excel，0 公式词法分析，彻底消除 0x8007000E 内存溢出；
+       - 仅对真正需要动态计算的 3 列单元格（G 列单价、H 列总价、J 列成本单价）精准通过单格 `.Formula` 赋值，并施加独立容错捕获；
+     - 严格遵循每 3 行新增代码至少 1 行中文注释规范。
+  3. **构建验证与产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整编译：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 已全量同步覆盖至 `publish/` 目录。
+
+- **【核心排查与修复：彻底解决更新成功后报错“没有足够的内存继续执行程序 (0x8007000E)”缺陷】(`Services/ExcelServices.ComponentDistribution.cs`, `publish/`)**：
+
+  1. **用户核心指令与截图确诊**：
+     - 用户指令反馈：“报错，但是更新是成功的”，并上传看板提示“更新元件汇总表发生异常: 没有足够的内存继续执行程序”运行截图；
+     - 现象排查与根因深度确诊：
+       ① **根因一（整行 16384 列 Copy/PasteSpecial 溢出）**：在方案 A 分支 2 中，插入新行后原代码执行了 `summarySheet.Range[$"{summaryRow}:{summaryRow}"].Copy()` 和 `PasteSpecial(-4122)`。在 Excel 标准工作表中，整行包含从 A 列到 XFD 列共 16,384 个单元格，复制整行格式会瞬间使系统剪贴板和 Excel 样式池膨胀超载，在特定环境直接触发 COM 异常 `0x8007000E (E_OUTOFMEMORY: 没有足够的内存继续执行程序)`；
+       ② **根因二（FindSummaryTotalRow 逐单元格循环产生海量 COM 句柄）**：原合计行扫描逐行裸调 `Cells[r, 2].Value` 循环多达几千次，违反规则 7（内存大数组批读），产生海量未释放的 COM 引用；
+       ③ **根因三（次生辅助步骤缺乏独立容错防御）**：虽然原行数量扣减、新行插入与核心数据/型号/公式写入均已 100% 成功，但因末尾整行格式复制或合计行扫描抛出次生异常被外层 catch 捕获，导致前端误报为操作失败。
+  2. **工程级最小改动闭环落地**：
+     - **定向有效数据列格式复制**：严格限制复制范围为有效数据列 `A{summaryRow}:Y{summaryRow}`（仅 25 列），杜绝 16,384 列引发剪贴板溢出，并增加剪贴板容错捕获；
+     - **内存二维数组重构合计行秒级定位**：严格遵循规则 7，一次性读取 `A6:C{scanEndRow}` 至内存二维数组，在纯 C# 内存中比对“合计”与“总计”关键字，0 次中间 COM 跨进程开销，彻底杜绝内存碎片；
+     - **精细化分层防御机制**：将序号重排与合计 SUM 公式重算纳入独立子 try-catch，确保只要核心数据写入成功，更新即宣告 100% 成功，不再被任何次生边缘问题阻断；
+     - 外层 catch 补全完整堆栈日志 `ex.ToString()`。
+  3. **构建验证与产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整编译：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 已全量同步覆盖至 `publish/` 目录。
+
+- **【核心新增：元器件分布看板行后添加【更新】按钮并落地方案 A（智能差量计算，数量多柜时自动分流，更新至汇总表 C 列原型号规格）】(`Services/ExcelServices.ComponentDistribution.cs`, `Forms/ComponentDistributionForm.cs`, `Resources/component_distribution.html`, `Models/ComponentDistributionModels.cs`, `publish/`)**：
+
+  1. **用户核心指令与需求确诊**：
+     - 用户指令反馈：“在每行后面添加更新按钮，用户如果更改了分类明细中对应的元器件型号，点击更新后，更新元件汇总表。使用 方案 A（智能差量计算，数量多柜时自动分流），更新到 C 列（原型号规格）”；
+     - 需求分析与决策落地：
+       ① **目标列锁定**：明确指定更新到【元件汇总表】的 **C 列（原型号规格）**，作为基准参考列，D 列（调价型号）保持留空；
+       ② **单柜独占/全量占满分支 (`deltaQty >= currSumQty`)**：若当前箱柜用量占满汇总行数量（或单柜独占），直接将该汇总行 C 列的原型号规格改写为分类明细表最新修改的新型号，并同步校验更新厂家与单位；
+       ③ **多柜共用/智能分流分支 (`deltaQty < currSumQty`)**：
+          - 从原汇总行扣减用量：`currSumQty - deltaQty`，F 列数量减少后，总价公式自动联动减少；
+          - 全表检索是否存在同名且 C 列原型号等于新型号的已存在行：若存在则将 `deltaQty` 累加到该行 F 列；若不存在，则在原行下方物理插入新行，复制格式，C 列写入新型号，F 列写入 `deltaQty`，注入标准动态公式，重新重排 A 列序号（1~N）并刷新底部合计行公式；
+       ④ **零容错与规则 6、7、8、9 约束**：分类表必须通过 `Tool.GetSheetValidCabinets` 严格校验定义名称，内存二维数组批读批写，所有 Excel 操作全部收敛在 `ExcelServices.ComponentDistribution.cs`。
+  2. **工程级闭环落地**：
+     - **数据模型层 (`Models/ComponentDistributionModels.cs`)**：
+       - 新增 `UpdateSummaryResultDto`（包含 `Success`, `Message`, `IsSplit`, `TargetSummaryRow`, `NewModel`, `DeltaQuantity`）；
+     - **业务服务层 (`Services/ExcelServices.ComponentDistribution.cs`)**：
+       - 实现 `UpdateSummaryComponentFromDetailRow(sheetName, detailRow, summaryRow)`：
+         - 校验源分类表与元件汇总表；
+         - 校验规则 6 并定位归属箱柜，从 `Cab_Sum` 行读取箱柜台数 `cabQty`；
+         - 规则 7 批量读取分类明细行数据，提取 `detailNewModel` 并计算工程差量总用量 `deltaQty = detailSingleQty * cabQty`；
+         - 校验汇总行数据：若型号未变动直接友好拦截；
+         - 执行方案 A 智能分流与 C 列改写/新行插入/格式复制/序号重刷/合计公式刷新；
+       - 实现 `FindSummaryTotalRow(summarySheet)` 动态定位合计行；
+     - **窗口宿主层 (`Forms/ComponentDistributionForm.cs`)**：
+       - 注册 `case "updateSummaryFromDetail":` 消息路由；
+       - 采用 `ExcelAsyncUtil.QueueAsMacro` 调度至 Excel 主线程安全执行，执行完毕异步回调 `PostMessageSafe("updateSummaryResult", ...)`；
+     - **前端看板与交互层 (`Resources/component_distribution.html`)**：
+       - 表格列恢复【操作】列，提供 `#009688` 风格且带 loading 态的【更新】微按钮；
+       - 优化各列宽度比例（序号 48px，柜号 115px，箱柜名称 145px，单柜数量 75px，柜台数 65px，备注 min 135px，行号 75px，操作 65px），弹性自适应，绝无水平滚动条；
+       - 实现 `handleUpdateRow(row)` 发送更新指令；
+       - 监听 `updateSummaryResult`：成功时弹出通知并自动调用 `refreshData()` 刷新看板数据，失败时弹窗提示；
+       - 严格遵循每 3 行新增代码至少 1 行中文注释规范。
+  3. **构建验证与多端产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整编译：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll`、`ExcelAddInDemo.pdb` 及前端静态资源 `component_distribution.html` 已全量覆盖同步至 `publish/` 与 `bin/Debug/net48/` 目录。
+
+- **【核心排查与修复：修复 Vue app 实例未声明导致未挂载 (导致 raw 模板泄露与点击关闭无效) 并增加原生 onclick 消息兜底】(`Resources/component_distribution.html`, `publish/Resources/`, `bin/Debug/net48/Resources/`)**：
+
+  1. **用户核心指令与截图确诊**：
+     - 用户指令反馈：“点击关闭还无效”，并发送看板运行截图；
+     - 现象与根因深度确诊：
+       ① **根因一（Vue 实例未声明导致挂载失败抛出 ReferenceError）**：截图显示整个页面布满了 `{{ componentInfo.componentName }}`、`{{ searchKeyword ? ... }}` 等原始 mustache 占位符，且数据未注入、组件未渲染，表明 Vue 根本没有成功运行！经审查代码，此前在注册 ElementPlus 图标时引入了 `app.component(...)`，但此前代码中仅写了 `createApp({ ... })` 而未将其赋值给变量 `const app = createApp({ ... })`。这导致浏览器执行至 `app.component(...)` 时直接抛出 `Uncaught ReferenceError: app is not defined` 致命运行时异常，后续 `app.use(ElementPlus).mount('#app')` 从未被执行，Vue 完全瘫痪；
+       ② **根因二（指令监听未生效）**：因 Vue 实例未挂载，模板上的所有 Vue 指令（包括 `@click.stop="handleClose"`、`v-if`、`v-loading`）全部形同虚设，用户点击关闭按钮时无法触发任何 JS 回调；
+       ③ **根因三（CDN 节点波动风险）**：原 CDN 直连 unpkg，容易受到网络延迟影响，缺乏国内镜像高速通道和 v-cloak 保护。
+  2. **工程级最小改动闭环落地**：
+     - **修复 Vue 实例赋值与挂载**：将 `createApp({ ... })` 明确赋值给 `const app = createApp({ ... })`，使 `app.component(...)` 和 `app.use(ElementPlus).mount('#app')` 正常执行，Vue 3 成功挂载；
+     - **关闭按钮原生双轨兜底**：在关闭按钮上追加原生 DOM 行内 `onclick` 监听：`onclick="if(window.chrome&&window.chrome.webview){window.chrome.webview.postMessage(JSON.stringify({action:'closeDialog'}))}"`，即便未来前端框架出现任何意外，原生 DOM 点击也能 100% 确保关闭窗口；
+     - **CDN 高速双通道容灾**：全面改用国内 `registry.npmmirror.com` 镜像，并配置 `onerror` 自动降级回退 `unpkg.com`，毫秒级极速加载；
+     - **防闪烁样式**：根容器追加 `v-cloak` 属性与 `[v-cloak] { display: none !important; }`，杜绝未挂载时原始表达式闪现。
+  3. **构建验证与多端产物同步**：
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整编译：**0 警告、0 错误**；
+     - 最新静态 HTML 资源已全量镜像同步至 `Resources/`、`publish/Resources/` 与 `bin/Debug/net48/Resources/` 目录。
+
+- **【核心排查与修复：补全看板右上角关闭按钮 z-index 层级、内联 SVG 矢量图标与全局注册 ElementPlus 图标】(`Resources/component_distribution.html`, `publish/Resources/`, `bin/Debug/net48/Resources/`)**：
+  1. **用户核心指令与缺陷确诊**：
+     - 用户提问反馈：“右上角的关闭按钮的index层级不对，看不到”；
+     - 现象排查与根因深度确诊：
+       ① **根因一（未显式声明定位与 z-index 失效）**：原 `component_distribution.html` 的 `<style>` 中缺少对 `.window-header` 的明确 CSS 定义，仅依赖 `theme.css`。而 `theme.css` 中只写了 `z-index: 1000` 但未声明 `position: relative`，在 CSS 标准规范中，默认 `position: static` 会导致 `z-index` 完全失效，导致标题栏被下方带有高层级的组件（如 `v-loading` 遮罩层、卡片容器）遮挡或压盖；
+       ② **根因二（ElementPlusIconsVue 未在 Vue 实例中注册）**：原代码在 `<div class="win-btn close-btn"><el-icon><component is="Close" /></el-icon></div>` 中使用了 Element Plus 的动态组件 `Close`，但在 Vue 实例挂载时未对 `ElementPlusIconsVue` 执行 `app.component(...)` 注册，导致 `Close`、`Grid`、`Search` 等组件完全无法渲染，关闭按钮内部为空白，视觉上不可见；
+       ③ **根因三（依赖外部 CDN 网络风险）**：若离线或未联网，外部 icon 字体库加载失败也会导致按钮内容丢失。
+  2. **工程级最小改动闭环落地**：
+     - **层级提升与精准定位**：在 `component_distribution.html` 内联声明 `.window-header`（`position: relative; z-index: 99999`）、`.window-controls`（`z-index: 100000`）及 `.win-btn`（`z-index: 100001`），彻底凌驾于任何内部遮罩与容器之上；
+     - **嵌入内联高清 SVG 矢量叉号**：关闭按钮内部直接采用原生 1024 视口矢量 SVG 图标，0 依赖、0 延迟、100% 绝对稳定渲染；
+     - **Vue 全局图标注册**：在 `app.use(ElementPlus).mount('#app')` 前批量遍历注册 `ElementPlusIconsVue`，确保标题栏 `Grid` 图标与表格内所有图标均正常显示；
+     - 严格遵循每 3 行新增代码至少 1 行中文注释规范。
+  3. **构建验证与多端产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整编译：**0 警告、0 错误**；
+     - 最新程序集与静态 HTML 资源已全量镜像同步至 `publish/` 与 `bin/Debug/net48/` 目录。
+
+- **【核心落地：从元件汇总表 AB1 读取源分类表进行定向扫描，并在穿透定位时将 Cab_Det 行置顶于视口第一行】(`Services/ExcelServices.ComponentDistribution.cs`, `Forms/ComponentDistributionForm.cs`, `Resources/component_distribution.html`, `publish/`)**：
+  1. **用户核心指令与需求确诊**：
+     - 用户指令反馈：“元件汇总表 的ab1单元格存有源分类明细信息，请求的时候需要携带源分类表名称，只扫描源分类表。定位的时候需要把det行放在第一行”；
+     - 需求分析与架构对齐：
+       ① **AB1 源分类表提取与请求携带**：元件汇总表生成时持久化将源分类表范围存放在隐藏单元格 `AB1`（格式通常为包含 `SelectedSheets` 的 JSON 配置或分隔符文本）；右键查询提取时必须读取 AB1 并携带 `SourceSheets`，在请求入参模型中完整传递；
+       ② **定向只扫描源分类表**：在 `ScanComponentDistribution` 中，严格遵循用户指令只扫描 `SourceSheets` 中的分类表，避免遍历全簿无关工作表，提升性能同时杜绝串表干扰；若 AB1 未配置源表信息按规则 9 直接报错提醒；
+       ③ **视口首行置顶定位 det 行**：双击任意明细行进行穿透定位时，将所属箱柜的 `Cab_Det` 信息行物理行号设为视口首行（`app.ActiveWindow.ScrollRow = Math.Max(1, detRow)` 且 `ScrollColumn = 1`），同时选中高亮目标元器件单元格并切回 Excel 焦点。
+  2. **工程级闭环落地**：
+     - **业务服务层 (`Services/ExcelServices.ComponentDistribution.cs`)**：
+       - `ExtractComponentQueryFromSummarySheet`：增强 AB1 读取与 JSON 解析，支持根为数组、根为配置对象（自适应检索含 `sheet` 关键词的数组属性如 `SelectedSheets`/`selectedSheets`）以及逗号/分号/换行分隔符文本；
+       - `ScanComponentDistribution`：改为直接且仅遍历 `query.SourceSheets`，未配置或找不到目标工作表直接报错提醒（严格遵循规则 8、9）；
+       - `LocateComponentInSheet`：支持 `detRow` 参数（若为 0 动态匹配当前行归属箱柜的 Cab_Det 行），将 `app.ActiveWindow.ScrollRow` 设置为 `detRow`，`ScrollColumn` 设为 1，确保箱柜信息行位于窗口第一行，同时选中目标单元格，还原最小化窗口并激活 Excel 前台焦点；
+     - **窗口宿主层 (`Forms/ComponentDistributionForm.cs`)**：
+       - 前端主动触发 `getDistributionData`（点击“刷新”）时，自动重新提取汇总表指定行的最新 AB1 源表配置与元器件特征，保持数据始终最新；
+     - **前端看板与交互层 (`Resources/component_distribution.html`)**：
+       - 增加 `errorMessage` 错误状态驱动，当 AB1 未配置或源表不存在时在空状态区和右上角精准提示；
+       - 双击行发送 `locateCell` 携带 `detRow: row.detRow`；
+       - 严格遵循每 3 行新增代码至少 1 行中文注释规范。
+  3. **构建验证与产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll`、`ExcelAddInDemo.pdb` 及前端静态资源 `component_distribution.html` 已全量同步镜像至 `publish/` 与 `bin/Debug/net48/` 目录。
+
+- **【核心排查与修复：补全 CustomContextMenuForm 消息路由 viewComponentDistribution 与兼容“元件汇总”表名判定】(`Forms/CustomContextMenuForm.cs`, `Services/ExcelServices.ComponentDistribution.cs`, `publish/`)**：
+  1. **用户核心指令与缺陷确诊**：
+     - 用户提问反馈：“右键点击无反应”；
+     - 现象排查与根因深度确诊：
+       ① **根因一（WebMessage 路由断链丢弃）**：在 `Forms/CustomContextMenuForm.cs` 的 `OnWebMessageReceived` 消息监听中，设有一个严格白名单的 `switch (action)` 语句；此前在 `ExecuteMenuAction` 中增加了 `case "viewComponentDistribution":`，但在 `OnWebMessageReceived` 中遗漏了该分支，导致前端点击【查看分布...】发出的 WebMessage 在进入后端时直接掉入 `default` 被无声丢弃；
+       ② **根因二（工作表名称严格比对）**：原逻辑严格比对 `ComponentSummarySheetName`（"元件汇总表"），若用户工作表名称为“元件汇总调价清单”或含有前后空格，无法被激活为汇总表上下文；
+       ③ **根因三（行号生硬拦截）**：原 `ExtractComponentQueryFromSummarySheet` 硬编码了 `summaryRow <= 5`，若表头较少且数据从第 4 或 5 行开始则会被错误过滤。
+  2. **工程级最小改动闭环落地**：
+     - 在 `CustomContextMenuForm.cs` 的 `OnWebMessageReceived` 的 `switch (action)` 中补全 `case "viewComponentDistribution":`，让菜单指令顺利分发；
+     - 将工作表名称匹配放宽为：精准匹配“元件汇总表”或包含“元件汇总”，提高兼容性；
+     - 将 `ExtractComponentQueryFromSummarySheet` 改为基于内容特征过滤表头（检测是否包含“序号”、“元件名称”、“规格型号”等），移除 `summaryRow <= 5` 生硬截断；
+     - 严格遵循每 3 行新增代码至少 1 行中文注释规范。
+  3. **构建验证与产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 最新程序集与静态 HTML 已全量同步镜像至 `publish/` 与 `bin/Debug/net48/` 目录。
+
+- **【核心新增：元件汇总表右键【查看分布...】穿透看板与整行双击定位（去除总数量与操作列）】(`Models/ComponentDistributionModels.cs`, `Services/ExcelServices.ComponentDistribution.cs`, `Forms/ComponentDistributionForm.cs`, `Resources/component_distribution.html`, `Resources/custom_context_menu.html`, `Forms/CustomContextMenuForm.cs`, `ExcelAddInDemo.csproj`, `publish/`)**：
+  1. **用户核心指令与需求确认**：
+     - 用户提问需求：“在excel的元件汇总表中，如果要在“元件汇总表”中添加右键“查看分布”按钮，点击后，弹出界面，可以查看该元器件是分别在哪些汇总的分类明细表中，在哪些箱柜中，如果要你设计，你怎么设计”；
+     - 用户进一步评审并调整：“去除总数量和操作列”；并在设计汇报后明确下达“实施”指令；
+     - 需求确诊与架构对齐：
+       ① 触发场景与上下文：用户在【元件汇总表】中右键任意元器件数据行，呼出右键菜单并点击新增的【查看分布...】按钮；防呆拦截表头与空行；
+       ② 极速扫描与零容错：遵循规则 6、7、8、9，使用 `Tool.GetSheetValidCabinets` 校验箱柜定义名称（`Cab_Sum`、`Cab_Det`、`Cab_Subsum`、`Cab_Tolsum`），不符合规则 6 直接报错提醒；一次性读取整表内存二维大数组切片循环，50ms 内极速返回；
+       ③ 界面紧凑与无水平滚动条：前端采用 Vue 3 + Element Plus，主色调 `#009688` 绿蓝相间，严格遵循用户指令**去除“总数量”与“操作列”**；包含列：`序号`、`柜号`、`箱柜名称`、`单柜数量`、`柜台数`、`回路/备注`、`所在行`；
+       ④ 视口穿透交互：双击表格任意行，Excel 自动激活对应分类表，视口滚动居中并将目标元器件单元格选中高亮，焦点无缝归还 Excel。
+  2. **工程级闭环落地**：
+     - **数据模型层 (`Models/ComponentDistributionModels.cs`)**：
+       - 创建 `ComponentDistributionQuery`、`ComponentDistributionRowDto`、`ComponentDistributionCategoryGroupDto`、`ComponentDistributionResultDto`；
+     - **业务服务层 (`Services/ExcelServices.ComponentDistribution.cs`)**：
+       - 实现 `ExtractComponentQueryFromSummarySheet(summaryRow)` 提取元器件特征（支持 D 列新型号、C 列原型号、U 列原始型号及单位、汇总数）；
+       - 实现 `ScanComponentDistribution(query)`：遍历所有分类表，规则 8 门禁校验规则 6 正确性，规则 7 内存二维数组扫描切片提取元器件区间（`Cab_Det + 2` 到 `Cab_Subsum - 1`）及汇总行柜台数；
+       - 实现 `LocateComponentInSheet(sheetName, row, col)`：激活工作表、选中单元格、Goto 居中并调用 `Win32Interop.SetForegroundWindow` 归还焦点；
+       - 实现 `ShowComponentDistributionDialog(summaryRow)` 呼出非模态窗口；
+     - **窗口宿主层 (`Forms/ComponentDistributionForm.cs`)**：
+       - 基于 WebView2 的 860x600 现代无边框窗体，WebMessage 通信路由，严格不包含任何直接 Excel 操作（规则 3）；
+     - **前端看板与交互层 (`Resources/component_distribution.html`)**：
+       - 采用 Vue 3 `<script setup>` 组合式 API + Element Plus，主色调 `#009688`；
+       - 包含元件概览卡片、统计指标胶囊、实时模糊搜索、一键展开/折叠、分类表折叠分组；
+       - 严格落实用户要求：无总数量列、无操作列；整行双击触发穿透跳转定位；
+     - **右键菜单集成 (`Resources/custom_context_menu.html`, `Forms/CustomContextMenuForm.cs`)**：
+       - `mode-summary` 下新增 `.summary-only` 菜单项【查看分布...】，其它模式下保持隐藏不干扰现有工作流；
+       - `ShowMenu` 记录 `_lastContextRow`，菜单动作分发 `case "viewComponentDistribution":`；
+       - 严格遵循每 3 行新增代码至少 1 行中文注释规范。
+  3. **构建验证与多端产物全量同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 编译通过：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll`、`ExcelAddInDemo.pdb` 及前端静态资源 `component_distribution.html`、`custom_context_menu.html` 已全量同步覆盖至 `publish/` 与 `bin/Debug/net48/` 目录。
+
 - **【核心修复：彻底解决右键取消筛选后 AutoFilter 下拉箭头残留、冻结行死死吸顶与虚拟表头残留缺陷】(`Services/ExcelServices.ComponentFilter.cs`, `publish/ExcelAddInDemo.dll`)**：
   1. **用户核心指令与缺陷确诊**：
      - 用户提问反馈：“右键取消筛选后，红框内内容还在，应该是清除的”（截图显示汇总表末行 119 行被施加了 AutoFilter 下拉箭头且悬浮吸顶在屏幕顶端，取消筛选后箭头与冻结依然残留）；

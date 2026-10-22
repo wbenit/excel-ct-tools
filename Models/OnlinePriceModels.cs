@@ -9,11 +9,14 @@ namespace ExcelAddInDemo.Models
     /// </summary>
     public enum OnlinePricePlatform
     {
-        // 电气天下 (dq123.com / 电小二)
+        // 电气天下 (dq123.com 官方接口)
         Dq123 = 0,
 
         // 天工矩阵 (titanmatrix.com / cpq.titanmatrix.com)
-        TitanMatrix = 1
+        TitanMatrix = 1,
+
+        // 电小二 (利驰Dx2智能查价引擎，支持复合拆解与多级匹配)
+        Dx2 = 2
     }
 
     /// <summary>

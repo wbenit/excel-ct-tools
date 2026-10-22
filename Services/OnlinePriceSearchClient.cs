@@ -468,6 +468,427 @@ namespace ExcelAddInDemo.Services
 
         #endregion
 
+        #region 电小二 (Dx2 智能查价引擎)
+
+        /// <summary>
+        /// 底层私有辅助方法: 向利驰电气数据库发送原始检索请求
+        /// </summary>
+        /// <param name="keyword">检索关键词</param>
+        /// <param name="factoryId">厂商代号过滤</param>
+        /// <returns>返回反序列化的条目集合</returns>
+        private static async Task<List<JsonElement>> QueryDq123RawListAsync(string keyword, int? factoryId)
+        {
+            // 空关键词直接返回空列表
+            if (string.IsNullOrWhiteSpace(keyword)) return new List<JsonElement>();
+
+            // 构造请求载荷对象
+            var payload = new
+            {
+                // 检索关键词
+                keyword = keyword.Trim(),
+                // 分页索引固定取第 1 页
+                currentPage = 1,
+                // 厂家代码
+                factoryId = factoryId,
+                // 系列代码为空
+                seriesId = (string?)null
+            };
+
+            // 序列化请求参数为 JSON 文本
+            string jsonBody = JsonSerializer.Serialize(payload);
+            // 封装 UTF-8 编码的请求报文
+            var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+
+            // 远端接口终结点地址
+            const string apiUrl = "https://www.dq123.com/view/price/search/element";
+            // 发起异步 POST 请求
+            var response = await _httpClient.PostAsync(apiUrl, content).ConfigureAwait(false);
+
+            // 若响应不成功则返回空列表
+            if (!response.IsSuccessStatusCode) return new List<JsonElement>();
+
+            // 异步读取响应内容
+            string responseJson = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            // 解析 JSON 根文档
+            using var doc = JsonDocument.Parse(responseJson);
+            // 获取根元素
+            var root = doc.RootElement;
+
+            // 提取数据数组节点
+            if (!root.TryGetProperty("data", out var dataProp) ||
+                !dataProp.TryGetProperty("data", out var listProp) ||
+                listProp.ValueKind != JsonValueKind.Array)
+            {
+                // 节点不存在返回空
+                return new List<JsonElement>();
+            }
+
+            // 克隆结果项以安全返回
+            var resultList = new List<JsonElement>();
+            // 遍历每个数据条目
+            foreach (var item in listProp.EnumerateArray())
+            {
+                // 复制并加入返回列表
+                resultList.Add(item.Clone());
+            }
+
+            // 返回提取的条目集合
+            return resultList;
+        }
+
+        /// <summary>
+        /// 电小二智能分词引擎: 生成针对工程图纸和复合型号的多级检索变体
+        /// </summary>
+        /// <param name="model">原始型号字符串</param>
+        /// <returns>优先级排序的搜索关键词变体列表</returns>
+        private static List<string> GenerateDx2SearchCandidates(string model)
+        {
+            // 初始化候选集并使用有序哈希去重
+            var candidates = new List<string>();
+            // 内部辅助添加方法
+            void AddCandidate(string c)
+            {
+                // 清洗空白字符
+                string trimmed = c?.Trim() ?? string.Empty;
+                // 长度有效且不重复时收录
+                if (!string.IsNullOrWhiteSpace(trimmed) && !candidates.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
+                {
+                    // 加入候选清单
+                    candidates.Add(trimmed);
+                }
+            }
+
+            // 候选 1: 原始型号基础规范化
+            string cleanRaw = Regex.Replace(model, @"\s+", " ").Trim();
+            // 添加清洗后的原词
+            AddCandidate(cleanRaw);
+
+            // 候选 2: 施耐德/国产品牌复合漏电智能重组 (如 iC65N 3P D20A Pro+VEA 30mA A)
+            if (Regex.IsMatch(cleanRaw, @"(VEA|VIGI|漏电|30mA)", RegexOptions.IgnoreCase))
+            {
+                // 变体 A: 剥离平台级 Pro+ 前缀并保留完整 VEA/漏电参数 (如: iC65N 3P D20A VEA 30mA A)
+                string noPro = Regex.Replace(cleanRaw, @"\bPro\+\s*", "", RegexOptions.IgnoreCase).Trim();
+                // 规范多余空格并添加
+                noPro = Regex.Replace(noPro, @"\s+", " ").Trim();
+                // 关键变体: 精准命中利驰库中 +VEA 整套型号
+                AddCandidate(noPro);
+
+                // 变体 B: 剥离尾部单字母分类后缀 (如从 VEA 30mA A 提取 VEA 30mA)
+                string shortLeak = Regex.Replace(noPro, @"\s+[A-Z]$", "", RegexOptions.IgnoreCase).Trim();
+                // 添加短漏电参数项
+                AddCandidate(shortLeak);
+
+                // 变体 C: 转换 VEA 为 ELE 电子式 (如 iC65N 3P D20A ELE 30mA A)
+                string eleLeak = Regex.Replace(noPro, @"\bVEA\b", "ELE", RegexOptions.IgnoreCase);
+                // 添加电子式脱扣变体
+                AddCandidate(eleLeak);
+
+                // 变体 D: 转换 VEA 为通用 Vigi 标识 (如 iC65N 3P D20A Vigi 30mA)
+                string vigiLeak = Regex.Replace(shortLeak, @"\bVEA\b", "Vigi", RegexOptions.IgnoreCase);
+                // 添加通用 Vigi 变体
+                AddCandidate(vigiLeak);
+
+                // 变体 E: 针对 2P 等规格的一体式 Vigi+ 标准命名格式 (如 iC65N Vigi+ 2P C 20A 30mA)
+                var matchPI = Regex.Match(cleanRaw, @"(\d+P).*?(?:(?<=\s|/)|^)([CD])\s*(\d+)A?", RegexOptions.IgnoreCase);
+                // 提取极数与安数成功
+                if (matchPI.Success)
+                {
+                    // 构造 Vigi+ 序列关键词
+                    string vigiCombined = $"iC65N Vigi+ {matchPI.Groups[1].Value} {matchPI.Groups[2].Value} {matchPI.Groups[3].Value}A 30mA";
+                    // 格式化多余空格
+                    vigiCombined = Regex.Replace(vigiCombined, @"\s+", " ").Trim();
+                    // 加入候选集
+                    AddCandidate(vigiCombined);
+                }
+            }
+
+            // 候选 3: 参数粘连规范化处理 (如 2PC20A -> 2P C20A, C20A/2P -> 2P C20A)
+            string spaceFixed = cleanRaw;
+            // 处理斜杠格式 C20A/2P
+            var slashMatch = Regex.Match(spaceFixed, @"([A-Z0-9\-]+)-([CD]\d+A?)/(\d+P)", RegexOptions.IgnoreCase);
+            // 成功匹配斜杠形式
+            if (slashMatch.Success)
+            {
+                // 转换为常规标准空格形式
+                string converted = $"{slashMatch.Groups[1].Value} {slashMatch.Groups[3].Value} {slashMatch.Groups[2].Value}";
+                // 添加转换项
+                AddCandidate(converted);
+            }
+
+            // 候选 4: 剥离复合附件获取微断/塑壳主开关本体 (供纯断路器或拼装回退)
+            string baseModel = Regex.Replace(cleanRaw, @"(\+?\s*(Pro\+)?VEA.*|\+?\s*Vigi.*|\+?\s*30mA.*|(?:\s*\(.*?\)))", "", RegexOptions.IgnoreCase).Trim();
+            // 避免与已有重复且保证长度合理
+            if (!string.IsNullOrWhiteSpace(baseModel) && baseModel.Length >= 4)
+            {
+                // 添加主开关本体
+                AddCandidate(baseModel);
+            }
+
+            // 返回整理好的候选序列
+            return candidates;
+        }
+
+        /// <summary>
+        /// 电小二智能打分优选算法: 评估条目与目标规格的契合度
+        /// </summary>
+        /// <param name="item">候选 JSON 条目</param>
+        /// <param name="targetModel">用户原始检索词</param>
+        /// <param name="targetBrand">预期品牌</param>
+        /// <returns>匹配得分数值 (分数越高契合度越佳)</returns>
+        private static int ScoreDx2Candidate(JsonElement item, string targetModel, string targetBrand)
+        {
+            // 基础初始得分
+            int score = 0;
+            // 提取条目型号
+            string itemModel = item.TryGetProperty("model", out var mp) ? (mp.GetString() ?? "") : "";
+            // 提取条目分类/系列名称
+            string className = item.TryGetProperty("className", out var cn) ? (cn.GetString() ?? "") : "";
+
+            // 提取条目单价
+            double priceVal = 0.0;
+            if (item.TryGetProperty("price", out var pp))
+            {
+                // 读取数值价格
+                if (pp.ValueKind == JsonValueKind.Number) priceVal = pp.GetDouble();
+                // 兼容字符串价格
+                else if (double.TryParse(pp.GetString(), out double pv)) priceVal = pv;
+            }
+
+            // 准则 1: 有效官方价格加权 (+100分)
+            if (priceVal > 0.01) score += 100;
+            // 无价格扣分
+            else score -= 150;
+
+            // 准则 2: 在产现行型号加权 (排除已停产条目)
+            if (className.Contains("已停产") || itemModel.Contains("已停产")) score -= 80;
+            // 在产正常加分
+            else score += 30;
+
+            // 准则 3: 极数强相关校验 (如 2P、3P、4P、1P)
+            var poleMatch = Regex.Match(targetModel, @"\b(\d+P(\+N)?)\b", RegexOptions.IgnoreCase);
+            // 若原始输入有明确极数
+            if (poleMatch.Success)
+            {
+                // 获取目标极数字符串
+                string targetPole = poleMatch.Groups[1].Value.ToUpperInvariant();
+                // 条目包含相同极数
+                if (itemModel.IndexOf(targetPole, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    // 极数符合加 50 分
+                    score += 50;
+                }
+                else
+                {
+                    // 极数错误重扣 120 分 (例如 2P 绝不能匹配为 3P)
+                    score -= 120;
+                }
+            }
+
+            // 准则 4: 额定电流强相关校验 (如 20A、D20、C20、100A 等)
+            var currentMatch = Regex.Match(targetModel, @"(?:\b|[CD])(\d+)(?:A|\b)", RegexOptions.IgnoreCase);
+            // 若存在电流参数
+            if (currentMatch.Success)
+            {
+                // 获取安数
+                string targetAmp = currentMatch.Groups[1].Value;
+                // 条目是否包含对应安数
+                if (Regex.IsMatch(itemModel, $@"\b[CD]?{targetAmp}A?\b", RegexOptions.IgnoreCase))
+                {
+                    // 安数匹配加 50 分
+                    score += 50;
+                }
+                else
+                {
+                    // 安数不符扣 80 分
+                    score -= 80;
+                }
+            }
+
+            // 准则 5: 漏电特征保护校验 (若目标包含 VEA/Vigi/30mA，条目必须包含漏电标识)
+            bool isTargetLeakage = Regex.IsMatch(targetModel, @"(VEA|Vigi|漏电|30mA)", RegexOptions.IgnoreCase);
+            // 校验条目是否包含漏电标识
+            bool isItemLeakage = Regex.IsMatch(itemModel + className, @"(Vigi|VEA|ELE|ELM|LE|漏电|剩余电流)", RegexOptions.IgnoreCase);
+            // 漏电特征同时满足
+            if (isTargetLeakage && isItemLeakage)
+            {
+                // 漏电属性一致重磅加 80 分
+                score += 80;
+            }
+            // 目标明确要求漏电，但条目为纯断路器！
+            else if (isTargetLeakage && !isItemLeakage)
+            {
+                // 必须重扣 250 分，坚决防止将纯断路器误判为漏电断路器返回！
+                score -= 250;
+            }
+
+            // 准则 6: 文本去空格无缝相等超高加权
+            string cTarget = Regex.Replace(targetModel, @"\s+", "");
+            string cItem = Regex.Replace(itemModel, @"\s+", "");
+            // 完全一致加 120 分
+            if (cTarget.Equals(cItem, StringComparison.OrdinalIgnoreCase)) score += 120;
+
+            // 返回综合评分
+            return score;
+        }
+
+        /// <summary>
+        /// 异步调用电小二智能查价引擎 (整合复合型号拆解、漏电特征识别与多级智能优选)
+        /// </summary>
+        /// <param name="model">检索型号</param>
+        /// <param name="brand">指定品牌</param>
+        /// <returns>查价结果元组 (状态, 匹配型号, 价格, 厂商, 描述)</returns>
+        public static async Task<(bool success, string matchedModel, double price, string vendor, string message)> SearchDx2Async(string model, string brand)
+        {
+            try
+            {
+                // 判空过滤
+                if (string.IsNullOrWhiteSpace(model)) return (false, string.Empty, 0.0, string.Empty, "未输入检索型号");
+
+                // 智能解析目标厂商代号
+                int? factoryId = null;
+                // 优先从界面用户选择解析
+                if (!string.IsNullOrWhiteSpace(brand) && brand != "全部" && Dq123BrandMap.TryGetValue(brand.Trim(), out int fid))
+                {
+                    // 确定厂家代码
+                    factoryId = fid;
+                }
+                // 若未指定则从型号特征自动推导
+                else
+                {
+                    // 智能推导品牌
+                    string deducedBrand = DeduceBrandFromModel(model);
+                    // 匹配厂商表
+                    if (!string.IsNullOrWhiteSpace(deducedBrand) && Dq123BrandMap.TryGetValue(deducedBrand, out int dfid))
+                    {
+                        // 赋予推导代码
+                        factoryId = dfid;
+                    }
+                }
+
+                // 阶段 1: 生成电小二智能分词候选序列
+                var searchCandidates = GenerateDx2SearchCandidates(model);
+                // 收集到的所有候选项与评分
+                var candidatePool = new List<(JsonElement item, int score)>();
+
+                // 依次检索各个候选序列
+                foreach (var candidateWord in searchCandidates)
+                {
+                    // 发起远端检索
+                    var rawList = await QueryDq123RawListAsync(candidateWord, factoryId).ConfigureAwait(false);
+                    // 校验条目列表
+                    if (rawList != null && rawList.Count > 0)
+                    {
+                        // 对条目执行智能打分
+                        foreach (var elem in rawList)
+                        {
+                            // 计算契合度评分
+                            int score = ScoreDx2Candidate(elem, model, brand);
+                            // 记录有效候选
+                            candidatePool.Add((elem, score));
+                        }
+
+                        // 若已命中高分项 (高于 160 分)，直接跳出后续候选检索
+                        if (candidatePool.Any(c => c.score >= 160)) break;
+                    }
+                }
+
+                // 阶段 2: 择优选取最佳评分条目
+                if (candidatePool.Count > 0)
+                {
+                    // 按得分降序排序取最高分
+                    var best = candidatePool.OrderByDescending(c => c.score).First();
+                    // 提取最高分条目
+                    var bestElem = best.item;
+
+                    // 提取型号与价格
+                    string bestModel = bestElem.TryGetProperty("model", out var bm) ? (bm.GetString() ?? "") : model;
+                    double bestPrice = 0.0;
+                    if (bestElem.TryGetProperty("price", out var bp))
+                    {
+                        // 解析数值单价
+                        if (bp.ValueKind == JsonValueKind.Number) bestPrice = bp.GetDouble();
+                        else if (double.TryParse(bp.GetString(), out double bVal)) bestPrice = bVal;
+                    }
+
+                    // 提取并解析品牌厂商
+                    string vendorName = ResolveBrandForDq123(bestElem, bestModel, brand);
+
+                    // 检查漏电冲突 (若用户明确检索漏电，但最高分条目仅为纯断路器，则绝不能直接采纳，必须转入拼装求和阶段)
+                    bool isTargetLeakage = Regex.IsMatch(model, @"(VEA|Vigi|漏电|30mA)", RegexOptions.IgnoreCase);
+                    bool isBestItemLeakage = Regex.IsMatch(bestModel, @"(Vigi|VEA|ELE|ELM|LE|漏电|剩余电流)", RegexOptions.IgnoreCase);
+
+                    // 评分合格 (得分大于等于 50 分) 且价格有效，且不存在漏电缺失冲突
+                    if ((!isTargetLeakage || isBestItemLeakage) && best.score >= 50 && bestPrice > 0.01)
+                    {
+                        // 成功返回电小二智能优选结果
+                        return (true, bestModel, bestPrice, vendorName, $"电小二查得: ¥{bestPrice:F2} (匹配度:{best.score})");
+                    }
+                }
+
+                // 阶段 3: 拼装拆解多组件求和兜底 (主开关 + 独立漏电保护附件)
+                if (Regex.IsMatch(model, @"(VEA|Vigi|漏电|30mA)", RegexOptions.IgnoreCase))
+                {
+                    // 提取主断路器型号 (如 iC65N 2P C20A)
+                    string mainBreakerModel = Regex.Replace(model, @"(\+?\s*(Pro\+)?VEA.*|\+?\s*Vigi.*|\+?\s*30mA.*)", "", RegexOptions.IgnoreCase).Trim();
+                    // 提取极数
+                    var pMatch = Regex.Match(model, @"(\d+P)", RegexOptions.IgnoreCase);
+                    string poles = pMatch.Success ? pMatch.Groups[1].Value : "2P";
+
+                    // 异步检索主开关
+                    var mainBreakerResult = await QueryDq123RawListAsync(mainBreakerModel, factoryId).ConfigureAwait(false);
+                    // 查找合适的主开关
+                    var mainMatch = mainBreakerResult?.FirstOrDefault(x =>
+                    {
+                        // 价格有效且极数相同
+                        double p = x.TryGetProperty("price", out var pr) && pr.ValueKind == JsonValueKind.Number ? pr.GetDouble() : 0.0;
+                        string m = x.TryGetProperty("model", out var mo) ? mo.GetString() ?? "" : "";
+                        return p > 0 && m.IndexOf(poles, StringComparison.OrdinalIgnoreCase) >= 0;
+                    });
+
+                    // 异步检索对应的漏电附件 (如 Vigi iC65 ELE 2P 30mA A)
+                    string vigiAccKeyword = $"Vigi iC65 ELE {poles} 30mA A";
+                    var vigiAccResult = await QueryDq123RawListAsync(vigiAccKeyword, factoryId).ConfigureAwait(false);
+                    // 寻找价格大于 0 的漏电附件
+                    var vigiMatch = vigiAccResult?.FirstOrDefault(x =>
+                    {
+                        double p = x.TryGetProperty("price", out var pr) && pr.ValueKind == JsonValueKind.Number ? pr.GetDouble() : 0.0;
+                        return p > 0;
+                    });
+
+                    // 若两件均查得
+                    if (mainMatch.HasValue && vigiMatch.HasValue)
+                    {
+                        // 提取主开关单价
+                        double mainP = mainMatch.Value.GetProperty("price").GetDouble();
+                        string mainM = mainMatch.Value.GetProperty("model").GetString() ?? mainBreakerModel;
+                        // 提取附件单价
+                        double vigiP = vigiMatch.Value.GetProperty("price").GetDouble();
+                        string vigiM = vigiMatch.Value.GetProperty("model").GetString() ?? vigiAccKeyword;
+
+                        // 合并总面价
+                        double totalP = mainP + vigiP;
+                        // 组合官方型号描述
+                        string combinedModel = $"{mainM} + {vigiM}";
+                        // 解析厂商
+                        string vendorName = ResolveBrandForDq123(mainMatch.Value, combinedModel, brand);
+
+                        // 返回拼装求和结果
+                        return (true, combinedModel, totalP, vendorName, $"电小二拼装查得: 主体(¥{mainP:F2}) + 漏电模块(¥{vigiP:F2}) = ¥{totalP:F2}");
+                    }
+                }
+
+                // 阶段 4: 若智能流程均未果，回退至基础查询
+                return await SearchDq123Async(model, brand).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // 异常保护返回详细报错
+                return (false, string.Empty, 0.0, string.Empty, $"电小二查价异常: {ex.Message}");
+            }
+        }
+
+        #endregion
+
         #region 天工矩阵 (titanmatrix.com) 查询引擎
 
         // 天工矩阵签名专用 AppID 与 AppKey --硬编码: 天工矩阵签名密钥--
@@ -709,9 +1130,14 @@ namespace ExcelAddInDemo.Services
                             // 调用天工矩阵查询
                             result = await SearchTitanMatrixAsync(item.SearchModel, config.Brand).ConfigureAwait(false);
                         }
+                        else if (config.Platform == OnlinePricePlatform.Dx2)
+                        {
+                            // 调用电小二智能查价引擎
+                            result = await SearchDx2Async(item.SearchModel, config.Brand).ConfigureAwait(false);
+                        }
                         else
                         {
-                            // 默认调用电气天下查询
+                            // 默认调用电气天下基础查询
                             result = await SearchDq123Async(item.SearchModel, config.Brand).ConfigureAwait(false);
                         }
 

@@ -215,6 +215,11 @@
       display: none !important;
     }
 
+    /* 默认隐藏元件汇总表专属项与分割线 */
+    .summary-only {
+      display: none !important;
+    }
+
     /* 模式 1：分类表顶部箱柜汇总区 (Row < Cab_Det) */
     .mode-cabinet .cabinet-only {
       /* 顶部箱柜区显示箱柜操作按钮 */
@@ -250,6 +255,10 @@
     }
     .mode-summary .component-tool {
       /* 元件汇总表显示通用参数匹配及查价工具 */
+      display: flex !important;
+    }
+    .mode-summary .summary-only {
+      /* 元件汇总表显示专属查看分布按钮 */
       display: flex !important;
     }
 
@@ -635,6 +644,16 @@
           <span class="item-shortcut">X/Y列</span>
         </div>
 
+        <!-- 查看分布... (元件汇总表专属) -->
+        <div class="menu-item summary-only" data-action="viewComponentDistribution" id="menuItemViewDistribution">
+          <div class="item-icon-wrap">
+            <!-- 树状网格分布 SVG 图标 -->
+            <svg viewBox="0 0 24 24"><path d="M3 3v6h6V3H3zm2 2h2v2H5V5zm10-2v6h6V3h-6zm2 2h2v2h-2V5zM3 15v6h6v-6H3zm2 2h2v2H5v-2zm10-2v6h6v-6h-6zm2 2h2v2h-2v-2zM9 6h6v2H9V6zm0 10h6v2H9v-2zm2-4h2v2h-2v-2zm0-4h2v2h-2V8zm0 8h2v2h-2v-2z"/></svg>
+          </div>
+          <span class="item-label">查看分布...</span>
+          <span class="item-shortcut">分类与箱柜</span>
+        </div>
+
         <!-- 通用底部分割线 -->
         <div class="menu-divider common-divider"></div>
 
@@ -740,6 +759,10 @@
             focusedIndex = idxInFocusable;
             menuItems.forEach(it => it.classList.remove('active-focus'));
             item.classList.add('active-focus');
+          }
+          // 若移入的并非拥有二级菜单的触发项，通知 C# 延迟隐藏二级子菜单
+          if (item !== searchPriceItem && item !== copyCabinetToItem) {
+            scheduleCloseSubmenu();
           }
         });
       });

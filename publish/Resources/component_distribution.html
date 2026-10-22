@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>元器件分布穿透看板</title>
+  <!-- 引入 Element Plus 样式库 (优先国内镜像，失败回退 unpkg) -->
+  <link rel="stylesheet" href="https://registry.npmmirror.com/element-plus/2.4.4/files/dist/index.css" onerror="this.onerror=null;this.href='https://unpkg.com/element-plus/dist/index.css'">
+  <!-- 引入 Vue 3 核心库 (优先国内镜像，失败回退 unpkg) -->
+  <script src="https://registry.npmmirror.com/vue/3.3.4/files/dist/vue.global.prod.js" onerror="this.onerror=null;this.src='https://unpkg.com/vue@3/dist/vue.global.js'"></script>
+  <!-- 引入 Element Plus 组件库 (优先国内镜像，失败回退 unpkg) -->
+  <script src="https://registry.npmmirror.com/element-plus/2.4.4/files/dist/index.full.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/element-plus'"></script>
+  <!-- 引入 Element Plus 图标库 (优先国内镜像，失败回退 unpkg) -->
+  <script src="https://registry.npmmirror.com/@element-plus/icons-vue/2.3.1/files/dist/index.iife.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/@element-plus/icons-vue'"></script>
+  <!-- 引入公共绿蓝相间主题样式 (主色调 #009688) -->
+  <link rel="stylesheet" href="theme.css">
+
+  <style>
+    /* 防止 Vue 模板在挂载前闪现原始 mustache 表达式 */
+    [v-cloak] {
+      display: none !important;
+    }
+    /* 全局盒模型与重置样式 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* 页面基底尺寸与禁止文本选中 */
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+      user-select: none;
+      background-color: #f8fafc;
+      color: #1e293b;
+    }
+
+    /* Vue 应用根容器，弹性垂直布局 */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      border: 1px solid #dcdfe6;
+      background-color: #f8fafc;
+      overflow: hidden;
+    }
+
+    /* 顶部无边框窗体拖拽标题栏 (绿蓝相间主题，主色调 #009688) */
+    .window-header {
+      height: 36px;
+      background: linear-gradient(135deg, #009688 0%, #00796b 100%);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px 0 14px;
+      cursor: move;
+      user-select: none;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 99999; /* 保证位于最顶层，不被任何 loading 遮罩或表格覆盖 */
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+      touch-action: none;
+    }
+
+    .window-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      color: #ffffff;
+    }
+
+    .window-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      position: relative;
+      z-index: 100000;
+    }
+
+    /* 标题栏右侧操作微按钮 */
+    .win-btn {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      border-radius: 4px;
+      color: #ffffff;
+      background: transparent;
+      border: none;
+      transition: background-color 0.2s, opacity 0.2s;
+      position: relative;
+      z-index: 100001;
+    }
+
+    .win-btn:hover {
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .win-btn.close-btn:hover {
+      background-color: #ef4444 !important;
+      color: #ffffff !important;
+    }
+
+    /* 主体内容滚动区，严禁水平滚动条 */
+    .main-body {
+      flex: 1;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    /* 自定义美观纵向滚动条 */
+    .main-body::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .main-body::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+
+    .main-body::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+
+    /* 顶部元件概览卡片 */
+    .comp-hero-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid #009688;
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      flex-shrink: 0;
+    }
+
+    /* 元件核心参数行 */
+    .comp-title-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* 元件名称与型号徽标 */
+    .comp-name-badge {
+      font-size: 15px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .comp-model-badge {
+      font-size: 13px;
+      font-weight: 600;
+      background: #e0f2f1;
+      color: #00796b;
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid #b2dfdb;
+    }
+
+    /* 参数属性网格 */
+    .comp-meta-grid {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 12px;
+      color: #64748b;
+      flex-wrap: wrap;
+    }
+
+    .comp-meta-item strong {
+      color: #334155;
+    }
+
+    /* 统计指标胶囊组 */
+    .metric-pills-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: auto;
+    }
+
+    .metric-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #f1f5f9;
+      padding: 4px 10px;
+      border-radius: 14px;
+      font-size: 12px;
+      color: #475569;
+    }
+
+    .metric-pill .metric-val {
+      font-weight: 700;
+      color: #009688;
+      font-size: 13px;
+    }
+
+    /* 工具栏控制行 (搜索、展开/折叠、刷新) */
+    .toolbar-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    .search-input-wrap {
+      width: 280px;
+    }
+
+    .btn-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 折叠组外壳样式 */
+    .category-group-collapse {
+      border: none;
+      background: transparent;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .el-collapse-item {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 8px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+
+    .el-collapse-item__header {
+      background: #f8fafc;
+      padding: 0 14px;
+      font-weight: 600;
+      font-size: 13px;
+      color: #334155;
+      height: 38px;
+      line-height: 38px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    .el-collapse-item__wrap {
+      border-bottom: none;
+      background: #ffffff;
+    }
+
+    .el-collapse-item__content {
+      padding: 0 !important;
+    }
+
+    /* 折叠头标题自定义布局 */
+    .group-header-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding-right: 8px;
+    }
+
+    .group-sheet-title {
+      color: #0f172a;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .group-tag {
+      font-size: 11px;
+      margin-left: auto;
+      color: #64748b;
+      font-weight: 400;
+    }
+
+    .group-tag strong {
+      color: #009688;
+    }
+
+    /* 表格自适应样式，禁止横向滚动 */
+    .distribution-table {
+      width: 100% !important;
+      font-size: 12px;
+    }
+
+    .distribution-table .el-table__header th {
+      background-color: #f1f5f9;
+      color: #475569;
+      font-weight: 600;
+      height: 32px;
+      padding: 2px 0;
+    }
+
+    .distribution-table .el-table__row {
+      cursor: pointer;
+      transition: background-color 0.15s;
+    }
+
+    .distribution-table .el-table__row:hover > td {
+      background-color: #e0f2f1 !important;
+    }
+
+    .distribution-table td {
+      padding: 5px 0;
+      color: #334155;
+    }
+
+    /* 柜号加粗样式 */
+    .cabinet-no-cell {
+      font-weight: 700;
+      color: #00796b;
+    }
+
+    /* 物理行号微标签 */
+    .row-index-tag {
+      font-size: 11px;
+      color: #94a3b8;
+      background: #f1f5f9;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    /* 底部柔和状态与操作指引栏 */
+    .footer-bar {
+      height: 32px;
+      background: #ffffff;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      font-size: 11px;
+      color: #64748b;
+      flex-shrink: 0;
+    }
+
+    .footer-tip {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: #00796b;
+    }
+
+    /* 空状态展示 */
+    .empty-wrap {
+      padding: 40px 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #94a3b8;
+      gap: 8px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app" v-cloak>
+    <!-- 1. 无边框窗口可拖动标题栏 -->
+    <div class="window-header" @mousedown="handleHeaderMouseDown">
+      <div class="window-title">
+        <el-icon style="margin-right: 4px; font-size: 16px;"><component is="Grid" /></el-icon>
+        <span>元器件分布穿透看板</span>
+      </div>
+      <div class="window-controls" @mousedown.stop>
+        <div class="win-btn close-btn" title="关闭 (Esc)" onclick="if(window.chrome&&window.chrome.webview){window.chrome.webview.postMessage(JSON.stringify({action:'closeDialog'}))}" @mousedown.stop @click.stop="handleClose">
+          <!-- 内联高清晰 SVG 矢量叉号图标，彻底避免 CDN 或组件注册丢失 -->
+          <svg viewBox="0 0 1024 1024" width="13" height="13" fill="currentColor">
+            <path d="M764.288 214.592 512 466.88 259.712 214.592a32 32 0 0 0-45.248 45.248L466.752 512 214.528 764.224a32 32 0 1 0 45.248 45.248L512 557.184l252.288 252.288a32 32 0 0 0 45.248-45.248L557.248 512l252.288-252.16a32 32 0 0 0-45.248-45.248z"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. 主体内容弹性滚动区 -->
+    <div class="main-body" v-loading="loading" element-loading-text="正在全簿检索元器件分布...">
+      <!-- 2.1 顶部元件信息概览卡片 -->
+      <div class="comp-hero-card" v-if="componentInfo">
+        <div class="comp-title-row">
+          <span class="comp-name-badge">{{ componentInfo.componentName || '未命名元件' }}</span>
+          <span class="comp-model-badge" v-if="componentInfo.model">{{ componentInfo.model }}</span>
+          
+          <!-- 统计指标微胶囊 -->
+          <div class="metric-pills-bar">
+            <div class="metric-pill" v-if="componentInfo.sourceSheets && componentInfo.sourceSheets.length > 0" :title="'源分类表: ' + componentInfo.sourceSheets.join(', ')">
+              <span>源分类表:</span>
+              <span class="metric-val">{{ componentInfo.sourceSheets.length }}</span>
+            </div>
+            <div class="metric-pill">
+              <span>涉及分类表:</span>
+              <span class="metric-val">{{ filteredGroups.length }}</span>
+            </div>
+            <div class="metric-pill">
+              <span>涉及箱柜:</span>
+              <span class="metric-val">{{ totalFilteredCabinets }}</span>
+            </div>
+            <div class="metric-pill">
+              <span>单柜数量小计:</span>
+              <span class="metric-val">{{ totalFilteredQty }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="comp-meta-grid">
+          <div class="comp-meta-item" v-if="componentInfo.manufacturer">
+            <span>生产厂家: </span>
+            <strong>{{ componentInfo.manufacturer }}</strong>
+          </div>
+          <div class="comp-meta-item" v-if="componentInfo.unit">
+            <span>单位: </span>
+            <strong>{{ componentInfo.unit }}</strong>
+          </div>
+          <div class="comp-meta-item" v-if="componentInfo.summaryQuantity">
+            <span>汇总表数量: </span>
+            <strong>{{ componentInfo.summaryQuantity }}</strong>
+          </div>
+          <div class="comp-meta-item" v-if="componentInfo.originalModel && componentInfo.originalModel !== componentInfo.model">
+            <span>原型号基准: </span>
+            <strong>{{ componentInfo.originalModel }}</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2.2 搜索与折叠控制工具栏 -->
+      <div class="toolbar-row">
+        <div class="search-input-wrap">
+          <el-input
+            v-model="searchKeyword"
+            placeholder="搜索柜号 / 箱柜名称 / 分类表..."
+            size="small"
+            clearable
+          >
+            <template #prefix>
+              <el-icon><component is="Search" /></el-icon>
+            </template>
+          </el-input>
+        </div>
+
+        <div class="btn-group">
+          <el-button size="small" @click="expandAllGroups">展开全部</el-button>
+          <el-button size="small" @click="collapseAllGroups">折叠全部</el-button>
+          <el-button size="small" type="primary" style="background-color: #009688; border-color: #009688;" @click="refreshData">
+            <el-icon style="margin-right: 4px;"><component is="Refresh" /></el-icon>
+            刷新
+          </el-button>
+        </div>
+      </div>
+
+      <!-- 2.3 分类表与箱柜明细折叠列表 -->
+      <div v-if="filteredGroups.length > 0">
+        <el-collapse v-model="activeCollapseNames" class="category-group-collapse">
+          <el-collapse-item
+            v-for="grp in filteredGroups"
+            :key="grp.sheetName"
+            :name="grp.sheetName"
+          >
+            <!-- 折叠头 -->
+            <template #title>
+              <div class="group-header-wrap">
+                <div class="group-sheet-title">
+                  <el-icon color="#009688"><component is="FolderOpened" /></el-icon>
+                  <span>{{ grp.sheetName }}</span>
+                </div>
+                <div class="group-tag">
+                  涉及 <strong>{{ grp.filteredRows.length }}</strong> 处分布，单柜合计: <strong>{{ grp.subtotalQty }}</strong>
+                </div>
+              </div>
+            </template>
+
+            <!-- 明细表格: 已去除“总数量”列与“操作”列，紧凑防溢出 -->
+            <el-table
+              :data="grp.filteredRows"
+              size="small"
+              stripe
+              class="distribution-table"
+              @row-dblclick="handleRowDblClick"
+              empty-text="暂无匹配项"
+            >
+              <!-- 1. 序号列 -->
+              <el-table-column prop="index" label="序号" width="55" align="center" />
+
+              <!-- 2. 柜号列 (加粗突出) -->
+              <el-table-column prop="cabinetNo" label="柜号" width="125" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span class="cabinet-no-cell">{{ row.cabinetNo || '-' }}</span>
+                </template>
+              </el-table-column>
+
+              <!-- 3. 箱柜名称列 -->
+              <el-table-column prop="cabinetName" label="箱柜名称" width="165" show-overflow-tooltip />
+
+              <!-- 4. 单柜数量列 -->
+              <el-table-column prop="quantityPerCabinet" label="单柜数量" width="85" align="center">
+                <template #default="{ row }">
+                  <span style="font-weight: 600; color: #009688;">{{ row.quantityPerCabinet }}</span>
+                </template>
+              </el-table-column>
+
+              <!-- 5. 柜台数列 -->
+              <el-table-column prop="cabinetCount" label="柜台数" width="75" align="center">
+                <template #default="{ row }">
+                  <span>{{ row.cabinetCount }}</span>
+                </template>
+              </el-table-column>
+
+              <!-- 6. 回路编号 / 备注列 (自适应撑满剩余空间) -->
+              <el-table-column prop="remark" label="回路编号 / 备注" min-width="135" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span>{{ row.remark || '-' }}</span>
+                </template>
+              </el-table-column>
+
+              <!-- 7. 所在行号列 -->
+              <el-table-column prop="rowIndex" label="所在行" width="75" align="center">
+                <template #default="{ row }">
+                  <span class="row-index-tag">第 {{ row.rowIndex }} 行</span>
+                </template>
+              </el-table-column>
+
+              <!-- 8. 操作列 (智能差量更新) -->
+              <el-table-column label="操作" width="65" align="center">
+                <template #default="{ row }">
+                  <!-- 更新按钮：在分类表修改型号后点击同步至汇总表 C 列 -->
+                  <el-button
+                    size="small"
+                    type="primary"
+                    link
+                    :loading="rowUpdatingKey === `${row.sheetName}_${row.rowIndex}`"
+                    style="color: #009688; font-weight: 600; padding: 2px 4px;"
+                    @click.stop="handleUpdateRow(row)"
+                    title="在分类明细表中修改型号后，点击更新元件汇总表 C 列"
+                  >
+                    更新
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-collapse-item>
+        </el-collapse>
+      </div>
+
+      <!-- 2.4 空数据提示 -->
+      <div v-else-if="!loading" class="empty-wrap">
+        <el-icon style="font-size: 36px; color: #cbd5e1;"><component is="DocumentRemove" /></el-icon>
+        <span>{{ searchKeyword ? '没有找到符合条件的箱柜明细' : (errorMessage || '未在源分类表中找到该元件分布') }}</span>
+      </div>
+    </div>
+
+    <!-- 3. 底部微提示与扫描耗时栏 -->
+    <div class="footer-bar">
+      <div class="footer-tip">
+        <el-icon><component is="InfoFilled" /></el-icon>
+        <span>💡 双击行定位单元格；在分类表修改型号后，点击【更新】即可差量同步至汇总表</span>
+      </div>
+      <div>
+        <span v-if="elapsedMs > 0">扫描耗时: {{ elapsedMs }} ms</span>
+      </div>
+    </div>
+  </div>
+
+
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    // 修复：声明 app 变量，供挂载与组件注册使用
+    const app = createApp({
+      setup() {
+        // 界面加载状态标识
+        const loading = ref(true);
+        // 元件基本信息模型
+        const componentInfo = ref(null);
+        // 原始分组数据列表
+        const rawGroups = ref([]);
+        // 当前展开的折叠面板名称集合
+        const activeCollapseNames = ref([]);
+        // 搜索关键字
+        const searchKeyword = ref('');
+        // 后台扫描耗时
+        const elapsedMs = ref(0);
+        // 错误与异常提示文本
+        const errorMessage = ref('');
+        // 当前正在执行更新的行 key (格式: sheetName_rowIndex)
+        const rowUpdatingKey = ref('');
+
+        // 向 C# 宿主发送 WebMessage 指令助手
+        function postToHost(actionName, payload = {}) {
+          if (window.chrome && window.chrome.webview) {
+            const msg = { action: actionName, ...payload };
+            window.chrome.webview.postMessage(JSON.stringify(msg));
+          }
+        }
+
+        // 标题栏按下拖拽窗口
+        function handleHeaderMouseDown(e) {
+          if (e.button === 0) {
+            postToHost('dragWindow');
+          }
+        }
+
+        // 关闭看板窗口
+        function handleClose() {
+          postToHost('closeDialog');
+        }
+
+        // 展开所有分类表折叠项
+        function expandAllGroups() {
+          activeCollapseNames.value = rawGroups.value.map(g => g.sheetName);
+        }
+
+        // 折叠所有分类表折叠项
+        function collapseAllGroups() {
+          activeCollapseNames.value = [];
+        }
+
+        // 主动请求后端重新拉取分布数据
+        function refreshData() {
+          loading.value = true;
+          postToHost('getDistributionData');
+        }
+
+        // 双击表格行触发 Excel 视口穿透跳转与高亮 (携带 detRow 置顶)
+        function handleRowDblClick(row) {
+          if (!row || !row.sheetName || !row.rowIndex) return;
+          postToHost('locateCell', {
+            sheetName: row.sheetName,
+            row: row.rowIndex,
+            col: row.columnIndex || 2,
+            detRow: row.detRow || 0
+          });
+        }
+
+        // 点击行【更新】按钮：将该箱柜修改后的型号智能同步至元件汇总表 C 列
+        function handleUpdateRow(row) {
+          if (!row || !row.sheetName || !row.rowIndex) return;
+          const sumRow = (componentInfo.value && componentInfo.value.summaryRowIndex) ? componentInfo.value.summaryRowIndex : 0;
+          if (!sumRow) {
+            ElementPlus.ElMessage.warning('未能识别当前关联的元件汇总表行号，无法更新');
+            return;
+          }
+          // 设置当前行 loading 状态
+          rowUpdatingKey.value = `${row.sheetName}_${row.rowIndex}`;
+          postToHost('updateSummaryFromDetail', {
+            sheetName: row.sheetName,
+            detailRow: row.rowIndex,
+            summaryRow: sumRow
+          });
+        }
+
+        // 响应前端实时搜索过滤后的分组明细
+        const filteredGroups = computed(() => {
+          const kw = searchKeyword.value.trim().toLowerCase();
+          if (!kw) {
+            return rawGroups.value.map(g => ({
+              sheetName: g.sheetName,
+              filteredRows: g.rows,
+              subtotalQty: g.rows.reduce((sum, r) => sum + (r.quantityPerCabinet || 0), 0)
+            }));
+          }
+
+          const res = [];
+          for (const g of rawGroups.value) {
+            // 匹配工作表名或者明细行
+            const sheetMatch = g.sheetName.toLowerCase().includes(kw);
+            const matchedRows = g.rows.filter(r => {
+              if (sheetMatch) return true;
+              const cabNo = (r.cabinetNo || '').toLowerCase();
+              const cabName = (r.cabinetName || '').toLowerCase();
+              const rem = (r.remark || '').toLowerCase();
+              return cabNo.includes(kw) || cabName.includes(kw) || rem.includes(kw);
+            });
+
+            if (matchedRows.length > 0) {
+              res.push({
+                sheetName: g.sheetName,
+                filteredRows: matchedRows,
+                subtotalQty: matchedRows.reduce((sum, r) => sum + (r.quantityPerCabinet || 0), 0)
+              });
+            }
+          }
+          return res;
+        });
+
+        // 过滤后的有效箱柜总数
+        const totalFilteredCabinets = computed(() => {
+          const cabSet = new Set();
+          for (const g of filteredGroups.value) {
+            for (const r of g.filteredRows) {
+              cabSet.add(`${g.sheetName}#${r.cabinetNo}`);
+            }
+          }
+          return cabSet.size;
+        });
+
+        // 过滤后的单柜数量总计
+        const totalFilteredQty = computed(() => {
+          let sum = 0;
+          for (const g of filteredGroups.value) {
+            sum += g.subtotalQty;
+          }
+          return sum;
+        });
+
+        // 接收 C# 宿主回传消息监听器
+        function handleHostMessage(event) {
+          let msg = event.data;
+          if (typeof msg === 'string') {
+            try { msg = JSON.parse(msg); } catch { }
+          }
+          if (!msg || !msg.action) return;
+
+          if (msg.action === 'renderDistributionData') {
+            loading.value = false;
+            const data = msg.data || {};
+            if (data.success) {
+              errorMessage.value = '';
+              componentInfo.value = data.componentInfo || {};
+              rawGroups.value = data.groups || [];
+              elapsedMs.value = data.elapsedMilliseconds || 0;
+              // 默认全部展开
+              activeCollapseNames.value = rawGroups.value.map(g => g.sheetName);
+            } else {
+              errorMessage.value = data.message || '查询失败';
+              ElementPlus.ElMessage.warning(data.message || '查询失败');
+            }
+          } else if (msg.action === 'locateResult') {
+            const res = msg.data || {};
+            if (res.success) {
+              ElementPlus.ElMessage.success({
+                message: `已定位至【${res.sheetName}】第 ${res.row} 行`,
+                duration: 1800
+              });
+            } else {
+              ElementPlus.ElMessage.warning('定位失败，未找到对应单元格');
+            }
+          } else if (msg.action === 'updateSummaryResult') {
+            // 清除行 loading 标识
+            rowUpdatingKey.value = '';
+            const res = msg.data || {};
+            if (res.success) {
+              // 成功右下角全局通知提醒
+              ElementPlus.ElNotification.success({
+                title: '更新成功',
+                message: res.message || '汇总表已成功更新',
+                duration: 4000
+              });
+              // 自动重新拉取最新分布数据，保证看板数量与型号与 Excel 实时一致
+              refreshData();
+            } else {
+              // 失败或无需更新弹窗提醒
+              ElementPlus.ElMessageBox.alert(res.message || '更新未执行', '更新提示', {
+                confirmButtonText: '确定',
+                type: 'warning',
+                confirmButtonClass: 'el-button--primary'
+              });
+            }
+          }
+        }
+
+        // 注册全局键盘监听 (Esc 快速关闭窗口)
+        window.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') {
+            handleClose();
+          }
+        });
+
+        // 挂载后通知宿主页面就绪
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', handleHostMessage);
+          }
+          // 告知 C# 宿主页面已挂载完毕
+          postToHost('pageReady');
+        });
+
+        return {
+          loading,
+          componentInfo,
+          rawGroups,
+          filteredGroups,
+          activeCollapseNames,
+          searchKeyword,
+          elapsedMs,
+          totalFilteredCabinets,
+          totalFilteredQty,
+          handleHeaderMouseDown,
+          handleClose,
+          expandAllGroups,
+          collapseAllGroups,
+          refreshData,
+          handleRowDblClick,
+          handleUpdateRow,
+          rowUpdatingKey,
+          errorMessage
+        };
+      }
+    });
+
+
+    // 全局注册 Element Plus 所有图标，保障 Grid, Search, Refresh, FolderOpened 等正常渲染
+    if (typeof ElementPlusIconsVue !== 'undefined') {
+      for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+        app.component(key, component);
+      }
+    }
+
+    app.use(ElementPlus).mount('#app');
+  </script>
+</body>
+
+</html>

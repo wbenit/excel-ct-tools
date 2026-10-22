@@ -137,10 +137,17 @@ namespace ExcelAddInDemo.Controllers
             (bool success, string matchedModel, double price, string vendor, string msg) res;
             if (platform == OnlinePricePlatform.TitanMatrix)
             {
+                // 调用天工矩阵查询引擎
                 res = await OnlinePriceSearchClient.SearchTitanMatrixAsync(model, brand).ConfigureAwait(false);
+            }
+            else if (platform == OnlinePricePlatform.Dx2)
+            {
+                // 调用电小二智能查价引擎 (支持复合拆解与多级匹配)
+                res = await OnlinePriceSearchClient.SearchDx2Async(model, brand).ConfigureAwait(false);
             }
             else
             {
+                // 默认调用电气天下官方基础查询
                 res = await OnlinePriceSearchClient.SearchDq123Async(model, brand).ConfigureAwait(false);
             }
 

@@ -35,6 +35,10 @@ namespace ExcelAddInDemo.Forms
         // 记录鼠标连续检测处于外部的计数值
         private int _outOfMenuTicks = 0;
 
+        // 记录最近一次右键呼出菜单时所在的工作表与行号
+        private static int _lastContextRow = 0;
+        private static string _lastContextSheetName = string.Empty;
+
         // 标记本次菜单弹出后鼠标是否已进入过菜单区域 (防止弹出时光标在外围导致瞬间误隐藏)
         private bool _hasEnteredMenu = false;
 
@@ -468,6 +472,7 @@ namespace ExcelAddInDemo.Forms
                     case "addToPersonalDb":
                     case "splitComponent":
                     case "deleteCategory":
+                    case "viewComponentDistribution":
                         // 收到菜单点击指令：先隐藏主菜单与二级子菜单，后通过 ExcelAsyncUtil.QueueAsMacro 异步执行
                         SafeInvoke(() =>
                         {
@@ -834,6 +839,11 @@ namespace ExcelAddInDemo.Forms
                         ExcelServices.OpenComponentSplitDialog();
                         break;
 
+                    case "viewComponentDistribution":
+                        // 调度业务服务层弹出“元器件分布穿透看板”
+                        ExcelServices.ShowComponentDistributionDialog(_lastContextRow);
+                        break;
+
                     case "switchToNativeMenu":
                         // 1. 切换为 Excel 原生右键菜单模式并持久化
                         ConfigManager.Instance.SetCustomContextMenuMode(false);
@@ -917,8 +927,13 @@ namespace ExcelAddInDemo.Forms
                     _instance = new CustomContextMenuForm();
                 }
 
-                // 判定当前工作表是否为“元件汇总表”
-                bool isSummarySheet = string.Equals(sheetName?.Trim(), ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase);
+                // 记录最近一次右键上下文
+                _lastContextRow = row;
+                _lastContextSheetName = sheetName ?? string.Empty;
+
+                // 判定当前工作表是否为“元件汇总表”或包含“元件汇总”的报表
+                bool isSummarySheet = string.Equals(sheetName?.Trim(), ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase) ||
+                                      (sheetName != null && sheetName.Trim().Contains("元件汇总"));
 
                 // 判定当前工作表是否为“元件汇总分布表”
                 bool isDistributionSheet = string.Equals(sheetName?.Trim(), ExcelServices.DistributionSheetName, StringComparison.OrdinalIgnoreCase);
@@ -948,10 +963,10 @@ namespace ExcelAddInDemo.Forms
 
                 // 每次显示前重置为标准尺寸：
                 // 1. 元件汇总分布表 (专属6项)：165px
-                // 2. 元件汇总表 (全局大单表)：215px
+                // 2. 元件汇总表 (全局大单表，含查看分布)：245px
                 // 3. 分类表顶部箱柜汇总区 (isAboveFirstDet == true)：385px
                 // 4. 分类表明细元器件插槽区 (isAboveFirstDet == false)：445px (隐藏禁用的新建箱柜后紧凑自适应)
-                int standardHeight = isDistributionSheet ? 175 : (isSummarySheet ? 215 : (isAboveFirstDet ? 412 : 445)); // --硬编码: 右键菜单标准高度 (分布表 175px, 汇总表 215px, 顶部箱柜 412px, 明细表 445px)--
+                int standardHeight = isDistributionSheet ? 175 : (isSummarySheet ? 245 : (isAboveFirstDet ? 412 : 445)); // --硬编码: 右键菜单标准高度 (分布表 175px, 汇总表 245px, 顶部箱柜 412px, 明细表 445px)--
                 // 若工作区高度受限 (如低分辨率笔记本屏幕)，自适应贴合可用工作区
                 int targetHeight = Math.Min(standardHeight, workArea.Height - 10);
                 // 获取当前窗体 DPI 缩放比率并计算标准物理宽度
