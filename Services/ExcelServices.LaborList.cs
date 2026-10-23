@@ -264,6 +264,7 @@ namespace ExcelAddInDemo
                         string cabName = "配电箱"; // 默认箱柜名称 --硬编码: 默认箱柜名称--
                         string cabModel = string.Empty; // 柜号/型号
                         decimal cabQty = 1; // 箱柜数量
+                        bool skipLaborCab = false;
 
                         // 优先从汇总行 (Cab_Sum_k) 提取基础信息
                         if (sumRow > 0)
@@ -299,9 +300,18 @@ namespace ExcelAddInDemo
                                     cabModel = dVal;
                                 }
 
-                                if (fObj != null && decimal.TryParse(fObj.ToString(), out decimal parsedQty) && parsedQty > 0)
+                                // 解析汇总行箱柜数量
+                                if (fObj != null && decimal.TryParse(fObj.ToString()?.Trim(), out decimal parsedQty))
                                 {
-                                    cabQty = parsedQty;
+                                    // 核心修复：若数量明确为 0 或负数则标记跳过
+                                    if (parsedQty <= 0)
+                                    {
+                                        skipLaborCab = true;
+                                    }
+                                    else
+                                    {
+                                        cabQty = parsedQty;
+                                    }
                                 }
                             }
                             catch (Exception exSum)
@@ -309,6 +319,9 @@ namespace ExcelAddInDemo
                                 LogHelper.WriteLog($"[人工清单] 提取箱柜 {kvp.Key} 汇总行容错: {exSum.Message}");
                             }
                         }
+
+                        // 若该箱柜数量明确为 0 则直接跳过不生成人工工费项
+                        if (skipLaborCab) continue;
 
                         // 若汇总行未能提取到完整信息，从明细表信息行 (Cab_Det_k) 补充
                         if (detRow > 0 && string.IsNullOrWhiteSpace(cabModel))

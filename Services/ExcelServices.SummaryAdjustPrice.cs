@@ -779,20 +779,32 @@ namespace ExcelAddInDemo
                         int cabQty = 1;
 
                         // 获取柜体台数（规则 6 & 8，优先从内存大矩阵读取汇总行 F 列数量，0 COM 调用）
+                        bool skipCab = false;
                         if (sumRow > 0)
                         {
                             try
                             {
                                 // 优先从内存大矩阵读取汇总行数量 (第 6 列 F 列与第 5 列 E 列)
                                 object? qVal = GetSheetVal(sumRow, 6) ?? GetSheetVal(sumRow, 5);
-                                // 转换台数整数
-                                if (qVal != null && int.TryParse(Convert.ToString(qVal), out int pQty) && pQty > 0)
+                                // 解析汇总行填写的箱柜数量
+                                if (qVal != null && decimal.TryParse(Convert.ToString(qVal)?.Trim(), out decimal pQty))
                                 {
-                                    cabQty = pQty;
+                                    // 核心修复：若顶部汇总行箱柜数量明确为 0 或负数，则标记跳过该箱柜不纳入统计
+                                    if (pQty <= 0)
+                                    {
+                                        skipCab = true;
+                                    }
+                                    else
+                                    {
+                                        cabQty = (int)Math.Round(pQty);
+                                    }
                                 }
                             }
                             catch { }
                         }
+
+                        // 若该箱柜数量明确为 0 则直接跳过不纳入元件汇总
+                        if (skipCab) continue;
 
                         // 元器件区域起始行与终止行
                         int compStartRow = detRow + 2;

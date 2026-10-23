@@ -6924,3 +6924,21 @@
    - 同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
    - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**。
 
+
+---
+
+## [2026-10-23 10:08:00] 修复材料统计及关联模块中顶部汇总行数量为 0 的箱柜仍被统计的问题
+
+### [Completed]
+1. **材料统计核心服务修复 (Services/ExcelServices.MaterialStat.cs)**：
+   - 在 ExportPurchaseListToCurrentWorkbook 中，解析汇总行（F列）数量时增加零值拦截：当解析到的数值小于等于 0 时，执行 continue 直接跳过该箱柜，彻底杜绝单台数量乘以此前保留的默认值 1 并计入采购清单；
+   - 在 GetMaterialStatInitData 中同步增加零值过滤逻辑：遍历各个箱柜时若汇总行数量小于等于 0 则不计入分类表有效箱柜计数 cabCount，确保前端向导界面展示的箱柜数与实际导出箱柜数完全一致；
+   - 严格遵循注释规范：新增及修改代码每 3 行包含一行中文注释。
+2. **全生命周期关联统计模块对齐**：
+   - Services/ExcelServices.SummaryAdjustPrice.cs：在汇总调价生成【元件汇总表】时，增加对汇总行数量明确小于等于 0 的过滤，跳过该箱柜不纳入元件汇总；
+   - Services/ExcelServices.DistributedAdjustPrice.cs：在生成【材料分布表】时，跳过汇总行数量小于等于 0 的箱柜；
+   - Services/ExcelServices.LaborList.cs：在生成【人工工费清单】时，跳过汇总行数量小于等于 0 的箱柜；
+   - Services/ExcelServices.FinishedHandover.cs：在生成【成品交接单】时，跳过汇总行数量小于等于 0 的箱柜。
+3. **编译构建与交付**：
+   - 执行 dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none 编译通过（0 错误）；
+   - 将最新生成的 ExcelAddInDemo.dll 成功同步覆盖至 publish/ 交付目录。

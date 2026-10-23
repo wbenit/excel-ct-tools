@@ -84,9 +84,40 @@ namespace ExcelAddInDemo
                     // 规则 8: 校验前确保规则 6 拓扑健康
                     Tool.FixAndFillCabinetNamesForSheet(sheet);
 
-                    // 提取当前分类表下有效箱柜数量
+                    // 提取当前分类表下有效箱柜列表
                     var validCabinets = Tool.GetSheetValidCabinets(sheet, activeWb);
-                    int cabCount = validCabinets != null ? validCabinets.Count : 0;
+                    // 初始化有效箱柜统计计数
+                    int cabCount = 0;
+                    if (validCabinets != null && validCabinets.Count > 0)
+                    {
+                        // 遍历各个箱柜检测顶部汇总行数量
+                        for (int i = 0; i < validCabinets.Count; i++)
+                        {
+                            var cabAnchor = validCabinets[i].Value;
+                            // 校验是否存在汇总行锚点
+                            if (cabAnchor.Sum != null)
+                            {
+                                int sumRow = Convert.ToInt32(cabAnchor.Sum.Row);
+                                // 规则 7: 一次性读取汇总行第 1~10 列至内存二维数组
+                                dynamic sumRange = sheet.Range[sheet.Cells[sumRow, 1], sheet.Cells[sumRow, 10]];
+                                object[,]? sumMatrix = sumRange.Value2 as object[,];
+
+                                if (sumMatrix != null)
+                                {
+                                    // F 列对应第 6 列 (箱柜数量)，备选第 5 列 E 列
+                                    object qVal = sumMatrix[1, 6] ?? sumMatrix[1, 5];
+                                    // 解析汇总行箱柜数量数值
+                                    if (qVal != null && decimal.TryParse(Convert.ToString(qVal)?.Trim(), out decimal q) && q <= 0)
+                                    {
+                                        // 汇总行数量明确为 0 或负数则跳过不计入有效箱柜
+                                        continue;
+                                    }
+                                }
+                            }
+                            // 累计有效箱柜数量
+                            cabCount++;
+                        }
+                    }
 
                     // 添加至返回列表中
                     initData.Categories.Add(new MaterialStatCategoryDto
@@ -248,11 +279,18 @@ namespace ExcelAddInDemo
 
                             if (sumMatrix != null)
                             {
-                                // F 列对应第 6 列 (箱柜数量)
+                                // F 列对应第 6 列 (箱柜数量)，备选第 5 列 E 列
                                 object qVal = sumMatrix[1, 6] ?? sumMatrix[1, 5];
-                                if (qVal != null && int.TryParse(Convert.ToString(qVal), out int q) && q > 0)
+                                // 解析汇总行填写的箱柜数量
+                                if (qVal != null && decimal.TryParse(Convert.ToString(qVal)?.Trim(), out decimal q))
                                 {
-                                    cabinetQty = q;
+                                    // 核心修复：若顶部汇总行箱柜数量明确为 0 或负数，则直接跳过该箱柜，不纳入材料统计
+                                    if (q <= 0)
+                                    {
+                                        continue;
+                                    }
+                                    // 赋值有效箱柜台数
+                                    cabinetQty = (int)Math.Round(q);
                                 }
                             }
                         }

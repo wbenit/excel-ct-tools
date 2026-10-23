@@ -134,6 +134,7 @@ namespace ExcelAddInDemo.Services
                             remark      TEXT,
                             param1      TEXT,
                             param2      TEXT,
+                            order_number TEXT,
                             current     INTEGER,
                             poles       TEXT,
                             tripping    TEXT,
@@ -213,6 +214,8 @@ namespace ExcelAddInDemo.Services
                     MigrateSecondarySchemeColumns(conn);
                     // 执行一次成套方案表的增量列热迁移升级
                     MigratePrimarySchemeColumns(conn);
+                    // 执行元器件基础物料表的增量订货号列热迁移升级
+                    MigrateComponentColumns(conn);
                 }
                 catch (Exception ex)
                 {
@@ -303,6 +306,44 @@ namespace ExcelAddInDemo.Services
             {
                 // 记录迁移异常日志
                 LogHelper.WriteLog($"[PersonalDb] MigratePrimarySchemeColumns 异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 自动检测并平滑升级 components 元器件表结构，增加 order_number 订货号列
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+        /// </summary>
+        private static void MigrateComponentColumns(SQLiteConnection conn)
+        {
+            try
+            {
+                // 维护 components 已有列名集合
+                var existingCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                // 查询 components 表元数据信息
+                using (var infoCmd = new SQLiteCommand("PRAGMA table_info(components);", conn)) // --硬编码: PRAGMA 嗅探--
+                using (var reader = infoCmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        // 提取当前列名称 (第 2 列是列名)
+                        string colName = reader.GetString(1);
+                        existingCols.Add(colName);
+                    }
+                }
+
+                // 若缺少 order_number 订货号列，执行热迁移追加
+                if (!existingCols.Contains("order_number"))
+                {
+                    // 执行追加订货号列指令
+                    using var alterCmd = new SQLiteCommand("ALTER TABLE components ADD COLUMN order_number TEXT DEFAULT '';", conn); // --硬编码: 迁移DDL--
+                    alterCmd.ExecuteNonQuery();
+                    LogHelper.WriteLog("[PersonalDb] 成功为 components 表追加 order_number 订货号列");
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录迁移异常日志
+                LogHelper.WriteLog($"[PersonalDb] MigrateComponentColumns 异常: {ex.Message}");
             }
         }
 
@@ -462,7 +503,7 @@ namespace ExcelAddInDemo.Services
 
                     // 构建 SQL 基础查询
                     var sb = new StringBuilder(@"
-                        SELECT id, brand, name, model, price, remark, param1, param2, current, poles, tripping 
+                        SELECT id, brand, name, model, price, remark, param1, param2, current, poles, tripping, order_number 
                         FROM components 
                         WHERE 1=1 
                     "); // --硬编码-- 查询字段列表
@@ -573,7 +614,7 @@ namespace ExcelAddInDemo.Services
 
                     // 构建查询
                     var sb = new StringBuilder(@"
-                        SELECT id, brand, name, model, price, remark, param1, param2, current, poles, tripping 
+                        SELECT id, brand, name, model, price, remark, param1, param2, current, poles, tripping, order_number 
                         FROM components 
                         WHERE 1=1 
                     ");
@@ -636,11 +677,11 @@ namespace ExcelAddInDemo.Services
                         cmd.Parameters.AddWithValue("@trip", $"%{tripMode!.Trim()}%");
                     }
 
-                    // 6. 用户关键字模糊匹配 (同时命中 model 或 name 或 param1 或 remark)
+                    // 6. 用户关键字模糊匹配 (同时命中 model 或 name 或 param1 或 remark 或 order_number)
                     if (!string.IsNullOrWhiteSpace(searchKeyword))
                     {
                         string kw = searchKeyword!.Trim();
-                        sb.Append("AND (model LIKE @kw OR name LIKE @kw OR param1 LIKE @kw OR remark LIKE @kw) ");
+                        sb.Append("AND (model LIKE @kw OR name LIKE @kw OR param1 LIKE @kw OR remark LIKE @kw OR order_number LIKE @kw) ");
                         cmd.Parameters.AddWithValue("@kw", $"%{kw}%");
                     }
 
@@ -712,7 +753,7 @@ namespace ExcelAddInDemo.Services
                             fallbackSb.Append($"AND brand IN ({string.Join(", ", fbBrandParamNames)}) ");
                         }
                         string kw = searchKeyword!.Trim();
-                        fallbackSb.Append("AND (model LIKE @fbKw OR name LIKE @fbKw OR param1 LIKE @fbKw OR remark LIKE @fbKw) ");
+                        fallbackSb.Append("AND (model LIKE @fbKw OR name LIKE @fbKw OR param1 LIKE @fbKw OR remark LIKE @fbKw OR order_number LIKE @fbKw) ");
                         fallbackCmd.Parameters.AddWithValue("@fbKw", $"%{kw}%");
 
                         // 必含规则约束 (多条规则间为 OR 或关系，满足任一关键字即可)
@@ -811,7 +852,7 @@ namespace ExcelAddInDemo.Services
                     conn.Open();
                     // 构造查询语句，严格精确匹配品牌与型号规格 (不区分大小写)
                     string sql = @"
-                        SELECT id, brand, original_id, name, model, price, remark, param1, param2, current, poles, tripping 
+                        SELECT id, brand, original_id, name, model, price, remark, param1, param2, current, poles, tripping, order_number 
                         FROM components 
                         WHERE UPPER(TRIM(brand)) = UPPER(TRIM(@brand)) 
                           AND UPPER(TRIM(model)) = UPPER(TRIM(@model)) 
@@ -838,7 +879,9 @@ namespace ExcelAddInDemo.Services
                             Param2 = Convert.ToString(reader["param2"]),
                             Current = reader["current"] == DBNull.Value ? null : Convert.ToInt32(reader["current"]),
                             Poles = Convert.ToString(reader["poles"]),
-                            Tripping = Convert.ToString(reader["tripping"])
+                            Tripping = Convert.ToString(reader["tripping"]),
+                            // 映射订货号字段
+                            OrderNumber = Convert.ToString(reader["order_number"])
                         };
                     }
                 }
@@ -873,8 +916,8 @@ namespace ExcelAddInDemo.Services
                     using var trans = conn.BeginTransaction();
 
                     string insertSql = @"
-                        INSERT INTO components (brand, name, model, price, remark, param1, param2, current, poles, tripping, created_at, updated_at) 
-                        VALUES (@brand, @name, @model, @price, @remark, @param1, @param2, @current, @poles, @tripping, @created_at, @updated_at);
+                        INSERT INTO components (brand, name, model, price, remark, param1, param2, current, poles, tripping, order_number, created_at, updated_at) 
+                        VALUES (@brand, @name, @model, @price, @remark, @param1, @param2, @current, @poles, @tripping, @order_number, @created_at, @updated_at);
                         SELECT last_insert_rowid();
                     ";
 
@@ -907,6 +950,8 @@ namespace ExcelAddInDemo.Services
                         cmd.Parameters.AddWithValue("@current", (object?)req.Current ?? DBNull.Value);
                         cmd.Parameters.AddWithValue("@poles", req.Poles ?? string.Empty);
                         cmd.Parameters.AddWithValue("@tripping", req.Tripping ?? string.Empty);
+                        // 绑定订货号参数
+                        cmd.Parameters.AddWithValue("@order_number", req.OrderNumber ?? string.Empty);
                         cmd.Parameters.AddWithValue("@created_at", nowIso);
                         cmd.Parameters.AddWithValue("@updated_at", nowIso);
 
@@ -925,7 +970,9 @@ namespace ExcelAddInDemo.Services
                             Param2 = req.Param2,
                             Current = req.Current,
                             Poles = req.Poles,
-                            Tripping = req.Tripping
+                            Tripping = req.Tripping,
+                            // 填充返回的订货号
+                            OrderNumber = req.OrderNumber
                         });
                     }
 
@@ -972,6 +1019,7 @@ namespace ExcelAddInDemo.Services
                             current = @current,
                             poles = @poles,
                             tripping = @tripping,
+                            order_number = @order_number,
                             updated_at = @updated_at 
                         WHERE id = @id;
                     ";
@@ -992,6 +1040,8 @@ namespace ExcelAddInDemo.Services
                         cmd.Parameters.AddWithValue("@current", (object?)req.Current ?? DBNull.Value);
                         cmd.Parameters.AddWithValue("@poles", req.Poles ?? string.Empty);
                         cmd.Parameters.AddWithValue("@tripping", req.Tripping ?? string.Empty);
+                        // 绑定更新订货号参数
+                        cmd.Parameters.AddWithValue("@order_number", req.OrderNumber ?? string.Empty);
                         cmd.Parameters.AddWithValue("@updated_at", nowIso);
 
                         int rows = cmd.ExecuteNonQuery();
@@ -1067,7 +1117,7 @@ namespace ExcelAddInDemo.Services
 
                     // 新规范: 附件标记从扩展参数1移至极数(poles) --硬编码: 附件标识--
                     string sql = @"
-                        SELECT id, brand, name, model, price, remark, param1, param2, current, poles, tripping 
+                        SELECT id, brand, name, model, price, remark, param1, param2, current, poles, tripping, order_number 
                         FROM components 
                         WHERE brand = @brand AND poles = '附件' 
                         ORDER BY id DESC;
@@ -1143,7 +1193,9 @@ namespace ExcelAddInDemo.Services
                 Param2 = reader.IsDBNull(7) ? string.Empty : reader.GetString(7),
                 Current = reader.IsDBNull(8) ? null : (int?)reader.GetInt32(8),
                 Poles = reader.IsDBNull(9) ? string.Empty : reader.GetString(9),
-                Tripping = reader.IsDBNull(10) ? string.Empty : reader.GetString(10)
+                Tripping = reader.IsDBNull(10) ? string.Empty : reader.GetString(10),
+                // 提取订货号 (若字段存在)
+                OrderNumber = reader.FieldCount > 11 && !reader.IsDBNull(11) ? reader.GetString(11) : string.Empty
             };
         }
 

@@ -174,6 +174,10 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("param2")]
         public string? Param2 { get; set; }
 
+        // 订货号/物料编码 (用于成套下单与精确物料匹配)
+        [JsonPropertyName("orderNumber")]
+        public string? OrderNumber { get; set; }
+
         // 额定电流数值 (如: 32, 100)
         [JsonPropertyName("current")]
         public int? Current { get; set; }

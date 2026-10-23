@@ -289,6 +289,7 @@ namespace ExcelAddInDemo
                         string cabModelD = string.Empty; // 汇总行 D 列型号
                         string cabModelN = string.Empty; // 汇总行 N 列三箱型号
                         decimal cabQty = 1; // 箱柜数量
+                        bool skipHandoverCab = false;
                         string cabRemark = string.Empty; // 备注
                         string rawDimension = string.Empty; // 尺寸文本
                         int width = 0, height = 0, depth = 0;
@@ -317,9 +318,18 @@ namespace ExcelAddInDemo
 
                                 // F 列为数量 (第 6 列)
                                 object fObj = sumMatrix[1, 6];
-                                if (fObj != null && decimal.TryParse(fObj.ToString(), out decimal parsedQty) && parsedQty > 0)
+                                // 解析汇总行箱柜数量
+                                if (fObj != null && decimal.TryParse(fObj.ToString()?.Trim(), out decimal parsedQty))
                                 {
-                                    cabQty = parsedQty;
+                                    // 核心修复：若数量明确为 0 或负数则标记跳过
+                                    if (parsedQty <= 0)
+                                    {
+                                        skipHandoverCab = true;
+                                    }
+                                    else
+                                    {
+                                        cabQty = parsedQty;
+                                    }
                                 }
 
                                 // I 列为备注 (第 9 列)
@@ -357,6 +367,9 @@ namespace ExcelAddInDemo
                                 LogHelper.WriteLog($"[成品交接单] 提取箱柜 {cabK} 汇总行容错: {exSum.Message}");
                             }
                         }
+
+                        // 若该箱柜数量明确为 0 则直接跳过不生成成品交接项
+                        if (skipHandoverCab) continue;
 
                         // 若柜号为空，尝试从明细表信息行 (Cab_Det_k) 补充
                         if (detRow > 0 && string.IsNullOrWhiteSpace(cabCode))

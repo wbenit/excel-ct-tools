@@ -566,8 +566,13 @@ namespace ExcelAddInDemo
                             // 数量一定在 F 列 (第 6 列)，直接读取 F 列，不解析 E 列
                             object qObj = sumMatrix[1, 6];
                             // 采用 double 容错解析台数
-                            if (qObj != null && double.TryParse(Convert.ToString(qObj), out double parsedDQ) && parsedDQ > 0)
+                            if (qObj != null && double.TryParse(Convert.ToString(qObj)?.Trim(), out double parsedDQ))
                             {
+                                // 核心修复：若顶部汇总行箱柜数量明确为 0 或负数，则跳过该箱柜不纳入材料分布统计
+                                if (parsedDQ <= 0)
+                                {
+                                    continue;
+                                }
                                 // 赋值有效箱柜台数
                                 cabQty = (int)Math.Round(parsedDQ);
                             }

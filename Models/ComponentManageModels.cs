@@ -57,14 +57,17 @@ namespace ExcelAddInDemo.Models
         // 扩展参数 2 所在列 (默认第 10 列 J)
         public int Param2Col { get; set; } = 10; // --硬编码-- 扩展参数2所在列索引
 
-        // 备注说明所在列 (默认第 11 列 K)
-        public int RemarkCol { get; set; } = 11; // --硬编码-- 备注所在列索引
+        // 订货号所在列 (默认第 11 列 K，方案B位于扩展参数与备注之间)
+        public int OrderNumberCol { get; set; } = 11; // --硬编码-- 订货号所在列索引
 
-        // 操作与同步状态提示所在列 (默认第 12 列 L)
-        public int StatusCol { get; set; } = 12; // --硬编码-- 状态提示所在列索引
+        // 备注说明所在列 (默认第 12 列 L)
+        public int RemarkCol { get; set; } = 12; // --硬编码-- 备注所在列索引
 
-        // 总列数
-        public int TotalColumns => 12;
+        // 操作与同步状态提示所在列 (默认第 13 列 M)
+        public int StatusCol { get; set; } = 13; // --硬编码-- 状态提示所在列索引
+
+        // 总列数扩充为 13 列
+        public int TotalColumns => 13;
     }
 
     /// <summary>
@@ -99,6 +102,10 @@ namespace ExcelAddInDemo.Models
         // 扩展参数 2
         [JsonPropertyName("param2")]
         public string? Param2 { get; set; }
+
+        // 订货号/物料编码 (用于成套下单与物料匹配)
+        [JsonPropertyName("orderNumber")]
+        public string? OrderNumber { get; set; }
 
         // 额定电流 (A)
         [JsonPropertyName("current")]
@@ -149,6 +156,10 @@ namespace ExcelAddInDemo.Models
         // 扩展参数 2
         [JsonPropertyName("param2")]
         public string? Param2 { get; set; }
+
+        // 订货号/物料编码 (用于成套下单与物料匹配)
+        [JsonPropertyName("orderNumber")]
+        public string? OrderNumber { get; set; }
 
         // 额定电流 (A)
         [JsonPropertyName("current")]

@@ -86,6 +86,8 @@ namespace ExcelAddInDemo
             headers[0, _manageColCfg.TrippingCol - 1] = "脱扣方式";
             headers[0, _manageColCfg.Param1Col - 1] = "扩展参数1";
             headers[0, _manageColCfg.Param2Col - 1] = "扩展参数2";
+            // 第 11 列写入订货号标准表头
+            headers[0, _manageColCfg.OrderNumberCol - 1] = "订货号";
             headers[0, _manageColCfg.RemarkCol - 1] = "备注";
             headers[0, _manageColCfg.StatusCol - 1] = "操作状态";
 
@@ -120,6 +122,8 @@ namespace ExcelAddInDemo
                 ((dynamic)newSheet.Columns[_manageColCfg.TrippingCol]).ColumnWidth = 12;
                 ((dynamic)newSheet.Columns[_manageColCfg.Param1Col]).ColumnWidth = 16;
                 ((dynamic)newSheet.Columns[_manageColCfg.Param2Col]).ColumnWidth = 16;
+                // 设置订货号列默认宽度为 20
+                ((dynamic)newSheet.Columns[_manageColCfg.OrderNumberCol]).ColumnWidth = 20;
                 ((dynamic)newSheet.Columns[_manageColCfg.RemarkCol]).ColumnWidth = 20;
                 ((dynamic)newSheet.Columns[_manageColCfg.StatusCol]).ColumnWidth = 22;
             }
@@ -201,6 +205,8 @@ namespace ExcelAddInDemo
                         dataArray[i, _manageColCfg.TrippingCol - 1] = item.Tripping ?? string.Empty;
                         dataArray[i, _manageColCfg.Param1Col - 1] = item.Param1 ?? string.Empty;
                         dataArray[i, _manageColCfg.Param2Col - 1] = item.Param2 ?? string.Empty;
+                        // 写入订货号至二维数组第 11 列
+                        dataArray[i, _manageColCfg.OrderNumberCol - 1] = item.OrderNumber ?? string.Empty;
                         dataArray[i, _manageColCfg.RemarkCol - 1] = item.Remark ?? string.Empty;
                         dataArray[i, _manageColCfg.StatusCol - 1] = statusTag;
                     }
@@ -376,6 +382,8 @@ namespace ExcelAddInDemo
                         Tripping = Convert.ToString(rowValues[1, _manageColCfg.TrippingCol])?.Trim(),
                         Param1 = Convert.ToString(rowValues[1, _manageColCfg.Param1Col])?.Trim(),
                         Param2 = Convert.ToString(rowValues[1, _manageColCfg.Param2Col])?.Trim(),
+                        // 从第 11 列提取订货号
+                        OrderNumber = Convert.ToString(rowValues[1, _manageColCfg.OrderNumberCol])?.Trim(),
                         Remark = Convert.ToString(rowValues[1, _manageColCfg.RemarkCol])?.Trim()
                     };
 
@@ -553,6 +561,8 @@ namespace ExcelAddInDemo
                         Tripping = Convert.ToString(rowValues[1, _manageColCfg.TrippingCol])?.Trim(),
                         Param1 = Convert.ToString(rowValues[1, _manageColCfg.Param1Col])?.Trim(),
                         Param2 = Convert.ToString(rowValues[1, _manageColCfg.Param2Col])?.Trim(),
+                        // 从第 11 列提取订货号写入新增 DTO
+                        OrderNumber = Convert.ToString(rowValues[1, _manageColCfg.OrderNumberCol])?.Trim(),
                         Remark = Convert.ToString(rowValues[1, _manageColCfg.RemarkCol])?.Trim()
                     };
 
