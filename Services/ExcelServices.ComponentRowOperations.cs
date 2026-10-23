@@ -133,13 +133,25 @@ namespace ExcelAddInDemo
                 dynamic readRange = sheet.Range[sheet.Cells[startRow, 1], sheet.Cells[endRow, colCount]];
                 object[,] fullValues = (object[,])readRange.Value2;
 
-                // 提取包含计算公式的单元格集合 (如总价公式、成本总价公式)
+                // 提取包含计算公式的单元格集合 (覆盖序号、单价、总价、成本等公式)
                 var formulas = new Dictionary<int, string>();
                 try
                 {
+                    // 检查首行 A 列 (序号) 是否包含公式
+                    string formulaA = Convert.ToString(sheet.Cells[startRow, 1].Formula) ?? "";
+                    if (formulaA.StartsWith("=")) formulas[1] = formulaA;
+
+                    // 检查首行 G 列 (销售单价) 是否包含公式
+                    string formulaG = Convert.ToString(sheet.Cells[startRow, 7].Formula) ?? "";
+                    if (formulaG.StartsWith("=")) formulas[7] = formulaG;
+
                     // 检查首行 H 列 (总价) 是否包含公式
                     string formulaH = Convert.ToString(sheet.Cells[startRow, 8].Formula) ?? "";
                     if (formulaH.StartsWith("=")) formulas[8] = formulaH;
+
+                    // 检查首行 J 列 (成本单价) 是否包含公式
+                    string formulaJ = Convert.ToString(sheet.Cells[startRow, 10].Formula) ?? "";
+                    if (formulaJ.StartsWith("=")) formulas[10] = formulaJ;
 
                     // 检查首行 K 列 (成本总价) 是否包含公式
                     string formulaK = Convert.ToString(sheet.Cells[startRow, 11].Formula) ?? "";
@@ -424,15 +436,26 @@ namespace ExcelAddInDemo
                     // 批量写入数据矩阵
                     insertRange.Value2 = valuesToWrite;
 
-                    // 批量恢复自适应标准计算公式 (F 列数量 * G 列单价，F 列数量 * J 列成本单价)
+                    // 批量恢复自适应标准计算公式 (A 列动态序号、G 列单价、H 列总价、J 列成本单价、K 列成本总价)
                     for (int i = 0; i < rowCount; i++)
                     {
-                        // 当前行号
+                        // 当前物理行号
                         int curR = targetRow + i;
-                        // H 列总价公式
-                        targetSheet.Cells[curR, 8].Formula = $"=F{curR}*G{curR}";
-                        // K 列成本总价公式
-                        targetSheet.Cells[curR, 11].Formula = $"=F{curR}*J{curR}";
+
+                        // 1. A 列动态序号公式：自适应绑定所属箱柜明细表头行 (detRow + 1)
+                        targetSheet.Cells[curR, 1].Formula = $"=ROW()-ROW(A${targetCab.DetRow + 1})";
+
+                        // 2. G 列销售单价标准公式：=IF(AND(B="",C=""),"",ROUND(M*L*N,2))
+                        targetSheet.Cells[curR, 7].Formula = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(M{curR}*L{curR}*N{curR},2))";
+
+                        // 3. H 列销售总价标准公式：=IF(AND(B="",C=""),"",ROUND(F*G,2))
+                        targetSheet.Cells[curR, 8].Formula = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(F{curR}*G{curR},2))";
+
+                        // 4. J 列成本单价标准公式：=IF(AND(B="",C=""),"",ROUND(M*N,2))
+                        targetSheet.Cells[curR, 10].Formula = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(M{curR}*N{curR},2))";
+
+                        // 5. K 列成本总价标准公式：=IF(AND(B="",C=""),"",ROUND(J*F,2))
+                        targetSheet.Cells[curR, 11].Formula = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(J{curR}*F{curR},2))";
                     }
 
                     // 若原操作为【剪切】模式，安全删除来源行 (批量删除 rowCount 行)

@@ -2619,6 +2619,22 @@ namespace ExcelAddInDemo
                                          gFormula.Contains("[") ||
                                          !gFormula.Contains($"M{physRow}");
 
+                        // 无论 G 列是否损坏，均独立检查并补齐 L 列 (报出系数，索引 11) 默认公式
+                        string lVal = Convert.ToString(compMatrix[c, 11])?.Trim() ?? "";
+                        if (string.IsNullOrWhiteSpace(lVal))
+                        {
+                            // 默认赋予自适应系数公式: 判空则空，否则为 1 --硬编码: 加价系数公式--
+                            compMatrix[c, 11] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",1)";
+                        }
+
+                        // 无论 G 列是否损坏，均独立检查并补齐 N 列 (折扣系数，索引 13) 默认公式
+                        string nVal = Convert.ToString(compMatrix[c, 13])?.Trim() ?? "";
+                        if (string.IsNullOrWhiteSpace(nVal))
+                        {
+                            // 默认赋予自适应折扣公式: 判空则空，否则为 1 --硬编码: 采购折扣公式--
+                            compMatrix[c, 13] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",1)";
+                        }
+
                         if (isGBroken)
                         {
                             // 若 G 列存有静态单价数值，且 M 列表价 (索引 12) 为空，则自动将静态单价平移沉淀至 M 列表价
@@ -2627,22 +2643,6 @@ namespace ExcelAddInDemo
                             {
                                 // 平移保存单价值至 M 列表价，确保手填价格不丢失
                                 compMatrix[c, 12] = gFormula;
-                            }
-
-                            // 补齐 L 列 (报出系数，索引 11) 默认值或公式
-                            string lVal = Convert.ToString(compMatrix[c, 11])?.Trim() ?? "";
-                            if (string.IsNullOrWhiteSpace(lVal))
-                            {
-                                // 默认赋予自适应系数公式: 判空则空，否则为 1 --硬编码: 加价系数公式--
-                                compMatrix[c, 11] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",1)";
-                            }
-
-                            // 补齐 N 列 (折扣系数，索引 13) 默认值或公式
-                            string nVal = Convert.ToString(compMatrix[c, 13])?.Trim() ?? "";
-                            if (string.IsNullOrWhiteSpace(nVal))
-                            {
-                                // 默认赋予自适应折扣公式: 判空则空，否则为 1 --硬编码: 采购折扣公式--
-                                compMatrix[c, 13] = $"=IF(AND(B{physRow}=\"\",C{physRow}=\"\"),\"\",1)";
                             }
 
                             // 将 G 列强力恢复为模板标准动态联动单价公式 (由 M*L*N 组装) --硬编码: 单价标准公式--
@@ -2701,8 +2701,52 @@ namespace ExcelAddInDemo
                         }
                     }
 
-                    // 规则 7: 内存 2D 公式矩阵单次 COM 批量写回 A~Q 列，毫秒级实现全区域公式自愈
-                    compRange.Formula = compMatrix;
+                    // 规则 7: 内存单列批量写回，解耦公式列与型号/文本列，彻底杜绝包含 -/+ 字符的型号在 put_Formula 时崩溃
+                    object[,] colA = new object[compRowCount, 1];
+                    // G 列单价公式矩阵
+                    object[,] colG = new object[compRowCount, 1];
+                    // H 列总价公式矩阵
+                    object[,] colH = new object[compRowCount, 1];
+                    // J 列成本单价公式矩阵
+                    object[,] colJ = new object[compRowCount, 1];
+                    // K 列成本总价公式矩阵
+                    object[,] colK = new object[compRowCount, 1];
+                    // L 列报出系数公式矩阵
+                    object[,] colL = new object[compRowCount, 1];
+                    // M 列表价纯数值矩阵
+                    object[,] colM = new object[compRowCount, 1];
+                    // N 列采购折扣公式矩阵
+                    object[,] colN = new object[compRowCount, 1];
+
+                    // 批量提取各列数据
+                    for (int c = 0; c < compRowCount; c++)
+                    {
+                        colA[c, 0] = compMatrix[c, 0];
+                        colG[c, 0] = compMatrix[c, 6];
+                        colH[c, 0] = compMatrix[c, 7];
+                        colJ[c, 0] = compMatrix[c, 9];
+                        colK[c, 0] = compMatrix[c, 10];
+                        colL[c, 0] = compMatrix[c, 11];
+                        colM[c, 0] = compMatrix[c, 12];
+                        colN[c, 0] = compMatrix[c, 13];
+                    }
+
+                    // A 列序号公式批量安全写入
+                    sheet.Range[$"A{compStartRow}:A{compEndRow}"].Formula = colA;
+                    // G 列销售单价公式批量安全写入
+                    sheet.Range[$"G{compStartRow}:G{compEndRow}"].Formula = colG;
+                    // H 列销售总价公式批量安全写入
+                    sheet.Range[$"H{compStartRow}:H{compEndRow}"].Formula = colH;
+                    // J 列成本单价公式批量安全写入
+                    sheet.Range[$"J{compStartRow}:J{compEndRow}"].Formula = colJ;
+                    // K 列成本总价公式批量安全写入
+                    sheet.Range[$"K{compStartRow}:K{compEndRow}"].Formula = colK;
+                    // L 列报出系数公式/数值批量安全写入
+                    sheet.Range[$"L{compStartRow}:L{compEndRow}"].Formula = colL;
+                    // M 列表价数值使用 Value2 安全赋值 (杜绝公式解析干扰)
+                    sheet.Range[$"M{compStartRow}:M{compEndRow}"].Value2 = colM;
+                    // N 列采购折扣公式/数值批量安全写入
+                    sheet.Range[$"N{compStartRow}:N{compEndRow}"].Formula = colN;
                 }
 
                 // 2. 刷新小计行求和公式 (精准定位真正包含“小计”文本的行，严格保护前置辅材/箱体行公式)

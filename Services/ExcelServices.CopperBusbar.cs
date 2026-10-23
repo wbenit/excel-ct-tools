@@ -295,31 +295,82 @@ namespace ExcelAddInDemo
                     // 计算写入起始物理行号
                     int writeStartRow = lastUsedRow + 1;
 
-                    // 构建写入的二维矩阵 (A 到 M 列，共 13 列) (规则 7 内存批量构建)
+                    // 构建 B 到 N 列纯数据矩阵 (共 13 列，规则 7 内存批量构建，防型号 COM 崩溃)
                     object[,] dataMatrix = new object[reqCount, 13];
+                    // 遍历插入物料构建纯数据与常数字段
                     for (int i = 0; i < reqCount; i++)
                     {
                         var item = insertItems[i];
-                        int curRow = writeStartRow + i;
-
-                        dataMatrix[i, 0] = $"=ROW()-ROW(A$6)";      // A 列: 自适应序号公式 --硬编码: 公式规范--
-                        dataMatrix[i, 1] = item.Name;                // B 列: 名称 (矩形铜母线)
-                        dataMatrix[i, 2] = item.Model;               // C 列: 型号 (如 TMY-2*(120x10))
-                        dataMatrix[i, 3] = "国优";                   // D 列: 生产厂家 (国优) --硬编码: 生产厂家--
-                        dataMatrix[i, 4] = item.Unit;                // E 列: 计量单位 (kg 或 米)
-                        dataMatrix[i, 5] = item.Qty;                 // F 列: 数量 (重量 或 长度)
-                        dataMatrix[i, 6] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(M{curRow},2))"; // G 列: 单价联动 M 列
-                        dataMatrix[i, 7] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(F{curRow}*G{curRow},2))"; // H 列: 总价公式
-                        dataMatrix[i, 8] = item.Remark;              // I 列: 备注 (水平主排/分支引下/接地PE)
-                        dataMatrix[i, 9] = "";                       // J 列: 成本单价预留
-                        dataMatrix[i, 10] = "";                      // K 列: 成本总价预留
-                        dataMatrix[i, 11] = 1.0;                     // L 列: 报出系数
-                        dataMatrix[i, 12] = item.PriceFormulaOrVal;  // M 列: 单价 (按重量为单价，按长度为公式 =ROUND(米重*铜价,2))
+                        // 索引 0 对应 B 列: 名称 (矩形铜母线)
+                        dataMatrix[i, 0] = item.Name;
+                        // 索引 1 对应 C 列: 型号 (如 TMY-2*(120x10)，纯文本写入)
+                        dataMatrix[i, 1] = item.Model;
+                        // 索引 2 对应 D 列: 生产厂家 (国优) --硬编码: 生产厂家--
+                        dataMatrix[i, 2] = "国优";
+                        // 索引 3 对应 E 列: 计量单位 (kg 或 米)
+                        dataMatrix[i, 3] = item.Unit;
+                        // 索引 4 对应 F 列: 数量 (重量 或 长度)
+                        dataMatrix[i, 4] = item.Qty;
+                        // 索引 5 对应 G 列: 预留销售单价列 (通过独立 Formula 单独写入)
+                        dataMatrix[i, 5] = DBNull.Value;
+                        // 索引 6 对应 H 列: 预留销售总价列 (通过独立 Formula 单独写入)
+                        dataMatrix[i, 6] = DBNull.Value;
+                        // 索引 7 对应 I 列: 备注 (水平主排/分支引下/接地PE)
+                        dataMatrix[i, 7] = item.Remark;
+                        // 索引 8 对应 J 列: 预留成本单价列 (通过独立 Formula 单独写入)
+                        dataMatrix[i, 8] = DBNull.Value;
+                        // 索引 9 对应 K 列: 预留成本总价列 (通过独立 Formula 单独写入)
+                        dataMatrix[i, 9] = DBNull.Value;
+                        // 索引 10 对应 L 列: 报出系数 (默认 1.0) --硬编码: 默认加价系数--
+                        dataMatrix[i, 10] = 1.0;
+                        // 索引 11 对应 M 列: 表价/单价数值 (按重量为单价，按长度为单价数值)
+                        dataMatrix[i, 11] = item.PriceFormulaOrVal;
+                        // 索引 12 对应 N 列: 采购折扣 (默认 1.0) --硬编码: 默认折扣系数--
+                        dataMatrix[i, 12] = 1.0;
                     }
 
-                    // 规则 7: 一次性将构建的矩阵通过 Formula 写入当前箱柜 A 到 M 列
-                    dynamic destRange = ws.Range[$"A{writeStartRow}:M{writeStartRow + reqCount - 1}"];
-                    destRange.Formula = dataMatrix;
+                    // 规则 7: 纯数据矩阵一次性写回 B 到 N 列
+                    dynamic destDataRange = ws.Range[$"B{writeStartRow}:N{writeStartRow + reqCount - 1}"];
+                    destDataRange.Value2 = dataMatrix;
+
+                    // 准备 A、G、H、J、K 五列独立标准联动公式矩阵
+                    object[,] formulasA = new object[reqCount, 1];
+                    // 销售单价公式矩阵
+                    object[,] formulasG = new object[reqCount, 1];
+                    // 销售总价公式矩阵
+                    object[,] formulasH = new object[reqCount, 1];
+                    // 成本单价公式矩阵
+                    object[,] formulasJ = new object[reqCount, 1];
+                    // 成本总价公式矩阵
+                    object[,] formulasK = new object[reqCount, 1];
+
+                    // 目标箱柜明细表头行号 (detRow + 1)
+                    int compHeaderRow = detRow + 1;
+                    for (int i = 0; i < reqCount; i++)
+                    {
+                        int curRow = writeStartRow + i;
+                        // A 列自适应序号公式绑定当前箱柜明细表头行 --硬编码: 序号公式模板--
+                        formulasA[i, 0] = $"=ROW()-ROW(A${compHeaderRow})";
+                        // G 列销售单价标准联动公式 =ROUND(M*L*N, 2) --硬编码: 销售单价公式--
+                        formulasG[i, 0] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(M{curRow}*L{curRow}*N{curRow},2))";
+                        // H 列销售总价标准联动公式 =ROUND(F*G, 2) --硬编码: 销售总价公式--
+                        formulasH[i, 0] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(F{curRow}*G{curRow},2))";
+                        // J 列成本单价标准联动公式 =ROUND(M*N, 2) --硬编码: 成本单价公式--
+                        formulasJ[i, 0] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(M{curRow}*N{curRow},2))";
+                        // K 列成本总价标准联动公式 =ROUND(J*F, 2) --硬编码: 成本总价公式--
+                        formulasK[i, 0] = $"=IF(AND(B{curRow}=\"\",C{curRow}=\"\"),\"\",ROUND(J{curRow}*F{curRow},2))";
+                    }
+
+                    // 规则 7: 单列单次 COM 批量写入公式，0 型号词法冲突
+                    ws.Range[$"A{writeStartRow}:A{writeStartRow + reqCount - 1}"].Formula = formulasA;
+                    // G 列单价公式写入
+                    ws.Range[$"G{writeStartRow}:G{writeStartRow + reqCount - 1}"].Formula = formulasG;
+                    // H 列总价公式写入
+                    ws.Range[$"H{writeStartRow}:H{writeStartRow + reqCount - 1}"].Formula = formulasH;
+                    // J 列成本单价公式写入
+                    ws.Range[$"J{writeStartRow}:J{writeStartRow + reqCount - 1}"].Formula = formulasJ;
+                    // K 列成本总价公式写入
+                    ws.Range[$"K{writeStartRow}:K{writeStartRow + reqCount - 1}"].Formula = formulasK;
                 }
 
                 // 写入全部完毕后，执行全局规则 6 自愈刷新，校准定义名称拓扑与超链接

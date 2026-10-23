@@ -1,3 +1,81 @@
+- **【核心新增与闭环：小计行求和终点严格为小计前一行（修复少计2行）+ 计费区同列公式平移保留全链路闭环】(`Services/ExcelServices.TenderReport.cs`, `Models/TenderReportModels.cs`, `publish/`)**：
+  1. **问题确诊与两项核心要求对齐**：
+     - ① **小计行公式少计 2 行 Bug 修复**：
+       - 截图中元器件 1~8 行占 G147:G154，辅材在 G155，箱体在 G156，小计行在 G157；
+       - 原代码公式终点写成了 `detailStartRow + compCount - 1`（第 154 行），遗漏了辅材与箱体；
+       - 纠正为 `subtotalEndRow = realRow - 1`（小计行的紧挨上一行，即第 156 行），小计公式生成为 `=ROUND(SUM(G147:G156), 0)`，100% 囊括小计前全部明细项；
+     - ② **计费区域同列公式自动保留平移**：
+       - 在 `Models/TenderReportModels.cs` 中增加 `OriginalRow` 与 `OriginalFormula`；
+       - 提取计费区域时同时读取 `feeFormulaMatrix = feeRange.Formula`；
+       - `TryTranslateSameColumnFormula` 校验同列纵向引用并动态平移重写为目标报表对应的列字母与新物理行号（如 `=ROUND(H25*0.05, 0)` $\rightarrow$ `=ROUND(G157*0.05, 0)`）；
+       - 单台合计行从 `subtotalRow` 累加到 `realRow - 1`，汇总表单价跨表引用分项表单台合计，全链路动态联动；
+     - 严格遵循每 3 行新增代码至少 1 行中文注释规范。
+  2. **构建验证与产物同步**：
+     - 最新程序集 `ExcelAddInDemo.dll` (3,398,144 bytes) 与 `.pdb` 已全量同步覆盖至 `publish/` 目录。
+
+- **【核心排查与根治：云物料/母排计算器插入Excel元器件行缺少G、H、J、K、L列公式与数据缺陷修复】(`Services/ExcelServices.CloudMaterialHub.cs`, `Services/ExcelServices.Cabinet.cs`, `Services/ExcelServices.CopperBusbar.cs`, `publish/`)**：
+  1. **用户核心指令与截图确诊**：
+     - 用户指令反馈：“插入到excel元器件行中，缺少gh,jkl列公式或数据”，并附带“云物料 - 母排计算器”操作面板截图；
+     - 现象排查与根因深度确诊：
+       ① **根因一（写入端 G/H/J/K/L 列被盲目赋 DBNull.Value 且缺少 N 列）**：在 `ExcelServices.CloudMaterialHub.cs` 的 `InsertMaterialsFromHub` 中，`writeBuffer` 仅申请了 13 列，其中索引 6(G列销售单价)、7(H列销售总价)、9(J列成本单价)、10(K列成本总价)、11(L列毛利/报出系数)全被显式赋予 `DBNull.Value`，且完全遗漏了 N 列(采购折扣系数)；由于直接调用 `writeRange.Value2 = writeBuffer`，新行物理写入后 G、H、J、K、L、N 列直接被写成空白单元格；
+       ② **根因二（RefreshCabinetFeeAreaFormulas 整块 Formula 赋值触发型号符号 COM 编译异常）**：后续调用的自愈刷新 `RefreshCabinetFeeAreaFormulas` 中，执行了 `compRange.Formula = compMatrix`；当元器件型号包含 `-`、`+`、`/`、`*` 等字符（如母排 `TMY-100x10`）时，Excel 底层 COM `put_Formula` 将其作为公式编译抛出异常被 catch 吞掉，导致整柜公式自愈中途断裂抛锚；
+       ③ **根因三（替换功能 ReplaceMaterialInExcel 缺少公式与系数补全）**：替换选中行时未检查补齐 L、N 列数值与 G、H、J、K 联动公式，若原行为空白行则导致公式全无；
+       ④ **根因四（CopperBusbar 独立插入端同样存在 J、K 列留空与 A 列硬编码 A$6 问题）**。
+  2. **工程级最小改动闭环落地**：
+     - **纯数据矩阵与公式矩阵解耦分离写入 (`Services/ExcelServices.CloudMaterialHub.cs`)**：
+       - B~N 列（13 列纯数据字段）：包含物料名称、型号规格、生产厂家、单位、数量、备注、L 列报出系数(默认 1.0)、M 列表价数值、N 列采购折扣(默认 1.0)，使用二维数组 `.Value2` 一次性安全批量写入，彻底杜绝型号符号引发 COM 崩溃；
+       - A、G、H、J、K 五列标准成套联动公式：
+         - A 列：自适应绑定所属箱柜明细表头行 `$"=ROW()-ROW(A${targetDetRow + 1})"`；
+         - G 列：销售单价标准联动公式 `$"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(M{curR}*L{curR}*N{curR},2))"`；
+         - H 列：销售总价标准联动公式 `$"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(F{curR}*G{curR},2))"`；
+         - J 列：成本单价标准联动公式 `$"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(M{curR}*N{curR},2))"`；
+         - K 列：成本总价标准联动公式 `$"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(J{curR}*F{curR},2))"`；
+           分别按单列 Range 单次 COM 批量写入 `.Formula`，确保插入即 100% 具备动态计算能力；
+       - `ReplaceMaterialInExcel` 同步补齐 L、N 默认系数及 G、H、J、K 标准联动公式；
+     - **RefreshCabinetFeeAreaFormulas 安全重构 (`Services/ExcelServices.Cabinet.cs`)**：
+       - 彻底废除 `compRange.Formula = compMatrix` 整块危险赋值，改为 A、G、H、J、K、L、N 按单列 Range 安全赋 Formula，M 列表价以 Value2 安全回写；无论 G 列是否损坏均独立补齐 L 与 N 列；
+     - **CopperBusbar 插入同步补全 (`Services/ExcelServices.CopperBusbar.cs`)**：
+       - 补齐 J、K 成本联动公式、G 销售单价公式与 N 采购折扣，A 列序号绑定所属箱柜真实表头行。
+  3. **构建验证与产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整编译：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 已全量同步覆盖至 `publish/` 目录。
+
+- **【核心排查与根治：剪切箱柜插入后报“未将对象引用设置到对象的实例”缺陷修复】(`Services/ExcelServices.CabinetManage.cs`, `publish/`)**：
+  1. **用户核心指令与截图确诊**：
+     - 用户指令反馈：“剪切最后一个箱柜插入到倒数第二个箱柜，报错如图，什么原因”，并附带弹窗截图：`插入复制的箱柜失败: 未将对象引用设置到对象的实例。`；
+     - 现象排查与根因深度确诊：
+       ① **真实根因（剪切模式置空剪贴板与成功弹窗空引用冲突）**：在剪切箱柜时，执行引擎 `ExecuteCabinetInsertOrClone` 在物理插入新箱柜、克隆明细数据并成功调用 `DeleteCabinets` 删除源箱柜后，为了防止旧数据被反复粘贴，在第 1276 行主动执行了 `_copiedCabinetContext = null;` 清空剪贴板；
+       ② **崩溃触发点**：回到 `InsertCopiedCabinet`（第 1355 行），代码尝试弹出成功提示：`MessageBox.Show($"箱柜【{_copiedCabinetContext.CabinetNo}】插入成功！", ...)`。由于 `_copiedCabinetContext` 刚刚被置空为 `null`，访问属性瞬间触发 `System.NullReferenceException: 未将对象引用设置到对象的实例。`，被外层 catch 捕获后误报成了“插入复制的箱柜失败: 未将对象引用设置到对象的实例。”；
+       ③ **表格实际状态**：查阅系统底层 `debug.log` 证实，Excel 表格内部的新箱柜插入、公式绑定以及原箱柜物理删除早已 100% 成功执行完毕，仅是在最后弹出完成通知时因读取空对象而崩溃误报。
+  2. **工程级最小改动闭环落地**：
+     - 在调用插入核心引擎前，预先从 `_copiedCabinetContext` 缓存箱柜编号 `string cabNo` 与 `bool isCut`；
+     - 弹出成功提示时使用预存的 `cabNo`，并根据 `isCut` 自适应展示“箱柜【{cabNo}】剪切移动成功！”，彻底杜绝空引用异常；
+     - 严格遵循每 3 行新增代码至少 1 行中文注释及最小改动法则。
+  3. **构建验证与产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整编译：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 已全量同步覆盖至 `publish/` 目录。
+
+- **【核心排查与根治：右键复制元件后插入，部分列缺少公式缺陷修复】(`Services/ExcelServices.ComponentRowOperations.cs`, `Services/UndoRedoManager.cs`, `publish/`)**：
+  1. **用户核心指令与缺陷确诊**：
+     - 用户指令反馈：“检查右键复制元件，然后插入复制的元件后，部分列缺少公式”；
+     - 现象排查与根因深度确诊：
+       ① **根因一（插入后只恢复 H 列与 K 列，漏掉 G 列、J 列与 A 列）**：在 `InsertCopiedOrCutComponentRow` 中，批量写入 `Value2` 纯数据后，代码原循环中仅针对 H 列写入 `$"=F{curR}*G{curR}"`、针对 K 列写入 `$"=F{curR}*J{curR}"`，**销售单价(G列)和成本单价(J列)完全未赋公式**，直接停留为静态数字，导致用户后续修改面价 M、系数 L 或采购折扣 N 时单价无法动态联动，并在【报价智能核验】时报 `FormulaBroken` 错误；动态序号(A列)亦未绑定明细表头，新插入行变成源行的旧常数序号；
+       ② **根因二（公式四舍五入与防空行规范缺失）**：成套规范（对齐 `Tool.BuildComponentRowsMatrix` 与 `QuotationCheck.cs`）要求 G、H、J、K 四列均具备 `=IF(AND(B="",C=""),"",ROUND(..., 2))` 自适应与两位取整保护，原插入代码缺少该规范；
+       ③ **根因三（撤销/重做同步缺陷）**：`UndoRedoManager.cs` 中 `ComponentRowInsertCommand.Undo` 与 `Redo` 同样只恢复了 8 与 11 列，缺少 7 与 10 列。
+  2. **工程级最小改动闭环落地**：
+     - **写入自适应标准公式全量覆盖 (`Services/ExcelServices.ComponentRowOperations.cs`)**：
+       - A 列：写入动态序号公式 `$"=ROW()-ROW(A${targetCab.DetRow + 1})"`，自适应绑定目标箱柜表头行，彻底杜绝序号重复与错乱；
+       - G 列：写入销售单价标准公式 `$"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(M{curR}*L{curR}*N{curR},2))"`；
+       - H 列：写入销售总价标准公式 `$"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(F{curR}*G{curR},2))"`；
+       - J 列：写入成本单价标准公式 `$"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(M{curR}*N{curR},2))"`；
+       - K 列：写入成本总价标准公式 `$"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(J{curR}*F{curR},2))"`；
+       - 同步完善 `ExtractActiveComponentRowToClipboard` 中的公式提取字典，覆盖 A、G、H、J、K 列；
+     - **撤销/重做端原子同步 (`Services/UndoRedoManager.cs`)**：
+       - `Undo()` 还原剪切行及 `Redo()` 重做插入行时，同步恢复 G 列、H 列、J 列、K 列成套标准计算公式；
+     - 严格遵循每 3 行新增代码至少 1 行中文注释及最小改动法则。
+  3. **构建验证与产物同步**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整编译：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 已全量同步覆盖至 `publish/` 目录。
 - **【核心排查与落地：在线查价全面支持订货号返回与自主选择回填】(`Models/OnlinePriceModels.cs`, `Services/OnlinePriceSearchClient.cs`, `Services/ExcelServices.OnlinePriceSearch.cs`, `Controllers/OnlinePriceSearchController.cs`, `Resources/online_price_search.html`, `publish/`)**：
   1. **用户核心指令与截图确诊**：
      - 用户指令反馈：“添加订货号返回”，并提供“在线查价与一键静默回写”工作台截图；

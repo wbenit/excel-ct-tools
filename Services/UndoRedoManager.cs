@@ -1059,12 +1059,19 @@ namespace ExcelAddInDemo.Services
                         // 一次性写回源行的完整原始数据矩阵 (含原始 CadHandle 与业务列)
                         srcSheet.Range[srcSheet.Cells[srcRow, 1], srcSheet.Cells[srcRow + RowCount - 1, srcCols]].Value2 = SourceClipSnapshot.FullRowValues;
 
-                        // 恢复源行的自适应计算公式
+                        // 恢复源行的自适应计算公式 (G 列单价、H 列总价、J 列成本单价、K 列成本总价)
                         for (int i = 0; i < RowCount; i++)
                         {
+                            // 当前物理行号
                             int curR = srcRow + i;
-                            srcSheet.Cells[curR, 8].Formula = $"=F{curR}*G{curR}";
-                            srcSheet.Cells[curR, 11].Formula = $"=F{curR}*J{curR}";
+                            // 恢复 G 列销售单价标准公式
+                            srcSheet.Cells[curR, 7].Formula = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(M{curR}*L{curR}*N{curR},2))";
+                            // 恢复 H 列销售总价标准公式
+                            srcSheet.Cells[curR, 8].Formula = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(F{curR}*G{curR},2))";
+                            // 恢复 J 列成本单价标准公式
+                            srcSheet.Cells[curR, 10].Formula = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(M{curR}*N{curR},2))";
+                            // 恢复 K 列成本总价标准公式
+                            srcSheet.Cells[curR, 11].Formula = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(J{curR}*F{curR},2))";
                         }
 
                         // 重新还原内存剪贴板与剪切流动虚线
@@ -1147,12 +1154,19 @@ namespace ExcelAddInDemo.Services
                     int writeCols = InsertedValues.GetLength(1);
                     targetSheet.Range[targetSheet.Cells[TargetRow, 1], targetSheet.Cells[TargetRow + RowCount - 1, writeCols]].Value2 = InsertedValues;
 
-                    // 恢复自适应标准计算公式 (F*G, F*J)
+                    // 恢复自适应标准计算公式 (G 列单价、H 列总价、J 列成本单价、K 列成本总价)
                     for (int i = 0; i < RowCount; i++)
                     {
+                        // 当前物理行号
                         int curR = TargetRow + i;
-                        targetSheet.Cells[curR, 8].Formula = $"=F{curR}*G{curR}";
-                        targetSheet.Cells[curR, 11].Formula = $"=F{curR}*J{curR}";
+                        // 恢复 G 列销售单价标准公式
+                        targetSheet.Cells[curR, 7].Formula = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(M{curR}*L{curR}*N{curR},2))";
+                        // 恢复 H 列销售总价标准公式
+                        targetSheet.Cells[curR, 8].Formula = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(F{curR}*G{curR},2))";
+                        // 恢复 J 列成本单价标准公式
+                        targetSheet.Cells[curR, 10].Formula = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(M{curR}*N{curR},2))";
+                        // 恢复 K 列成本总价标准公式
+                        targetSheet.Cells[curR, 11].Formula = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(J{curR}*F{curR},2))";
                     }
                 }
 

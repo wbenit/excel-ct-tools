@@ -1331,6 +1331,11 @@ namespace ExcelAddInDemo
                 }
                 catch { }
 
+                // 预先捕获箱柜编号，防止剪切执行后 _copiedCabinetContext 被置为 null 触发空引用异常
+                string cabNo = _copiedCabinetContext.CabinetNo ?? "";
+                // 记录当前是否为剪切操作模式
+                bool isCut = _copiedCabinetContext.IsCut;
+
                 // 调度核心引擎 (keepName = true 保持名称不变，preferredCursorRow: cursorRow 在光标行上方插入)
                 var result = ExecuteCabinetInsertOrClone(
                     app,
@@ -1352,7 +1357,10 @@ namespace ExcelAddInDemo
                     {
                         activeSheet.Cells[result.SumRow, 2].Select();
                     }
-                    System.Windows.Forms.MessageBox.Show($"箱柜【{_copiedCabinetContext.CabinetNo}】插入成功！", "操作成功", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                    // 根据操作类型自适应成功提示文案
+                    string actionText = isCut ? "剪切移动" : "插入";
+                    // 弹出操作成功提示框，使用预存的箱柜编号杜绝空引用异常
+                    System.Windows.Forms.MessageBox.Show($"箱柜【{cabNo}】{actionText}成功！", "操作成功", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
                 }
             }
             catch (Exception ex)

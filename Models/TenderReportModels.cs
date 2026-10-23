@@ -88,6 +88,12 @@ namespace ExcelAddInDemo.Models
 
         // 物料类别名称 (如 "电线", "材料")
         public string Category { get; set; } = string.Empty;
+
+        // 原始物理行号 (在原分类表中的物理行号，用于计费区域同列公式动态映射)
+        public int OriginalRow { get; set; } = 0;
+
+        // 原始总价公式 (在原分类表合价列中的原始公式字符串，若为同列引用公式则予以保留平移)
+        public string OriginalFormula { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -127,6 +133,12 @@ namespace ExcelAddInDemo.Models
 
         // 箱柜备注说明
         public string Remark { get; set; } = string.Empty;
+
+        // 原分类表中小计行的物理行号 (用于计费区域公式动态映射)
+        public int OriginalSubsumRow { get; set; } = 0;
+
+        // 原分类表中总计行的物理行号
+        public int OriginalTolsumRow { get; set; } = 0;
 
         // 箱柜内部包含的所有元器件清单列表
         public List<TenderReportComponentItem> Components { get; set; } = new List<TenderReportComponentItem>();

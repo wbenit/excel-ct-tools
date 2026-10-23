@@ -299,46 +299,87 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 5. 规则 7: 采用数组一次性将物料数据写入内存并回写单元格
-                object[,] writeBuffer = new object[count, 13]; // 覆盖 A 到 M 列
-                // 遍历物料明细填充二维数组
+                // 5. 规则 7: 纯数据矩阵与公式列解耦安全写入，杜绝 put_Formula 对含特殊字符型号解析崩溃
+                // 覆盖 B 列到 N 列 (共 13 列纯数据字段)
+                object[,] dataMatrix = new object[count, 13];
+                // 遍历物料列表填充纯数据矩阵 (含名称、型号、厂家、单位、数量、备注、系数、单价、折扣)
                 for (int i = 0; i < count; i++)
                 {
                     // 获取当前物料 DTO 对象
                     var curItem = items[i];
-                    // A 列序号公式指向明细表头行 (targetDetRow + 1)
-                    int compHeaderRow = targetDetRow + 1;
-                    writeBuffer[i, 0] = $"=ROW()-ROW(A${compHeaderRow})";
-                    // B 列物料名称
-                    writeBuffer[i, 1] = curItem.Name;
-                    // C 列型号规格
-                    writeBuffer[i, 2] = curItem.Model;
-                    // D 列品牌生产厂家
-                    writeBuffer[i, 3] = string.IsNullOrWhiteSpace(curItem.Brand) ? "国优" : curItem.Brand;
-                    // E 列计量单位
-                    writeBuffer[i, 4] = string.IsNullOrWhiteSpace(curItem.Unit) ? "米" : curItem.Unit;
-                    // F 列数量 (长度或重量)
-                    writeBuffer[i, 5] = curItem.Quantity > 0 ? curItem.Quantity : 1.0;
-                    // G 列单价 (空或与 M 列联动)
-                    writeBuffer[i, 6] = DBNull.Value;
-                    // H 列总价
-                    writeBuffer[i, 7] = DBNull.Value;
-                    // I 列备注
-                    writeBuffer[i, 8] = curItem.Remark ?? string.Empty;
-                    // J 列成本单价
-                    writeBuffer[i, 9] = DBNull.Value;
-                    // K 列成本总价
-                    writeBuffer[i, 10] = DBNull.Value;
-                    // L 列毛利
-                    writeBuffer[i, 11] = DBNull.Value;
-                    // M 列单价数值 (纯数值或由公式联动)
-                    writeBuffer[i, 12] = (double)curItem.Price;
+                    // 索引 0 对应 B 列: 物料名称
+                    dataMatrix[i, 0] = curItem.Name;
+                    // 索引 1 对应 C 列: 型号规格 (纯文本写入，杜绝 COM 解析 -/+ 异常)
+                    dataMatrix[i, 1] = curItem.Model;
+                    // 索引 2 对应 D 列: 品牌生产厂家 (若为空默认国优) --硬编码: 默认厂家--
+                    dataMatrix[i, 2] = string.IsNullOrWhiteSpace(curItem.Brand) ? "国优" : curItem.Brand;
+                    // 索引 3 对应 E 列: 计量单位 (若为空默认米) --硬编码: 默认计量单位--
+                    dataMatrix[i, 3] = string.IsNullOrWhiteSpace(curItem.Unit) ? "米" : curItem.Unit;
+                    // 索引 4 对应 F 列: 数量 (长度或重量)
+                    dataMatrix[i, 4] = curItem.Quantity > 0 ? curItem.Quantity : 1.0;
+                    // 索引 5 对应 G 列: 预留销售单价列 (通过独立 Formula 单独写入)
+                    dataMatrix[i, 5] = DBNull.Value;
+                    // 索引 6 对应 H 列: 预留销售总价列 (通过独立 Formula 单独写入)
+                    dataMatrix[i, 6] = DBNull.Value;
+                    // 索引 7 对应 I 列: 备注说明
+                    dataMatrix[i, 7] = curItem.Remark ?? string.Empty;
+                    // 索引 8 对应 J 列: 预留成本单价列 (通过独立 Formula 单独写入)
+                    dataMatrix[i, 8] = DBNull.Value;
+                    // 索引 9 对应 K 列: 预留成本总价列 (通过独立 Formula 单独写入)
+                    dataMatrix[i, 9] = DBNull.Value;
+                    // 索引 10 对应 L 列: 报出/加价系数 (默认 1.0) --硬编码: 默认加价系数--
+                    dataMatrix[i, 10] = 1.0;
+                    // 索引 11 对应 M 列: 面价/基准单价数值
+                    dataMatrix[i, 11] = (double)curItem.Price;
+                    // 索引 12 对应 N 列: 采购折扣系数 (默认 1.0) --硬编码: 默认折扣系数--
+                    dataMatrix[i, 12] = 1.0;
                 }
 
-                // 一次性批量回写到目标单元格行区域 (覆盖 insertRow 到 insertRow + count - 1)
-                dynamic writeRange = ws.Range[$"A{insertRow}:M{insertRow + count - 1}"];
+                // 规则 7: 一次性将 B 到 N 列纯数据批量写入工作表
+                dynamic dataRange = ws.Range[$"B{insertRow}:N{insertRow + count - 1}"];
                 // 批量内存赋值
-                writeRange.Value2 = writeBuffer;
+                dataRange.Value2 = dataMatrix;
+
+                // 准备 A、G、H、J、K 五列的独立标准公式矩阵 (规则 7 单列整块写入)
+                object[,] formulasA = new object[count, 1];
+                // 销售单价公式矩阵
+                object[,] formulasG = new object[count, 1];
+                // 销售总价公式矩阵
+                object[,] formulasH = new object[count, 1];
+                // 成本单价公式矩阵
+                object[,] formulasJ = new object[count, 1];
+                // 成本总价公式矩阵
+                object[,] formulasK = new object[count, 1];
+
+                // 目标箱柜明细表头行号 (targetDetRow + 1)
+                int compHeaderRow = targetDetRow + 1;
+                // 循环组装各行标准成套计算公式
+                for (int i = 0; i < count; i++)
+                {
+                    // 当前实际物理行号
+                    int curR = insertRow + i;
+                    // A 列: 自适应序号公式 --硬编码: 动态序号公式--
+                    formulasA[i, 0] = $"=ROW()-ROW(A${compHeaderRow})";
+                    // G 列: 销售单价标准联动公式 =ROUND(M*L*N, 2) --硬编码: 销售单价公式--
+                    formulasG[i, 0] = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(M{curR}*L{curR}*N{curR},2))";
+                    // H 列: 销售总价标准联动公式 =ROUND(F*G, 2) --硬编码: 销售总价公式--
+                    formulasH[i, 0] = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(F{curR}*G{curR},2))";
+                    // J 列: 成本单价标准联动公式 =ROUND(M*N, 2) --硬编码: 成本单价公式--
+                    formulasJ[i, 0] = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(M{curR}*N{curR},2))";
+                    // K 列: 成本总价标准联动公式 =ROUND(J*F, 2) --硬编码: 成本总价公式--
+                    formulasK[i, 0] = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(J{curR}*F{curR},2))";
+                }
+
+                // 规则 7: 分别按单列 Range 单次 COM 批量写入公式，0 型号词法冲突
+                ws.Range[$"A{insertRow}:A{insertRow + count - 1}"].Formula = formulasA;
+                // 写入 G 列销售单价公式
+                ws.Range[$"G{insertRow}:G{insertRow + count - 1}"].Formula = formulasG;
+                // 写入 H 列销售总价公式
+                ws.Range[$"H{insertRow}:H{insertRow + count - 1}"].Formula = formulasH;
+                // 写入 J 列成本单价公式
+                ws.Range[$"J{insertRow}:J{insertRow + count - 1}"].Formula = formulasJ;
+                // 写入 K 列成本总价公式
+                ws.Range[$"K{insertRow}:K{insertRow + count - 1}"].Formula = formulasK;
 
                 // 6. 规则 6 & 8: 刷新当前箱柜元器件 A 列序号自适应公式与计费小计公式，根治序号断裂与 #REF!
                 try
@@ -387,7 +428,7 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 替换 Excel 当前光标选中行物料数据 (用户决策 A2: 直接覆盖该行的名称、型号、单价等字段)
+        /// 替换 Excel 当前光标选中行物料数据 (用户决策 A2: 直接覆盖该行的名称、型号、单价等字段，并确保公式完备)
         /// </summary>
         /// <param name="item">新物料条目</param>
         /// <param name="updateQuantity">是否同步覆盖 F 列数量</param>
@@ -410,46 +451,71 @@ namespace ExcelAddInDemo
                 // 规则 8: 校验并纠正规则 6
                 Tool.FixAndFillCabinetNamesForSheet(ws);
 
-                // 读取当前行的数量与原有内容 (规则 7: 数组读取)
-                dynamic readRange = ws.Range[$"A{targetRow}:M{targetRow}"];
+                // 读取当前行的数量与原有内容 (规则 7: 覆盖 A 到 N 列，共 14 列)
+                dynamic readRange = ws.Range[$"A{targetRow}:N{targetRow}"];
                 object[,] existingVals = (object[,])readRange.Value2;
 
-                // 准备写回数组
+                // 准备写回数组 (B 到 N 列共 13 列纯数据)
                 object[,] writeBuffer = new object[1, 13];
                 for (int c = 0; c < 13; c++)
                 {
-                    writeBuffer[0, c] = existingVals[1, c + 1];
+                    // 复制现有单元格数值
+                    writeBuffer[0, c] = existingVals[1, c + 2];
                 }
 
                 // 覆盖 B 列名称
-                writeBuffer[0, 1] = item.Name;
-                // 覆盖 C 列型号
-                writeBuffer[0, 2] = item.Model;
-                // 覆盖 D 列品牌
+                writeBuffer[0, 0] = item.Name;
+                // 覆盖 C 列型号 (纯文本赋值，防 COM 解析崩溃)
+                writeBuffer[0, 1] = item.Model;
+                // 覆盖 D 列品牌 (若非空则更新)
                 if (!string.IsNullOrWhiteSpace(item.Brand))
                 {
-                    writeBuffer[0, 3] = item.Brand;
+                    writeBuffer[0, 2] = item.Brand;
                 }
-                // 覆盖 E 列单位
+                // 覆盖 E 列单位 (若非空则更新)
                 if (!string.IsNullOrWhiteSpace(item.Unit))
                 {
-                    writeBuffer[0, 4] = item.Unit;
+                    writeBuffer[0, 3] = item.Unit;
                 }
                 // 若指定更新数量，覆盖 F 列数量
                 if (updateQuantity && item.Quantity > 0)
                 {
-                    writeBuffer[0, 5] = item.Quantity;
+                    writeBuffer[0, 4] = item.Quantity;
                 }
                 // 覆盖 I 列备注
                 if (!string.IsNullOrWhiteSpace(item.Remark))
                 {
-                    writeBuffer[0, 8] = item.Remark;
+                    writeBuffer[0, 7] = item.Remark;
                 }
-                // 覆盖 M 列单价
-                writeBuffer[0, 12] = (double)item.Price;
+                // 检查补齐 L 列报出系数 (若为空或非有效数值则初始化为 1.0)
+                object oldL = writeBuffer[0, 10];
+                if (oldL == null || !double.TryParse(oldL.ToString(), out double lNum) || lNum <= 0)
+                {
+                    // 赋默认报出系数 --硬编码: 默认系数--
+                    writeBuffer[0, 10] = 1.0;
+                }
+                // 覆盖 M 列单价数值
+                writeBuffer[0, 11] = (double)item.Price;
+                // 检查补齐 N 列采购折扣 (若为空或非有效数值则初始化为 1.0)
+                object oldN = writeBuffer[0, 12];
+                if (oldN == null || !double.TryParse(oldN.ToString(), out double nNum) || nNum <= 0)
+                {
+                    // 赋默认采购折扣 --硬编码: 默认折扣--
+                    writeBuffer[0, 12] = 1.0;
+                }
 
-                // 规则 7: 数组一次性写回
-                readRange.Value2 = writeBuffer;
+                // 规则 7: 纯数据矩阵一次性写回 B 到 N 列
+                dynamic writeRange = ws.Range[$"B{targetRow}:N{targetRow}"];
+                writeRange.Value2 = writeBuffer;
+
+                // 补齐 G 列销售单价标准联动公式 --硬编码: 销售单价公式--
+                ws.Cells[targetRow, 7].Formula = $"=IF(AND(B{targetRow}=\"\",C{targetRow}=\"\"),\"\",ROUND(M{targetRow}*L{targetRow}*N{targetRow},2))";
+                // 补齐 H 列销售总价标准联动公式 --硬编码: 销售总价公式--
+                ws.Cells[targetRow, 8].Formula = $"=IF(AND(B{targetRow}=\"\",C{targetRow}=\"\"),\"\",ROUND(F{targetRow}*G{targetRow},2))";
+                // 补齐 J 列成本单价标准联动公式 --硬编码: 成本单价公式--
+                ws.Cells[targetRow, 10].Formula = $"=IF(AND(B{targetRow}=\"\",C{targetRow}=\"\"),\"\",ROUND(M{targetRow}*N{targetRow},2))";
+                // 补齐 K 列成本总价标准联动公式 --硬编码: 成本总价公式--
+                ws.Cells[targetRow, 11].Formula = $"=IF(AND(B{targetRow}=\"\",C{targetRow}=\"\"),\"\",ROUND(J{targetRow}*F{targetRow},2))";
 
                 return true;
             }
