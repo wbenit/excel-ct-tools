@@ -317,6 +317,10 @@ namespace ExcelAddInDemo
                 string brandColLetter = NormalizeColLetter(config.BrandTargetCol);
                 bool needWriteBrand = !string.IsNullOrWhiteSpace(brandColLetter) && brandColLetter != "NONE";
 
+                // 解析目标订货号列字母 (可选手填，若设为 NONE 或不回填则不回写订货号)
+                string orderNoColLetter = NormalizeColLetter(config.OrderNoTargetCol);
+                bool needWriteOrderNo = !string.IsNullOrWhiteSpace(orderNoColLetter) && orderNoColLetter != "NONE";
+
                 // 计算受影响的行范围 (起始行与终止行)
                 int minRow = successItems.Min(i => i.Row);
                 int maxRow = successItems.Max(i => i.Row);
@@ -494,7 +498,62 @@ namespace ExcelAddInDemo
                     brandRange.Value2 = newBrandMatrix;
                 }
 
-                // ==================== 3. 注册撤销栈命令 ====================
+                // ==================== 4. 批量回写订货号列 (规则 7: 若配置启用) ====================
+                if (needWriteOrderNo)
+                {
+                    // 锁定订货号区域 A1 表达式
+                    string orderNoRangeAddr = $"{orderNoColLetter}{minRow}:{orderNoColLetter}{maxRow}";
+                    dynamic orderNoRange = activeSheet.Range[orderNoRangeAddr];
+
+                    // 一次性读取订货号原有快照 (规则 7)
+                    object[,] oldOrderNoMatrix;
+                    if (totalSpanRows == 1)
+                    {
+                        // 单格处理
+                        oldOrderNoMatrix = new object[1, 1];
+                        oldOrderNoMatrix[0, 0] = orderNoRange.Value2;
+                    }
+                    else
+                    {
+                        // 矩阵强转
+                        oldOrderNoMatrix = (object[,])orderNoRange.Value2;
+                    }
+
+                    // 实例化新的订货号二维数据矩阵
+                    object[,] newOrderNoMatrix = new object[totalSpanRows, 1];
+
+                    // 复制原有数据并填充查得的订货号
+                    for (int r = 1; r <= totalSpanRows; r++)
+                    {
+                        int currentRow = minRow + r - 1;
+                        if (rowItemMap.TryGetValue(currentRow, out var matchDto))
+                        {
+                            // 提取查得的有效订货号
+                            string orderNoVal = matchDto.OrderNo?.Trim() ?? string.Empty;
+                            // 若查得订货号有效则更新，若无订货号则保留原单元格内容
+                            newOrderNoMatrix[r - 1, 0] = !string.IsNullOrWhiteSpace(orderNoVal) ? orderNoVal : oldOrderNoMatrix[r, 1];
+                        }
+                        else
+                        {
+                            // 保持原样
+                            newOrderNoMatrix[r - 1, 0] = oldOrderNoMatrix[r, 1];
+                        }
+                    }
+
+                    // 记录撤销快照切片
+                    undoSlices.Add(new RangeDeltaSlice
+                    {
+                        SheetName = activeSheet.Name,
+                        RangeAddress = orderNoRangeAddr,
+                        OldValues = oldOrderNoMatrix,
+                        NewValues = newOrderNoMatrix
+                    });
+
+                    // 规则 7: 批量写回订货号列
+                    orderNoRange.Value2 = newOrderNoMatrix;
+                }
+
+                // ==================== 5. 注册撤销栈命令 ====================
                 if (undoSlices.Count > 0)
                 {
                     // 压入撤销栈
@@ -503,7 +562,7 @@ namespace ExcelAddInDemo
                 }
 
                 // 成功返回更新统计
-                return (true, successItems.Count, $"成功更新 {successItems.Count} 个元器件价格");
+                return (true, successItems.Count, $"成功更新 {successItems.Count} 个元器件数据");
             }
             catch (Exception ex)
             {

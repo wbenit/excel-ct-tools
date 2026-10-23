@@ -134,7 +134,7 @@ namespace ExcelAddInDemo.Controllers
             }
 
             // 根据平台分发
-            (bool success, string matchedModel, double price, string vendor, string msg) res;
+            (bool success, string matchedModel, double price, string vendor, string orderNo, string msg) res;
             if (platform == OnlinePricePlatform.TitanMatrix)
             {
                 // 调用天工矩阵查询引擎
@@ -158,7 +158,8 @@ namespace ExcelAddInDemo.Controllers
                 item.MatchedModel = res.matchedModel;
                 item.Price = res.price;
                 item.Vendor = res.vendor;
-                item.Message = $"查得价格: {res.price:F2}";
+                item.OrderNo = res.orderNo;
+                item.Message = $"查得价格: {res.price:F2}" + (!string.IsNullOrWhiteSpace(res.orderNo) ? $" (订货号: {res.orderNo})" : string.Empty);
             }
             else
             {

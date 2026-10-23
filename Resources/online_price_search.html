@@ -496,7 +496,7 @@
             </el-select>
           </div>
 
-          <!-- 品牌厂商回填列 (新增！可选手填) -->
+          <!-- 品牌厂商回填列 (可选手填) -->
           <div class="param-item">
             <span class="param-label">品牌回填目标列</span>
             <el-select
@@ -511,6 +511,24 @@
               <el-option label="D 列 (品牌/厂家·推荐)" value="D"></el-option>
               <el-option label="E 列 (参数描述)" value="E"></el-option>
               <el-option label="不回填 (保持原品牌)" value="NONE"></el-option>
+            </el-select>
+          </div>
+
+          <!-- 订货号回填列 (新增！可选手填) -->
+          <div class="param-item">
+            <span class="param-label">订货号回填目标列</span>
+            <el-select
+              v-model="config.orderNoTargetCol"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择或输入列(如K)"
+              @change="onColChange('orderNoTargetCol')"
+              style="width: 100%;"
+            >
+              <el-option label="K 列 (订货号·推荐)" value="K"></el-option>
+              <el-option label="E 列 (参数/编号)" value="E"></el-option>
+              <el-option label="不回填 (保持原样)" value="NONE"></el-option>
             </el-select>
           </div>
 
@@ -628,6 +646,13 @@
                 </template>
               </el-table-column>
               <el-table-column prop="vendor" label="品牌厂商" min-width="110" show-overflow-tooltip></el-table-column>
+              <el-table-column prop="orderNo" label="订货号" min-width="125" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span :style="{ color: row.orderNo ? '#00796b' : '#999999', fontFamily: 'Consolas, monospace', fontWeight: row.orderNo ? '600' : 'normal' }">
+                    {{ row.orderNo || '-' }}
+                  </span>
+                </template>
+              </el-table-column>
               <el-table-column prop="status" label="状态" width="85" align="center">
                 <template #default="{ row }">
                   <el-tag v-if="row.status === 'Success'" type="success" size="small">成功</el-tag>
@@ -656,12 +681,17 @@
                   </el-tag>
                 </el-descriptions-item>
                 <el-descriptions-item label="匹配官方型号">{{ singleResult.matchedModel || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="商品订货号">
+                  <span style="color: #00796b; font-weight: 600; font-family: Consolas, monospace;">
+                    {{ singleResult.orderNo || '-' }}
+                  </span>
+                </el-descriptions-item>
                 <el-descriptions-item label="官方单价(面价)">
                   <span style="color: #d32f2f; font-weight: 700; font-size: 14px;">
                     {{ singleResult.price > 0 ? `¥ ${singleResult.price.toFixed(2)}` : '-' }}
                   </span>
                 </el-descriptions-item>
-                <el-descriptions-item label="厂商品牌" :span="2">{{ singleResult.vendor || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="厂商品牌">{{ singleResult.vendor || '-' }}</el-descriptions-item>
                 <el-descriptions-item label="详细说明" :span="2">{{ singleResult.message || '-' }}</el-descriptions-item>
               </el-descriptions>
             </div>
@@ -680,11 +710,12 @@
       setup() {
         // 查价与回填配置数据模型 (响应式)
         const config = reactive({
-          platform: 0,              // 0: 电气天下, 1: 天工矩阵
+          platform: 0,              // 0: 电气天下, 1: 天工矩阵, 2: 电小二
           brand: '全部',            // 默认厂商
           modelTargetCol: 'C',     // 型号回填列 (可选可填)
           priceTargetCol: 'M',     // 价格回填列 (可选可填)
-          brandTargetCol: 'D',     // 品牌回填列 (可选可填，新增！)
+          brandTargetCol: 'D',     // 品牌回填列 (可选可填)
+          orderNoTargetCol: 'NONE', // 订货号回填列 (可选可填，设为 NONE 不回填)
           maxConcurrency: 6,       // 并发数
           onlyUpdatePrice: false,  // 仅更新价格
           trimParentheses: true    // 剥离括号参数
@@ -825,7 +856,8 @@
           appendLog(`开始执行批量查价，数据源: ${platformName}，指定品牌: ${config.brand}`);
           const brandColDesc = (!config.brandTargetCol || config.brandTargetCol === 'NONE') ? '不回填' : `${config.brandTargetCol} 列`;
           const modelColDesc = (!config.modelTargetCol || config.modelTargetCol === 'NONE') ? '不回填' : `${config.modelTargetCol} 列`;
-          appendLog(`回填列设置: 型号 -> ${modelColDesc}，价格 -> ${config.priceTargetCol} 列，品牌 -> ${brandColDesc}`);
+          const orderNoColDesc = (!config.orderNoTargetCol || config.orderNoTargetCol === 'NONE') ? '不回填' : `${config.orderNoTargetCol} 列`;
+          appendLog(`回填列设置: 型号 -> ${modelColDesc}，价格 -> ${config.priceTargetCol} 列，品牌 -> ${brandColDesc}，订货号 -> ${orderNoColDesc}`);
 
           // 发送指令给 C# 后台
           postToHost('startBatchSearch', { config: { ...config } });

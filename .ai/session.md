@@ -1,3 +1,33 @@
+- **【核心排查与落地：在线查价全面支持订货号返回与自主选择回填】(`Models/OnlinePriceModels.cs`, `Services/OnlinePriceSearchClient.cs`, `Services/ExcelServices.OnlinePriceSearch.cs`, `Controllers/OnlinePriceSearchController.cs`, `Resources/online_price_search.html`, `publish/`)**：
+  1. **用户核心指令与截图确诊**：
+     - 用户指令反馈：“添加订货号返回”，并提供“在线查价与一键静默回写”工作台截图；
+     - 需求分析与字段确诊：
+       ① 电气天下 (dq123.com) 官方接口返回数据中包含 `orderNum`（订货号）字段；
+       ② 天工矩阵 (TitanMatrix) 官方接口返回数据中包含核心字段 `prodcode`（商品编码/订货号，如施耐德 `A9F18220`、正泰 15 位数字编码 `710021111300063`）以及兼容 `orderNo`；
+       ③ 电小二智能分词打分引擎及附件拼装求和阶段，提取对应元器件物料订货号（或拼装组合订货号）；
+       ④ 用户需要支持订货号的回填控制（在“自主选择回填列与写入模式”中支持选择或手填任意列，如推荐 K 列，默认 NONE 不回填）；
+       ⑤ 结果展示：在“查价明细表格”中增加“订货号”展示列，在“单件精确测试”中展示“商品订货号”，并在实时日志中记录订货号信息；
+       ⑥ 回写执行：严格遵循规则 7，采用二维数组整块读取与批量写入 Excel，并登记 `RangeDeltaSlice` 纳入撤销/重做栈。
+  2. **工程级最小改动闭环落地**：
+     - **数据模型层 (`Models/OnlinePriceModels.cs`)**：
+       - `OnlinePriceConfig` 增加 `OrderNoTargetCol`（默认 `"NONE"`）；
+       - `OnlinePriceItemDto` 增加 `OrderNo` 字段传输实体；
+     - **查价网络客户端 (`Services/OnlinePriceSearchClient.cs`)**：
+       - `SearchDq123Async`、`SearchDx2Async`、`SearchTitanMatrixAsync` 返回元组均增加 `string orderNo`，全面提取 `prodcode` / `orderNum` 字段；
+       - `ExecuteBatchSearchAsync` 并发调度中将返回的订货号赋值给 `item.OrderNo` 并在进度日志中展示；
+     - **控制器调度层 (`Controllers/OnlinePriceSearchController.cs`)**：
+       - `SearchSingleAsync` 接收并赋值 `item.OrderNo`；
+     - **Excel 批量回写服务层 (`Services/ExcelServices.OnlinePriceSearch.cs`)**：
+       - `BatchWriteBackPrices` 增加订货号列的批量回写处理，严格使用二维数组批量赋值，并同步推入撤销栈；
+     - **前端界面与交互 (`Resources/online_price_search.html`)**：
+       - 在“自主选择回填列与写入模式”中增加“订货号回填目标列”下拉选择/手填框（支持 K 列推荐、NONE 不回填或手填任意列）；
+       - “查价明细表格”增加“订货号”列；
+       - “单件精确测试”增加“商品订货号”字段展示；
+       - 批量启动日志中输出订货号回填列配置描述；
+     - 同步将编译成果及 HTML 更新至 `publish/` 与 `bin/Debug/net48/Resources/` 目录。
+  3. **构建验证**：
+     - 使用 `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整编译：**0 警告，0 错误**。
+
 - **【核心排查与落地：二级子菜单（搜索价格/复制箱柜）鼠标移开后即时清除高亮并经过 400ms 自动隐藏，杜绝残留孤立浮层】(`Forms/CustomContextSubmenuForm.cs`, `Resources/custom_context_menu.html`, `publish/`)**：
   1. **用户核心指令与截图确诊**：
      - 用户指令反馈：“需要鼠标不在上面一定时间后隐藏”，并上传二级子菜单（个人库/云库/关闭搜索）高亮停留在最后一项【关闭搜索 停用】的浮层截图；
@@ -45,7 +75,6 @@
      - 最新程序集 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 已全量同步覆盖至 `publish/` 目录。
 
 - **【核心排查与修复：彻底解决更新成功后报错“没有足够的内存继续执行程序 (0x8007000E)”缺陷】(`Services/ExcelServices.ComponentDistribution.cs`, `publish/`)**：
-
   1. **用户核心指令与截图确诊**：
      - 用户指令反馈：“报错，但是更新是成功的”，并上传看板提示“更新元件汇总表发生异常: 没有足够的内存继续执行程序”运行截图；
      - 现象排查与根因深度确诊：
@@ -62,16 +91,15 @@
      - 最新程序集 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 已全量同步覆盖至 `publish/` 目录。
 
 - **【核心新增：元器件分布看板行后添加【更新】按钮并落地方案 A（智能差量计算，数量多柜时自动分流，更新至汇总表 C 列原型号规格）】(`Services/ExcelServices.ComponentDistribution.cs`, `Forms/ComponentDistributionForm.cs`, `Resources/component_distribution.html`, `Models/ComponentDistributionModels.cs`, `publish/`)**：
-
   1. **用户核心指令与需求确诊**：
      - 用户指令反馈：“在每行后面添加更新按钮，用户如果更改了分类明细中对应的元器件型号，点击更新后，更新元件汇总表。使用 方案 A（智能差量计算，数量多柜时自动分流），更新到 C 列（原型号规格）”；
      - 需求分析与决策落地：
        ① **目标列锁定**：明确指定更新到【元件汇总表】的 **C 列（原型号规格）**，作为基准参考列，D 列（调价型号）保持留空；
        ② **单柜独占/全量占满分支 (`deltaQty >= currSumQty`)**：若当前箱柜用量占满汇总行数量（或单柜独占），直接将该汇总行 C 列的原型号规格改写为分类明细表最新修改的新型号，并同步校验更新厂家与单位；
        ③ **多柜共用/智能分流分支 (`deltaQty < currSumQty`)**：
-          - 从原汇总行扣减用量：`currSumQty - deltaQty`，F 列数量减少后，总价公式自动联动减少；
-          - 全表检索是否存在同名且 C 列原型号等于新型号的已存在行：若存在则将 `deltaQty` 累加到该行 F 列；若不存在，则在原行下方物理插入新行，复制格式，C 列写入新型号，F 列写入 `deltaQty`，注入标准动态公式，重新重排 A 列序号（1~N）并刷新底部合计行公式；
-       ④ **零容错与规则 6、7、8、9 约束**：分类表必须通过 `Tool.GetSheetValidCabinets` 严格校验定义名称，内存二维数组批读批写，所有 Excel 操作全部收敛在 `ExcelServices.ComponentDistribution.cs`。
+       - 从原汇总行扣减用量：`currSumQty - deltaQty`，F 列数量减少后，总价公式自动联动减少；
+       - 全表检索是否存在同名且 C 列原型号等于新型号的已存在行：若存在则将 `deltaQty` 累加到该行 F 列；若不存在，则在原行下方物理插入新行，复制格式，C 列写入新型号，F 列写入 `deltaQty`，注入标准动态公式，重新重排 A 列序号（1~N）并刷新底部合计行公式；
+         ④ **零容错与规则 6、7、8、9 约束**：分类表必须通过 `Tool.GetSheetValidCabinets` 严格校验定义名称，内存二维数组批读批写，所有 Excel 操作全部收敛在 `ExcelServices.ComponentDistribution.cs`。
   2. **工程级闭环落地**：
      - **数据模型层 (`Models/ComponentDistributionModels.cs`)**：
        - 新增 `UpdateSummaryResultDto`（包含 `Success`, `Message`, `IsSplit`, `TargetSummaryRow`, `NewModel`, `DeltaQuantity`）；
@@ -97,7 +125,6 @@
      - 最新程序集 `ExcelAddInDemo.dll`、`ExcelAddInDemo.pdb` 及前端静态资源 `component_distribution.html` 已全量覆盖同步至 `publish/` 与 `bin/Debug/net48/` 目录。
 
 - **【核心排查与修复：修复 Vue app 实例未声明导致未挂载 (导致 raw 模板泄露与点击关闭无效) 并增加原生 onclick 消息兜底】(`Resources/component_distribution.html`, `publish/Resources/`, `bin/Debug/net48/Resources/`)**：
-
   1. **用户核心指令与截图确诊**：
      - 用户指令反馈：“点击关闭还无效”，并发送看板运行截图；
      - 现象与根因深度确诊：
@@ -344,7 +371,7 @@
        - 校准模板定义名称，并全量镜像同步至 `Resources/CabinetTemplate.xlsx` 与 `publish/Resources/CabinetTemplate.xlsx`；
        - `dotnet build` 编译验证：**0 错误**；最新 `ExcelAddInDemo.dll` 与 PDB 全量覆盖至 `publish/`。
 
-  1. **用户核心指令与需求背景**：
+  3. **用户核心指令与需求背景**：
      - 用户指令反馈：“把箱柜保持到一次方案，价格都是为0，没能录入，如图”、“在一次方案和二次方案添加删除功能，你怎么设计”；并在设计方案汇报后明确指令：“认可，执行”；
      - 需求确诊：
        ① 修复从当前活动 Excel 抓取箱柜为一次方案时，BOM 清单中的表价、单价、总价均为 0 的缺陷；
@@ -353,7 +380,7 @@
        ④ 纯本地未入库 DWG 默认勾选送入回收站；物理文件删除必须调用 Windows Shell API 送入系统回收站（可随时还原），并配置根目录路径白名单防穿越安全防线；
        ⑤ 纯数据库虚拟方案清除 SQLite 记录；删除完成后自动关闭详情大视口（若正打开该方案），自动重新加载卡片列表并刷新左侧分类树角标计数；
        ⑥ 严格遵循每 3 行新增代码包含 1 行中文注释，主色调 `#009688`，弹性布局无水平滚动条，最小变动法则。
-  2. **工程级闭环落地**：
+  4. **工程级闭环落地**：
      - **价格读取与自愈补齐 (`Services/ExcelServices.CloudSolution.cs`)**：
        - 在 `ExcelServices.CloudSolution.cs` 中增加健壮的 `SafeParseDecimal` 和 `SafeParseDouble`；
        - 读取当前活动箱柜元器件行时，精确抓取 M 列（表价）、L 列（报出折扣）、N 列（采购折扣）、G 列（单价）、H 列（总价）、J 列（成本单价）；
@@ -370,7 +397,7 @@
        - 实现 `handleDeleteScheme(card, schemeType)` 方法，利用 `ElementPlus.ElMessageBox.confirm` 弹出优雅直观的确认框，展示方案标题、DWG 图纸路径与回收站勾选框；
        - WebMessage 监听处理删除结果：删除成功时自动关闭详情大视口、重新拉取方案列表并重新扫描左侧子分类角标数量；
        - `setup()` 正确导出 `handleDeleteScheme`。
-  3. **构建验证与多端资源同步**：
+  5. **构建验证与多端资源同步**：
      - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 完整构建：**0 错误**；
      - `Resources/cloud_solution.html` 镜像同步复制至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`。
 
@@ -407,14 +434,14 @@
        三者切换流畅丝滑，界面排版整洁美观，零水平滚动条。
 
 - **【云方案中心：修复存活动箱柜弹窗“浏览...”与编辑方案“更换/清除”DWG图纸按钮无效缺陷】(`Forms/CloudSolutionForm.cs`, `Resources/cloud_solution.html`, `publish/Resources/`, `publish/`, `bin/`)**：
-   1. **用户核心指令与缺陷确诊**：
+  1.  **用户核心指令与缺陷确诊**：
       - 用户指令反馈：“此处的浏览文件无效，编辑的浏览文件也无效”；
       - 深度根因排查：
         ① **前端方法未暴露给模板**：在 Vue 3 的 `setup()` 中定义了 `chooseDwgForCapture`、`chooseDwgForEdit` 与 `onClearPrimEditDwg`，但在底部的 `return { ... }` 中漏写了这三个方法，导致模板中的 `@click` 与 `@clear` 无法触发；
         ② **C# WinForm IPC 消息未派发**：`CloudSolutionForm.cs` 的 `OnWebMessageReceived` 消息循环中缺失 `case "chooseDwgFile"` 路由，前端发出的请求被直接丢弃；
         ③ **前端消息监听中心缺失响应**：`initWebMessageListener` 中未监听 `chooseDwgFileResult` 回调，选图后无法反显至输入框与表单模型；
         ④ **编辑弹窗初始值与保存 Payload 缺失**：打开编辑弹窗时未初始化 `dwgDisplayPath`，保存时 payload 遗漏了 `selectedDwgFilePath`、`groupName` 与清空图纸解绑逻辑。
-   2. **工程级最小变动修复落地**：
+  2.  **工程级最小变动修复落地**：
       - **C# 后端 STA 独立线程解耦弹窗 (`Forms/CloudSolutionForm.cs`)**：
         - 新增 `case "chooseDwgFile"` 分支，在独立 STA 后台线程中创建 `OpenFileDialog`，杜绝 Chromium IPC 模态死锁，选择完成后通过 `PostMessageSafe("chooseDwgFileResult", ...)` 线程安全回传路径与调用源；
       - **前端模板暴露与数据双向闭环 (`Resources/cloud_solution.html`)**：
@@ -423,11 +450,10 @@
         - `openEditPrimSchemeModal` 中补全 `dwgDisplayPath` 和 `selectedDwgFilePath` 的初始化；
         - `savePrimarySchemeForm` 组装 payload 时补全 `selectedDwgFilePath`、`groupName` 以及清空图纸解绑判断；
       - 严格遵循每 3 行新增代码包含 1 行中文注释规范。
-   3. **构建验证与端到端实测**：
+  3.  **构建验证与端到端实测**：
       - `dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
       - 最新 DLL、PDB 及静态 HTML 资源全量镜像同步至 `publish/` 与 `bin/Debug/net48/`；
       - 通过 Browser Subagent 实测页面交互：存当前柜弹窗正常弹出，DWG 关联图纸选择与方案名称自动填充完美闭环运转。
-
 
 - **【智能辅材与壳体计算中心：水平主排常规加长0.4m与双电源加长0.8m动态推导与定额配置闭环】(`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`, `publish/`, `bin/`)**：
   1. **用户核心指令与需求确诊**：
@@ -571,26 +597,27 @@
      - `dotnet build` 编译完整通过：**0 错误**；
      - 最新程序集 `ExcelAddInDemo.dll` (3.18 MB) 及 PDB 全量同步覆盖至 `publish/` 与 `bin/Debug/net48/`。
 
-
 ﻿- **【型号参数解析流水线强化：识别出主代号后自动安全遮蔽防误判 + 分类胶囊末尾快捷新建分类】(Services/ExcelServices.ModelParse.cs, Resources/model_param_parser.html, publish/, in/)**：
-  1. **用户核心指令与需求确诊**：
-     - 用户提问反馈：“没有添加分类的功能吗？如果CJ20-160A 3P,通过CJ20识别出来是接触器，后面识别级数和电流的时候，CJ20还参与计算吗”；用户发出“实施”指令；
-     - 现象与隐患确诊：
-       ① 之前各解析通道独立传入 rawModel，未对命中的系列代号（如 CJ20, DZ47）进行隔离遮蔽。若遇无单位电流（如 CJ20-160 3P）或通用数字规则，代号内的数字（如 20）极易被误提取为电流候选值（误判为 20A）；
-       ② 原分类管理仅在通道标题栏右上角提供“新建分类”按钮，下方的分类胶囊池末尾缺乏直观的“+ 新建分类”快捷胶囊。
-  2. **工程级算法优化与最小改动落地**：
-     - **主代号自动安全遮蔽机制 (Services/ExcelServices.ModelParse.cs)**：
-       - ParseCategory 扩展支持 out string matchedCode，记录命中的具体特征代号（如 CJ20, C65）；
-       - 新增 MaskMatchedCategoryCode(string rawModel, string matchedCode) 辅助方法，将命中代号切片替换为等长空格，保持原文本其余部分位置不变；
-       - ParseSingleModel 与 ExecuteBatchModelParse 中，在识别出类别后，极数、电流与脱扣流水线均基于遮蔽后的安全文本执行，使 CJ20 的 20、DZ47 的 47、C65 的 65 彻底不参与计算，从源头上杜绝误判；
-       - 严格遵循每 3 行包含 1 行中文注释规范。
-     - **前端胶囊快捷新建交互 (Resources/model_param_parser.html)**：
-       - 在分类胶囊列表末尾增加 .cat-pill.add-cat-pill 快捷胶囊按钮，点击直接呼出新建分类弹窗；
-       - 添加浅绿背景（#f0fdf4）与青绿虚线边框（#009688），hover 变实线，与“+ 添加代号”风格统一。
-  3. **构建验证与多端产物同步**：
-     - dotnet build 编译：0 错误、0 警告新增；
-     - 程序集 ExcelAddInDemo.dll 及 PDB 全量同步覆盖至 publish/ 与 in/Debug/net48/；
-     - 前端资源同步至 publish/Resources/ 与 in/Debug/net48/Resources/。
+
+1. **用户核心指令与需求确诊**：
+   - 用户提问反馈：“没有添加分类的功能吗？如果CJ20-160A 3P,通过CJ20识别出来是接触器，后面识别级数和电流的时候，CJ20还参与计算吗”；用户发出“实施”指令；
+   - 现象与隐患确诊：
+     ① 之前各解析通道独立传入 rawModel，未对命中的系列代号（如 CJ20, DZ47）进行隔离遮蔽。若遇无单位电流（如 CJ20-160 3P）或通用数字规则，代号内的数字（如 20）极易被误提取为电流候选值（误判为 20A）；
+     ② 原分类管理仅在通道标题栏右上角提供“新建分类”按钮，下方的分类胶囊池末尾缺乏直观的“+ 新建分类”快捷胶囊。
+2. **工程级算法优化与最小改动落地**：
+   - **主代号自动安全遮蔽机制 (Services/ExcelServices.ModelParse.cs)**：
+     - ParseCategory 扩展支持 out string matchedCode，记录命中的具体特征代号（如 CJ20, C65）；
+     - 新增 MaskMatchedCategoryCode(string rawModel, string matchedCode) 辅助方法，将命中代号切片替换为等长空格，保持原文本其余部分位置不变；
+     - ParseSingleModel 与 ExecuteBatchModelParse 中，在识别出类别后，极数、电流与脱扣流水线均基于遮蔽后的安全文本执行，使 CJ20 的 20、DZ47 的 47、C65 的 65 彻底不参与计算，从源头上杜绝误判；
+     - 严格遵循每 3 行包含 1 行中文注释规范。
+   - **前端胶囊快捷新建交互 (Resources/model_param_parser.html)**：
+     - 在分类胶囊列表末尾增加 .cat-pill.add-cat-pill 快捷胶囊按钮，点击直接呼出新建分类弹窗；
+     - 添加浅绿背景（#f0fdf4）与青绿虚线边框（#009688），hover 变实线，与“+ 添加代号”风格统一。
+3. **构建验证与多端产物同步**：
+   - dotnet build 编译：0 错误、0 警告新增；
+   - 程序集 ExcelAddInDemo.dll 及 PDB 全量同步覆盖至 publish/ 与 in/Debug/net48/；
+   - 前端资源同步至 publish/Resources/ 与 in/Debug/net48/Resources/。
+
 - **【规则6精益落地：云物料物料插入严格在光标行插入，且仅当行数超过元器件区域空白行时插入相差行】(`Services/ExcelServices.CloudMaterialHub.cs`, `publish/`, `bin/`)**：
   1. **用户核心指令与需求确诊**：
      - 用户指令反馈：“添加到excel的时候，在光标的下一行插入了，应该在光标行插入；如果行数超过元器件区域的空白行数，需要插入相差行”；
@@ -929,7 +956,6 @@
      - 将最新程序集 `ExcelAddInDemo.dll`、`ExcelAddInDemo.pdb` 及 `copper_busbar_calc.html` 镜像覆盖至 `publish/` 与 `bin/Debug/net48/` 目录；
      - 通过 Browser Subagent 进行高保真交互与模式切换测试，双向联动正常。
 
-
 - **【利驰铜排计算界面高度 100% 父容器自适应与横向滚动条彻底消除】(`Resources/copper_busbar_calc.html`, `publish/`, `bin/`)**：
   1. **用户核心指令与截图反馈**：
      - 用户指令反馈：“这个高度是不是小了，应该100%父容器高度”，并截图框出中间明细表格下方大片空白以及表格底部的水平滚动条；
@@ -1036,7 +1062,6 @@
      - `dotnet build /p:RunExcelDnaBuild=false` 验证通过：**0 错误**；
      - 编译产物 `ExcelAddInDemo.dll` 及 `pdb` 已同步更新至 `bin/Debug/net48` 与 `publish/` 目录。
 
-
 - **【缺陷根治与逻辑自愈：跨表复制粘贴箱柜按光标位置前置对齐插入、消除单价#REF!与调序窗口排除幽灵箱柜闭环】(`Services/ExcelServices.CabinetManage.cs`, `Tool.cs`, `publish/ExcelAddInDemo.dll`)**：
   1. **用户核心反馈与现场确诊**：
      - 用户反馈：“从其他分类明细复制箱柜到另一个分类明细中，粘贴后，底部明细和顶部汇总顺序不一致，调序界面和实际也不一致，是什么原因”，以及“点击箭头从其他分类明细复制箱柜插入，依旧插入在最后面，没有按光标位置插入，需要修改”；
@@ -1081,7 +1106,6 @@
   4. **构建验证与物理产物同步**：
      - `dotnet build /p:RunExcelDnaBuild=false` 验证通过：**0 错误**；
      - 程序集 `ExcelAddInDemo.dll` 及 `pdb` 已同步更新至 `bin/Debug/net48` 与 `publish/` 目录。
-
 
 - **【缺陷根治与逻辑自愈：解决新建及复制箱柜时底表明细顺序与顶部汇总相反颠倒缺陷】(`Services/ExcelServices.Cabinet.cs`, `Services/ExcelServices.CabinetManage.cs`, `publish/ExcelAddInDemo.dll`)**：
   1. **用户核心反馈与故障现象**：
@@ -1317,7 +1341,7 @@
        - 紧凑微调窗体尺寸：收起状态由 510 优化为 430px，展开状态由 770 优化为 680px，彻底消除表单移除后的底部留白；
        - 消息通信接入双轨安全容错防护（启发式 #22）；
      - **前端纯净化重构 (`Resources/create_project.html`)**：
-       - 彻底删除【项目编号】、【项目类型】、【* 待办】、【* 重置】以及【批建箱柜】DOM 节点；
+       - 彻底删除【项目编号】、【项目类型】、【_ 待办】、【_ 重置】以及【批建箱柜】DOM 节点；
        - 动态获取当前系统日期 `getTodayFormatted()` 与 `getTodayQuoteNumber()`；
        - 文件名拼接公式升级为 `{项目名称}原始清单{报价单号}_{项目备注}`，多字段实时联动；
        - `selectFolder` 将当前 `form.savePath` 作为 `currentPath` 投递给宿主。
@@ -1621,7 +1645,6 @@
        - **阶段 3（箱柜 2-1 复合提取与直推）**：`ExcelServices.ExtractAllCabinetsForCloudSync`、`Forms/CloudEBoxSyncForm.cs`、`Resources/ebox_sync.html`（箱柜表格预览、覆盖模式开关、批次配置、二次确认弹窗、一键调用 `POST /api/Project/ImportExcelData`）；
        - **Ribbon 菜单挂接**：`RibbonController.cs` 中在【云项目】与【箱柜】菜单中集成【🔗 绑定云端项目...】与【🚀 推送到云端箱柜...】按钮；
        - **编译构建验证**：`dotnet build ExcelAddInDemo.csproj -p:RunExcelDnaBuild=false` 验证通过：**0 警告、0 错误**，HTML 资源已全量同步到 `publish/` 目录。
-
 
 - **【方案规划与实施方案制定】excel-ct-tools 插件与云端多租户箱柜管理打通技术实施文档已正式归档 (`.ai/session.md`, 实施文档见 artifacts)**：
   1. **明确多租户切库核心命门**：梳理 `CtmoGroupIdFilterAttribute` 的 `DrawCode_{groupId}` 物理分库机制，确立 `(projectId, groupId)` 二元组绑定是云端读写的核心前提；
@@ -6583,7 +6606,7 @@
 - **【DrawCode 云端接入登录弹窗“值不在预期的范围内”异常根因定位与修复】(`LoginForm.cs`, `DrawCodeApiClient.cs`)**：
   1. **异常根本原因**：
      - **WebView2 消息类型契约不匹配**：前端 `login.html` 在提交表单时使用 `window.chrome.webview.postMessage(payload)` 发送原生 JavaScript 对象（Object）；
-     - **后端单轨方法报错**：C# 后端 `LoginForm.cs` 的 `OnWebMessageReceived` 方法原本直接调用了 `e.TryGetWebMessageAsString()`。根据微软 WebView2 规范，当客户端发送非纯字符串（如对象/数组）时，`TryGetWebMessageAsString` 会直接抛出 COM `ArgumentException` 异常（错误信息为：“值不在预期的范围内。” / *Value does not fall within the expected range*）；
+     - **后端单轨方法报错**：C# 后端 `LoginForm.cs` 的 `OnWebMessageReceived` 方法原本直接调用了 `e.TryGetWebMessageAsString()`。根据微软 WebView2 规范，当客户端发送非纯字符串（如对象/数组）时，`TryGetWebMessageAsString` 会直接抛出 COM `ArgumentException` 异常（错误信息为：“值不在预期的范围内。” / _Value does not fall within the expected range_）；
      - **异常提示外显**：该未捕获异常被外部 `catch` 捕获后，格式化为 `处理异常: 值不在预期的范围内。` 回发给前端弹窗展示，导致登录流程中断。
   2. **最小变动修复实施**：
      - **双轨安全消息读取**：在 `LoginForm.cs` 中改用项目统一的双轨兼容提取模式，优先读取 `e.WebMessageAsJson` 属性以无缝解析原生 JS 对象，若为空再回退尝试 `e.TryGetWebMessageAsString()`；
@@ -6612,9 +6635,11 @@
 ## [Next]
 
 - 持续跟进用户对界面细节与云端数据交互的体验反馈。
+
 ## [2026-10-07 16:26:00] 修复壳体辅材计算白板问题
 
 ### [Completed]
+
 - **【修复 cabinet_aux_calc.html 标签闭合错误与 Vue 3 编译白板问题】**：
   1. **定位根因**：第 5125 行存在多余的 </div>，导致弹窗主体主容器提前闭合，进而使得 <el-dialog> 在第 5248 行被提前闭合，随后的 <template #footer> 脱离了组件作用域，导致 Vue 3 模板编译抛出 Uncaught TypeError: Cannot read properties of undefined (reading 'type') 并中断挂载呈现白板。
   2. **代码修复**：
@@ -6624,11 +6649,13 @@
   3. **无头浏览器验证**：在 Edge 无头环境中完整加载页面与各选项卡，确认 Vue 正常挂载，页面与弹窗均完美渲染，零异常。
 
 ### [Next]
+
 - 提示用户重新打开【壳体辅材计算】窗口验证界面渲染效果。
 
 ## [2026-10-08 14:35:00] 排查切换外部工作簿切回时定义名称丢失与自动生成卡顿根因
 
 ### [Completed]
+
 - **【根因深入诊断分析完成】**：
   1. **“定义名称被清空”的本质**：
      - Excel 的活动工作簿上下文机制（Active Context）：切换至外部非插件表格时，Excel 前台上下文指向外部工作簿，名称框和名称管理器仅展示活动工作簿的名称；且插件箱柜定义名称（Cab_Sum/Cab_Det 等）属于工作表级局部名称（Worksheet Scope），在外部工作簿中完全不显示，造成视觉上“被清空”的假象。
@@ -6656,14 +6683,17 @@
      - 最新程序集 `ExcelAddInDemo.dll` / `pdb` 已同步至 `publish/` 目录。
 
 ### [In-Progress]
+
 - 交付用户在实际 Excel 多工作簿切换场景下验证 0ms 极速响应效果。
 
 ### [Next]
+
 - 持续跟进用户在复杂图纸表格切换过程中的流畅度反馈。
 
 ## [2026-10-08 21:10:00] 全面落地【总价一键调整】功能 (目标总价反算、Q列动态分摊、L列报出系数与计费区公式自适应重算)
 
 ### [Completed]
+
 - **【深度需求对齐与架构设计】**：
   1. 对齐利驰 ExWinner `frmProjectFeeFormula.html` 与 `frmProjectFeeAdjustByType.html` 的核心业务逻辑，确立“自顶向下目标价反算分摊”与“底线成本安全防御”机制；
   2. 确立按 Q 列动态分摊策略：元器件行 Q 列固定为“元件”，计费区域动态提取 Q 列，若为空回退提取 B 列费用名，再为空归入【其他费用】兜底；
@@ -6688,11 +6718,13 @@
      - 执行 `dotnet build` 编译成功：0 错误。
 
 ### [Next]
+
 - 协助用户在 Excel 中加载插件并实测【总价一键调整】功能的完整流程。
 
 ## [2026-10-12 20:18:00] 图纸参数匹配窗体“⚡ 补测”与 DWG 尺寸双引擎自愈系统落地
 
 ### [Completed]
+
 - **【根本原因定位】**：
   1. 用户此前点击“⚡ 补测”无尺寸显示的根本原因：Excel 进程（PID 10920）系 18:55 启动并持续占用旧版 XLL，新增的 `forceExtractDimensions` 事件分支与修复尚未载入内存；且 AutoCAD 当时未开启；
   2. 当前目录下 `20.dwg`、`30.dwg`、`BH50.dwg` 尚未测算入库（此前数据库仅收录了 `BH75`）。
@@ -6707,27 +6739,29 @@
      - 最新 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo-AddIn64.xll` 已完整产出并同步至 `publish/` 目录。
 
 ### [In-Progress]
+
 - 生产环境运行跟踪。
 
 ### [Next]
+
 - 验证双击 DWG 自动回写 Excel 当前行（包含尺寸拼接）流程。
 
 ## [2026-10-12 20:23:00] 多余代码与高频调试日志清理完毕
 
 ### [Completed]
+
 1. 彻底移除了 `DwgDimensionScanner.cs` 中硬编码的临时排查日志代码 (`scan.log`)；
 2. 清理了 `CadExcelSyncServer.cs` 管道监听和图纸测算内部的高频写盘日志，仅保留核心异常拦截日志，消除不必要的磁盘 IO 损耗；
 3. 两端项目（AutoCAD `ClassLibrary3.csproj` 与 Excel `ExcelAddInDemo.csproj`）重新构建验证通过：**0 警告，0 错误**；
 4. 临时测试文件已全部回收。
 
-
-
 ## [2026-10-13 09:13:20] 右键菜单自动消失排查修复与 Ribbon 工具菜单接入
 
 ### [Completed]
+
 1. **排查并彻底解决右键菜单弹出后鼠标不移入时很快自动消失的问题**：
-   - **根本原因**：CustomContextMenuForm.cs 的 ShowMenu 中默认将菜单坐标偏移了 2 像素（screenPos.X + 2, screenPos.Y + 2），导致菜单弹出时光标位于菜单矩形外部（Contains(cur) == false）；而巡检定时器 _mouseTrackerTimer（100ms 周期）在初始缓冲 -2 下只要检测到 2 次外部（即总耗时约 400ms），就会强行判定光标已离开并触发 	his.Hide()。用户右键后若未在 0.4 秒内瞬间移入菜单，菜单就会闪退消失；
-   - **实施修复**：在 CustomContextMenuForm.cs 中增加 _hasEnteredMenu 首次进入标记与四周 10px 的吸附容差区。鼠标未曾进入菜单前绝不短时间误杀，提供宽松的静止安全期；一旦移入后再移出且连续达到 500ms 阈值才执行平滑隐藏，彻底消除了闪退问题。
+   - **根本原因**：CustomContextMenuForm.cs 的 ShowMenu 中默认将菜单坐标偏移了 2 像素（screenPos.X + 2, screenPos.Y + 2），导致菜单弹出时光标位于菜单矩形外部（Contains(cur) == false）；而巡检定时器 \_mouseTrackerTimer（100ms 周期）在初始缓冲 -2 下只要检测到 2 次外部（即总耗时约 400ms），就会强行判定光标已离开并触发 his.Hide()。用户右键后若未在 0.4 秒内瞬间移入菜单，菜单就会闪退消失；
+   - **实施修复**：在 CustomContextMenuForm.cs 中增加 \_hasEnteredMenu 首次进入标记与四周 10px 的吸附容差区。鼠标未曾进入菜单前绝不短时间误杀，提供宽松的静止安全期；一旦移入后再移出且连续达到 500ms 阈值才执行平滑隐藏，彻底消除了闪退问题。
 2. **将【图纸参数匹配】加入 Excel Ribbon 的【项目工具】菜单中**：
    - 在 RibbonController.cs 的 menuProjectTools 下添加 <button id='btnComponentParamMatch' label='图纸参数匹配' ... /> 按钮节点；
    - 在 OnMenuAction 回调中接入 ExcelServices.ShowComponentParamMatchDialog()，支持从顶部 Ribbon 功能区一键直达“元器件图纸参数匹配 (200x800)”伴随式侧边浮窗。
@@ -6735,23 +6769,28 @@
    - 执行 dotnet build /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false 验证通过，**0 警告、0 错误**，程序集 ExcelAddInDemo.dll 成功生成。
 
 ### [In-Progress]
+
 - 等待用户关闭运行中的 Excel 进程以完成最终 .xll 文件的覆写与加载验证。
 
 ### [Next]
+
 - 用户在 Excel 重启后测试 Ribbon【项目工具】->【图纸参数匹配】及右键菜单稳定性。
+
 ## [2026-10-13 09:29:29] 修复完成与打包就绪
 
 ### [Completed]
+
 1. **Excel Ribbon【项目工具】菜单新增【图纸参数匹配】完成**：
    - 在 RibbonController.cs 中注册 tnComponentParamMatch，直接调用 ExcelServices.ShowComponentParamMatchDialog() 唤起元器件图纸参数匹配浮窗；
 2. **右键菜单弹出后如果光标不进入快速消失的缺陷修复完成**：
-   - 在 CustomContextMenuForm.cs 中增加 _hasEnteredMenu 首次移入标记与 10px 吸附容差检测，未进入前提供宽松安全期绝不闪退，移入后移出保持平滑自动隐藏；
+   - 在 CustomContextMenuForm.cs 中增加 \_hasEnteredMenu 首次移入标记与 10px 吸附容差检测，未进入前提供宽松安全期绝不闪退，移入后移出保持平滑自动隐藏；
 3. **全局打包构建完成**：
    - Excel 进程关闭后执行全量构建打包，**0 警告、0 错误**，ExcelAddInDemo-AddIn64-packed.xll 与 ExcelAddInDemo.dll 完全生成。
 
 ## [2026-10-14 10:13:00] 跨分类复制箱柜明细表头 Cab_Sum 定义名称残留旧 Key 缺陷修复闭环
 
 ### [Completed]
+
 1. **跨分类复制与插入箱柜核心引擎显式绑定新定义名称** (`Services/ExcelServices.CabinetManage.cs`)：
    - 在 `ExecuteCabinetInsertOrClone` 中新增步骤 19.5，显式重写明细表头行（`newDetRow + 1`）A 列公式为 `targetSheet.Cells[newDetRow + 1, 1].Formula = $"=\"序号\" & {newSumTag}";`，对齐规则 6 架构规范；
    - 在汇总行与明细行 `CleanRangeFormulas` 调用中传入源箱柜序号 `clip.SourceCabinetK` 与新序号 `newK`。
@@ -6764,14 +6803,17 @@
    - 程序集 `ExcelAddInDemo.dll` 及 `pdb` 已同步复制覆盖至 `publish/` 目录。
 
 ### [In-Progress]
+
 - 待用户在 Excel 中加载最新程序集，验证跨分类复制箱柜及右键修复。
 
 ### [Next]
+
 - 用户重启 Excel 测试跨分类复制箱柜，确认 A 列表头不再显示 `#NAME?` 且正确联动到目标汇总行序号。
 
 ## [2026-10-15 18:45:00] 取消箱柜盲目容错配对，对齐规则 9 报警机制落地闭环
 
 ### [Completed]
+
 1. **取消过度容错与盲目拉郎配逻辑** (`Tool.cs:FixAndFillCabinetNamesForSheet`)：
    - 彻底移除原有的第 2 轮（G 列公式行号正则反推）、第 3 轮（拓扑顺序保底硬配）和第 4 轮（孤立底表明细强行塞入空槽位）逻辑；
    - 彻底消除了因穿插纯汇总无明细箱柜（如外购设备、母线桥）或柜号手误导致的 Off-by-one 全量箱柜串行错位隐患。
@@ -6782,11 +6824,13 @@
    - 运行 `dotnet build ExcelAddInDemo.csproj` 通过，**0 错误**。
 
 ### [Next]
+
 - 用户在 Excel 中操作含有纯汇总柜或修改柜号的图纸，验证定义名称对齐精确度及未匹配预警提示。
 
 ## [2026-10-15 20:35:00] FixAndFillCabinetNamesForSheet 六大性能与逻辑闭环优化实施完成
 
 ### [Completed]
+
 1. **配对对象化预清洗投影 (优化点 1)** (`Tool.cs`)：
    - 提取 `sumItems` 与 `detItems` 轻量元组数组，在循环前完成 `CleanCabStr` 与 Trim，消除 $O(N \times M \times 3)$ 次重复调用与大量临时字符串 GC 分配。
 2. **汇总未配对反向预警闭环 (优化点 2 & 规则 9)** (`Tool.cs`)：
@@ -6803,11 +6847,13 @@
    - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 验证通过：**0 警告、0 错误**。
 
 ### [Next]
+
 - 待用户在 Excel 中测试包含多箱柜的大型分类表，体验自愈响应速度与正反双向预警机制。
 
 ## [2026-10-15 20:58:00] 修复 Lazy Check 对无明细（纯汇总）箱柜的误判 Bug
 
 ### [Completed]
+
 1. **重构 Lazy Check 明细完整性检查** (`Tool.cs:FixAndFillCabinetNamesForSheet`)：
    - 彻底废除 `hasDetCount > 0 && hasDetCount < existingMap.Count` 的一刀切误杀逻辑；
    - 遵照规则 7，将顶部汇总区预读扩展至 `A{cabSumStartRow}:G500`（同时载入 `Value2` 与 `Formula` 数组）；
@@ -6818,11 +6864,13 @@
    - 编译通过：**0 错误**。
 
 ### [Next]
+
 - 待用户在 Excel 中打开同时含有标准成套柜与纯汇总设备（如母线桥、外购件）的表格，验证是否能直接享受 0ms 极速放行。
 
 ## 2026-10-15T15:01:23.723Z - 元器件拆分工作台复合句柄 CAD 对焦修复
 
 ### [Completed]
+
 1. **ComponentSplitForm 选定图元句柄切分** (ComponentSplitForm.cs)：
    - 在 selectHandle 消息分支中，对传入的 handle 字符串补充 Split(new[] { '-', ',', ';', ' ' }) 切分清洗与过滤，将复合句柄（如 3685-361C）拆分为纯净十六进制句柄集合。
 2. **CadSyncClient 防御性扁平化** (CadSyncClient.cs)：
@@ -6831,10 +6879,10 @@
    - 在 ProcessReceivedMessage 中统一对 handles 扁平化拆分去重；
    - 在 ExecuteHighlightInCad 中将直接遍历 handles 升级为遍历切分后的 latHandles，彻底杜绝 Convert.ToInt64(h, 16) 遇到连字符抛出 FormatException 导致的聚焦无响应。
 
-
 ## [2026-10-16 22:28:00] 云物料一体化工作台当日大盘金属行情 (铜/铝) 实时拉取全套功能落地交付
 
 ### [Completed]
+
 1. **行情数据传输模型 (Models/CloudMaterialHubModels.cs)**：新增 MarketPriceResult 模型，涵盖 Success, CopperPrice, AluminumPrice, Source, UpdateTime, IsFallback, Message，标明离线备选基准铜价 78500，铝价 19800。
 2. **大盘行情服务层 (Services/MarketPriceService.cs)**：基于 HttpClient 单例拉取上期所主力连续数据源 (新浪期货行情 API)，带 Referer 头、4秒超时防护、10分钟内存缓存与安全兜底。
 3. **C# 宿主窗体双向 IPC (Forms/CloudMaterialHubForm.cs)**：HandleInitHub 初始化下发行情，HandleGetMarketPriceAsync 响应 getMarketPrice 强制刷新指令并回传。
@@ -6843,12 +6891,13 @@
 6. **浏览器自动化测试**：通过 browser_subagent 验证通过。
 
 ### [Next]
-- 用户在 ExcelAddInCTtools 插件端体验当日真实行情自动带出与刷新。
 
+- 用户在 ExcelAddInCTtools 插件端体验当日真实行情自动带出与刷新。
 
 ## [2026-10-16 22:42:00] 修复母排计算器刷新铜价“一直转圈”与跨线程异常 (CoreWebView2 UI Thread)
 
 ### [Problem & Root Cause]
+
 1. **CoreWebView2 跨线程派发异常**：
    - 用户在界面上点击刷新铜价后，按钮一直转圈（Loading 不结束）且铜价停留在旧值 111465；
    - 查阅 %AppData%/ExcelAddInDemo/debug.log 发现报错：`[CloudMaterialHubForm] PostMessageToWeb 异常: CoreWebView2 can only be accessed from the UI thread`；
@@ -6859,6 +6908,7 @@
    - 初始静态值使用了旧硬编码 111465，初始化报文因跨线程异常丢包后未能被新行情覆盖。
 
 ### [Completed]
+
 1. **重构 C# 跨线程安全派发 (`Forms/CloudMaterialHubForm.cs`)**：
    - 在 `PostMessageToWeb` 中引入 WinForms 经典 `this.InvokeRequired` 校验，遇跨线程时自动使用 `this.BeginInvoke` 调度回 UI 消息泵安全执行，彻底根除跨线程崩溃；
    - 将默认兜底铜价修正为当前行业大盘基准 78,500 元/吨（标明 `--硬编码: 离线备用基准铜价 78500--`）。
@@ -6872,10 +6922,10 @@
 4. **端到端浏览器自动化验证**：
    - 经 `browser_subagent` 实测验证：页面初始铜价精准显示为 78,500；点击刷新按钮后 Loading 动效正常触发并在回包后顺利结束，提示框正常弹出，无任何卡顿转圈。
 
-
 ## [2026-10-16 23:05:00] 铜价基准升级为 1#电解铜现货 (110,625 元/吨) 全套落地交付
 
 ### [Completed]
+
 1. **行情数据源与模型全面升级 (Models/CloudMaterialHubModels.cs, Services/MarketPriceService.cs)**：
    - 废除停更旧代码（CU0/AL0 导致误取 78,500 元/吨旧数据），升级为 2026 年最新活跃的国内期货主连与现货映射通道（nf_CU0, nf_AL0）；
    - 正则表达式优化为兼容下划线前缀，正确解析盘面价格；
@@ -6899,6 +6949,7 @@
 ## [2026-10-17 18:24:00] 修复活动箱柜保存至一次方案时价格为0的问题全链路交付
 
 ### [Completed]
+
 1. **Excel 元器件价格抓取底层升级 (`Services/ExcelServices.CloudSolution.cs`)**：
    - 遵循规则 8：在提取前显式调用 `Tool.FixAndFillCabinetNamesForSheet(ws)` 保证规则 6 结构正确，并调用 `ws.Calculate()` 确保当前表格所有公式运算生效；
    - 新增 `SafeParseDecimal` 与 `SafeParseDouble`：过滤货币符号（¥、￥、$）、千分位逗号与空格，防范 NaN/无穷大异常，杜绝文本型数字导致解析抛错降级为 0；
@@ -6924,12 +6975,12 @@
    - 同步覆盖至 `publish/Resources/` 与 `bin/Debug/net48/Resources/`；
    - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**。
 
-
 ---
 
 ## [2026-10-23 10:08:00] 修复材料统计及关联模块中顶部汇总行数量为 0 的箱柜仍被统计的问题
 
 ### [Completed]
+
 1. **材料统计核心服务修复 (Services/ExcelServices.MaterialStat.cs)**：
    - 在 ExportPurchaseListToCurrentWorkbook 中，解析汇总行（F列）数量时增加零值拦截：当解析到的数值小于等于 0 时，执行 continue 直接跳过该箱柜，彻底杜绝单台数量乘以此前保留的默认值 1 并计入采购清单；
    - 在 GetMaterialStatInitData 中同步增加零值过滤逻辑：遍历各个箱柜时若汇总行数量小于等于 0 则不计入分类表有效箱柜计数 cabCount，确保前端向导界面展示的箱柜数与实际导出箱柜数完全一致；

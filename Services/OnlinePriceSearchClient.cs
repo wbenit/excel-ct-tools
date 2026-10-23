@@ -354,8 +354,8 @@ namespace ExcelAddInDemo.Services
         /// </summary>
         /// <param name="model">检索型号</param>
         /// <param name="brand">指定品牌(为空或全部时不限)</param>
-        /// <returns>查价结果元组 (状态, 匹配型号, 价格, 厂商, 描述)</returns>
-        public static async Task<(bool success, string matchedModel, double price, string vendor, string message)> SearchDq123Async(string model, string brand)
+        /// <returns>查价结果元组 (状态, 匹配型号, 价格, 厂商, 订货号, 描述)</returns>
+        public static async Task<(bool success, string matchedModel, double price, string vendor, string orderNo, string message)> SearchDq123Async(string model, string brand)
         {
             try
             {
@@ -388,7 +388,7 @@ namespace ExcelAddInDemo.Services
                 // 校验 HTTP 响应状态码
                 if (!response.IsSuccessStatusCode)
                 {
-                    return (false, string.Empty, 0.0, string.Empty, $"HTTP 响应异常: {response.StatusCode}");
+                    return (false, string.Empty, 0.0, string.Empty, string.Empty, $"HTTP 响应异常: {response.StatusCode}");
                 }
 
                 // 读取响应文本流
@@ -401,7 +401,7 @@ namespace ExcelAddInDemo.Services
                 // 检查 data.data 数组节点
                 if (!root.TryGetProperty("data", out var dataProp) || !dataProp.TryGetProperty("data", out var listProp) || listProp.ValueKind != JsonValueKind.Array)
                 {
-                    return (false, string.Empty, 0.0, string.Empty, "未查得该型号价格");
+                    return (false, string.Empty, 0.0, string.Empty, string.Empty, "未查得该型号价格");
                 }
 
                 // 清洗检索词空白字符以便精准比对
@@ -439,7 +439,7 @@ namespace ExcelAddInDemo.Services
                 // 若依然未找到任何条目
                 if (!found)
                 {
-                    return (false, string.Empty, 0.0, string.Empty, "未查得该型号价格");
+                    return (false, string.Empty, 0.0, string.Empty, string.Empty, "未查得该型号价格");
                 }
 
                 // 提取匹配的型号
@@ -456,13 +456,26 @@ namespace ExcelAddInDemo.Services
                 // 精准提炼电气天下实际品牌名称 (基于厂商代码映射、型号前缀推导与品类清洗，杜绝误填系列名)
                 string vendorName = ResolveBrandForDq123(bestMatch, matchedM, brand);
 
-                // 成功返回查价数据
-                return (true, matchedM, priceVal, vendorName, "查询成功");
+                // 提取商品订货号或物料编码 (优先读取 orderNum，备选兼容 prodcode)
+                string orderNo = string.Empty;
+                if (bestMatch.TryGetProperty("orderNum", out var onProp))
+                {
+                    // 获取订货号字符串
+                    orderNo = onProp.GetString() ?? string.Empty;
+                }
+                else if (bestMatch.TryGetProperty("prodcode", out var pcProp))
+                {
+                    // 获取备用商品编码
+                    orderNo = pcProp.GetString() ?? string.Empty;
+                }
+
+                // 成功返回查价数据与订货号
+                return (true, matchedM, priceVal, vendorName, orderNo, "查询成功");
             }
             catch (Exception ex)
             {
                 // 捕获异常并返回错误原因
-                return (false, string.Empty, 0.0, string.Empty, $"电气天下查价异常: {ex.Message}");
+                return (false, string.Empty, 0.0, string.Empty, string.Empty, $"电气天下查价异常: {ex.Message}");
             }
         }
 
@@ -736,13 +749,13 @@ namespace ExcelAddInDemo.Services
         /// </summary>
         /// <param name="model">检索型号</param>
         /// <param name="brand">指定品牌</param>
-        /// <returns>查价结果元组 (状态, 匹配型号, 价格, 厂商, 描述)</returns>
-        public static async Task<(bool success, string matchedModel, double price, string vendor, string message)> SearchDx2Async(string model, string brand)
+        /// <returns>查价结果元组 (状态, 匹配型号, 价格, 厂商, 订货号, 描述)</returns>
+        public static async Task<(bool success, string matchedModel, double price, string vendor, string orderNo, string message)> SearchDx2Async(string model, string brand)
         {
             try
             {
                 // 判空过滤
-                if (string.IsNullOrWhiteSpace(model)) return (false, string.Empty, 0.0, string.Empty, "未输入检索型号");
+                if (string.IsNullOrWhiteSpace(model)) return (false, string.Empty, 0.0, string.Empty, string.Empty, "未输入检索型号");
 
                 // 智能解析目标厂商代号
                 int? factoryId = null;
@@ -813,6 +826,19 @@ namespace ExcelAddInDemo.Services
                     // 提取并解析品牌厂商
                     string vendorName = ResolveBrandForDq123(bestElem, bestModel, brand);
 
+                    // 提取商品订货号或物料编码 (优先 orderNum，备选 prodcode)
+                    string bestOrderNo = string.Empty;
+                    if (bestElem.TryGetProperty("orderNum", out var onProp))
+                    {
+                        // 获取订货号
+                        bestOrderNo = onProp.GetString() ?? string.Empty;
+                    }
+                    else if (bestElem.TryGetProperty("prodcode", out var pcProp))
+                    {
+                        // 获取商品编码
+                        bestOrderNo = pcProp.GetString() ?? string.Empty;
+                    }
+
                     // 检查漏电冲突 (若用户明确检索漏电，但最高分条目仅为纯断路器，则绝不能直接采纳，必须转入拼装求和阶段)
                     bool isTargetLeakage = Regex.IsMatch(model, @"(VEA|Vigi|漏电|30mA)", RegexOptions.IgnoreCase);
                     bool isBestItemLeakage = Regex.IsMatch(bestModel, @"(Vigi|VEA|ELE|ELM|LE|漏电|剩余电流)", RegexOptions.IgnoreCase);
@@ -820,8 +846,8 @@ namespace ExcelAddInDemo.Services
                     // 评分合格 (得分大于等于 50 分) 且价格有效，且不存在漏电缺失冲突
                     if ((!isTargetLeakage || isBestItemLeakage) && best.score >= 50 && bestPrice > 0.01)
                     {
-                        // 成功返回电小二智能优选结果
-                        return (true, bestModel, bestPrice, vendorName, $"电小二查得: ¥{bestPrice:F2} (匹配度:{best.score})");
+                        // 成功返回电小二智能优选结果与订货号
+                        return (true, bestModel, bestPrice, vendorName, bestOrderNo, $"电小二查得: ¥{bestPrice:F2} (匹配度:{best.score})");
                     }
                 }
 
@@ -872,8 +898,14 @@ namespace ExcelAddInDemo.Services
                         // 解析厂商
                         string vendorName = ResolveBrandForDq123(mainMatch.Value, combinedModel, brand);
 
+                        // 提取主开关与附件订货号
+                        string mainOrder = mainMatch.Value.TryGetProperty("orderNum", out var mon) ? (mon.GetString() ?? "") : "";
+                        string vigiOrder = vigiMatch.Value.TryGetProperty("orderNum", out var von) ? (von.GetString() ?? "") : "";
+                        // 组合订货号文本
+                        string combinedOrder = !string.IsNullOrWhiteSpace(mainOrder) && !string.IsNullOrWhiteSpace(vigiOrder) ? $"{mainOrder} + {vigiOrder}" : (!string.IsNullOrWhiteSpace(mainOrder) ? mainOrder : vigiOrder);
+
                         // 返回拼装求和结果
-                        return (true, combinedModel, totalP, vendorName, $"电小二拼装查得: 主体(¥{mainP:F2}) + 漏电模块(¥{vigiP:F2}) = ¥{totalP:F2}");
+                        return (true, combinedModel, totalP, vendorName, combinedOrder, $"电小二拼装查得: 主体(¥{mainP:F2}) + 漏电模块(¥{vigiP:F2}) = ¥{totalP:F2}");
                     }
                 }
 
@@ -883,7 +915,7 @@ namespace ExcelAddInDemo.Services
             catch (Exception ex)
             {
                 // 异常保护返回详细报错
-                return (false, string.Empty, 0.0, string.Empty, $"电小二查价异常: {ex.Message}");
+                return (false, string.Empty, 0.0, string.Empty, string.Empty, $"电小二查价异常: {ex.Message}");
             }
         }
 
@@ -922,8 +954,8 @@ namespace ExcelAddInDemo.Services
         /// </summary>
         /// <param name="model">检索型号</param>
         /// <param name="brand">指定品牌过滤</param>
-        /// <returns>查价结果元组 (状态, 匹配型号, 价格, 厂商, 描述)</returns>
-        public static async Task<(bool success, string matchedModel, double price, string vendor, string message)> SearchTitanMatrixAsync(string model, string brand)
+        /// <returns>查价结果元组 (状态, 匹配型号, 价格, 厂商, 订货号, 描述)</returns>
+        public static async Task<(bool success, string matchedModel, double price, string vendor, string orderNo, string message)> SearchTitanMatrixAsync(string model, string brand)
         {
             try
             {
@@ -968,7 +1000,7 @@ namespace ExcelAddInDemo.Services
                 // 校验返回状态码
                 if (!response.IsSuccessStatusCode)
                 {
-                    return (false, string.Empty, 0.0, string.Empty, $"HTTP 响应异常: {(int)response.StatusCode} {response.ReasonPhrase}");
+                    return (false, string.Empty, 0.0, string.Empty, string.Empty, $"HTTP 响应异常: {(int)response.StatusCode} {response.ReasonPhrase}");
                 }
 
                 // 读取响应文本流
@@ -981,13 +1013,13 @@ namespace ExcelAddInDemo.Services
                 // 校验 entity 字段
                 if (!root.TryGetProperty("entity", out var entityProp) || entityProp.ValueKind != JsonValueKind.Object)
                 {
-                    return (false, string.Empty, 0.0, string.Empty, "天工矩阵未返回结果");
+                    return (false, string.Empty, 0.0, string.Empty, string.Empty, "天工矩阵未返回结果");
                 }
 
                 // 提取内层内嵌的 resultData JSON 文本
                 if (!entityProp.TryGetProperty("resultData", out var resDataProp) || resDataProp.ValueKind != JsonValueKind.String)
                 {
-                    return (false, string.Empty, 0.0, string.Empty, "天工矩阵结果集为空");
+                    return (false, string.Empty, 0.0, string.Empty, string.Empty, "天工矩阵结果集为空");
                 }
 
                 // 解析内层数据
@@ -998,14 +1030,14 @@ namespace ExcelAddInDemo.Services
                 // 校验数组有效性
                 if (innerRoot.ValueKind != JsonValueKind.Array || innerRoot.GetArrayLength() == 0)
                 {
-                    return (false, string.Empty, 0.0, string.Empty, "未查得该型号价格");
+                    return (false, string.Empty, 0.0, string.Empty, string.Empty, "未查得该型号价格");
                 }
 
                 // 提取第一组分类中的 list 列表
                 var firstCategory = innerRoot[0];
                 if (!firstCategory.TryGetProperty("list", out var listArray) || listArray.ValueKind != JsonValueKind.Array || listArray.GetArrayLength() == 0)
                 {
-                    return (false, string.Empty, 0.0, string.Empty, "未查得该型号价格");
+                    return (false, string.Empty, 0.0, string.Empty, string.Empty, "未查得该型号价格");
                 }
 
                 // 遍历结果集，根据指定品牌进行筛选
@@ -1043,7 +1075,7 @@ namespace ExcelAddInDemo.Services
                 // 若筛选后无结果
                 if (!targetItem.HasValue)
                 {
-                    return (false, string.Empty, 0.0, string.Empty, $"未查得该型号在【{brand}】下的价格");
+                    return (false, string.Empty, 0.0, string.Empty, string.Empty, $"未查得该型号在【{brand}】下的价格");
                 }
 
                 // 提取最终匹配条目
@@ -1063,13 +1095,21 @@ namespace ExcelAddInDemo.Services
                     else if (double.TryParse(p.GetString(), out double pv)) finalPrice = pv;
                 }
 
-                // 返回成功结果
-                return (true, matchedName, finalPrice, finalVendor, "查询成功");
+                // 提取商品订货号或物料编码 (天工矩阵核心字段 prodcode，备选兼容 orderNo)
+                string prodCode = chosen.TryGetProperty("prodcode", out var pcode) ? (pcode.GetString() ?? "") : "";
+                if (string.IsNullOrWhiteSpace(prodCode) && chosen.TryGetProperty("orderNo", out var ono))
+                {
+                    // 获取备选订货号
+                    prodCode = ono.GetString() ?? "";
+                }
+
+                // 返回成功结果与订货号
+                return (true, matchedName, finalPrice, finalVendor, prodCode, "查询成功");
             }
             catch (Exception ex)
             {
                 // 捕获异常
-                return (false, string.Empty, 0.0, string.Empty, $"天工矩阵查价异常: {ex.Message}");
+                return (false, string.Empty, 0.0, string.Empty, string.Empty, $"天工矩阵查价异常: {ex.Message}");
             }
         }
 
@@ -1124,7 +1164,7 @@ namespace ExcelAddInDemo.Services
                         if (ct.IsCancellationRequested) return;
 
                         // 根据平台分流调用接口
-                        (bool success, string matchedModel, double price, string vendor, string msg) result;
+                        (bool success, string matchedModel, double price, string vendor, string orderNo, string msg) result;
                         if (config.Platform == OnlinePricePlatform.TitanMatrix)
                         {
                             // 调用天工矩阵查询
@@ -1148,6 +1188,7 @@ namespace ExcelAddInDemo.Services
                             item.MatchedModel = result.matchedModel;
                             item.Price = result.price;
                             item.Vendor = result.vendor;
+                            item.OrderNo = result.orderNo;
                             item.Message = $"查得单价: {result.price:F2}";
                         }
                         else
@@ -1161,13 +1202,15 @@ namespace ExcelAddInDemo.Services
                         // 计算百分比
                         int percent = (int)Math.Round((double)currentDone / totalCount * 100);
 
+                        // 组装订货号附注文字
+                        string orderInfo = !string.IsNullOrWhiteSpace(item.OrderNo) ? $" [{item.OrderNo}]" : "";
                         // 汇报实时进度
                         progress?.Report(new OnlinePriceProgressDto
                         {
                             Current = currentDone,
                             Total = totalCount,
                             Percent = percent,
-                            LogText = $"[{currentDone}/{totalCount}] 行 {item.Row}: {item.SearchModel} -> {(result.success ? $"{item.Price:F2}元" : "未查得")}",
+                            LogText = $"[{currentDone}/{totalCount}] 行 {item.Row}: {item.SearchModel} -> {(result.success ? $"{item.Price:F2}元{orderInfo}" : "未查得")}",
                             Item = item
                         });
                     }

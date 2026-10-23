@@ -44,6 +44,10 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("brandTargetCol")]
         public string BrandTargetCol { get; set; } = "D";
 
+        // 订货号回填目标列名称 (默认 "NONE"，支持自由填写如 "K" 或设为 "NONE" 不回写)
+        [JsonPropertyName("orderNoTargetCol")]
+        public string OrderNoTargetCol { get; set; } = "NONE";
+
         // 最大异步网络并发数 (默认 6，防止被远端平台限流) --硬编码: 并发阈值--
         [JsonPropertyName("maxConcurrency")]
         public int MaxConcurrency { get; set; } = 6;
@@ -85,6 +89,10 @@ namespace ExcelAddInDemo.Models
         // 远端返回的所属品牌或生产厂家
         [JsonPropertyName("vendor")]
         public string Vendor { get; set; } = string.Empty;
+
+        // 远端返回的物料订货号或商品编码
+        [JsonPropertyName("orderNo")]
+        public string OrderNo { get; set; } = string.Empty;
 
         // 当前项查询与匹配状态 (如 "Success", "NotFound", "Error")
         [JsonPropertyName("status")]
