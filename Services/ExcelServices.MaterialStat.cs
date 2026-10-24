@@ -106,10 +106,10 @@ namespace ExcelAddInDemo
                                 {
                                     // F 列对应第 6 列 (箱柜数量)，备选第 5 列 E 列
                                     object qVal = sumMatrix[1, 6] ?? sumMatrix[1, 5];
-                                    // 解析汇总行箱柜数量数值
-                                    if (qVal != null && decimal.TryParse(Convert.ToString(qVal)?.Trim(), out decimal q) && q <= 0)
+                                    // 核心判定：未填写、为null、空白文本、解析失败或数值<=0，均视作无数量跳过
+                                    if (qVal == null || !decimal.TryParse(Convert.ToString(qVal)?.Trim(), out decimal q) || q <= 0)
                                     {
-                                        // 汇总行数量明确为 0 或负数则跳过不计入有效箱柜
+                                        // 汇总行无数量或明确<=0直接跳过不计入有效箱柜
                                         continue;
                                     }
                                 }
@@ -268,8 +268,10 @@ namespace ExcelAddInDemo
                     {
                         var cabAnchor = validCabinets[i].Value;
 
-                        // 提取箱柜台数 (从汇总行 F 列读取)
-                        int cabinetQty = 1;
+                        // 提取箱柜台数 (从汇总行 F 列读取，严格判定有效性)
+                        int cabinetQty = 0;
+                        // 标记该箱柜是否具备有效数量
+                        bool hasValidCabinetQty = false;
                         if (cabAnchor.Sum != null)
                         {
                             int sumRow = Convert.ToInt32(cabAnchor.Sum.Row);
@@ -281,18 +283,20 @@ namespace ExcelAddInDemo
                             {
                                 // F 列对应第 6 列 (箱柜数量)，备选第 5 列 E 列
                                 object qVal = sumMatrix[1, 6] ?? sumMatrix[1, 5];
-                                // 解析汇总行填写的箱柜数量
-                                if (qVal != null && decimal.TryParse(Convert.ToString(qVal)?.Trim(), out decimal q))
+                                // 核心判定：若数量不为空且能解析为正数，方视为有效数量
+                                if (qVal != null && decimal.TryParse(Convert.ToString(qVal)?.Trim(), out decimal q) && q > 0)
                                 {
-                                    // 核心修复：若顶部汇总行箱柜数量明确为 0 或负数，则直接跳过该箱柜，不纳入材料统计
-                                    if (q <= 0)
-                                    {
-                                        continue;
-                                    }
                                     // 赋值有效箱柜台数
                                     cabinetQty = (int)Math.Round(q);
+                                    hasValidCabinetQty = true;
                                 }
                             }
+                        }
+
+                        // 核心规则：若顶部汇总行箱柜数量为 null、空白、解析失败或 <= 0，直接跳过该箱柜，不纳入材料统计
+                        if (!hasValidCabinetQty || cabinetQty <= 0)
+                        {
+                            continue;
                         }
 
                         // 提取箱柜内部元器件明细 (起点 detRow+2，终点 subsumRow-1，规则 6)

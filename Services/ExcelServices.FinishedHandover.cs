@@ -92,9 +92,29 @@ namespace ExcelAddInDemo
                     // 规则 8: 校验前确保规则 6 拓扑健康
                     Tool.FixAndFillCabinetNamesForSheet(sheet);
 
-                    // 提取当前分类表下有效箱柜数量
+                    // 提取当前分类表下有效箱柜列表
                     var validCabinets = Tool.GetSheetValidCabinets(sheet, activeWb);
-                    int cabCount = validCabinets != null ? validCabinets.Count : 0;
+                    // 仅统计汇总行具有有效数量 (> 0) 的箱柜
+                    int cabCount = 0;
+                    if (validCabinets != null && validCabinets.Count > 0)
+                    {
+                        // 遍历各个箱柜检测汇总行数量
+                        foreach (var kvp in validCabinets)
+                        {
+                            // 检查是否存在汇总行锚点
+                            if (kvp.Value.Sum != null)
+                            {
+                                int sRow = Convert.ToInt32(kvp.Value.Sum.Row);
+                                // 读取汇总行 F 列 (第 6 列) 数量
+                                object? qVal = sheet.Cells[sRow, 6].Value2;
+                                if (qVal != null && decimal.TryParse(Convert.ToString(qVal)?.Trim(), out decimal q) && q > 0)
+                                {
+                                    // 仅当数量存在且大于 0 时计入
+                                    cabCount++;
+                                }
+                            }
+                        }
+                    }
 
                     // 若该分类下存在箱柜，添加至返回列表中
                     if (cabCount > 0)
@@ -318,18 +338,16 @@ namespace ExcelAddInDemo
 
                                 // F 列为数量 (第 6 列)
                                 object fObj = sumMatrix[1, 6];
-                                // 解析汇总行箱柜数量
-                                if (fObj != null && decimal.TryParse(fObj.ToString()?.Trim(), out decimal parsedQty))
+                                // 解析汇总行箱柜数量 (核心修复：未填、null、空白或<=0均标记跳过)
+                                if (fObj != null && decimal.TryParse(fObj.ToString()?.Trim(), out decimal parsedQty) && parsedQty > 0)
                                 {
-                                    // 核心修复：若数量明确为 0 或负数则标记跳过
-                                    if (parsedQty <= 0)
-                                    {
-                                        skipHandoverCab = true;
-                                    }
-                                    else
-                                    {
-                                        cabQty = parsedQty;
-                                    }
+                                    // 赋值有效箱柜台数
+                                    cabQty = parsedQty;
+                                }
+                                else
+                                {
+                                    // 数量为空、null或<=0均跳过不纳入成品交接单
+                                    skipHandoverCab = true;
                                 }
 
                                 // I 列为备注 (第 9 列)

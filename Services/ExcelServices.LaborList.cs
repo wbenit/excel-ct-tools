@@ -82,9 +82,29 @@ namespace ExcelAddInDemo
                     // 规则 8: 校验前确保规则 6 拓扑健康
                     Tool.FixAndFillCabinetNamesForSheet(sheet);
 
-                    // 提取当前分类表下有效箱柜数量
+                    // 提取当前分类表下有效箱柜列表
                     var validCabinets = Tool.GetSheetValidCabinets(sheet, activeWb);
-                    int cabCount = validCabinets != null ? validCabinets.Count : 0;
+                    // 仅统计汇总行具有有效数量 (> 0) 的箱柜
+                    int cabCount = 0;
+                    if (validCabinets != null && validCabinets.Count > 0)
+                    {
+                        // 遍历各个箱柜检测汇总行数量
+                        foreach (var kvp in validCabinets)
+                        {
+                            // 检查是否存在汇总行锚点
+                            if (kvp.Value.Sum != null)
+                            {
+                                int sRow = Convert.ToInt32(kvp.Value.Sum.Row);
+                                // 读取汇总行 F 列 (第 6 列) 数量
+                                object? qVal = sheet.Cells[sRow, 6].Value2;
+                                if (qVal != null && decimal.TryParse(Convert.ToString(qVal)?.Trim(), out decimal q) && q > 0)
+                                {
+                                    // 仅当数量存在且大于 0 时计入
+                                    cabCount++;
+                                }
+                            }
+                        }
+                    }
 
                     // 若该分类下存在箱柜，添加至返回列表中
                     if (cabCount > 0)
@@ -205,18 +225,35 @@ namespace ExcelAddInDemo
                     return result;
                 }
 
-                // 3. 提取项目名称 (优先从【项目信息】表 B5 单元格提取)
+                // 3. 提取项目名称与公司名称 (优先从【项目信息】表提取)
                 string projectName = Path.GetFileNameWithoutExtension(Convert.ToString(activeWb.Name) ?? "");
+                // 声明公司名称变量 --硬编码: 默认公司名称为空--
+                string companyName = string.Empty;
                 foreach (dynamic ws in activeWb.Worksheets)
                 {
+                    // 比对工作表名称是否为【项目信息】
                     if (string.Equals(Convert.ToString(ws.Name)?.Trim(), "项目信息", StringComparison.OrdinalIgnoreCase))
                     {
                         try
                         {
-                            string pName = Convert.ToString(ws.Range["B5"].Value2)?.Trim() ?? "";
+                            // 规则 7: 一次性读取 A1:C30 区域至内存二维数组
+                            dynamic infoRange = ws.Range["A1:C30"];
+                            object[,] infoMatrix = (object[,])infoRange.Value2;
+
+                            // 提取项目名称 (优先 Cell B5)
+                            string pName = Convert.ToString(infoMatrix[5, 2])?.Trim() ?? "";
                             if (!string.IsNullOrWhiteSpace(pName)) projectName = pName;
+
+                            // 提取公司名称 (优先 Cell B22 供货单位，次选 Cell B1 公司名称)
+                            string comp = Convert.ToString(infoMatrix[22, 2])?.Trim() ?? "";
+                            if (string.IsNullOrWhiteSpace(comp)) comp = Convert.ToString(infoMatrix[1, 2])?.Trim() ?? "";
+                            companyName = comp;
                         }
-                        catch { }
+                        catch (Exception exInfo)
+                        {
+                            // 记录提取项目信息微小异常但继续流程
+                            LogHelper.WriteLog($"[人工清单] 读取项目信息容错: {exInfo.Message}");
+                        }
                         break;
                     }
                 }
@@ -300,18 +337,16 @@ namespace ExcelAddInDemo
                                     cabModel = dVal;
                                 }
 
-                                // 解析汇总行箱柜数量
-                                if (fObj != null && decimal.TryParse(fObj.ToString()?.Trim(), out decimal parsedQty))
+                                // 解析汇总行箱柜数量 (核心修复：未填、null、空白或<=0均标记跳过)
+                                if (fObj != null && decimal.TryParse(fObj.ToString()?.Trim(), out decimal parsedQty) && parsedQty > 0)
                                 {
-                                    // 核心修复：若数量明确为 0 或负数则标记跳过
-                                    if (parsedQty <= 0)
-                                    {
-                                        skipLaborCab = true;
-                                    }
-                                    else
-                                    {
-                                        cabQty = parsedQty;
-                                    }
+                                    // 赋值有效箱柜台数
+                                    cabQty = parsedQty;
+                                }
+                                else
+                                {
+                                    // 数量为空、null或<=0均跳过不纳入人工清单
+                                    skipLaborCab = true;
                                 }
                             }
                             catch (Exception exSum)
@@ -390,12 +425,13 @@ namespace ExcelAddInDemo
                             }
                         }
 
-                        // 6. 计算单台人工费 (选项 A: 直接取明细原值，若为成套总费用则除以台数)
+                        // 6. 计算单台人工单价 (核心修复：成套分类明细计费区本身就是单台人工费，不除以箱柜数量)
                         decimal unitLaborPrice = 0;
+                        // 若提取到有效人工费，直接取原值 (四舍五入对齐整元)
                         if (totalLaborAmount > 0)
                         {
-                            // 单台人工单价 = 总人工费 / 台数，四舍五入取整对齐工程实际
-                            unitLaborPrice = cabQty > 0 ? Math.Round(totalLaborAmount / cabQty, 0) : totalLaborAmount;
+                            // 严格保留单台单价原值，不除以 cabQty 数量
+                            unitLaborPrice = Math.Round(totalLaborAmount, 0);
                         }
 
                         // 组装箱柜人工清单项
@@ -533,22 +569,55 @@ namespace ExcelAddInDemo
                         LogHelper.WriteLog($"[人工清单] 模板列动态解析容错: {exMap.Message}");
                     }
 
-                    // 11. 替换表头项目名称占位符 (A5 单元格)
+                    // 11. 替换表头项目名称与第一/二行[公司名称]占位符
                     try
                     {
-                        string a5Val = Convert.ToString(laborSheet.Range["A5"].Value2) ?? "";
-                        if (a5Val.Contains("[[项目名称]]"))
+                        // 规则 7: 一次性读取表头 A1:E5 区域文本至内存二维数组
+                        dynamic headerRange = laborSheet.Range["A1:E5"];
+                        object[,] headerMatrix = (object[,])headerRange.Value2;
+                        bool headerChanged = false;
+
+                        // 遍历表头 5 行 5 列检索并替换占位符
+                        for (int r = 1; r <= 5; r++)
                         {
-                            laborSheet.Range["A5"].Value2 = a5Val.Replace("[[项目名称]]", projectName);
+                            // 遍历各列单元格
+                            for (int c = 1; c <= 5; c++)
+                            {
+                                // 获取单元格文本内容
+                                string cellText = Convert.ToString(headerMatrix[r, c]) ?? "";
+                                if (string.IsNullOrWhiteSpace(cellText)) continue;
+
+                                // 检查并替换公司名称占位符 (支持 [公司名称] 与 [[公司名称]])
+                                if (!string.IsNullOrWhiteSpace(companyName) && (cellText.Contains("[公司名称]") || cellText.Contains("[[公司名称]]")))
+                                {
+                                    // 执行公司名称占位符文本替换
+                                    cellText = cellText.Replace("[[公司名称]]", companyName).Replace("[公司名称]", companyName);
+                                    headerMatrix[r, c] = cellText;
+                                    headerChanged = true;
+                                }
+
+                                // 检查并替换项目名称占位符 (支持 [项目名称] 与 [[项目名称]])
+                                if (!string.IsNullOrWhiteSpace(projectName) && (cellText.Contains("[项目名称]") || cellText.Contains("[[项目名称]]")))
+                                {
+                                    // 执行项目名称占位符文本替换
+                                    cellText = cellText.Replace("[[项目名称]]", projectName).Replace("[项目名称]", projectName);
+                                    headerMatrix[r, c] = cellText;
+                                    headerChanged = true;
+                                }
+                            }
                         }
-                        else if (a5Val.Contains("[项目名称]"))
+
+                        // 若表头占位符发生替换变动，批量一次性回写 (规则 7)
+                        if (headerChanged)
                         {
-                            laborSheet.Range["A5"].Value2 = a5Val.Replace("[项目名称]", projectName);
+                            // 批量回写更新后的表头文字
+                            headerRange.Value2 = headerMatrix;
                         }
                     }
-                    catch (Exception exA5)
+                    catch (Exception exHeader)
                     {
-                        LogHelper.WriteLog($"[人工清单] 替换项目名称容错: {exA5.Message}");
+                        // 记录表头占位符替换微小容错
+                        LogHelper.WriteLog($"[人工清单] 替换表头信息容错: {exHeader.Message}");
                     }
 
                     // 12. 自适应排版扩展 (模板预留 6 行: 7~12 行)

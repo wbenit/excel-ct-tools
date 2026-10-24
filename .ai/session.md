@@ -1,3 +1,49 @@
+﻿- **【核心落实与闭环：坚决落实规则 9，分类明细顶部 A 列缺少序号直接返回错误并前端告警提示修复】(Services/ExcelServices.DistributedAdjustPrice.cs, publish/)**：
+  1. **用户核心指令与原则对齐**：
+     - 用户指令反馈：“@[e:\Ace\excel-ct-tools\Services\ExcelServices.DistributedAdjustPrice.cs:L1532-L1535] 修改为前端告警，提示修复”；
+     - 严格践行规则 9（“不需要考虑兼容的情况，如果不符合要求，直接报错提醒，不需要做自以为的防御代码”）：
+       - ① **回写端**：彻底移除 cabSeqInSheet <= 0 时的保底猜测（cabEntry.Key 与 currentCabIndex），若分类表顶部汇总行 A 列无有效数字序号，立即设置 esult.Success = false，返回详尽的中文报错信息（指出具体的分类工作表名与箱柜名称），并在前端弹窗/告警拦截提示用户补齐 A 列序号；
+       - ② **字典查找纯粹化**：完全废除多余的模糊兜底，严格按唯一键 $"所属分类|柜序号|柜号" 单向精准匹配；
+       - ③ **生成端同步对齐**：若在生成材料分布表时探测到分类表顶部汇总行 A 列缺少有效数字序号，坚决不盲目赋保底值，直接弹窗警告并终止生成，从源头上杜绝隐患；
+     - 严格遵循每 3 行新增代码至少 1 行中文注释规范与最小变动法则。
+  2. **构建验证与产物同步**：
+     - 执行 dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false 完整编译：**0 错误**；
+     - 最新程序集 ExcelAddInDemo.dll (3,402,240 bytes) 与 ExcelAddInDemo.pdb 已全量覆盖同步至 publish/ 交付目录。
+
+- **【核心修复与闭环：材料统计/人工清单/成品交接单对顶部汇总行数量清空(null/空白/<=0)统一视作无数量并直接跳过】(`Services/ExcelServices.MaterialStat.cs`, `Services/ExcelServices.LaborList.cs`, `Services/ExcelServices.FinishedHandover.cs`, `publish/`)**：
+  1. **问题确诊与需求对齐**：
+     - 用户提问确诊：“材料统计的时候，如果用户把分类明细中顶部汇总行的数量清除，为null了，统计材料的时候是算的1吗”；
+     - 现象根因确诊：原代码默认赋值 `int cabinetQty = 1`，当 F 列清空为 null 或空字符串时，`decimal.TryParse` 失败未能触发 `q <= 0` 跳过分支，导致该箱柜被按默认 1 台将内部元器件明细错误纳入采购清单，且向导统计也误将其视作有效箱柜；
+     - 全链路对齐落地：
+       - ① **材料统计 (`Services/ExcelServices.MaterialStat.cs`)**：
+         - 向导统计 `GetMaterialStatInitData`：数量为 null、空白、解析失败或 <= 0 时直接跳过，不计入有效箱柜；
+         - 核心导出 `ExportMaterialStatToCurrentWorkbook`：若数量为 null、空白或 <= 0，直接 `continue` 跳过该箱柜，绝不按 1 台计入材料；
+       - ② **人工清单 (`Services/ExcelServices.LaborList.cs`)**：
+         - 导出时若数量未填、为 null、空白或 <= 0，统一设置 `skipLaborCab = true` 跳过；向导端同步过滤；
+       - ③ **成品交接单 (`Services/ExcelServices.FinishedHandover.cs`)**：
+         - 导出时若数量未填、为 null、空白或 <= 0，统一设置 `skipHandoverCab = true` 跳过；向导端同步过滤；
+     - 严格遵循每 3 行新增代码至少 1 行中文注释规范。
+  2. **构建验证与产物同步**：
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整编译：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 已全量覆盖同步至 `publish/` 目录。
+
+- **【核心修复与落地：材料统计下拉菜单图标补齐、人工清单公司名称占位符替换及人工单价取消除以数量】(`RibbonController.cs`, `Services/ExcelServices.LaborList.cs`, `publish/`)**：
+  1. **用户核心指令与三项任务确诊闭环**：
+     - ① **菜单图标补全 (`RibbonController.cs`)**：
+       - 将 `btnLaborListSub`（人工清单）的 `imageMso` 从无效名称 `TaskCreate` 更新为 Office 官方标准 `GroupTeamTasks`（团队任务/人工工时矢量图标）；
+       - 将 `btnFinishedHandoverSub`（成品交接单）的 `imageMso` 从无效名称 `FileDeliver` 更新为 Office 官方标准 `FileSendMenu`（成品交付签收矢量图标）；
+       - 彻底解决下拉菜单中人工清单和成品交接单左侧空白缺失图标的问题；
+     - ② **模板表头公司名称占位符替换 (`Services/ExcelServices.LaborList.cs`)**：
+       - 提取端：遵循规则 7，从【项目信息】工作表一次性读取 A1:C30 二维数组，优先提取 B22 供货单位，次选 B1 公司名称至 `companyName`；
+       - 回写端：遵循规则 7，克隆【人工清单】母版后一次性读取 A1:E5 表头文本矩阵，双向覆盖扫描替换 `[公司名称]` 与 `[[公司名称]]` 以及 `[项目名称]` 与 `[[项目名称]]`，批量回写，100% 解决母版第一/二行公司名称未替换问题；
+     - ③ **人工单价取消除以数量 (`Services/ExcelServices.LaborList.cs`)**：
+       - 彻底移除 `Math.Round(totalLaborAmount / cabQty, 0)` 除法计算，单台人工单价直接取计费区原值 `unitLaborPrice = Math.Round(totalLaborAmount, 0)`；
+       - 人工清单 F 列写入真实单台人工单价，D 列为数量台数，G 列公式保持 `=F*D`，计算出的总价与单价完全对齐工程实际；
+     - 严格遵循每 3 行新增代码至少 1 行中文注释与最小变动法则。
+  2. **构建验证与产物同步**：
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 已全量覆盖同步至 `publish/` 目录。
+
 - **【核心新增与闭环：小计行求和终点严格为小计前一行（修复少计2行）+ 计费区同列公式平移保留全链路闭环】(`Services/ExcelServices.TenderReport.cs`, `Models/TenderReportModels.cs`, `publish/`)**：
   1. **问题确诊与两项核心要求对齐**：
      - ① **小计行公式少计 2 行 Bug 修复**：
@@ -7071,3 +7117,27 @@
 3. **编译构建与交付**：
    - 执行 dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none 编译通过（0 错误）；
    - 将最新生成的 ExcelAddInDemo.dll 成功同步覆盖至 publish/ 交付目录。
+
+---
+
+## [2026-10-24 08:50:00] 修复常规样式投标报表导出中分项表与汇总表箱柜映射错位问题
+
+### [Problem & Root Cause]
+1. **现象**：
+   - 用户使用“常规样式投标报表导出 (标书报表)”生成的报表中，屏柜分项表和屏柜汇总表不对应，分项表的第 1 个箱柜对应到了汇总表的第 2 个箱柜。
+2. **根因剖析**：
+   - 在 `Services/ExcelServices.TenderReport.cs` 的 `PopulateSingleDetailSheet` 循环中，生成第 1 个箱柜信息栏（Row 11 模板）后，原代码过早执行了 `globalCabIndex++;`（第 1702 行）。
+   - 此时当前箱柜尚未生成完毕（后续紧随元件表头栏、元器件明细行、费用项明细行、箱柜总计栏），到第 1971 行记录该箱柜的单台单价单元格引用 `cabPriceRefMap[globalCabIndex] = ...` 时，`globalCabIndex` 已经变成了 2。
+   - 导致第 1 个箱柜的单价单元格被登记在 key=2 上，第 2 个箱柜登记在 key=3 上；
+   - 随后 `LinkSummaryCabinetPricesToDetail` 遍历汇总表箱柜（`cabSumRowMap`，key=1, 2, ...）回填跨表单价公式时，汇总表第 1 个箱柜未找到 key=1，而汇总表第 2 个箱柜从 key=2 中取出了分项表第 1 个箱柜的单台合计单元格（如 `='屏柜分项表'!G35`），导致错位。
+
+### [Completed]
+1. **时机校准与最小改动修复 (`Services/ExcelServices.TenderReport.cs`)**：
+   - 移除箱柜信息行下方的提前自增操作，改为仅向下移动行游标 `currentRow++`；
+   - 保证当前箱柜的 `globalCabIndex` 贯穿其信息栏、明细行、总计栏及单价引用字典记录；
+   - 将 `globalCabIndex++;` 移至该箱柜块全部生成完毕的最末尾执行；
+   - 严格遵循注释规范：新增每 3 行包含一行中文注释。
+2. **构建验证与物理产物同步**：
+   - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
+   - 将生成的 `ExcelAddInDemo.dll` 成功同步覆盖至 `publish/` 交付目录。
+

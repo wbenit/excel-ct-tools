@@ -272,10 +272,10 @@ namespace ExcelAddInDemo
             <button id='btnMaterialStatSub' label='材料统计' imageMso='ChartInsert' onAction='OnMenuAction' />
             <!-- 领料清单项 (基于采购清单生成成套设备装配领料单) -->
             <button id='btnPickListSub' label='领料清单' imageMso='CreateForm' onAction='OnMenuAction' screentip='导出装配领料单' supertip='直接基于现有【采购清单】及其 J 列库存标记，快速生成成套设备装配领料单' />
-            <!-- 人工清单项 (基于各分类表明细生成成套设备装配人工清单) -->
-            <button id='btnLaborListSub' label='人工清单' imageMso='TaskCreate' onAction='OnMenuAction' screentip='导出装配人工清单' supertip='基于各分类表明细中箱柜台套与人工费，一键导出成套设备制作与装配人工清单' />
-            <!-- 成品交接单项 (基于各分类表明细中箱柜台套、型号、主进线电流及防护等级生成成品交接单) -->
-            <button id='btnFinishedHandoverSub' label='成品交接单' imageMso='FileDeliver' onAction='OnMenuAction' screentip='生成成品交接单' supertip='基于各分类表明细中的箱柜台套、型号、主进线开关整定电流及防护等级，一键生成成品出厂交接单' />
+            <!-- 人工清单项 (基于各分类表明细生成成套设备装配人工清单，使用标准团队任务/人工图标) -->
+            <button id='btnLaborListSub' label='人工清单' imageMso='GroupTeamTasks' onAction='OnMenuAction' screentip='导出装配人工清单' supertip='基于各分类表明细中箱柜台套与人工费，一键导出成套设备制作与装配人工清单' />
+            <!-- 成品交接单项 (基于各分类表明细中箱柜台套、型号、主进线电流及防护等级生成成品交接单，使用标准交付图标) -->
+            <button id='btnFinishedHandoverSub' label='成品交接单' imageMso='FileSendMenu' onAction='OnMenuAction' screentip='生成成品交接单' supertip='基于各分类表明细中的箱柜台套、型号、主进线开关整定电流及防护等级，一键生成成品出厂交接单' />
           </menu>
         </group>
         <!-- 辅助项 功能分组 -->

@@ -1699,7 +1699,8 @@ namespace ExcelAddInDemo
                                 catch { }
                             }
 
-                            globalCabIndex++;
+                            // 仅向下移动行游标至表头栏，绝不可在此处提前递增 globalCabIndex
+                            // 必须保持当前箱柜全局序号贯穿其所有明细与总计栏，防止单价映射错位
                             currentRow++;
 
                             // ② 克隆元件表头栏 (灰底)
@@ -1987,6 +1988,10 @@ namespace ExcelAddInDemo
 
                             // 箱柜块之间空一行保持美观间距
                             currentRow++;
+
+                            // 当前箱柜整块数据（信息栏、表头栏、元器件、费用项及总计行）全部生成完毕后
+                            // 递增全局箱柜计数器，保证汇总表与分项表箱柜单价及序号 1:1 严格对齐
+                            globalCabIndex++;
                         }
                     }
                 }

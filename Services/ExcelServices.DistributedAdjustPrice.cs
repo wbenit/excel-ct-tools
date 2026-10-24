@@ -335,6 +335,9 @@ namespace ExcelAddInDemo
             // 备注
             public string Remark { get; set; } = string.Empty;
 
+            // 箱柜在横向分布表中的柜序号 (对应第 1 行: 1, 2, 3...)
+            public int Seq { get; set; } = 1;
+
             // 明细起始行 (规则 6: detRow + 2)
             public int CompStartRow { get; set; }
 
@@ -553,12 +556,20 @@ namespace ExcelAddInDemo
                         decimal cabUnitPrice = 0;
                         decimal cabTotalPrice = 0;
                         string cabRemark = "";
+                        // 分类明细顶部汇总行 A 列真实箱柜序号 (如 1, 2, 3...)
+                        int cabSeqInSheet = 0;
 
                         if (anchor.Sum != null)
                         {
                             int sumRow = Convert.ToInt32(anchor.Sum.Row);
                             // 一次性读取汇总行 A:H 区域数据 (覆盖柜号B、名称C、型号D、单位E、数量F、单价G、总价H，规则 7)
                             object[,] sumMatrix = (object[,])sheet.Range[$"A{sumRow}:H{sumRow}"].Value2;
+                            // 提取 A 列 (第 1 列) 真实箱柜序号
+                            object seqObj = sumMatrix[1, 1];
+                            if (seqObj != null && int.TryParse(Convert.ToString(seqObj)?.Trim(), out int parsedSeq) && parsedSeq > 0)
+                            {
+                                cabSeqInSheet = parsedSeq;
+                            }
                             cabNo = Convert.ToString(sumMatrix[1, 2])?.Trim() ?? "";
                             cabName = Convert.ToString(sumMatrix[1, 3])?.Trim() ?? "";
                             cabModel = Convert.ToString(sumMatrix[1, 4])?.Trim() ?? "";
@@ -599,10 +610,24 @@ namespace ExcelAddInDemo
                             cabName = cabNo;
                         }
 
+                        // 规则 9: 不需要考虑兼容的情况，若分类表顶部汇总行 A 列缺少有效数字序号，坚决不做盲目兜底，直接弹窗告警提示用户修复
+                        if (cabSeqInSheet <= 0)
+                        {
+                            // 弹出警告提示对话框
+                            System.Windows.Forms.MessageBox.Show(
+                                $"分类工作表【{sheetName}】中的箱柜【{cabNo}】顶部汇总行 A 列缺少有效数字序号，请在分类表中补齐 A 列序号后再生成分布表！",
+                                "错误提示",
+                                System.Windows.Forms.MessageBoxButtons.OK,
+                                System.Windows.Forms.MessageBoxIcon.Warning);
+                            return false;
+                        }
+
                         // 封装箱柜列信息实体
                         var cabInfo = new CabinetColumnInfo
                         {
                             Index = globalCabIndex,
+                            // 柜序号严格绑定分类明细表顶部汇总行 A 列真实序号 (如 1, 2...)
+                            Seq = cabSeqInSheet,
                             SheetName = sheetName,
                             CabinetNo = cabNo,
                             CabinetName = cabName,
@@ -850,8 +875,8 @@ namespace ExcelAddInDemo
                 object[,] cabHeaderMatrix = new object[7, totalCabCols];
                 for (int j = 0; j < totalCabCols; j++)
                 {
-                    // 行 1: 柜序号 (1, 2, 3...)
-                    cabHeaderMatrix[0, j] = j + 1;
+                    // 行 1: 柜序号 (严格取自各分类明细表顶部汇总行 A 列真实序号，确保 100% 一致)
+                    cabHeaderMatrix[0, j] = cabinetList[j].Seq;
                     // 行 2: 所属分类工作表名称
                     cabHeaderMatrix[1, j] = cabinetList[j].SheetName;
                     // 行 3: 箱柜名称 (进线柜、联络柜等)
@@ -1198,6 +1223,7 @@ namespace ExcelAddInDemo
                 }
 
                 // 动态推导各行物理行号 (新版标准: rowCompHeader = 8)
+                int rowCabSeq = Math.Max(1, rowCompHeader - 7);     // 柜序号行 (第 1 行)
                 int rowCabSheet = Math.Max(1, rowCompHeader - 6);   // 所属分类行 (第 2 行)
                 int rowCabNo = Math.Max(1, rowCompHeader - 3);      // 箱柜柜号行 (第 5 行)
                 int rowCabQty = Math.Max(1, rowCompHeader - 1);     // 箱柜数量行 (第 7 行)
@@ -1232,21 +1258,26 @@ namespace ExcelAddInDemo
                 {
                     string startCabColLetter = GetExcelColumnLetter(fixedColCount + 1);
                     string endCabColLetter = GetExcelColumnLetter(totalUsedCols);
-                    // 批量读取箱柜表头: 所属分类、箱柜数量、柜号等 (规则 7)
+                    // 批量读取箱柜表头: 柜序号(行1)、所属分类(行2)、箱柜数量(行7)、柜号(行5)等 (规则 7)
                     object[,] headerMatrix = (object[,])distrSheet.Range[$"{startCabColLetter}1:{endCabColLetter}{rowCabQty}"].Value2;
+
                     for (int c = 1; c <= totalCabCols; c++)
                     {
-                        // 提取所属分类 (行 2)
+                        // 提取第 1 行柜序号 (如 1, 2, 3...)
+                        int seq = c;
+                        int.TryParse(Convert.ToString(headerMatrix[rowCabSeq, c]), out seq);
+                        // 提取第 2 行所属分类 (如 20)
                         string sName = Convert.ToString(headerMatrix[rowCabSheet, c])?.Trim() ?? "";
-                        // 提取箱柜柜号 (行 5)
+                        // 提取第 5 行箱柜柜号 (如 AL21)
                         string cNo = Convert.ToString(headerMatrix[rowCabNo, c])?.Trim() ?? "";
-                        // 提取箱柜台数 (行 7)
+                        // 提取第 7 行箱柜台数
                         int q = 1;
                         int.TryParse(Convert.ToString(headerMatrix[rowCabQty, c]), out q);
 
                         cabColumns.Add(new CabinetColumnInfo
                         {
                             Index = c - 1,
+                            Seq = seq,
                             SheetName = sName,
                             Quantity = q > 0 ? q : 1,
                             CabinetNo = cNo
@@ -1269,7 +1300,7 @@ namespace ExcelAddInDemo
 
                 // 通用单价与规格规则列表 (用于全局兜底匹配)
                 var globalPriceRules = new List<AggregatedComponentRow>();
-                // 按 "SheetName|CabinetNo" 归集每个箱柜的具体元器件清单 (含最新单价与修改后的单台数量)
+                // 按用户建议采用极简标准单一字典映射键: $"所属分类|柜序号|柜号" (如 "20|1|AL21")
                 var cabSpecificComponentsMap = new Dictionary<string, List<CabinetUpdateComponentItem>>(StringComparer.OrdinalIgnoreCase);
 
                 for (int r = 1; r <= totalCompRows; r++)
@@ -1315,39 +1346,55 @@ namespace ExcelAddInDemo
                         Remark = remark
                     });
 
-                    // 遍历横向箱柜列，提取该器件在各箱柜的单台数量
+                    // 遍历横向箱柜列，提取该器件在各箱柜的单台数量并归集至 $"所属分类|柜序号|柜号" 字典中
                     for (int c = 0; c < cabColumns.Count; c++)
                     {
+                        // 获取当前横向箱柜列信息
                         var colInfo = cabColumns[c];
-                        string key = $"{colInfo.SheetName}|{colInfo.CabinetNo}";
+                        // 组装极简单一字典键: $"所属分类|柜序号|柜号" (如 "20|1|AL21")
+                        string key = $"{colInfo.SheetName}|{colInfo.Seq}|{colInfo.CabinetNo}";
                         if (!cabSpecificComponentsMap.TryGetValue(key, out var compList))
                         {
                             compList = new List<CabinetUpdateComponentItem>();
                             cabSpecificComponentsMap[key] = compList;
                         }
 
+                        // 从二维大矩阵中提取该元器件在当前箱柜列填写的数量值
                         object qObj = distrMatrix[r, fixedColCount + 1 + c];
                         decimal parsedQty = 0;
                         bool hasQty = false;
+                        // 判断单元格是否填写了非空有效内容
                         if (qObj != null && !string.IsNullOrWhiteSpace(Convert.ToString(qObj)))
                         {
+                            // 解析填写的单台数量数值
                             if (decimal.TryParse(Convert.ToString(qObj), out parsedQty))
                             {
                                 hasQty = true;
                             }
                         }
 
+                        // 将解析出的用量与调价属性存入字典列表中
                         compList.Add(new CabinetUpdateComponentItem
                         {
+                            // 器件名称
                             Name = name,
+                            // 规格型号
                             Model = model,
+                            // 计量单位
                             Unit = string.IsNullOrWhiteSpace(unit) ? "个" : unit,
+                            // 生产厂家
                             Manufacturer = mfg,
+                            // 报出单价
                             UnitPrice = unitPrice,
+                            // 表价
                             ListPrice = listPrice,
+                            // 折扣
                             Discount = discount,
+                            // 单台数量
                             Quantity = parsedQty,
-                            HasQuantitySpecified = hasQty, // 若单元格为空则为 false，为 0 则为 true 且值为 0
+                            // 是否明确填写了数量 (未填写为空删除，填0保留)
+                            HasQuantitySpecified = hasQty,
+                            // 排序权重 ID
                             SortId = sortId
                         });
                     }
@@ -1392,24 +1439,26 @@ namespace ExcelAddInDemo
                 app.DisplayAlerts = false;
 
                 // 从分布表箱柜列中提取涉及的有效目标分类工作表名称集合
-                var targetSheetNames = cabColumns
+                // 按分布表横向箱柜列分类表出现的次序收集目标分类表，确保从左到右严格一致
+                var orderedSheetNames = cabColumns
                     .Select(c => c.SheetName)
                     .Where(s => !string.IsNullOrWhiteSpace(s))
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
 
                 // 收集工作簿中实际存在的有效目标工作表列表，跳过所有无关表
                 var validTargetSheets = new List<dynamic>();
-                // 遍历当前工作簿的所有表以定位目标表
-                foreach (dynamic ws in activeWb.Worksheets)
+                foreach (string sName in orderedSheetNames)
                 {
-                    // 提取工作表名称
-                    string wsName = Convert.ToString(ws.Name)?.Trim() ?? "";
-                    // 仅收录属于目标分类且非辅助表的工作表
-                    if (targetSheetNames.Contains(wsName) &&
-                        !string.Equals(wsName, DistributionSheetName, StringComparison.OrdinalIgnoreCase))
+                    try
                     {
-                        validTargetSheets.Add(ws);
+                        dynamic ws = activeWb.Worksheets[sName];
+                        if (ws != null && !string.Equals(sName, DistributionSheetName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            validTargetSheets.Add(ws);
+                        }
                     }
+                    catch { }
                 }
 
                 // 预先统计总箱柜数以计算平滑进度
@@ -1450,11 +1499,14 @@ namespace ExcelAddInDemo
 
                     bool sheetModified = false;
 
-                    // 遍历工作表下的每个箱柜
+                    // 遍历工作表下的每个箱柜 (按从上到下明细物理顺序)
                     foreach (var cabEntry in validCabinets)
                     {
+                        // 递增全局柜序号计数器 (1, 2, 3... 对应分布表第 1 行柜序号)
                         currentCabIndex++;
+                        // 提取箱柜锚点数据
                         var anchor = cabEntry.Value;
+                        // 校验明细行与小计行有效性
                         if (anchor.Det == null || anchor.Subsum == null) continue;
 
                         int detRow = Convert.ToInt32(anchor.Det.Row);
@@ -1466,18 +1518,38 @@ namespace ExcelAddInDemo
 
                         if (compEndRow < compStartRow) continue;
 
-                        // 提取箱柜柜号
+                        // 提取箱柜柜号与顶部汇总行 A 列真实序号
                         string cabNo = "";
+                        // 分类明细顶部汇总行 A 列真实序号
+                        int cabSeqInSheet = 0;
+
                         if (anchor.Sum != null)
                         {
-                            // 汇总行存在时从汇总行提取柜号 (B列)
+                            // 汇总行存在时从汇总行提取柜号 (B列) 与 A 列序号 (规则 7)
                             int sumRow = Convert.ToInt32(anchor.Sum.Row);
+                            object aVal = sheet.Cells[sumRow, 1].Value;
+                            if (aVal != null && int.TryParse(Convert.ToString(aVal)?.Trim(), out int parsedSeq) && parsedSeq > 0)
+                            {
+                                cabSeqInSheet = parsedSeq;
+                            }
                             cabNo = Convert.ToString(sheet.Cells[sumRow, 2].Value)?.Trim() ?? "";
                         }
                         if (string.IsNullOrWhiteSpace(cabNo))
                         {
                             // 汇总行无柜号时从明细行提取
                             cabNo = Convert.ToString(sheet.Cells[detRow, 2].Value)?.Trim() ?? "";
+                        }
+
+                        // 规则 9: 不需要考虑兼容的情况，若分类表顶部汇总行 A 列缺少有效数字序号，坚决不做盲目兜底，直接返回错误提示前端告警
+                        if (cabSeqInSheet <= 0)
+                        {
+                            // 格式化当前箱柜名称标签
+                            string cabDisplay = string.IsNullOrWhiteSpace(cabNo) ? $"第 {currentCabIndex} 柜" : cabNo;
+                            // 标记执行失败
+                            result.Success = false;
+                            // 组装具体告警提示信息，明确指出工作表与箱柜位置，提示用户到分类表中补齐 A 列序号
+                            result.Message = $"【分布调价同步失败】分类工作表【{sheetName}】中的箱柜【{cabDisplay}】顶部汇总行 A 列缺少有效数字序号，请在分类表中补齐 A 列序号后重试！";
+                            return result;
                         }
 
                         // 计算当前箱柜进度百分比 (10% ~ 90%)
@@ -1487,8 +1559,8 @@ namespace ExcelAddInDemo
                         // 触发进度回调通知前端当前正在更新的工作表与箱柜号
                         progressCallback?.Invoke(cabProgress, $"正在更新: [{sheetName}] - {cabNo} ({currentCabIndex}/{totalCabCountAcrossSheets})...");
 
-                        // 查找该箱柜在分布表中的具体配置项列表
-                        string cabKey = $"{sheetName}|{cabNo}";
+                        // 采用极简标准单一字典映射键: $"所属分类|柜序号|柜号" (如 "20|1|AL21")，其中柜序号直接对应顶部汇总 A 列序号
+                        string cabKey = $"{sheetName}|{cabSeqInSheet}|{cabNo}";
                         cabSpecificComponentsMap.TryGetValue(cabKey, out var expectedCompItems);
 
                         // 重置该箱柜所有分布项的消费认领状态，确保状态纯净
