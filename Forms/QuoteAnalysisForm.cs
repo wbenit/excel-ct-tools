@@ -39,6 +39,9 @@ namespace ExcelAddInDemo.Forms
             PropertyNameCaseInsensitive = true
         };
 
+        // 当前用户在前端多选的工作表名称列表 (null 时默认当前活动工作表)
+        private System.Collections.Generic.List<string>? _currentSelectedSheets;
+
         /// <summary>
         /// 构造函数：初始化窗体属性与 WebView2 核心控件
         /// </summary>
@@ -172,7 +175,26 @@ namespace ExcelAddInDemo.Forms
                     // 1. 请求加载或刷新报价全景数据
                     case "getQuoteData":
                     case "refreshData":
-                        LoadAndPushQuoteData();
+                        LoadAndPushQuoteData(_currentSelectedSheets);
+                        break;
+
+                    // 1.1 响应前端多选工作表变更
+                    case "setSheets":
+                        if (root.TryGetProperty("sheets", out var sheetsProp) && sheetsProp.ValueKind == JsonValueKind.Array)
+                        {
+                            var sList = new System.Collections.Generic.List<string>();
+                            foreach (var elem in sheetsProp.EnumerateArray())
+                            {
+                                string? name = elem.GetString();
+                                if (!string.IsNullOrWhiteSpace(name)) sList.Add(name);
+                            }
+                            _currentSelectedSheets = sList;
+                        }
+                        else
+                        {
+                            _currentSelectedSheets = null;
+                        }
+                        LoadAndPushQuoteData(_currentSelectedSheets);
                         break;
 
                     // 2. 点击图表或箱柜卡片，下钻穿透定位至 Excel 单元格
@@ -229,12 +251,12 @@ namespace ExcelAddInDemo.Forms
         /// <summary>
         /// 从 ExcelServices 提取全量业务数据并推送至前端 Vue 3
         /// </summary>
-        private void LoadAndPushQuoteData()
+        private void LoadAndPushQuoteData(System.Collections.Generic.List<string>? selectedSheets = null)
         {
             try
             {
-                // 从业务服务层批量抽取数据
-                var quoteData = ExcelServices.GetQuoteAnalysisData();
+                // 从业务服务层批量抽取数据 (支持指定工作表列表)
+                var quoteData = ExcelServices.GetQuoteAnalysisData(selectedSheets);
 
                 // 序列化为 JSON 字符串
                 string payload = JsonSerializer.Serialize(new

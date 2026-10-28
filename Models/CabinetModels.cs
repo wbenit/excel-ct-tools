@@ -376,8 +376,12 @@ namespace ExcelAddInDemo.Models
                     // 提取模板相对行号
                     if (int.TryParse(match.Groups[2].Value, out int tmplRow))
                     {
+                        // 基准模板起始行默认设为 1 (F1 映射为 excelStartRow 计费首行，F2 映射为 excelStartRow + 1)
+                        int baseStart = templateStartRow > 0 ? templateStartRow : 1;
                         // 计算基于真实落地的真实 Excel 行号
-                        int realRow = excelStartRow + (tmplRow - templateStartRow);
+                        int realRow = excelStartRow + (tmplRow - baseStart);
+                        // 防呆防御：杜绝因基准行号异常减到上一行 (不小于计费首行 excelStartRow)
+                        if (realRow < excelStartRow) realRow = excelStartRow;
 
                         // 返回重映射后的单元格标识 (如 H26)
                         return $"{col}{realRow}";

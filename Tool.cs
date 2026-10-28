@@ -512,31 +512,34 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 动态平移公式表达式中的相对行号，将其映射到箱柜物理小计行 (如将 H2 转换为 H{subtotalRow})
-        /// <summary>
-        /// 平移公式中的相对行号，并解析动态宏（如 [器件首行]）为实际物理行号
+        /// 动态平移公式表达式中的相对行号，并解析动态宏（如 [器件首行]）为实际物理行号
+        /// 遵循规范：公式中的相对行号 1~10 分别严格对应计费区各行：
+        /// 1 对应 feeStartRow (计费首行，如辅材)，2 对应 feeStartRow + 1 (如箱体)，以此类推，绝不连接到上一行
         /// </summary>
         /// <param name="formula">待平移的公式字符串</param>
-        /// <param name="subtotalRow">箱柜小计行实际物理行号</param>
+        /// <param name="feeStartRow">箱柜计费区起始实际物理行号 (feeStartRow)</param>
         /// <param name="compStartRow">元器件起始物理行号 (依据规则 6: Cab_Det + 2，默认 0)</param>
         /// <returns>平移修正后的公式字符串</returns>
-        public static string TransformFormulaRowOffset(string formula, int subtotalRow, int compStartRow = 0)
+        public static string TransformFormulaRowOffset(string formula, int feeStartRow, int compStartRow = 0)
         {
             // 校验公式格式是否以等号开头
             if (string.IsNullOrWhiteSpace(formula) || !formula.StartsWith("=")) return formula;
 
-            // 1. 正则匹配公式中的单元格引用与行号 (如 H2, H3, H4, H5, H6, K2, K5, F7, G7 等)
-            // 先平移 1~10 计费区内部相对行号，此时 [器件首行] 为非数字字符串，不会被误平移
+            // 1. 正则匹配公式中的单元格引用与行号 (如 F1, G1, B1, H1, K1, F2, G2, H3, H4 等)
+            // 公式内部 1~10 计费区相对行号映射规范:
+            // 行号 1 严格映射为 feeStartRow (计费首行，例如辅材本行)
+            // 行号 2 严格映射为 feeStartRow + 1 (计费第 2 行，例如箱体本行)
+            // 行号 rowNum 映射为 feeStartRow + (rowNum - 1)
             string transformed = System.Text.RegularExpressions.Regex.Replace(formula, @"([A-Z]+)(\d+)", match =>
             {
                 string col = match.Groups[1].Value;
                 if (int.TryParse(match.Groups[2].Value, out int rowNum))
                 {
-                    // 若模板中行号在 1~10 之间，平移偏移量 (rowNum - 1)
+                    // 若模板中行号在 1~10 之间，严格按 feeStartRow + (rowNum - 1) 计算
                     if (rowNum >= 1 && rowNum <= 10)
                     {
-                        // 计算实际物理行号
-                        int realRow = subtotalRow + (rowNum - 1);
+                        // 计算实际物理行号 (如 rowNum=1 时即 feeStartRow，绝不连到上一行)
+                        int realRow = feeStartRow + (rowNum - 1);
                         return $"{col}{realRow}";
                     }
                 }
@@ -707,8 +710,18 @@ namespace ExcelAddInDemo
                 // I 列 (索引 8): 备注 (保留空字符串)
                 feeMatrix[i, 8] = string.Empty;
 
-                // J 列 (索引 9): 成本单价
-                feeMatrix[i, 9] = item.CostPrice ?? string.Empty;
+                // J 列 (索引 9): 成本单价 (支持公式行号平移及 [器件首行] 宏解析)
+                if (!string.IsNullOrEmpty(item.CostPrice))
+                {
+                    if (item.CostPrice.StartsWith("="))
+                        feeMatrix[i, 9] = TransformFormulaRowOffset(item.CostPrice, subsumRow, compStartRow);
+                    else
+                        feeMatrix[i, 9] = item.CostPrice;
+                }
+                else
+                {
+                    feeMatrix[i, 9] = string.Empty;
+                }
 
                 // K 列 (索引 10): 成本总价公式转换
                 if (!string.IsNullOrEmpty(item.CostTotalPriceFormula))

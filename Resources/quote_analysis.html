@@ -114,6 +114,77 @@
       transform: translateY(-1px);
     }
 
+    /* 工作表选择器美化包装 */
+    .sheet-selector-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.18);
+      padding: 3px 8px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .sheet-selector-group .el-select {
+      --el-select-input-color: #ffffff;
+    }
+
+    /* 图表右侧微型 Tab 按钮组 */
+    .chart-tab-group {
+      display: inline-flex;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 6px;
+      padding: 2px;
+      gap: 2px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .chart-tab-btn {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .chart-tab-btn.active {
+      background: #009688;
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    /* 帕累托图横向平滑滚动容器 */
+    .pareto-outer-wrapper {
+      flex: 1 1 0%;
+      min-height: 0;
+      width: 100%;
+      position: relative;
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+
+    .pareto-outer-wrapper::-webkit-scrollbar {
+      height: 7px;
+    }
+
+    .theme-dark .pareto-outer-wrapper::-webkit-scrollbar-thumb {
+      background: #009688;
+      border-radius: 4px;
+    }
+
+    .theme-light .pareto-outer-wrapper::-webkit-scrollbar-thumb {
+      background: #0284c7;
+      border-radius: 4px;
+    }
+
+    .pareto-canvas-inner {
+      height: 100%;
+      min-width: 100%;
+    }
+
     /* 主工作区：弹性自适应纵向滚动网格，严格杜绝水平滚动条 */
     .dashboard-body {
       flex: 1 1 0%;
@@ -337,6 +408,34 @@
           <span>{{ summary.projectName || '正在加载工程...' }}</span>
           <span v-if="summary.quoteNumber" style="margin-left: 6px; opacity: 0.8;">({{ summary.quoteNumber }})</span>
         </div>
+
+        <!-- 数据来源工作表多选器 -->
+        <div class="sheet-selector-group" v-if="availableSheets.length > 0">
+          <span style="font-size: 11px; opacity: 0.85;">数据源:</span>
+          <el-select
+            v-model="selectedSheetNames"
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="多选工作表"
+            size="small"
+            @change="onSheetsChange"
+            style="width: 200px;"
+          >
+            <el-option
+              v-for="s in availableSheets"
+              :key="s.name"
+              :label="`${s.name} (${s.cabinetCount}台)`"
+              :value="s.name"
+            >
+              <span style="float: left">{{ s.name }}</span>
+              <span style="float: right; color: #94a3b8; font-size: 11px">{{ s.cabinetCount }}台</span>
+            </el-option>
+          </el-select>
+          <button class="header-btn" style="padding: 2px 7px; font-size: 11px;" @click="toggleSelectAllSheets">
+            {{ isAllSheetsSelected ? '清空' : '全选' }}
+          </button>
+        </div>
       </div>
       <div class="header-right">
         <button class="header-btn" @click="toggleTheme">
@@ -444,56 +543,82 @@
       </section>
 
       <!-- 3. 中部：成本多维旭日/双环饼图 + 箱柜功能南丁格尔玫瑰图 -->
+      <!-- 3. 中部：成本结构旭日图 + 生产厂家/功能分类多维分析 -->
       <section class="charts-row-split">
-        <!-- 图表 A: 成本利润五大支柱双环饼图 -->
+        <!-- 图表 A: 成本利润五大支柱双环旭日图 (Q列分组 + J/K列汇总) -->
         <div class="chart-panel">
           <div class="panel-header">
             <div class="panel-title">
               <span>🍩</span>
               <span>成本结构与利润解构 (双环嵌套旭日图)</span>
+              <span v-if="Math.abs(reconcileDiff) > 1" style="color: #f59e0b; font-size: 11px; margin-left: 6px;" :title="'明细成本累计与表头成本总价存在 ¥' + formatMoney(reconcileDiff) + ' 差额'">
+                ⚠️ 差额: ¥{{ formatMoney(reconcileDiff) }}
+              </span>
             </div>
-            <div class="panel-tag">内环: 成本 vs 毛利 ｜ 外环: 五大支柱</div>
+            <div class="panel-tag">内环: J成本 / K毛利 ｜ 外环: Q列分类 (费用取B列)</div>
           </div>
           <div id="chartCostSunburst" class="chart-container"></div>
         </div>
 
-        <!-- 图表 B: 箱柜功能分类南丁格尔玫瑰图 -->
+        <!-- 图表 B: 生产厂家采购分布 (南丁格尔玫瑰图) / C列箱柜名称分布玫瑰图 -->
         <div class="chart-panel">
           <div class="panel-header">
             <div class="panel-title">
               <span>🌹</span>
-              <span>箱柜功能类别分布 (南丁格尔玫瑰图)</span>
+              <span>{{ midChartTab === 'vendor' ? '生产厂家采购分布 (南丁格尔玫瑰图 - D列)' : '箱柜名称分布 (南丁格尔玫瑰图 - C列)' }}</span>
             </div>
-            <div class="panel-tag">半径: 产值金额 ｜ 角度: 台数</div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <div class="chart-tab-group">
+                <button class="chart-tab-btn" :class="{ active: midChartTab === 'vendor' }" @click="switchMidTab('vendor')">D列厂家玫瑰</button>
+                <button class="chart-tab-btn" :class="{ active: midChartTab === 'rose' }" @click="switchMidTab('rose')">C列箱柜名称玫瑰</button>
+              </div>
+              <div class="panel-tag">{{ midChartTab === 'vendor' ? '半径: 采购总价 ｜ 弧度: 品牌份额' : '半径: 产值金额 ｜ 角度: 台数' }}</div>
+            </div>
           </div>
-          <div id="chartRoseCategory" class="chart-container"></div>
+          <div v-show="midChartTab === 'vendor'" id="chartVendorRose" class="chart-container"></div>
+          <div v-show="midChartTab === 'rose'" id="chartRoseCategory" class="chart-container"></div>
         </div>
       </section>
 
-      <!-- 4. 底部：箱柜价值排布帕累托图 + 供应链物料 Treemap 树图 -->
+      <!-- 4. 底部：箱柜价值排布帕累托图 (支持横向平滑滚动与对数轴) + 供应链元件矩形树图 -->
       <section class="bottom-row-grid">
-        <!-- 图表 C: 32台箱柜价值排布与帕累托 Pareto 80/20 累积双轴图 -->
-        <div class="chart-panel">
+        <!-- 图表 C: 箱柜价值排布与帕累托 Pareto 累积分析 -->
+        <div class="chart-panel" style="overflow: hidden;">
           <div class="panel-header">
             <div class="panel-title">
               <span>📈</span>
-              <span>32 台箱柜价值排布与帕累托 (Pareto) 累积分析</span>
+              <span>{{ cabinets.length }} 台箱柜价值排布与帕累托 (Pareto) 累积分析</span>
             </div>
-            <div class="panel-tag" style="cursor: pointer;" title="点击图表柱体可在 Excel 中直接定位高亮该箱柜">
-              💡 点击柱体可直达 Excel 单元格
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <!-- 排序模式切换 -->
+              <div class="chart-tab-group">
+                <button class="chart-tab-btn" :class="{ active: paretoSortMode === 'desc' }" @click="toggleParetoSort('desc')">帕累托降序</button>
+                <button class="chart-tab-btn" :class="{ active: paretoSortMode === 'original' }" @click="toggleParetoSort('original')">原始顺序</button>
+              </div>
+              <!-- 对数轴切换 -->
+              <div class="chart-tab-group">
+                <button class="chart-tab-btn" :class="{ active: !paretoIsLog }" @click="toggleParetoAxis(false)">标准轴</button>
+                <button class="chart-tab-btn" :class="{ active: paretoIsLog }" @click="toggleParetoAxis(true)" title="对数坐标：避免超大单台压扁其它几千元箱柜">对数Log</button>
+              </div>
+              <div class="panel-tag" style="cursor: pointer;" title="点击柱体可在 Excel 中直接定位高亮该箱柜">
+                💡 点击柱体直达 Excel
+              </div>
             </div>
           </div>
-          <div id="chartPareto" class="chart-container"></div>
+          <!-- 横向滑动容器，确保几百台柜子不挤压 -->
+          <div class="pareto-outer-wrapper" ref="paretoScrollBox">
+            <div id="chartPareto" class="pareto-canvas-inner"></div>
+          </div>
         </div>
 
-        <!-- 图表 D: 核心器件供应链 Treemap 矩形树图 -->
+        <!-- 图表 D: 供应链核心物料 Treemap 矩形树图 (按B列元件名称分组) -->
         <div class="chart-panel">
           <div class="panel-header">
             <div class="panel-title">
               <span>📦</span>
               <span>供应链核心物料体量分布 (矩形树图)</span>
             </div>
-            <div class="panel-tag">面积: 采购合价</div>
+            <div class="panel-tag">层级: Q列类别 ➔ B列元件 ｜ 面积: 采购合价</div>
           </div>
           <div id="chartTreemap" class="chart-container"></div>
         </div>
@@ -562,6 +687,26 @@
         const categoryDistributions = ref([]);
         const brandDistributions = ref([]);
 
+        // 工作表多选状态
+        const availableSheets = ref([]);
+        const selectedSheetNames = ref([]);
+        const isAllSheetsSelected = computed(() => {
+          return availableSheets.value.length > 0 && selectedSheetNames.value.length === availableSheets.value.length;
+        });
+
+        // 旭日图与树图结构化数据
+        const costSunburstTree = ref(null);
+        const vendorSunburstTree = ref(null);
+        const componentTreemapTree = ref(null);
+        const reconcileDiff = ref(0);
+
+        // 中部图表面板 Tab 切换 ('vendor': 厂家旭日图, 'rose': 箱柜玫瑰图)
+        const midChartTab = ref('vendor');
+
+        // 帕累托图控制状态
+        const paretoSortMode = ref('desc'); // 'desc' 降序帕累托 / 'original' 原始顺序
+        const paretoIsLog = ref(false);     // 是否启用对数坐标轴
+
         // What-If 模拟器参数
         const discountRate = ref(0); // 报价让利 %
         const costCutRate = ref(0);   // 供应链降本 %
@@ -572,6 +717,7 @@
 
         // ECharts 实例缓存
         let chartCost = null;
+        let chartVendor = null;
         let chartRose = null;
         let chartParetoInstance = null;
         let chartTreemapInstance = null;
@@ -611,6 +757,56 @@
           }
         };
 
+        // 工作表多选切换响应
+        const onSheetsChange = (val) => {
+          ElementPlus.ElMessage.info('正在聚合所选工作表数据...');
+          postToCSharp({
+            action: 'setSheets',
+            sheets: val
+          });
+        };
+
+        // 全选 / 清空所有工作表
+        const toggleSelectAllSheets = () => {
+          if (isAllSheetsSelected.value) {
+            // 清空时保留第一个以防空异常
+            if (availableSheets.value.length > 0) {
+              selectedSheetNames.value = [availableSheets.value[0].name];
+            } else {
+              selectedSheetNames.value = [];
+            }
+          } else {
+            selectedSheetNames.value = availableSheets.value.map(s => s.name);
+          }
+          onSheetsChange(selectedSheetNames.value);
+        };
+
+        // 切换中部图表 Tab
+        const switchMidTab = (tab) => {
+          midChartTab.value = tab;
+          nextTick(() => {
+            if (tab === 'vendor') {
+              renderVendorRose();
+              chartVendor?.resize();
+            } else {
+              renderRoseCategory();
+              chartRose?.resize();
+            }
+          });
+        };
+
+        // 切换帕累托排序模式
+        const toggleParetoSort = (mode) => {
+          paretoSortMode.value = mode;
+          renderParetoChart();
+        };
+
+        // 切换帕累托对数坐标轴
+        const toggleParetoAxis = (isLog) => {
+          paretoIsLog.value = isLog;
+          renderParetoChart();
+        };
+
         // 监听 C# 消息
         const initMessageListener = () => {
           if (window.chrome && window.chrome.webview) {
@@ -634,20 +830,34 @@
           if (data.categoryDistributions) categoryDistributions.value = data.categoryDistributions;
           if (data.brandDistributions) brandDistributions.value = data.brandDistributions;
 
+          // 更新工作表列表与当前选中项
+          if (data.availableSheets) availableSheets.value = data.availableSheets;
+          if (data.selectedSheets) selectedSheetNames.value = data.selectedSheets;
+
+          // 更新结构化多级树
+          if (data.costSunburst) costSunburstTree.value = data.costSunburst;
+          if (data.vendorSunburst) vendorSunburstTree.value = data.vendorSunburst;
+          if (data.componentTreemap) componentTreemapTree.value = data.componentTreemap;
+          reconcileDiff.value = data.reconcileDiff || 0;
+
           nextTick(() => {
             renderAllCharts();
           });
         };
 
-        // 渲染全部绚丽图表
+        // 渲染全部图表
         const renderAllCharts = () => {
           renderCostSunburst();
-          renderRoseCategory();
+          if (midChartTab.value === 'vendor') {
+            renderVendorRose();
+          } else {
+            renderRoseCategory();
+          }
           renderParetoChart();
           renderTreemapChart();
         };
 
-        // 图表 1: 成本结构与利润解构 (双环嵌套旭日/环形图)
+        // 图表 1: 成本结构与利润解构 (双环嵌套旭日图 / 多层环形图)
         const renderCostSunburst = () => {
           const dom = document.getElementById('chartCostSunburst');
           if (!dom) return;
@@ -655,7 +865,7 @@
 
           const themeTextColor = isDark.value ? '#cbd5e1' : '#334155';
 
-          // 内环数据 (成本 vs 毛利)
+          // 内环数据 (制造成本 J列 vs 毛利润 K列)
           const innerData = [
             {
               value: simulatedSummary.value.totalCostPrice,
@@ -667,7 +877,7 @@
             },
             {
               value: Math.max(0, simulatedSummary.value.totalGrossProfit),
-              name: '净毛利',
+              name: '毛利润总额',
               itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 1, 1, [
                 { offset: 0, color: '#009688' },
                 { offset: 1, color: '#10b981' }
@@ -675,87 +885,45 @@
             }
           ];
 
-          // 外环数据 (五大支柱拆解)
-          const outerData = [
-            { value: costStructure.componentsTotal || 24000, name: '元器件采购', itemStyle: { color: '#0ea5e9' } },
-            { value: costStructure.cabinetBoxTotal || 6500, name: '箱体钣金壳体', itemStyle: { color: '#38bdf8' } },
-            { value: costStructure.laborTotal || 4500, name: '人工装配工时', itemStyle: { color: '#7dd3fc' } },
-            { value: costStructure.auxMaterialsTotal || 2800, name: '铜排导线辅料', itemStyle: { color: '#bae6fd' } },
-            { value: Math.max(0, costStructure.completeSetTotal || 3500), name: '成套费与税金', itemStyle: { color: '#2dd4bf' } },
-            { value: Math.max(0, simulatedSummary.value.totalGrossProfit), name: '企业留存毛利', itemStyle: { color: '#059669' } }
-          ];
+          // 外环数据：优先取后端精确计算的 Q 列分类树
+          let outerData = [];
+          if (costSunburstTree.value && costSunburstTree.value.children && costSunburstTree.value.children.length > 0) {
+            const costNode = costSunburstTree.value.children[0];
+            const profitNode = costSunburstTree.value.children[1];
 
-          const option = {
-            tooltip: {
-              trigger: 'item',
-              formatter: '{a} <br/><strong>{b}</strong>: ¥{c} ({d}%)'
-            },
-            legend: {
-              bottom: '2%',
-              left: 'center',
-              textStyle: { color: themeTextColor, fontSize: 11 },
-              itemWidth: 10,
-              itemHeight: 10
-            },
-            series: [
-              {
-                name: '宏观层面',
-                type: 'pie',
-                selectedMode: 'single',
-                radius: [0, '42%'],
-                label: {
-                  position: 'inner',
-                  fontSize: 11,
-                  color: '#ffffff',
-                  fontWeight: 'bold'
-                },
-                data: innerData
-              },
-              {
-                name: '成本五大支柱',
-                type: 'pie',
-                radius: ['52%', '72%'],
-                labelLine: { length: 10, length2: 10 },
-                label: {
-                  formatter: '{b|{b}}\n{d|{d}%}',
-                  rich: {
-                    b: { color: themeTextColor, fontSize: 11, lineHeight: 14 },
-                    d: { color: '#009688', fontSize: 10, fontWeight: 'bold' }
-                  }
-                },
-                data: outerData
-              }
-            ]
-          };
+            // 成本子项颜色阶 (支持任意多个Q列分类)
+            const costColors = ['#0284c7', '#0ea5e9', '#38bdf8', '#7dd3fc', '#bae6fd', '#60a5fa', '#3b82f6', '#6366f1'];
+            if (costNode && costNode.children) {
+              costNode.children.forEach((c, idx) => {
+                outerData.push({
+                  value: c.value,
+                  name: c.name,
+                  itemStyle: { color: costColors[idx % costColors.length] }
+                });
+              });
+            }
 
-          chartCost.setOption(option);
-        };
+            // 利润子项颜色阶 (支持任意B列费用项与净毛利)
+            const profitColors = ['#2dd4bf', '#f59e0b', '#10b981', '#059669', '#ec4899', '#f97316'];
+            if (profitNode && profitNode.children) {
+              profitNode.children.forEach((c, idx) => {
+                outerData.push({
+                  value: c.value,
+                  name: c.name,
+                  itemStyle: { color: profitColors[idx % profitColors.length] }
+                });
+              });
+            }
+          }
 
-        // 图表 2: 箱柜功能类别南丁格尔玫瑰图
-        const renderRoseCategory = () => {
-          const dom = document.getElementById('chartRoseCategory');
-          if (!dom) return;
-          if (!chartRose) chartRose = echarts.init(dom);
-
-          const themeTextColor = isDark.value ? '#cbd5e1' : '#334155';
-
-          // 准备玫瑰图数据
-          let roseData = categoryDistributions.value.map((cat, idx) => {
-            const colors = ['#009688', '#0284c7', '#0ea5e9', '#f59e0b', '#10b981', '#6366f1', '#ec4899'];
-            return {
-              value: cat.totalPrice,
-              name: `${cat.categoryName} (${cat.cabinetCount}台)`,
-              itemStyle: { color: colors[idx % colors.length] }
-            };
-          });
-
-          if (roseData.length === 0) {
-            roseData = [
-              { value: 18500, name: '消防应急控制 (8台)', itemStyle: { color: '#009688' } },
-              { value: 14200, name: '照明配电系统 (12台)', itemStyle: { color: '#0284c7' } },
-              { value: 8900, name: '电梯动力系统 (4台)', itemStyle: { color: '#0ea5e9' } },
-              { value: 5200, name: '双电源互投箱 (4台)', itemStyle: { color: '#f59e0b' } },
-              { value: 2623, name: '专用控制箱 (4台)', itemStyle: { color: '#10b981' } }
+          if (outerData.length === 0) {
+            outerData = [
+              { value: costStructure.componentsTotal || 24000, name: '元件', itemStyle: { color: '#0ea5e9' } },
+              { value: costStructure.cabinetBoxTotal || 6500, name: '箱体', itemStyle: { color: '#38bdf8' } },
+              { value: costStructure.laborTotal || 4500, name: '人工费', itemStyle: { color: '#7dd3fc' } },
+              { value: costStructure.auxMaterialsTotal || 2800, name: '材料', itemStyle: { color: '#bae6fd' } },
+              { value: Math.max(0, costStructure.completeSetTotal || 3500), name: '综合成套费', itemStyle: { color: '#2dd4bf' } },
+              { value: Math.max(0, simulatedSummary.value.totalGrossProfit), name: '净毛利', itemStyle: { color: '#059669' } }
             ];
           }
 
@@ -773,7 +941,188 @@
             },
             series: [
               {
-                name: '箱柜功能分类',
+                name: '核心财务指标',
+                type: 'pie',
+                selectedMode: 'single',
+                radius: [0, '40%'],
+                label: {
+                  position: 'inner',
+                  fontSize: 11,
+                  color: '#ffffff',
+                  fontWeight: 'bold'
+                },
+                data: innerData
+              },
+              {
+                name: 'Q列明细与利润解构',
+                type: 'pie',
+                radius: ['50%', '72%'],
+                labelLine: { length: 10, length2: 10 },
+                label: {
+                  formatter: '{b|{b}}\n{d|{d}%}',
+                  rich: {
+                    b: { color: themeTextColor, fontSize: 11, lineHeight: 14 },
+                    d: { color: '#009688', fontSize: 10, fontWeight: 'bold' }
+                  }
+                },
+                data: outerData
+              }
+            ]
+          };
+
+          chartCost.setOption(option);
+        };
+
+        // 图表 1.2: 生产厂家采购分布 (南丁格尔玫瑰图：根据D列生产厂家分组)
+        const renderVendorRose = () => {
+          const dom = document.getElementById('chartVendorRose');
+          if (!dom) return;
+          if (!chartVendor) chartVendor = echarts.init(dom);
+
+          const themeTextColor = isDark.value ? '#cbd5e1' : '#334155';
+
+          // 准备生产厂家玫瑰图数据
+          let roseData = [];
+
+          // 调色盘
+          const colors = [
+            '#009688', '#0284c7', '#0ea5e9', '#f59e0b', '#10b981',
+            '#6366f1', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316'
+          ];
+
+          if (vendorSunburstTree.value && vendorSunburstTree.value.children && vendorSunburstTree.value.children.length > 0) {
+            roseData = vendorSunburstTree.value.children.map((vNode, idx) => {
+              // 提取该厂家前 3 项核心元件作为浮窗亮点
+              const topItemList = (vNode.children || [])
+                .filter(c => c.name !== '其它元件')
+                .slice(0, 3)
+                .map(c => c.name);
+
+              return {
+                name: vNode.name,
+                value: vNode.value,
+                topItems: topItemList,
+                itemStyle: { color: colors[idx % colors.length] }
+              };
+            });
+          } else if (brandDistributions.value && brandDistributions.value.length > 0) {
+            roseData = brandDistributions.value.map((b, idx) => ({
+              name: b.brandName,
+              value: b.totalPrice,
+              topItems: [],
+              itemStyle: { color: colors[idx % colors.length] }
+            }));
+          } else {
+            roseData = [
+              { name: '德力西', value: 92855, topItems: ['塑壳断路器', '微型断路器', '互感器'], itemStyle: { color: '#009688' } },
+              { name: '国优', value: 113365, topItems: ['双电源', '电涌保护器', '电涌后备'], itemStyle: { color: '#0284c7' } },
+              { name: '安科瑞', value: 19042, topItems: ['多功能表', '直接式表'], itemStyle: { color: '#0ea5e9' } },
+              { name: '青鸟', value: 5301, topItems: ['火灾探测器'], itemStyle: { color: '#f59e0b' } },
+              { name: '华科', value: 4339, topItems: ['智能照明'], itemStyle: { color: '#10b981' } },
+              { name: '自制/通用', value: 95150, topItems: ['铜排导线', '箱体钣金', '装配人工'], itemStyle: { color: '#6366f1' } }
+            ];
+          }
+
+          const option = {
+            tooltip: {
+              trigger: 'item',
+              formatter: (params) => {
+                const item = params.data;
+                const itemsText = item.topItems && item.topItems.length > 0 ?
+                  `<br/><span style="color: #94a3b8; font-size: 11px;">核心供应: ${item.topItems.join('、')}</span>` : '';
+                return `<strong>${item.name}</strong><br/>` +
+                       `采购总合价: <strong>¥${formatMoney(item.value)}</strong><br/>` +
+                       `品牌金额占比: <strong>${params.percent}%</strong>` +
+                       itemsText;
+              }
+            },
+            legend: {
+              bottom: '2%',
+              left: 'center',
+              textStyle: { color: themeTextColor, fontSize: 11 },
+              itemWidth: 10,
+              itemHeight: 10
+            },
+            series: [
+              {
+                name: '生产厂家采购分布',
+                type: 'pie',
+                radius: ['20%', '76%'],
+                center: ['50%', '46%'],
+                roseType: 'radius',
+                itemStyle: {
+                  borderRadius: 6,
+                  borderColor: isDark.value ? '#111a28' : '#ffffff',
+                  borderWidth: 2
+                },
+                label: {
+                  color: themeTextColor,
+                  fontSize: 11,
+                  formatter: '{b}\n¥{c}'
+                },
+                data: roseData
+              }
+            ]
+          };
+
+          chartVendor.setOption(option);
+        };
+
+        // 图表 2: 箱柜功能类别南丁格尔玫瑰图
+        const renderRoseCategory = () => {
+          const dom = document.getElementById('chartRoseCategory');
+          if (!dom) return;
+          if (!chartRose) chartRose = echarts.init(dom);
+
+          const themeTextColor = isDark.value ? '#cbd5e1' : '#334155';
+
+          // 准备玫瑰图数据 (调色盘扩充支持更多C列不同名称的花瓣)
+          const colors = [
+            '#009688', '#0284c7', '#0ea5e9', '#f59e0b', '#10b981',
+            '#6366f1', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316',
+            '#3b82f6', '#84cc16', '#a855f7', '#d946ef', '#06b6d4'
+          ];
+          let roseData = categoryDistributions.value.map((cat, idx) => {
+            return {
+              value: cat.totalPrice,
+              name: `${cat.categoryName} (${cat.cabinetCount}台)`,
+              cabinetCount: cat.cabinetCount,
+              categoryName: cat.categoryName,
+              itemStyle: { color: colors[idx % colors.length] }
+            };
+          });
+
+          if (roseData.length === 0) {
+            roseData = [
+              { value: 18500, name: '应急照明配电箱 (8台)', cabinetCount: 8, categoryName: '应急照明配电箱', itemStyle: { color: '#009688' } },
+              { value: 14200, name: '普通照明配电箱 (12台)', cabinetCount: 12, categoryName: '普通照明配电箱', itemStyle: { color: '#0284c7' } },
+              { value: 8900, name: '客梯动力配电箱 (4台)', cabinetCount: 4, categoryName: '客梯动力配电箱', itemStyle: { color: '#0ea5e9' } },
+              { value: 5200, name: '双电源切换箱 (4台)', cabinetCount: 4, categoryName: '双电源切换箱', itemStyle: { color: '#f59e0b' } },
+              { value: 2623, name: '潜污泵控制箱 (4台)', cabinetCount: 4, categoryName: '潜污泵控制箱', itemStyle: { color: '#10b981' } }
+            ];
+          }
+
+          const option = {
+            tooltip: {
+              trigger: 'item',
+              formatter: (params) => {
+                const item = params.data;
+                return `<strong>${item.categoryName || item.name}</strong><br/>` +
+                       `产值总金额: <strong>¥${formatMoney(item.value)}</strong><br/>` +
+                       `物理总台数: <strong>${item.cabinetCount || '-'} 台</strong><br/>` +
+                       `产值金额占比: <strong>${params.percent}%</strong>`;
+              }
+            },
+            legend: {
+              bottom: '2%',
+              left: 'center',
+              textStyle: { color: themeTextColor, fontSize: 11 },
+              itemWidth: 10,
+              itemHeight: 10
+            },
+            series: [
+              {
+                name: 'C列箱柜名称分布',
                 type: 'pie',
                 radius: ['20%', '75%'],
                 center: ['50%', '46%'],
@@ -795,36 +1144,47 @@
           chartRose.setOption(option);
         };
 
-        // 图表 3: 32台箱柜价值排布与帕累托 (Pareto) 80/20 累积双轴图
+        // 图表 3: 箱柜价值排布与帕累托 (Pareto) 累积分析 (支持几百台横向滑动与对数坐标)
         const renderParetoChart = () => {
           const dom = document.getElementById('chartPareto');
           if (!dom) return;
+
+          // 根据排序模式组织箱柜数据
+          let sortedList = [...cabinets.value];
+          if (paretoSortMode.value === 'desc') {
+            sortedList.sort((a, b) => b.totalPrice - a.totalPrice);
+          }
+
+          // 核心特性：动态根据箱柜台数扩展图表画布宽度，保证几百台箱柜横向滑动、清晰排布不挤在一起
+          const parentWrapper = dom.parentElement;
+          const barSlotWidth = 52; // 单个箱柜柱体分配的槽位宽度
+          const containerWidth = parentWrapper ? parentWrapper.clientWidth : 600;
+          const canvasWidth = Math.max(containerWidth, sortedList.length * barSlotWidth);
+          dom.style.width = canvasWidth + 'px';
+
           if (!chartParetoInstance) {
             chartParetoInstance = echarts.init(dom);
-            // 绑定点击穿透下钻到 Excel 单元格
             chartParetoInstance.on('click', (params) => {
               if (params.data && params.data.rawItem) {
                 openCabinetDrawer(params.data.rawItem);
               }
             });
+          } else {
+            chartParetoInstance.resize();
           }
 
           const themeTextColor = isDark.value ? '#94a3b8' : '#64748b';
           const splitLineColor = isDark.value ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
 
-          // 按总价降序排序箱柜列表
-          const sortedList = [...cabinets.value].sort((a, b) => b.totalPrice - a.totalPrice);
           const totalSum = sortedList.reduce((acc, cur) => acc + cur.totalPrice, 0) || 1;
-
           const names = [];
           const barData = [];
           const lineData = [];
           let runningSum = 0;
 
           sortedList.forEach((cab) => {
-            // 简写柜名避免过长
             let shortName = cab.name.replace("系统", "").replace("配电箱", "").trim();
-            if (shortName.length > 8) shortName = shortName.substring(0, 8) + '..';
+            if (shortName.length > 9) shortName = shortName.substring(0, 9) + '..';
             names.push(shortName);
 
             runningSum += cab.totalPrice;
@@ -837,6 +1197,17 @@
             lineData.push(accumPercent);
           });
 
+          // Y 轴配置：支持标准线性或对数 Log
+          const yAxisMoney = {
+            type: paretoIsLog.value ? 'log' : 'value',
+            logBase: 10,
+            min: paretoIsLog.value ? 10 : undefined,
+            name: paretoIsLog.value ? '金额(对数Log)' : '金额 (元)',
+            nameTextStyle: { color: themeTextColor, fontSize: 11 },
+            axisLabel: { color: themeTextColor, fontSize: 10 },
+            splitLine: { lineStyle: { color: splitLineColor } }
+          };
+
           const option = {
             tooltip: {
               trigger: 'axis',
@@ -846,20 +1217,20 @@
                 const item = params[0];
                 const raw = item.data.rawItem;
                 const percent = params[1] ? params[1].value : '';
-                return `<strong>${raw ? raw.name : item.name}</strong><br/>` +
+                return `<strong>${raw ? raw.sheetName + ' ｜ ' + raw.name : item.name}</strong><br/>` +
                        `报出总价: ¥${formatMoney(raw ? raw.totalPrice : item.value)}<br/>` +
                        `成本价: ¥${formatMoney(raw ? raw.costPrice : 0)}<br/>` +
                        `毛利率: ${(raw ? raw.grossProfitRate * 100 : 0).toFixed(1)}%<br/>` +
-                       `价值累计贡献: <strong>${percent}%</strong><br/>` +
+                       `累计贡献占比: <strong>${percent}%</strong><br/>` +
                        `<span style="color: #009688;">(点击直达 Excel 明细行)</span>`;
               }
             },
             grid: {
               top: '15%',
-              left: '4%',
-              right: '4%',
-              bottom: '18%',
-              containLabel: true
+              left: '50px',
+              right: '50px',
+              bottom: '22%',
+              containLabel: false
             },
             xAxis: {
               type: 'category',
@@ -873,13 +1244,7 @@
               axisLine: { lineStyle: { color: splitLineColor } }
             },
             yAxis: [
-              {
-                type: 'value',
-                name: '金额 (元)',
-                nameTextStyle: { color: themeTextColor, fontSize: 11 },
-                axisLabel: { color: themeTextColor, fontSize: 10 },
-                splitLine: { lineStyle: { color: splitLineColor } }
-              },
+              yAxisMoney,
               {
                 type: 'value',
                 name: '累计占比',
@@ -898,7 +1263,7 @@
               {
                 name: '箱柜金额',
                 type: 'bar',
-                barWidth: '60%',
+                barWidth: '55%',
                 itemStyle: {
                   borderRadius: [4, 4, 0, 0],
                   color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
@@ -922,33 +1287,44 @@
             ]
           };
 
-          chartParetoInstance.setOption(option);
+          chartParetoInstance.setOption(option, true);
         };
 
-        // 图表 4: 供应链核心物料矩形树图 (Treemap)
+        // 图表 4: 供应链核心物料矩形树图 (Treemap: 第一层Q列类别，第二层B列元件名称)
         const renderTreemapChart = () => {
           const dom = document.getElementById('chartTreemap');
           if (!dom) return;
           if (!chartTreemapInstance) chartTreemapInstance = echarts.init(dom);
 
-          // 组织树图数据结构 (按品牌或名称聚合)
-          const treeData = topComponents.value.map(c => ({
-            name: `${c.name}\n${c.model.substring(0, 15)}`,
-            value: c.totalPrice,
-            rawItem: c
-          }));
+          // 组织树图数据结构 (优先使用后台结构化 componentTreemapTree)
+          let treeData = [];
+          if (componentTreemapTree.value && componentTreemapTree.value.children && componentTreemapTree.value.children.length > 0) {
+            treeData = componentTreemapTree.value.children.map(catNode => ({
+              name: catNode.name,
+              value: catNode.value,
+              children: (catNode.children || []).map(item => ({
+                name: `${item.name}`,
+                value: item.value,
+                quantity: item.quantity,
+                extra: item.extra
+              }))
+            }));
+          } else {
+            treeData = topComponents.value.map(c => ({
+              name: `${c.name}\n${c.model.substring(0, 15)}`,
+              value: c.totalPrice,
+              quantity: c.totalQuantity,
+              extra: `${c.manufacturer} ｜ ${c.model}`
+            }));
+          }
 
           const option = {
             tooltip: {
               formatter: (info) => {
-                const c = info.data.rawItem;
-                if (!c) return `${info.name}: ¥${info.value}`;
-                return `<strong>${c.name}</strong><br/>` +
-                       `型号: ${c.model}<br/>` +
-                       `品牌: ${c.manufacturer}<br/>` +
-                       `用量: ${c.totalQuantity} 只/套<br/>` +
-                       `采购单价: ¥${c.unitPrice}<br/>` +
-                       `采购合价: <strong>¥${c.totalPrice}</strong>`;
+                const item = info.data;
+                const qtyText = item.quantity ? `<br/>累计用量: ${item.quantity}` : '';
+                const extraText = item.extra ? `<br/>详情: ${item.extra}` : '';
+                return `<strong>${info.name}</strong><br/>采购合价: <strong>¥${formatMoney(info.value)}</strong>${qtyText}${extraText}`;
               }
             },
             series: [
@@ -958,13 +1334,27 @@
                 height: '90%',
                 roam: false,
                 nodeClick: false,
-                breadcrumb: { show: false },
+                breadcrumb: {
+                  show: true,
+                  itemStyle: {
+                    color: isDark.value ? '#1e293b' : '#e2e8f0',
+                    textStyle: { color: isDark.value ? '#cbd5e1' : '#334155' }
+                  }
+                },
                 levels: [
                   {
                     itemStyle: {
                       borderColor: isDark.value ? '#111a28' : '#ffffff',
                       borderWidth: 2,
                       gapWidth: 2
+                    }
+                  },
+                  {
+                    colorSaturation: [0.35, 0.6],
+                    itemStyle: {
+                      borderColor: isDark.value ? '#1e293b' : '#cbd5e1',
+                      borderWidth: 1,
+                      gapWidth: 1
                     }
                   }
                 ],
@@ -1077,6 +1467,7 @@
         // 窗口尺寸变化自适应重排
         window.addEventListener('resize', () => {
           chartCost?.resize();
+          chartVendor?.resize();
           chartRose?.resize();
           chartParetoInstance?.resize();
           chartTreemapInstance?.resize();
@@ -1096,6 +1487,13 @@
           costStructure,
           topComponents,
           categoryDistributions,
+          availableSheets,
+          selectedSheetNames,
+          isAllSheetsSelected,
+          reconcileDiff,
+          midChartTab,
+          paretoSortMode,
+          paretoIsLog,
           discountRate,
           costCutRate,
           simulatedSummary,
@@ -1103,6 +1501,11 @@
           drawerVisible,
           activeCabinet,
           formatMoney,
+          onSheetsChange,
+          toggleSelectAllSheets,
+          switchMidTab,
+          toggleParetoSort,
+          toggleParetoAxis,
           onSimulateChange,
           resetSimulation,
           refreshData,

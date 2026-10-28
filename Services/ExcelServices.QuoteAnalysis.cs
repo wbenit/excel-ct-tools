@@ -61,87 +61,14 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 从当前活动工作簿中全量提取报价分析数据模型 (严格遵循规则 7 采用数组一次性读入内存)
+        /// 从当前活动工作簿中全量提取报价分析数据模型 (默认活动工作表，严格遵循规则 7 内存二维数组读取)
         /// </summary>
+        /// <param name="selectedSheets">可选的工作表名称过滤列表，为空时默认只分析当前活动工作表</param>
         /// <returns>结构化报价全景分析传输对象</returns>
-        public static QuoteAnalysisDto GetQuoteAnalysisData()
+        public static QuoteAnalysisDto GetQuoteAnalysisData(List<string>? selectedSheets = null)
         {
-            // 初始化数据传输对象根节点
-            var dto = new QuoteAnalysisDto();
-
-            try
-            {
-                // 获取当前正在运行的 Excel Application COM 接口
-                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
-                if (app == null) return dto;
-
-                // 获取当前活动的工程算价工作簿
-                dynamic? activeWb = app.ActiveWorkbook;
-                if (activeWb == null) return dto;
-
-                // 基础概况初值：默认取文件名作为备选项目名
-                string fallbackProjName = Path.GetFileNameWithoutExtension(Convert.ToString(activeWb.Name) ?? "");
-                dto.Summary.ProjectName = fallbackProjName;
-
-                // 收集活动工作簿中所有定义名称字典 (用于快速匹配 Cab_Det_K 行号)
-                var definedNameRowMap = ExtractDefinedNamesMap(activeWb);
-
-                // 缓存所有分类工作表引用
-                var categorySheets = new List<dynamic>();
-                dynamic? projectInfoSheet = null;
-                dynamic? componentSumSheet = null;
-
-                // 遍历当前工作簿下全部工作表
-                foreach (dynamic sheet in activeWb.Worksheets)
-                {
-                    // 读取并清洗工作表名称
-                    string sName = Convert.ToString(sheet.Name)?.Trim() ?? string.Empty;
-
-                    // 识别【项目信息】工作表 --硬编码: 系统固定工作表名称--
-                    if (string.Equals(sName, "项目信息", StringComparison.OrdinalIgnoreCase))
-                    {
-                        projectInfoSheet = sheet;
-                    }
-                    // 识别【元件汇总表】或【元件汇总表１】 --硬编码: 系统固定工作表名称--
-                    else if (sName.StartsWith("元件汇总表", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (componentSumSheet == null) componentSumSheet = sheet;
-                    }
-                    // 识别以【分类】开头的箱柜分类工作表 (如 分类1, 分类2) --硬编码: 分类表前缀--
-                    else if (sName.StartsWith("分类", StringComparison.OrdinalIgnoreCase))
-                    {
-                        categorySheets.Add(sheet);
-                    }
-                }
-
-                // 步骤 1：解析【项目信息】工作表
-                if (projectInfoSheet != null)
-                {
-                    ParseProjectInfoSheet(projectInfoSheet, dto.Summary);
-                }
-
-                // 步骤 2：全量解析各分类工作表中的箱柜汇总与明细构成 (遵循规则 7 内存二维数组读取)
-                foreach (dynamic catSheet in categorySheets)
-                {
-                    ParseCategorySheetCabinets(catSheet, dto, definedNameRowMap);
-                }
-
-                // 步骤 3：解析【元件汇总表】提取供应链排名与品牌体量
-                if (componentSumSheet != null)
-                {
-                    ParseComponentSummarySheet(componentSumSheet, dto);
-                }
-
-                // 步骤 4：基于提取的箱柜矩阵全量汇总宏观指标与成本五大支柱
-                FinalizeAnalysisMetrics(dto);
-            }
-            catch (Exception ex)
-            {
-                // 异常统一记录日志
-                LogHelper.WriteLog($"[报价分析大屏] 提取全景数据异常: {ex.Message}\r\n{ex.StackTrace}");
-            }
-
-            return dto;
+            // 委托给全新的高级解析引擎执行深度多维分析
+            return ExecuteQuoteAnalysis(selectedSheets);
         }
 
         /// <summary>

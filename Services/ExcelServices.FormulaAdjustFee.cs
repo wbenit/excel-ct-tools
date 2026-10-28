@@ -462,21 +462,21 @@ namespace ExcelAddInDemo
                     sheet.Rows[$"{delStart}:{delEnd}"].Delete(-4121);
                 }
 
-                // 新小计起始物理行号保持与旧计费起点对齐
-                int newSubsumRow = oldSubsumRow;
+                // 新计费首行物理行号保持与旧计费起点对齐 (即 feeStartRow，第 1 行辅材本行)
+                int newFeeStartRow = oldSubsumRow;
                 // 新总计行物理行号
-                int newTolsumRow = newSubsumRow + N - 1;
-                // 元器件终止行 (依据规则 6: Cab_Subsum - 1)
-                int compEndRow = newSubsumRow - 1;
+                int newTolsumRow = newFeeStartRow + N - 1;
+                // 元器件终止行 (依据规则 6: 计费首行 - 1)
+                int compEndRow = newFeeStartRow - 1;
 
-                // 构建 17 列完整二维计费公式矩阵 (规则 7: 内存一次性生成，透传 cabSumRow 与 preservedTolQty 确保总计行数量不丢失)
-                object[,] feeMatrix = Tool.BuildFeeMatrix(items, cabDetRow, newSubsumRow, compStartRow, compEndRow, 17, cabSumRow, preservedTolQty);
+                // 构建 17 列完整二维计费公式矩阵 (规则 7: 内存一次性生成，F1 严格对应 newFeeStartRow 本行，F2 对应 newFeeStartRow + 1)
+                object[,] feeMatrix = Tool.BuildFeeMatrix(items, cabDetRow, newFeeStartRow, compStartRow, compEndRow, 17, cabSumRow, preservedTolQty);
 
                 // 批量一次性覆盖写入 Excel 计费区域 (彻底替换旧计费区域)
                 try
                 {
-                    // 获取新计费区域 Range
-                    dynamic feeRange = sheet.Range[$"A{newSubsumRow}:Q{newTolsumRow}"];
+                    // 获取新计费区域 Range (从计费首行 newFeeStartRow 到总计行 newTolsumRow)
+                    dynamic feeRange = sheet.Range[$"A{newFeeStartRow}:Q{newTolsumRow}"];
                     // 覆盖写入公式矩阵
                     feeRange.Formula = feeMatrix;
                 }
@@ -512,9 +512,9 @@ namespace ExcelAddInDemo
 
                 // 获取当前工作表纯文本名称
                 string sheetName = Convert.ToString(sheet.Name) ?? "";
-                // 覆盖更新当前箱柜小计行定义名称 (规则 6)
-                Tool.SafeSetSheetName(sheet, sheetName, $"{subsumPrefix}{k}", newSubsumRow);
-                // 覆盖更新当前箱柜总计行定义名称 (规则 6)
+                // 覆盖更新当前箱柜小计/计费首行定义名称 (规则 6: Cab_Subsum 指向计费首行)
+                Tool.SafeSetSheetName(sheet, sheetName, $"{subsumPrefix}{k}", newFeeStartRow);
+                // 覆盖更新当前箱柜总计行定义名称 (规则 6: Cab_Tolsum 指向总计行)
                 Tool.SafeSetSheetName(sheet, sheetName, $"{tolsumPrefix}{k}", newTolsumRow);
 
                 // 同步更新顶部汇总行公式联动
@@ -799,6 +799,7 @@ namespace ExcelAddInDemo
                     ("总价", item.TotalPriceFormula),
                     ("成本总价", item.CostTotalPriceFormula),
                     ("单价", item.Price),
+                    ("成本单价", item.CostPrice),
                     ("数量", item.Quantity),
                     ("系数", item.Coefficient),
                     ("表价", item.MarkedPrice)

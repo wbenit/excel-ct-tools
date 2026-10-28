@@ -757,6 +757,7 @@
                 <el-input
                   v-model="scope.row.costPrice"
                   class="table-cell-input"
+                  :class="{'formula-error-border': isFormulaError(scope.row.costPrice)}"
                   size="small"
                   @change="saveAllToHost"
                 ></el-input>
@@ -956,6 +957,7 @@
               { key: "totalPriceFormula", label: "总价" },
               { key: "costTotalPriceFormula", label: "成本总价" },
               { key: "price", label: "单价" },
+              { key: "costPrice", label: "成本单价" },
               { key: "quantity", label: "数量" },
               { key: "coefficient", label: "系数" },
               { key: "markedPrice", label: "表价" }

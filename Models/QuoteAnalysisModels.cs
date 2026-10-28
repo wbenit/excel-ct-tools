@@ -12,13 +12,13 @@ namespace ExcelAddInDemo.Models
         // 项目基本财务与概况信息
         public QuoteProjectSummaryDto Summary { get; set; } = new QuoteProjectSummaryDto();
 
-        // 全表 32 台或多台箱柜汇总明细列表
+        // 全表箱柜汇总明细列表 (过滤数量为0后的有效箱柜)
         public List<CabinetAnalysisItemDto> Cabinets { get; set; } = new List<CabinetAnalysisItemDto>();
 
         // 全案成本构成五大维度解构 (元件、箱体、辅材、人工、成套费)
         public CostBreakdownDto CostStructure { get; set; } = new CostBreakdownDto();
 
-        // 核心元器件供应链排行与体量分布 (来自元件汇总表)
+        // 核心元器件供应链排行与体量分布
         public List<ComponentRankingDto> TopComponents { get; set; } = new List<ComponentRankingDto>();
 
         // 箱柜功能类别聚合统计 (动力控制、照明配电、双电源、消防等)
@@ -26,6 +26,60 @@ namespace ExcelAddInDemo.Models
 
         // 品牌供应链采购金额分布 (正泰、国优、安科瑞等)
         public List<BrandDistributionDto> BrandDistributions { get; set; } = new List<BrandDistributionDto>();
+
+        // 可供多选的所有有效报价工作表列表
+        public List<QuoteSheetInfoDto> AvailableSheets { get; set; } = new List<QuoteSheetInfoDto>();
+
+        // 当前选中的分析工作表名称列表
+        public List<string> SelectedSheets { get; set; } = new List<string>();
+
+        // 成本结构与利润解构双环旭日图数据树 (内环成本/毛利，外环Q列明细+成套税金净毛利)
+        public SunburstNodeDto CostSunburst { get; set; } = new SunburstNodeDto();
+
+        // 生产厂家与元件分布双环旭日图数据树 (内环D列厂家，外环B列元件名称)
+        public SunburstNodeDto VendorSunburst { get; set; } = new SunburstNodeDto();
+
+        // 供应链元件名称矩形树图数据树 (第一层Q列类别，第二层B列元件名称)
+        public SunburstNodeDto ComponentTreemap { get; set; } = new SunburstNodeDto();
+
+        // 明细成本汇总与顶部J列汇总之间的核对差额 (绝对值超过1元时前端提示)
+        public double ReconcileDiff { get; set; }
+    }
+
+    /// <summary>
+    /// 可选报价工作表基础信息
+    /// </summary>
+    public class QuoteSheetInfoDto
+    {
+        // 工作表名称 (如: 109, 20, 4台)
+        public string Name { get; set; } = string.Empty;
+
+        // 该工作表包含的箱柜总台数
+        public int CabinetCount { get; set; }
+
+        // 是否为当前正在编辑或活动的活动工作表
+        public bool IsActive { get; set; }
+    }
+
+    /// <summary>
+    /// 通用多层级旭日图 / 树图节点数据传输模型
+    /// </summary>
+    public class SunburstNodeDto
+    {
+        // 节点名称 (如: 成本, 德力西, 塑壳断路器)
+        public string Name { get; set; } = string.Empty;
+
+        // 节点金额数值 (元)
+        public double Value { get; set; }
+
+        // 子节点集合 (支持多级下钻)
+        public List<SunburstNodeDto> Children { get; set; } = new List<SunburstNodeDto>();
+
+        // 附加数据信息 (如规格型号、厂家、数量等)
+        public string Extra { get; set; } = string.Empty;
+
+        // 物料累计数量 (如只数、米数、台数)
+        public double Quantity { get; set; }
     }
 
     /// <summary>
@@ -104,6 +158,12 @@ namespace ExcelAddInDemo.Models
 
         // 对应分类表中的明细锚点行号 (用于图表联动下钻定位)
         public int DetRow { get; set; }
+
+        // 该箱柜在工作表下方明细块的起始行号
+        public int DetBlockStartRow { get; set; }
+
+        // 该箱柜在工作表下方明细块的结束行号
+        public int DetBlockEndRow { get; set; }
 
         // 箱体外形尺寸 (高x宽x深)
         public string Size { get; set; } = string.Empty;

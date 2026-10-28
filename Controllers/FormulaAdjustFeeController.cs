@@ -323,6 +323,8 @@ namespace ExcelAddInDemo.Controllers
                         TotalPriceFormula = item.TotalPriceFormula,
                         CostPrice = item.CostPrice,
                         CostTotalPriceFormula = item.CostTotalPriceFormula,
+                        Coefficient = item.Coefficient,
+                        MarkedPrice = item.MarkedPrice,
                         Category = item.Category
                     });
                 }
@@ -638,6 +640,15 @@ namespace ExcelAddInDemo.Controllers
                     // 检查并修正数量公式
                     string f4 = item.Quantity;
                     if (FixTrailingParen(ref f4)) { item.Quantity = f4; modified = true; }
+                    // 检查并修正成本单价公式
+                    string f5 = item.CostPrice;
+                    if (FixTrailingParen(ref f5)) { item.CostPrice = f5; modified = true; }
+                    // 检查并修正系数公式
+                    string f6 = item.Coefficient;
+                    if (FixTrailingParen(ref f6)) { item.Coefficient = f6; modified = true; }
+                    // 检查并修正表价公式
+                    string f7 = item.MarkedPrice;
+                    if (FixTrailingParen(ref f7)) { item.MarkedPrice = f7; modified = true; }
                 }
             }
 
