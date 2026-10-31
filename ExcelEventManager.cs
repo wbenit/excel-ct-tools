@@ -1109,6 +1109,37 @@ namespace ExcelAddInDemo
                 // 校验全局 _excelApp 与 target 句柄有效性
                 if (_excelApp == null || target == null) return;
 
+                // 优先读取当前右键菜单配置项：是否启用自定义业务右键菜单
+                bool useCustomMenu = ConfigManager.Instance.Current.Excel.UseCustomContextMenu;
+
+                // 若当前使用的是系统菜单 (Excel 原生右键菜单模式)：
+                // 彻底放行原生右键菜单，移除同步 CutCopyMode = 0 清除，不做任何拦截与选区修改，保证 0 延迟、0 干扰、100% 原生流畅
+                if (!useCustomMenu)
+                {
+                    // 彻底放行原生右键菜单弹窗
+                    cancel = false;
+                    // 直接返回，绝不干扰 Excel 原生剪贴板跑马灯状态机与上下文菜单管道
+                    return;
+                }
+
+                // 转换当前触发右击的工作表强类型对象
+                Microsoft.Office.Interop.Excel.Worksheet? activeSheet = shObj as Microsoft.Office.Interop.Excel.Worksheet;
+                if (activeSheet == null) return;
+
+                // 核心业务表智能路由：判定当前工作表是否应弹出业务专属右键菜单
+                // 规则：外部文件、项目信息表、元件分布表、封面、目录等无关表，自动放行系统原生右键菜单
+                if (!ExcelServices.ShouldUseCustomContextMenu(activeSheet))
+                {
+                    // 彻底放行原生系统右键菜单弹窗
+                    cancel = false;
+                    // 直接返回，绝不干扰 Excel 原生剪贴板跑马灯状态机与上下文菜单管道
+                    return;
+                }
+
+                // 获取所属工作簿对象
+                Microsoft.Office.Interop.Excel.Workbook? wb = null;
+                try { wb = activeSheet.Parent as Microsoft.Office.Interop.Excel.Workbook; } catch { }
+
                 // 核心修复：若当前处于复制或剪切模式 (单元格四周带虚线框)，且用户右击的单元格落在当前被选中的选区内部
                 // 说明用户在被复制的源单元格自身上点击右键 (例如准备按当前值进行右键筛选)，绝非要在自身上执行粘贴
                 // 此时提前清除挂起的 CutCopyMode，消除跑马灯虚线框，避免带着虚线框触发右键筛选导致状态机挂起、卡死无法输入
@@ -1128,26 +1159,6 @@ namespace ExcelAddInDemo
                     }
                 }
                 catch { }
-
-                // 读取当前配置：是否启用自定义业务右键菜单
-                bool useCustomMenu = ConfigManager.Instance.Current.Excel.UseCustomContextMenu;
-
-                // 转换当前触发右击的工作表强类型对象
-                Microsoft.Office.Interop.Excel.Worksheet? activeSheet = shObj as Microsoft.Office.Interop.Excel.Worksheet;
-                if (activeSheet == null) return;
-
-                // 获取所属工作簿对象
-                Microsoft.Office.Interop.Excel.Workbook? wb = null;
-                try { wb = activeSheet.Parent as Microsoft.Office.Interop.Excel.Workbook; } catch { }
-
-                // 若处于【Excel 原生右键菜单模式】：完全放行，不做任何拦截与 CommandBar 访问
-                if (!useCustomMenu)
-                {
-                    // 彻底放行原生右键菜单，不做任何 CommandBar 遍历与修改，保证 0 延迟、0 干扰、100% 原生流畅
-                    cancel = false;
-                    // 直接返回 (切勿在右键点击事件中操作 CommandBars，避免干扰 Excel 菜单管道引发致命死锁)
-                    return;
-                }
 
                 // ------------------ 【以下为 WebView 2 业务专属菜单模式】 ------------------
                 // 确保右键点击的目标单元格处于活动选中状态，对齐 Excel 原生行为

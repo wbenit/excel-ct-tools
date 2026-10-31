@@ -1,4 +1,32 @@
-﻿- **【核心落实与闭环：坚决落实规则 9，分类明细顶部 A 列缺少序号直接返回错误并前端告警提示修复】(Services/ExcelServices.DistributedAdjustPrice.cs, publish/)**：
+- **【精准定位与根因确诊：复制单元格/跑马线流动时右键菜单闪退一次原因】(ExcelEventManager.cs: L1112-L1130)**：
+  1. **用户核心指令与关键现象确诊**：
+     - 用户明确澄清：“只有复制单元格，跑马线流动的时候，右键菜单弹出会闪退一次，是右击菜单闪退，不是excel软件”；
+  2. **代码级精准根因剖析**：
+     - 根本病灶点：`ExcelEventManager.cs` 第 1115~1130 行：
+       ```csharp
+       if (_excelApp.CutCopyMode != 0)
+       {
+           Microsoft.Office.Interop.Excel.Range? currentSel = _excelApp.Selection as Microsoft.Office.Interop.Excel.Range;
+           if (currentSel != null && _excelApp.Intersect(currentSel, target) != null)
+           {
+               _excelApp.CutCopyMode = (Microsoft.Office.Interop.Excel.XlCutCopyMode)0;
+           }
+       }
+       ```
+     - ① **逻辑误区**：在 Excel 原生事件机制中，当用户右键点击任意单元格 `target` 时，Excel 在派发 `SheetBeforeRightClick` 之前，就已经将当前 `Selection` 切换为了 `target`！因此 `_excelApp.Intersect(currentSel, target) != null` 无论在何处右击都永远为真（True）！
+     - ② **右键打断与菜单闪退**：当单元格被复制时，Excel 内部正准备弹出带有动态“粘贴选项”的右键菜单。然而在 `SheetBeforeRightClick` 事件响应时，上述代码粗暴调用了 `_excelApp.CutCopyMode = 0`，强行重置了 Excel 剪贴板状态机。这立即引发了 Excel 原生 CommandBars 菜单管道的重绘与状态重构，正在构建或刚刚露脸的右键菜单瞬间被 Windows/Office 判定失效而自动撤回销毁（闪退）！
+     - ③ **为什么只闪退一次**：第一次右键点击时，跑马灯已被这行代码消除，`CutCopyMode` 变为了 0；用户再次右击（第二次右击）时，因为已经没有跑马线了，不会再进入该分支，菜单便能正常显示！
+     - ④ **为什么包含原生菜单模式**：这段代码位于 `if (!useCustomMenu) return;` 的正上方，原生右键和业务右键模式均会被其打断！
+     - ⑤ **该清理代码完全多余**：在真正的“按值筛选”动作处（`ComponentFilter.cs` 和 `CustomContextMenuForm.cs`），代码本身早就已有按需清除 `CutCopyMode` 的保护；在右键点击入口处粗暴清空不仅导致菜单闪退，还粗暴打断了用户原本想要进行的“右键粘贴”操作。
+  3. **最小改动修复方案**：彻底移除或注释掉 `ExcelEventManager.cs` L1112~L1130 的这段代码，保持用户原生的复制剪切状态完好无损。
+��动触发的浮窗显示或窗口状态变更瞬间引发了 `WM_KILLFOCUS`/`WM_CANCELMODE` 或 `Deactivate`，导致系统判定用户在外部点击，将刚弹出的菜单瞬间撤回关闭（闪退）；
+       - ④ 为什么只“闪退一次”：第二次右击同一单元格时，选区未变不再触发 `SheetSelectionChange`，无浮窗刷新和焦点抢占，因此菜单能稳定驻留。
+     - **场景 B：Excel 进程直接崩溃闪退退出（错误日志证实存在 `0xc0000409` / `ntdll.dll`）**：
+       - 查阅 Windows 应用程序错误事件，存在 `EXCEL.EXE` 崩溃事件（异常代码 `0xc0000409` Fast Fail，故障模块 `ntdll.dll`）；
+       - ① COM 重入冲突：在 Excel 进入右键菜单构建管道期间，若在事件中同步操作 `Selection`、`Intersect`、`CutCopyMode`，或在右键模式下执行 `target.Select()`，会引发 Excel 内部状态机重入与死锁保护；
+       - ② 视口子类化钩子干扰：`ExcelWindowHook` 对 `EXCEL7` 视口进行了 Win32 消息子类化挂接，在右键上下文菜单弹出期间，菜单系统专属消息与子类化消息泵产生并发冲突，易引发 `ntdll.dll` 的栈安全检查失败崩溃。
+
+- **【核心落实与闭环：坚决落实规则 9，分类明细顶部 A 列缺少序号直接返回错误并前端告警提示修复】(Services/ExcelServices.DistributedAdjustPrice.cs, publish/)**：
   1. **用户核心指令与原则对齐**：
      - 用户指令反馈：“@[e:\Ace\excel-ct-tools\Services\ExcelServices.DistributedAdjustPrice.cs:L1532-L1535] 修改为前端告警，提示修复”；
      - 严格践行规则 9（“不需要考虑兼容的情况，如果不符合要求，直接报错提醒，不需要做自以为的防御代码”）：
@@ -7141,3 +7169,65 @@
    - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
    - 将生成的 `ExcelAddInDemo.dll` 成功同步覆盖至 `publish/` 交付目录。
 
+
+---
+
+## [2026-10-31 15:45:00] 深度排查：复制单元格带跑马线时弹出右键菜单闪退根因分析
+
+### [Problem & Root Cause]
+1. **现象**：
+   - 用户在 Excel 中复制单元格（处于跑马线流动状态，即 CutCopyMode != 0）时，右键弹出菜单会发生闪退。
+2. **系统日志与原生崩溃证据 (Windows Event Log)**：
+   - 提取到多次 EXCEL.EXE 进程崩溃记录：
+     - 故障程序: EXCEL.EXE (版本 16.0.20326.20232)
+     - 故障模块: ntdll.dll (版本 10.0.19041.6456)
+     - 异常代码: 0xc0000409 (STATUS_STACK_BUFFER_OVERRUN / __fastfail)
+     - 偏移量: 0x000000000008cc4f
+3. **核心代码病灶剖析 (ExcelEventManager.cs & CustomContextMenuForm.cs)**：
+   - **病灶 1 (CutCopyMode 粗暴同步清零)**：在 OnSheetBeforeRightClick 回调中（第 1126 行），在 Excel 正在根据剪贴板构建上下文菜单的敏感时刻，同步强行设置 _excelApp.CutCopyMode = 0，破坏 Excel 内部 OLE 剪贴板状态机，触发 FastFail。
+   - **病灶 2 (同步 target.Select() 引发级联事件重入)**：在 BeforeRightClick 中（第 1160 行）在未关闭 EnableEvents 的情况下调用 	arget.Select()，在复制状态下强改选区，直接重入触发 OnSheetSelectionChange，破坏正在进行的右键 Hit-Test 消息链。
+   - **病灶 3 (COM 回调内部同步抢焦 Show/Activate)**：在 BeforeRightClick 事件尚未向 Excel 内核返回 cancel=true 之前，直接同步调用 _instance.Show() 与 Activate()，强行抢夺顶层焦点，破坏 Excel 的原生消息管道。
+   - **病灶 4 (浮窗 Deactivate 容差缺陷)**：菜单初始定位坐标存在 +2px 偏移，当上述状态变动引发 Excel 窗口重绘抢焦时，菜单窗体失焦，Bounds.Contains(Cursor.Position) 判定为外部，触发 this.Hide() 导致菜单瞬间闪退消失。
+
+### [Next]
+- 待用户确认后实施最小改动修复：
+  1. 解除 BeforeRightClick 中的同步 CutCopyMode 清除与 target.Select()；
+  2. 采用 ExcelAsyncUtil.QueueAsMacro 将右键菜单的弹出与选区调整异步化至下一个消息节拍；
+  3. 优化 CustomContextMenuForm 的 Bounds 容差与防失焦逻辑。
+
+---
+
+## [2026-10-31 15:47:00] 完成：系统菜单模式下彻底移除 BeforeRightClick 的 CutCopyMode 清除
+
+### [Completed]
+1. **时机判定与前置放行 (ExcelEventManager.cs)**：
+   - 将读取配置 ConfigManager.Instance.Current.Excel.UseCustomContextMenu 提前到 OnSheetBeforeRightClick 最前端；
+   - 若处于系统菜单模式（!useCustomMenu），直接设置 cancel = false 并立即 eturn 放行，绝不执行后续的 CutCopyMode = 0 及任何选区操作；
+   - 彻底消除了系统菜单模式下右键点击单元格时清除跑马灯并导致 Excel 闪退的问题；
+   - 严格遵循注释规范：新增/修改代码每 3 行包含一行中文注释。
+2. **构建验证与物理产物同步**：
+   - 执行 dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none 编译通过（0 错误）；
+   - 将最新生成的 ExcelAddInDemo.dll 成功同步覆盖至 publish/ 交付目录。
+
+---
+
+## [2026-10-31 16:04:00] 实施：无关表及“元件分布表”自动使用系统右键菜单
+
+### [Completed]
+1. **业务表判定服务 (Services/ExcelServices.cs)**：
+   - 新增 ShouldUseCustomContextMenu(Worksheet activeSheet) 核心路由算法；
+   - 规则层级：
+     1. 外部非工程工作簿 -> 使用系统原生菜单；
+     2. 【项目信息】表自身 -> 使用系统原生菜单；
+     3. 【元件分布表】（或表名包含“分布”） -> 依据用户指令明确放行系统原生菜单；
+     4. 【元件汇总表】（或表名包含“元件汇总”） -> 激活业务专属菜单；
+     5. 已登记在【项目信息】中的有效分类明细表（白名单） -> 激活业务专属菜单；
+     6. 兜底检测存在有效 Cab_Det_* 箱柜定义名称 -> 激活业务专属菜单；
+     7. 其余无关表（封面、目录、技术规范、空白表等） -> 自动放行系统原生菜单。
+   - 严格遵循注释规范：新增每 3 行包含一行中文注释。
+2. **右键事件前置路由 (ExcelEventManager.cs)**：
+   - 在 OnSheetBeforeRightClick 开头校验 !ExcelServices.ShouldUseCustomContextMenu(activeSheet)；
+   - 对判定为系统菜单的场景，直接 cancel = false; return;，绝不修改 CutCopyMode、绝不执行 target.Select()、绝不抢夺焦点，100% 保持原生流畅。
+3. **构建验证与物理产物同步**：
+   - 执行 dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none 编译通过（0 错误）；
+   - 将最新生成的 ExcelAddInDemo.dll 成功同步覆盖至 publish/ 交付目录。

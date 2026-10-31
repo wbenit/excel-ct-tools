@@ -753,6 +753,137 @@ namespace ExcelAddInDemo
                 System.Windows.Forms.MessageBox.Show($"修复定义名称时发生异常：{ex.Message}", "修复失败", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
             }
         }
+
+        /// <summary>
+        /// 判定指定工作表是否应当使用成套专属右键菜单 (仅分类明细表与元件汇总表)
+        /// 规则：
+        /// 1. 外部非工程工作簿 -> false (使用系统原生菜单)
+        /// 2. 【项目信息】表自身 -> false (使用系统原生菜单)
+        /// 3. 【元件分布表】(含“分布”) -> false (按用户要求使用系统原生菜单)
+        /// 4. 【元件汇总表】(含“元件汇总”) -> true (使用业务专属菜单)
+        /// 5. 已登记在【项目信息】中的有效分类明细表 -> true (使用业务专属菜单)
+        /// 6. 兜底：表中包含有效箱柜定义名称 (Cab_Det) -> true (使用业务专属菜单)
+        /// 7. 其他无关表 (封面/目录/技术表/空白表等) -> false (使用系统原生菜单)
+        /// </summary>
+        /// <param name="activeSheet">当前右击的目标工作表 COM 对象</param>
+        /// <returns>若需要弹出业务专属右键菜单返回 true，若使用 Excel 系统原生菜单返回 false</returns>
+        public static bool ShouldUseCustomContextMenu(Microsoft.Office.Interop.Excel.Worksheet? activeSheet)
+        {
+            // 校验工作表有效性
+            if (activeSheet == null) return false;
+
+            try
+            {
+                // 1. 提取当前工作簿对象
+                var wb = activeSheet.Parent as Microsoft.Office.Interop.Excel.Workbook;
+                // 若非有效成套工程工作簿 (不含【项目信息】表)，直接使用系统原生菜单
+                if (wb == null || !Tool.IsProjectWorkbook(wb))
+                {
+                    // 外部普通表格放行系统原生菜单
+                    return false;
+                }
+
+                // 2. 提取当前工作表名称
+                string sheetName = Convert.ToString(activeSheet.Name)?.Trim() ?? string.Empty;
+                // 若表名为空则安全回退系统原生菜单
+                if (string.IsNullOrEmpty(sheetName)) return false;
+
+                // 3. 【项目信息】表自身：明确使用系统原生右键菜单
+                if (string.Equals(sheetName, "项目信息", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 项目信息主表中枢放行系统原生菜单
+                    return false;
+                }
+
+                // 4. 【元件分布表】：依据用户明确需求，元件分布表自动使用系统原生右键菜单
+                if (string.Equals(sheetName, DistributionSheetName, StringComparison.OrdinalIgnoreCase) ||
+                    sheetName.Contains("分布"))
+                {
+                    // 元件汇总分布表放行系统原生右键菜单
+                    return false;
+                }
+
+                // 5. 【元件汇总表】：包含“元件汇总”的标准全单大表，使用业务专属菜单
+                if (string.Equals(sheetName, Models.ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase) ||
+                    sheetName.Contains("元件汇总"))
+                {
+                    // 元件汇总大表激活业务专属右键菜单
+                    return true;
+                }
+
+                // 6. 白名单判定：从【项目信息】读取分类明细表登记集合 (60秒纯内存高速缓存直出)
+                var categorySheets = Tool.GetProjectCategorySheetNames(wb);
+                // 若当前表名属于受管分类明细表，激活业务专属右键菜单
+                if (categorySheets != null && categorySheets.Contains(sheetName))
+                {
+                    // 受管分类明细表激活业务菜单
+                    return true;
+                }
+
+                // 7. 特征兜底扫描：若未登记在白名单，但该表内包含有效的 Cab_Det_* 箱柜定义名称
+                string detPrefix = Models.CabinetPrefixConfig.Current.DetPrefix;
+                // 检查工作表级别定义名称中是否存在有效箱柜明细行标记
+                if (activeSheet.Names != null)
+                {
+                    // 遍历工作表私有定义名称
+                    foreach (Microsoft.Office.Interop.Excel.Name n in activeSheet.Names)
+                    {
+                        try
+                        {
+                            // 清理定义名称前缀与特殊字符
+                            string nName = Convert.ToString(n.Name) ?? "";
+                            if (nName.Contains("!")) nName = nName.Substring(nName.IndexOf("!") + 1);
+                            nName = nName.Trim('\'', '=', ' ', '"');
+                            // 匹配到有效箱柜明细前缀
+                            if (nName.StartsWith(detPrefix, StringComparison.OrdinalIgnoreCase))
+                            {
+                                // 表内包含箱柜定义，判定为分类业务表
+                                return true;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
+                // 检查工作簿级别定义名称中属于当前表的箱柜明细项
+                if (wb.Names != null)
+                {
+                    // 遍历工作簿全局定义名称集合
+                    foreach (Microsoft.Office.Interop.Excel.Name n in wb.Names)
+                    {
+                        try
+                        {
+                            // 清理全局定义名称
+                            string nName = Convert.ToString(n.Name) ?? "";
+                            if (nName.Contains("!")) nName = nName.Substring(nName.IndexOf("!") + 1);
+                            nName = nName.Trim('\'', '=', ' ', '"');
+                            // 匹配箱柜明细特征
+                            if (nName.StartsWith(detPrefix, StringComparison.OrdinalIgnoreCase))
+                            {
+                                // 获取指向的引用单元格
+                                var r = n.RefersToRange;
+                                // 校验所属工作表名称与当前工作表一致
+                                if (r != null && r.Worksheet != null &&
+                                    string.Equals(Convert.ToString(r.Worksheet.Name), sheetName, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    // 确认为属于当前表的有效箱柜定义，判定为分类业务表
+                                    return true;
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录判定异常日志并安全放行系统菜单
+                LogHelper.WriteLog($"[ShouldUseCustomContextMenu] 判定表类型异常: {ex.Message}");
+            }
+
+            // 无任何业务表特征 (如封面、技术表、空白表等)，安全放行系统原生菜单
+            return false;
+        }
     }
 }
 
