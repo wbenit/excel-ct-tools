@@ -301,11 +301,13 @@ namespace ExcelAddInDemo.Services
                 return resultList;
             }
 
-            // 获取 AutoCAD 插件 DLL 的物理路径 --硬编码: ClassLibrary3.dll 路径--
-            string pluginDllPath = @"E:\Ace\cad-net_1\cad1\ClassLibrary1\bin\Debug\ClassLibrary3.dll";
-            if (!File.Exists(pluginDllPath))
+            // 智能检索并定位 AutoCAD 尺寸提取插件程序集路径 (优先从配置读取，支持多级智能探测)
+            string pluginDllPath = ResolveCadPluginDllPath();
+            // 校验插件程序集物理文件是否存在
+            if (string.IsNullOrWhiteSpace(pluginDllPath) || !File.Exists(pluginDllPath))
             {
-                LogHelper.WriteLog($"[CadSyncClient] 插件程序集不存在: {pluginDllPath}");
+                // 记录明确的中文告警日志并退出
+                LogHelper.WriteLog("[CadSyncClient] 未找到 AutoCAD 尺寸测算插件程序集 (ClassLibrary3.dll)，请在 appsettings.json 中配置 CadSyncSettings:PluginDllPath 或将 DLL 放置于插件目录");
                 return resultList;
             }
 
@@ -385,43 +387,256 @@ namespace ExcelAddInDemo.Services
         }
 
         /// <summary>
-        /// 自动探测 AutoCAD accoreconsole.exe 核心控制台的物理绝对路径
+        /// 智能解析并定位 AutoCAD 尺寸测算插件 (ClassLibrary3.dll) 的物理绝对路径
+        /// 优先级：1.配置文件显式路径 -> 2.插件运行根目录 -> 3.plugins子目录 -> 4.开发环境相邻工程相对路径
         /// </summary>
-        /// <returns>程序路径，未找到时返回空字符串</returns>
+        /// <returns>有效的文件绝对路径；若未找到则返回空字符串</returns>
+        private static string ResolveCadPluginDllPath()
+        {
+            // 获取当前 Excel 插件所在的物理根目录
+            string appDir = Tool.GetAppDirectory();
+
+            try
+            {
+                // 1. 优先读取 appsettings.json 中的用户显式配置
+                string configuredPath = AppConfig.Instance.CadSync.PluginDllPath;
+                // 判断配置项是否非空有效
+                if (!string.IsNullOrWhiteSpace(configuredPath))
+                {
+                    // 若配置为绝对路径则直接使用，若为相对路径则基于插件根目录解析
+                    string fullConfigured = Path.IsPathRooted(configuredPath)
+                        ? configuredPath
+                        : Path.Combine(appDir, configuredPath);
+
+                    // 检查配置文件指定的物理文件是否存在
+                    if (File.Exists(fullConfigured))
+                    {
+                        return fullConfigured;
+                    }
+                }
+            }
+            catch { }
+
+            // 2. 探测发布目录/当前运行同级目录下的 ClassLibrary3.dll
+            string localPath = Path.Combine(appDir, "ClassLibrary3.dll");
+            // 校验同级目录下是否存在目标动态库
+            if (File.Exists(localPath))
+            {
+                return localPath;
+            }
+
+            // 3. 探测 plugins 专属插件子目录
+            string pluginsSubPath = Path.Combine(appDir, "plugins", "ClassLibrary3.dll");
+            // 校验子目录下是否存在目标动态库
+            if (File.Exists(pluginsSubPath))
+            {
+                return pluginsSubPath;
+            }
+
+            // 4. 开发环境多工程相对路径探测 (消除绝对盘符依赖，适配相邻工程结构)
+            try
+            {
+                // 向上追溯三级目录探测相邻工程 cad-net_1 的编译输出目录
+                string devRelativePath = Path.GetFullPath(Path.Combine(appDir, @"..\..\..\cad-net_1\cad1\ClassLibrary1\bin\Debug\ClassLibrary3.dll"));
+                // 校验相对解析后的开发产物是否存在
+                if (File.Exists(devRelativePath))
+                {
+                    return devRelativePath;
+                }
+            }
+            catch { }
+
+            // 全部探测路径均未命中时返回空字符串
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// 自动多维自适应探测 AutoCAD accoreconsole.exe 核心控制台的物理绝对路径
+        /// 探测策略：用户自定义配置 -> 注册表多版本动态枚举 -> 磁盘全盘符多版本扫描 -> PATH 环境变量
+        /// </summary>
+        /// <returns>有效可执行文件绝对路径，未找到时返回空字符串</returns>
         private static string GetAccoreConsolePath()
+        {
+            // 0. 优先检测用户自定义显式配置项
+            try
+            {
+                // 读取配置中显式指定的 accoreconsole 自定义路径
+                string customPath = AppConfig.Instance.CadSync.CustomAccoreConsolePath;
+                // 校验自定义路径非空且文件物理存在
+                if (!string.IsNullOrWhiteSpace(customPath) && File.Exists(customPath))
+                {
+                    return customPath;
+                }
+            }
+            catch { }
+
+            // 1. 动态自适应枚举 Windows 注册表中已安装的所有 AutoCAD 版本 (高版本优先)
+            string registryPath = ProbeAccoreConsoleFromRegistry();
+            // 校验注册表探测结果有效性
+            if (!string.IsNullOrWhiteSpace(registryPath) && File.Exists(registryPath))
+            {
+                return registryPath;
+            }
+
+            // 2. 遍历系统所有固定磁盘多版本常用安装目录兜底排查
+            string diskPath = ProbeAccoreConsoleFromCommonDisks();
+            // 校验磁盘扫描探测结果有效性
+            if (!string.IsNullOrWhiteSpace(diskPath) && File.Exists(diskPath))
+            {
+                return diskPath;
+            }
+
+            // 3. 从系统 PATH 环境变量中嗅探
+            string envPath = ProbeAccoreConsoleFromEnvironmentPath();
+            // 校验环境变量探测结果有效性
+            if (!string.IsNullOrWhiteSpace(envPath) && File.Exists(envPath))
+            {
+                return envPath;
+            }
+
+            // 全部途径均未探测到时返回空
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// 动态枚举 Windows 注册表寻找各版本 AutoCAD 安装目录下的 accoreconsole.exe
+        /// </summary>
+        private static string ProbeAccoreConsoleFromRegistry()
+        {
+            // 定义需要检索的注册表基项配置 (覆盖 64 位 HKLM、HKCU 与 32 位视图)
+            var regRoots = new[]
+            {
+                (Hive: Microsoft.Win32.RegistryHive.LocalMachine, View: Microsoft.Win32.RegistryView.Registry64),
+                (Hive: Microsoft.Win32.RegistryHive.CurrentUser, View: Microsoft.Win32.RegistryView.Registry64),
+                (Hive: Microsoft.Win32.RegistryHive.LocalMachine, View: Microsoft.Win32.RegistryView.Registry32)
+            };
+
+            foreach (var root in regRoots)
+            {
+                try
+                {
+                    // 打开目标注册表基项视图
+                    using (var baseKey = Microsoft.Win32.RegistryKey.OpenBaseKey(root.Hive, root.View))
+                    // 打开 AutoCAD 统一根路径
+                    using (var cadRoot = baseKey.OpenSubKey(@"SOFTWARE\Autodesk\AutoCAD"))
+                    {
+                        // 校验根键有效性
+                        if (cadRoot == null) continue;
+
+                        // 获取所有版本子项名称并按版本号降序排序 (如 R24.3, R24.2, R24.1, R24.0, R23.1 等，高版本优先)
+                        var versionKeys = cadRoot.GetSubKeyNames()
+                            .OrderByDescending(v => v, StringComparer.OrdinalIgnoreCase);
+
+                        foreach (var verName in versionKeys)
+                        {
+                            // 逐个打开版本子键
+                            using (var verKey = cadRoot.OpenSubKey(verName))
+                            {
+                                if (verKey == null) continue;
+
+                                // 遍历版本下的具体语言与产品代码子项 (如 ACAD-4101:804、ACAD-5101:409 等)
+                                foreach (var prodName in verKey.GetSubKeyNames())
+                                {
+                                    using (var prodKey = verKey.OpenSubKey(prodName))
+                                    {
+                                        if (prodKey == null) continue;
+
+                                        // 读取 AutoCAD 安装物理根目录
+                                        string? acadLoc = prodKey.GetValue("AcadLocation") as string;
+                                        if (!string.IsNullOrWhiteSpace(acadLoc))
+                                        {
+                                            // 拼接 accoreconsole.exe 绝对路径
+                                            string exePath = Path.Combine(acadLoc, "accoreconsole.exe");
+                                            // 校验文件物理存在性
+                                            if (File.Exists(exePath))
+                                            {
+                                                return exePath;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// 遍历系统各本地固定磁盘驱动器与多版本常见目录探测 accoreconsole.exe
+        /// </summary>
+        private static string ProbeAccoreConsoleFromCommonDisks()
         {
             try
             {
-                // 1. 优先从注册表 AutoCAD 2021 安装路径查找 --硬编码: 注册表路径--
-                using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Autodesk\AutoCAD\R24.0\ACAD-4101:804"))
+                // 获取当前系统中所有就绪的固定硬盘驱动器盘符 (如 C:\, D:\, E:\ 等，自适应不写死)
+                var driveRoots = DriveInfo.GetDrives()
+                    .Where(d => d.DriveType == DriveType.Fixed && d.IsReady)
+                    .Select(d => d.RootDirectory.FullName)
+                    .ToList();
+
+                // 候选常见 AutoCAD 发行年份 (由近及远降序排查)
+                int[] candidateYears = new[] { 2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018 };
+
+                foreach (var drive in driveRoots)
                 {
-                    if (key != null)
+                    foreach (var year in candidateYears)
                     {
-                        string? loc = key.GetValue("AcadLocation") as string;
-                        if (!string.IsNullOrWhiteSpace(loc))
+                        // 常见候选安装相对目录模式
+                        string[] candidateRelativeDirs = new[]
                         {
-                            string target = Path.Combine(loc, "accoreconsole.exe");
-                            if (File.Exists(target)) return target;
+                            Path.Combine("Program Files", "Autodesk", $"AutoCAD {year}"),
+                            Path.Combine("Program Files (x86)", "Autodesk", $"AutoCAD {year}"),
+                            Path.Combine("Autodesk", $"AutoCAD {year}"),
+                            $"AutoCAD {year}"
+                        };
+
+                        foreach (var relDir in candidateRelativeDirs)
+                        {
+                            // 构造完整的可执行程序探测路径
+                            string targetExe = Path.Combine(drive, relDir, "accoreconsole.exe");
+                            // 命中物理存在即可返回
+                            if (File.Exists(targetExe))
+                            {
+                                return targetExe;
+                            }
                         }
                     }
                 }
             }
             catch { }
 
-            // 2. 常见物理安装目录兜底排查 --硬编码: 常用安装路径--
-            string[] probePaths = new[]
-            {
-                @"D:\Program Files\Autodesk\AutoCAD 2021\accoreconsole.exe",
-                @"C:\Program Files\Autodesk\AutoCAD 2021\accoreconsole.exe",
-                @"D:\AutoCAD 2021\accoreconsole.exe",
-                @"C:\AutoCAD 2021\accoreconsole.exe"
-            };
+            return string.Empty;
+        }
 
-            foreach (var p in probePaths)
+        /// <summary>
+        /// 从系统环境变量 PATH 注册目录中探测 accoreconsole.exe
+        /// </summary>
+        private static string ProbeAccoreConsoleFromEnvironmentPath()
+        {
+            try
             {
-                // 找到即返回
-                if (File.Exists(p)) return p;
+                // 读取系统的 PATH 环境变量文本
+                string? pathEnv = Environment.GetEnvironmentVariable("PATH");
+                if (string.IsNullOrWhiteSpace(pathEnv)) return string.Empty;
+
+                // 拆分各目录片段
+                var paths = pathEnv.Split(new[] { Path.PathSeparator }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var dir in paths)
+                {
+                    // 组合目标程序绝对路径
+                    string candidate = Path.Combine(dir.Trim(), "accoreconsole.exe");
+                    // 校验文件物理存在性
+                    if (File.Exists(candidate))
+                    {
+                        return candidate;
+                    }
+                }
             }
+            catch { }
 
             return string.Empty;
         }

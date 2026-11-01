@@ -54,8 +54,8 @@ namespace ExcelAddInDemo.Services
 
         #region 品牌厂商精准识别与归一化引擎
 
-        // 电气天下品牌 ID 映射表 --硬编码: 厂商代码对照--
-        private static readonly Dictionary<string, int> Dq123BrandMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        // 电气天下内置常用知名电气品牌与厂商代码基准对照字典 (兜底保障)
+        private static readonly Dictionary<string, int> DefaultDq123BrandMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
             // 正泰厂家代码
             { "正泰", 1 },
@@ -80,6 +80,108 @@ namespace ExcelAddInDemo.Services
             // 良信电器厂家代码
             { "良信", 138 }
         };
+
+        /// <summary>
+        /// 动态获取电气天下品牌至厂商 ID 的映射关系字典
+        /// 优先从运行时配置中读取用户自定义字典，并与内置知名品牌字典动态双向合并
+        /// </summary>
+        /// <returns>合并后的最新品牌映射字典</returns>
+        public static Dictionary<string, int> GetDq123BrandMap()
+        {
+            // 1. 初始化包含默认大厂的基础映射副本
+            var merged = new Dictionary<string, int>(DefaultDq123BrandMap, StringComparer.OrdinalIgnoreCase);
+
+            try
+            {
+                // 2. 尝试从全局配置管理器提取用户配置的映射字典
+                var configuredMap = ConfigManager.Instance.Current?.OnlinePriceSearch?.Dq123BrandMap;
+                // 若配置存在且包含项，依次覆盖或追加
+                if (configuredMap != null && configuredMap.Count > 0)
+                {
+                    // 遍历配置项执行合并
+                    foreach (var kvp in configuredMap)
+                    {
+                        // 校验品牌名称非空有效
+                        if (!string.IsNullOrWhiteSpace(kvp.Key))
+                        {
+                            // 用户自定义配置优先覆盖或补充
+                            merged[kvp.Key.Trim()] = kvp.Value;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // 3. 返回动态合并后的完整品牌映射
+            return merged;
+        }
+
+        /// <summary>
+        /// 根据品牌名称动态解析电气天下的厂商数字 ID
+        /// </summary>
+        /// <param name="brand">输入的品牌名称</param>
+        /// <param name="factoryId">输出的厂商数字 ID</param>
+        /// <returns>是否成功解析命中厂商 ID</returns>
+        public static bool TryGetDq123FactoryId(string brand, out int factoryId)
+        {
+            // 默认输出 0
+            factoryId = 0;
+            // 校验入参有效性
+            if (string.IsNullOrWhiteSpace(brand)) return false;
+
+            // 获取当前动态合并的映射字典
+            var map = GetDq123BrandMap();
+            // 执行忽略大小写的安全匹配
+            return map.TryGetValue(brand.Trim(), out factoryId);
+        }
+
+        /// <summary>
+        /// 根据电气天下的厂商数字 ID 反向解析规范的中文品牌名称
+        /// 优先从用户动态配置字典反查，未命中则查内置大厂与系列对照表
+        /// </summary>
+        /// <param name="factoryId">厂商数字 ID</param>
+        /// <param name="brandName">输出的规范品牌名称</param>
+        /// <returns>是否成功命中品牌</returns>
+        public static bool TryResolveDq123BrandByFactoryId(int factoryId, out string brandName)
+        {
+            // 默认输出空字符串
+            brandName = string.Empty;
+            // 校验厂商 ID 正数有效性
+            if (factoryId <= 0) return false;
+
+            try
+            {
+                // 1. 优先查动态配置字典 (若用户在配置中追加了新品牌)
+                var configMap = ConfigManager.Instance.Current?.OnlinePriceSearch?.Dq123BrandMap;
+                // 校验配置字典有效
+                if (configMap != null)
+                {
+                    // 遍历寻找匹配 ID 的品牌键名
+                    foreach (var kvp in configMap)
+                    {
+                        // 匹配厂商 ID 且品牌名有效
+                        if (kvp.Value == factoryId && !string.IsNullOrWhiteSpace(kvp.Key))
+                        {
+                            // 赋值输出并返回成功
+                            brandName = kvp.Key;
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // 2. 查内置的官方厂商代码与系列对照表 (覆盖微断/塑壳子系列 ID)
+            if (Dq123FactoryIdMap.TryGetValue(factoryId, out var mapped))
+            {
+                // 命中内置系列品牌
+                brandName = mapped;
+                return true;
+            }
+
+            // 全部未命中返回 false
+            return false;
+        }
 
         // 电气天下已知厂商代码与实际品牌反向对照表 --硬编码: 厂商代码到实际品牌--
         private static readonly Dictionary<int, string> Dq123FactoryIdMap = new Dictionary<int, string>
@@ -308,8 +410,8 @@ namespace ExcelAddInDemo.Services
                 else if (int.TryParse(mnProp.GetString(), out int mv)) fid = mv;
             }
 
-            // 步骤 2: 查电气天下厂家代码对照表精准命中品牌
-            if (fid > 0 && Dq123FactoryIdMap.TryGetValue(fid, out var mappedBrand))
+            // 步骤 2: 查电气天下厂家代码与动态配置对照表精准命中品牌
+            if (fid > 0 && TryResolveDq123BrandByFactoryId(fid, out var mappedBrand))
             {
                 return mappedBrand;
             }
@@ -359,10 +461,10 @@ namespace ExcelAddInDemo.Services
         {
             try
             {
-                // 解析厂商 ID
+                // 解析厂商 ID (自适应从动态合并映射表中查找)
                 int? factoryId = null;
-                // 若指定了具体品牌且存在于映射表，则指定对应 ID
-                if (!string.IsNullOrWhiteSpace(brand) && Dq123BrandMap.TryGetValue(brand.Trim(), out int fid))
+                // 若指定了具体品牌且命中映射，则指定对应厂商 ID
+                if (!string.IsNullOrWhiteSpace(brand) && TryGetDq123FactoryId(brand, out int fid))
                 {
                     factoryId = fid;
                 }
@@ -381,8 +483,12 @@ namespace ExcelAddInDemo.Services
                 // 构造 UTF-8 JSON 格式的 HTTP 内容
                 var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
 
-                // 发起 POST 请求至电气天下查询终结点 --硬编码: 电气天下接口--
-                const string apiUrl = "https://www.dq123.com/view/price/search/element";
+                // 发起 POST 请求至电气天下查询终结点 (动态优先读取配置)
+                string configuredDq123Url = ConfigManager.Instance.Current?.OnlinePriceSearch?.Dq123ApiUrl;
+                // 校验配置是否有效非空，否则回退默认
+                string apiUrl = !string.IsNullOrWhiteSpace(configuredDq123Url)
+                    ? configuredDq123Url
+                    : "https://www.dq123.com/view/price/search/element";
                 var response = await _httpClient.PostAsync(apiUrl, content).ConfigureAwait(false);
 
                 // 校验 HTTP 响应状态码
@@ -757,10 +863,10 @@ namespace ExcelAddInDemo.Services
                 // 判空过滤
                 if (string.IsNullOrWhiteSpace(model)) return (false, string.Empty, 0.0, string.Empty, string.Empty, "未输入检索型号");
 
-                // 智能解析目标厂商代号
+                // 智能解析目标厂商代号 (支持从动态配置字典中自适应解析)
                 int? factoryId = null;
                 // 优先从界面用户选择解析
-                if (!string.IsNullOrWhiteSpace(brand) && brand != "全部" && Dq123BrandMap.TryGetValue(brand.Trim(), out int fid))
+                if (!string.IsNullOrWhiteSpace(brand) && brand != "全部" && TryGetDq123FactoryId(brand.Trim(), out int fid))
                 {
                     // 确定厂家代码
                     factoryId = fid;
@@ -770,8 +876,8 @@ namespace ExcelAddInDemo.Services
                 {
                     // 智能推导品牌
                     string deducedBrand = DeduceBrandFromModel(model);
-                    // 匹配厂商表
-                    if (!string.IsNullOrWhiteSpace(deducedBrand) && Dq123BrandMap.TryGetValue(deducedBrand, out int dfid))
+                    // 匹配厂商表 (自适应动态配置)
+                    if (!string.IsNullOrWhiteSpace(deducedBrand) && TryGetDq123FactoryId(deducedBrand, out int dfid))
                     {
                         // 赋予推导代码
                         factoryId = dfid;
@@ -923,9 +1029,29 @@ namespace ExcelAddInDemo.Services
 
         #region 天工矩阵 (titanmatrix.com) 查询引擎
 
-        // 天工矩阵签名专用 AppID 与 AppKey --硬编码: 天工矩阵签名密钥--
-        private const string TitanAppId = "201010";
-        private const string TitanAppKey = "72933362EAA649B893699E6191BC898F";
+        /// <summary>
+        /// 动态解析天工矩阵签名凭据与 API 终结点配置
+        /// 优先级：1. ConfigManager 运行时配置 -> 2. AppConfig 默认配置 -> 3. 内置安全兜底
+        /// </summary>
+        /// <returns>生效的天工矩阵配置实体</returns>
+        private static TitanMatrixSettings GetTitanConfig()
+        {
+            try
+            {
+                // 1. 尝试从当前全局配置管理器提取天工矩阵配置
+                var cfg = ConfigManager.Instance.Current?.OnlinePriceSearch?.Titan;
+                // 若配置存在且 AppId/AppKey 均非空有效，直接采用配置项
+                if (cfg != null && !string.IsNullOrWhiteSpace(cfg.AppId) && !string.IsNullOrWhiteSpace(cfg.AppKey))
+                {
+                    // 返回已加载的有效配置
+                    return cfg;
+                }
+            }
+            catch { }
+
+            // 2. 兜底回退：返回标准默认配置实例 (内置安全默认值)
+            return new TitanMatrixSettings();
+        }
 
         /// <summary>
         /// 纯原生计算 MD5 32位十六进制小写哈希
@@ -959,6 +1085,17 @@ namespace ExcelAddInDemo.Services
         {
             try
             {
+                // 1. 动态获取天工矩阵签名凭据与端点配置 (彻底消除硬编码)
+                var titanConfig = GetTitanConfig();
+                // 读取动态配置的应用 AppId
+                string appId = titanConfig.AppId;
+                // 读取动态配置的应用 AppKey
+                string appKey = titanConfig.AppKey;
+                // 读取动态配置的接口终结点 URL (若配置为空则使用默认端点)
+                string apiUrl = !string.IsNullOrWhiteSpace(titanConfig.ApiUrl)
+                    ? titanConfig.ApiUrl
+                    : "https://cpq.titanmatrix.com/api/cpq/search/specsearch";
+
                 // 严格对齐 JavaScript1.js 中的系统环境 UA 字符串 --硬编码: 天工专用UA--
                 const string systemInfo = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36";
                 // 客户端 JSON 结构 (对齐 JavaScript1.js 中 f 对象的序列化格式)
@@ -976,23 +1113,26 @@ namespace ExcelAddInDemo.Services
                 // 生成东八区格式化时间戳 yyyy/MM/dd HH:mm:ss (对齐 JavaScript1.js 中 Se.call(Ee(), "yyyy/MM/dd hh:mm:ss"))
                 string timestamp = DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss");
 
-                // 按照天工矩阵官方 JavaScript1.js 算法拼接待签名原始串
-                string signRaw = $"appid={TitanAppId}&client={clientJson}&param={paramJson}&rank={rank}&timestamp={timestamp}&token=&key={TitanAppKey}";
+                // 按照天工矩阵官方 JavaScript1.js 算法拼接待签名原始串 (动态注入配置化 appId 与 appKey)
+                string signRaw = $"appid={appId}&client={clientJson}&param={paramJson}&rank={rank}&timestamp={timestamp}&token=&key={appKey}";
                 // 纯原生计算 MD5 散列签名 (与 JavaScript1.js 中 hash(p) 完全一致)
                 string sign = ComputeMd5(signRaw);
 
                 // 构造最终 POST JSON 请求报文 (与 JavaScript1.js 返回后序列化的 Rootobject 一致)
-                string postBody = $"{{\"appid\":\"{TitanAppId}\",\"client\":{clientJson},\"param\":{paramJson},\"timestamp\":\"{timestamp}\",\"rank\":\"{rank}\",\"sign\":\"{sign}\"}}";
+                string postBody = $"{{\"appid\":\"{appId}\",\"client\":{clientJson},\"param\":{paramJson},\"timestamp\":\"{timestamp}\",\"rank\":\"{rank}\",\"sign\":\"{sign}\"}}";
 
-                // 构造针对天工矩阵的专门 HTTP 请求 --硬编码: 天工接口终结点--
-                using var request = new HttpRequestMessage(HttpMethod.Post, "https://cpq.titanmatrix.com/api/cpq/search/specsearch");
+                // 构造针对天工矩阵的专门 HTTP 请求 (终结点动态配置化)
+                using var request = new HttpRequestMessage(HttpMethod.Post, apiUrl);
                 // 设置请求内容与编码 UTF-8
                 request.Content = new StringContent(postBody, Encoding.UTF8, "application/json");
 
-                // 严格配置天工矩阵跨域与防盗链标头
-                request.Headers.Add("Referer", "http://www.titanmatrix.com/tgxx");
-                request.Headers.Add("Origin", "http://www.titanmatrix.com");
+                // 严格配置天工矩阵跨域与防盗链标头 (动态读取配置)
+                request.Headers.Add("Referer", string.IsNullOrWhiteSpace(titanConfig.Referer) ? "http://www.titanmatrix.com/tgxx" : titanConfig.Referer);
+                // 配置跨域 Origin 标头
+                request.Headers.Add("Origin", string.IsNullOrWhiteSpace(titanConfig.Origin) ? "http://www.titanmatrix.com" : titanConfig.Origin);
+                // 配置 API 版本标头
                 request.Headers.Add("apiVersion", "1.0");
+                // 配置 Accept 接收标头
                 request.Headers.Add("Accept", "application/json, text/plain, */*");
 
                 // 异步发送 HTTP 请求

@@ -155,33 +155,8 @@ namespace ExcelAddInDemo.Forms
         {
             try
             {
-                // 获取插件运行根目录
-                string appDir = Tool.GetAppDirectory();
-                // 获取当前应用域基准目录
-                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-
-                // 构造多级备选查找路径集合
-                string[] candidatePaths = new[]
-                {
-                    Path.Combine(appDir, "Resources", "cloud_solution.html"),
-                    Path.Combine(appDir, "publish", "Resources", "cloud_solution.html"),
-                    Path.Combine(baseDir, "Resources", "cloud_solution.html"),
-                    Path.Combine(baseDir, "publish", "Resources", "cloud_solution.html"),
-                    Path.Combine(baseDir, "..", "..", "Resources", "cloud_solution.html"),
-                    Path.Combine(baseDir, "..", "..", "..", "Resources", "cloud_solution.html"),
-                    @"d:\code\excel-ct-tools\Resources\cloud_solution.html" // --硬编码: 本地开发源码目录兜底--
-                };
-
-                // 遍历寻找首个物理存在的 HTML 页面
-                string targetHtml = string.Empty;
-                foreach (var candidate in candidatePaths)
-                {
-                    if (File.Exists(candidate))
-                    {
-                        targetHtml = Path.GetFullPath(candidate);
-                        break;
-                    }
-                }
+                // 全局自适应寻址 cloud_solution.html 静态资源物理路径
+                string targetHtml = Tool.ResolveHtmlResourcePath("cloud_solution.html");
 
                 // 若找到有效 HTML 物理文件则执行虚拟主机映射并导航
                 if (!string.IsNullOrEmpty(targetHtml) && File.Exists(targetHtml))
@@ -203,9 +178,7 @@ namespace ExcelAddInDemo.Forms
                     string notFoundHtml = "<div style='font-family:Segoe UI,sans-serif;padding:30px;color:#dc2626;'>" +
                                           "<h2>⚠️ 未找到云方案页面文件 (cloud_solution.html)</h2>" +
                                           "<p>请确保 <code>Resources/cloud_solution.html</code> 存在并已复制至输出目录。</p>" +
-                                          "<p>检索路径列表:<ul>" +
-                                          string.Join("", Array.ConvertAll(candidatePaths, p => $"<li>{p}</li>")) +
-                                          "</ul></p></div>";
+                                          $"<p>预期路径: <code>{targetHtml}</code></p></div>";
                     _webView.CoreWebView2.NavigateToString(notFoundHtml);
                     // 记录未找到页面日志
                     LogHelper.WriteLog($"[CloudSolutionForm] 未找到 cloud_solution.html 页面文件，已呈现错误提示。");

@@ -176,27 +176,8 @@ namespace ExcelAddInDemo.Forms
         /// </summary>
         private void LoadHtmlResource()
         {
-            // 获取当前程序集基准目录
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-
-            // 构造备选资源路径
-            string[] searchPaths = new[]
-            {
-                Path.Combine(baseDir, "Resources", "cabinet_manage.html"),
-                Path.Combine(baseDir, "..", "..", "Resources", "cabinet_manage.html"),
-                Path.Combine(baseDir, "publish", "Resources", "cabinet_manage.html"),
-                @"d:\code\excel-ct-tools\Resources\cabinet_manage.html" // 开发源码目录兜底 --硬编码--
-            };
-
-            string htmlPath = string.Empty;
-            foreach (var path in searchPaths)
-            {
-                if (File.Exists(path))
-                {
-                    htmlPath = Path.GetFullPath(path);
-                    break;
-                }
-            }
+            // 全局自适应寻址 cabinet_manage.html 静态资源物理路径
+            string htmlPath = Tool.ResolveHtmlResourcePath("cabinet_manage.html");
 
             if (!string.IsNullOrEmpty(htmlPath))
             {

@@ -162,56 +162,11 @@ namespace ExcelAddInDemo
                 // 提取活动工作簿的纯文件名小写
                 string hostFileName = Path.GetFileName(activeFilePath).ToLowerInvariant();
 
-                // 收集所有候选的 projectJsonFile 目录路径集合
-                var candidateDirs = new List<string>();
-
-                // 策略 A：从当前工作簿所在目录逐级向上探测是否存在 projectJsonFile 目录
-                try
-                {
-                    // 提取当前文件目录
-                    string currentDir = Path.GetDirectoryName(activeFilePath) ?? string.Empty;
-                    // 构建目录对象
-                    DirectoryInfo? cur = new DirectoryInfo(currentDir);
-                    // 逐层向上攀爬探测
-                    while (cur != null)
-                    {
-                        // 拼接候选子目录
-                        string candidate = Path.Combine(cur.FullName, "projectJsonFile");
-                        // 校验该工程 JSON 目录物理是否存在
-                        if (Directory.Exists(candidate))
-                        {
-                            // 探测命中并加入候选列表
-                            candidateDirs.Add(candidate);
-                            // 终止向上探测
-                            break;
-                        }
-                        // 向上跳至父目录
-                        cur = cur.Parent;
-                    }
-                }
-                catch { }
-
-                // 策略 B：预设常用/已知授权工程目录候选池 --硬编码: 本地预设工程搜索目录--
-                string[] defaultDirs = new[]
-                {
-                    @"E:\BaiduNetdiskWorkspace\hj\projectJsonFile",
-                    @"E:\2026\projectJsonFile",
-                    @"D:\xingrenfile\projectJsonFile",
-                    @"D:\xingrenfile"
-                };
-                // 遍历检查系统默认工程目录池
-                foreach (var dir in defaultDirs)
-                {
-                    // 若物理目录存在且未包含，加入候选池
-                    if (Directory.Exists(dir) && !candidateDirs.Contains(dir, StringComparer.OrdinalIgnoreCase))
-                    {
-                        // 添加候选目录
-                        candidateDirs.Add(dir);
-                    }
-                }
+                // 智能多级自适应探测并收集所有包含 projectJsonFile 的有效候选目录（优先配置，杜绝硬编码）
+                var candidateDirs = ResolveCandidateProjectJsonDirectories(activeFilePath);
 
                 // 若未探测到任何有效的 projectJsonFile 目录，直接返回未命中
-                if (candidateDirs.Count == 0)
+                if (candidateDirs == null || candidateDirs.Count == 0)
                 {
                     // 无有效工程目录返回 false
                     return false;
@@ -272,6 +227,168 @@ namespace ExcelAddInDemo
 
             // 全部未匹配返回 false
             return false;
+        }
+
+        /// <summary>
+        /// 智能多级自适应收集所有可能包含工程单体 JSON 的候选物理目录列表
+        /// 策略优先级：1. appsettings.json 显式配置 -> 2. global_config.json 用户设置智能推导 -> 3. 活动工作簿向上攀爬 -> 4. 全盘动态年份自愈扫描
+        /// </summary>
+        /// <param name="activeFilePath">当前工作簿物理绝对路径</param>
+        /// <returns>去重后已验证物理存在的候选目录绝对路径列表</returns>
+        private static List<string> ResolveCandidateProjectJsonDirectories(string activeFilePath)
+        {
+            // 初始化候选目录列表
+            var candidateDirs = new List<string>();
+
+            // 1. 优先读取 appsettings.json 中的用户显式配置目录列表 (配置绝对优先)
+            try
+            {
+                var configuredDirs = AppConfig.Instance.Project?.ProjectJsonDirectories;
+                if (configuredDirs != null)
+                {
+                    foreach (var dir in configuredDirs)
+                    {
+                        // 若配置目录有效且物理存在，加入候选池
+                        if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir) && !candidateDirs.Contains(dir, StringComparer.OrdinalIgnoreCase))
+                        {
+                            candidateDirs.Add(dir);
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // 2. 联动读取 global_config.json 用户设置的默认项目目录并进行智能双向推导
+            try
+            {
+                // 获取全局用户配置的新建项目保存目录
+                string defaultProjDir = Tool.GetDefaultProjectDirectoryFromGlobalConfig();
+                if (!string.IsNullOrWhiteSpace(defaultProjDir))
+                {
+                    // 2.1 探测默认项目目录自身下的 projectJsonFile 子目录
+                    string subPjf = Path.Combine(defaultProjDir, "projectJsonFile");
+                    if (Directory.Exists(subPjf) && !candidateDirs.Contains(subPjf, StringComparer.OrdinalIgnoreCase))
+                    {
+                        candidateDirs.Add(subPjf);
+                    }
+
+                    // 2.2 核心智能推导：探测默认项目目录父级目录下的 projectJsonFile (自动命中如 E:\x项目文件\projectJsonFile)
+                    var parentDir = Directory.GetParent(defaultProjDir);
+                    if (parentDir != null && parentDir.Exists)
+                    {
+                        string parentPjf = Path.Combine(parentDir.FullName, "projectJsonFile");
+                        if (Directory.Exists(parentPjf) && !candidateDirs.Contains(parentPjf, StringComparer.OrdinalIgnoreCase))
+                        {
+                            candidateDirs.Add(parentPjf);
+                        }
+                    }
+
+                    // 2.3 探测默认项目目录自身
+                    if (Directory.Exists(defaultProjDir) && !candidateDirs.Contains(defaultProjDir, StringComparer.OrdinalIgnoreCase))
+                    {
+                        candidateDirs.Add(defaultProjDir);
+                    }
+                }
+
+                // 获取全局用户配置的自定义数据目录
+                string customDataDir = Tool.GetCustomDataDirectoryFromGlobalConfig();
+                if (!string.IsNullOrWhiteSpace(customDataDir))
+                {
+                    // 探测数据目录下的 projectJsonFile 子目录
+                    string subData = Path.Combine(customDataDir, "projectJsonFile");
+                    if (Directory.Exists(subData) && !candidateDirs.Contains(subData, StringComparer.OrdinalIgnoreCase))
+                    {
+                        candidateDirs.Add(subData);
+                    }
+                }
+            }
+            catch { }
+
+            // 3. 策略：从当前工作簿所在目录逐级向上探测是否存在 projectJsonFile 目录
+            try
+            {
+                // 提取当前文件所在的文件夹路径
+                string currentDir = Path.GetDirectoryName(activeFilePath) ?? string.Empty;
+                DirectoryInfo? cur = new DirectoryInfo(currentDir);
+                // 逐层向上攀爬探测直至磁盘根节点
+                while (cur != null)
+                {
+                    // 拼接候选子目录
+                    string candidate = Path.Combine(cur.FullName, "projectJsonFile");
+                    // 校验该工程 JSON 目录物理是否存在
+                    if (Directory.Exists(candidate))
+                    {
+                        // 探测命中并加入候选列表 (去重)
+                        if (!candidateDirs.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+                        {
+                            candidateDirs.Add(candidate);
+                        }
+                        // 终止当前向上探测
+                        break;
+                    }
+                    // 向上跳至父目录
+                    cur = cur.Parent;
+                }
+            }
+            catch { }
+
+            // 4. 全硬盘动态自适应自愈探测 (彻底杜绝写死盘符与特定年份)
+            try
+            {
+                // 动态枚举当前系统所有已就绪的固定硬盘驱动器 (C:\, D:\, E:\ 等，自适应不写死)
+                var drives = DriveInfo.GetDrives()
+                    .Where(d => d.DriveType == DriveType.Fixed && d.IsReady)
+                    .Select(d => d.RootDirectory.FullName);
+
+                // 当前年份及前后年份列表 (自适应动态年份，不写死固定年份)
+                int curYear = DateTime.Now.Year;
+                int[] years = new[] { curYear, curYear + 1, curYear - 1, 2026 };
+
+                foreach (var drive in drives)
+                {
+                    // 4.1 探测各硬盘下的 x项目文件 目录体系 (如 E:\x项目文件\projectJsonFile)
+                    string xProjPjf = Path.Combine(drive, "x项目文件", "projectJsonFile");
+                    if (Directory.Exists(xProjPjf) && !candidateDirs.Contains(xProjPjf, StringComparer.OrdinalIgnoreCase))
+                    {
+                        candidateDirs.Add(xProjPjf);
+                    }
+
+                    // 4.2 探测各硬盘根目录下的 projectJsonFile
+                    string rootPjf = Path.Combine(drive, "projectJsonFile");
+                    if (Directory.Exists(rootPjf) && !candidateDirs.Contains(rootPjf, StringComparer.OrdinalIgnoreCase))
+                    {
+                        candidateDirs.Add(rootPjf);
+                    }
+
+                    // 4.3 探测各硬盘下的 xingrenfile 目录体系
+                    string xingrenPjf = Path.Combine(drive, "xingrenfile", "projectJsonFile");
+                    if (Directory.Exists(xingrenPjf) && !candidateDirs.Contains(xingrenPjf, StringComparer.OrdinalIgnoreCase))
+                    {
+                        candidateDirs.Add(xingrenPjf);
+                    }
+
+                    // 4.4 动态探测各年份目录下的 projectJsonFile
+                    foreach (var y in years)
+                    {
+                        string yearPjf = Path.Combine(drive, y.ToString(), "projectJsonFile");
+                        if (Directory.Exists(yearPjf) && !candidateDirs.Contains(yearPjf, StringComparer.OrdinalIgnoreCase))
+                        {
+                            candidateDirs.Add(yearPjf);
+                        }
+                    }
+
+                    // 4.5 兼容开发机百度网盘工作空间结构 (动态盘符适配，不写死 E 盘)
+                    string netdiskPjf = Path.Combine(drive, "BaiduNetdiskWorkspace", "hj", "projectJsonFile");
+                    if (Directory.Exists(netdiskPjf) && !candidateDirs.Contains(netdiskPjf, StringComparer.OrdinalIgnoreCase))
+                    {
+                        candidateDirs.Add(netdiskPjf);
+                    }
+                }
+            }
+            catch { }
+
+            // 返回去重后的全部有效物理候选目录
+            return candidateDirs;
         }
 
         /// <summary>

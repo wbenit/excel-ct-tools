@@ -109,14 +109,13 @@ namespace ExcelAddInDemo.Forms
                 // 挂载前端 postMessage 消息接收监听器
                 _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
 
-                // 从全局配置管理器中获取目标 Web 页面基准 URL
-                string rawUrl = ConfigManager.Instance.Current.Api.LocalFileControlUrl;
-
-                // 若配置为空则回退到官方线上嵌入式独立路由
+                // 优先从全局配置管理器提取目标 Web 页面基准 URL
+                string rawUrl = ConfigManager.Instance.Current?.Api?.LocalFileControlUrl;
+                // 若配置管理器尚未完全初始化或配置项为空
                 if (string.IsNullOrWhiteSpace(rawUrl))
                 {
-                    // 默认官方线上独立嵌入地址
-                    rawUrl = "https://code.xingren.online/#/embed/fileCtrol";
+                    // 自愈回退至当前 AppConfig 单例或模型预设的嵌入式独立路由
+                    rawUrl = AppConfig.Instance?.Api?.LocalFileControlUrl ?? new ApiSettings().LocalFileControlUrl;
                 }
 
                 // 读取当前 Excel 插件中已登录认证的 Token 凭证

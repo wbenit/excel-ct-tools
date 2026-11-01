@@ -78,19 +78,23 @@ namespace ExcelAddInDemo.Services
         /// </summary>
         public static string GetBaseUrl()
         {
-            // 从全局配置管理器提取基准地址
-            string url = ConfigManager.Instance.Current?.Api?.DrawCodeBaseUrl ?? string.Empty;
-            // 若配置为空则回退到官方线上域名
+            // 优先从全局配置管理器提取基准地址，若未生效则从默认 AppConfig 或 ApiSettings 动态获取
+            string url = ConfigManager.Instance.Current?.Api?.DrawCodeBaseUrl;
+            // 检查配置项是否为空或仅空白字符
             if (string.IsNullOrWhiteSpace(url))
             {
-                url = "https://code.xingren.online/api"; // --硬编码: 官方线上默认域名--
+                // 回退至当前运行实例的配置或默认配置对象定义
+                url = AppConfig.Instance?.Api?.DrawCodeBaseUrl ?? new ApiSettings().DrawCodeBaseUrl;
             }
-            url = url.Trim().TrimEnd('/');
-            // 确保以 /api 结尾，兼容本地 5217 与线上域名
+            // 去除前后空白与末尾多余斜杠
+            url = (url ?? string.Empty).Trim().TrimEnd('/');
+            // 确保以 /api 结尾，兼容本地 5217 端口与云端域名
             if (!url.EndsWith("/api", StringComparison.OrdinalIgnoreCase))
             {
+                // 自动补齐标准 /api 端点路径
                 url = $"{url}/api";
             }
+            // 返回规范化后的 WebAPI 基准访问路径
             return url;
         }
 

@@ -18,47 +18,101 @@ namespace ExcelAddInDemo.Services
         // 线程安全互斥锁，保障多线程与并发访问 SQLite 安全
         private static readonly object _dbLock = new object();
 
-        // 默认数据库文件名称
-        private const string DefaultDbFileName = "personal_components.db"; // --硬编码-- 默认个人物料库文件名
+        // 默认数据库文件名称 (底线安全保障)
+        private const string DefaultDbFileName = "personal_components.db";
 
         // 缓存当前生效的 SQLite 连接字符串
         private static string? _connectionString;
 
         /// <summary>
-        /// 获取或初始化本地个人物料库 SQLite 数据库文件的绝对物理路径 (纯粹使用 Tool.GetAppDataDirectory 统一规范)
+        /// 获取本地个人物料库运行时配置模型 (多级自愈读取)
         /// </summary>
+        public static PersonalComponentDbSettings GetSettings()
+        {
+            // 优先从全局配置管理器提取物料库配置
+            var settings = ConfigManager.Instance.Current?.PersonalComponentDb;
+            // 若配置为空则回退到当前单例实例中的配置
+            if (settings == null)
+            {
+                // 从 AppConfig 默认实例或新建实体保障底线可用
+                settings = AppConfig.Instance?.PersonalComponentDb ?? new PersonalComponentDbSettings();
+            }
+            // 返回有效配置对象
+            return settings;
+        }
+
         /// <summary>
         /// 获取或初始化本地个人物料库 SQLite 数据库文件的绝对物理路径
         /// </summary>
         /// <returns>数据库文件全路径</returns>
         public static string GetDatabaseFilePath()
         {
-            // 优先检查标准数据目录路径
+            // 提取当前生效的物料库配置对象
+            var settings = GetSettings();
+            // 若用户显式配置了自定义物理绝对路径且该路径有效
+            if (!string.IsNullOrWhiteSpace(settings.CustomDbFilePath))
+            {
+                // 规范化自定义路径
+                string customPath = settings.CustomDbFilePath.Trim();
+                // 提取父级目录路径
+                string? customDir = Path.GetDirectoryName(customPath);
+                // 若指定的物理文件存在，或者其所在父目录有效可写，则优先采纳用户自定义路径
+                if (File.Exists(customPath) || (!string.IsNullOrEmpty(customDir) && Directory.Exists(customDir)))
+                {
+                    // 确保父目录存在以防创建文件失败
+                    if (!string.IsNullOrEmpty(customDir) && !Directory.Exists(customDir))
+                    {
+                        // 递归创建所需父级目录
+                        Directory.CreateDirectory(customDir);
+                    }
+                    // 返回用户显式指定的数据库全路径
+                    return customPath;
+                }
+            }
+
+            // 获取配置的数据库文件名，若未配置或为空则优雅回退标准默认文件名
+            string dbFileName = string.IsNullOrWhiteSpace(settings.DbFileName) 
+                                ? DefaultDbFileName 
+                                : settings.DbFileName.Trim();
+
+            // 优先检查标准数据目录路径 (Tool.GetAppDataDirectory)
             string appDataDir = Tool.GetAppDataDirectory();
-            string standardPath = Path.Combine(appDataDir, DefaultDbFileName);
+            // 拼接标准物理路径
+            string standardPath = Path.Combine(appDataDir, dbFileName);
+            // 若标准路径已存在物理文件直接命中返回
             if (File.Exists(standardPath)) return standardPath;
 
             // 备选路径：避免在调试、发布或 IDE 开发环境中因相对路径差异找不到已有数据库
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            // 提取应用程序根目录
             string appDir = Tool.GetAppDirectory();
+            // 构建多级备选探测路径数组
             string[] candidatePaths = new string[]
             {
-                Path.Combine(appDir, "data", DefaultDbFileName),
-                Path.Combine(baseDir, "data", DefaultDbFileName),
-                Path.Combine(baseDir, "..", "..", "data", DefaultDbFileName),
-                Path.Combine(baseDir, "publish", "data", DefaultDbFileName),
-                Path.Combine(Directory.GetCurrentDirectory(), "data", DefaultDbFileName)
+                // 策略 1：插件运行根目录下的 data 文件夹
+                Path.Combine(appDir, "data", dbFileName),
+                // 策略 2：当前 AppDomain 基准目录下的 data 文件夹
+                Path.Combine(baseDir, "data", dbFileName),
+                // 策略 3：开发源码相对目录
+                Path.Combine(baseDir, "..", "..", "data", dbFileName),
+                // 策略 4：publish 发布包相对目录
+                Path.Combine(baseDir, "publish", "data", dbFileName),
+                // 策略 5：当前工作目录
+                Path.Combine(Directory.GetCurrentDirectory(), "data", dbFileName)
             };
 
             // 循环遍历首个真实存在的目标文件
             foreach (string candidate in candidatePaths)
             {
+                // 检查候选路径文件是否存在
                 if (File.Exists(candidate))
                 {
+                    // 命中已有数据库文件，立即返回
                     return candidate;
                 }
             }
 
+            // 备选路径均未命中时，默认返回标准 AppData 路径用于新建数据库
             return standardPath;
         }
 
@@ -85,14 +139,33 @@ namespace ExcelAddInDemo.Services
 
                 // 获取数据库文件的物理全路径
                 string dbPath = GetDatabaseFilePath();
-                // 构建标准 SQLite 连接字符串 (启用 UTF-8 与连接池)
-                _connectionString = $"Data Source={dbPath};Version=3;Pooling=True;Max Pool Size=20;"; // --硬编码-- 连接字符串配置
+                // 获取当前生效的物料库存储与连接池配置
+                var settings = GetSettings();
+                // 提取连接池最大连接数，限制最小为 1
+                int maxPoolSize = Math.Max(1, settings.MaxPoolSize);
+                // 提取默认连接或执行超时时间 (秒)
+                int timeoutSec = Math.Max(1, settings.DefaultTimeoutSeconds);
+                // 动态构建包含连接池参数与超时控制的标准 SQLite 连接字符串
+                _connectionString = $"Data Source={dbPath};Version=3;Pooling={(settings.EnablePooling ? "True" : "False")};Max Pool Size={maxPoolSize};Default Timeout={timeoutSec};";
 
                 // 确保数据库文件及数据表、索引已初始化
                 EnsureDatabaseCreated(dbPath);
 
                 // 返回构建好的连接字符串
                 return _connectionString;
+            }
+        }
+
+        /// <summary>
+        /// 重置数据库连接缓存 (当用户热更新配置时调用以触发自愈重建连接)
+        /// </summary>
+        public static void ResetConnectionCache()
+        {
+            // 加锁安全清空连接字符串缓存
+            lock (_dbLock)
+            {
+                // 清空缓存以便下次重新提取最新配置路径与参数
+                _connectionString = null;
             }
         }
 

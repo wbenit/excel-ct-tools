@@ -1,3 +1,205 @@
+- **【核心改造与闭环：根除第三大类硬编码——本地个人物料库 SQLite 数据库存储路径、文件名及连接池参数全面配置化】(`AppConfig.cs`, `Services/PersonalComponentDbService.cs`, `appsettings.json`, `publish/`)**：
+  1. **用户核心指令与需求确认**：
+     - 用户指令：“(Recommended) 第三大类：本地物料数据库配置（personal_components.db 路径、文件名及 SQLite 连接池配置化）”；
+     - 彻底消除 PersonalComponentDbService.cs:22（写死数据库文件名 personal_components.db）与 Line 89（写死 SQLite 连接字符串 Data Source=...;Pooling=True;Max Pool Size=20;），并提供用户自定义绝对路径与连接参数的能力。
+  2. **代码与配置级实施细节**：
+     - **强类型配置模型扩展 (AppConfig.cs)**：
+       - 新增 `PersonalComponentDbSettings` 配置模型，包含 CustomDbFilePath（自定义绝对路径）、DbFileName（数据库文件名）、EnablePooling（连接池开关）、MaxPoolSize（最大物理连接数）、DefaultTimeoutSeconds（超时时间）全维参数；
+       - 在 AppConfig 根类中挂载 `PersonalComponentDb` 配置节点；
+       - 在 appsettings.json、publish/appsettings.json、data/appsettings.json 中同步对齐默认参数；
+     - **数据访问引擎全面重构 (Services/PersonalComponentDbService.cs)**：
+       - 封装公开静态方法 `GetSettings()`：优先提取 ConfigManager 运行时配置，空值多级自愈降级到 AppConfig 实例与模型默认值；
+       - 重构 `GetDatabaseFilePath()`：优先识别用户显式指定的有效 CustomDbFilePath 绝对路径并自动递归创建父目录；若未指定则动态采用配置的 DbFileName，结合 Tool.GetAppDataDirectory 标准目录与 5 级备选候选池动态自愈嗅探；
+       - 重构 `GetConnectionString()`：动态注入配置的连接池与超时参数；
+       - 新增 `ResetConnectionCache()` 方法，支持配置热更新时安全重置缓存；
+       - 严格遵守每 3 行新增代码至少包含 1 行中文注释规范；
+  3. **构建验证与产物交付**：
+     - 执行 dotnet build 完整编译：0 错误，483 警告；
+     - 最新程序集 ExcelAddInDemo.dll 与 .pdb 已全量同步覆盖至 publish/ 交付目录。
+
+- **【核心改造与闭环：根除第二大类第 4 项硬编码——云端商户与无代码平台 API 服务基地址统一配置化与兜底收敛】(`AppConfig.cs`, `Services/ComponentApiClient.cs`, `Services/DrawCodeApiClient.cs`, `Forms/LocalProjectForm.cs`, `Services/AutoPricingDataService.cs`, `appsettings.json`, `publish/`)**：
+  1. **用户核心指令与需求确认**：
+     - 用户指令：“继续”（逐项稳步推进第二大类第 4 项）；
+     - 针对用户截图表格第二大类第 4 项（ComponentApiClient.cs、DrawCodeApiClient.cs、LocalProjectForm.cs、AutoPricingDataService.cs）：散落分布的线上域名 `https://mall.xingren.online`、`https://code.xingren.online/api`、`https://code.xingren.online/#/embed/fileCtrol` 等服务基地址和嵌入式路由写死在各业务方法与窗体类中，且各配置文件定义不一致。
+  2. **代码与配置级实施细节**：
+     - **配置文件全量对齐 (appsettings.json, publish/appsettings.json, data/appsettings.json)**：
+       - 统一补齐并对齐 ApiSettings 下的所有节点：BaseUrl（默认商户基地址）、DrawCodeBaseUrl（无代码平台基地址）、LocalFileControlUrl（嵌入式文件控制台页面）、ComponentGetPagedListEndpoint（元器件分页接口）；
+     - **业务客户端与调用点单点收敛与自愈机制**：
+       - **ComponentApiClient.cs**：封装公开静态方法 `GetBaseUrl()` 与 `GetComponentGetPagedListEndpoint()`，彻底消除了散落在 8 个业务方法中的 `"https://mall.xingren.online"` 硬编码兜底，统一按“运行时配置 -> 默认配置单例 -> 模型标准默认值”多级优雅降级；
+       - **DrawCodeApiClient.cs**：重构 `GetBaseUrl()`，移除写死的域名字面量，自动适配本地端口与远程环境；
+       - **LocalProjectForm.cs**：重构 WebView2 加载嵌入控制台时的基准 URL 获取，移除写死的嵌入路由字面量；
+       - **AutoPricingDataService.cs**：彻底移除类中定义的 `DefaultProductionApiBaseUrl` 硬编码常量，`BuildSchemeApiUrl` 统一委托调用 `ComponentApiClient.GetBaseUrl()`，实现全工程单点一致维护；
+       - 严格遵守每 3 行新增代码至少包含 1 行中文注释规范；
+  3. **构建验证与产物交付**：
+     - 执行 dotnet build 完整编译：0 错误，483 警告；
+     - 最新程序集 ExcelAddInDemo.dll 与 .pdb 已全量同步覆盖至 publish/ 交付目录。
+  4. **全阶段里程碑达成**：
+     - **用户硬编码清单中的第二大类（网络服务端点与第三方 API 签名凭据，共 4 项）已全部 100% 彻底根除并闭环！**
+     - **第一大类（本地路径/开发环境依赖类，共 5 项）与第二大类（网络服务/第三方API类，共 4 项）共计 9 大硬编码核心病灶全部清零！**
+
+- **【核心改造与闭环：根除第二大类第 3 项硬编码——新浪期货实时行情接口、合约代码及 Referer 请求标头全面配置化】(`AppConfig.cs`, `Services/MarketPriceService.cs`, `appsettings.json`, `publish/`)**：
+  1. **用户核心指令与需求确认**：
+     - 用户指令：“继续”（逐项稳步推进第二大类第 3 项）；
+     - 针对用户截图表格第二大类第 3 项（MarketPriceService.cs:55-57）：新浪期货行情接口 URL `https://hq.sinajs.cn/list=nf_CU0,nf_AL0`、防盗链 Referer `https://finance.sina.com.cn`、主力合约代码及现货升水基差写死在源码中。
+  2. **代码与配置级实施细节**：
+     - **强类型配置模型扩展 (AppConfig.cs)**：
+       - 新增 `MarketPriceSettings` 实体模型，包含 ApiUrl、Referer、CopperContractCode、AluminumContractCode、CopperSpotPremium、DefaultCopperPrice、DefaultAluminumPrice、CacheDurationMinutes 全维参数；
+       - 在 AppConfig 根类中挂载 `MarketPrice` 配置节点；
+       - 在 appsettings.json、publish/appsettings.json、data/appsettings.json 中同步配置默认行情参数；
+     - **实时行情拉取引擎解耦 (MarketPriceService.cs)**：
+       - 封装私有静态方法 `GetSettings()`：优先提取 ConfigManager 运行时配置，空值自动回退标准配置实体；
+       - 动态注入 ApiUrl 与 Referer 请求头；
+       - 动态适配合约代码匹配（CU/AL主力合约）、现货升水计算与断网兜底默认值；
+       - 严格遵守每 3 行新增代码至少包含 1 行中文注释规范；
+  3. **构建验证与产物交付**：
+     - 执行 dotnet build 完整编译：0 错误，477 警告；
+     - 最新程序集 ExcelAddInDemo.dll 与 .pdb 已全量同步覆盖至 publish/ 交付目录。
+
+- **【核心改造与闭环：根除第二大类第 2 项硬编码——电气天下品牌厂商代码字典动态外置与接口端点配置化】(`AppConfig.cs`, `Services/OnlinePriceSearchClient.cs`, `appsettings.json`, `publish/`)**：
+  1. **用户核心指令与需求确认**：
+     - 用户指令：“继续”（逐项稳步推进第二大类第 2 项）；
+     - 针对用户截图表格第二大类第 2 项（OnlinePriceSearchClient.cs:58-82）：电气天下厂商 ID 对照表（Dq123BrandMap）死写在 C# 语法字典中，且接口端点 apiUrl 亦硬编码，新增品牌或变更端点需改动源码。
+  2. **代码与配置级实施细节**：
+     - **强类型配置模型扩展 (AppConfig.cs)**：
+       - 在 OnlinePriceSearchSettings 中新增 Dq123ApiUrl 属性与 Dq123BrandMap 字典属性；
+       - 在 appsettings.json、publish/appsettings.json、data/appsettings.json 中同步配置包含 11 个大厂的完整默认对照表以及 Dq123ApiUrl；
+     - **品牌字典动态合并与双向自愈解析 (OnlinePriceSearchClient.cs)**：
+       - 将原 Dq123BrandMap 转为私有只读默认字典 DefaultDq123BrandMap（底线保障）；
+       - 封装 `GetDq123BrandMap()`：读取 ConfigManager 运行时配置，用户自定义品牌与厂商 ID 自动合并且优先覆盖内置映射；
+       - 封装 `TryGetDq123FactoryId(brand, out fid)`：供常规与电小二智能多轮查价引擎动态精准定位厂商 ID；
+       - 封装 `TryResolveDq123BrandByFactoryId(fid, out brandName)`：实现反向动态解析，用户配置新品牌（如“环宇”: 15）后返回数据也能准确归一化为对应品牌名；
+       - SearchDq123Async 中的 apiUrl 改为动态配置读取；
+       - 严格遵守每 3 行新增代码至少包含 1 行中文注释规范；
+  3. **构建验证与产物交付**：
+     - 执行 dotnet build 完整编译：0 错误，477 警告；
+     - 最新程序集 ExcelAddInDemo.dll 与 .pdb 已全量同步覆盖至 publish/ 交付目录。
+
+- **【核心改造与闭环：根除第二大类第 1 项硬编码——天工矩阵在线查价签名凭据与 API 端点全面配置化】(`AppConfig.cs`, `Services/OnlinePriceSearchClient.cs`, `appsettings.json`, `publish/`)**：
+  1. **用户核心指令与需求确认**：
+     - 用户指令：“逐项稳步推进（推荐）”；
+     - 针对用户截图表格第二大类第 1 项（OnlinePriceSearchClient.cs:927-928, 988）：天工矩阵查价签名 AppId=201010 与 AppKey 及 API 终结点暴露写死在源码中的高危问题。
+  2. **代码与配置级实施细节**：
+     - **强类型配置模型扩展 (AppConfig.cs)**：
+       - 增加 `OnlinePriceSearchSettings` 与 `TitanMatrixSettings` 模型实体，包含 AppId、AppKey、ApiUrl、Referer、Origin 全维配置；
+       - 在 AppConfig 根类中增加 `OnlinePriceSearch` 属性节点；
+       - 在 appsettings.json、publish/appsettings.json、data/appsettings.json 中同步配置默认节点；
+     - **签名与请求引擎全面重构 (OnlinePriceSearchClient.cs)**：
+       - 彻底删除原静态硬编码常量 `TitanAppId` 与 `TitanAppKey`；
+       - 封装私有静态方法 `GetTitanConfig()`，实现 ConfigManager 运行时配置 -> AppConfig 默认配置 -> 内存安全实例的多级自愈读取；
+       - 在 `SearchTitanMatrixAsync` 查价请求与 MD5 签名计算全流程中，动态注入配置的 AppId、AppKey、ApiUrl、Referer 与 Origin；
+       - 严格遵守每 3 行新增代码至少包含 1 行中文注释规范；
+  3. **构建验证与产物交付**：
+     - 执行 dotnet build 完整编译：0 错误，475 警告；
+     - 最新程序集 ExcelAddInDemo.dll 与 .pdb 已全量同步覆盖至 publish/ 交付目录。
+
+- **【核心改造与闭环：根除第五个硬编码——前端 WebView2 窗口的备用 HTML 路径残留老工程名及开发绝对路径全面自适应重构】(`Tool.cs`, `Forms/*`, `publish/`)**：
+  1. **用户核心指令与需求确认**：
+     - 针对用户截图表格中的第 5 个硬编码（第一大类“本地路径/开发环境依赖类”最后一项）：
+       - FinishedHandoverForm.cs:136-137、LaborListForm.cs:137-138、SpotlightSettingForm.cs:174、CloudSolutionForm.cs:172、CabinetManageForm.cs:188、DistributedAdjustPriceForm.cs:105 中残留了老工程名 `ExcelAddInCTtools` 与写死的开发机绝对物理路径 `d:\code\...`。
+  2. **代码级实施细节**：
+     - **全局自适应静态页面寻址架构 (Tool.cs)**：
+       - 在 Tool.cs 中新增公开静态方法 `ResolveHtmlResourcePath(string htmlFileName)`；
+       - 构建高容错探测路径网：
+         - ① 优先命中插件运行目录 Resources (如 publish/Resources/xxx.html)；
+         - ② 命中插件根目录或 publish/Resources (从源码根目录调试)；
+         - ③ 动态向上攀爬 1~4 层目录探测工程源码根目录 Resources 或 publish/Resources (VS/Rider 在 bin/Debug/net48 调试状态下自动定位回源码目录)；
+         - ④ 彻底杜绝任何对盘符或开发机文件夹的硬编码依赖；
+     - **业务窗体全面清理与重构**：
+       - FinishedHandoverForm.cs：删除 E:\Ace\ExcelAddInCTtools\... 绝对路径硬编码，直接调用 Tool.ResolveHtmlResourcePath；
+       - LaborListForm.cs：删除 E:\Ace\ExcelAddInCTtools\... 绝对路径硬编码，直接调用 Tool.ResolveHtmlResourcePath；
+       - SpotlightSettingForm.cs：删除 d:\code\excel-ct-tools\... 硬编码 fallbackPath，直接调用 Tool.ResolveHtmlResourcePath；
+       - CloudSolutionForm.cs：删除 d:\code\excel-ct-tools\... 源码路径兜底，直接调用 Tool.ResolveHtmlResourcePath；
+       - CabinetManageForm.cs：删除 d:\code\excel-ct-tools\... 兜底路径，直接调用 Tool.ResolveHtmlResourcePath；
+       - DistributedAdjustPriceForm.cs：消除 LocalAppData 下死写 "ExcelAddInCTtools" 的缓存目录，统一使用 Tool.GetWebView2UserDataFolder，并自适应解析 distributed_adjust_price.html。
+     - 严格遵守每 3 行新增代码至少包含 1 行中文注释规范；
+  3. **构建验证与产物交付**：
+     - 执行 dotnet build 完整编译：0 错误，475 警告；
+     - 最新程序集 ExcelAddInDemo.dll 与 .pdb 已全量同步覆盖至 publish/ 交付目录。
+  4. **阶段里程碑达成**：
+     - 用户截图表格中的**第 1 大分类（本地路径/开发环境依赖类硬编码，共 5 项）已全部彻底根除并闭环！**
+
+- **【核心改造与闭环：根除第四个硬编码——工程单体 JSON 扫描候选目录全面动态多源自适应探测】(`Services/ExcelServices.Project.cs`, `publish/`)**：
+  1. **用户核心指令与需求确认**：
+     - 用户指令：“继续解决下一个硬编码”（针对截图表格中的第 4 个硬编码：ExcelServices.Project.cs:197-200 中写死的开发者历史项目文件夹 E:\BaiduNetdiskWorkspace\hj\projectJsonFile、E:\2026\...、D:\xingrenfile 等）；
+  2. **代码级实施细节**：
+     - **病灶彻底消除**：
+       - 彻底删除原代码中死写的 4 个固定开发路径（E:\BaiduNetdiskWorkspace\hj\projectJsonFile, E:\2026\projectJsonFile, D:\xingrenfile\projectJsonFile, D:\xingrenfile）；
+     - **多源自适应工程仓库探测架构 (ExcelServices.Project.cs)**：
+       - 封装 ResolveCandidateProjectJsonDirectories(activeFilePath)：
+         - ① 策略 A：当前活动工作簿目录逐级向上探测直至根目录；
+         - ② 策略 B：联动系统全局配置中心 Tool.GetDefaultProjectDirectoryFromGlobalConfig() 与 Tool.GetCustomDataDirectoryFromGlobalConfig()，优先采用用户自定义的项目目录；
+         - ③ 策略 C：全硬盘动态自愈扫描（DriveInfo.GetDrives 遍历系统 C/D/E/F 等全部硬盘盘符，并结合 DateTime.Now.Year 动态适配年份，彻底消除盘符与年份死锁，同时平滑兼容历史开发环境）；
+       - 严格遵守每 3 行新增代码至少包含 1 行中文注释规范；
+  3. **构建验证与产物交付**：
+     - 执行 dotnet build 完整编译：0 错误；
+     - 最新程序集 ExcelAddInDemo.dll (3,404,800 bytes) 与 .pdb 已全量同步覆盖至 publish/ 交付目录。
+
+- **【核心改造与闭环：根除第三个硬编码——柜体测算与图纸参数匹配图纸库路径全面自适应多级探测】(`Services/ExcelServices.CabinetAuxCalc.cs`, `Tool.cs`, `Forms/ComponentParamMatchForm.cs`, `AppConfig.cs`, `publish/`)**：
+  1. **用户核心指令与需求确认**：
+     - 用户指令：“继续”（针对截图表格中的第 3 个硬编码：ExcelServices.CabinetAuxCalc.cs:638 中写死的个人网盘图纸库路径 E:\BaiduNetdiskWorkspace\BaseData\新库）；
+  2. **代码级实施细节**：
+     - **病灶彻底消除**：
+       - 彻底删除 ExcelServices.CabinetAuxCalc.cs:638 写死的特定个人网盘路径 E:\BaiduNetdiskWorkspace\BaseData\新库；
+       - 清除 AppConfig.cs 中 ComponentParamMatchSettings.BaseDirectory 的默认硬编码路径，改为默认空字符串；
+     - **全局智能自适应探测机制 (Tool.cs)**：
+       - 在 Tool.cs 中新增 ResolveComponentDwgBaseDirectory()：按“1. 用户显式配置 -> 2. 当前活动工作簿同级及常见子目录(BaseData/新库/图纸库/DWG) -> 3. 插件安装根目录子目录 -> 4. 全盘符固定磁盘动态自愈扫描(C/D/E/F)”四级策略进行安全物理目录探测；
+     - **业务层与界面层安全保护 (ExcelServices.CabinetAuxCalc.cs, ComponentParamMatchForm.cs)**：
+       - CabinetAuxCalc.cs：通过 isDwgDirValid 前置检查，若未配置或未找到物理目录，跳过磁盘物理探测，杜绝在空路径或假路径上对成百上千个元器件进行无效 File.Exists 磁盘 I/O 检查；
+       - ComponentParamMatchForm.cs：初始化时通过 Tool.ResolveComponentDwgBaseDirectory() 智能自愈填充有效图纸库路径；
+       - 严格遵守每 3 行新增代码至少包含 1 行中文注释规范；
+  3. **构建验证与产物交付**：
+     - 执行 dotnet build 完整编译：0 错误；
+     - 最新程序集 ExcelAddInDemo.dll (3,404,800 bytes) 与 .pdb 已全量同步覆盖至 publish/ 交付目录。
+
+- **【核心改造与闭环：根除第二个硬编码——AutoCAD 命令行引擎 accoreconsole.exe 全版本、全盘符、全语言自适应探测】(`Services/CadSyncClient.cs`, `publish/`)**：
+  1. **用户核心指令与需求确认**：
+     - 用户指令：“继续解决第二个硬编码”（针对 CadSyncClient.cs 中 AutoCAD 2021 注册表键与 4 个写死安装目录的硬编码）；
+  2. **代码级实施细节**：
+     - **病灶彻底根除**：
+       - 彻底删除原代码中写死的特定注册表项 `SOFTWARE\Autodesk\AutoCAD\R24.0\ACAD-4101:804`（仅支持 2021 中文版）；
+       - 彻底删除原代码中写死的 4 个固定路径（D:\Program Files\... 等 2021 版本固定路径）；
+     - **全自动多维自适应引擎重构 (`Services/CadSyncClient.cs`)**：
+       - ① **优先自定义配置**：读取 `AppConfig.Instance.CadSync.CustomAccoreConsolePath`，用户指定时绝对优先；
+       - ② **注册表动态枚举 (`ProbeAccoreConsoleFromRegistry`)**：覆盖 64位 HKLM、HKCU 及 32位视图，动态扫描所有 AutoCAD 发行版本（R24.3~R19.0 等），高版本优先（按版本名降序排序），并深入所有语言代码（4101:804、5101:409等）提取 `AcadLocation`，自动找到对应版本的 `accoreconsole.exe`；
+       - ③ **全盘符动态扫描 (`ProbeAccoreConsoleFromCommonDisks`)**：通过 `DriveInfo.GetDrives()` 动态遍历本机全部固定磁盘驱动器（C/D/E/F等），覆盖 2018~2026 常见版本的典型目录结构，彻底告别写死盘符；
+       - ④ **环境变量嗅探 (`ProbeAccoreConsoleFromEnvironmentPath`)**：自适应检索系统 `PATH` 路径；
+       - 严格遵守每 3 行代码至少包含 1 行中文注释规范；
+  3. **构建验证与产物交付**：
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` (3,404,800 bytes) 及 `.pdb` 已全量覆盖同步至 `publish/` 交付目录。
+
+- **【核心改造与闭环：根除第一个硬编码——AutoCAD 离线尺寸测算插件 ClassLibrary3.dll 路径全面配置化与智能级联探测】(`Services/CadSyncClient.cs`, `AppConfig.cs`, `appsettings.json`, `publish/`)**：
+  1. **用户核心指令与需求确认**：
+     - 用户指令：“执行”（针对 excel-ct-tools 中第一个硬编码 CadSyncClient.cs:305 的配置化重构方案）；
+  2. **代码级实施细节**：
+     - **根因消除**：彻底废除 CadSyncClient.cs:305 写死的宿主机绝对路径；
+     - **配置层升级 (AppConfig.cs, appsettings.json, publish/appsettings.json, data/appsettings.json)**：
+       - 新增 CadSyncSettings 配置模型与 CadSync 根属性，提供 PluginDllPath（默认 ClassLibrary3.dll）与 CustomAccoreConsolePath（自定义控制台执行引擎路径）；
+     - **自适应智能级联探测链 (Services/CadSyncClient.cs)**：
+       - 封装 ResolveCadPluginDllPath()：按“1. 用户显式配置 -> 2. 插件运行根目录 -> 3. 插件 plugins/ 子目录 -> 4. 开发环境多工程相对层级”四级优雅回退探测，彻底消除任何环境和盘符绑定；
+       - GetAccoreConsolePath() 同步增强支持优先读取 CustomAccoreConsolePath 自定义路径；
+       - 严格遵守每 3 行代码至少包含 1 行中文注释规范；
+     - **构建与分发交付**：
+       - 将 ClassLibrary3.dll 同步分发至 publish/ 与 bin/Debug/net48/ 目录，确保生产环境零配置开箱即用；
+  3. **构建验证与产物交付**：
+     - 执行 dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false 完整构建：0 错误；
+     - 最新程序集 ExcelAddInDemo.dll 及 .pdb 已全量覆盖同步至 publish/ 交付目录。
+
+﻿- **【核心改造与闭环：彻底取消自动组价方案库使用本地文件/SQLite降级机制，转为纯云端 WebAPI 远程通道 (Services/AutoPricingDataService.cs, AppConfig.cs, ppsettings.json, publish/)】**：
+  1. **用户核心指令与需求确认**：
+     - 用户指令：“直接取消使用本地文件”；
+     - 彻底删除自动组价方案数据服务中的本地文件/SQLite降级回退机制，全面转为纯云端 WebAPI 远程数据通道；
+  2. **代码级实施细节**：
+     - Services/AutoPricingDataService.cs：
+       - 移除未使用的 using System.Data.SQLite; 与 using System.IO;；
+       - 将核心查询方法（GetCategoryTree、GetCategoryNodes、GetSchemes、GetSchemeDetail）改造成纯云端调用，在请求失败或超时时记录日志并安全返回空集合/null，绝不再回退加载本地 SQLite 文件；
+       - 彻底删除 #region 本地 SQLite 离线加载逻辑（500余行离线库解析代码）与 GetLocalDbPath 本地自愈探测方法；
+       - 严格遵守每 3 行代码至少包含 1 行中文注释规范；
+     - AppConfig.cs、ppsettings.json、data/appsettings.json、publish/appsettings.json：
+       - 彻底移除已废弃的 LocalSchemeDbPath 配置项，确保配置干净无冗余；
+  3. **编译构建与产物同步交付**：
+     - 执行 dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none，编译通过且 0 错误；
+     - 最新构建生成的 ExcelAddInDemo.dll 已同步覆盖至 publish/ 交付目录。
 - **【精准定位与根因确诊：复制单元格/跑马线流动时右键菜单闪退一次原因】(ExcelEventManager.cs: L1112-L1130)**：
   1. **用户核心指令与关键现象确诊**：
      - 用户明确澄清：“只有复制单元格，跑马线流动的时候，右键菜单弹出会闪退一次，是右击菜单闪退，不是excel软件”；
@@ -19,7 +221,7 @@
      - ④ **为什么包含原生菜单模式**：这段代码位于 `if (!useCustomMenu) return;` 的正上方，原生右键和业务右键模式均会被其打断！
      - ⑤ **该清理代码完全多余**：在真正的“按值筛选”动作处（`ComponentFilter.cs` 和 `CustomContextMenuForm.cs`），代码本身早就已有按需清除 `CutCopyMode` 的保护；在右键点击入口处粗暴清空不仅导致菜单闪退，还粗暴打断了用户原本想要进行的“右键粘贴”操作。
   3. **最小改动修复方案**：彻底移除或注释掉 `ExcelEventManager.cs` L1112~L1130 的这段代码，保持用户原生的复制剪切状态完好无损。
-��动触发的浮窗显示或窗口状态变更瞬间引发了 `WM_KILLFOCUS`/`WM_CANCELMODE` 或 `Deactivate`，导致系统判定用户在外部点击，将刚弹出的菜单瞬间撤回关闭（闪退）；
+��动触发的浮窗显示或窗口状态变更瞬间引发了 `WM_KILLFOCUS`/`WM_CANCELMODE` 或 `Deactivate`，导致系统判定用户在外部点击，将刚弹出的菜单瞬间撤回关闭（闪退）；
        - ④ 为什么只“闪退一次”：第二次右击同一单元格时，选区未变不再触发 `SheetSelectionChange`，无浮窗刷新和焦点抢占，因此菜单能稳定驻留。
      - **场景 B：Excel 进程直接崩溃闪退退出（错误日志证实存在 `0xc0000409` / `ntdll.dll`）**：
        - 查阅 Windows 应用程序错误事件，存在 `EXCEL.EXE` 崩溃事件（异常代码 `0xc0000409` Fast Fail，故障模块 `ntdll.dll`）；
@@ -7231,3 +7433,55 @@
 3. **构建验证与物理产物同步**：
    - 执行 dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none 编译通过（0 错误）；
    - 将最新生成的 ExcelAddInDemo.dll 成功同步覆盖至 publish/ 交付目录。
+
+---
+
+## [2026-10-31 18:05:00] 完成：彻底修复箱柜报价明细“顶 3 行与底 3 行”硬编码
+
+### [Completed]
+1. **配置体系扩充 (appsettings.json & AppConfig.cs)**：
+   - 在 ppsettings.json、publish/appsettings.json 与 data/appsettings.json 的 ExcelSettings 分节中新增 "DetailHeaderRows": 3 与 "DetailFooterRows": 3；
+   - 在 AppConfig.cs 的 ExcelSettings 中新增强类型属性 DetailHeaderRows（默认 3）与 DetailFooterRows（默认 3）；
+   - 修正 TemplateDetailBlockTotalRows 计算公式为：(CabTolsumRowIndex >= CabDetRowIndex ? (CabTolsumRowIndex - CabDetRowIndex + 1) : 28) + DetailHeaderRows + DetailFooterRows，动态覆盖大标题与落款签名；
+   - 在 AppConfig 类上新增静态便捷访问器 Instance => ConfigManager.Instance.Current。
+2. **核心业务代码硬编码全面替换**：
+   - **Services/ExcelServices.Cabinet.cs**：
+     - CreateCabinetInGroup：改用 TemplateDetailBlockTotalRows 消除写死 74 - 41 + 1；大标题行与追加偏移改用 headerRows、ooterRows 与 minDetBlockStart；
+     - DeleteCabinets：删除明细块物理范围动态扣除 headerRows 与加上 ooterRows；
+     - CopyCabinet：源明细块起止行、新箱柜 Det 行号及下一块起始行动态绑定 DetailHeaderRows、DetailFooterRows 与 TemplateDetailBlockTotalRows；
+     - CreateSingleCabinetDirect：消除 41、+ 4 及 const int headerOffset = 3 / footerOffset = 3 硬编码，改用配置驱动；
+     - InitCategorySheetContext：母版明细块范围、清理行数与下一箱柜起始位置完全由 DetailHeaderRows、DetailFooterRows 及 TemplateDetailBlockTotalRows 驱动；
+     - ExportSingleCabinetOptimized：消除 34 与 detRow + 3，母版直拷行数与关键行映射由配置驱动。
+   - **Services/ExcelServices.CabinetManage.cs**：
+     - CaptureCabinetContext（整柜快照提取）：明细块起止行 detStart 与 detEnd 改用 headerRows 与 ooterRows；
+     - PasteCabinet：插入目标明细行及新箱柜 Det 行推导改用 headerRows 与 ooterRows；
+     - ReorderCabinets：箱柜明细块起止行计算与原生剪切插入块范围全面改用 headerRows 与 ooterRows。
+   - **Services/ExcelServices.Category.cs**：
+     - MergeSheetsFast：分类合并时的目标明细块首行追加偏移消除 + 4 与 38，改用 ooterRows + 1 与 defDetRow - headerRows。
+3. **严格遵守开发规范**：
+   - 所有新增和修改的代码，严格满足每 3 行包含至少一行中文注释；
+   - 坚持最小改动原则，不触碰无关逻辑。
+4. **编译构建与产物交付**：
+   - 执行 dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none，编译成功（0 个错误）；
+   - 最新构建生成的 in/Debug/net48/ExcelAddInDemo.dll 已同步覆盖至 publish/ 交付目录。
+
+---
+
+## [2026-10-31 18:35:00] 完成：彻底移除 AutoPricingDataService 中死路径硬编码并实施配置驱动
+
+### [Completed]
+1. **删除失效硬编码常量 (Services/AutoPricingDataService.cs)**：
+   - 彻底删除第 20-21 行已失效的 private const string LocalSqlitePath = @"d:\code\cad-net_1\ExWinner_Schemes.db";；
+   - 重构 GetLocalDbPath() 寻径逻辑：
+     1. 优先读取配置项 ConfigManager.Instance.Current?.Excel?.LocalSchemeDbPath（支持绝对路径与相对路径解析）；
+     2. 探测插件专属数据目录 candidateAppData；
+     3. 多级工作区自适应自愈嗅探（支持 Debug 输出目录 4 级回溯与 publish 交付目录 2 级回溯自动定位到 E:\Ace\cad-net_1\ExWinner_Schemes.db）；
+     4. 若均未探测到，安全返回 string.Empty，彻底杜绝死路径回退。
+2. **配置体系打通 (AppConfig.cs & appsettings.json)**：
+   - 在 ExcelSettings 中新增 LocalSchemeDbPath 属性（默认空字符串，自动触发智能自愈）；
+   - 在 ppsettings.json、data/appsettings.json 和 publish/appsettings.json 中同步增加 "LocalSchemeDbPath": ""；
+   - 严格遵循注释规范：新增每 3 行代码包含至少一行中文注释。
+3. **构建与产物交付**：
+   - 运行 dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none 编译成功（0 个错误）；
+   - 最新构建产物已同步覆盖至 publish/ExcelAddInDemo.dll。
+

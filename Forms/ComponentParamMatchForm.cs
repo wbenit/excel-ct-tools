@@ -198,7 +198,10 @@ namespace ExcelAddInDemo.Forms
                 if (action == "getInitialData")
                 {
                     var cfg = ConfigManager.Instance.Current?.ComponentParamMatch ?? new ComponentParamMatchSettings();
-                    string baseDir = cfg.BaseDirectory;
+                    // 优先采用配置的有效目录，若未配置或物理不存在则智能自适应探测
+                    string baseDir = !string.IsNullOrWhiteSpace(cfg.BaseDirectory) && Directory.Exists(cfg.BaseDirectory)
+                        ? cfg.BaseDirectory
+                        : Tool.ResolveComponentDwgBaseDirectory();
                     // 扫描当前根目录层级
                     var scanResult = DwgPreviewService.ScanDirectoryHierarchy(baseDir);
 

@@ -140,41 +140,8 @@ namespace ExcelAddInDemo.Forms
                     _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
                 }
 
-                // 获取当前程序集 AppDomain 基准运行路径
-                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-
-                // 候选页面物理定位路径列表 (支持开发调试与打包发布环境)
-                string[] candidatePaths = new string[]
-                {
-                    // 候选 1: 当前 AppDomain/Resources/spotlight_setting.html
-                    Path.Combine(baseDir, "Resources", "spotlight_setting.html"),
-                    // 候选 2: 当前工程目录/Resources/spotlight_setting.html
-                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Resources", "spotlight_setting.html")
-                };
-
-                // 记录命中的有效 HTML 文件路径
-                string htmlPath = string.Empty;
-
-                // 遍历查找首个存在的 HTML 文件
-                foreach (string candidate in candidatePaths)
-                {
-                    // 校验文件是否存在
-                    if (File.Exists(candidate))
-                    {
-                        // 命中有效路径
-                        htmlPath = candidate;
-                        break;
-                    }
-                }
-
-                // 若未在输出目录找到，尝试从工作区根目录兜底回退
-                if (string.IsNullOrEmpty(htmlPath))
-                {
-                    // 尝试从工程物理路径获取
-                    string fallbackPath = @"d:\code\excel-ct-tools\Resources\spotlight_setting.html";
-                    // 校验兜底路径
-                    if (File.Exists(fallbackPath)) htmlPath = fallbackPath;
-                }
+                // 全局自适应寻址 spotlight_setting.html 静态资源物理路径
+                string htmlPath = Tool.ResolveHtmlResourcePath("spotlight_setting.html");
 
                 // 若找到有效 HTML 页面资源
                 if (!string.IsNullOrEmpty(htmlPath) && File.Exists(htmlPath))

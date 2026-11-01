@@ -149,7 +149,12 @@ namespace ExcelAddInDemo
                     }
 
                     // 8. 定位底部明细块目标起始插入行
-                    int copyRowCount = 74 - 41 + 1; // 模板固定 41 行至 74 行，共 34 行 --硬编码: 模板行数34--
+                    // 读取 Excel 配置参数中的表头表尾扩展行数与标准高度
+                    int headerRows = cfg.DetailHeaderRows > 0 ? cfg.DetailHeaderRows : 3;
+                    int footerRows = cfg.DetailFooterRows > 0 ? cfg.DetailFooterRows : 3;
+                    int defDetRow = cfg.CabDetRowIndex > 0 ? cfg.CabDetRowIndex : 44;
+                    // 从配置动态获取母版明细块总行数 (包含大标题与落款签名)
+                    int copyRowCount = cfg.TemplateDetailBlockTotalRows;
                     // 默认使用传入的目标明细起始行号
                     int targetDetailStartRow = targetStartRow;
                     // 若未显式传入明细起始行，则智能计算
@@ -203,30 +208,33 @@ namespace ExcelAddInDemo
                             }
                         }
 
-                        // 若找到了目标明细箱柜，插在其大标题行 (Det - 3) 的上方，确保新明细块排在该箱柜前方
+                        // 计算首个明细块理论最小起始行 (扣除表头大标题行数)
+                        int minDetBlockStart = Math.Max(1, defDetRow - headerRows);
+
+                        // 若找到了目标明细箱柜，插在其大标题行上方，确保新明细块排在该箱柜前方
                         if (targetDetRow > 0)
                         {
-                            // 模板大标题在 Det 前 3 行，最小受限于基准行 41 --硬编码: 模板大标题在Det前3行，首个明细基准行41--
-                            targetDetailStartRow = Math.Max(41, targetDetRow - 3);
+                            // 模板大标题在 Det 前 headerRows 行
+                            targetDetailStartRow = Math.Max(minDetBlockStart, targetDetRow - headerRows);
                         }
                         else
                         {
                             // 全表末尾追加模式（末尾追加、或全表现存箱柜均无明细、或光标未命中特定箱柜）：重新动态嗅探工作表最新行号
                             var curIndexes = Tool.FindStandardCategoryRowIndexes((object)activeSheet, -1);
-                            // 消除汇总插行导致的 1 行物理下移偏差，紧随全表现存最后一个明细落款行后插入
-                            targetDetailStartRow = curIndexes.cabTolsumRow > 0 ? curIndexes.cabTolsumRow + 4 : 41;
+                            // 消除汇总插行偏差，紧随全表现存最后一个明细落款行后插入 (tolsum + footerRows + 1)
+                            targetDetailStartRow = curIndexes.cabTolsumRow > 0 ? (curIndexes.cabTolsumRow + footerRows + 1) : minDetBlockStart;
                         }
                     }
 
                     // 9. 打开 CabinetTemplate.xlsx 模板工作簿并动态读取 Cab_Det_1、Cab_Subsum_1、Cab_Tolsum_1 实际行号
                     // 显式指定 UpdateLinks: 0 杜绝外部源链接安全警告弹窗
                     dynamic templateWb = app.Workbooks.Open(templatePath, UpdateLinks: 0, ReadOnly: true);
-                    // 模板内关键行号初始兜底 (Det:44, Subsum:64, Tolsum:71) --硬编码: 兜底物理行号--
-                    int tmplDetRow = 44;
+                    // 模板内关键行号初始配置读取
+                    int tmplDetRow = cfg.CabDetRowIndex > 0 ? cfg.CabDetRowIndex : 44;
                     int tmplSubsumRow = 64;
-                    int tmplTolsumRow = 71;
-                    int tmplStartRow = 41;
-                    int tmplEndRow = 74;
+                    int tmplTolsumRow = cfg.CabTolsumRowIndex > 0 ? cfg.CabTolsumRowIndex : 71;
+                    int tmplStartRow = Math.Max(1, tmplDetRow - headerRows);
+                    int tmplEndRow = tmplTolsumRow + footerRows;
                     try
                     {
                         // 获取模板中的源工作表
@@ -249,9 +257,9 @@ namespace ExcelAddInDemo
                         // 核心：动态读取模板中 Cab_Tolsum_1 总计行的实际行号 (兜底 71)
                         tmplTolsumRow = Tool.GetDefinedNameRowFromTemplate(templateSheet, templateWb, "Cab_Tolsum_1", 71);
 
-                        // 动态计算模板明细块在模板中的起止行号与行数
-                        tmplStartRow = Math.Max(1, tmplDetRow - 3); // 模板大标题在 Det 前 3 行
-                        tmplEndRow = tmplTolsumRow + 3;             // 模板总计行后附带 3 行报价人与落款签名
+                        // 动态计算模板明细块在模板中的起止行号与行数 (根据配置的顶底扩展行动态计算)
+                        tmplStartRow = Math.Max(1, tmplDetRow - headerRows); // 模板大标题在 Det 前 headerRows 行
+                        tmplEndRow = tmplTolsumRow + footerRows;             // 模板总计行后附带 footerRows 行报价人与落款签名
                         copyRowCount = tmplEndRow - tmplStartRow + 1;
 
                         // 物理向下插入 copyRowCount 行空间 (-4121 对应 xlShiftDown)，确保后续内容与定义名称安全平移
@@ -678,6 +686,11 @@ namespace ExcelAddInDemo
 
                     // 3. 部分删除模式：搜集每个待删除箱柜的物理行号范围
                     var deleteBlocks = new List<CabinetDeleteInfo>();
+                    // 获取配置的明细块顶部大标题与底部落款行数
+                    var cfg = ConfigManager.Instance.Current.Excel;
+                    int headerRows = cfg.DetailHeaderRows > 0 ? cfg.DetailHeaderRows : 3;
+                    int footerRows = cfg.DetailFooterRows > 0 ? cfg.DetailFooterRows : 3;
+
                     foreach (var cab in toDeleteList)
                     {
                         var anchor = cab.Value;
@@ -695,12 +708,12 @@ namespace ExcelAddInDemo
                         int detailEndRow = 0;
                         if (detRow > 0)
                         {
-                            // 计算明细区块行范围 [detailStartRow, detailEndRow] (从大标题到总计行下方3行报价人信息)
-                            detailStartRow = detRow - 3;
+                            // 计算明细区块行范围 [detailStartRow, detailEndRow] (从大标题到总计行下方报价人签名信息)
+                            detailStartRow = detRow - headerRows;
                             // 若起始行小于 1 则兜底使用 detRow
                             if (detailStartRow < 1) detailStartRow = detRow;
-                            // 结束行包含总计行及紧随其后的 3 行报价人信息 (完整明细块)
-                            detailEndRow = tolsumRow + 3;
+                            // 结束行包含总计行及紧随其后的报价人落款信息 (完整明细块)
+                            detailEndRow = tolsumRow + footerRows;
 
                             // 检查明细块下方是否包含 1 行分隔空行，若有连同空行一起删除保持整洁
                             try
@@ -968,13 +981,13 @@ namespace ExcelAddInDemo
                     // 兜底保护标准元器件行数 --硬编码--
                     if (standardCompRows <= 0) standardCompRows = 19;
 
-                    // 动态计算源明细块大标题物理行 (Cab_Det 上方 3 行) 与完整结束行 (包含总计行下方3行报价人信息)
-                    int copyStartRow = srcDetRow - 3;
-                    int copyEndRow = srcTolsumRow + 3;
+                    // 动态计算源明细块大标题物理行与完整结束行 (包含总计行下方落款签名)
+                    int copyStartRow = srcDetRow - cfg.DetailHeaderRows;
+                    int copyEndRow = srcTolsumRow + cfg.DetailFooterRows;
                     // 计算待复制的明细块总行数
                     int copyRowCount = copyEndRow - copyStartRow + 1;
-                    // 异常兜底校验行数有效性 --硬编码--
-                    if (copyRowCount <= 0) copyRowCount = cfg.TemplateDetailBlockTotalRows + 3;
+                    // 异常兜底校验行数有效性 (使用配置的明细块总行数)
+                    if (copyRowCount <= 0) copyRowCount = cfg.TemplateDetailBlockTotalRows;
 
                     // 5. 根据汇总行所选中的源箱柜，定位新明细块的目标起始行 (紧随源箱柜明细块的结束行之后)
                     int newDetailStartRow = copyEndRow + 1;
@@ -992,8 +1005,8 @@ namespace ExcelAddInDemo
                     // 清洗复制公式中的外部工作簿文件路径引用 (显式跳过 A 列以保护定义名称与超链接)
                     Tool.CleanRangeFormulas(targetRange);
 
-                    // 6. 计算新箱柜的关键行号初始映射
-                    int newDetRow = newDetailStartRow + 3; // 箱柜信息行 (大标题后第 3 行)
+                    // 6. 计算新箱柜的关键行号初始映射 (大标题下方加上配置的顶部扩展行即为 Det 行)
+                    int newDetRow = newDetailStartRow + cfg.DetailHeaderRows;
                     int newCompStartRow = newDetRow + 2;   // 元器件起始行 (规则 6: Cab_Det + 2)
                     int newSubsumRow = newDetailStartRow + (srcSubsumRow - copyStartRow); // 初始小计行
                     int newTolsumRow = newDetailStartRow + (srcTolsumRow - copyStartRow); // 初始总计行
@@ -1441,8 +1454,14 @@ namespace ExcelAddInDemo
                     nextCabinetK = validCabinets.Max(kvp => kvp.Key) + 1;
                 }
 
-                int sumRow = 7; // 首台汇总行默认基准 --硬编码: 默认首台汇总行--
-                int detailStartRow = 41; // 首台明细块默认基准 --硬编码: 默认首台明细块起始行--
+                // 读取 Excel 配置参数中的表头表尾扩展行数与基准行
+                var cfg = AppConfig.Instance.Excel;
+                int headerRows = cfg.DetailHeaderRows > 0 ? cfg.DetailHeaderRows : 3;
+                int footerRows = cfg.DetailFooterRows > 0 ? cfg.DetailFooterRows : 3;
+
+                int sumRow = cfg.CabSumRowIndex > 0 ? cfg.CabSumRowIndex : 7; // 首台汇总行默认基准
+                // 首台明细块默认基准行：取配置基准行扣除表头大标题行数
+                int detailStartRow = Math.Max(1, (cfg.CabDetRowIndex > 0 ? cfg.CabDetRowIndex : 44) - headerRows);
                 int firstDetRow = 0;
 
                 Models.CabinetAnchorModel? sourceCab = null;
@@ -1493,8 +1512,8 @@ namespace ExcelAddInDemo
                     // 同步顺延总计行物理行号
                     srcTolsumRow = rawTolsumRow + 1;
 
-                    // 新箱柜明细块直接位于整张表最后一个总计行下方 (+3行签名 + 1空行) --硬编码: 签名及空行共4行--
-                    detailStartRow = maxTolsumRow + 4;
+                    // 新箱柜明细块直接位于整张表最后一个总计行下方 (顺延落款行 footerRows 及 1 行间隙)
+                    detailStartRow = maxTolsumRow + footerRows + 1;
                 }
                 else
                 {
@@ -1503,24 +1522,24 @@ namespace ExcelAddInDemo
                     if (tmplSheet != null)
                     {
                         // 动态安全提取模板中的 Cab_Det_1 行号 (兜底 44)
-                        srcDetRow = Tool.GetDefinedNameRowFromTemplate(tmplSheet, activeWb, "Cab_Det_1", 44);
+                        srcDetRow = Tool.GetDefinedNameRowFromTemplate(tmplSheet, activeWb, "Cab_Det_1", cfg.CabDetRowIndex > 0 ? cfg.CabDetRowIndex : 44);
                         // 动态安全提取模板中的 Cab_Subsum_1 行号 (计费区起始行，兜底 64)
                         srcSubsumRow = Tool.GetDefinedNameRowFromTemplate(tmplSheet, activeWb, "Cab_Subsum_1", 64);
                         // 动态安全提取模板中的 Cab_Tolsum_1 行号 (兜底 71)
-                        srcTolsumRow = Tool.GetDefinedNameRowFromTemplate(tmplSheet, activeWb, "Cab_Tolsum_1", 71);
+                        srcTolsumRow = Tool.GetDefinedNameRowFromTemplate(tmplSheet, activeWb, "Cab_Tolsum_1", cfg.CabTolsumRowIndex > 0 ? cfg.CabTolsumRowIndex : 71);
                     }
                 }
 
                 // 5. 按照成套电气规则 6，动态从源定义名称的 Row 推导各区域真实行数
                 // 规则 6: Cab_Det.row + 2 为元器件起始行，Cab_Subsum.row - 1 为元器件终止行
                 // Cab_Subsum.row 到 Cab_Tolsum.row - 1 为计费区域 (计费区不是固定的，动态计算差额)
-                const int headerOffset = 3; // 明细大标题到 Det 行的间距 (标题、表头、空行) --硬编码: 表头结构偏移--
-                const int footerOffset = 3; // 总计行下方的签名行数 (编制、审核、批准) --硬编码: 签名区行数--
+                int headerOffset = headerRows; // 明细大标题到 Det 行的间距 (标题、表头、空行，从配置读取)
+                int footerOffset = footerRows; // 总计行下方的签名落款行数 (编制、审核、批准，从配置读取)
 
                 // 安全兜底校验：若源定义名称读取异常，提供基础兜底
-                if (srcDetRow <= 0) srcDetRow = 44; // --硬编码: 兜底源Det行--
-                if (srcSubsumRow <= srcDetRow) srcSubsumRow = srcDetRow + 22; // --硬编码: 兜底源Subsum行--
-                if (srcTolsumRow <= srcSubsumRow) srcTolsumRow = srcSubsumRow + 5; // --硬编码: 兜底源Tolsum行--
+                if (srcDetRow <= 0) srcDetRow = cfg.CabDetRowIndex > 0 ? cfg.CabDetRowIndex : 44;
+                if (srcSubsumRow <= srcDetRow) srcSubsumRow = srcDetRow + 22; // 兜底源Subsum行
+                if (srcTolsumRow <= srcSubsumRow) srcTolsumRow = srcSubsumRow + 5; // 兜底源Tolsum行
 
                 // 动态计算源箱柜的元器件行数（初始容量）
                 int srcCompCapacity = (srcSubsumRow - 1) - (srcDetRow + 2) + 1;
@@ -2056,9 +2075,10 @@ namespace ExcelAddInDemo
                     dynamic ws = sheetCtx.Sheet;
                     try
                     {
-                        // 先删除纯净母表明细块 (34 行) --硬编码--
+                        // 先删除纯净母表明细块 (根据配置动态计算总行数)
                         int tmplDetStart = sheetCtx.TemplateDetailBlockStartRow;
-                        int tmplDetCount = 34; // --硬编码--
+                        // 读取母版实际明细行数或配置标准行数
+                        int tmplDetCount = sheetCtx.TemplateDetailBlockRowCount > 0 ? sheetCtx.TemplateDetailBlockRowCount : AppConfig.Instance.Excel.TemplateDetailBlockTotalRows;
                         ws.Rows[$"{tmplDetStart}:{tmplDetStart + tmplDetCount - 1}"].Delete(-4119); // -4119 对应 xlShiftUp
 
                         // 若存在母版汇总行 (全新表场景)，再删除母版汇总行 (1 行)
@@ -2116,8 +2136,10 @@ namespace ExcelAddInDemo
             public int NextSumRow { get; set; }
             // 底部明细块下一行的起始物理行号
             public int NextDetailStartRow { get; set; }
-            // 纯净母版明细块的起始物理行号 (34行纯净模板) --硬编码--
-            public int TemplateDetailBlockStartRow { get; set; } = 41;
+            // 纯净母版明细块的起始物理行号 (由配置动态计算基准行扣除表头大标题行)
+            public int TemplateDetailBlockStartRow { get; set; } = Math.Max(1, AppConfig.Instance.Excel.CabDetRowIndex - AppConfig.Instance.Excel.DetailHeaderRows);
+            // 纯净母版明细块的物理总行数 (包含表头大标题与落款签名)
+            public int TemplateDetailBlockRowCount { get; set; } = AppConfig.Instance.Excel.TemplateDetailBlockTotalRows;
             // 纯净母版汇总行的物理行号 (<=0 表示无母版汇总行)
             public int TemplateSumRow { get; set; } = 0;
             // 是否有纯净母版需要在批量导出完成后统一物理删除
@@ -2162,13 +2184,22 @@ namespace ExcelAddInDemo
                 || (!string.IsNullOrWhiteSpace(sumBText) && sumBText != "箱柜1")
                 || (!string.IsNullOrWhiteSpace(detBText) && detBText != "箱柜1");
 
+            // 读取全局 Excel 关键行与扩展行配置
+            var cfg = ConfigManager.Instance.Current.Excel;
+            int headerRows = cfg.DetailHeaderRows > 0 ? cfg.DetailHeaderRows : 3;
+            int footerRows = cfg.DetailFooterRows > 0 ? cfg.DetailFooterRows : 3;
+            int blockTotalRows = cfg.TemplateDetailBlockTotalRows;
+            int defaultDetRow = cfg.CabDetRowIndex > 0 ? cfg.CabDetRowIndex : 44;
+
             if (!isFirstSlotOccupied)
             {
                 // 【场景 1：全新工作表或首槽位为空】
-                // 保留第 7 行汇总与 41:74 行明细作为纯净母版，绝不直接在上面写入数据
+                // 保留汇总与明细作为纯净母版，绝不直接在上面写入数据
                 ctx.HasTemplateToClean = true;
-                ctx.TemplateSumRow = baseSumRow; // 默认 7 --硬编码--
-                ctx.TemplateDetailBlockStartRow = 41; // 模板首台明细块起始行 --硬编码--
+                ctx.TemplateSumRow = baseSumRow;
+                // 设置纯净母表明细起始行与总行数
+                ctx.TemplateDetailBlockStartRow = Math.Max(1, (baseDetRow > 0 ? baseDetRow : defaultDetRow) - headerRows);
+                ctx.TemplateDetailBlockRowCount = blockTotalRows;
                 ctx.NextCabinetK = 1;
 
                 // 汇总区一次性批量预扩容 N 行（插入在母版汇总行下方）
@@ -2182,8 +2213,8 @@ namespace ExcelAddInDemo
 
                 // 真实箱柜的汇总行起始位置：母版汇总行下方
                 ctx.NextSumRow = baseSumRow + 1;
-                // 真实箱柜的明细块起始位置：母版明细块（34行）下方
-                ctx.NextDetailStartRow = ctx.TemplateDetailBlockStartRow + 34; // --硬编码--
+                // 真实箱柜的明细块起始位置：母版明细块下方 (平移完整明细块行数)
+                ctx.NextDetailStartRow = ctx.TemplateDetailBlockStartRow + blockTotalRows;
             }
             else
             {
@@ -2194,11 +2225,11 @@ namespace ExcelAddInDemo
                 int lastTolsumRow = lastIndexes.cabTolsumRow > 0 ? lastIndexes.cabTolsumRow : 71;
 
                 // 核心防御：必须先在表尾成功准备好临时纯净母版，然后再扩容汇总区，杜绝异常时在 Excel 遗留空行脏数据
-                // 当前未扩容状态下表尾明细预备位置 (总计行 + 3行签名 + 1)
-                int preTemplatePos = lastTolsumRow + 4; // --硬编码--
+                // 当前未扩容状态下表尾明细预备位置 (总计行 + footerRows 行签名 + 1)
+                int preTemplatePos = lastTolsumRow + footerRows + 1;
                 bool templateReady = false;
 
-                // 通道 A：优先从外部 CabinetTemplate.xlsx 标准模板复制 34 行标准明细块
+                // 通道 A：优先从外部 CabinetTemplate.xlsx 标准模板复制标准明细块
                 try
                 {
                     // 获取或探测模板物理路径
@@ -2211,9 +2242,13 @@ namespace ExcelAddInDemo
                         {
                             // 默认选取分类模板表
                             dynamic templateSheet = templateWb.Sheets.Count >= 2 ? templateWb.Sheets[2] : templateWb.Sheets[1];
-                            // 复制模板第 41:74 行 (34行纯净明细块) --硬编码--
-                            dynamic srcTmplRange = templateSheet.Rows["41:74"];
-                            dynamic dstTmplRange = sheet.Rows[$"{preTemplatePos}:{preTemplatePos + 34 - 1}"];
+                            // 动态计算模板明细块物理行范围
+                            int tmplDet = cfg.CabDetRowIndex > 0 ? cfg.CabDetRowIndex : 44;
+                            int tmplTol = cfg.CabTolsumRowIndex > 0 ? cfg.CabTolsumRowIndex : 71;
+                            int tmplStart = tmplDet - headerRows;
+                            int tmplEnd = tmplTol + footerRows;
+                            dynamic srcTmplRange = templateSheet.Rows[$"{tmplStart}:{tmplEnd}"];
+                            dynamic dstTmplRange = sheet.Rows[$"{preTemplatePos}:{preTemplatePos + blockTotalRows - 1}"];
                             srcTmplRange.Copy(dstTmplRange);
                             templateReady = true;
                         }
@@ -2236,16 +2271,16 @@ namespace ExcelAddInDemo
                     try
                     {
                         // 获取当前工作表首台箱柜基准行号
-                        int firstDetRow = baseDetRow > 0 ? baseDetRow : 44;
-                        // 首台箱柜明细块起始行 (detRow - 3)
-                        int firstDetBlockStart = firstDetRow - 3;
-                        // 复制 34 行已有结构至表尾临时母版位置 --硬编码--
-                        dynamic srcExistingRange = sheet.Rows[$"{firstDetBlockStart}:{firstDetBlockStart + 34 - 1}"];
-                        dynamic dstExistingRange = sheet.Rows[$"{preTemplatePos}:{preTemplatePos + 34 - 1}"];
+                        int firstDetRow = baseDetRow > 0 ? baseDetRow : defaultDetRow;
+                        // 首台箱柜明细块起始行 (detRow - headerRows)
+                        int firstDetBlockStart = firstDetRow - headerRows;
+                        // 复制完整明细块已有结构至表尾临时母版位置
+                        dynamic srcExistingRange = sheet.Rows[$"{firstDetBlockStart}:{firstDetBlockStart + blockTotalRows - 1}"];
+                        dynamic dstExistingRange = sheet.Rows[$"{preTemplatePos}:{preTemplatePos + blockTotalRows - 1}"];
                         srcExistingRange.Copy(dstExistingRange);
 
                         // 纯净化临时母版：清空元器件区域内容，保留表头和底部计费公式
-                        int compCleanStart = preTemplatePos + 5; // 即 detRow + 2
+                        int compCleanStart = preTemplatePos + headerRows + 2; // 即 detRow + 2
                         int compCleanEnd = preTemplatePos + 24;  // 即 subsumRow - 1
                         sheet.Range[$"A{compCleanStart}:U{compCleanEnd}"].ClearContents();
                         sheet.Range[$"AD{compCleanStart}:AD{compCleanEnd}"].ClearContents();
@@ -2271,8 +2306,11 @@ namespace ExcelAddInDemo
                 // 汇总区扩容后，表尾母版位置顺移 cabCountInGroup 行
                 int finalTemplatePos = preTemplatePos + cabCountInGroup;
                 ctx.HasTemplateToClean = templateReady;
+                // 设置表尾母表明细起始物理行
                 ctx.TemplateDetailBlockStartRow = finalTemplatePos;
-                ctx.NextDetailStartRow = finalTemplatePos + 34; // --硬编码--
+                // 登记表尾母表明细物理总行数
+                ctx.TemplateDetailBlockRowCount = blockTotalRows;
+                ctx.NextDetailStartRow = finalTemplatePos + blockTotalRows;
                 ctx.NextCabinetK = GetNextCabinetIndex(activeWb, sheet);
             }
 
@@ -2303,20 +2341,26 @@ namespace ExcelAddInDemo
                     ? (cab.Header.Remark ?? string.Empty)
                     : cab.Header.InstallMode.Trim();
 
+                // 读取配置中顶部大标题与底部落款行数
+                var cfg = ConfigManager.Instance.Current.Excel;
+                int headerRows = cfg.DetailHeaderRows > 0 ? cfg.DetailHeaderRows : 3;
+                int footerRows = cfg.DetailFooterRows > 0 ? cfg.DetailFooterRows : 3;
+                int blockTotalRows = cfg.TemplateDetailBlockTotalRows;
+
                 // 1. 为新箱柜分配独立序号与物理行
                 int cabinetK = ctx.NextCabinetK++;
                 int sumRow = ctx.NextSumRow++;
                 int targetDetailStartRow = ctx.NextDetailStartRow;
 
-                // 2. 纯净模板直拷：从纯净母版明细块复制 34 行到表尾目标区 (零平移开销，结构 100% 完整纯净)
-                int copyRowCount = 34; // --硬编码--
+                // 2. 纯净模板直拷：从纯净母版明细块复制完整块到表尾目标区 (零平移开销，结构 100% 完整纯净)
+                int copyRowCount = blockTotalRows;
                 int srcStart = ctx.TemplateDetailBlockStartRow;
                 dynamic srcRange = sheet.Rows[$"{srcStart}:{srcStart + copyRowCount - 1}"];
                 dynamic dstRange = sheet.Rows[$"{targetDetailStartRow}:{targetDetailStartRow + copyRowCount - 1}"];
                 srcRange.Copy(dstRange);
 
                 // 计算新建箱柜的关键行号映射
-                int detRow = targetDetailStartRow + 3; // --硬编码--
+                int detRow = targetDetailStartRow + headerRows;
                 int subsumRow = detRow + 22; // --硬编码--
                 int tolsumRow = detRow + 27; // --硬编码--
 
@@ -2339,8 +2383,8 @@ namespace ExcelAddInDemo
                     tolsumRow += insertCount;
                 }
 
-                // 更新上下文中的下一明细块起始物理行号 (总计行 + 3行报价人 + 1)
-                ctx.NextDetailStartRow = tolsumRow + 4;
+                // 更新上下文中的下一明细块起始物理行号 (总计行 + footerRows行报价人 + 1)
+                ctx.NextDetailStartRow = tolsumRow + footerRows + 1;
                 int compEndRow = subsumRow - 1;
 
                 // 4. 规则 7：调用 Tool.BuildComponentRowsMatrix 一次性批量生成并写入 17 列元器件矩阵

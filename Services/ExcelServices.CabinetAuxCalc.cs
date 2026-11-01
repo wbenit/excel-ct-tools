@@ -630,13 +630,10 @@ namespace ExcelAddInDemo
             // 批量从 SQLite 数据库获取已收录的 DWG 三维尺寸字典 (毫秒级零延迟查库)
             var dwgDimMap = PersonalComponentDbService.BatchGetDwgDimensions(dwgKeys);
 
-            // 获取元器件图纸库基准根目录（优先从配置中读取，若空则使用默认基准路径并标识硬编码）
-            string baseDwgDir = ConfigManager.Instance.Current?.ComponentParamMatch?.BaseDirectory ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(baseDwgDir))
-            {
-                // 默认图纸库根路径 --硬编码--
-                baseDwgDir = @"E:\BaiduNetdiskWorkspace\BaseData\新库";
-            }
+            // 智能自适应解析元器件图纸库基准根目录（多级探测：用户配置 -> 工作簿 -> 插件 -> 全盘自愈，杜绝硬编码）
+            string baseDwgDir = Tool.ResolveComponentDwgBaseDirectory();
+            // 判断图纸库物理目录是否有效可用
+            bool isDwgDirValid = !string.IsNullOrWhiteSpace(baseDwgDir) && Directory.Exists(baseDwgDir);
 
             // 收集本地 SQLite 未收录但磁盘物理存在的 DWG 图纸文件绝对路径集合
             var missingDwgPaths = new List<string>();
@@ -656,8 +653,8 @@ namespace ExcelAddInDemo
                 bool hasDim = (dwgDimMap.TryGetValue(normKey, out var existingItem) && existingItem != null && existingItem.Width > 0 && existingItem.Height > 0)
                            || (dwgDimMap.TryGetValue(c.DwgName, out existingItem) && existingItem != null && existingItem.Width > 0 && existingItem.Height > 0);
 
-                // 若未收录有效尺寸，探测磁盘物理文件是否存在
-                if (!hasDim)
+                // 若未收录有效尺寸且图纸库根物理目录存在，探测磁盘物理文件是否存在
+                if (!hasDim && isDwgDirValid)
                 {
                     // 保证图纸文件名具备 .dwg 后缀
                     string fileName = c.DwgName.EndsWith(".dwg", StringComparison.OrdinalIgnoreCase) ? c.DwgName : c.DwgName + ".dwg";

@@ -119,6 +119,192 @@ namespace ExcelAddInDemo
             return currentDir;
         }
 
+        /// <summary>
+        /// 智能自适应解析元器件图纸库的物理基准根目录
+        /// 优先级：1.配置文件显式路径 -> 2.当前活动工作簿同级及子目录 -> 3.插件根目录子目录 -> 4.全硬盘动态自愈探测
+        /// </summary>
+        /// <returns>已确认物理存在的图纸库绝对路径；若未找到则返回空字符串</returns>
+        public static string ResolveComponentDwgBaseDirectory()
+        {
+            // 1. 优先读取 appsettings.json 中的用户显式配置
+            try
+            {
+                // 获取当前生效的图纸匹配配置项
+                string configuredDir = ConfigManager.Instance.Current?.ComponentParamMatch?.BaseDirectory ?? string.Empty;
+                // 校验配置文本非空
+                if (!string.IsNullOrWhiteSpace(configuredDir))
+                {
+                    // 若配置为相对路径则基于插件根目录解析为绝对路径
+                    string fullConfigured = Path.IsPathRooted(configuredDir)
+                        ? configuredDir
+                        : Path.Combine(GetAppDirectory(), configuredDir);
+
+                    // 校验配置文件指定的物理目录是否存在
+                    if (Directory.Exists(fullConfigured))
+                    {
+                        return fullConfigured;
+                    }
+                }
+            }
+            catch { }
+
+            // 2. 探测当前 Excel 活动工作簿同级及常见子目录
+            try
+            {
+                // 安全获取 Excel-DNA 主程序实例
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                // 获取当前活动工作簿物理所在文件夹路径
+                string? wbPath = app?.ActiveWorkbook?.Path as string;
+                if (!string.IsNullOrWhiteSpace(wbPath) && Directory.Exists(wbPath))
+                {
+                    // 候选工作簿相关子目录清单
+                    string[] wbSubCandidates = new[]
+                    {
+                        Path.Combine(wbPath, "BaseData", "新库"),
+                        Path.Combine(wbPath, "新库"),
+                        Path.Combine(wbPath, "BaseData"),
+                        Path.Combine(wbPath, "图纸库"),
+                        Path.Combine(wbPath, "DWG")
+                    };
+
+                    foreach (var cand in wbSubCandidates)
+                    {
+                        // 命中物理存在的目录立即返回
+                        if (Directory.Exists(cand)) return cand;
+                    }
+                }
+            }
+            catch { }
+
+            // 3. 探测插件自身安装根目录下的常见子目录
+            string appDir = GetAppDirectory();
+            if (!string.IsNullOrWhiteSpace(appDir))
+            {
+                // 候选插件内置图纸子目录清单
+                string[] appSubCandidates = new[]
+                {
+                    Path.Combine(appDir, "BaseData", "新库"),
+                    Path.Combine(appDir, "新库"),
+                    Path.Combine(appDir, "BaseData"),
+                    Path.Combine(appDir, "DwgLibrary")
+                };
+
+                foreach (var cand in appSubCandidates)
+                {
+                    // 命中物理存在的目录立即返回
+                    if (Directory.Exists(cand)) return cand;
+                }
+            }
+
+            // 4. 全盘符动态自愈扫描 (兼容历史开发环境，彻底消除绝对盘符依赖)
+            try
+            {
+                // 动态枚举所有已就绪的本地固定磁盘 (如 C, D, E, F 等，自适应不写死)
+                var drives = DriveInfo.GetDrives()
+                    .Where(d => d.DriveType == DriveType.Fixed && d.IsReady)
+                    .Select(d => d.RootDirectory.FullName);
+
+                foreach (var drive in drives)
+                {
+                    // 候选典型基准库相对路径清单
+                    string[] driveCandidates = new[]
+                    {
+                        Path.Combine(drive, "BaiduNetdiskWorkspace", "BaseData", "新库"),
+                        Path.Combine(drive, "BaseData", "新库"),
+                        Path.Combine(drive, "新库")
+                    };
+
+                    foreach (var cand in driveCandidates)
+                    {
+                        // 命中物理存在的目录立即返回
+                        if (Directory.Exists(cand)) return cand;
+                    }
+                }
+            }
+            catch { }
+
+            // 全部途径均未找到时安全返回空字符串
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// 全局自适应解析指定 HTML 静态前端资源的物理绝对路径
+        /// 优先级：插件运行目录 Resources -> 应用域基准目录 Resources -> 根目录向上回溯源码/发布目录 -> 根目录直接匹配
+        /// 彻底消除对 @"E:\Ace\ExcelAddInCTtools\..." 或 @"d:\code\..." 等固定开发路径的硬编码依赖
+        /// </summary>
+        /// <param name="htmlFileName">HTML 文件名称 (如 finished_handover.html)</param>
+        /// <returns>已确认物理存在的绝对路径；若未找到则返回标准推荐路径</returns>
+        public static string ResolveHtmlResourcePath(string htmlFileName)
+        {
+            // 1. 获取当前插件的主程序集运行目录 (如 publish 或 bin/Debug/net48)
+            string appDir = GetAppDirectory();
+            // 2. 获取当前宿主应用域基准目录 (如 Excel 进程所在目录或临时目录)
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory ?? string.Empty;
+
+            // 3. 构建多级高容错的候选查找路径列表
+            var candidatePaths = new List<string>
+            {
+                // ① 插件根目录的 Resources 文件夹 (标准安装/发布结构: publish/Resources/xxx.html)
+                Path.Combine(appDir, "Resources", htmlFileName),
+                // ② 插件根目录下的 publish/Resources (从项目源码根目录启动或调试)
+                Path.Combine(appDir, "publish", "Resources", htmlFileName),
+                // ③ 插件根目录直接放置
+                Path.Combine(appDir, htmlFileName),
+                // ④ 应用域基准目录下的 Resources
+                Path.Combine(baseDir, "Resources", htmlFileName),
+                // ⑤ 应用域基准目录下的 publish/Resources
+                Path.Combine(baseDir, "publish", "Resources", htmlFileName),
+                // ⑥ 应用域基准目录直接放置
+                Path.Combine(baseDir, htmlFileName),
+                // ⑦ 当前工作目录下的 Resources
+                Path.Combine(Directory.GetCurrentDirectory(), "Resources", htmlFileName)
+            };
+
+            // 4. 向上攀爬推导：在 VS/Rider 开发调试状态下，程序集输出在 bin/Debug/net48，需向上回溯至工程源码目录
+            try
+            {
+                // 从 appDir 向上查找包含 Resources 目录的父级
+                DirectoryInfo? currentDirInfo = new DirectoryInfo(appDir);
+                // 最多向上攀爬 4 级目录
+                for (int depth = 0; depth < 4 && currentDirInfo != null; depth++)
+                {
+                    // 构造父级 Resources 候选路径
+                    string candidateInParent = Path.Combine(currentDirInfo.FullName, "Resources", htmlFileName);
+                    // 去重加入候选集
+                    if (!candidatePaths.Contains(candidateInParent))
+                    {
+                        // 登记父级 Resources 路径
+                        candidatePaths.Add(candidateInParent);
+                    }
+                    // 构造父级 publish/Resources 候选路径
+                    string candidateInParentPublish = Path.Combine(currentDirInfo.FullName, "publish", "Resources", htmlFileName);
+                    // 去重加入候选集
+                    if (!candidatePaths.Contains(candidateInParentPublish))
+                    {
+                        // 登记父级 publish/Resources 路径
+                        candidatePaths.Add(candidateInParentPublish);
+                    }
+                    // 向上迈进一级
+                    currentDirInfo = currentDirInfo.Parent;
+                }
+            }
+            catch { }
+
+            // 5. 遍历各候选路径，返回首个物理存在的文件绝对路径
+            foreach (var candidate in candidatePaths)
+            {
+                // 校验路径非空且文件真实存在
+                if (!string.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
+                {
+                    // 返回规范化绝对路径
+                    return Path.GetFullPath(candidate);
+                }
+            }
+
+            // 6. 若未找到已存在文件，则返回标准推荐规范路径 (优先 appDir/Resources)
+            return Path.Combine(appDir, "Resources", htmlFileName);
+        }
+
         // 缓存当前进程中用户自定义的数据存储目录
         private static string? _customDataDirectoryCache = null;
 

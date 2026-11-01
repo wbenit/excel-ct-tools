@@ -117,37 +117,8 @@ namespace ExcelAddInDemo.Forms
                     _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
                 }
 
-                // 寻找目标 HTML 静态资源物理路径
-                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                string appDir = Tool.GetAppDirectory();
-
-                // 配置多级备选路径集以实现全域高容错加载 (开发目录、输出目录、发布目录与根目录)
-                string[] candidatePaths = new string[]
-                {
-                    Path.Combine(appDir, "Resources", "labor_list.html"),
-                    Path.Combine(appDir, "publish", "Resources", "labor_list.html"),
-                    Path.Combine(appDir, "labor_list.html"),
-                    Path.Combine(baseDir, "Resources", "labor_list.html"),
-                    Path.Combine(baseDir, "labor_list.html"),
-                    Path.Combine(Directory.GetCurrentDirectory(), "Resources", "labor_list.html"),
-                    // 向上探测源码根目录 (bin/Debug/net48 -> 项目源码目录)
-                    Path.Combine(appDir, "..", "..", "..", "Resources", "labor_list.html"),
-                    Path.Combine(appDir, "..", "..", "..", "publish", "Resources", "labor_list.html"),
-                    // 工程物理路径绝对兜底 --硬编码: 工程物理兜底路径--
-                    @"E:\Ace\ExcelAddInCTtools\Resources\labor_list.html",
-                    @"E:\Ace\ExcelAddInCTtools\publish\Resources\labor_list.html"
-                };
-
-                // 循环检索首个真实存在的目标 HTML 文件
-                string htmlPath = string.Empty;
-                foreach (string candidate in candidatePaths)
-                {
-                    if (File.Exists(candidate))
-                    {
-                        htmlPath = candidate;
-                        break;
-                    }
-                }
+                // 全局自适应寻址 labor_list.html 静态资源物理路径
+                string htmlPath = Tool.ResolveHtmlResourcePath("labor_list.html");
 
                 // 导航至前端 Vue 3 页面
                 if (!string.IsNullOrWhiteSpace(htmlPath))

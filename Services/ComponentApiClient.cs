@@ -62,6 +62,59 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 动态获取配置的远程元器件商城 WebAPI 服务的基准访问地址
+        /// 优先级：ConfigManager 运行时配置 -> AppConfig 默认配置 -> 官方默认生产地址
+        /// </summary>
+        /// <returns>清洗规范后的 WebAPI 基准访问地址</returns>
+        public static string GetBaseUrl()
+        {
+            try
+            {
+                // 1. 尝试从全局配置管理器提取基准地址
+                string? url = ConfigManager.Instance.Current?.Api?.BaseUrl;
+                // 若配置有效且非空，返回修剪末尾斜杠后的有效地址
+                if (!string.IsNullOrWhiteSpace(url))
+                {
+                    return url.Trim().TrimEnd('/');
+                }
+            }
+            catch { }
+
+            try
+            {
+                // 2. 尝试从 AppConfig 默认单例配置中提取
+                string? defaultUrl = AppConfig.Instance?.Api?.BaseUrl;
+                // 校验配置非空
+                if (!string.IsNullOrWhiteSpace(defaultUrl))
+                {
+                    return defaultUrl.Trim().TrimEnd('/');
+                }
+            }
+            catch { }
+
+            // 3. 兜底回退：返回标准默认基准域名
+            return "https://mall.xingren.online";
+        }
+
+        /// <summary>
+        /// 动态获取元器件分页检索的接口相对路径
+        /// </summary>
+        /// <returns>接口端点路径</returns>
+        public static string GetComponentGetPagedListEndpoint()
+        {
+            try
+            {
+                // 优先从配置管理器中读取
+                string? ep = ConfigManager.Instance.Current?.Api?.ComponentGetPagedListEndpoint;
+                if (!string.IsNullOrWhiteSpace(ep)) return ep.Trim();
+            }
+            catch { }
+
+            // 默认标准端点
+            return "/api/api/Component/GetPagedList";
+        }
+
+        /// <summary>
         /// 从远程商城 WebAPI 获取所有品牌及其包含的元器件数量统计
         /// </summary>
         /// <returns>品牌及其数量统计列表</returns>
@@ -69,9 +122,9 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 从配置读取 API 基准地址
-                string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
-                string url = $"{baseUrl.TrimEnd('/')}/api/api/Component/GetBrandStats";
+                // 动态获取 API 基准地址 (完全配置化)
+                string baseUrl = GetBaseUrl();
+                string url = $"{baseUrl}/api/api/Component/GetBrandStats";
 
                 // 同步发起 HTTP GET 请求
                 var response = _httpClient.GetAsync(url).GetAwaiter().GetResult();
@@ -119,9 +172,9 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 从全局配置管理器读取 API 基准地址与接口端点
-                string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
-                string endpoint = ConfigManager.Instance.Current.Api.ComponentGetPagedListEndpoint ?? "/api/api/Component/GetPagedList";
+                // 动态获取 API 基准地址与接口端点 (完全配置化)
+                string baseUrl = GetBaseUrl();
+                string endpoint = GetComponentGetPagedListEndpoint();
 
                 // 构建查询参数 QueryString 列表
                 var queryParams = new List<string>();
@@ -409,9 +462,9 @@ namespace ExcelAddInDemo
             var allItems = new List<ComponentApiDto>();
             try
             {
-                // 读取 API 基准地址配置
-                string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
-                string endpoint = ConfigManager.Instance.Current.Api.ComponentGetPagedListEndpoint ?? "/api/api/Component/GetPagedList";
+                // 动态读取 API 基准地址配置与接口端点 (完全配置化)
+                string baseUrl = GetBaseUrl();
+                string endpoint = GetComponentGetPagedListEndpoint();
 
                 int pageIndex = 1;
                 int pageSize = ComponentManageDefaults.MaxQueryPageSize;
@@ -494,12 +547,12 @@ namespace ExcelAddInDemo
             var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                // 读取 API 基准地址配置
-                string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
+                // 动态读取 API 基准地址配置 (完全配置化)
+                string baseUrl = GetBaseUrl();
                 string cleanBrand = brand?.Trim() ?? string.Empty;
 
                 // 1. 优先调用后端专用的数据库级 DISTINCT 聚合接口: GET /api/api/Component/GetNames?brand={brand}
-                string endpoint = $"{baseUrl.TrimEnd('/')}/api/api/Component/GetNames";
+                string endpoint = $"{baseUrl}/api/api/Component/GetNames";
                 if (!string.IsNullOrEmpty(cleanBrand) && !string.Equals(cleanBrand, "全部", StringComparison.OrdinalIgnoreCase))
                 {
                     endpoint += $"?brand={Uri.EscapeDataString(cleanBrand)}";
@@ -643,10 +696,10 @@ namespace ExcelAddInDemo
 
             try
             {
-                // 读取 API 基准地址配置
-                string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
+                // 动态读取 API 基准地址配置 (完全配置化)
+                string baseUrl = GetBaseUrl();
                 // 构造单次定向快速查询 URL，按品牌与型号关键字联合检索
-                string qUrl = $"{baseUrl.TrimEnd('/')}/api/api/Component/GetPagedList?PageIndex=1&PageSize=50&Brand={Uri.EscapeDataString(brand.Trim())}&Keyword={Uri.EscapeDataString(model.Trim())}";
+                string qUrl = $"{baseUrl}/api/api/Component/GetPagedList?PageIndex=1&PageSize=50&Brand={Uri.EscapeDataString(brand.Trim())}&Keyword={Uri.EscapeDataString(model.Trim())}";
 
                 // 发起快速 GET 请求
                 var resp = _httpClient.GetAsync(qUrl).GetAwaiter().GetResult();
@@ -693,9 +746,9 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 读取 API 基准地址配置
-                string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
-                string url = $"{baseUrl.TrimEnd('/')}/api/api/Component/Create";
+                // 动态读取 API 基准地址配置 (完全配置化)
+                string baseUrl = GetBaseUrl();
+                string url = $"{baseUrl}/api/api/Component/Create";
 
                 // 序列化请求体 JSON
                 string jsonBody = JsonSerializer.Serialize(dto, _jsonOptions);
@@ -770,9 +823,9 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 读取 API 基准地址配置
-                string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
-                string url = $"{baseUrl.TrimEnd('/')}/api/api/Component/Update";
+                // 动态读取 API 基准地址配置 (完全配置化)
+                string baseUrl = GetBaseUrl();
+                string url = $"{baseUrl}/api/api/Component/Update";
 
                 // 序列化请求体 JSON
                 string jsonBody = JsonSerializer.Serialize(dto, _jsonOptions);
@@ -807,9 +860,9 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 读取 API 基准地址配置
-                string baseUrl = ConfigManager.Instance.Current.Api.BaseUrl ?? "https://mall.xingren.online";
-                string url = $"{baseUrl.TrimEnd('/')}/api/api/Component/Delete?id={id}";
+                // 动态读取 API 基准地址配置 (完全配置化)
+                string baseUrl = GetBaseUrl();
+                string url = $"{baseUrl}/api/api/Component/Delete?id={id}";
 
                 // 发起 DELETE 请求
                 var response = _httpClient.DeleteAsync(url).GetAwaiter().GetResult();

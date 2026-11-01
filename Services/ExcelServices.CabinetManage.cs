@@ -412,14 +412,19 @@ namespace ExcelAddInDemo
                 clip.SumRowValues = (object[,])sumRange.Value2;
                 clip.SumRowFormulas = (object[,])sumRange.Formula;
 
-                // 7. 若为普通有明细箱柜，整块读入底部明细区域 (从 detRow-3 到 tolsumRow+3)
+                // 7. 若为普通有明细箱柜，整块读入底部明细区域 (根据配置读取顶部大标题到总计行下方落款签名)
                 if (!isNoDetail && detRow > 0)
                 {
-                    // 明细块起始物理行
-                    int detStart = detRow - 3;
+                    // 读取明细块大标题与签名扩展行配置
+                    var cfg = ConfigManager.Instance.Current.Excel;
+                    int headerRows = cfg.DetailHeaderRows > 0 ? cfg.DetailHeaderRows : 3;
+                    int footerRows = cfg.DetailFooterRows > 0 ? cfg.DetailFooterRows : 3;
+
+                    // 明细块起始物理行 (Det 行向上扩展大标题)
+                    int detStart = detRow - headerRows;
                     if (detStart < 1) detStart = detRow;
-                    // 明细块结束物理行
-                    int detEnd = tolsumRow + 3;
+                    // 明细块结束物理行 (总计行向下扩展落款签名)
+                    int detEnd = tolsumRow + footerRows;
 
                     // 填充明细区间与行数
                     clip.SourceDetStartRow = detStart;
@@ -950,7 +955,12 @@ namespace ExcelAddInDemo
                     // 12. 普通有明细箱柜：定位明细块插入物理行
                     // 重新获取目标表最新的有效箱柜列表 (已包含刚才插入汇总行后的真实物理下移)
                     validCabinets = Tool.GetSheetValidCabinets((object)targetSheet, (object)wb);
-                    int insertDetailRow = 41;
+                    // 读取明细块大标题与签名落款扩展行配置
+                    int headerRows = cfg?.DetailHeaderRows > 0 ? cfg.DetailHeaderRows : 3;
+                    int footerRows = cfg?.DetailFooterRows > 0 ? cfg.DetailFooterRows : 3;
+                    int defDetRow = cfg?.CabDetRowIndex > 0 ? cfg.CabDetRowIndex : 44;
+                    int minInsertDetailRow = Math.Max(1, defDetRow - headerRows);
+                    int insertDetailRow = minInsertDetailRow;
 
                     // 若为末尾追加模式或目标表现存无箱柜
                     if (appendToEnd || validCabinets.Count == 0)
@@ -960,14 +970,13 @@ namespace ExcelAddInDemo
                         // 校验目标表是否确实存在已有的底表明细块 (总计行与信息行均大于0)
                         if (curIndexes.cabTolsumRow > 0 && curIndexes.cabDetRow > 0)
                         {
-                            // 紧随最后一个总计行后 + 4 行追加大标题
-                            insertDetailRow = curIndexes.cabTolsumRow + 4;
+                            // 紧随最后一个总计行后 + footerRows + 1 行追加大标题
+                            insertDetailRow = curIndexes.cabTolsumRow + footerRows + 1;
                         }
                         else
                         {
-                            // 全表尚无明细块，以配置的明细基准行 (默认41) - 3 作为首个明细大标题起始行 (第38行大标题，第41行Det)
-                            int defDetRow = ConfigManager.Instance.Current?.Excel?.CabDetRowIndex ?? 41;
-                            insertDetailRow = Math.Max(38, defDetRow - 3);
+                            // 全表尚无明细块，以配置的明细基准行减大标题行作为首个明细大标题起始行
+                            insertDetailRow = minInsertDetailRow;
                         }
                     }
                     else
@@ -1012,8 +1021,8 @@ namespace ExcelAddInDemo
 
                         if (targetDetRow > 0)
                         {
-                            // 插在明细大标题行 (Det - 3) 上方，确保顺序一致 --硬编码: 大标题在Det前3行--
-                            insertDetailRow = Math.Max(38, targetDetRow - 3);
+                            // 插在明细大标题行 (Det - headerRows) 上方，确保顺序一致
+                            insertDetailRow = Math.Max(minInsertDetailRow, targetDetRow - headerRows);
                         }
                         else
                         {
@@ -1021,12 +1030,11 @@ namespace ExcelAddInDemo
                             var curIndexes = Tool.FindStandardCategoryRowIndexes((object)targetSheet, -1);
                             if (curIndexes.cabTolsumRow > 0 && curIndexes.cabDetRow > 0)
                             {
-                                insertDetailRow = curIndexes.cabTolsumRow + 4;
+                                insertDetailRow = curIndexes.cabTolsumRow + footerRows + 1;
                             }
                             else
                             {
-                                int defDetRow = ConfigManager.Instance.Current?.Excel?.CabDetRowIndex ?? 41;
-                                insertDetailRow = Math.Max(38, defDetRow - 3);
+                                insertDetailRow = minInsertDetailRow;
                             }
                         }
                     }
@@ -1055,16 +1063,16 @@ namespace ExcelAddInDemo
                         realTolsumRow = clip.SourceTolsumRow + sumOffset;
                         if (realDetRow <= 0 && clip.SourceDetStartRow > 0)
                         {
-                            realDetRow = clip.SourceDetStartRow + 3;
+                            realDetRow = clip.SourceDetStartRow + headerRows;
                             realSubsumRow = clip.SourceDetEndRow - 8;
-                            realTolsumRow = clip.SourceDetEndRow - 3;
+                            realTolsumRow = clip.SourceDetEndRow - footerRows;
                         }
                     }
 
-                    // 推导源明细块起止行范围 (通常 detRow - 3 到 tolsumRow + 3)
-                    int realDetStart = realDetRow - 3;
+                    // 推导源明细块起止行范围 (通常 detRow - headerRows 到 tolsumRow + footerRows)
+                    int realDetStart = realDetRow - headerRows;
                     if (realDetStart < 1) realDetStart = realDetRow;
-                    int realDetEnd = realTolsumRow + 3;
+                    int realDetEnd = realTolsumRow + footerRows;
                     int blockRowCount = realDetEnd - realDetStart + 1;
 
                     // 14. 物理插入明细块空白行
@@ -1847,6 +1855,11 @@ namespace ExcelAddInDemo
                 // 校验清洗后的有效排序集合数量
                 if (sanitizedOrder.Count <= 1) return true;
 
+                // 读取 Excel 配置参数中的明细表头表尾扩展行数
+                var cfg = AppConfig.Instance.Excel;
+                int headerRows = cfg.DetailHeaderRows;
+                int footerRows = cfg.DetailFooterRows;
+
                 // 预先搜集所有拥有明细块的箱柜及其明细块物理总行数
                 var detCabinets = validCabinets.Where(c => c.Value.Det != null).OrderBy(c => (int)c.Value.Det.Row).ToList();
                 var detRowCountMap = new Dictionary<int, int>();
@@ -1855,9 +1868,10 @@ namespace ExcelAddInDemo
                 // 若存在拥有明细块的箱柜则计算明细区域参数
                 if (detCabinets.Count > 0)
                 {
-                    // 获取全表首个明细块的起始物理行号 (Det行减3)
+                    // 获取全表首个明细块的起始物理行号 (Det行减 headerRows)
                     int firstDetRow = Convert.ToInt32(detCabinets[0].Value.Det.Row);
-                    firstDetStartRow = firstDetRow - 3;
+                    // 扣除表头大标题行数推导明细块起始物理行
+                    firstDetStartRow = firstDetRow - headerRows;
                     // 容错校验起始行必须大于等于1
                     if (firstDetStartRow < 1) firstDetStartRow = firstDetRow;
 
@@ -1869,18 +1883,19 @@ namespace ExcelAddInDemo
                         // 获取当前明细信息行与总计行物理行号
                         int curDet = Convert.ToInt32(cab.Value.Det.Row);
                         int curTol = cab.Value.Tolsum != null ? Convert.ToInt32(cab.Value.Tolsum.Row) : (curDet + 27);
-                        // 计算起始行 (大标题行)
-                        int curStart = curDet - 3;
+                        // 计算起始行 (大标题行，扣除配置的表头行数)
+                        int curStart = curDet - headerRows;
                         if (curStart < 1) curStart = curDet;
 
-                        // 计算结束行 (总计行及附注落款共3行)
-                        int curEnd = curTol + 3;
+                        // 计算结束行 (总计行加上附注落款行数)
+                        int curEnd = curTol + footerRows;
                         // 若存在紧随其后的下一个明细块且中间有空行则平滑包含空行
                         if (i < detCabinets.Count - 1)
                         {
-                            // 获取下一个明细块的起始行号
+                            // 获取下一个明细块的起始行号并扣除表头行数
                             int nextDet = Convert.ToInt32(detCabinets[i + 1].Value.Det.Row);
-                            int nextStart = nextDet - 3;
+                            // 下一个明细块的顶部起始行
+                            int nextStart = nextDet - headerRows;
                             // 若下一个起始行大于当前结束行加1则将间隙包含在当前块内
                             if (nextStart > curEnd + 1)
                             {
@@ -1949,9 +1964,10 @@ namespace ExcelAddInDemo
                             int curDetRow = detName != null ? Convert.ToInt32(detName.RefersToRange.Row) : 0;
                             if (curDetRow <= 0) continue;
 
-                            // 推导当前明细块起始行与结束行范围
-                            int curStart = curDetRow - 3;
+                            // 推导当前明细块起始行与结束行范围 (动态扣除表头大标题行数)
+                            int curStart = curDetRow - headerRows;
                             if (curStart < 1) curStart = curDetRow;
+                            // 结束行基于计算出的整块长度推导
                             int curEnd = curStart + blockLen - 1;
 
                             // 若当前起始行与目标起始行不一致则执行整块原生剪切插入

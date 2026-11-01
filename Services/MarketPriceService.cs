@@ -29,8 +29,29 @@ namespace ExcelAddInDemo.Services
         // 锁对象，保证多线程请求环境下的缓存安全性
         private static readonly object CacheLock = new object();
 
-        // 行情缓存有效期 (10 分钟)，避免用户短时间内频繁向第三方发送请求
-        private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(10);
+        /// <summary>
+        /// 动态解析有色金属实时行情配置
+        /// 优先级：1. ConfigManager 运行时配置 -> 2. AppConfig 默认配置 -> 3. 内置安全兜底
+        /// </summary>
+        /// <returns>生效的行情配置实体</returns>
+        private static MarketPriceSettings GetSettings()
+        {
+            try
+            {
+                // 1. 尝试从全局配置管理器提取行情配置
+                var cfg = ConfigManager.Instance.Current?.MarketPrice;
+                // 若配置存在且接口 URL 非空，直接采用配置项
+                if (cfg != null && !string.IsNullOrWhiteSpace(cfg.ApiUrl))
+                {
+                    // 返回加载的有效配置
+                    return cfg;
+                }
+            }
+            catch { }
+
+            // 2. 兜底回退：返回标准默认配置实例
+            return new MarketPriceSettings();
+        }
 
         /// <summary>
         /// 异步获取当日大盘最新铜价与铝价 (优先读取短周期缓存，支持强制刷新)
@@ -38,11 +59,16 @@ namespace ExcelAddInDemo.Services
         /// <param name="forceRefresh">是否跳过缓存强制请求第三方网络行情</param>
         public static async Task<MarketPriceResult> FetchMarketPricesAsync(bool forceRefresh = false)
         {
+            // 0. 读取生效的动态配置实体
+            var settings = GetSettings();
+            // 动态计算缓存有效期
+            TimeSpan cacheDuration = TimeSpan.FromMinutes(settings.CacheDurationMinutes > 0 ? settings.CacheDurationMinutes : 10);
+
             // 1. 检查本地内存缓存有效性
             lock (CacheLock)
             {
                 // 若未强制刷新且缓存尚未过期，直接返回内存缓存
-                if (!forceRefresh && _cachedResult != null && (DateTime.Now - _lastFetchTime) < CacheDuration)
+                if (!forceRefresh && _cachedResult != null && (DateTime.Now - _lastFetchTime) < cacheDuration)
                 {
                     return _cachedResult;
                 }
@@ -51,10 +77,18 @@ namespace ExcelAddInDemo.Services
             // 2. 发起第三方实时行情请求
             try
             {
-                // 构建新浪期货行情 API 请求消息 (nf_CU0=沪铜主力，nf_AL0=沪铝主力)
-                using var request = new HttpRequestMessage(HttpMethod.Get, "https://hq.sinajs.cn/list=nf_CU0,nf_AL0");
-                // 新浪行情接口必须携带合法的 Referer 头防盗链
-                request.Headers.Add("Referer", "https://finance.sina.com.cn");
+                // 动态提取配置的行情 API 终结点
+                string apiUrl = !string.IsNullOrWhiteSpace(settings.ApiUrl)
+                    ? settings.ApiUrl
+                    : "https://hq.sinajs.cn/list=nf_CU0,nf_AL0";
+                // 构建行情 API 请求消息
+                using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+
+                // 动态注入防盗链 Referer 请求头标
+                string referer = !string.IsNullOrWhiteSpace(settings.Referer)
+                    ? settings.Referer
+                    : "https://finance.sina.com.cn";
+                request.Headers.Add("Referer", referer);
 
                 // 发起网络异步 GET 请求
                 using var response = await HttpClientInstance.SendAsync(request).ConfigureAwait(false);
@@ -64,8 +98,8 @@ namespace ExcelAddInDemo.Services
                 // 读取响应纯文本 (GBK 或 UTF-8 字符流)
                 string rawText = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-                // 3. 结构化解析行情数据
-                var parseResult = ParseSinaFuturesResponse(rawText);
+                // 3. 结构化解析行情数据 (传入动态配置)
+                var parseResult = ParseSinaFuturesResponse(rawText, settings);
                 if (parseResult != null && parseResult.Success)
                 {
                     // 写入内存缓存
@@ -102,30 +136,33 @@ namespace ExcelAddInDemo.Services
                 }
             }
 
-            // 5. 首次且断网时的安全基准兜底
-            // --硬编码: 默认离线备选 1#电解铜现货 110625 元/吨，铝价 23075 元/吨--
+            // 5. 首次且断网时的安全基准兜底 (完全基于动态配置)
             return new MarketPriceResult
             {
                 Success = true,
-                CopperPrice = 110625.0,
-                AluminumPrice = 23075.0,
+                CopperPrice = settings.DefaultCopperPrice,
+                AluminumPrice = settings.DefaultAluminumPrice,
                 Source = "1#电解铜现货 (长江/上海有色)",
                 UpdateTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm"),
                 IsFallback = true,
-                Message = "已使用系统内置的标准 1#电解铜基准行情 (110,625 元/吨)"
+                Message = $"已使用系统配置的基准行情 (铜 {settings.DefaultCopperPrice:N0} 元/吨，铝 {settings.DefaultAluminumPrice:N0} 元/吨)"
             };
         }
 
         /// <summary>
         /// 解析新浪期货返回的文本数据字符串并换算为 1#电解铜现货均价
         /// </summary>
-        private static MarketPriceResult? ParseSinaFuturesResponse(string rawText)
+        private static MarketPriceResult? ParseSinaFuturesResponse(string rawText, MarketPriceSettings settings)
         {
             if (string.IsNullOrWhiteSpace(rawText)) return null;
 
             double copperPrice = 0.0;
             double aluminumPrice = 0.0;
             string timeStr = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+            // 提取目标合约代码标识 (大写)
+            string cuSymbol = (settings.CopperContractCode ?? "CU").ToUpperInvariant();
+            string alSymbol = (settings.AluminumContractCode ?? "AL").ToUpperInvariant();
 
             // 按分号切分多品种行情行
             string[] lines = rawText.Split(new[] { ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -156,13 +193,16 @@ namespace ExcelAddInDemo.Services
 
                     if (curVal > 1000)
                     {
-                        if (symbol.Contains("CU"))
+                        // 动态匹配铜合约标识
+                        if (symbol.Contains("CU") || symbol.Contains(cuSymbol))
                         {
-                            // 盘面期货价加上现货基差升水 (现货升水 625 元/吨，或基准 110625)
-                            // --硬编码: 1#电解铜现货升水 625 元/吨--
-                            copperPrice = (curVal >= 40000 && curVal <= 150000) ? curVal + 625.0 : 110625.0;
+                            // 盘面期货价加上配置的现货升水基差
+                            copperPrice = (curVal >= 40000 && curVal <= 150000)
+                                ? curVal + settings.CopperSpotPremium
+                                : settings.DefaultCopperPrice;
                         }
-                        else if (symbol.Contains("AL"))
+                        // 动态匹配铝合约标识
+                        else if (symbol.Contains("AL") || symbol.Contains(alSymbol))
                         {
                             aluminumPrice = curVal;
                         }
@@ -179,8 +219,8 @@ namespace ExcelAddInDemo.Services
             // 校验铜价是否成功提取到有效数值 (>10000 元/吨)
             if (copperPrice > 10000)
             {
-                // 若铝价未能正常识别，则兜底为行业合理均价 23075
-                if (aluminumPrice <= 1000) aluminumPrice = 23075.0; // --硬编码: 离线备选铝价 23075--
+                // 若铝价未能正常识别，则兜底为配置的合理均价
+                if (aluminumPrice <= 1000) aluminumPrice = settings.DefaultAluminumPrice;
 
                 return new MarketPriceResult
                 {

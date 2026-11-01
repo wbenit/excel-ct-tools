@@ -2544,9 +2544,14 @@ namespace ExcelAddInDemo
                     // 6. 批量追加基线初始化 (循环外部只计算一次，消除 O(N^2) 全表扫描瓶颈)
                     progressCallback?.Invoke(12, "正在准备目标分类表批量追加基准...");
 
-                    // 提取定义名称前缀配置
-                    var cfg = ConfigManager.Instance.Current?.Excel;
-                    var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = cfg?.Prefixes ?? CabinetPrefixConfig.Default;
+                    // 提取定义名称前缀配置与明细扩展行配置
+                    var cfg = ConfigManager.Instance.Current.Excel;
+                    // 读取前缀配置对象避免解构类型推断歧义
+                    CabinetPrefixConfig prefixes = cfg?.Prefixes ?? CabinetPrefixConfig.Default;
+                    var (sumPrefix, detPrefix, subsumPrefix, tolsumPrefix) = prefixes;
+                    // 读取大标题行数与底部落款行数配置
+                    int headerRows = cfg?.DetailHeaderRows > 0 ? cfg.DetailHeaderRows : 3;
+                    int footerRows = cfg?.DetailFooterRows > 0 ? cfg.DetailFooterRows : 3;
 
                     // 获取目标表初始有效箱柜列表
                     var targetValidCabinets = Tool.GetSheetValidCabinets((object)targetSheet, (object)wb);
@@ -2555,18 +2560,18 @@ namespace ExcelAddInDemo
                     int curInsertSumRow = DetermineTopSummaryInsertRow(app, targetSheet, targetValidCabinets, 0, appendToEnd: true);
 
                     // 确定首个明细块的插入物理行号 (末尾追加模式)
-                    int curInsertDetRow = 41; // 默认兜底基准
+                    int curInsertDetRow = Math.Max(1, (cfg?.CabDetRowIndex ?? 44) - headerRows);
                     var targetIndexes = Tool.FindStandardCategoryRowIndexes((object)targetSheet, -1);
                     if (targetIndexes.cabTolsumRow > 0 && targetIndexes.cabDetRow > 0)
                     {
-                        // 紧贴现有最后一个明细块总计行后 + 4 行追加大标题
-                        curInsertDetRow = targetIndexes.cabTolsumRow + 4;
+                        // 紧贴现有最后一个明细块总计行后，跳过落款行并在下一行追加大标题
+                        curInsertDetRow = targetIndexes.cabTolsumRow + footerRows + 1;
                     }
                     else
                     {
-                        // 目标表当前尚无明细块，取默认基准行 38
-                        int defDetRow = ConfigManager.Instance.Current?.Excel?.CabDetRowIndex ?? 41;
-                        curInsertDetRow = Math.Max(38, defDetRow - 3);
+                        // 目标表当前尚无明细块，取默认基准行扣除大标题行数
+                        int defDetRow = cfg?.CabDetRowIndex ?? 44;
+                        curInsertDetRow = Math.Max(1, defDetRow - headerRows);
                     }
 
                     // 提取目标表当前最大分配唯一序号 startK

@@ -99,12 +99,8 @@ namespace ExcelAddInDemo
         {
             try
             {
-                // 指定 WebView2 用户运行数据独立缓存目录，避免与其他插件冲突
-                string userDataFolder = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "ExcelAddInCTtools",
-                    "WebView2Data"
-                );
+                // 1. 获取统一隔离的 WebView2 用户运行数据独立缓存目录
+                string userDataFolder = Tool.GetWebView2UserDataFolder("WebView2_DistributedAdjustPrice");
 
                 // 异步创建核心运行时环境
                 var environment = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
@@ -121,21 +117,22 @@ namespace ExcelAddInDemo
                 // 注册 WebMessage 前后端消息通信接收监听器
                 _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
 
-                // 获取工程 Resources 资源目录绝对路径
-                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                string resDir = Path.Combine(baseDir, "Resources");
-
-                // 注册虚拟主机名映射，杜绝跨域拦截
-                _webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
-                    "appassets.local",
-                    resDir,
-                    CoreWebView2HostResourceAccessKind.Allow
-                );
+                // 2. 自适应解析 distributed_adjust_price.html 资源路径
+                string htmlPath = Tool.ResolveHtmlResourcePath("distributed_adjust_price.html");
 
                 // 检查本地 HTML 资源文件是否存在
-                string htmlPath = Path.Combine(resDir, "distributed_adjust_price.html");
                 if (File.Exists(htmlPath))
                 {
+                    // 提取实际资源文件夹路径
+                    string resDir = Path.GetDirectoryName(htmlPath) ?? AppDomain.CurrentDomain.BaseDirectory;
+
+                    // 注册虚拟主机名映射，杜绝跨域拦截
+                    _webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                        "appassets.local",
+                        resDir,
+                        CoreWebView2HostResourceAccessKind.Allow
+                    );
+
                     // 使用安全域名协议导航加载
                     _webView.Source = new Uri("https://appassets.local/distributed_adjust_price.html");
                 }
