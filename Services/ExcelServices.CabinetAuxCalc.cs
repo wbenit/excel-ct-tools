@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -3506,6 +3506,103 @@ namespace ExcelAddInDemo
 
             // 返回核算元组
             return (unitPrice, totalArea, material, thickness, model);
+        }
+
+        /// <summary>
+        /// 根据工作表名称与箱柜定义名称（如 Cab_Det_1），在 Excel 中自动定位并置顶滚动至底部明细区域
+        /// </summary>
+        /// <param name="sheetName">工作表名称</param>
+        /// <param name="detName">箱柜定义名称（例如 Cab_Det_1）</param>
+        /// <returns>是否成功定位</returns>
+        public static bool LocateCabinetDetail(string sheetName, string detName)
+        {
+            // 校验输入参数合法性
+            if (string.IsNullOrWhiteSpace(sheetName) || string.IsNullOrWhiteSpace(detName))
+            {
+                return false;
+            }
+
+            try
+            {
+                // 获取 Excel COM Application 实例
+                var app = ExcelDnaSafeAccessor.GetApplication();
+                if (app == null) return false;
+
+                // 获取活动工作簿
+                Workbook wb = app.ActiveWorkbook;
+                if (wb == null) return false;
+
+                // 获取目标工作表
+                Worksheet ws = wb.Worksheets[sheetName] as Worksheet;
+                if (ws == null) return false;
+
+                // 若当前活动表不是目标表，先激活目标工作表
+                if (app.ActiveSheet is Worksheet currentWs && currentWs.Name != ws.Name)
+                {
+                    ws.Activate();
+                }
+
+                // 获取目标工作表所有有效箱柜映射
+                var validCabinets = Tool.GetSheetValidCabinets(ws, wb);
+                int targetDetRow = 0;
+
+                // 遍历匹配目标 detName 对应的箱柜行号
+                foreach (var kvp in validCabinets)
+                {
+                    string currentDetTag = $"Cab_Det_{kvp.Key}";
+                    if (string.Equals(currentDetTag, detName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (kvp.Value?.Det != null)
+                        {
+                            targetDetRow = Convert.ToInt32(kvp.Value.Det.Row);
+                            break;
+                        }
+                    }
+                }
+
+                // 若未在映射中找到，尝试通过名称管理器直接查询 Range
+                if (targetDetRow <= 0)
+                {
+                    try
+                    {
+                        var nameRange = ws.Evaluate(detName) as Range;
+                        if (nameRange != null)
+                        {
+                            targetDetRow = nameRange.Row;
+                        }
+                    }
+                    catch { }
+                }
+
+                // 校验定位行有效性
+                if (targetDetRow <= 0) return false;
+
+                // 视口垂直滚动置顶到该箱柜明细行 (首行展示)
+                app.ActiveWindow.ScrollRow = Math.Max(1, targetDetRow);
+                // 视口水平滚动回 A 列
+                app.ActiveWindow.ScrollColumn = 1;
+
+                // 显式选中目标明细行的 B 列 (箱柜名称单元格)
+                Range targetCell = ws.Range[$"B{targetDetRow}"];
+                if (targetCell != null)
+                {
+                    targetCell.Select();
+                }
+
+                // 若 Excel 窗口处于最小化，自动恢复为正常窗口
+                if (app.WindowState == (int)XlWindowState.xlMinimized)
+                {
+                    app.WindowState = (int)XlWindowState.xlNormal;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // 记录定位异常日志
+                System.Diagnostics.Debug.WriteLine($"[LocateCabinetDetail] 定位异常: {ex.Message}");
+                return false;
+            }
         }
     }
 }

@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
@@ -1016,17 +1016,19 @@
               <el-select
                 v-model="selectedCabinetDet"
                 placeholder="选择箱柜"
+                @change="onCabinetChange"
                 size="small"
                 style="width: 170px"
-                @change="onAnalyze"
+
               >
                 <el-option
                   v-for="cab in cabinets"
                   :key="cab.detName"
-                  :label="cab.cabinetName + ' (' + cab.detName + ')'"
+                  :label="cab.displayName || (cab.cabinetName + (cab.seqNo ? '(' + cab.seqNo + ')' : ''))"
                   :value="cab.detName"
                 ></el-option>
               </el-select>
+              <el-button size="small" circle title="定位到当前箱柜底部明细区域" style="margin-left: 4px; padding: 5px" @click="locateCurrentCabinetDetail">📍</el-button>
             </div>
 
             <div class="param-row-item">
@@ -7271,6 +7273,25 @@
           };
 
           // 执行箱柜智能推导分析 (带 300ms 防抖，彻底消除连续点击步进器高频轰炸后端 COM 导致界面卡死)
+          // 联动自动定位当前箱柜在 Excel 中的底部明细区域
+          const locateCurrentCabinetDetail = () => {
+            // 校验当前工作表与选中箱柜
+            if (!selectedSheet.value || !selectedCabinetDet.value) return;
+            // 通过 postToCSharp 发送定位指令
+            postToCSharp({
+              action: "locateCabinetDetail",
+              sheetName: selectedSheet.value,
+              detName: selectedCabinetDet.value,
+            });
+          };
+
+          // 箱柜下拉选择变更联动处理函数 (推导分析 + 自动定位明细)
+          const onCabinetChange = () => {
+            // 1. 触发原有的箱柜智能推导分析
+            onAnalyze();
+            // 2. 自动定位到底部明细区域
+            locateCurrentCabinetDetail();
+          };
           const onAnalyze = (immediate = false) => {
             // 校验选择的合法性
             if (!selectedSheet.value || !selectedCabinetDet.value) {
@@ -8647,6 +8668,10 @@
             isCopperPriceLoading,
             // 获取大盘当日铜价刷新函数
             fetchTodayCopperPrice,
+            // 箱柜下拉选择变更联动函数
+            onCabinetChange,
+            // 箱柜底部明细区域定位函数
+            locateCurrentCabinetDetail,
           };
         },
       });

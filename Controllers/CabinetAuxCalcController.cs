@@ -20,9 +20,17 @@ namespace ExcelAddInDemo.Controllers
         [JsonPropertyName("detName")]
         public string DetName { get; set; } = string.Empty;
 
-        // 箱柜名称或编号 (如 AP1)
+        // 箱柜名称或编号 (如 AL1)
         [JsonPropertyName("cabinetName")]
         public string CabinetName { get; set; } = string.Empty;
+
+        // 汇总行 A 列序号 (如 2)
+        [JsonPropertyName("seqNo")]
+        public string SeqNo { get; set; } = string.Empty;
+
+        // 拼接后的显示名称 (如 AL1(2))
+        [JsonPropertyName("displayName")]
+        public string DisplayName { get; set; } = string.Empty;
 
         // 箱柜物理行号 (Cab_Det 行)
         [JsonPropertyName("detRow")]
@@ -92,22 +100,9 @@ namespace ExcelAddInDemo.Controllers
                     // 若为当前活动表，提取该表下的箱柜列表
                     if (activeWs != null && ws.Name == activeWs.Name)
                     {
-                        var validCabinets = Tool.GetSheetValidCabinets(ws, wb);
-                        foreach (var kvp in validCabinets)
-                        {
-                            int cabIndex = kvp.Key;
-                            var anchor = kvp.Value;
-                            if (anchor?.Det == null) continue;
-                            int detRow = Convert.ToInt32(anchor.Det.Row);
-                            string cabTitle = ws.Range[$"A{detRow}"].Value?.ToString() ?? $"箱柜{cabIndex}";
-                            context.Cabinets.Add(new CabinetChoiceDto
-                            {
-                                SheetName = ws.Name,
-                                DetName = $"Cab_Det_{cabIndex}",
-                                CabinetName = cabTitle,
-                                DetRow = detRow
-                            });
-                        }
+                        // 调度抽取方法提取当前活动表所有有效箱柜 (B列柜号与A列序号组合如 AL1(2))
+                        context.Cabinets = ExtractCabinetChoices(ws, wb);
+
                     }
                 }
 
@@ -119,6 +114,81 @@ namespace ExcelAddInDemo.Controllers
                 System.Diagnostics.Debug.WriteLine($"获取辅材计算初始上下文异常: {ex.Message}");
             }
             return context;
+        }
+
+        /// <summary>
+        /// 从指定分类工作表中提取所有有效箱柜选择项列表 (B列柜号与A列序号组合如 AL1(2))
+        /// </summary>
+        /// <param name="ws">目标工作表</param>
+        /// <param name="wb">活动工作簿</param>
+        /// <returns>箱柜选择条目集合</returns>
+        private List<CabinetChoiceDto> ExtractCabinetChoices(Worksheet ws, Workbook wb)
+        {
+            // 初始化结果条目列表
+            var list = new List<CabinetChoiceDto>();
+            // 校验工作表与工作簿
+            if (ws == null || wb == null) return list;
+
+            // 获取该工作表所有已注册的有效箱柜映射
+            var validCabinets = Tool.GetSheetValidCabinets(ws, wb);
+            // 遍历每个箱柜锚点
+            foreach (var kvp in validCabinets)
+            {
+                // 获取箱柜唯一序号与锚点模型
+                int cabIndex = kvp.Key;
+                var anchor = kvp.Value;
+                // 必须具备底部明细锚点
+                if (anchor?.Det == null) continue;
+
+                // 提取底部明细行号 (Cab_Det 行)
+                int detRow = Convert.ToInt32(anchor.Det.Row);
+                // 优先从明细行 B 列读取箱柜真实名称 (例如 AL1)
+                string cabTitle = ws.Range[$"B{detRow}"].Value?.ToString()?.Trim() ?? string.Empty;
+
+                // 汇总行序号与备选柜名提取
+                string seqNo = string.Empty;
+                if (anchor.Sum != null)
+                {
+                    // 提取汇总行物理行号
+                    int sumRow = Convert.ToInt32(anchor.Sum.Row);
+                    // 从汇总行 A 列提取序号 (例如 2)
+                    seqNo = ws.Range[$"A{sumRow}"].Value?.ToString()?.Trim() ?? string.Empty;
+
+                    // 若明细行 B 列为空，兜底从汇总行 B 列读取柜号
+                    if (string.IsNullOrWhiteSpace(cabTitle))
+                    {
+                        cabTitle = ws.Range[$"B{sumRow}"].Value?.ToString()?.Trim() ?? string.Empty;
+                    }
+                }
+
+                // 若仍未获取到柜号，采用规范默认兜底名称
+                if (string.IsNullOrWhiteSpace(cabTitle))
+                {
+                    cabTitle = $"箱柜{cabIndex}";
+                }
+
+                // 若未提取到汇总行 A 列序号，兜底采用当前箱柜索引号
+                if (string.IsNullOrWhiteSpace(seqNo))
+                {
+                    seqNo = cabIndex.ToString();
+                }
+
+                // 按照“B列的柜号和A列序号”组合展示格式：如 AL1(2)
+                string displayName = $"{cabTitle}({seqNo})";
+
+                // 构建强类型 DTO 条目并添加至列表
+                list.Add(new CabinetChoiceDto
+                {
+                    SheetName = ws.Name,
+                    DetName = $"Cab_Det_{cabIndex}",
+                    CabinetName = cabTitle,
+                    SeqNo = seqNo,
+                    DisplayName = displayName,
+                    DetRow = detRow
+                });
+            }
+
+            return list;
         }
 
         /// <summary>
@@ -139,22 +209,9 @@ namespace ExcelAddInDemo.Controllers
                 Worksheet ws = wb.Worksheets[sheetName] as Worksheet;
                 if (ws == null) return list;
 
-                var validCabinets = Tool.GetSheetValidCabinets(ws, wb);
-                foreach (var kvp in validCabinets)
-                {
-                    int cabIndex = kvp.Key;
-                    var anchor = kvp.Value;
-                    if (anchor?.Det == null) continue;
-                    int detRow = Convert.ToInt32(anchor.Det.Row);
-                    string cabTitle = ws.Range[$"A{detRow}"].Value?.ToString() ?? $"箱柜{cabIndex}";
-                    list.Add(new CabinetChoiceDto
-                    {
-                        SheetName = ws.Name,
-                        DetName = $"Cab_Det_{cabIndex}",
-                        CabinetName = cabTitle,
-                        DetRow = detRow
-                    });
-                }
+
+                // 调度私有抽取方法统一构建强类型箱柜列表 (B列柜号与A列序号组合如 AL1(2))
+                return ExtractCabinetChoices(ws, wb);
             }
             catch (Exception ex)
             {

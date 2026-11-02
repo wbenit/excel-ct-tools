@@ -1,3 +1,22 @@
+- **【核心排查与根除：Excel-DNA Diagnostic Display 加载弹窗（GetBaseUrl 重复注册 Error 与 System.Runtime.CompilerServices.Unsafe 缺失 Warning）】(`ExcelAddInDemo-AddIn*.dna`, `Services/ComponentApiClient.cs`, `Services/DrawCodeApiClient.cs`, `bin/`, `publish/`)**：
+  1. **用户核心指令与截图确诊**：
+     - 用户截图展示弹窗：`ExcelAddInDemo Add-In64 - Diagnostic Display`：
+       - `Registration [Error] Repeated function name: 'GetBaseUrl' - previous registration will be overwritten.`
+       - `Initialization [Warning] Assembly SYSTEM.RUNTIME.COMPILERSERVICES.UNSAFE could not be loaded from resources.`
+  2. **根因深度溯源**：
+     - ① **Error 根因**：Excel-DNA 在默认 `ExplicitExports="false"` 模式下，会全量反射程序集中所有 public 类的 public static 方法并注册为 Excel 工作表自定义函数（UDF）。由于此前第二大类第 4 项重构时在 `ComponentApiClient` 与 `DrawCodeApiClient` 均声明了 `public static string GetBaseUrl()`，Excel-DNA 在注册 UDF 时产生命名冲突，触发覆盖错误弹窗；同时整个工程属于操作型插件（使用 `[ExcelCommand]` 宏响应），根本无需将任何公共业务辅助静态方法作为 Excel 工作表公式导出；
+     - ② **Warning 根因**：`.dna` 声明中未包含 `<Reference Path="System.Runtime.CompilerServices.Unsafe.dll" Pack="true" />`，导致 Excel-DNA 打包及初始化解析时在内置资源中寻找该程序集失败；
+  3. **双重隔离防御与闭环实施**：
+     - ① **Excel-DNA 导出模式与打包依赖收敛 (`ExcelAddInDemo-AddIn*.dna`)**：
+       - 将主程序集标记改为 `ExplicitExports="true"`，严格只导出显式标注 `[ExcelCommand]` 或 `[ExcelFunction]` 的方法，彻底杜绝所有未标记辅助业务方法被意外注册为 Excel 公式，消除全局命名冲突与性能损耗；
+       - 在 Reference 列表中补全 `System.Runtime.CompilerServices.Unsafe.dll`、`System.Threading.Tasks.Extensions.dll` 与 `System.Numerics.Vectors.dll` 基础依赖；
+       - 同步将更新后的 `.dna` 文件部署至 `bin/Debug/net48/` 与 `publish/` 目录；
+     - ② **类可见性最小暴露原则 (`Services/ComponentApiClient.cs`, `Services/DrawCodeApiClient.cs`)**：
+       - 将两个客户端类修饰符由 `public static class` 收敛为 `internal static class`，从类型可见性层面彻底切断 Excel-DNA 反射扫描入口；
+  4. **构建验证与产物交付**：
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` (3,437,056 bytes) 与 `.pdb`、`.dna` 文件已全量同步覆盖至 `publish/` 交付目录。
+
 - **【核心改造与闭环：根除第三大类硬编码——本地个人物料库 SQLite 数据库存储路径、文件名及连接池参数全面配置化】(`AppConfig.cs`, `Services/PersonalComponentDbService.cs`, `appsettings.json`, `publish/`)**：
   1. **用户核心指令与需求确认**：
      - 用户指令：“(Recommended) 第三大类：本地物料数据库配置（personal_components.db 路径、文件名及 SQLite 连接池配置化）”；
@@ -186,20 +205,22 @@
      - 最新程序集 ExcelAddInDemo.dll 及 .pdb 已全量覆盖同步至 publish/ 交付目录。
 
 ﻿- **【核心改造与闭环：彻底取消自动组价方案库使用本地文件/SQLite降级机制，转为纯云端 WebAPI 远程通道 (Services/AutoPricingDataService.cs, AppConfig.cs, ppsettings.json, publish/)】**：
-  1. **用户核心指令与需求确认**：
-     - 用户指令：“直接取消使用本地文件”；
-     - 彻底删除自动组价方案数据服务中的本地文件/SQLite降级回退机制，全面转为纯云端 WebAPI 远程数据通道；
-  2. **代码级实施细节**：
-     - Services/AutoPricingDataService.cs：
-       - 移除未使用的 using System.Data.SQLite; 与 using System.IO;；
-       - 将核心查询方法（GetCategoryTree、GetCategoryNodes、GetSchemes、GetSchemeDetail）改造成纯云端调用，在请求失败或超时时记录日志并安全返回空集合/null，绝不再回退加载本地 SQLite 文件；
-       - 彻底删除 #region 本地 SQLite 离线加载逻辑（500余行离线库解析代码）与 GetLocalDbPath 本地自愈探测方法；
-       - 严格遵守每 3 行代码至少包含 1 行中文注释规范；
-     - AppConfig.cs、ppsettings.json、data/appsettings.json、publish/appsettings.json：
-       - 彻底移除已废弃的 LocalSchemeDbPath 配置项，确保配置干净无冗余；
-  3. **编译构建与产物同步交付**：
-     - 执行 dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none，编译通过且 0 错误；
-     - 最新构建生成的 ExcelAddInDemo.dll 已同步覆盖至 publish/ 交付目录。
+
+1. **用户核心指令与需求确认**：
+   - 用户指令：“直接取消使用本地文件”；
+   - 彻底删除自动组价方案数据服务中的本地文件/SQLite降级回退机制，全面转为纯云端 WebAPI 远程数据通道；
+2. **代码级实施细节**：
+   - Services/AutoPricingDataService.cs：
+     - 移除未使用的 using System.Data.SQLite; 与 using System.IO;；
+     - 将核心查询方法（GetCategoryTree、GetCategoryNodes、GetSchemes、GetSchemeDetail）改造成纯云端调用，在请求失败或超时时记录日志并安全返回空集合/null，绝不再回退加载本地 SQLite 文件；
+     - 彻底删除 #region 本地 SQLite 离线加载逻辑（500余行离线库解析代码）与 GetLocalDbPath 本地自愈探测方法；
+     - 严格遵守每 3 行代码至少包含 1 行中文注释规范；
+   - AppConfig.cs、ppsettings.json、data/appsettings.json、publish/appsettings.json：
+     - 彻底移除已废弃的 LocalSchemeDbPath 配置项，确保配置干净无冗余；
+3. **编译构建与产物同步交付**：
+   - 执行 dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none，编译通过且 0 错误；
+   - 最新构建生成的 ExcelAddInDemo.dll 已同步覆盖至 publish/ 交付目录。
+
 - **【精准定位与根因确诊：复制单元格/跑马线流动时右键菜单闪退一次原因】(ExcelEventManager.cs: L1112-L1130)**：
   1. **用户核心指令与关键现象确诊**：
      - 用户明确澄清：“只有复制单元格，跑马线流动的时候，右键菜单弹出会闪退一次，是右击菜单闪退，不是excel软件”；
@@ -221,21 +242,11 @@
      - ④ **为什么包含原生菜单模式**：这段代码位于 `if (!useCustomMenu) return;` 的正上方，原生右键和业务右键模式均会被其打断！
      - ⑤ **该清理代码完全多余**：在真正的“按值筛选”动作处（`ComponentFilter.cs` 和 `CustomContextMenuForm.cs`），代码本身早就已有按需清除 `CutCopyMode` 的保护；在右键点击入口处粗暴清空不仅导致菜单闪退，还粗暴打断了用户原本想要进行的“右键粘贴”操作。
   3. **最小改动修复方案**：彻底移除或注释掉 `ExcelEventManager.cs` L1112~L1130 的这段代码，保持用户原生的复制剪切状态完好无损。
-��动触发的浮窗显示或窗口状态变更瞬间引发了 `WM_KILLFOCUS`/`WM_CANCELMODE` 或 `Deactivate`，导致系统判定用户在外部点击，将刚弹出的菜单瞬间撤回关闭（闪退）；
-       - ④ 为什么只“闪退一次”：第二次右击同一单元格时，选区未变不再触发 `SheetSelectionChange`，无浮窗刷新和焦点抢占，因此菜单能稳定驻留。
-     - **场景 B：Excel 进程直接崩溃闪退退出（错误日志证实存在 `0xc0000409` / `ntdll.dll`）**：
-       - 查阅 Windows 应用程序错误事件，存在 `EXCEL.EXE` 崩溃事件（异常代码 `0xc0000409` Fast Fail，故障模块 `ntdll.dll`）；
-       - ① COM 重入冲突：在 Excel 进入右键菜单构建管道期间，若在事件中同步操作 `Selection`、`Intersect`、`CutCopyMode`，或在右键模式下执行 `target.Select()`，会引发 Excel 内部状态机重入与死锁保护；
-       - ② 视口子类化钩子干扰：`ExcelWindowHook` 对 `EXCEL7` 视口进行了 Win32 消息子类化挂接，在右键上下文菜单弹出期间，菜单系统专属消息与子类化消息泵产生并发冲突，易引发 `ntdll.dll` 的栈安全检查失败崩溃。
+     ��动触发的浮窗显示或窗口状态变更瞬间引发了 `WM_KILLFOCUS`/`WM_CANCELMODE` 或 `Deactivate`，导致系统判定用户在外部点击，将刚弹出的菜单瞬间撤回关闭（闪退）；- ④ 为什么只“闪退一次”：第二次右击同一单元格时，选区未变不再触发 `SheetSelectionChange`，无浮窗刷新和焦点抢占，因此菜单能稳定驻留。- **场景 B：Excel 进程直接崩溃闪退退出（错误日志证实存在 `0xc0000409` / `ntdll.dll`）**：- 查阅 Windows 应用程序错误事件，存在 `EXCEL.EXE` 崩溃事件（异常代码 `0xc0000409` Fast Fail，故障模块 `ntdll.dll`）；- ① COM 重入冲突：在 Excel 进入右键菜单构建管道期间，若在事件中同步操作 `Selection`、`Intersect`、`CutCopyMode`，或在右键模式下执行 `target.Select()`，会引发 Excel 内部状态机重入与死锁保护；- ② 视口子类化钩子干扰：`ExcelWindowHook` 对 `EXCEL7` 视口进行了 Win32 消息子类化挂接，在右键上下文菜单弹出期间，菜单系统专属消息与子类化消息泵产生并发冲突，易引发 `ntdll.dll` 的栈安全检查失败崩溃。
 
 - **【核心落实与闭环：坚决落实规则 9，分类明细顶部 A 列缺少序号直接返回错误并前端告警提示修复】(Services/ExcelServices.DistributedAdjustPrice.cs, publish/)**：
-  1. **用户核心指令与原则对齐**：
-     - 用户指令反馈：“@[e:\Ace\excel-ct-tools\Services\ExcelServices.DistributedAdjustPrice.cs:L1532-L1535] 修改为前端告警，提示修复”；
-     - 严格践行规则 9（“不需要考虑兼容的情况，如果不符合要求，直接报错提醒，不需要做自以为的防御代码”）：
-       - ① **回写端**：彻底移除 cabSeqInSheet <= 0 时的保底猜测（cabEntry.Key 与 currentCabIndex），若分类表顶部汇总行 A 列无有效数字序号，立即设置 esult.Success = false，返回详尽的中文报错信息（指出具体的分类工作表名与箱柜名称），并在前端弹窗/告警拦截提示用户补齐 A 列序号；
-       - ② **字典查找纯粹化**：完全废除多余的模糊兜底，严格按唯一键 $"所属分类|柜序号|柜号" 单向精准匹配；
-       - ③ **生成端同步对齐**：若在生成材料分布表时探测到分类表顶部汇总行 A 列缺少有效数字序号，坚决不盲目赋保底值，直接弹窗警告并终止生成，从源头上杜绝隐患；
-     - 严格遵循每 3 行新增代码至少 1 行中文注释规范与最小变动法则。
+  1. **用户核心指令与原则对齐**：- 用户指令反馈：“@[e:\Ace\excel-ct-tools\Services\ExcelServices.DistributedAdjustPrice.cs:L1532-L1535] 修改为前端告警，提示修复”；- 严格践行规则 9（“不需要考虑兼容的情况，如果不符合要求，直接报错提醒，不需要做自以为的防御代码”）：- ① **回写端**：彻底移除 cabSeqInSheet <= 0 时的保底猜测（cabEntry.Key 与 currentCabIndex），若分类表顶部汇总行 A 列无有效数字序号，立即设置
+     esult.Success = false，返回详尽的中文报错信息（指出具体的分类工作表名与箱柜名称），并在前端弹窗/告警拦截提示用户补齐 A 列序号；- ② **字典查找纯粹化**：完全废除多余的模糊兜底，严格按唯一键 $"所属分类|柜序号|柜号" 单向精准匹配；- ③ **生成端同步对齐**：若在生成材料分布表时探测到分类表顶部汇总行 A 列缺少有效数字序号，坚决不盲目赋保底值，直接弹窗警告并终止生成，从源头上杜绝隐患；- 严格遵循每 3 行新增代码至少 1 行中文注释规范与最小变动法则。
   2. **构建验证与产物同步**：
      - 执行 dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false 完整编译：**0 错误**；
      - 最新程序集 ExcelAddInDemo.dll (3,402,240 bytes) 与 ExcelAddInDemo.pdb 已全量覆盖同步至 publish/ 交付目录。
@@ -7353,6 +7364,7 @@
 ## [2026-10-24 08:50:00] 修复常规样式投标报表导出中分项表与汇总表箱柜映射错位问题
 
 ### [Problem & Root Cause]
+
 1. **现象**：
    - 用户使用“常规样式投标报表导出 (标书报表)”生成的报表中，屏柜分项表和屏柜汇总表不对应，分项表的第 1 个箱柜对应到了汇总表的第 2 个箱柜。
 2. **根因剖析**：
@@ -7362,6 +7374,7 @@
    - 随后 `LinkSummaryCabinetPricesToDetail` 遍历汇总表箱柜（`cabSumRowMap`，key=1, 2, ...）回填跨表单价公式时，汇总表第 1 个箱柜未找到 key=1，而汇总表第 2 个箱柜从 key=2 中取出了分项表第 1 个箱柜的单台合计单元格（如 `='屏柜分项表'!G35`），导致错位。
 
 ### [Completed]
+
 1. **时机校准与最小改动修复 (`Services/ExcelServices.TenderReport.cs`)**：
    - 移除箱柜信息行下方的提前自增操作，改为仅向下移动行游标 `currentRow++`；
    - 保证当前箱柜的 `globalCabIndex` 贯穿其信息栏、明细行、总计栏及单价引用字典记录；
@@ -7371,27 +7384,28 @@
    - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none` 编译通过：**0 错误**；
    - 将生成的 `ExcelAddInDemo.dll` 成功同步覆盖至 `publish/` 交付目录。
 
-
 ---
 
 ## [2026-10-31 15:45:00] 深度排查：复制单元格带跑马线时弹出右键菜单闪退根因分析
 
 ### [Problem & Root Cause]
+
 1. **现象**：
    - 用户在 Excel 中复制单元格（处于跑马线流动状态，即 CutCopyMode != 0）时，右键弹出菜单会发生闪退。
 2. **系统日志与原生崩溃证据 (Windows Event Log)**：
    - 提取到多次 EXCEL.EXE 进程崩溃记录：
      - 故障程序: EXCEL.EXE (版本 16.0.20326.20232)
      - 故障模块: ntdll.dll (版本 10.0.19041.6456)
-     - 异常代码: 0xc0000409 (STATUS_STACK_BUFFER_OVERRUN / __fastfail)
+     - 异常代码: 0xc0000409 (STATUS_STACK_BUFFER_OVERRUN / \_\_fastfail)
      - 偏移量: 0x000000000008cc4f
 3. **核心代码病灶剖析 (ExcelEventManager.cs & CustomContextMenuForm.cs)**：
-   - **病灶 1 (CutCopyMode 粗暴同步清零)**：在 OnSheetBeforeRightClick 回调中（第 1126 行），在 Excel 正在根据剪贴板构建上下文菜单的敏感时刻，同步强行设置 _excelApp.CutCopyMode = 0，破坏 Excel 内部 OLE 剪贴板状态机，触发 FastFail。
-   - **病灶 2 (同步 target.Select() 引发级联事件重入)**：在 BeforeRightClick 中（第 1160 行）在未关闭 EnableEvents 的情况下调用 	arget.Select()，在复制状态下强改选区，直接重入触发 OnSheetSelectionChange，破坏正在进行的右键 Hit-Test 消息链。
-   - **病灶 3 (COM 回调内部同步抢焦 Show/Activate)**：在 BeforeRightClick 事件尚未向 Excel 内核返回 cancel=true 之前，直接同步调用 _instance.Show() 与 Activate()，强行抢夺顶层焦点，破坏 Excel 的原生消息管道。
+   - **病灶 1 (CutCopyMode 粗暴同步清零)**：在 OnSheetBeforeRightClick 回调中（第 1126 行），在 Excel 正在根据剪贴板构建上下文菜单的敏感时刻，同步强行设置 \_excelApp.CutCopyMode = 0，破坏 Excel 内部 OLE 剪贴板状态机，触发 FastFail。
+   - **病灶 2 (同步 target.Select() 引发级联事件重入)**：在 BeforeRightClick 中（第 1160 行）在未关闭 EnableEvents 的情况下调用 arget.Select()，在复制状态下强改选区，直接重入触发 OnSheetSelectionChange，破坏正在进行的右键 Hit-Test 消息链。
+   - **病灶 3 (COM 回调内部同步抢焦 Show/Activate)**：在 BeforeRightClick 事件尚未向 Excel 内核返回 cancel=true 之前，直接同步调用 \_instance.Show() 与 Activate()，强行抢夺顶层焦点，破坏 Excel 的原生消息管道。
    - **病灶 4 (浮窗 Deactivate 容差缺陷)**：菜单初始定位坐标存在 +2px 偏移，当上述状态变动引发 Excel 窗口重绘抢焦时，菜单窗体失焦，Bounds.Contains(Cursor.Position) 判定为外部，触发 this.Hide() 导致菜单瞬间闪退消失。
 
 ### [Next]
+
 - 待用户确认后实施最小改动修复：
   1. 解除 BeforeRightClick 中的同步 CutCopyMode 清除与 target.Select()；
   2. 采用 ExcelAsyncUtil.QueueAsMacro 将右键菜单的弹出与选区调整异步化至下一个消息节拍；
@@ -7402,9 +7416,11 @@
 ## [2026-10-31 15:47:00] 完成：系统菜单模式下彻底移除 BeforeRightClick 的 CutCopyMode 清除
 
 ### [Completed]
+
 1. **时机判定与前置放行 (ExcelEventManager.cs)**：
    - 将读取配置 ConfigManager.Instance.Current.Excel.UseCustomContextMenu 提前到 OnSheetBeforeRightClick 最前端；
-   - 若处于系统菜单模式（!useCustomMenu），直接设置 cancel = false 并立即 eturn 放行，绝不执行后续的 CutCopyMode = 0 及任何选区操作；
+   - 若处于系统菜单模式（!useCustomMenu），直接设置 cancel = false 并立即
+     eturn 放行，绝不执行后续的 CutCopyMode = 0 及任何选区操作；
    - 彻底消除了系统菜单模式下右键点击单元格时清除跑马灯并导致 Excel 闪退的问题；
    - 严格遵循注释规范：新增/修改代码每 3 行包含一行中文注释。
 2. **构建验证与物理产物同步**：
@@ -7416,6 +7432,7 @@
 ## [2026-10-31 16:04:00] 实施：无关表及“元件分布表”自动使用系统右键菜单
 
 ### [Completed]
+
 1. **业务表判定服务 (Services/ExcelServices.cs)**：
    - 新增 ShouldUseCustomContextMenu(Worksheet activeSheet) 核心路由算法；
    - 规则层级：
@@ -7424,7 +7441,7 @@
      3. 【元件分布表】（或表名包含“分布”） -> 依据用户指令明确放行系统原生菜单；
      4. 【元件汇总表】（或表名包含“元件汇总”） -> 激活业务专属菜单；
      5. 已登记在【项目信息】中的有效分类明细表（白名单） -> 激活业务专属菜单；
-     6. 兜底检测存在有效 Cab_Det_* 箱柜定义名称 -> 激活业务专属菜单；
+     6. 兜底检测存在有效 Cab*Det*\* 箱柜定义名称 -> 激活业务专属菜单；
      7. 其余无关表（封面、目录、技术规范、空白表等） -> 自动放行系统原生菜单。
    - 严格遵循注释规范：新增每 3 行包含一行中文注释。
 2. **右键事件前置路由 (ExcelEventManager.cs)**：
@@ -7439,6 +7456,7 @@
 ## [2026-10-31 18:05:00] 完成：彻底修复箱柜报价明细“顶 3 行与底 3 行”硬编码
 
 ### [Completed]
+
 1. **配置体系扩充 (appsettings.json & AppConfig.cs)**：
    - 在 ppsettings.json、publish/appsettings.json 与 data/appsettings.json 的 ExcelSettings 分节中新增 "DetailHeaderRows": 3 与 "DetailFooterRows": 3；
    - 在 AppConfig.cs 的 ExcelSettings 中新增强类型属性 DetailHeaderRows（默认 3）与 DetailFooterRows（默认 3）；
@@ -7470,6 +7488,7 @@
 ## [2026-10-31 18:35:00] 完成：彻底移除 AutoPricingDataService 中死路径硬编码并实施配置驱动
 
 ### [Completed]
+
 1. **删除失效硬编码常量 (Services/AutoPricingDataService.cs)**：
    - 彻底删除第 20-21 行已失效的 private const string LocalSqlitePath = @"d:\code\cad-net_1\ExWinner_Schemes.db";；
    - 重构 GetLocalDbPath() 寻径逻辑：
@@ -7485,3 +7504,70 @@
    - 运行 dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none 编译成功（0 个错误）；
    - 最新构建产物已同步覆盖至 publish/ExcelAddInDemo.dll。
 
+---
+
+## [2026-11-02 16:08:00] 需求分析：智能辅材与壳体计算中心箱柜下拉项格式重构为 AL1(2) 并自动定位明细区域
+
+### [Problem & Current State Analysis]
+
+1. **现状与现象剖析**：
+   - 界面：在“智能辅材与壳体计算中心”(`Forms/CabinetAuxCalcForm.cs` + `Resources/cabinet_aux_calc.html`) 中，“选择箱柜”下拉框中展示的条目文本为 `柜号: (Cab_Det_1)`、`柜号: (Cab_Det_2)` 等；
+   - 根因：
+     - 在后端 `Controllers/CabinetAuxCalcController.cs` 中，`GetInitialContext()` 和 `GetCabinetsBySheet()` 中取箱柜标题时使用了 `string cabTitle = ws.Range[$"A{detRow}"].Value?.ToString() ?? $"箱柜{cabIndex}";`。在 Excel 分类表中，明细信息行（`detRow`，即 `Cab_Det_K` 所在行）的 A 列为固定文本标签 `"柜号:"`，而实际箱柜名称（如 `AL1`）存放于 B 列；
+     - 在前端 `cabinet_aux_calc.html` 中，选项 Label 被写为 `:label="cab.cabinetName + ' (' + cab.detName + ')'"`，两端叠加导致下拉列表呈现为 `柜号: (Cab_Det_1)`；
+     - 切换箱柜下拉选项时，目前仅在前端调用 `@change="onAnalyze"` 触发推导计算，未向 Excel 发送任何视口滚动或选区定位指令。
+2. **用户核心诉求**：
+   - 诉求 1：下拉选项内容修改为“B列的柜号和A列序号，如AL1(2)”（即展示格式为 `[B列柜号]([A列序号])`）；
+   - 诉求 2：在下拉框选中目标箱柜后，自动在 Excel 中联动定位并视口置顶滚动到该箱柜的“底部明细区域”（即对应的 `Cab_Det_K` 明细块）。
+
+### [Design & Implementation Plan]
+
+1. **下拉项数据模型与提取重构 (`Controllers/CabinetAuxCalcController.cs`)**：
+   - 完善 `CabinetChoiceDto` 数据结构，增加 `CabinetName`（B列柜号）、`SeqNo`（A列序号）、`DisplayName`（拼接后的显示名，如 `AL1(2)`）；
+   - 在 `GetInitialContext` 与 `GetCabinetsBySheet` 中，读取箱柜名称时准确从 `ws.Cells[detRow, 2].Value`（或汇总行 B 列）获取柜号；从汇总行 A 列（`ws.Cells[sumRow, 1].Value`，若不存在则回退至 `cabIndex`）获取序号；
+   - 构造目标文本格式为 `AL1(2)`，当某一列为空时具备优雅回退策略。
+2. **前端下拉渲染与事件联动 (`Resources/cabinet_aux_calc.html`)**：
+   - 修改 `el-option` 的 `:label` 绑定为 `cab.displayName || `${cab.cabinetName}(${cab.seqNo})``，其 `:value`保持为`cab.detName`，确保后续推导与参数传递完全向下兼容；
+   - 在选择箱柜的 `@change` 逻辑中，不仅调用 `onAnalyze`，同时向 C# 发送 `locateCabinetDetail` 动作，传递目标表名与定义名称（或物理行号）。
+3. **Excel 视口置顶定位公共服务 (`Services/ExcelServices.cs` 或扩展文件)**：
+   - 严格遵守架构规范：所有 Excel COM 操作统一写在公共服务 `ExcelServices.cs` 中，窗体类仅负责 IPC 消息调度；
+   - 实现 `LocateCabinetDetail(string sheetName, string detName)`：
+     - 激活目标工作表；
+     - 依据 `Cab_Det_K` 找到实际物理行 `detRow`；
+     - 垂直视口置顶滚动：`app.ActiveWindow.ScrollRow = Math.Max(1, detRow); app.ActiveWindow.ScrollColumn = 1;`；
+     - 选中目标单元格 `ws.Cells[detRow, 2].Select()`，并确保 Excel 窗口处于正常可见状态。
+
+### [Next Steps]
+
+- 待用户确认需求分析与方案设计后，启动实施与交付构建。
+
+
+---
+
+## [2026-11-02 16:22:00] 完成：智能辅材与壳体计算中心箱柜下拉项重构为 AL1(2) 并实现自动置顶定位明细区域
+
+### [Completed]
+1. **箱柜条目数据提取与 DTO 重构 (`Controllers/CabinetAuxCalcController.cs`)**：
+   - 在 `CabinetChoiceDto` 中新增强类型属性 `SeqNo`（汇总行 A 列序号）与 `DisplayName`（展示名称，如 `AL1(2)`）；
+   - 彻底修复原代码错误从明细行 A 列读取 `"柜号:"` 标签的缺陷：
+     - 从明细行 B 列 `ws.Range[$"B{detRow}"].Value`（或汇总行 B 列）准确读取箱柜柜号 `cabTitle`（如 `AL1`）；
+     - 从顶部汇总行 A 列 `ws.Range[$"A{sumRow}"].Value` 提取序号 `seqNo`（如 `2`），若未填写则优雅回退至箱柜索引号 `cabIndex`；
+     - 拼接形成 `AL1(2)` 格式的显示名称；
+   - 提取私有方法 `ExtractCabinetChoices(Worksheet ws, Workbook wb)`，彻底消除 `GetInitialContext` 与 `GetCabinetsBySheet` 中的重复遍历代码。
+2. **Excel 视口滚动置顶与选区定位服务 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+   - 遵循业务解耦规范，在公共服务分部类中实现 `LocateCabinetDetail(string sheetName, string detName)`；
+   - 激活目标工作表，依据 `detName`（如 `Cab_Det_1`）解析实际物理行号 `detRow`；
+   - 自动执行垂直视口置顶滚动：`app.ActiveWindow.ScrollRow = Math.Max(1, targetDetRow); app.ActiveWindow.ScrollColumn = 1;`；
+   - 显式高亮选中明细行 B 列柜号单元格 `ws.Range[$"B{targetDetRow}"].Select()`；
+   - 若 Excel 处于最小化，自动恢复为正常窗口；
+   - 严格满足每 3 行包含至少一行中文注释的规范。
+3. **IPC 调度与窗体路由扩展 (`Forms/CabinetAuxCalcForm.cs`)**：
+   - 在 `WebMessageReceived` 中新增 `locateCabinetDetail` 动作分支，提取 `sheetName` 与 `detName`，调度 `ExcelServices.LocateCabinetDetail`。
+4. **前端交互与下拉渲染升级 (`Resources/cabinet_aux_calc.html`)**：
+   - 将下拉项 `<el-option>` 的 `:label` 绑定为 `cab.displayName || (cab.cabinetName + (cab.seqNo ? '(' + cab.seqNo + ')' : ''))`，底层 `:value` 保持为 `cab.detName`；
+   - 将下拉选择事件从单一分析升级为 `@change="onCabinetChange"`，同时触发 `onAnalyze()` 智能推导分析与 `locateCurrentCabinetDetail()` 底部明细区域自动联动定位；
+   - 在下拉框右侧新增辅助定位按钮（📍），支持在已选中状态下一键再次重新定位；
+   - 在 setup return 对象中完整导出相关函数，并将修改同步至 `publish/Resources/cabinet_aux_calc.html`。
+5. **编译构建与产物交付**：
+   - 执行 `dotnet build e:\Ace\excel-ct-tools\ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none`，编译完全成功：**0 错误**；
+   - 最新构建生成的 `bin/Debug/net48/ExcelAddInDemo.dll` 已同步覆盖至 `publish/` 交付目录。

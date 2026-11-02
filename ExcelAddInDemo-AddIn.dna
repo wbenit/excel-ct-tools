@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <DnaLibrary Name="ExcelAddInDemo Add-In" RuntimeVersion="v4.0" xmlns="http://schemas.excel-dna.net/addin/2020/07/dnalibrary">
-  <!-- 主程序集 ExternalLibrary 定义 -->
-  <ExternalLibrary Path="ExcelAddInDemo.dll" ExplicitExports="false" LoadFromBytes="true" Pack="true" IncludePdb="false" />
+  <!-- 主程序集 ExternalLibrary 定义，ExplicitExports 设为 true 确保仅导出标记了 [ExcelCommand] 或 [ExcelFunction] 的方法，避免将业务静态方法当做 Excel 函数胡乱注册 -->
+  <ExternalLibrary Path="ExcelAddInDemo.dll" ExplicitExports="true" LoadFromBytes="true" Pack="true" IncludePdb="false" />
 
   <!-- 强制指示 ExcelDnaPack 将所有依赖的第三方 DLL 打包压入 -packed.xll 中 -->
   <Reference Path="Microsoft.Web.WebView2.WinForms.dll" Pack="true" />
@@ -12,4 +12,7 @@
   <Reference Path="System.Memory.dll" Pack="true" />
   <Reference Path="System.Buffers.dll" Pack="true" />
   <Reference Path="System.ValueTuple.dll" Pack="true" />
+  <Reference Path="System.Runtime.CompilerServices.Unsafe.dll" Pack="true" />
+  <Reference Path="System.Threading.Tasks.Extensions.dll" Pack="true" />
+  <Reference Path="System.Numerics.Vectors.dll" Pack="true" />
 </DnaLibrary>

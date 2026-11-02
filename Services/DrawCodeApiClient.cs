@@ -18,7 +18,8 @@ namespace ExcelAddInDemo.Services
     /// DrawCode 云端 WebAPI 官方通信服务客户端
     /// 统一管理用户登录、工作组选择、Windows DPAPI 凭证加密、会话持久化与租户切库
     /// </summary>
-    public static class DrawCodeApiClient
+    // 限制为 internal，杜绝 Excel-DNA 自动将其暴露为 Excel 单元格工作表函数
+    internal static class DrawCodeApiClient
     {
         // 全局单例 HttpClient 实例，复用底层 TCP 连接池
         private static readonly HttpClient _httpClient;

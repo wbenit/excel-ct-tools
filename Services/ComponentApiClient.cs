@@ -12,7 +12,8 @@ namespace ExcelAddInDemo
     /// <summary>
     /// 商城电气元器件 WebAPI 客户端 (负责与 https://mall.xingren.online 真实接口通信)
     /// </summary>
-    public static class ComponentApiClient
+    // 限制为 internal，杜绝 Excel-DNA 自动将其暴露为 Excel 单元格工作表函数
+    internal static class ComponentApiClient
     {
         // 静态单例 HttpClient，避免套接字耗尽问题
         private static readonly HttpClient _httpClient;

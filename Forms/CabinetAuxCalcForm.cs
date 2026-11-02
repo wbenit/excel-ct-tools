@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -304,6 +304,16 @@ namespace ExcelAddInDemo.Forms
                     }, JsonOptions);
                     // 线程安全回送前端
                     PostWebMessageSafe(resJson);
+                }
+                // 响应自动定位箱柜底部明细区域动作
+                else if (action == "locateCabinetDetail")
+                {
+                    // 提取目标工作表名称
+                    string sheetName = root.TryGetProperty("sheetName", out var sn) ? sn.GetString() ?? string.Empty : string.Empty;
+                    // 提取目标箱柜定义名称 (如 Cab_Det_1)
+                    string detName = root.TryGetProperty("detName", out var dn) ? dn.GetString() ?? string.Empty : string.Empty;
+                    // 调度 ExcelServices 公共服务在 Excel 中定位并置顶滚动至明细行
+                    ExcelServices.LocateCabinetDetail(sheetName, detName);
                 }
                 // 响应保存规则配置
                 else if (action == "saveRules")
