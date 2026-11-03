@@ -276,6 +276,8 @@ namespace ExcelAddInDemo
             <button id='btnLaborListSub' label='人工清单' imageMso='GroupTeamTasks' onAction='OnMenuAction' screentip='导出装配人工清单' supertip='基于各分类表明细中箱柜台套与人工费，一键导出成套设备制作与装配人工清单' />
             <!-- 成品交接单项 (基于各分类表明细中箱柜台套、型号、主进线电流及防护等级生成成品交接单，使用标准交付图标) -->
             <button id='btnFinishedHandoverSub' label='成品交接单' imageMso='FileSendMenu' onAction='OnMenuAction' screentip='生成成品交接单' supertip='基于各分类表明细中的箱柜台套、型号、主进线开关整定电流及防护等级，一键生成成品出厂交接单' />
+            <!-- 尺寸安装方式项 (基于各分类表明细中箱柜台套、外形尺寸与安装方式生成尺寸安装方式表) -->
+            <button id='btnDimensionsInstallModeSub' label='尺寸安装方式' imageMso='Dimensions' onAction='OnMenuAction' screentip='生成尺寸安装方式表' supertip='基于各分类表明细中的箱柜台套、外形尺寸(宽高深)与安装方式，一键生成尺寸安装方式表' />
           </menu>
         </group>
         <!-- 辅助项 功能分组 -->
@@ -826,6 +828,12 @@ namespace ExcelAddInDemo
             {
                 // 调度业务服务分部类：智能分流或弹出分类选择向导导出成品交接单
                 ExcelServices.ShowFinishedHandoverDialogOrExport();
+            }
+            // 响应“尺寸安装方式”按钮指令 (基于各分类表明细中箱柜台套、外形尺寸及安装方式生成尺寸安装方式表)
+            else if (controlId == "btnDimensionsInstallModeSub")
+            {
+                // 调度业务服务分部类：智能分流或弹出分类选择向导导出尺寸安装方式表
+                ExcelServices.ShowCabinetDimensionsDialogOrExport();
             }
             // 响应“撤销”按钮指令 (标记内容，不使用快捷键)
             else if (controlId == "btnUndoAction" || controlId == "btnUndoRedoSub")

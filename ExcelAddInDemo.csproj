@@ -183,6 +183,10 @@
     <None Include="Resources\finished_handover.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- 自动将尺寸安装方式前端 Vue 3 页面复制至构建输出路径中 -->
+    <None Include="Resources\cabinet_dimensions.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <!-- 自动将报价智能核验前端 Vue 3 页面复制至构建输出路径中 -->
     <None Include="Resources\quotation_check.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
