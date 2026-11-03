@@ -809,6 +809,8 @@ namespace ExcelAddInDemo
                 {
                     // 兜底保障：无论成功还是异常，均强力失效当前工作表箱柜映射缓存
                     Tool.InvalidateSheetCabinetsCache(sheetName);
+                    // 同步失效当前工作表的元器件行号缓存，防止删柜后下方箱柜行号错位
+                    InvalidateCategoryRowCache(sheetName);
 
                     // 恢复屏幕刷新与系统事件响应
                     app.ScreenUpdating = true;

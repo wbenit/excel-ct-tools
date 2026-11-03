@@ -965,6 +965,12 @@ namespace ExcelAddInDemo.Services
         // 发生剪切时的原始数据交换实体快照
         public ComponentRowExchangeDto? SourceClipSnapshot { get; }
 
+        // 标记本次插入是否发生在箱柜首行元件处 (若为 true 则需对齐元件行标准格式)
+        public bool IsFirstCompRow { get; }
+
+        // 目标箱柜明细信息行 DetRow (用于 Redo 还原 A 列动态序号公式绑定)
+        public int TargetDetRow { get; }
+
         /// <summary>
         /// 构造元器件插入可逆命令
         /// </summary>
@@ -976,7 +982,9 @@ namespace ExcelAddInDemo.Services
             int colCount,
             object[,] insertedValues,
             bool isCutMode,
-            ComponentRowExchangeDto? sourceClipSnapshot)
+            ComponentRowExchangeDto? sourceClipSnapshot,
+            bool isFirstCompRow = false,
+            int targetDetRow = 0)
         {
             // 记录描述文本
             ActionName = actionName;
@@ -996,6 +1004,10 @@ namespace ExcelAddInDemo.Services
             IsCutMode = isCutMode;
             // 缓存源剪切数据快照
             SourceClipSnapshot = sourceClipSnapshot;
+            // 记录是否为首行元件插入
+            IsFirstCompRow = isFirstCompRow;
+            // 记录目标箱柜明细信息行
+            TargetDetRow = targetDetRow;
 
             // 粗略估算内存大小
             EstimatedMemoryBytes = 128 + (insertedValues != null ? insertedValues.Length * 16 : 0);
@@ -1150,22 +1162,44 @@ namespace ExcelAddInDemo.Services
                     // 物理插入整行
                     targetSheet.Range[targetSheet.Rows[TargetRow], targetSheet.Rows[TargetRow + RowCount - 1]].Insert(Microsoft.Office.Interop.Excel.XlInsertShiftDirection.xlShiftDown);
 
+                    // 若为箱柜首行元件插入，重做时同步从下方推移后的原首行复制元件标准格式
+                    if (IsFirstCompRow)
+                    {
+                        // 提取下方被推移下去的原首行元件作为格式参考源
+                        dynamic refFormatRow = targetSheet.Rows[TargetRow + RowCount];
+                        // 复制参考行格式
+                        refFormatRow.Copy();
+                        // 圈定新插入物理行区域
+                        dynamic insertedRowsRange = targetSheet.Range[targetSheet.Rows[TargetRow], targetSheet.Rows[TargetRow + RowCount - 1]];
+                        // 仅粘贴格式消除表头背景底色与粗体 (-4122 = xlPasteFormats)
+                        insertedRowsRange.PasteSpecial(Microsoft.Office.Interop.Excel.XlPasteType.xlPasteFormats);
+                        // 清除剪贴板状态
+                        app.CutCopyMode = (Microsoft.Office.Interop.Excel.XlCutCopyMode)0;
+                    }
+
                     // 一次性批量写回插入数据矩阵 (规则 7)
                     int writeCols = InsertedValues.GetLength(1);
                     targetSheet.Range[targetSheet.Cells[TargetRow, 1], targetSheet.Cells[TargetRow + RowCount - 1, writeCols]].Value2 = InsertedValues;
 
-                    // 恢复自适应标准计算公式 (G 列单价、H 列总价、J 列成本单价、K 列成本总价)
+                    // 恢复自适应标准计算公式 (A 列动态序号、G 列单价、H 列总价、J 列成本单价、K 列成本总价)
                     for (int i = 0; i < RowCount; i++)
                     {
                         // 当前物理行号
                         int curR = TargetRow + i;
-                        // 恢复 G 列销售单价标准公式
+
+                        // 1. A 列动态序号公式：自适应绑定所属箱柜明细表头行 (detRow + 1)
+                        if (TargetDetRow > 0)
+                        {
+                            targetSheet.Cells[curR, 1].Formula = $"=ROW()-ROW(A${TargetDetRow + 1})";
+                        }
+
+                        // 2. 恢复 G 列销售单价标准公式
                         targetSheet.Cells[curR, 7].Formula = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(M{curR}*L{curR}*N{curR},2))";
-                        // 恢复 H 列销售总价标准公式
+                        // 3. 恢复 H 列销售总价标准公式
                         targetSheet.Cells[curR, 8].Formula = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(F{curR}*G{curR},2))";
-                        // 恢复 J 列成本单价标准公式
+                        // 4. 恢复 J 列成本单价标准公式
                         targetSheet.Cells[curR, 10].Formula = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(M{curR}*N{curR},2))";
-                        // 恢复 K 列成本总价标准公式
+                        // 5. 恢复 K 列成本总价标准公式
                         targetSheet.Cells[curR, 11].Formula = $"=IF(AND(B{curR}=\"\",C{curR}=\"\"),\"\",ROUND(J{curR}*F{curR},2))";
                     }
                 }
@@ -1383,6 +1417,9 @@ namespace ExcelAddInDemo.Services
                 // 在 Excel 状态栏提示撤销成功
                 SetExcelStatusBar($"[成套工具] 已撤销: {cmd.ActionName}");
 
+                // 核心同步：撤销执行后全量清空元器件行号缓存，保证后续点击响应最新行列
+                ExcelServices.InvalidateCategoryRowCache();
+
                 // 状态变更：无论是否还有可撤销项，均通知 Ribbon 刷新控件显示与禁用状态
                 RegisterExcelOnUndo(CurrentUndoName ?? string.Empty);
 
@@ -1431,6 +1468,9 @@ namespace ExcelAddInDemo.Services
 
                 // 在 Excel 状态栏给出成功提示
                 SetExcelStatusBar($"[成套工具] 已还原: {cmd.ActionName}");
+
+                // 核心同步：重做执行后全量清空元器件行号缓存，保证后续点击响应最新行列
+                ExcelServices.InvalidateCategoryRowCache();
 
                 // 同步刷新 Ribbon 控件的显示与状态
                 RegisterExcelOnUndo(cmd.ActionName);

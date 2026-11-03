@@ -399,6 +399,9 @@ namespace ExcelAddInDemo
                     ? $"{rowCount} 行元件 (行 {targetRow}~{targetRow + rowCount - 1})"
                     : $"行 {targetRow}: {clipData.ComponentName}";
 
+                // 判断本次插入点是否为箱柜第一行元器件 (DetRow + 2)
+                bool isFirstCompRow = (targetRow <= targetCab.CompStartRow);
+
                 // 备份原始状态以便退出时安全恢复
                 bool prevUpdating = false;
                 XlCalculation prevCalc = XlCalculation.xlCalculationAutomatic;
@@ -429,6 +432,21 @@ namespace ExcelAddInDemo
                     dynamic insertRows = targetSheet.Range[targetSheet.Rows[targetRow], targetSheet.Rows[targetRow + rowCount - 1]];
                     // 执行原生向下平移插入行
                     insertRows.Insert(XlInsertShiftDirection.xlShiftDown);
+
+                    // 若插入到箱柜首行元件，因 Excel 原生 Insert 默认继承上方表头样式，需从下方原首行对齐格式
+                    if (isFirstCompRow)
+                    {
+                        // 提取下方被推移下去的原首行元件行作为格式参考源 (物理行号为 targetRow + rowCount)
+                        dynamic refFormatRow = targetSheet.Rows[targetRow + rowCount];
+                        // 执行参考行单元格格式复制
+                        refFormatRow.Copy();
+                        // 重新圈定当前新插入的所有物理行区域
+                        dynamic insertedRowsRange = targetSheet.Range[targetSheet.Rows[targetRow], targetSheet.Rows[targetRow + rowCount - 1]];
+                        // 仅向新插入行区域粘贴单元格格式，消除表头背景底色与粗体 (-4122 = xlPasteFormats)
+                        insertedRowsRange.PasteSpecial(XlPasteType.xlPasteFormats);
+                        // 清除 Excel 剪贴板复制状态
+                        app.CutCopyMode = (XlCutCopyMode)0;
+                    }
 
                     // 写入整行数据矩阵 (单次 COM 批量写入，规则 7)
                     // 定位待写入的完整目标矩形区域
@@ -509,6 +527,15 @@ namespace ExcelAddInDemo
                     }
                     catch { }
 
+                    // 主动使目标表元器件行缓存失效，防止后续快速点击 C 列错位
+                    InvalidateCategoryRowCache(targetSheetName);
+                    // 若为剪切模式，源表也发生了行删除位移，同步使源表缓存失效
+                    if (clipData.IsCutMode && !string.IsNullOrEmpty(clipData.SourceSheetName))
+                    {
+                        // 移除源表元器件行号内存缓存
+                        InvalidateCategoryRowCache(clipData.SourceSheetName);
+                    }
+
                     // 在状态栏反馈插入成功 (直接复用前置构造好的 resultText)
                     app.StatusBar = $"[插入元件成功] {resultText} (跨柜清空Handle: {isCrossCabinet})";
                 }
@@ -533,7 +560,9 @@ namespace ExcelAddInDemo
                     colCount: writeCols,
                     insertedValues: valuesToWrite,
                     isCutMode: clipSnapshot.IsCutMode,
-                    sourceClipSnapshot: clipSnapshot);
+                    sourceClipSnapshot: clipSnapshot,
+                    isFirstCompRow: isFirstCompRow,
+                    targetDetRow: targetCab.DetRow);
                 UndoRedoManager.Instance.PushCommand(insertCmd);
             }
             catch (Exception ex)
@@ -692,6 +721,9 @@ namespace ExcelAddInDemo
                         app.CutCopyMode = (XlCutCopyMode)0;
                     }
                     catch { }
+
+                    // 物理删行完成后，主动失效当前表的元器件行号缓存，防止后续快速点击 C 列错位
+                    InvalidateCategoryRowCache(Convert.ToString(sheet.Name));
 
                     // 状态栏极速反馈删除结果
                     string delDesc = deleteRowCount > 1

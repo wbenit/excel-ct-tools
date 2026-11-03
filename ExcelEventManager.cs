@@ -664,6 +664,9 @@ namespace ExcelAddInDemo
                 // 核心安全守门：若当前工作簿不是成套工程工作簿 (不含【项目信息】表)，直接退出，杜绝常规表格受任何联动干扰
                 if (!Tool.IsProjectWorkbook(wb)) return;
 
+                // 核心感知：只要工作表发生单元格或行列变动，立即失效该表的元器件行缓存，防止删行插行后行号错位
+                ExcelServices.InvalidateCategoryRowCache(sh.Name);
+
                 // 1. 优先尝试处理箱柜关键行（Sum 汇总行、Det 明细行、Tolsum 总计行）之间的 8 组双向数据绑定联动
                 if (TryHandleCabinetBiDirectionalSync(wb, sh, target))
                 {

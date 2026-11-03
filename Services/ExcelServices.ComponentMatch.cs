@@ -60,8 +60,8 @@ namespace ExcelAddInDemo
         private static readonly Dictionary<string, (DateTime CacheTime, List<(int StartRow, int EndRow)> Ranges)> _categoryRangesSheetCache =
             new Dictionary<string, (DateTime, List<(int, int)>)>(StringComparer.OrdinalIgnoreCase);
 
-        // 缓存有效期设为 10 分钟 (工作表结构稳定，切换或连续点击 100% 内存瞬发命中)
-        private static readonly TimeSpan CategoryRangesCacheExpiry = TimeSpan.FromMinutes(10);
+        // 缓存有效期设为 3 秒 (保证连续光标移动 100% 内存瞬发命中，同时在删行或插行后数秒内即可快速自愈)
+        private static readonly TimeSpan CategoryRangesCacheExpiry = TimeSpan.FromSeconds(60);
 
         /// <summary>
         /// 清空分类表元器件行区间缓存 (当工作表插入行、删除分类或新建箱柜时主动调用)
@@ -183,12 +183,21 @@ namespace ExcelAddInDemo
                     // 纯内存比较，0 次 COM 调用
                     foreach (var range in cachedEntry.Ranges)
                     {
+                        // 若命中任一箱柜元器件有效行区间
                         if (row >= range.StartRow && row <= range.EndRow)
                         {
+                            // 立即快速返回有效
                             return true;
                         }
                     }
-                    return false;
+
+                    // 核心自愈防错位：若未命中任何已有区间，但在 1 秒内刚刚完成扫描，确实非元器件行，直接返回 false
+                    if ((now - cachedEntry.CacheTime) < TimeSpan.FromSeconds(1))
+                    {
+                        // 1 秒内短路返回 false，阻断非元件行重复扫描
+                        return false;
+                    }
+                    // 若超过 1 秒且未命中缓存区间，不再草率判死刑，放行到下方穿透缓存重新执行轻量扫描以自动自愈
                 }
 
                 // 2. 缓存未命中：采用轻量级名称前缀短路扫描 (避免遍历无关名称导致上百次 COM 调用)

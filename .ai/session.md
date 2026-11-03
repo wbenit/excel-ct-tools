@@ -1,3 +1,16 @@
+- **【核心排查与根治：复制元器件到箱柜第一行样式错误继承表头灰色底纹与粗体缺陷修复】(`Services/ExcelServices.ComponentRowOperations.cs`, `Services/UndoRedoManager.cs`, `publish/`)**：
+  1. **用户核心指令与截图确诊**：
+     - 用户截图展示：从其他箱柜复制元器件到另一个箱柜的第一行（`targetRow == targetCab.CompStartRow`）后，新行整行带有明细表头的灰色底纹，成本单价列带有表头暗红底纹，文字加粗，边框变为实线；
+     - 用户要求：“修复，不过不要考虑底线保底的情况（不会存在）”。
+  2. **根因剖析与工程落地**：
+     - ① **根因确诊**：`InsertCopiedOrCutComponentRow` 执行 `Range.Insert(xlShiftDown)` 时未传递 `CopyOrigin`，Excel COM 接口缺省为 `xlFormatFromLeftOrAbove`（从上方继承格式）；当目标行处于首行元件时，上方恰好为箱柜明细表头行（DetRow + 1），导致新插入行被全盘赋予表头的灰色底纹、暗红成本单价底纹、黑体粗体与实线边框；
+     - ② **精准对齐修复**：在插入行后，判断若 `targetRow <= targetCab.CompStartRow`，直接提取下方推移后的原首行元件行（`targetSheet.Rows[targetRow + rowCount]`）执行 `Copy()`，对新插入行区域执行 `PasteSpecial(XlPasteType.xlPasteFormats)` 仅粘贴格式，100% 消除表头底色与加粗样式，恢复元件标准虚线明细网格；
+     - ③ **撤销重做原子对称支持**：在 `ComponentRowInsertCommand` 中传递 `isFirstCompRow`，在 `Redo` 执行时若为首行同样自动对齐下方元件格式，确保撤销/重做生命周期格式完好无损；
+     - ④ 严格践行规则 9 与用户要求，不添加冗余的兜底防御代码；严格遵守每 3 行新增代码至少 1 行中文注释规范。
+  3. **构建验证与产物交付**：
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 最新程序集 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 已全量同步覆盖至 `publish/` 交付目录。
+
 - **【核心排查与根除：Excel-DNA Diagnostic Display 加载弹窗（GetBaseUrl 重复注册 Error 与 System.Runtime.CompilerServices.Unsafe 缺失 Warning）】(`ExcelAddInDemo-AddIn*.dna`, `Services/ComponentApiClient.cs`, `Services/DrawCodeApiClient.cs`, `bin/`, `publish/`)**：
   1. **用户核心指令与截图确诊**：
      - 用户截图展示弹窗：`ExcelAddInDemo Add-In64 - Diagnostic Display`：
