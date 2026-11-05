@@ -558,9 +558,194 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 一键检查并修复当前工作簿中所有定义名称、小计公式、双向超链接及死链清理
+        /// 针对单张分类工作表执行规则 6、7、8 自愈、元器件行公式刷新与单表死链清理
         /// </summary>
-        public static void RepairAllDefinedNames()
+        /// <param name="sheet">目标分类工作表 COM 实例</param>
+        /// <param name="activeWb">所属工作簿 COM 实例</param>
+        /// <param name="forceRebuild">是否强制全量重建定义名称</param>
+        /// <returns>校准箱柜数与修复元器件行数的二元组</returns>
+        public static (int fixedCabinets, int fixedComponentRows) RepairSingleCategorySheetInternal(dynamic sheet, dynamic activeWb, bool forceRebuild = true)
+        {
+            // 初始化返回计数
+            int fixedCabinets = 0;
+            int fixedComponentRows = 0;
+
+            if (sheet == null || activeWb == null) return (0, 0);
+
+            try
+            {
+                // 1. 强制执行全量箱柜定义名称、双向超链接及小计公式重建自愈 (规则 6、7、8)
+                fixedCabinets = Tool.FixAndFillCabinetNamesForSheet(sheet, forceRebuild: forceRebuild);
+
+                // 2. 提取当前分类表中所有有效的箱柜锚点字典 (规则 6 架构)
+                var cabinets = Tool.GetSheetValidCabinets((object)sheet, (object)activeWb);
+                if (cabinets != null && cabinets.Count > 0)
+                {
+                    // 逐台箱柜遍历修复底部明细区域元器件行公式及汇总行联动公式
+                    foreach (var kvp in cabinets)
+                    {
+                        // 提取箱柜锚点数据
+                        var cab = kvp.Value;
+                        // 提取物理行号
+                        int sumRow = cab.Sum != null ? Convert.ToInt32(cab.Sum.Row) : 0;
+                        int detRow = cab.Det != null ? Convert.ToInt32(cab.Det.Row) : 0;
+                        int subsumRow = cab.Subsum != null ? Convert.ToInt32(cab.Subsum.Row) : 0;
+                        int tolsumRow = cab.Tolsum != null ? Convert.ToInt32(cab.Tolsum.Row) : 0;
+
+                        // 校验明细块各行号合法性 (规则 6 架构)
+                        if (detRow > 0 && subsumRow > detRow && tolsumRow >= subsumRow)
+                        {
+                            // 元器件起始行号 (规则 6: detRow + 2)
+                            int compStartRow = detRow + 2;
+                            // 规则 7: 内存 2D 数组批量自愈底部明细元器件行 A/G/H/J/K 列公式及小计求和公式
+                            int fixedRows = RefreshCabinetFeeAreaFormulas(sheet, detRow, compStartRow, subsumRow, tolsumRow);
+                            fixedComponentRows += fixedRows;
+
+                            // 若存在顶部汇总行，确保汇总行公式与明细总计行联动完好
+                            if (sumRow > 0)
+                            {
+                                try
+                                {
+                                    // G 列单价公式绑定明细总计行 G 列
+                                    sheet.Cells[sumRow, 7].Formula = $"=G{tolsumRow}"; // --硬编码: 汇总单价公式--
+                                    // H 列总价公式 = 数量(F列) * 单价(G列)
+                                    sheet.Cells[sumRow, 8].Formula = $"=F{sumRow}*G{sumRow}"; // --硬编码: 汇总总价公式--
+                                    // J 列成本总价公式绑定明细总计行成本总价 K 列
+                                    sheet.Cells[sumRow, 10].Formula = $"=K{tolsumRow}"; // --硬编码: 汇总成本公式--
+                                    // K 列毛利公式 = 销售总价(H列) - 成本总价(J列)
+                                    sheet.Cells[sumRow, 11].Formula = $"=H{sumRow}-J{sumRow}"; // --硬编码: 汇总毛利公式--
+                                    // L 列毛利率公式 (防除以 0 保护)
+                                    sheet.Cells[sumRow, 12].Formula = $"=IF(H{sumRow}=0,0,K{sumRow}/H{sumRow})"; // --硬编码: 汇总毛利率公式--
+                                }
+                                catch { }
+                            }
+                        }
+                    }
+                }
+
+                // 3. 清理单工作表内的失效死链 (#REF!) 幽灵名称
+                try
+                {
+                    foreach (dynamic sName in sheet.Names)
+                    {
+                        string sRef = Convert.ToString(sName.RefersTo) ?? "";
+                        if (sRef.Contains("#REF!"))
+                        {
+                            sName.Delete();
+                        }
+                    }
+                }
+                catch { }
+            }
+            catch (Exception exSheet)
+            {
+                // 记录单表自愈异常日志
+                LogHelper.WriteLog($"单表自愈异常: {exSheet.Message}");
+            }
+
+            return (fixedCabinets, fixedComponentRows);
+        }
+
+        /// <summary>
+        /// 仅检查并修复当前活动工作表分类 (主按钮功能)
+        /// 严格遵循规则 9：若当前活动表不是分类明细表直接弹窗拦截，绝不盲目兜底
+        /// 修复时自动对齐【项目信息】主表与当前分类表
+        /// </summary>
+        public static void RepairCurrentCategory()
+        {
+            try
+            {
+                // 获取 Excel 宿主 COM 应用程序实例 (安全调用)
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                if (app == null) return;
+
+                // 获取当前活动工作簿
+                dynamic? activeWb = app.ActiveWorkbook;
+                if (activeWb == null)
+                {
+                    // 弹出未打开工作簿提示窗 --硬编码: 系统提示文本--
+                    System.Windows.Forms.MessageBox.Show("当前未检测到打开的 Excel 工作簿，无法执行修复。", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                    return;
+                }
+
+                // 核心准入检查：工作簿必须是包含【项目信息】的标准成套工程工作簿
+                if (!Tool.IsProjectWorkbook(activeWb))
+                {
+                    // 规则 9：非成套工程工作簿直接报错提示拦截 --硬编码: 系统提示文本--
+                    System.Windows.Forms.MessageBox.Show("当前工作簿不是标准成套工程工作簿（缺少【项目信息】主表中枢），无法执行分类修复。", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // 获取当前活动工作表
+                dynamic? activeSheet = app.ActiveSheet;
+                if (activeSheet == null) return;
+
+                string sheetName = Convert.ToString(activeSheet.Name)?.Trim() ?? "";
+
+                // 规则 9 守门：检查是否为系统保留表或报表
+                if (string.IsNullOrWhiteSpace(sheetName) || Tool.IsReservedOrReportSheet(sheetName))
+                {
+                    // 规则 9：直接前端弹窗报错提醒，严禁自以为是兜底 --硬编码: 警告提示文本--
+                    System.Windows.Forms.MessageBox.Show($"当前活动工作表【{sheetName}】是系统保留表或汇总报表，不是分类明细表，无法执行单表分类修复。\n\n如需修复特定分类，请先在下方标签栏点击切换至对应的分类工作表；或点击下拉菜单选择【修复全部】。", "操作提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // 暂存原有屏幕刷新与警告事件状态
+                bool prevUpdating = app.ScreenUpdating;
+                bool prevAlerts = app.DisplayAlerts;
+                bool prevEvents = app.EnableEvents;
+
+                // 压栈开启静默模式防止界面闪烁卡顿
+                app.ScreenUpdating = false;
+                app.DisplayAlerts = false;
+                app.EnableEvents = false;
+
+                int fixedCabs = 0;
+                int fixedRows = 0;
+
+                try
+                {
+                    // 1. 核心对齐：先将当前分类工作表与【项目信息】主表进行双向对齐与注册
+                    AlignProjectInfoCategory(activeWb, sheetName);
+
+                    // 2. 调度单表自愈引擎，重建四元组、自愈元器件公式与小计总计联动
+                    (int fixedCabinets, int fixedComponentRows) result = RepairSingleCategorySheetInternal(activeSheet, activeWb, forceRebuild: true);
+                    // 读取物理元组字段 Item1/Item2，彻底避免 DLR 动态反射查找抛出 fixedCabinets 未定义异常
+                    fixedCabs = result.Item1;
+                    fixedRows = result.Item2;
+                }
+                finally
+                {
+                    // 严格成对恢复 Excel 原有运行状态
+                    app.ScreenUpdating = prevUpdating;
+                    app.DisplayAlerts = prevAlerts;
+                    app.EnableEvents = prevEvents;
+                }
+
+                // 3. 构建单表修复完成报告 --硬编码: 报告文本--
+                string successMsg = $"✅ 分类表【{sheetName}】修复完成！\n\n" +
+                                     $"• 校准成套箱柜定义名称：{fixedCabs} 台套\n" +
+                                     $"• 修复底部明细元器件行公式：{fixedRows} 行\n" +
+                                     $"• 已深度对齐【项目信息】主表汇总行、联动公式与双向超链接。\n\n" +
+                                     $"已按规则 6 校准所有箱柜的 Cab_Sum / Cab_Det / Cab_Subsum / Cab_Tolsum 拓扑，重挂双向超链接，并已恢复元器件行序号与计算公式。";
+
+                // 弹出修复报告弹窗 --硬编码: 弹窗标题--
+                System.Windows.Forms.MessageBox.Show(successMsg, "分类表修复报告", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志到日志系统
+                LogHelper.WriteLog($"执行当前分类表修复异常: {ex.Message}");
+                // 弹出异常告警提示 --硬编码: 弹窗标题--
+                System.Windows.Forms.MessageBox.Show($"修复分类表时发生异常：{ex.Message}", "修复失败", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// 一键检查并修复当前工作簿中所有定义名称、小计公式、双向超链接、死链清理及项目信息表对齐
+        /// (下拉菜单【修复全部】入口)
+        /// </summary>
+        public static void RepairAllCategoriesAndAlign()
         {
             // 记录已扫描并修复的分类表数量
             int processedSheets = 0;
@@ -570,17 +755,17 @@ namespace ExcelAddInDemo
             int totalFixedComponentRows = 0;
             // 记录清理的断链与死链幽灵名称总数
             int cleanedDeadNames = 0;
+            // 记录与项目信息主表成功对齐的分类表数
+            int alignedCategoryCount = 0;
 
             try
             {
                 // 获取 Excel 宿主 COM 应用程序实例 (安全调用)
                 dynamic? app = ExcelDnaSafeAccessor.GetApplication();
-                // 若实例为空则安全退出
                 if (app == null) return;
 
                 // 获取当前活动工作簿
                 dynamic? activeWb = app.ActiveWorkbook;
-                // 若当前没有打开的工作簿则终止并提示
                 if (activeWb == null)
                 {
                     // 弹出未打开工作簿提示窗 --硬编码: 系统提示文本--
@@ -603,52 +788,38 @@ namespace ExcelAddInDemo
                     // 1. 全局清理工作簿级失效死链 (#REF!) 幽灵名称
                     try
                     {
-                        // 遍历工作簿级定义名称集合
                         foreach (dynamic nameObj in activeWb.Names)
                         {
-                            // 读取引用公式文本
                             string refersTo = Convert.ToString(nameObj.RefersTo) ?? "";
-                            // 校验是否包含 #REF! 断链错误 --硬编码: Excel错误值--
                             if (refersTo.Contains("#REF!"))
                             {
-                                // 物理删除损坏名称
                                 nameObj.Delete();
                                 cleanedDeadNames++;
                             }
                         }
                     }
-                    catch
-                    {
-                        // 捕获权限受限等个别名称异常
-                    }
+                    catch { }
 
                     // 2. 清理各工作表级失效死链 (#REF!) 幽灵名称
                     foreach (dynamic sheet in activeWb.Worksheets)
                     {
                         try
                         {
-                            // 遍历单表定义名称集合
                             foreach (dynamic sName in sheet.Names)
                             {
-                                // 获取单表名称引用字符串
                                 string sRef = Convert.ToString(sName.RefersTo) ?? "";
-                                // 校验是否包含 #REF! 断链错误 --硬编码: Excel错误值--
                                 if (sRef.Contains("#REF!"))
                                 {
-                                    // 物理删除损坏的单表名称
                                     sName.Delete();
                                     cleanedDeadNames++;
                                 }
                             }
                         }
-                        catch
-                        {
-                            // 忽略个别受保护工作表异常
-                        }
+                        catch { }
                     }
 
-                    // 3. 强制刷新【项目信息】白名单分类表名缓存
-                    Tool.GetProjectCategorySheetNames(activeWb, forceRefresh: true);
+                    // 3. 核心关键步骤：全量深度双向对齐【项目信息】主表与各个分类表
+                    alignedCategoryCount = AlignProjectInfoAllCategories(activeWb);
 
                     // 4. 遍历所有工作表执行箱柜定义名称全量自愈与明细公式修复 (规则 6、7、8)
                     foreach (dynamic sheet in activeWb.Worksheets)
@@ -656,60 +827,11 @@ namespace ExcelAddInDemo
                         // 判定是否为当前工程中的标准分类明细表
                         if (Tool.IsProjectCategorySheet(sheet, activeWb))
                         {
-                            // 强制执行全量箱柜定义名称、双向超链接及小计公式重建自愈
-                            int fixedCount = Tool.FixAndFillCabinetNamesForSheet(sheet, forceRebuild: true);
-                            // 累加修复箱柜总数
-                            totalFixedCabinets += fixedCount;
-
-                            // 规则 8: 提取当前分类表中所有有效的箱柜锚点字典 (规则 6 架构)
-                            var cabinets = Tool.GetSheetValidCabinets((object)sheet, (object)activeWb);
-                            // 若存在有效箱柜集合
-                            if (cabinets != null && cabinets.Count > 0)
-                            {
-                                // 逐台箱柜遍历修复底部明细区域元器件行公式及汇总行联动公式
-                                foreach (var kvp in cabinets)
-                                {
-                                    // 提取箱柜锚点数据
-                                    var cab = kvp.Value;
-                                    // 提取物理行号
-                                    int sumRow = cab.Sum != null ? Convert.ToInt32(cab.Sum.Row) : 0;
-                                    int detRow = cab.Det != null ? Convert.ToInt32(cab.Det.Row) : 0;
-                                    int subsumRow = cab.Subsum != null ? Convert.ToInt32(cab.Subsum.Row) : 0;
-                                    int tolsumRow = cab.Tolsum != null ? Convert.ToInt32(cab.Tolsum.Row) : 0;
-
-                                    // 校验明细块各行号合法性 (规则 6 架构)
-                                    if (detRow > 0 && subsumRow > detRow && tolsumRow >= subsumRow)
-                                    {
-                                        // 元器件起始行号 (规则 6: detRow + 2)
-                                        int compStartRow = detRow + 2;
-                                        // 规则 7: 内存 2D 数组批量自愈底部明细元器件行 A/G/H/J/K 列公式及小计求和公式
-                                        int fixedRows = RefreshCabinetFeeAreaFormulas(sheet, detRow, compStartRow, subsumRow, tolsumRow);
-                                        // 累加修复的元器件行公式总数
-                                        totalFixedComponentRows += fixedRows;
-
-                                        // 若存在顶部汇总行，确保汇总行公式与明细总计行联动完好
-                                        if (sumRow > 0)
-                                        {
-                                            try
-                                            {
-                                                // G 列单价公式绑定明细总计行 G 列
-                                                sheet.Cells[sumRow, 7].Formula = $"=G{tolsumRow}"; // --硬编码: 汇总单价公式--
-                                                // H 列总价公式 = 数量(F列) * 单价(G列)
-                                                sheet.Cells[sumRow, 8].Formula = $"=F{sumRow}*G{sumRow}"; // --硬编码: 汇总总价公式--
-                                                // J 列成本总价公式绑定明细总计行成本总价 K 列
-                                                sheet.Cells[sumRow, 10].Formula = $"=K{tolsumRow}"; // --硬编码: 汇总成本公式--
-                                                // K 列毛利公式 = 销售总价(H列) - 成本总价(J列)
-                                                sheet.Cells[sumRow, 11].Formula = $"=H{sumRow}-J{sumRow}"; // --硬编码: 汇总毛利公式--
-                                                // L 列毛利率公式 (防除以 0 保护)
-                                                sheet.Cells[sumRow, 12].Formula = $"=IF(H{sumRow}=0,0,K{sumRow}/H{sumRow})"; // --硬编码: 汇总毛利率公式--
-                                            }
-                                            catch { }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // 累加分类表数量
+                            // 执行单表自愈引擎并显式强转元组，规避动态反射绑定
+                            (int fixedCabinets, int fixedComponentRows) result = RepairSingleCategorySheetInternal(sheet, activeWb, forceRebuild: true);
+                            // 累加修复的箱柜定义名称与元器件行公式数量
+                            totalFixedCabinets += result.Item1;
+                            totalFixedComponentRows += result.Item2;
                             processedSheets++;
                         }
                     }
@@ -727,12 +849,13 @@ namespace ExcelAddInDemo
                 if (processedSheets > 0)
                 {
                     // 包含分类表时的标准报告 --硬编码: 报告文本--
-                    successMsg = $"✅ 项目工具修复完成！\n\n" +
+                    successMsg = $"✅ 项目工具全量修复完成！\n\n" +
                                  $"• 扫描并修复分类工作表：{processedSheets} 个\n" +
+                                 $"• 深度对齐【项目信息】主表分类：{alignedCategoryCount} 个\n" +
                                  $"• 校准成套箱柜定义名称：{totalFixedCabinets} 台套\n" +
                                  $"• 修复底部明细元器件行公式：{totalFixedComponentRows} 行\n" +
                                  $"• 清理断链失效幽灵名称：{cleanedDeadNames} 个\n\n" +
-                                 $"已按规则 6 校准所有箱柜的 Cab_Sum / Cab_Det / Cab_Subsum / Cab_Tolsum 拓扑，重挂双向超链接，并已全面恢复底部明细中元器件行序号、单价、总价、成本及小计求和公式。";
+                                 $"已按规则 6 校准所有箱柜的 Cab_Sum / Cab_Det / Cab_Subsum / Cab_Tolsum 拓扑，重挂双向超链接，全面恢复底部明细中元器件行序号、单价、总价、成本及小计求和公式，并确保【项目信息】主表与分类表双向完全对齐。";
                 }
                 else
                 {
@@ -748,10 +871,18 @@ namespace ExcelAddInDemo
             catch (Exception ex)
             {
                 // 记录异常日志到日志系统
-                LogHelper.WriteLog($"执行一键修复所有定义名称异常: {ex.Message}");
+                LogHelper.WriteLog($"执行一键全量修复异常: {ex.Message}");
                 // 弹出异常告警提示 --硬编码: 弹窗标题--
-                System.Windows.Forms.MessageBox.Show($"修复定义名称时发生异常：{ex.Message}", "修复失败", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+                System.Windows.Forms.MessageBox.Show($"全量修复时发生异常：{ex.Message}", "修复失败", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
             }
+        }
+
+        /// <summary>
+        /// 兼容保留旧命名接口，内部全量委托 RepairAllCategoriesAndAlign
+        /// </summary>
+        public static void RepairAllDefinedNames()
+        {
+            RepairAllCategoriesAndAlign();
         }
 
         /// <summary>

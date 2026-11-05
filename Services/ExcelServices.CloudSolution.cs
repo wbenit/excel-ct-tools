@@ -1378,7 +1378,8 @@ namespace ExcelAddInDemo
                             Brand = brand,
                             Unit = unit,
                             Quantity = qty,
-                            IsWlDoubled = false,
+                            // 默认所有元器件均随回路倍增 (响应用户配置)
+                            IsWlDoubled = true,
                             CatalogPrice = catalogPrice,
                             MarkedPrice = catalogPrice,
                             Discount = discount,

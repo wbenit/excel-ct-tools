@@ -2989,8 +2989,11 @@
                       style="color: #475569; font-family: Consolas, 'Segoe UI', monospace;">
                       {{ item.model || item.itemSpec || item.spec || '-' }}
                     </td>
-                    <!-- 基准用量数量 -->
-                    <td style="text-align: right; font-weight: 600; color: #0f172a;">{{ item.quantity }}</td>
+                    <!-- 动态用量数量 (随回路倍增系数联动，悬停提示基准用量) -->
+                    <td style="text-align: right; font-weight: 600; color: #0f172a;"
+                      :title="'基准数量: ' + item.quantity">
+                      {{ item.isWlDoubled && Number(apLoopMultiplier || 1) > 1 ? (Number(item.quantity || 1) * Number(apLoopMultiplier || 1)) : item.quantity }}
+                    </td>
                     <!-- 计量单位 -->
                     <td style="text-align: center; color: #64748b;">{{ item.unit || '只' }}</td>
                     <!-- 品牌厂家 -->
@@ -6176,10 +6179,10 @@
 
         // 安全转换与规范化 BOM 物料记录 (支持表价、采购折扣、报出系数、销售单价与总价的智能互推自愈)
         const mapBomItemSafely = (b, idx, defaultCat = "一次成套") => {
-          // 基础用量数量提取 (默认 1)
-          const quantity = Number(b.quantity ?? b.Quantity ?? b.qty) || 1;
-          // WL 随回路翻倍标志
-          const isWlDoubled = Boolean(b.isWlDoubled ?? b.IsWlDoubled);
+          // WL 随回路翻倍标志 (默认所有元器件均随回路倍增)
+          const isWlDoubled = typeof b.isWlDoubled !== "undefined"
+            ? Boolean(b.isWlDoubled)
+            : (typeof b.IsWlDoubled !== "undefined" ? Boolean(b.IsWlDoubled) : true);
 
           // 1. 采购折扣率提取 (默认 1.0)
           let discount = Number(b.discount ?? b.Discount ?? 1.0);
@@ -7799,9 +7802,9 @@
                     if (typeof item.selected === "undefined") {
                       item.selected = true;
                     }
-                    // 默认不随回路倍增
+                    // 默认所有元器件均随回路倍增 (响应用户要求)
                     if (typeof item.isWlDoubled === "undefined") {
-                      item.isWlDoubled = false;
+                      item.isWlDoubled = true;
                     }
                   });
                   // 保存当前活动 BOM 清单

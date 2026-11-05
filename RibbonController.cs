@@ -297,6 +297,16 @@ namespace ExcelAddInDemo
               <button id='btnSpotlightModeCol' label='仅高亮当前列' imageMso='TableColumnSelect' onAction='OnMenuAction' />
             </menu>
           </splitButton>
+          <!-- 修复功能拆分按钮 (大图标一键修复当前活动表分类，下拉菜单选择修复全部) -->
+          <splitButton id='splitRepairDefinedNames' size='large'>
+            <!-- 主按钮：点击直接修复当前活动表分类并对齐项目信息表 -->
+            <button id='btnRepairCurrentCategory' label='修复' imageMso='AutoCorrect' onAction='OnMenuAction' screentip='修复当前活动分类表' supertip='一键检查并修复当前活动分类表中的箱柜定义名称(Cab_Sum/Det/Subsum/Tolsum)、双向超链接、底部明细元器件行计算公式(A/G/H/J/K列)与小计总计公式，并深度对齐项目信息表' />
+            <!-- 下拉菜单：提供当前分类表与全量分类表修复选项 -->
+            <menu id='menuRepairDefinedNames' label='修复选项' imageMso='AutoCorrect'>
+              <button id='btnRepairCurrentCategorySub' label='修复当前分类表' imageMso='AutoCorrect' onAction='OnMenuAction' screentip='修复当前分类表' supertip='仅对当前处于活动状态的分类明细表执行箱柜拓扑校准与公式自愈，并深度对齐项目信息表' />
+              <button id='btnRepairAllCategories' label='修复全部' imageMso='ReviewAcceptChange' onAction='OnMenuAction' screentip='修复全部 (所有分类表)' supertip='全面检查并修复当前工作簿中的所有分类表，深度对齐【项目信息】主表与各个分类表的汇总映射、公式体系及双向超链接，并全量清理失效死链' />
+            </menu>
+          </splitButton>
           <!-- AutoCAD 5:5 均等分屏按钮 -->
           <button id='btnToggleCadTaskPane' label='CAD分屏' imageMso='ViewSideBySide' size='large' screentip='AutoCAD 5:5 均等分屏' supertip='一键将当前 Excel 与 AutoCAD 在屏幕上 5:5 均等并排排列，再次点击还原 Excel 全屏最大化' onAction='OnMenuAction' />
           <!-- 联动CAD夹点显示切换按钮 -->
@@ -305,8 +315,10 @@ namespace ExcelAddInDemo
           <button id='btnToggleContextMenuMode' label='右键菜单模式' imageMso='ControlsGallery' size='large' screentip='切换右键菜单模式' supertip='在【业务专属菜单】与【Excel 原生右键菜单】之间彻底二选一切换' onAction='OnMenuAction' />
           <!-- 项目工具下拉菜单 (使用标准工具箱图标 ControlToolboxOutlook，解决大图标空白问题) -->
           <menu id='menuProjectTools' label='项目工具' imageMso='ControlToolboxOutlook' size='large'>
-            <!-- 修复定义名称项 (在项目工具下拉菜单中同步提供快捷入口) -->
-            <button id='btnRepairDefinedNamesSub' label='修复' imageMso='AutoCorrect' onAction='OnMenuAction' screentip='修复定义名称与明细公式' supertip='一键检查并修复当前工作簿所有分类表中的箱柜定义名称、双向超链接、底部明细元器件行计算公式(A/G/H/J/K列)与小计总计公式' />
+            <!-- 修复当前分类表项 (在项目工具下拉菜单中同步提供快捷入口) -->
+            <button id='btnRepairCurrentInTools' label='修复当前分类表' imageMso='AutoCorrect' onAction='OnMenuAction' screentip='修复当前分类表' supertip='仅对当前处于活动状态的分类明细表执行箱柜拓扑校准与公式自愈，并深度对齐项目信息表' />
+            <!-- 修复全部项 (在项目工具下拉菜单中同步提供快捷入口) -->
+            <button id='btnRepairAllInTools' label='修复全部' imageMso='ReviewAcceptChange' onAction='OnMenuAction' screentip='修复全部 (所有分类表)' supertip='全面检查并修复当前工作簿中的所有分类表，深度对齐【项目信息】主表与各个分类表' />
             <!-- 母排铜排计算按钮 (根据W列电流与X列极数计算并插入明细行) -->
             <button id='btnCopperBusbarCalc' label='母排铜排计算' imageMso='ChartInsert' screentip='母排铜排智能计算' supertip='根据W列电流与X列级数智能计算各箱柜主母排与分支排用量，一键安全插入元器件明细行' onAction='OnMenuAction' />
             <!-- 智能输入按钮 -->
@@ -685,11 +697,17 @@ namespace ExcelAddInDemo
                 // 调起并激活“元器件图纸参数匹配 (200x800)”伴随式侧边浮窗
                 ExcelServices.ShowComponentParamMatchDialog();
             }
-            // 响应“修复定义名称”按钮及菜单指令 (全局自愈所有分类表箱柜定义名称与清理死链)
-            else if (controlId == "btnRepairDefinedNames" || controlId == "btnRepairDefinedNamesSub")
+            // 响应“修复当前活动表分类”指令 (点击主按钮或下拉子菜单项)
+            else if (controlId == "btnRepairCurrentCategory" || controlId == "btnRepairCurrentCategorySub" || controlId == "btnRepairCurrentInTools")
             {
-                // 调度业务层公共服务执行全表定义名称与公式自愈
-                ExcelServices.RepairAllDefinedNames();
+                // 调用业务层服务：只修复当前活动工作表分类并深度对齐项目信息表
+                ExcelServices.RepairCurrentCategory();
+            }
+            // 响应“修复全部 (所有分类表)”指令 (点击下拉菜单项或兼容旧入口)
+            else if (controlId == "btnRepairAllCategories" || controlId == "btnRepairAllInTools" || controlId == "btnRepairDefinedNames" || controlId == "btnRepairDefinedNamesSub")
+            {
+                // 调度业务层服务执行全表定义名称自愈与项目信息主表全量双向对齐
+                ExcelServices.RepairAllCategoriesAndAlign();
             }
             // 响应“识别极数电流”按钮指令
             else if (controlId == "btnModelParamParser")

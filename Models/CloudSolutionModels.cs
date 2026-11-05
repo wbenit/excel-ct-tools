@@ -177,8 +177,8 @@ namespace ExcelAddInDemo.Models
         // 基础单回路额定用量
         public double Quantity { get; set; } = 1.0;
 
-        // 是否属于随回路数翻倍元器件 (WL 标志: 勾选则回路数倍增，不勾选保持基准数量)
-        public bool IsWlDoubled { get; set; } = false;
+        // 是否属于随回路数翻倍元器件 (WL 标志: 默认所有元器件均随回路倍增)
+        public bool IsWlDoubled { get; set; } = true;
 
         // 目录官方表价 (元)
         public decimal CatalogPrice { get; set; } = 0m;

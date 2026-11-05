@@ -828,6 +828,8 @@ namespace ExcelAddInDemo
                         ScreenTip: "点击进入本箱柜明细表",
                         TextToDisplay: Convert.ToString(cabinetIndex)
                     );
+                    // 重新写入 A 列序号公式，使其兼具超链接跳转与动态行序号计算能力
+                    catSheet.Cells[cabSumRow, 1].Formula = "=ROW()-ROW(A$6)";
 
                     // 填入箱柜名称
                     catSheet.Cells[cabSumRow, 2].Value = safeCabName;
@@ -1726,8 +1728,20 @@ namespace ExcelAddInDemo
                 // 写入 A 列公式：跟随起始行上方表头自动动态计算序号，计算结果保留超链接属性与蓝色下划线
                 infoSheet.Cells[targetInfoRow, 1].Formula = $"=ROW()-ROW(A${headerRowIndex})";
 
-                // 选项 A: 为分类表 A5 挂载反向超链接，精准跳转回【项目信息】当前分类汇总行
-                SetCategorySheetBackHyperlink(targetWb, categorySheetName, targetInfoRow);
+                // 动态探测分类表顶部汇总三元组行 (用于动态替换写死的 31 与 35)
+                dynamic catSheet = null;
+                try { catSheet = targetWb.Sheets[categorySheetName]; } catch { }
+                int subtotalRow = 31; // 默认小计基准行 --硬编码: 默认小计基准行 31--
+                int totRow = 35; // 默认合计基准行 --硬编码: 默认合计基准行 35--
+                int minDetRow = -1; // 默认首台明细行
+                if (catSheet != null)
+                {
+                    // 动态提取三元组物理行号 (显式传 object 避免 DLR 动态分派)
+                    (int detSub, int detTot, int detMinDet) = FindCategorySheetTopSummaryRows((object)catSheet);
+                    if (detTot > 0) totRow = detTot;
+                    if (detSub > 0) subtotalRow = detSub;
+                    minDetRow = detMinDet;
+                }
 
                 // 2. 写入 B 列分类名称动态公式: 对齐 ExWinner 原生机制，根据工作表引用动态解析分类名
                 // 使用 CELL("filename") 与 FIND 提取工作表名，实现随 Sheet 改名自动级联联动
@@ -1740,14 +1754,14 @@ namespace ExcelAddInDemo
                 // 写入动态工作表名公式 --硬编码: Excel公式函数名--
                 infoSheet.Cells[targetInfoRow, 2].Formula = $"=MID(CELL(\"filename\",'{categorySheetName}'!$A$1),FIND(\"]\",CELL(\"filename\",'{categorySheetName}'!$A$1))+1,31)";
 
-                // 3. 写入 C 列箱柜数量公式: 对齐 ExWinner 母版公式，结合 H 列属性与合计行 F35 联动
-                infoSheet.Cells[targetInfoRow, 3].Formula = $"=IF(H{targetInfoRow}=\"箱变\",'{categorySheetName}'!F35,'{categorySheetName}'!F31*IF('{categorySheetName}'!F35=\"\",1,'{categorySheetName}'!F35))";
+                // 3. 写入 C 列箱柜数量公式: 对齐 ExWinner 母版公式，结合 H 列属性与合计行 F{totRow} 动态联动
+                infoSheet.Cells[targetInfoRow, 3].Formula = $"=IF(H{targetInfoRow}=\"箱变\",'{categorySheetName}'!F{totRow},'{categorySheetName}'!F{subtotalRow}*IF('{categorySheetName}'!F{totRow}=\"\",1,'{categorySheetName}'!F{totRow}))";
 
-                // 4. 写入 D 列总价公式: 精准直连分类表合计行销售总价 H35，保留 2 位小数
-                infoSheet.Cells[targetInfoRow, 4].Formula = $"=ROUND('{categorySheetName}'!H35,2)";
+                // 4. 写入 D 列总价公式: 精准直连分类表合计行销售总价 H{totRow}，保留 2 位小数
+                infoSheet.Cells[targetInfoRow, 4].Formula = $"=ROUND('{categorySheetName}'!H{totRow},2)";
 
-                // 5. 写入 E 列成本总价公式: 直连分类表合计行成本总价 J35，保留 2 位小数
-                infoSheet.Cells[targetInfoRow, 5].Formula = $"=ROUND('{categorySheetName}'!J35,2)";
+                // 5. 写入 E 列成本总价公式: 直连分类表合计行成本总价 J{totRow}，保留 2 位小数
+                infoSheet.Cells[targetInfoRow, 5].Formula = $"=ROUND('{categorySheetName}'!J{totRow},2)";
 
                 // 6. 写入 F 列毛利公式: 销售总价 - 成本总价
                 infoSheet.Cells[targetInfoRow, 6].Formula = $"=ROUND((D{targetInfoRow}-E{targetInfoRow}),2)";
@@ -1757,6 +1771,12 @@ namespace ExcelAddInDemo
 
                 // 8. 写入 H 列分类属性公式: 智能判定箱变/欧变/美变/常规类型
                 infoSheet.Cells[targetInfoRow, 8].Formula = $"=IF(OR(ISNUMBER(FIND(\"箱变\",B{targetInfoRow}))=TRUE,ISNUMBER(FIND(\"欧变\",B{targetInfoRow}))=TRUE,ISNUMBER(FIND(\"美变\",B{targetInfoRow}))=TRUE,ISNUMBER(FIND(\"KVA\",UPPER(B{targetInfoRow})))=TRUE,ISNUMBER(FIND(\"箱式变电\",B{targetInfoRow}))=TRUE),\"箱变\",\"常规\")";
+
+                // 9. 双向自愈：同步校准分类表内部关联【项目信息】的全部表头、合计行与表尾公式及反向超链接
+                if (catSheet != null)
+                {
+                    AlignCategorySheetToProjectInfo(targetWb, catSheet, categorySheetName, targetInfoRow, totRow, minDetRow);
+                }
 
                 // 同步清空项目分类工作表白名单缓存
                 Tool.InvalidateProjectCategorySheetCache();
@@ -1840,16 +1860,36 @@ namespace ExcelAddInDemo
                         // 写入最新分类表的动态工作表名公式 --硬编码: Excel公式函数名--
                         infoSheet.Cells[r, 2].Formula = $"=MID(CELL(\"filename\",'{newName}'!$A$1),FIND(\"]\",CELL(\"filename\",'{newName}'!$A$1))+1,31)";
 
-                        // 3. 重新写入 C/D/E 列联动公式，确保指向最新表名
-                        infoSheet.Cells[r, 3].Formula = $"=IF(H{r}=\"箱变\",'{newName}'!F35,'{newName}'!F31*IF('{newName}'!F35=\"\",1,'{newName}'!F35))";
-                        infoSheet.Cells[r, 4].Formula = $"=ROUND('{newName}'!H35,2)";
-                        infoSheet.Cells[r, 5].Formula = $"=ROUND('{newName}'!J35,2)";
+                        // 动态探测重命名后分类表顶部汇总三元组行
+                        dynamic catSheet = null;
+                        try { catSheet = targetWb.Sheets[newName]; } catch { }
+                        int subtotalRow = 31; // 默认小计基准行 --硬编码: 默认小计基准行 31--
+                        int totRow = 35; // 默认合计基准行 --硬编码: 默认合计基准行 35--
+                        int minDetRow = -1; // 默认首台明细行
+                        if (catSheet != null)
+                        {
+                            // 动态提取三元组物理行号 (显式传 object 避免 DLR 动态分派)
+                            (int detSub, int detTot, int detMinDet) = FindCategorySheetTopSummaryRows((object)catSheet);
+                            if (detTot > 0) totRow = detTot;
+                            if (detSub > 0) subtotalRow = detSub;
+                            minDetRow = detMinDet;
+                        }
 
-                        // 4. 重新触发行属性判断公式
+                        // 3. 重新写入 C/D/E/F/G/H 列联动公式，精准直连动态合计行与小计行
+                        infoSheet.Cells[r, 3].Formula = $"=IF(H{r}=\"箱变\",'{newName}'!F{totRow},'{newName}'!F{subtotalRow}*IF('{newName}'!F{totRow}=\"\",1,'{newName}'!F{totRow}))";
+                        infoSheet.Cells[r, 4].Formula = $"=ROUND('{newName}'!H{totRow},2)";
+                        infoSheet.Cells[r, 5].Formula = $"=ROUND('{newName}'!J{totRow},2)";
+                        infoSheet.Cells[r, 6].Formula = $"=ROUND((D{r}-E{r}),2)";
+                        infoSheet.Cells[r, 7].Formula = $"=IF(D{r}=0,0,F{r}/D{r})";
+
+                        // 4. 重新触发行属性判断公式 (箱变/常规)
                         infoSheet.Cells[r, 8].Formula = $"=IF(OR(ISNUMBER(FIND(\"箱变\",B{r}))=TRUE,ISNUMBER(FIND(\"欧变\",B{r}))=TRUE,ISNUMBER(FIND(\"美变\",B{r}))=TRUE,ISNUMBER(FIND(\"KVA\",UPPER(B{r})))=TRUE,ISNUMBER(FIND(\"箱式变电\",B{r}))=TRUE),\"箱变\",\"常规\")";
 
-                        // 选项 A: 同步更新重命名后的新分类表 A5 反向超链接指向当前汇总行 r
-                        SetCategorySheetBackHyperlink(targetWb, newName, r);
+                        // 5. 双向自愈：同步校准分类表内部关联【项目信息】的全部表头、合计行与表尾公式及反向超链接
+                        if (catSheet != null)
+                        {
+                            AlignCategorySheetToProjectInfo(targetWb, catSheet, newName, r, totRow, minDetRow);
+                        }
 
                         // 同步清空项目分类工作表白名单缓存
                         Tool.InvalidateProjectCategorySheetCache();
@@ -1911,20 +1951,542 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 公共通用方法：自愈并规范化【项目信息】工作表中的分类汇总超链接与公式结构
-        /// 彻底修复历史文件可能存在的：A列缺超链接、B列错挂超链接、B列公式由于名称缺失报 #NAME? 等缺陷
+        /// 动态探测分类工作表顶部箱柜汇总表的“合计”或“总计”物理行号
+        /// 遵循规则 4（禁止硬编码）、规则 6（顶部汇总与底表明细分界）、规则 7（二维数组单次读取）、规则 9（不盲目兜底，未找到返回 -1）
+        /// </summary>
+        /// <param name="catSheet">分类工作表 COM 实例</param>
+        /// <returns>合计行真实物理行号，若未检测到则返回 -1</returns>
+        public static int FindCategorySheetTopSummaryTotalRow(dynamic catSheet)
+        {
+            // 显式转为 object 避免 DLR 动态分派导致元组无法在编译期析构
+            (int _, int totRow, int _) = FindCategorySheetTopSummaryRows((object)catSheet);
+            // 返回合计行物理行号
+            return totRow;
+        }
+
+        /// <summary>
+        /// 动态探测分类工作表顶部箱柜汇总表的“小计”、“合计”以及首台明细行“Cab_Det_1”的物理行号
+        /// 遵循规则 4（禁止硬编码）、规则 6（顶部汇总与底表明细分界）、规则 7（二维数组单次读取）、规则 9（不盲目兜底，未找到返回 -1）
+        /// </summary>
+        /// <param name="catSheet">分类工作表 COM 实例</param>
+        /// <returns>三元组：(subtotalRow 小计物理行号, totalRow 合计物理行号, minDetRow 首台明细行号)，未找到则为 -1</returns>
+        public static (int subtotalRow, int totalRow, int minDetRow) FindCategorySheetTopSummaryRows(dynamic catSheet)
+        {
+            // 校验工作表入参有效性
+            if (catSheet == null) return (-1, -1, -1);
+            try
+            {
+                // 1. 动态获取汇总起始行：优先读取配置中心 CabSumRowIndex
+                int startRow = ConfigManager.Instance.Current?.Excel?.CabSumRowIndex ?? 7;
+                // 起始行安全下限保护（默认基准 7）
+                if (startRow <= 0) startRow = 7; // --硬编码: 基准起始行 7--
+
+                // 2. 依据规则 6 寻找明细表首行 Cab_Det 的最小物理行作为天然分界线
+                int minDetRow = int.MaxValue;
+                try
+                {
+                    // 扫描当前工作表所有已定义的名称以寻找 Cab_Det_* 锚点
+                    dynamic names = catSheet.Names;
+                    if (names != null)
+                    {
+                        // 遍历工作表级定义名称
+                        foreach (dynamic nObj in names)
+                        {
+                            try
+                            {
+                                string n = Convert.ToString(nObj.Name) ?? "";
+                                // 匹配明细行前缀 Cab_Det_
+                                if (n.Contains("Cab_Det_"))
+                                {
+                                    // 提取物理行号
+                                    int r = Convert.ToInt32(nObj.RefersToRange.Row);
+                                    if (r > 0 && r < minDetRow) minDetRow = r;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                }
+                catch { }
+
+                // 若工作表级未找到，尝试从工作簿级定义名称反查该表对应的 Cab_Det
+                if (minDetRow == int.MaxValue)
+                {
+                    try
+                    {
+                        dynamic wbNames = catSheet.Parent?.Names;
+                        string sheetName = Convert.ToString(catSheet.Name) ?? "";
+                        if (wbNames != null)
+                        {
+                            // 遍历工作簿级定义名称
+                            foreach (dynamic nObj in wbNames)
+                            {
+                                try
+                                {
+                                    string n = Convert.ToString(nObj.Name) ?? "";
+                                    if (n.Contains("Cab_Det_"))
+                                    {
+                                        string refersTo = Convert.ToString(nObj.RefersTo) ?? "";
+                                        // 确保定义名称属于当前分类表
+                                        if (refersTo.Contains($"'{sheetName}'!") || refersTo.Contains($"{sheetName}!"))
+                                        {
+                                            int r = Convert.ToInt32(nObj.RefersToRange.Row);
+                                            if (r > 0 && r < minDetRow) minDetRow = r;
+                                        }
+                                    }
+                                }
+                                catch { }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                // 记录首台明细行有效行号
+                int validMinDetRow = (minDetRow != int.MaxValue) ? minDetRow : -1;
+
+                // 动态计算扫描终止物理行
+                int scanEndRow;
+                if (minDetRow != int.MaxValue)
+                {
+                    // 汇总表严格位于首台明细行上方
+                    scanEndRow = minDetRow - 1;
+                }
+                else
+                {
+                    // 若尚无明细块定义名称，顶部汇总区域通常在起始行后 30-40 行内，防止跨入明细行导致合计行误判
+                    dynamic usedRange = catSheet.UsedRange;
+                    int usedEnd = Convert.ToInt32(usedRange.Row) + Convert.ToInt32(usedRange.Rows.Count) - 1;
+                    scanEndRow = Math.Min(usedEnd, startRow + 35);
+                }
+
+                // 行数不足以构成汇总区则直接返回
+                if (scanEndRow < startRow) return (-1, -1, validMinDetRow);
+
+                // 3. 规则 7: 使用二维数组一次性读取 A 列至 E 列数据到内存 (覆盖柜号、名称、型号等列)
+                dynamic scanRng = catSheet.Range[catSheet.Cells[startRow, 1], catSheet.Cells[scanEndRow, 5]];
+                object[,]? arr = scanRng.Value2 as object[,];
+                int subtotalRow = -1;
+                int totalRow = -1;
+                if (arr != null)
+                {
+                    // 获取矩阵行数与列数
+                    int rowCount = arr.GetLength(0);
+                    int colCount = arr.GetLength(1);
+                    // 遍历行检索小计与合计关键字
+                    for (int i = 1; i <= rowCount; i++)
+                    {
+                        bool hitTotal = false;
+                        // 遍历 A~E 各列文本
+                        for (int c = 1; c <= colCount; c++)
+                        {
+                            // 清洗单元格文本
+                            string text = Convert.ToString(arr[i, c])?.Trim()?.Replace(" ", "") ?? "";
+                            // 遇到说明、报价人或明细表标志说明已超出顶部汇总区，立即终止
+                            if (text.Contains("说明") || text.Contains("报价人") || text.Contains("明细表") || text.StartsWith("柜号"))
+                            {
+                                hitTotal = true;
+                                break;
+                            }
+                            // 命中“小计”关键字且尚未记录
+                            if (text.Contains("小计") && subtotalRow == -1)
+                            {
+                                subtotalRow = startRow + i - 1;
+                            }
+                            // 命中“合计”或“总计”关键字
+                            if (text.Contains("合计") || text.Contains("总计"))
+                            {
+                                // 计算对应的真实物理行号 (startRow + i - 1)
+                                totalRow = startRow + i - 1;
+                                hitTotal = true;
+                                break;
+                            }
+                        }
+                        // 一旦顶部汇总合计行被命中或离开汇总区，立即停止向下扫描，防止明细箱柜内部合计干扰
+                        if (hitTotal && totalRow != -1)
+                        {
+                            break;
+                        }
+                    }
+                }
+
+                // 若未找到独立小计行但找到了合计行，小计回退为合计行
+                if (subtotalRow == -1 && totalRow != -1)
+                {
+                    subtotalRow = totalRow;
+                }
+
+                // 若尚未通过定义名称锚定首台明细行，从合计行下方探测“柜号”关键字作为首台明细行
+                if (validMinDetRow == -1 && totalRow > 0)
+                {
+                    try
+                    {
+                        // 扫描合计行后方 20 行以确定首台箱柜明细行 (Cab_Det_1)
+                        int probeEnd = totalRow + 20;
+                        dynamic probeRng = catSheet.Range[catSheet.Cells[totalRow + 1, 1], catSheet.Cells[probeEnd, 2]];
+                        object[,]? pArr = probeRng.Value2 as object[,];
+                        if (pArr != null)
+                        {
+                            int pRows = pArr.GetLength(0);
+                            for (int pi = 1; pi <= pRows; pi++)
+                            {
+                                string pt1 = Convert.ToString(pArr[pi, 1])?.Trim() ?? "";
+                                string pt2 = Convert.ToString(pArr[pi, 2])?.Trim() ?? "";
+                                if (pt1.StartsWith("柜号") || pt2.StartsWith("柜号"))
+                                {
+                                    validMinDetRow = totalRow + pi;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                return (subtotalRow, totalRow, validMinDetRow);
+            }
+            catch (Exception ex)
+            {
+                // 记录探测异常日志
+                LogHelper.WriteLog($"[FindCategorySheetTopSummaryRows] 动态探测异常: {ex.Message}");
+            }
+
+            // 规则 9: 未匹配到直接返回 -1，绝不自以为是盲目兜底返回 35
+            return (-1, -1, -1);
+        }
+
+        /// <summary>
+        /// 规范化与自愈分类明细表与【项目信息】主表之间的所有关联公式及正反向超链接
+        /// 遵循标杆规范：
+        /// 1. A2: =T(项目信息!B22) （企业单位名称）
+        /// 2. A3: =T(项目信息!B23) （企业英文名称）
+        /// 3. A5: =CONCATENATE("项目名称:",项目信息!B5) 并挂载反向超链接跳回 '项目信息'!A{targetInfoRow}
+        /// 4. H5: =CONCATENATE("报价序号:",项目信息!B7) （报价单号）
+        /// 5. F{totRow}: =IF(项目信息!H{targetInfoRow}="箱变",1,"") （箱变台数智能联动）
+        /// 6. 表尾报价人与日期所在行（动态探测“报价人”关键字或位于 totRow 与首柜明细行之间）：
+        ///    - A{quoterRow}: =CONCATENATE("报价人：",项目信息!B8)
+        ///    - H{quoterRow}: =项目信息!B9
+        ///    - A{quoterRow+1}: =T(项目信息!$B$22)
+        ///    - A{quoterRow+2}: =T(项目信息!$B$23)
         /// </summary>
         /// <param name="targetWb">目标工作簿 COM 实例</param>
-        public static void NormalizeCategorySummaryLinks(dynamic targetWb)
+        /// <param name="catSheet">分类工作表 COM 实例</param>
+        /// <param name="categorySheetName">分类工作表名称</param>
+        /// <param name="targetInfoRow">【项目信息】表中对应的汇总行物理行号</param>
+        /// <param name="totRow">分类表顶部汇总表的合计行物理行号</param>
+        /// <param name="minDetRow">分类表明细首台箱柜明细行号 (若无传 -1)</param>
+        public static void AlignCategorySheetToProjectInfo(
+            dynamic targetWb,
+            dynamic catSheet,
+            string categorySheetName,
+            int targetInfoRow,
+            int totRow,
+            int minDetRow)
         {
-            if (targetWb == null) return;
+            // 校验基础入参
+            if (targetWb == null || catSheet == null || targetInfoRow <= 0) return;
 
             try
             {
-                // 获取【项目信息】工作表
+                // 1. 设置表头企业名称与英文名称动态公式 (A2, A3)
+                try
+                {
+                    // A2 单元格绑定单位名称公式
+                    catSheet.Range["A2"].Formula = "=T(项目信息!B22)";
+                    // A3 单元格绑定英文名称公式
+                    catSheet.Range["A3"].Formula = "=T(项目信息!B23)";
+                }
+                catch { }
+
+                // 2. 设置表头工程名称与报价序号动态公式 (A5, H5)
+                try
+                {
+                    // A5 单元格绑定项目名称连接公式
+                    catSheet.Range["A5"].Formula = "=CONCATENATE(\"项目名称:\",项目信息!B5)";
+                    // H5 单元格绑定报价序号连接公式
+                    catSheet.Range["H5"].Formula = "=CONCATENATE(\"报价序号:\",项目信息!B7)";
+                }
+                catch { }
+
+                // 3. 挂载 A5 单元格反向超链接，跳回【项目信息】当前分类汇总行 A 列
+                SetCategorySheetBackHyperlink(targetWb, categorySheetName, targetInfoRow);
+
+                // 4. 设置顶部汇总表合计行 F 列台数智能联动公式
+                if (totRow > 0)
+                {
+                    try
+                    {
+                        // 联动项目信息表 H 列属性，箱变则自动赋值 1，常规柜为空
+                        catSheet.Range[$"F{totRow}"].Formula = $"=IF(项目信息!H{targetInfoRow}=\"箱变\",1,\"\")";
+                    }
+                    catch { }
+                }
+
+                // 5. 动态探测表尾报价人所在物理行 (在 totRow 与首柜明细行之间)
+                int quoterRow = -1;
+                // 报价人扫描起始行在合计行下方
+                int startScanQuoter = totRow > 0 ? totRow + 1 : 36;
+                // 报价人扫描终止行在首台明细行上方
+                int endScanQuoter = minDetRow > 0 && minDetRow != int.MaxValue ? minDetRow - 1 : startScanQuoter + 10;
+
+                if (endScanQuoter >= startScanQuoter)
+                {
+                    try
+                    {
+                        // 规则 7: 内存二维数组读取 A 列至 B 列检索“报价人”关键字
+                        dynamic qRng = catSheet.Range[catSheet.Cells[startScanQuoter, 1], catSheet.Cells[endScanQuoter, 2]];
+                        object[,]? qArr = qRng.Value2 as object[,];
+                        if (qArr != null)
+                        {
+                            // 遍历扫描区域行
+                            int qRows = qArr.GetLength(0);
+                            for (int qi = 1; qi <= qRows; qi++)
+                            {
+                                // 获取第 1 列和第 2 列文本
+                                string c1 = Convert.ToString(qArr[qi, 1])?.Trim() ?? "";
+                                string c2 = Convert.ToString(qArr[qi, 2])?.Trim() ?? "";
+                                // 命中报价人关键字
+                                if (c1.Contains("报价人") || c2.Contains("报价人"))
+                                {
+                                    quoterRow = startScanQuoter + qi - 1;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                // 若未在中间探测到，尝试在 minDetRow - 4 基准位置校验
+                if (quoterRow <= 0 && minDetRow > 5)
+                {
+                    quoterRow = minDetRow - 4;
+                }
+
+                // 6. 若定位到有效报价人行，回填联动公式
+                if (quoterRow > 0)
+                {
+                    try
+                    {
+                        // 报价人姓名连接公式
+                        catSheet.Range[$"A{quoterRow}"].Formula = "=CONCATENATE(\"报价人：\",项目信息!B8)";
+                        // 创建日期连接公式
+                        catSheet.Range[$"H{quoterRow}"].Formula = "=项目信息!B9";
+                        // 企业单位名称落款公式
+                        catSheet.Range[$"A{quoterRow + 1}"].Formula = "=T(项目信息!$B$22)";
+                        // 企业英文名称落款公式
+                        catSheet.Range[$"A{quoterRow + 2}"].Formula = "=T(项目信息!$B$23)";
+                    }
+                    catch { }
+                }
+            }
+            catch (Exception exAlignSheet)
+            {
+                // 记录自愈分类表自身公式异常日志
+                LogHelper.WriteLog($"[AlignCategorySheetToProjectInfo] 异常: {exAlignSheet.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 对齐单个分类工作表与【项目信息】主表汇总行
+        /// 若在【项目信息】中未登记则在小计前插入新行并注册，若已登记则校准 A~H 公式及正反向超链接
+        /// </summary>
+        /// <param name="targetWb">目标工作簿 COM 实例</param>
+        /// <param name="categorySheetName">分类工作表名称</param>
+        public static void AlignProjectInfoCategory(dynamic targetWb, string categorySheetName)
+        {
+            // 参数有效性校验
+            if (targetWb == null || string.IsNullOrWhiteSpace(categorySheetName)) return;
+
+            try
+            {
+                // 尝试提取【项目信息】工作表
                 dynamic infoSheet = null;
                 try { infoSheet = targetWb.Sheets["项目信息"]; } catch { }
                 if (infoSheet == null) return;
+
+                // 尝试提取目标分类工作表
+                dynamic catSheet = null;
+                try { catSheet = targetWb.Sheets[categorySheetName]; } catch { }
+                if (catSheet == null) return;
+
+                // 读取配置中分类汇总起始物理行号与最大扫描行数
+                var cfg = ConfigManager.Instance.Current.Excel;
+                int startRow = cfg.ProjectInfoCategorySummaryStartRow;
+                int maxScan = cfg.ProjectInfoCategorySummaryMaxScanRows;
+                int headerRowIndex = startRow - 1;
+
+                // 寻找该分类表在【项目信息】中的对应行或空闲行
+                int targetRow = -1;
+                int subtotalRow = -1;
+
+                // 扫描项目信息分类汇总区
+                for (int r = startRow; r < startRow + maxScan; r++)
+                {
+                    // 读取 B 列单元格值与公式
+                    string cellBVal = Convert.ToString(infoSheet.Cells[r, 2].Value)?.Trim() ?? "";
+                    string cellBFormula = Convert.ToString(infoSheet.Cells[r, 2].Formula)?.Trim() ?? "";
+
+                    // 若命中“小计”行，记录小计物理行号并终止向下扫描
+                    if (cellBVal.Contains("小计"))
+                    {
+                        subtotalRow = r;
+                        break;
+                    }
+
+                    // 1. 判断是否直接匹配分类名称
+                    if (string.Equals(cellBVal, categorySheetName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        targetRow = r;
+                        break;
+                    }
+
+                    // 2. 检查 A 列或 B 列超链接 SubAddress 是否指向该分类表
+                    try
+                    {
+                        dynamic aCell = infoSheet.Cells[r, 1];
+                        if (aCell.Hyperlinks != null && aCell.Hyperlinks.Count > 0)
+                        {
+                            string subAddr = Convert.ToString(aCell.Hyperlinks[1].SubAddress) ?? "";
+                            if (subAddr.Contains($"'{categorySheetName}'") || subAddr.Contains($"{categorySheetName}!"))
+                            {
+                                targetRow = r;
+                                break;
+                            }
+                        }
+                    }
+                    catch { }
+
+                    // 3. 检查 B 列公式是否包含该表名
+                    if (cellBFormula.Contains($"'{categorySheetName}'!") || cellBFormula.Contains($"{categorySheetName}!"))
+                    {
+                        targetRow = r;
+                        break;
+                    }
+
+                    // 4. 若遇到空白行且尚无目标行，且未记录首个可用空白行
+                    if (string.IsNullOrEmpty(cellBVal) && targetRow == -1)
+                    {
+                        // 预选该空白行
+                        targetRow = r;
+                    }
+                }
+
+                // 若未在既有行中找到，且已检测到小计行：在小计行前插入一行
+                if (targetRow == -1 && subtotalRow > 0)
+                {
+                    // 在小计行前插入物理行
+                    infoSheet.Rows[subtotalRow].Insert(-4121);
+                    targetRow = subtotalRow;
+                }
+                else if (targetRow == -1)
+                {
+                    // 若连小计行都未探测到，直接采用 startRow 兜底
+                    targetRow = startRow;
+                }
+
+                // 动态探测该分类表顶部汇总表的三元组行 (显式传 object 避免 DLR 动态分派)
+                (int catSubtotalRow, int totRow, int minDetRow) = FindCategorySheetTopSummaryRows((object)catSheet);
+                if (totRow <= 0)
+                {
+                    // 规则 9: 未探测到合计行直接前端报错提醒，杜绝假兜底导致公式引用错误
+                    string errMsg = $"分类表【{categorySheetName}】顶部汇总区未找到【合计】行，无法计算并对齐主表公式！请先检查规范表格。";
+                    LogHelper.WriteLog($"[AlignProjectInfoCategory] {errMsg}");
+                    System.Windows.Forms.MessageBox.Show(errMsg, "分类表格式异常", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // 1. 规范化 A 列：挂载超链接指向分类表 A1，并写入序号公式
+                try
+                {
+                    infoSheet.Hyperlinks.Add(
+                        Anchor: infoSheet.Range[$"A{targetRow}"],
+                        Address: "",
+                        SubAddress: $"'{categorySheetName}'!A1",
+                        ScreenTip: "点击进入本分类报价清单" // --硬编码: 屏幕提示文本--
+                    );
+                    // 写入序号公式
+                    infoSheet.Cells[targetRow, 1].Formula = $"=ROW()-ROW(A${headerRowIndex})";
+                }
+                catch { }
+
+                // 2. 规范化 B 列：删除残留超链接，写入动态工作表名称公式
+                try
+                {
+                    infoSheet.Range[$"B{targetRow}"].Hyperlinks.Delete();
+                }
+                catch { }
+                // 写入动态工作表名公式 --硬编码: Excel公式函数名--
+                infoSheet.Cells[targetRow, 2].Formula = $"=MID(CELL(\"filename\",'{categorySheetName}'!$A$1),FIND(\"]\",CELL(\"filename\",'{categorySheetName}'!$A$1))+1,31)";
+
+                // 3. 规范化 C~H 列联动公式
+                try
+                {
+                    // 确定小计行物理行号 (动态适配，若无小计行退至合计行)
+                    int subRow = catSubtotalRow > 0 ? catSubtotalRow : totRow;
+                    // C 列数量公式：动态直连 totRow 与 subRow
+                    infoSheet.Cells[targetRow, 3].Formula = $"=IF(H{targetRow}=\"箱变\",'{categorySheetName}'!F{totRow},'{categorySheetName}'!F{subRow}*IF('{categorySheetName}'!F{totRow}=\"\",1,'{categorySheetName}'!F{totRow}))";
+                    // D 列销售总价公式：动态直连 H{totRow}
+                    infoSheet.Cells[targetRow, 4].Formula = $"=ROUND('{categorySheetName}'!H{totRow},2)";
+                    // E 列成本总价公式：动态直连 J{totRow}
+                    infoSheet.Cells[targetRow, 5].Formula = $"=ROUND('{categorySheetName}'!J{totRow},2)";
+                    // F 列毛利公式
+                    infoSheet.Cells[targetRow, 6].Formula = $"=ROUND((D{targetRow}-E{targetRow}),2)";
+                    // G 列毛利率公式 (防除以 0 保护)
+                    infoSheet.Cells[targetRow, 7].Formula = $"=IF(D{targetRow}=0,0,F{targetRow}/D{targetRow})";
+                    // H 列属性判断公式 (箱变/常规)
+                    infoSheet.Cells[targetRow, 8].Formula = $"=IF(OR(ISNUMBER(FIND(\"箱变\",B{targetRow}))=TRUE,ISNUMBER(FIND(\"欧变\",B{targetRow}))=TRUE,ISNUMBER(FIND(\"美变\",B{targetRow}))=TRUE,ISNUMBER(FIND(\"KVA\",UPPER(B{targetRow})))=TRUE,ISNUMBER(FIND(\"箱式变电\",B{targetRow}))=TRUE),\"箱变\",\"常规\")";
+                }
+                catch { }
+
+                // 4. 双向自愈：同步规范化分类明细表内部关联【项目信息】的全部表头、合计行与表尾公式及反向超链接
+                AlignCategorySheetToProjectInfo(targetWb, catSheet, categorySheetName, targetRow, totRow, minDetRow);
+
+                // 5. 强制刷新项目分类白名单缓存
+                Tool.InvalidateProjectCategorySheetCache();
+            }
+            catch (Exception ex)
+            {
+                // 记录对齐单表异常日志
+                LogHelper.WriteLog($"[AlignProjectInfoCategory] 异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 全量深度双向对齐【项目信息】主表与工作簿中的所有分类工作表
+        /// 1. 扫描工作簿中所有非保留分类表
+        /// 2. 识别并整行物理删除【项目信息】中的孤立死链残留行与 #REF! 错误行
+        /// 3. 为未登记的有效分类表在小计前插入新行并注册
+        /// 4. 全量规范化每一行的 A~H 公式、正向超链接与分类表 A5 反向超链接
+        /// 5. 刷新小计行包裹范围与内存白名单缓存
+        /// </summary>
+        /// <param name="targetWb">目标工作簿 COM 实例</param>
+        /// <returns>成功对齐的分类表总数</returns>
+        public static int AlignProjectInfoAllCategories(dynamic targetWb)
+        {
+            // 校验工作簿入参有效性
+            if (targetWb == null) return 0;
+
+            try
+            {
+                // 尝试获取【项目信息】工作表
+                dynamic infoSheet = null;
+                try { infoSheet = targetWb.Sheets["项目信息"]; } catch { }
+                if (infoSheet == null) return 0;
+
+                // 收集工作簿中现存的所有有效分类工作表名称 (按物理标签顺序，排除系统保留表)
+                var existingCategorySheets = new List<string>();
+                var existingSheetMap = new Dictionary<string, dynamic>(StringComparer.OrdinalIgnoreCase);
+                foreach (dynamic ws in targetWb.Worksheets)
+                {
+                    string wsName = Convert.ToString(ws.Name)?.Trim() ?? string.Empty;
+                    // 排除系统保留与报表工作表
+                    if (!string.IsNullOrWhiteSpace(wsName) && !Tool.IsReservedOrReportSheet(wsName))
+                    {
+                        existingCategorySheets.Add(wsName);
+                        existingSheetMap[wsName] = ws;
+                    }
+                }
 
                 // 读取配置中分类汇总起始物理行号与最大扫描数
                 var cfg = ConfigManager.Instance.Current.Excel;
@@ -1932,157 +2494,209 @@ namespace ExcelAddInDemo
                 int maxScan = cfg.ProjectInfoCategorySummaryMaxScanRows;
                 int headerRowIndex = startRow - 1;
 
-                // 获取工作簿中所有现存的分类工作表名称集合 (排除系统保留表)
-                var existingCategorySheets = new List<string>();
-                foreach (dynamic ws in targetWb.Worksheets)
+                // 记录已在【项目信息】中匹配到物理行的分类表名称
+                var matchedSheets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                // 记录待整行物理删除的无效/死链行号列表
+                var rowsToDelete = new List<int>();
+
+                // 第一阶段：扫描现有分类汇总行，标记失效行与有效行
+                int currentSubtotalRow = -1;
+                for (int r = startRow; r < startRow + maxScan; r++)
                 {
-                    string wsName = Convert.ToString(ws.Name)?.Trim() ?? string.Empty;
-                    // 排除系统辅助工作表 --硬编码: 系统辅助工作表名--
-                    if (!string.Equals(wsName, "项目信息", StringComparison.OrdinalIgnoreCase) &&
-                        !string.Equals(wsName, "封面", StringComparison.OrdinalIgnoreCase) &&
-                        !string.Equals(wsName, "元件汇总表", StringComparison.OrdinalIgnoreCase))
+                    // 读取 B 列单元格值、文本与公式
+                    string cellBVal = Convert.ToString(infoSheet.Cells[r, 2].Value)?.Trim() ?? "";
+                    string cellBFormula = Convert.ToString(infoSheet.Cells[r, 2].Formula)?.Trim() ?? "";
+                    string cellBText = "";
+                    try { cellBText = Convert.ToString(infoSheet.Cells[r, 2].Text)?.Trim() ?? ""; } catch { }
+
+                    // 若命中“小计”行，记录小计行号并停止扫描
+                    if (cellBVal.Contains("小计") || cellBText.Contains("小计"))
                     {
-                        existingCategorySheets.Add(wsName);
+                        currentSubtotalRow = r;
+                        break;
+                    }
+
+                    // 检查是否包含 #REF! 断链错误
+                    bool isRefError = cellBVal.Contains("#REF") || cellBFormula.Contains("#REF") || cellBText.Contains("#REF") ||
+                                      cellBVal.StartsWith("#") || cellBVal == "-2146826288";
+
+                    // 尝试从该行匹配对应的现存分类表
+                    string matchedSheetName = string.Empty;
+                    if (!string.IsNullOrEmpty(cellBVal) && existingSheetMap.ContainsKey(cellBVal))
+                    {
+                        matchedSheetName = cellBVal;
+                    }
+                    else
+                    {
+                        // 尝试从 A 列超链接解析
+                        try
+                        {
+                            dynamic aCell = infoSheet.Cells[r, 1];
+                            if (aCell.Hyperlinks != null && aCell.Hyperlinks.Count > 0)
+                            {
+                                string subAddr = Convert.ToString(aCell.Hyperlinks[1].SubAddress) ?? "";
+                                matchedSheetName = ExtractSheetNameFromSubAddress(subAddr, existingCategorySheets);
+                            }
+                        }
+                        catch { }
+                    }
+
+                    // 若为 #REF! 错误或底表已不存在的死链行
+                    if (isRefError || (!string.IsNullOrEmpty(cellBVal) && string.IsNullOrEmpty(matchedSheetName)))
+                    {
+                        // 标记整行删除
+                        rowsToDelete.Add(r);
+                    }
+                    else if (!string.IsNullOrEmpty(matchedSheetName))
+                    {
+                        // 记录已匹配
+                        matchedSheets.Add(matchedSheetName);
                     }
                 }
 
-                // 若当前无有效分类表，直接返回
-                if (existingCategorySheets.Count == 0) return;
+                // 第二阶段：倒序整行物理删除所有失效/死链行 (自下而上删除，杜绝行号偏移)
+                for (int i = rowsToDelete.Count - 1; i >= 0; i--)
+                {
+                    try
+                    {
+                        infoSheet.Rows[rowsToDelete[i]].EntireRow.Delete();
+                    }
+                    catch { }
+                }
 
-                // 遍历扫描分类汇总区域
+                // 重新定位小计行号
+                currentSubtotalRow = -1;
                 for (int r = startRow; r < startRow + maxScan; r++)
                 {
-                    // 读取 B 列单元格的值、文本与公式
                     string cellBVal = Convert.ToString(infoSheet.Cells[r, 2].Value)?.Trim() ?? "";
-                    string cellBText = string.Empty;
+                    string cellBText = "";
                     try { cellBText = Convert.ToString(infoSheet.Cells[r, 2].Text)?.Trim() ?? ""; } catch { }
-                    string cellBFormula = Convert.ToString(infoSheet.Cells[r, 2].Formula)?.Trim() ?? "";
-
-                    // 读取 C 列单元格的文本辅助判断
-                    string cellCText = string.Empty;
-                    try { cellCText = Convert.ToString(infoSheet.Cells[r, 3].Text)?.Trim() ?? ""; } catch { }
-
-                    // 若遇到小计行，说明分类汇总数据区域已结束
-                    if (cellBVal.Contains("小计") || cellBText.Contains("小计")) break;
-
-                    // 判定是否为破坏性的 #REF! 错误或断链
-                    bool isRefError = cellBVal.Contains("#REF") || cellBFormula.Contains("#REF") || cellBText.Contains("#REF")
-                        || cellCText.Contains("#REF") || cellBVal == "-2146826288" || cellBVal.StartsWith("#");
-
-                    // 判断该行是否为有效分类行：尝试提取对应的分类表名
-                    string matchedCatName = string.Empty;
-
-                    // 1. 如果 B 列有现成的有效分类名称且匹配现存工作表
-                    if (!string.IsNullOrEmpty(cellBVal) && !cellBVal.StartsWith("#") && existingCategorySheets.Contains(cellBVal, StringComparer.OrdinalIgnoreCase))
+                    if (cellBVal.Contains("小计") || cellBText.Contains("小计"))
                     {
-                        matchedCatName = existingCategorySheets.First(s => string.Equals(s, cellBVal, StringComparison.OrdinalIgnoreCase));
+                        currentSubtotalRow = r;
+                        break;
                     }
+                }
 
-                    // 2. 若 B 列显示为 #NAME? 或无效，尝试从 A 列或 B 列既有超链接 SubAddress 中解析分类工作表
-                    if (string.IsNullOrEmpty(matchedCatName))
+                // 第三阶段：为尚未在【项目信息】中登记的有效分类表插入新行
+                foreach (string sheetName in existingCategorySheets)
+                {
+                    if (!matchedSheets.Contains(sheetName))
                     {
-                        // 检查 A 列单元格超链接
-                        dynamic aCell = infoSheet.Cells[r, 1];
-                        if (aCell.Hyperlinks != null && aCell.Hyperlinks.Count > 0)
+                        if (currentSubtotalRow > 0)
                         {
-                            string subAddr = Convert.ToString(aCell.Hyperlinks[1].SubAddress) ?? "";
-                            matchedCatName = ExtractSheetNameFromSubAddress(subAddr, existingCategorySheets);
-                        }
-
-                        // 检查 B 列单元格超链接
-                        if (string.IsNullOrEmpty(matchedCatName))
-                        {
-                            dynamic bCell = infoSheet.Cells[r, 2];
-                            if (bCell.Hyperlinks != null && bCell.Hyperlinks.Count > 0)
-                            {
-                                string subAddr = Convert.ToString(bCell.Hyperlinks[1].SubAddress) ?? "";
-                                matchedCatName = ExtractSheetNameFromSubAddress(subAddr, existingCategorySheets);
-                            }
-                        }
-
-                        // 3. 若仍未匹配且并非 #REF! 错误行，按物理顺序匹配现存分类工作表
-                        if (string.IsNullOrEmpty(matchedCatName) && !isRefError)
-                        {
-                            int catSeqIdx = r - startRow;
-                            if (catSeqIdx >= 0 && catSeqIdx < existingCategorySheets.Count)
-                            {
-                                matchedCatName = existingCategorySheets[catSeqIdx];
-                            }
+                            // 在小计行前插入一个物理行
+                            infoSheet.Rows[currentSubtotalRow].Insert(-4121);
+                            // 小计行物理后移
+                            currentSubtotalRow++;
                         }
                     }
+                }
 
-                    // 若未找到对应的分类表且单元格为空，说明到达空白区间，结束巡检
-                    if (string.IsNullOrEmpty(matchedCatName))
+                // 第四阶段：全量格式化并对齐每一个分类汇总行
+                int currentRow = startRow;
+                int alignedCount = 0;
+                foreach (string sheetName in existingCategorySheets)
+                {
+                    // 提取分类工作表 COM 实例
+                    if (!existingSheetMap.TryGetValue(sheetName, out dynamic catSheet) || catSheet == null) continue;
+
+                    // 动态探测该分类表的顶部汇总三元组行 (显式传 object 避免 DLR 动态分派)
+                    (int catSubtotalRow, int totRow, int minDetRow) = FindCategorySheetTopSummaryRows((object)catSheet);
+                    if (totRow <= 0)
                     {
-                        // 若该行包含破坏性的 #REF! 错误且工作簿中已无匹配分类表，直接整行物理删除该废弃断链行自愈
-                        if (isRefError)
-                        {
-                            try
-                            {
-                                infoSheet.Rows[r].EntireRow.Delete();
-                                r--;
-                                maxScan--;
-                            }
-                            catch { }
-                            continue;
-                        }
-
-                        if (string.IsNullOrEmpty(cellBVal) && string.IsNullOrEmpty(cellBText)) break;
+                        // 规则 9: 未探测到合计行直接前端报错提醒并跳过，杜绝假兜底导致公式引用错误
+                        string errMsg = $"分类表【{sheetName}】顶部汇总区未找到【合计】行，跳过对齐！请先检查规范表格。";
+                        LogHelper.WriteLog($"[AlignProjectInfoAllCategories] {errMsg}");
+                        System.Windows.Forms.MessageBox.Show(errMsg, "分类表格式异常", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                        currentRow++;
                         continue;
                     }
 
-                    // 4. 规范化 A 列：挂载超链接指向 matchedCatName，并确保公式为 =ROW()-ROW(A$28)
+                    // 1. 规范化 A 列序号公式与正向超链接
                     try
                     {
-                        // 挂载超链接并设置屏幕提示 --硬编码: 屏幕提示文本--
                         infoSheet.Hyperlinks.Add(
-                            Anchor: infoSheet.Range[$"A{r}"],
+                            Anchor: infoSheet.Range[$"A{currentRow}"],
                             Address: "",
-                            SubAddress: $"'{matchedCatName}'!A1",
-                            ScreenTip: "点击进入本分类报价清单"
+                            SubAddress: $"'{sheetName}'!A1",
+                            ScreenTip: "点击进入本分类报价清单" // --硬编码: 屏幕提示文本--
                         );
-                        // 写入动态序号公式
-                        infoSheet.Cells[r, 1].Formula = $"=ROW()-ROW(A${headerRowIndex})";
+                        infoSheet.Cells[currentRow, 1].Formula = $"=ROW()-ROW(A${headerRowIndex})";
                     }
                     catch { }
 
-                    // 5. 规范化 B 列：坚决删除超链接，写入动态工作表名称公式，彻底消除蓝字下划线与 #NAME?
+                    // 2. 规范化 B 列工作表名动态公式 (彻底清理超链接)
                     try
                     {
-                        // 删除超链接
-                        infoSheet.Range[$"B{r}"].Hyperlinks.Delete();
+                        infoSheet.Range[$"B{currentRow}"].Hyperlinks.Delete();
                     }
                     catch { }
-                    // 写入指向匹配分类表的动态工作表名公式 --硬编码: Excel公式函数名--
-                    infoSheet.Cells[r, 2].Formula = $"=MID(CELL(\"filename\",'{matchedCatName}'!$A$1),FIND(\"]\",CELL(\"filename\",'{matchedCatName}'!$A$1))+1,31)";
+                    infoSheet.Cells[currentRow, 2].Formula = $"=MID(CELL(\"filename\",'{sheetName}'!$A$1),FIND(\"]\",CELL(\"filename\",'{sheetName}'!$A$1))+1,31)";
 
-                    // 6. 确保 C~H 列公式有效对齐
+                    // 3. 规范化 C~H 列动态联动公式
                     try
                     {
-                        // C 列箱柜数量公式
-                        infoSheet.Cells[r, 3].Formula = $"=IF(H{r}=\"箱变\",'{matchedCatName}'!F35,'{matchedCatName}'!F31*IF('{matchedCatName}'!F35=\"\",1,'{matchedCatName}'!F35))";
-                        // D 列总价公式
-                        infoSheet.Cells[r, 4].Formula = $"=ROUND('{matchedCatName}'!H35,2)";
-                        // E 列成本总价公式
-                        infoSheet.Cells[r, 5].Formula = $"=ROUND('{matchedCatName}'!J35,2)";
-                        // F 列毛利公式
-                        infoSheet.Cells[r, 6].Formula = $"=ROUND((D{r}-E{r}),2)";
-                        // G 列毛利率公式
-                        infoSheet.Cells[r, 7].Formula = $"=IF(D{r}=0,0,F{r}/D{r})";
-                        // H 列分类属性公式
-                        infoSheet.Cells[r, 8].Formula = $"=IF(OR(ISNUMBER(FIND(\"箱变\",B{r}))=TRUE,ISNUMBER(FIND(\"欧变\",B{r}))=TRUE,ISNUMBER(FIND(\"美变\",B{r}))=TRUE,ISNUMBER(FIND(\"KVA\",UPPER(B{r})))=TRUE,ISNUMBER(FIND(\"箱式变电\",B{r}))=TRUE),\"箱变\",\"常规\")";
-
-                        // 7. 同步规范化分类表 A5 反向超链接，精准跳转回【项目信息】当前物理汇总行 (选项 A)
-                        SetCategorySheetBackHyperlink(targetWb, matchedCatName, r);
+                        // 确定小计行物理行号 (动态适配，若无小计行退至合计行)
+                        int subRow = catSubtotalRow > 0 ? catSubtotalRow : totRow;
+                        infoSheet.Cells[currentRow, 3].Formula = $"=IF(H{currentRow}=\"箱变\",'{sheetName}'!F{totRow},'{sheetName}'!F{subRow}*IF('{sheetName}'!F{totRow}=\"\",1,'{sheetName}'!F{totRow}))";
+                        infoSheet.Cells[currentRow, 4].Formula = $"=ROUND('{sheetName}'!H{totRow},2)";
+                        infoSheet.Cells[currentRow, 5].Formula = $"=ROUND('{sheetName}'!J{totRow},2)";
+                        infoSheet.Cells[currentRow, 6].Formula = $"=ROUND((D{currentRow}-E{currentRow}),2)";
+                        infoSheet.Cells[currentRow, 7].Formula = $"=IF(D{currentRow}=0,0,F{currentRow}/D{currentRow})";
+                        infoSheet.Cells[currentRow, 8].Formula = $"=IF(OR(ISNUMBER(FIND(\"箱变\",B{currentRow}))=TRUE,ISNUMBER(FIND(\"欧变\",B{currentRow}))=TRUE,ISNUMBER(FIND(\"美变\",B{currentRow}))=TRUE,ISNUMBER(FIND(\"KVA\",UPPER(B{currentRow})))=TRUE,ISNUMBER(FIND(\"箱式变电\",B{currentRow}))=TRUE),\"箱变\",\"常规\")";
                     }
                     catch { }
+
+                    // 4. 双向自愈：同步规范化分类明细表内部关联【项目信息】的全部表头、合计行与表尾公式及反向超链接
+                    AlignCategorySheetToProjectInfo(targetWb, catSheet, sheetName, currentRow, totRow, minDetRow);
+
+                    // 递增物理行与计数
+                    currentRow++;
+                    alignedCount++;
                 }
+
+                // 第五阶段：若分类表后方有多余的空白行或死行直到小计行，清理多余空行保持紧凑
+                if (currentSubtotalRow > currentRow)
+                {
+                    for (int r = currentSubtotalRow - 1; r >= currentRow; r--)
+                    {
+                        try
+                        {
+                            string checkB = Convert.ToString(infoSheet.Cells[r, 2].Value)?.Trim() ?? "";
+                            if (string.IsNullOrEmpty(checkB) || checkB.StartsWith("#"))
+                            {
+                                infoSheet.Rows[r].EntireRow.Delete();
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
+                // 第六阶段：刷新项目分类工作表白名单缓存
+                Tool.InvalidateProjectCategorySheetCache();
+
+                // 返回成功对齐的分类表总数
+                return alignedCount;
             }
             catch (Exception ex)
             {
-                // 记录自愈异常日志
-                LogHelper.WriteLog($"规范化分类汇总超链接与公式异常: {ex.Message}");
+                // 记录全局对齐异常日志
+                LogHelper.WriteLog($"[AlignProjectInfoAllCategories] 全局对齐异常: {ex.Message}");
+                return 0;
             }
+        }
+
+        /// <summary>
+        /// 公共通用方法：自愈并规范化【项目信息】工作表中的分类汇总超链接与公式结构
+        /// 内部全量委托 AlignProjectInfoAllCategories 深度双向对齐
+        /// </summary>
+        /// <param name="targetWb">目标工作簿 COM 实例</param>
+        public static void NormalizeCategorySummaryLinks(dynamic targetWb)
+        {
+            if (targetWb == null) return;
+            // 全面调用全量双向对齐方法
+            AlignProjectInfoAllCategories(targetWb);
         }
 
         /// <summary>
