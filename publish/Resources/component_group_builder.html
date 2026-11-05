@@ -236,6 +236,58 @@
       cursor: not-allowed;
     }
 
+    /* 手动位次徽标样式 (支持点击快速弹窗修改序号) */
+    .rule-order-badge {
+      font-size: 11px;
+      /* 徽标文字颜色为主题绿 */
+      color: #009688;
+      /* 浅绿色背景 */
+      background: #e0f2f1;
+      padding: 1px 5px;
+      /* 圆角样式 */
+      border-radius: 3px;
+      margin-right: 2px;
+      /* 鼠标指针为手型 */
+      cursor: pointer;
+      font-weight: 600;
+      /* 平滑过渡效果 */
+      transition: all 0.2s;
+      user-select: none;
+    }
+
+    /* 悬停高亮效果 */
+    .rule-order-badge:hover {
+      /* 背景翻转为深主题绿 */
+      background: #009688;
+      /* 文字翻转为白色 */
+      color: #ffffff;
+    }
+
+    /* 拖拽中的卡片半透明虚线样式 */
+    .rule-card-item.is-dragging {
+      /* 拖拽时降低不透明度 */
+      opacity: 0.45;
+      /* 边框变为虚线 */
+      border-style: dashed;
+      border-color: #009688;
+    }
+
+    /* 拖拽经过目标项的高亮提示框 */
+    .rule-card-item.drag-over {
+      /* 边框颜色高亮 */
+      border-color: #009688;
+      /* 外发光阴影指示放置位置 */
+      box-shadow: 0 0 0 2px rgba(0, 150, 136, 0.35);
+      /* 轻微上浮动效 */
+      transform: translateY(-2px);
+    }
+
+    /* 手动排序弹窗表格样式 */
+    .sort-table tr:hover {
+      /* 鼠标悬停行浅绿高亮 */
+      background-color: #f0fdf4;
+    }
+
     /* 2. 中间主编辑器面板 (自适应伸缩) */
     .editor-panel {
       flex: 1;
@@ -607,54 +659,102 @@
       <div class="sidebar-panel">
         <div class="sidebar-header">
           <div class="sidebar-header-top">
+            <!-- 规则库标题与计数 -->
             <span style="font-size: 13px; font-weight: 600; color: #1e293b;">
+              <!-- 列表图标 -->
               <i class="fa-solid fa-list-check" style="color: #009688; margin-right: 6px;"></i>规则库 ({{ filteredRules.length }})
             </span>
-            <el-button size="small" type="primary" plain @click="addNewRule">
-              <i class="fa-solid fa-plus" style="margin-right: 4px;"></i>新建规则
-            </el-button>
+            <!-- 顶部操作按钮组 -->
+            <div style="display: flex; gap: 4px;">
+              <!-- 手动排序对话框入口按钮 -->
+              <el-button size="small" type="warning" plain @click="openSortDialog" style="padding: 5px 6px;" title="打开手动排序窗口全面调整顺序">
+                <!-- 排序图标 -->
+                <i class="fa-solid fa-arrow-down-up-across-line" style="margin-right: 2px;"></i>排序
+              </el-button>
+              <!-- 新建规则按钮 -->
+              <el-button size="small" type="primary" plain @click="addNewRule" style="padding: 5px 6px;">
+                <!-- 加号图标 -->
+                <i class="fa-solid fa-plus" style="margin-right: 2px;"></i>新建
+              </el-button>
+            </div>
           </div>
+          <!-- 关键字快速搜索输入框 -->
           <el-input v-model="searchKeyword" size="small" placeholder="搜索规则名称 / 目标组..." clearable>
+            <!-- 搜索框前缀放大镜图标 -->
             <template #prefix>
               <i class="fa-solid fa-magnifying-glass" style="color: #94a3b8;"></i>
             </template>
           </el-input>
         </div>
 
+        <!-- 规则卡片滚动容器 -->
         <div class="rule-list-container">
+          <!-- 规则卡片项 (支持原生拖拽排序) -->
           <div
             v-for="(rule, index) in filteredRules"
             :key="rule.id"
             class="rule-card-item"
-            :class="{ active: currentRule && currentRule.id === rule.id }"
+            :class="{ 
+              active: currentRule && currentRule.id === rule.id,
+              'drag-over': dragOverIndex === index,
+              'is-dragging': draggingRuleId === rule.id
+            }"
+            draggable="true"
+            @dragstart="onDragStart($event, rule, index)"
+            @dragover.prevent="onDragOver($event, index)"
+            @dragleave="onDragLeave($event, index)"
+            @drop="onDrop($event, index)"
+            @dragend="onDragEnd"
             @click="selectRule(rule)"
           >
+            <!-- 卡片顶部信息与操作行 -->
             <div class="rule-card-top">
+              <!-- 左侧：拖拽手柄、开关与规则名称 -->
               <div class="rule-card-name" :title="rule.name">
+                <!-- 拖拽抓手图标 -->
+                <i class="fa-solid fa-grip-vertical" style="color: #94a3b8; cursor: grab; font-size: 11px; margin-right: 2px;" title="按住拖拽排序"></i>
+                <!-- 规则启用开关 -->
                 <el-switch
                   v-model="rule.enabled"
                   size="small"
                   @click.stop
                   style="--el-switch-on-color: #009688;"
                 ></el-switch>
+                <!-- 规则名称文本 -->
                 <span style="margin-left: 4px;">{{ rule.name || '未命名规则' }}</span>
               </div>
+              <!-- 右侧：手动点击指定位次徽标与微调按钮 -->
               <div style="display: flex; align-items: center; gap: 4px;">
-                <span style="font-size: 11px; color: #94a3b8; margin-right: 2px;">#{{ index + 1 }}</span>
+                <!-- 点击可直接输入指定位次数字的徽标 -->
+                <span 
+                  class="rule-order-badge" 
+                  @click.stop="quickChangeOrder(rule, index)" 
+                  title="点击手动输入指定位次序号"
+                >#{{ index + 1 }}</span>
+                <!-- 上移按钮 (微调) -->
                 <div class="order-btn" :class="{ disabled: index === 0 }" @click.stop="moveRuleUp(index)" title="上移(提升扣减优先级)">
+                  <!-- 向上箭头 -->
                   <i class="fa-solid fa-chevron-up"></i>
                 </div>
+                <!-- 下移按钮 (微调) -->
                 <div class="order-btn" :class="{ disabled: index === filteredRules.length - 1 }" @click.stop="moveRuleDown(index)" title="下移(降低扣减优先级)">
+                  <!-- 向下箭头 -->
                   <i class="fa-solid fa-chevron-down"></i>
                 </div>
               </div>
             </div>
+            <!-- 卡片次要信息行 (条件摘要与目标组) -->
             <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+              <!-- 条件摘要展示 -->
               <div class="rule-card-expr" :title="getRuleSummary(rule)" style="flex: 1; display: flex; align-items: center; gap: 4px;">
+                <!-- 守卫标签 -->
                 <el-tag v-if="rule.guards && rule.guards.length > 0" size="small" type="warning" effect="plain" style="font-size: 10px; height: 16px; padding: 0 3px; border-radius: 2px;">守卫</el-tag>
+                <!-- 条件文本 -->
                 <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ getRuleSummary(rule) }}</span>
               </div>
+              <!-- 目标元件组名称 -->
               <div class="rule-card-target">
+                <!-- 组名文本 -->
                 <span>{{ rule.targetGroup || '未定组名' }}</span>
               </div>
             </div>
@@ -1196,6 +1296,104 @@
         </div>
       </div>
     </div>
+
+    <!-- 规则库手动排序管理弹窗 -->
+    <el-dialog
+      v-model="sortDialogVisible"
+      title="规则库优先级手动排序管理"
+      width="580px"
+      :close-on-click-modal="false"
+      append-to-body
+    >
+      <!-- 弹窗说明提示条 -->
+      <div style="font-size: 12px; color: #64748b; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+        <!-- 信息提示图标 -->
+        <i class="fa-solid fa-circle-info" style="color: #009688;"></i>
+        <!-- 提示文本 -->
+        <span>提示：直接修改位次数字即可调整顺序，或使用置顶/置底/上下移按钮。排名越前，扣减优先级越高。</span>
+      </div>
+      <!-- 排序表格可滚动容器 -->
+      <div style="max-height: 420px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px;">
+        <!-- 紧凑型排序表格 -->
+        <table class="sort-table" style="width: 100%; border-collapse: collapse; font-size: 12px;">
+          <thead>
+            <!-- 表头行 -->
+            <tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #475569; position: sticky; top: 0; z-index: 2;">
+              <!-- 位次列 -->
+              <th style="padding: 6px 8px; width: 65px; text-align: center;">位次</th>
+              <!-- 规则名称列 -->
+              <th style="padding: 6px 8px; text-align: left;">规则名称</th>
+              <!-- 目标元件组列 -->
+              <th style="padding: 6px 8px; width: 110px; text-align: left;">目标组</th>
+              <!-- 快捷操作列 -->
+              <th style="padding: 6px 8px; width: 140px; text-align: center;">快捷调序</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- 表格数据行循环 -->
+            <tr v-for="(rule, sIdx) in tempSortList" :key="rule.id" style="border-bottom: 1px solid #f1f5f9;">
+              <!-- 位次编辑单元格 -->
+              <td style="padding: 6px 8px; text-align: center;">
+                <!-- 可直接修改的位次数字输入框 -->
+                <el-input-number 
+                  v-model="rule.tempOrder" 
+                  :min="1" 
+                  :max="tempSortList.length" 
+                  size="small" 
+                  :controls="false"
+                  @change="onTempOrderChange(rule, sIdx)"
+                  style="width: 50px;"
+                />
+              </td>
+              <!-- 规则名称单元格 -->
+              <td style="padding: 6px 8px; font-weight: 500; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px;">
+                {{ rule.name }}
+              </td>
+              <!-- 目标元件组单元格 -->
+              <td style="padding: 6px 8px; color: #009688; font-weight: 600;">
+                {{ rule.targetGroup }}
+              </td>
+              <!-- 快捷调序按钮组单元格 -->
+              <td style="padding: 6px 8px; text-align: center;">
+                <div style="display: flex; align-items: center; justify-content: center; gap: 3px;">
+                  <!-- 置顶按钮 -->
+                  <el-button size="small" text type="primary" :disabled="sIdx === 0" @click="moveTempTop(sIdx)" title="置顶到第 1 位">
+                    <i class="fa-solid fa-angles-up"></i>
+                  </el-button>
+                  <!-- 上移按钮 -->
+                  <el-button size="small" text type="primary" :disabled="sIdx === 0" @click="moveTempUp(sIdx)" title="上移一位">
+                    <i class="fa-solid fa-angle-up"></i>
+                  </el-button>
+                  <!-- 下移按钮 -->
+                  <el-button size="small" text type="primary" :disabled="sIdx === tempSortList.length - 1" @click="moveTempDown(sIdx)" title="下移一位">
+                    <i class="fa-solid fa-angle-down"></i>
+                  </el-button>
+                  <!-- 置底按钮 -->
+                  <el-button size="small" text type="primary" :disabled="sIdx === tempSortList.length - 1" @click="moveTempBottom(sIdx)" title="置底到最后一位">
+                    <i class="fa-solid fa-angles-down"></i>
+                  </el-button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <!-- 弹窗底部操作栏 -->
+      <template #footer>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <!-- 还原初始顺序按钮 -->
+          <el-button size="small" @click="resetTempSort">还原初始顺序</el-button>
+          <div style="display: flex; gap: 8px;">
+            <!-- 取消关闭按钮 -->
+            <el-button size="small" @click="sortDialogVisible = false">取消</el-button>
+            <!-- 确定应用排序按钮 -->
+            <el-button size="small" type="primary" @click="applySortDialog" style="background-color: #009688; border-color: #009688;">
+              应用排序
+            </el-button>
+          </div>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 
   <script>
@@ -1236,6 +1434,14 @@
         const isExecuting = ref(false);
         // 批量生成动态进度对象
         const execProgress = ref({ percent: 0, statusText: '' });
+        // 手动排序弹窗显隐状态
+        const sortDialogVisible = ref(false);
+        // 手动排序弹窗临时工作列表
+        const tempSortList = ref([]);
+        // 当前正在拖拽的规则 ID
+        const draggingRuleId = ref(null);
+        // 当前拖拽悬停的目标卡片索引
+        const dragOverIndex = ref(-1);
 
         // 过滤后的规则列表
         const filteredRules = computed(() => {
@@ -1412,6 +1618,227 @@
             if (testComponents.value && testComponents.value.length > 0) {
               runSandboxTest();
             }
+          }
+        };
+
+        // 将规则精准移动到指定序号位置 (1-based 位次)
+        const moveRuleToPosition = (rule, targetPos) => {
+          // 查找该规则在原数组中的真实索引
+          const realIdx = config.value.rules.findIndex(r => r.id === rule.id);
+          // 若未找到或位置无变化则无需调整
+          if (realIdx === -1 || realIdx === targetPos - 1) return;
+          // 从原数组中移除该规则
+          const [removed] = config.value.rules.splice(realIdx, 1);
+          // 插入到新目标位次 (0-based 对应 targetPos - 1)
+          config.value.rules.splice(targetPos - 1, 0, removed);
+          // 重新从 1 到 N 刷新所有规则的 priority 优先级
+          config.value.rules.forEach((r, idx) => { r.priority = idx + 1; });
+          // 弹出操作成功提示
+          ElementPlus.ElMessage.success(`已将规则 [${rule.name}] 调整至第 ${targetPos} 位`);
+          // 若沙盒存在测试元件，自动重跑沙盒评估
+          if (testComponents.value && testComponents.value.length > 0) {
+            runSandboxTest();
+          }
+        };
+
+        // 点击卡片上的序号徽标，弹出输入框手动修改位次
+        const quickChangeOrder = (rule, filteredIndex) => {
+          // 当前位次 (1-based)
+          const currentPos = filteredIndex + 1;
+          // 规则总数量
+          const total = config.value.rules.length;
+          // 弹出数字输入对话框
+          ElementPlus.ElMessageBox.prompt(`请输入规则 [${rule.name}] 的新位次 (1 ~ ${total}):`, '手动设置位次', {
+            confirmButtonText: '确定调整',
+            cancelButtonText: '取消',
+            inputValue: currentPos.toString(),
+            inputPattern: /^[1-9]\d*$/,
+            inputErrorMessage: `请输入 1 到 ${total} 之间的正整数`
+          }).then(({ value }) => {
+            // 解析目标位次
+            let target = parseInt(value, 10);
+            // 兜底最小边界
+            if (isNaN(target) || target < 1) target = 1;
+            // 兜底最大边界
+            if (target > total) target = total;
+            // 执行位置移动
+            moveRuleToPosition(rule, target);
+          }).catch(() => {});
+        };
+
+        // 原生拖拽排序：开始拖拽
+        const onDragStart = (e, rule, index) => {
+          // 记录当前拖拽的规则 ID
+          draggingRuleId.value = rule.id;
+          // 设置拖拽数据传输载荷
+          e.dataTransfer.setData('text/plain', rule.id);
+          // 设置拖拽视觉效果为移动
+          e.dataTransfer.effectAllowed = 'move';
+        };
+
+        // 原生拖拽排序：悬停目标卡片上方
+        const onDragOver = (e, index) => {
+          // 更新悬停高亮索引
+          dragOverIndex.value = index;
+        };
+
+        // 原生拖拽排序：移出目标卡片
+        const onDragLeave = (e, index) => {
+          // 若移出的是当前目标索引，则清除高亮
+          if (dragOverIndex.value === index) {
+            dragOverIndex.value = -1;
+          }
+        };
+
+        // 原生拖拽排序：在目标位置释放
+        const onDrop = (e, targetFilteredIndex) => {
+          // 获取被拖拽的规则 ID
+          const ruleId = draggingRuleId.value || e.dataTransfer.getData('text/plain');
+          // 查找被拖拽的源规则
+          const rule = config.value.rules.find(r => r.id === ruleId);
+          // 查找目标卡片对应的规则实体
+          const targetRule = filteredRules.value[targetFilteredIndex];
+          // 校验有效性且并非自身
+          if (rule && targetRule && rule.id !== targetRule.id) {
+            // 获取源规则在原数组中的真实索引
+            const fromIndex = config.value.rules.findIndex(r => r.id === rule.id);
+            // 获取目标规则在原数组中的真实索引
+            const toIndex = config.value.rules.findIndex(r => r.id === targetRule.id);
+            // 从原数组移除源规则
+            const [moved] = config.value.rules.splice(fromIndex, 1);
+            // 插入至目标位置
+            config.value.rules.splice(toIndex, 0, moved);
+            // 重新刷新从 1 到 N 的 priority 优先级
+            config.value.rules.forEach((r, idx) => { r.priority = idx + 1; });
+            // 弹出提示
+            ElementPlus.ElMessage.success(`已将 [${rule.name}] 调整至第 ${toIndex + 1} 位`);
+            // 若沙盒存在数据则重新跑沙盒
+            if (testComponents.value && testComponents.value.length > 0) {
+              runSandboxTest();
+            }
+          }
+          // 清空拖拽状态
+          draggingRuleId.value = null;
+          dragOverIndex.value = -1;
+        };
+
+        // 原生拖拽排序：拖拽结束恢复状态
+        const onDragEnd = () => {
+          // 恢复拖拽 ID 为空
+          draggingRuleId.value = null;
+          // 恢复悬停目标索引
+          dragOverIndex.value = -1;
+        };
+
+        // 打开手动排序全局管理弹窗
+        const openSortDialog = () => {
+          // 深度复制一份规则清单供弹窗内独立编辑
+          tempSortList.value = (config.value.rules || []).map((r, idx) => ({
+            ...r,
+            tempOrder: idx + 1
+          }));
+          // 打开弹窗可见性
+          sortDialogVisible.value = true;
+        };
+
+        // 弹窗内：置顶某条规则
+        const moveTempTop = (idx) => {
+          // 校验是否已经在顶部
+          if (idx <= 0) return;
+          // 从当前位置移除
+          const [item] = tempSortList.value.splice(idx, 1);
+          // 插入到数组第 0 位
+          tempSortList.value.unshift(item);
+          // 刷新所有项的临时序号
+          tempSortList.value.forEach((r, i) => { r.tempOrder = i + 1; });
+        };
+
+        // 弹窗内：上移某条规则
+        const moveTempUp = (idx) => {
+          // 校验是否已经在最上方
+          if (idx <= 0) return;
+          // 交换两项位置
+          const temp = tempSortList.value[idx];
+          tempSortList.value[idx] = tempSortList.value[idx - 1];
+          tempSortList.value[idx - 1] = temp;
+          // 刷新所有项的临时序号
+          tempSortList.value.forEach((r, i) => { r.tempOrder = i + 1; });
+        };
+
+        // 弹窗内：下移某条规则
+        const moveTempDown = (idx) => {
+          // 校验是否已经在最下方
+          if (idx >= tempSortList.value.length - 1) return;
+          // 交换两项位置
+          const temp = tempSortList.value[idx];
+          tempSortList.value[idx] = tempSortList.value[idx + 1];
+          tempSortList.value[idx + 1] = temp;
+          // 刷新所有项的临时序号
+          tempSortList.value.forEach((r, i) => { r.tempOrder = i + 1; });
+        };
+
+        // 弹窗内：置底某条规则
+        const moveTempBottom = (idx) => {
+          // 校验是否已经在底部
+          if (idx >= tempSortList.value.length - 1) return;
+          // 从当前位置移除
+          const [item] = tempSortList.value.splice(idx, 1);
+          // 插入到数组末尾
+          tempSortList.value.push(item);
+          // 刷新所有项的临时序号
+          tempSortList.value.forEach((r, i) => { r.tempOrder = i + 1; });
+        };
+
+        // 弹窗内：输入框修改位次
+        const onTempOrderChange = (rule, oldIdx) => {
+          // 提取输入的目标位次
+          let target = parseInt(rule.tempOrder, 10);
+          // 校验最小位次边界
+          if (isNaN(target) || target < 1) target = 1;
+          // 校验最大位次边界
+          if (target > tempSortList.value.length) target = tempSortList.value.length;
+          // 目标索引
+          const targetIdx = target - 1;
+          // 若索引无变化直接返回
+          if (targetIdx === oldIdx) return;
+          // 从原位置移除
+          const [item] = tempSortList.value.splice(oldIdx, 1);
+          // 插入到新目标索引处
+          tempSortList.value.splice(targetIdx, 0, item);
+          // 重新整理全部序号
+          tempSortList.value.forEach((r, i) => { r.tempOrder = i + 1; });
+        };
+
+        // 弹窗内：还原初始顺序
+        const resetTempSort = () => {
+          // 重新从 config.rules 生成初始位次
+          tempSortList.value = (config.value.rules || []).map((r, idx) => ({
+            ...r,
+            tempOrder: idx + 1
+          }));
+          // 提示已还原
+          ElementPlus.ElMessage.info('已还原为打开弹窗时的顺序');
+        };
+
+        // 弹窗内：应用排序
+        const applySortDialog = () => {
+          // 将弹窗中的规则列表应用回 config.rules
+          config.value.rules = tempSortList.value.map((r, idx) => {
+            // 复制规则并更新 priority
+            const copy = { ...r };
+            // 清理临时字段
+            delete copy.tempOrder;
+            // 重新设置优先级为最新序号
+            copy.priority = idx + 1;
+            return copy;
+          });
+          // 关闭弹窗
+          sortDialogVisible.value = false;
+          // 提示成功
+          ElementPlus.ElMessage.success('已成功应用规则库新排序！');
+          // 若沙盒有测试元件，触发重新评估
+          if (testComponents.value && testComponents.value.length > 0) {
+            runSandboxTest();
           }
         };
 
@@ -1814,6 +2241,29 @@
           deleteCurrentRule,
           moveRuleUp,
           moveRuleDown,
+          // 手动移动位次
+          moveRuleToPosition,
+          // 快捷修改位次
+          quickChangeOrder,
+          // 拖拽排序事件与状态
+          onDragStart,
+          onDragOver,
+          onDragLeave,
+          onDrop,
+          onDragEnd,
+          draggingRuleId,
+          dragOverIndex,
+          // 手动排序弹窗状态与方法
+          sortDialogVisible,
+          tempSortList,
+          openSortDialog,
+          moveTempTop,
+          moveTempUp,
+          moveTempDown,
+          moveTempBottom,
+          onTempOrderChange,
+          resetTempSort,
+          applySortDialog,
           addGuardCondition,
           removeGuardCondition,
           addConditionNode,

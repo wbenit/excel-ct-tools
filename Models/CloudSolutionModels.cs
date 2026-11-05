@@ -340,7 +340,7 @@ namespace ExcelAddInDemo.Models
         // 回路数倍增器数值 (默认 1 个回路)
         public int LoopMultiplier { get; set; } = 1;
 
-        // 插入目标方式 ("currentCabinet": 写入当前选中的箱柜元器件区, "newCabinet": 自动新建并追加箱柜)
+        // 插入目标方式 ("currentCabinet": 写入当前选中的箱柜元器件区, "newCabinet": 自动新建并追加箱柜, "activeRow": 在活动行插入)
         public string InsertMode { get; set; } = "newCabinet"; // --硬编码-- 默认插入为新箱柜
 
         // 用户勾选确认的 BOM 明细列表

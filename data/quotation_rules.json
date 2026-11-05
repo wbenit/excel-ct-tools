@@ -232,5 +232,21 @@
   "laborRules": {
     "areaBaseRate": 2.9500000000000002,
     "reservedCircuitDiscount": 0.40000000000000002
+  },
+  "pz30Rules": {
+    "pz30Priority": false,
+    "minReservedModules": 0,
+    "modularComponentNames": [
+      "微型断路器",
+      "微型漏电",
+      "电涌保护器",
+      "导轨式电表"
+    ],
+    "standardModSizes": [
+      6, 8, 10, 12, 15, 18, 20, 24, 30, 36, 40, 45, 48, 54, 60
+    ],
+    "shellRate": 4.0,
+    "auxRate": 1.2,
+    "laborRate": 1.4
   }
 }

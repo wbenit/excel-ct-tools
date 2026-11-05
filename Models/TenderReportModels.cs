@@ -254,6 +254,9 @@ namespace ExcelAddInDemo.Models
         // 归并脱敏：将铜排物料合并到计费区辅材项 (默认 false)
         public bool MergeCopperToAux { get; set; } = false;
 
+        // 归并脱敏：将箱柜内多规格铜排合并为一行总重量展示 (默认 false，与 MergeCopperToAux 互斥)
+        public bool MergeCopperBars { get; set; } = false;
+
         // 辅材备注列是否自动注明合并包含项 (如: 含铜排、电线，默认 true)
         public bool AuxRemarkShowMergedDetails { get; set; } = true;
     }

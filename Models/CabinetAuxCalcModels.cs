@@ -43,6 +43,29 @@ namespace ExcelAddInDemo.Models
     /// </summary>
     public class Pz30Config
     {
+        // 是否开启 PZ30 优先推荐开关 (当整柜全为模数化元件时自动推导并靠拢 PZ30)
+        [JsonPropertyName("pz30Priority")]
+        public bool Pz30Priority { get; set; } = false;
+
+        // 最小预留模数 N (当设置为 N 时，算出的模数累加 N 后再去靠拢标准箱)
+        [JsonPropertyName("minReservedModules")]
+        public int MinReservedModules { get; set; } = 0;
+
+        // 约定的模数化元器件名称库 (用于判定整柜是否全为模数化元件) --硬编码: 默认列表--
+        [JsonPropertyName("modularComponentNames")]
+        public List<string> ModularComponentNames { get; set; } = new List<string>
+        {
+            "微断", "微型断路器", "小型断路器", "微型漏电断路器", "微型漏电", "微漏",
+            "小型漏电断路器", "浪涌保护器", "电涌保护器", "避雷器", "导轨式电表"
+        };
+
+        // PZ30 标准模数规格阶梯库 (用于向上靠拢最接近的标准箱) --硬编码: 默认规格阶梯--
+        [JsonPropertyName("standardModSizes")]
+        public List<int> StandardModSizes { get; set; } = new List<int>
+        {
+            6,8, 12, 15, 18, 20, 24, 30, 36, 40, 45,48, 54, 60
+        };
+
         // 壳体单价系数 (单位: 元/位，默认 4.0，壳体 = 数字 * 4.0) --硬编码: 默认系数--
         [JsonPropertyName("shellRate")]
         public double ShellRate { get; set; } = 4.0;

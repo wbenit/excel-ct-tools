@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
@@ -974,23 +974,37 @@
             "
           >
             <span>🎯 箱柜范围选择与实时参数</span>
-            <el-button
-              size="small"
-              type="primary"
-              plain
-              @click="openBindingWorkbench"
-              style="
-                border-color: #009688;
-                color: #009688;
-                font-weight: 500;
-                padding: 4px 10px;
-                font-size: 12px;
-                height: 26px;
-              "
-              title="打开二次图纸对齐与二次元件组回路绑定工作台"
-            >
-              📂 二次图纸对齐与绑定
-            </el-button>
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <el-tooltip
+                content="开启后：当箱柜内元器件全为微断等约定模数型元件时，自动读取CAD图纸真实宽度计算模数，叠加最小预留模数后向上靠拢最近的标准PZ30模数箱"
+                placement="bottom"
+              >
+                <el-checkbox
+                  v-model="rules.pz30Rules.pz30Priority"
+                  @change="onAnalyze"
+                  style="color: #009688; font-weight: 600; margin-right: 0;"
+                >
+                  ⚡ PZ30优先
+                </el-checkbox>
+              </el-tooltip>
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                @click="openBindingWorkbench"
+                style="
+                  border-color: #009688;
+                  color: #009688;
+                  font-weight: 500;
+                  padding: 4px 10px;
+                  font-size: 12px;
+                  height: 26px;
+                "
+                title="打开二次图纸对齐与二次元件组回路绑定工作台"
+              >
+                📂 二次图纸对齐与绑定
+              </el-button>
+            </div>
           </div>
           <div class="param-grid three-col">
             <div class="param-row-item">
@@ -3428,12 +3442,25 @@
                   </div>
                 </div>
 
-                <!-- PZ30计费 (纯数字型号) -->
+                <!-- PZ30计费与智能选型 -->
                 <div class="cfg-card" style="background: #fafafa; margin-top: 10px">
                   <div class="cfg-card-header">
-                    <span>⚡ PZ30计费 (箱体型号为纯数字时自动触发)</span>
+                    <span>⚡ PZ30 模数箱计费与智能推导规则</span>
                   </div>
-                  <div class="param-grid" style="margin-top: 4px">
+                  <div class="param-grid four-col" style="margin-top: 4px">
+                    <div class="param-row-item">
+                      <span class="param-label">最小预留模数 N:</span>
+                      <el-input-number
+                        v-model="rules.pz30Rules.minReservedModules"
+                        :step="1"
+                        :min="0"
+                        :max="50"
+                        size="small"
+                        style="width: 110px"
+                        controls-position="right"
+                      ></el-input-number>
+                      <span class="param-unit">位 (算出的模数加 N 靠拢)</span>
+                    </div>
                     <div class="param-row-item">
                       <span class="param-label">壳体单价系数:</span>
                       <el-input-number
@@ -3471,13 +3498,54 @@
                       <span class="param-unit">元/位 (人工 = 数字 * {{ rules.pz30Rules?.laborRate ?? 1.4 }})</span>
                     </div>
                   </div>
+
+                  <!-- 模数化元器件约定名称库配置 -->
+                  <div style="margin-top: 8px; padding: 6px 10px; background: #fff; border: 1px solid #e2e8f0; border-radius: 4px;">
+                    <div style="font-size: 12px; font-weight: 600; color: #334155; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+                      <span>🏷️ 模数化元器件约定名称库 (B列名称包含以下词汇视为模数元件):</span>
+                      <span style="font-size: 11px; color: #94a3b8; font-weight: normal;">输入新名称按回车添加</span>
+                    </div>
+                    <el-select
+                      v-model="rules.pz30Rules.modularComponentNames"
+                      multiple
+                      filterable
+                      allow-create
+                      default-first-option
+                      size="small"
+                      placeholder="添加模数元器件名称关键字"
+                      style="width: 100%"
+                    >
+                      <el-option
+                        v-for="item in (rules.pz30Rules?.modularComponentNames || [])"
+                        :key="item"
+                        :label="item"
+                        :value="item"
+                      ></el-option>
+                    </el-select>
+                  </div>
+
+                  <!-- 标准 PZ30 模数阶梯展示 -->
+                  <div style="margin-top: 6px; padding: 6px 10px; background: #fff; border: 1px solid #e2e8f0; border-radius: 4px; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 12px; font-weight: 600; color: #334155; white-space: nowrap;">📐 PZ30 标准规格阶梯:</span>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                      <span
+                        v-for="s in (rules.pz30Rules?.standardModSizes || [8, 12, 15, 18, 20, 24, 30, 36, 40, 45, 54, 60])"
+                        :key="s"
+                        style="background: #e0f2f1; color: #00796b; font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 3px;"
+                      >
+                        {{ s }}位
+                      </span>
+                    </div>
+                  </div>
+
                   <div class="formula-hint-box" style="margin-top: 6px">
                     <div>
-                      • <b>PZ30纯数字模数箱计费机制</b>：当箱体型号被修改为纯数字（如 15、20）时，自动切换为 PZ30 模数位计费规则：
-                      <b>壳体</b> = 数字 * {{ rules.pz30Rules?.shellRate ?? 4 }}；
-                      <b>辅材</b> = 数字 * {{ rules.pz30Rules?.auxRate ?? 1.2 }}；
-                      <b>人工</b> = 数字 * {{ rules.pz30Rules?.laborRate ?? 1.4 }}；
-                      铜排自动免计（不设铜排）。
+                      • <b>PZ30智能推导机制</b>：当整柜内元器件 100% 均为约定模数型元件时，系统自动提取 CAD 图块真实宽度计算模数（宽度 / 18），叠加最小预留模数 N 后向上靠拢最近的标准 PZ30 规格；
+                      <br />• <b>PZ30计费定额</b>：
+                      <b>壳体</b> = 位数 * {{ rules.pz30Rules?.shellRate ?? 4 }}；
+                      <b>辅材</b> = 位数 * {{ rules.pz30Rules?.auxRate ?? 1.2 }}；
+                      <b>人工</b> = 位数 * {{ rules.pz30Rules?.laborRate ?? 1.4 }}；
+                      铜排自动免计（0元）。
                     </div>
                   </div>
                 </div>
@@ -6395,6 +6463,13 @@
               reservedMaxBreakersThreshold: 3, // 预留回路打折断路器台数上限门限(台) --硬编码--
             },
             pz30Rules: {
+              pz30Priority: false, // 是否开启 PZ30 优先推导开关
+              minReservedModules: 0, // 最小预留模数 N (算出的模数加 N 靠拢)
+              modularComponentNames: [ // 约定模数化元器件名称库 --硬编码: 默认列表--
+                "微断", "微型断路器", "小型断路器", "微型漏电断路器", "微型漏电", "微漏",
+                "小型漏电断路器", "浪涌保护器", "电涌保护器", "避雷器", "导轨式电表"
+              ],
+              standardModSizes: [8, 12, 15, 18, 20, 24, 30, 36, 40, 45, 54, 60], // PZ30 标准规格阶梯 --硬编码: 默认阶梯--
               shellRate: 4.0, // 壳体单价系数(元/位) --硬编码: 默认系数--
               auxRate: 1.2,   // 辅材费用系数(元/位) --硬编码: 默认系数--
               laborRate: 1.4, // 人工费用系数(元/位) --硬编码: 默认系数--

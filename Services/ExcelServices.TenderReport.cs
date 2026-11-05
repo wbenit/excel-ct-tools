@@ -361,6 +361,9 @@ namespace ExcelAddInDemo
                     // 3.5 依据用户勾选的“明细归并与脱敏选项”，执行内存级数据合并与辅材累加 (金额绝对守恒)
                     ApplyAuxMerge(exportCategories, settings);
 
+                    // 3.6 依据用户勾选的“合并【铜排】(保留一行)”，执行内存级多规格铜排归并（累加总重量，型号TMY）
+                    ApplyCopperBarsMerge(exportCategories, settings);
+
                     // 4. 填充《封面》工作表
                     PopulateCoverWorksheet(reportWb, config.ProjectInfo, config.IncludeCover);
 
@@ -945,6 +948,137 @@ namespace ExcelAddInDemo
             catch (Exception exMerge)
             {
                 LogHelper.WriteLog($"[TenderReport] ApplyAuxMerge 异常: {exMerge}");
+            }
+        }
+
+        /// <summary>
+        /// 依据用户勾选的“合并【铜排】(保留一行)”，在内存中将箱柜内的多规格铜排归并为单行展示
+        /// 累加总重量，综合单价采用加权平均单价（保留 2 位小数），型号统一显示为 TMY，重新自增元器件编号
+        /// </summary>
+        /// <param name="categories">待导出的分类与箱柜元器件数据集合</param>
+        /// <param name="settings">用户报表导出配置</param>
+        private static void ApplyCopperBarsMerge(List<TenderReportCategoryGroup> categories, TenderReportSettings settings)
+        {
+            // 校验输入集合及用户偏好设置有效性
+            if (categories == null || categories.Count == 0 || settings == null) return;
+
+            // 若用户未启用合并铜排，或已勾选合并铜排到辅材，则无需执行多排合并
+            if (!settings.MergeCopperBars || settings.MergeCopperToAux) return;
+
+            try
+            {
+                // 记录成功合并铜排的箱柜计数
+                int mergedCabinetCount = 0;
+
+                // 遍历所有待导出的分类工作表
+                foreach (var cat in categories)
+                {
+                    // 若当前分类无箱柜数据则跳过
+                    if (cat?.Cabinets == null || cat.Cabinets.Count == 0) continue;
+
+                    // 遍历当前分类下的每台箱柜
+                    foreach (var cab in cat.Cabinets)
+                    {
+                        // 若箱柜内无元器件明细项则跳过
+                        if (cab?.Components == null || cab.Components.Count == 0) continue;
+
+                        // 筛选当前箱柜中所有属于铜排的元器件项
+                        var copperItems = cab.Components.Where(c => c != null && c.IsCopper).ToList();
+
+                        // 若铜排项小于 2 行，无需执行合并，保持原样展示
+                        if (copperItems.Count < 2) continue;
+
+                        // 累加所有铜排行的总重量 (数量)
+                        decimal totalWeight = copperItems.Sum(c => c.Quantity);
+
+                        // 累加所有铜排行的总合价 (优先取 TotalPrice，若为 0 则通过单价*数量计算)
+                        decimal totalAmount = copperItems.Sum(c => c.TotalPrice > 0 ? c.TotalPrice : (c.Quantity * c.UnitPrice));
+
+                        // 计算加权平均综合单价并保留 2 位小数 (允许重新计算)
+                        decimal avgUnitPrice = totalWeight > 0 ? Math.Round(totalAmount / totalWeight, 2) : 0;
+
+                        // 依据重新计算后的综合单价与总重量推导最终合价
+                        decimal recomputedTotal = Math.Round(totalWeight * avgUnitPrice, 2);
+
+                        // 寻找首个铜排项在列表中的位置
+                        int firstCopperIdx = cab.Components.FindIndex(c => c != null && c.IsCopper);
+                        var firstCopper = cab.Components[firstCopperIdx];
+
+                        // 将首个铜排项原地重塑为合并后的唯一样式
+                        firstCopper.Name = "铜排"; // --硬编码: 归并后标准铜排名称--
+                        // 型号按照业务决策统一约定为 TMY
+                        firstCopper.Model = "TMY"; // --硬编码: 归并后标准铜排型号--
+                        // 单位统一按重量单位公斤设定
+                        firstCopper.Unit = "kg"; // --硬编码: 统一铜排重量单位--
+                        firstCopper.Quantity = totalWeight;
+                        firstCopper.UnitPrice = avgUnitPrice;
+                        firstCopper.TotalPrice = recomputedTotal;
+
+                        // 重新构建该箱柜的元器件明细列表 (保留首行铜排，移除其余多余铜排)
+                        var newComponents = new List<TenderReportComponentItem>();
+                        bool keptFirst = false;
+
+                        // 遍历原有元器件进行重组
+                        foreach (var comp in cab.Components)
+                        {
+                            if (comp == null) continue;
+                            if (comp.IsCopper)
+                            {
+                                // 仅保留首个铜排合并项
+                                if (!keptFirst)
+                                {
+                                    newComponents.Add(firstCopper);
+                                    keptFirst = true;
+                                }
+                            }
+                            else
+                            {
+                                // 非铜排元器件按原样保留
+                                newComponents.Add(comp);
+                            }
+                        }
+
+                        // 对保留的元器件列表重新连续自增编号 (1, 2, 3...)
+                        for (int idx = 0; idx < newComponents.Count; idx++)
+                        {
+                            newComponents[idx].Index = idx + 1;
+                        }
+                        cab.Components = newComponents;
+
+                        // 联动维护计费区域的小计金额与序号，确保数据自洽
+                        if (cab.FeeItems != null && cab.FeeItems.Count > 0)
+                        {
+                            // 查找小计行对象
+                            var subtotalFee = cab.FeeItems.FirstOrDefault(f => (f?.Name ?? "").Contains("小计"));
+                            if (subtotalFee != null)
+                            {
+                                // 重新计算当前所有元器件的合价值
+                                decimal currentCompTotal = newComponents.Sum(c => c.TotalPrice);
+                                subtotalFee.TotalPrice = currentCompTotal;
+                                if (subtotalFee.UnitPrice > 0 || subtotalFee.Quantity <= 1)
+                                {
+                                    subtotalFee.UnitPrice = currentCompTotal;
+                                }
+                            }
+
+                            // 刷新计费项序列号紧随元器件自增
+                            for (int fi = 0; fi < cab.FeeItems.Count; fi++)
+                            {
+                                cab.FeeItems[fi].Index = newComponents.Count + fi + 1;
+                            }
+                        }
+
+                        mergedCabinetCount++;
+                    }
+                }
+
+                // 输出铜排归并调试日志
+                LogHelper.WriteLog($"[TenderReport] ApplyCopperBarsMerge 完成: 共归并 {mergedCabinetCount} 台箱柜的多规格铜排为单行 TMY");
+            }
+            catch (Exception exCopperMerge)
+            {
+                // 记录异常日志防止中断导出
+                LogHelper.WriteLog($"[TenderReport] ApplyCopperBarsMerge 异常: {exCopperMerge}");
             }
         }
 

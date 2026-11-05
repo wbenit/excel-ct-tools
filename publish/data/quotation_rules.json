@@ -287,6 +287,22 @@
     "reservedMaxBreakersThreshold": 3
   },
   "pz30Rules": {
+    "pz30Priority": false,
+    "minReservedModules": 0,
+    "modularComponentNames": [
+      "微断",
+      "微型断路器",
+      "小型断路器",
+      "微型漏电断路器",
+      "微型漏电",
+      "微漏",
+      "小型漏电断路器",
+      "浪涌保护器",
+      "电涌保护器",
+      "避雷器",
+      "导轨式电表"
+    ],
+    "standardModSizes": [8, 12, 15, 18, 20, 24, 30, 36, 40, 45, 54, 60],
     "shellRate": 4.0,
     "auxRate": 1.2,
     "laborRate": 1.4

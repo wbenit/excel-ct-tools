@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>常规样式投标报表导出</title>
     <!-- 引入 Element Plus CSS 样式库 -->
-    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/element-plus/dist/index.css"
+    />
     <!-- 引入 Vue 3 核心构建库 -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <!-- 引入 Element Plus 组件库 -->
@@ -18,12 +21,15 @@
       * {
         box-sizing: border-box;
       }
-      html, body {
+      html,
+      body {
         margin: 0;
         padding: 0;
         height: 100%;
         overflow: hidden;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
         background-color: #f8fafc;
         color: #1e293b;
         user-select: none;
@@ -238,18 +244,26 @@
         <div class="panel-card">
           <div class="panel-header">
             <span>📋 工程与供需单位核对</span>
-            <el-tag size="small" type="success" effect="plain">自动匹配自当前算价底稿</el-tag>
+            <el-tag size="small" type="success" effect="plain"
+              >自动匹配自当前算价底稿</el-tag
+            >
           </div>
           <el-form :model="projectInfo" label-width="75px" size="small">
             <el-row :gutter="12">
               <el-col :span="12">
                 <el-form-item label="项目名称">
-                  <el-input v-model="projectInfo.projectName" placeholder="请输入工程项目全称" />
+                  <el-input
+                    v-model="projectInfo.projectName"
+                    placeholder="请输入工程项目全称"
+                  />
                 </el-form-item>
               </el-col>
               <el-col :span="6">
                 <el-form-item label="报价单号">
-                  <el-input v-model="projectInfo.quotationNumber" placeholder="例如: BJ-2026-001" />
+                  <el-input
+                    v-model="projectInfo.quotationNumber"
+                    placeholder="例如: BJ-2026-001"
+                  />
                 </el-form-item>
               </el-col>
               <el-col :span="6">
@@ -267,29 +281,44 @@
             <el-row :gutter="12">
               <el-col :span="12">
                 <el-form-item label="客户单位">
-                  <el-input v-model="projectInfo.customerName" placeholder="客户单位 / 甲方招标方全称" />
+                  <el-input
+                    v-model="projectInfo.customerName"
+                    placeholder="客户单位 / 甲方招标方全称"
+                  />
                 </el-form-item>
               </el-col>
               <el-col :span="6">
                 <el-form-item label="客户联系人">
-                  <el-input v-model="projectInfo.customerContact" placeholder="甲方联系人" />
+                  <el-input
+                    v-model="projectInfo.customerContact"
+                    placeholder="甲方联系人"
+                  />
                 </el-form-item>
               </el-col>
               <el-col :span="6">
                 <el-form-item label="联系电话">
-                  <el-input v-model="projectInfo.customerPhone" placeholder="联系电话 / 传真" />
+                  <el-input
+                    v-model="projectInfo.customerPhone"
+                    placeholder="联系电话 / 传真"
+                  />
                 </el-form-item>
               </el-col>
             </el-row>
             <el-row :gutter="12">
               <el-col :span="12">
                 <el-form-item label="供货单位">
-                  <el-input v-model="projectInfo.factoryName" placeholder="本单位 / 投标方名称" />
+                  <el-input
+                    v-model="projectInfo.factoryName"
+                    placeholder="本单位 / 投标方名称"
+                  />
                 </el-form-item>
               </el-col>
               <el-col :span="6">
                 <el-form-item label="供货联系人">
-                  <el-input v-model="projectInfo.factoryContact" placeholder="业务经理 / 编制人" />
+                  <el-input
+                    v-model="projectInfo.factoryContact"
+                    placeholder="业务经理 / 编制人"
+                  />
                 </el-form-item>
               </el-col>
               <el-col :span="6">
@@ -305,10 +334,22 @@
         <div class="panel-card">
           <div class="panel-header">
             <span>📦 选择参与导出的分类工作表</span>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <el-button link type="primary" size="small" @click="checkAllCategories(true)">全选</el-button>
-              <span style="color: #cbd5e1; font-size: 12px;">|</span>
-              <el-button link type="info" size="small" @click="checkAllCategories(false)">全不选</el-button>
+            <div style="display: flex; align-items: center; gap: 8px">
+              <el-button
+                link
+                type="primary"
+                size="small"
+                @click="checkAllCategories(true)"
+                >全选</el-button
+              >
+              <span style="color: #cbd5e1; font-size: 12px">|</span>
+              <el-button
+                link
+                type="info"
+                size="small"
+                @click="checkAllCategories(false)"
+                >全不选</el-button
+              >
             </div>
           </div>
           <el-table
@@ -328,31 +369,67 @@
                 />
               </template>
               <template #default="{ row }">
-                <el-checkbox v-model="row.isSelected" @change="handleCategorySelectionChange" />
+                <el-checkbox
+                  v-model="row.isSelected"
+                  @change="handleCategorySelectionChange"
+                />
               </template>
             </el-table-column>
-            <el-table-column prop="categoryName" label="分类工作表名称" min-width="140">
+            <el-table-column
+              prop="categoryName"
+              label="分类工作表名称"
+              min-width="140"
+            >
               <template #default="{ row }">
-                <span style="font-weight: 600; color: #334155;">📁 {{ row.categoryName }}</span>
+                <span style="font-weight: 600; color: #334155"
+                  >📁 {{ row.categoryName }}</span
+                >
               </template>
             </el-table-column>
-            <el-table-column prop="totalCabinetCount" label="箱柜台数" width="100" align="center">
+            <el-table-column
+              prop="totalCabinetCount"
+              label="箱柜台数"
+              width="100"
+              align="center"
+            >
               <template #default="{ row }">
-                <el-tag size="small" type="info">{{ row.totalCabinetCount }} 台</el-tag>
+                <el-tag size="small" type="info"
+                  >{{ row.totalCabinetCount }} 台</el-tag
+                >
               </template>
             </el-table-column>
-            <el-table-column prop="totalAmount" label="报出合价 (元)" width="130" align="right">
+            <el-table-column
+              prop="totalAmount"
+              label="报出合价 (元)"
+              width="130"
+              align="right"
+            >
               <template #default="{ row }">
-                <span style="color: #009688; font-weight: 600;">¥ {{ formatMoney(row.totalAmount) }}</span>
+                <span style="color: #009688; font-weight: 600"
+                  >¥ {{ formatMoney(row.totalAmount) }}</span
+                >
               </template>
             </el-table-column>
           </el-table>
 
           <!-- 勾选统计统计条 -->
-          <div class="summary-stat-bar" style="margin-top: 8px;">
-            <span>已选分类: <span class="summary-highlight">{{ selectedCount }}</span> / {{ categories.length }} 个</span>
-            <span>箱柜总台数: <span class="summary-highlight">{{ selectedCabinetCount }}</span> 台</span>
-            <span>总报价金额: <span class="summary-highlight">¥ {{ formatMoney(selectedTotalAmount) }}</span></span>
+          <div class="summary-stat-bar" style="margin-top: 8px">
+            <span
+              >已选分类:
+              <span class="summary-highlight">{{ selectedCount }}</span> / {{
+              categories.length }} 个</span
+            >
+            <span
+              >箱柜总台数:
+              <span class="summary-highlight">{{ selectedCabinetCount }}</span>
+              台</span
+            >
+            <span
+              >总报价金额:
+              <span class="summary-highlight"
+                >¥ {{ formatMoney(selectedTotalAmount) }}</span
+              ></span
+            >
           </div>
         </div>
 
@@ -360,105 +437,180 @@
         <div class="panel-card">
           <div class="panel-header">
             <span>⚙️ 报表自由配置选项</span>
-            <el-tag size="small" type="success" effect="plain">自动持久化至本地</el-tag>
+            <el-tag size="small" type="success" effect="plain"
+              >自动持久化至本地</el-tag
+            >
           </div>
 
           <!-- 分组 1: 输出结构与分 Sheet 模式 -->
           <div class="setting-group-title">📑 工作表结构与输出方式</div>
           <el-row :gutter="12" class="setting-row">
             <el-col :span="6">
-              <el-checkbox v-model="exportConfig.includeCover">包含《封面》</el-checkbox>
+              <el-checkbox v-model="exportConfig.includeCover"
+                >包含《封面》</el-checkbox
+              >
             </el-col>
             <el-col :span="6">
-              <el-checkbox v-model="exportConfig.includeSummary">包含《屏柜汇总表》</el-checkbox>
+              <el-checkbox v-model="exportConfig.includeSummary"
+                >包含《屏柜汇总表》</el-checkbox
+              >
             </el-col>
             <el-col :span="6">
-              <el-checkbox v-model="exportConfig.includeDetail">包含《屏柜分项表》</el-checkbox>
+              <el-checkbox v-model="exportConfig.includeDetail"
+                >包含《屏柜分项表》</el-checkbox
+              >
             </el-col>
             <el-col :span="6">
-              <el-checkbox v-model="exportConfig.autoOpen">导出后自动打开展示</el-checkbox>
+              <el-checkbox v-model="exportConfig.autoOpen"
+                >导出后自动打开展示</el-checkbox
+              >
             </el-col>
           </el-row>
           <el-row :gutter="12" class="setting-row">
             <el-col :span="12">
-              <el-checkbox v-model="reportSettings.splitDetailBySheet" :disabled="!exportConfig.includeDetail">
-                <span style="font-weight: 600; color: #009688;">按“分类工作表”分别输出独立 Sheet</span>
+              <el-checkbox
+                v-model="reportSettings.splitDetailBySheet"
+                :disabled="!exportConfig.includeDetail"
+              >
+                <span style="font-weight: 600; color: #009688"
+                  >按“分类工作表”分别输出独立 Sheet</span
+                >
               </el-checkbox>
             </el-col>
             <el-col :span="12">
               <el-checkbox v-model="reportSettings.enableOneKeyLocate">
-                <span style="font-weight: 600; color: #009688;">一键定位 (汇总行与分项明细双向超链接跳转)</span>
+                <span style="font-weight: 600; color: #009688"
+                  >一键定位 (汇总行与分项明细双向超链接跳转)</span
+                >
               </el-checkbox>
             </el-col>
           </el-row>
 
           <!-- 分组 2: 金额取整与计算模式 -->
-          <div class="setting-group-title" style="margin-top: 6px;">💰 取整与计算模式</div>
+          <div class="setting-group-title" style="margin-top: 6px">
+            💰 取整与计算模式
+          </div>
           <el-row :gutter="12" class="setting-row">
             <el-col :span="6">
-              <el-checkbox v-model="reportSettings.roundProjectTotal">项目总价取整到元</el-checkbox>
+              <el-checkbox v-model="reportSettings.roundProjectTotal"
+                >项目总价取整到元</el-checkbox
+              >
             </el-col>
             <el-col :span="6">
-              <el-checkbox v-model="reportSettings.roundCabinetTotal">箱柜总价取整到元</el-checkbox>
+              <el-checkbox v-model="reportSettings.roundCabinetTotal"
+                >箱柜总价取整到元</el-checkbox
+              >
             </el-col>
             <el-col :span="6">
-              <el-checkbox v-model="reportSettings.roundCabinetUnitPrice">箱柜单价取整到元</el-checkbox>
+              <el-checkbox v-model="reportSettings.roundCabinetUnitPrice"
+                >箱柜单价取整到元</el-checkbox
+              >
             </el-col>
             <el-col :span="6">
-              <el-checkbox v-model="reportSettings.roundDetailUnitPriceTotal">明细表单/总价取整到元</el-checkbox>
+              <el-checkbox v-model="reportSettings.roundDetailUnitPriceTotal"
+                >明细表单/总价取整到元</el-checkbox
+              >
             </el-col>
           </el-row>
           <el-row :gutter="12" class="setting-row">
             <el-col :span="6">
-              <el-checkbox v-model="reportSettings.totalWithFormula">总价带公式 (取消则纯数值)</el-checkbox>
+              <el-checkbox v-model="reportSettings.totalWithFormula"
+                >总价带公式 (取消则纯数值)</el-checkbox
+              >
             </el-col>
             <el-col :span="6">
-              <el-checkbox v-model="reportSettings.feeItemWithoutFormula">费用项不带公式 (纯数值)</el-checkbox>
+              <el-checkbox v-model="reportSettings.feeItemWithoutFormula"
+                >费用项不带公式 (纯数值)</el-checkbox
+              >
             </el-col>
             <el-col :span="6">
-              <el-checkbox v-model="reportSettings.textAutoWrap">单元格文字自动换行</el-checkbox>
+              <el-checkbox v-model="reportSettings.textAutoWrap"
+                >单元格文字自动换行</el-checkbox
+              >
             </el-col>
             <el-col :span="6">
-              <el-checkbox v-model="isPaginatedPrint">每台箱柜分页打印 (插入分页符)</el-checkbox>
+              <el-checkbox v-model="isPaginatedPrint"
+                >每台箱柜分页打印 (插入分页符)</el-checkbox
+              >
             </el-col>
           </el-row>
 
-          <!-- 分组 2.5: 明细归并与脱敏选项 (合并至计费区辅材) -->
-          <div class="setting-group-title" style="margin-top: 6px;">🧩 明细归并与脱敏选项 (合并至计费区辅材)</div>
+          <!-- 分组 2.5: 明细归并与脱敏选项 -->
+          <div class="setting-group-title" style="margin-top: 6px">
+            🧩 明细归并与脱敏选项
+          </div>
           <el-row :gutter="12" class="setting-row">
             <el-col :span="6">
               <el-checkbox v-model="reportSettings.mergeComponentGroupToAux">
-                <span style="font-weight: 500; color: #009688;">合并【元件组】到辅材</span>
+                <span style="font-weight: 500; color: #009688"
+                  >合并【元件组】到辅材</span
+                >
               </el-checkbox>
             </el-col>
             <el-col :span="6">
               <el-checkbox v-model="reportSettings.mergeWireToAux">
-                <span style="font-weight: 500; color: #009688;">合并【电线】到辅材</span>
+                <span style="font-weight: 500; color: #009688"
+                  >合并【电线】到辅材</span
+                >
               </el-checkbox>
             </el-col>
             <el-col :span="6">
-              <el-checkbox v-model="reportSettings.mergeCopperToAux">
-                <span style="font-weight: 500; color: #009688;">合并【铜排】到辅材</span>
+              <el-checkbox
+                v-model="reportSettings.mergeCopperToAux"
+                :disabled="reportSettings.mergeCopperBars"
+                @change="onMergeCopperToAuxChange"
+              >
+                <span style="font-weight: 500; color: #009688"
+                  >合并【铜排】到辅材</span
+                >
               </el-checkbox>
             </el-col>
             <el-col :span="6">
-              <el-checkbox v-model="reportSettings.auxRemarkShowMergedDetails" :disabled="!hasAnyMergeChecked">
+              <el-checkbox
+                v-model="reportSettings.auxRemarkShowMergedDetails"
+                :disabled="!hasAnyMergeChecked"
+              >
                 辅材备注注明包含项
+              </el-checkbox>
+            </el-col>
+          </el-row>
+          <el-row :gutter="12" class="setting-row" style="margin-top: 4px">
+            <el-col :span="12">
+              <el-checkbox
+                v-model="reportSettings.mergeCopperBars"
+                :disabled="reportSettings.mergeCopperToAux"
+                @change="onMergeCopperBarsChange"
+              >
+                <span style="font-weight: 500; color: #009688"
+                  >合并【铜排】(明细仅保留一行，累加重量，型号TMY)</span
+                >
               </el-checkbox>
             </el-col>
           </el-row>
 
           <!-- 分组 3: 报价说明与排版 -->
-          <div class="setting-group-title" style="margin-top: 6px;">📝 报价说明与排版</div>
+          <div class="setting-group-title" style="margin-top: 6px">
+            📝 报价说明与排版
+          </div>
           <el-row :gutter="12" class="setting-row">
             <el-col :span="8">
-              <el-checkbox v-model="reportSettings.outputNotesInSummary">在总表输出报价说明</el-checkbox>
+              <el-checkbox v-model="reportSettings.outputNotesInSummary"
+                >在总表输出报价说明</el-checkbox
+              >
             </el-col>
             <el-col :span="8">
-              <el-checkbox v-model="reportSettings.notesMultilineDisplay" :disabled="!reportSettings.outputNotesInSummary">报价说明逐条分行</el-checkbox>
+              <el-checkbox
+                v-model="reportSettings.notesMultilineDisplay"
+                :disabled="!reportSettings.outputNotesInSummary"
+                >报价说明逐条分行</el-checkbox
+              >
             </el-col>
             <el-col :span="8">
-              <el-checkbox v-model="reportSettings.notesAutoFitRowHeight" :disabled="!reportSettings.outputNotesInSummary">报价说明自动行高</el-checkbox>
+              <el-checkbox
+                v-model="reportSettings.notesAutoFitRowHeight"
+                :disabled="!reportSettings.outputNotesInSummary"
+                >报价说明自动行高</el-checkbox
+              >
             </el-col>
           </el-row>
         </div>
@@ -486,18 +638,18 @@
         setup() {
           // 工程基础数据
           const projectInfo = ref({
-            projectName: '',
-            quotationNumber: '',
-            quotationDate: '',
-            customerName: '',
-            customerContact: '',
-            customerPhone: '',
-            factoryName: '',
-            factoryContact: '',
-            factoryPhone: '',
-            bidder: '',
-            projectRemark: '',
-            amountUnit: '人民币元'
+            projectName: "",
+            quotationNumber: "",
+            quotationDate: "",
+            customerName: "",
+            customerContact: "",
+            customerPhone: "",
+            factoryName: "",
+            factoryContact: "",
+            factoryPhone: "",
+            bidder: "",
+            projectRemark: "",
+            amountUnit: "人民币元",
           });
 
           // 分类列表
@@ -510,7 +662,7 @@
             includeCover: true,
             includeSummary: true,
             includeDetail: true,
-            autoOpen: true
+            autoOpen: true,
           });
 
           // 自由配置偏好设置 (自动持久化至 appsettings.json)
@@ -528,26 +680,45 @@
             notesAutoFitRowHeight: false,
             textAutoWrap: false,
             splitDetailBySheet: true, // 默认按“分类工作表”分别输出独立 Sheet
-            printSetting: 'Continuous',
+            printSetting: "Continuous",
             mergeComponentGroupToAux: false, // 默认不合并元件组
             mergeWireToAux: false, // 默认不合并电线
             mergeCopperToAux: false, // 默认不合并铜排
-            auxRemarkShowMergedDetails: true // 辅材备注默认注明包含项
+            mergeCopperBars: false, // 默认不合并多规格铜排为一行
+            auxRemarkShowMergedDetails: true, // 辅材备注默认注明包含项
           });
+
+          // 铜排合并至辅材变更处理：当勾选时，互斥清空“合并铜排(保留一行)”
+          const onMergeCopperToAuxChange = (val) => {
+            if (val) {
+              reportSettings.value.mergeCopperBars = false;
+            }
+          };
+
+          // 铜排合并保留一行变更处理：当勾选时，互斥清空“合并【铜排】到辅材”
+          const onMergeCopperBarsChange = (val) => {
+            if (val) {
+              reportSettings.value.mergeCopperToAux = false;
+            }
+          };
 
           // 计算属性：判定是否有任何明细归并选项被勾选
           const hasAnyMergeChecked = computed(() => {
-            return !!(reportSettings.value.mergeComponentGroupToAux ||
-                      reportSettings.value.mergeWireToAux ||
-                      reportSettings.value.mergeCopperToAux);
+            return !!(
+              reportSettings.value.mergeComponentGroupToAux ||
+              reportSettings.value.mergeWireToAux ||
+              reportSettings.value.mergeCopperToAux
+            );
           });
 
           // 打印分页切换联动属性
           const isPaginatedPrint = computed({
-            get: () => reportSettings.value.printSetting === 'Paginated',
+            get: () => reportSettings.value.printSetting === "Paginated",
             set: (val) => {
-              reportSettings.value.printSetting = val ? 'Paginated' : 'Continuous';
-            }
+              reportSettings.value.printSetting = val
+                ? "Paginated"
+                : "Continuous";
+            },
           });
 
           // 统一向 C# 后端发送指令 (优先对象，兼顾字符串)
@@ -563,49 +734,58 @@
 
           // 计算属性：选中的分类数量
           const selectedCount = computed(() => {
-            return categories.value.filter(c => c.isSelected).length;
+            return categories.value.filter((c) => c.isSelected).length;
           });
 
           // 计算属性：选中的箱柜总台数
           const selectedCabinetCount = computed(() => {
             return categories.value
-              .filter(c => c.isSelected)
+              .filter((c) => c.isSelected)
               .reduce((sum, c) => sum + (c.totalCabinetCount || 0), 0);
           });
 
           // 计算属性：选中的总报出金额
           const selectedTotalAmount = computed(() => {
             return categories.value
-              .filter(c => c.isSelected)
+              .filter((c) => c.isSelected)
               .reduce((sum, c) => sum + (c.totalAmount || 0), 0);
           });
 
           // 全选勾选状态
           const isAllChecked = computed(() => {
-            return categories.value.length > 0 && selectedCount.value === categories.value.length;
+            return (
+              categories.value.length > 0 &&
+              selectedCount.value === categories.value.length
+            );
           });
 
           // 半选状态
           const isIndeterminate = computed(() => {
-            return selectedCount.value > 0 && selectedCount.value < categories.value.length;
+            return (
+              selectedCount.value > 0 &&
+              selectedCount.value < categories.value.length
+            );
           });
 
           // 全选变更
           const handleCheckAllChange = (val) => {
-            categories.value.forEach(c => c.isSelected = val);
+            categories.value.forEach((c) => (c.isSelected = val));
           };
 
           // 快速全选/全不选
           const checkAllCategories = (checked) => {
-            categories.value.forEach(c => c.isSelected = checked);
+            categories.value.forEach((c) => (c.isSelected = checked));
           };
 
           const handleCategorySelectionChange = () => {};
 
           // 金额格式化
           const formatMoney = (val) => {
-            if (val === undefined || val === null || isNaN(val)) return '0.00';
-            return Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            if (val === undefined || val === null || isNaN(val)) return "0.00";
+            return Number(val).toLocaleString("zh-CN", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            });
           };
 
           // 窗口平滑拖拽监听
@@ -614,7 +794,7 @@
           let lastMouseY = 0;
 
           const onHeaderMouseDown = (e) => {
-            if (e.target.classList.contains('window-close')) return;
+            if (e.target.classList.contains("window-close")) return;
             isDragging = true;
             lastMouseX = e.screenX;
             lastMouseY = e.screenY;
@@ -626,46 +806,50 @@
               lastMouseX = moveEvent.screenX;
               lastMouseY = moveEvent.screenY;
               if (deltaX !== 0 || deltaY !== 0) {
-                postToCSharp({ action: 'moveWindow', deltaX, deltaY });
+                postToCSharp({ action: "moveWindow", deltaX, deltaY });
               }
             };
 
             const onMouseUp = () => {
               isDragging = false;
-              window.removeEventListener('mousemove', onMouseMove);
-              window.removeEventListener('mouseup', onMouseUp);
+              window.removeEventListener("mousemove", onMouseMove);
+              window.removeEventListener("mouseup", onMouseUp);
             };
 
-            window.addEventListener('mousemove', onMouseMove);
-            window.addEventListener('mouseup', onMouseUp);
+            window.addEventListener("mousemove", onMouseMove);
+            window.addEventListener("mouseup", onMouseUp);
           };
 
           // 关闭窗口
           const closeWindow = () => {
-            postToCSharp({ action: 'closeWindow' });
+            postToCSharp({ action: "closeWindow" });
           };
 
           // 执行导出
           const startExport = () => {
             if (selectedCount.value === 0) {
-              ElementPlus.ElMessage.warning('请至少选择一个参与导出的分类工作表！');
+              ElementPlus.ElMessage.warning(
+                "请至少选择一个参与导出的分类工作表！",
+              );
               return;
             }
 
             isExporting.value = true;
             const payload = {
               projectInfo: projectInfo.value,
-              selectedCategories: categories.value.filter(c => c.isSelected).map(c => c.categoryName),
+              selectedCategories: categories.value
+                .filter((c) => c.isSelected)
+                .map((c) => c.categoryName),
               includeCover: exportConfig.value.includeCover,
               includeSummary: exportConfig.value.includeSummary,
               includeDetail: exportConfig.value.includeDetail,
               autoOpen: exportConfig.value.autoOpen,
-              settings: reportSettings.value
+              settings: reportSettings.value,
             };
 
             postToCSharp({
-              action: 'exportReport',
-              config: payload
+              action: "exportReport",
+              config: payload,
             });
           };
 
@@ -673,37 +857,78 @@
           onMounted(() => {
             if (window.chrome && window.chrome.webview) {
               // 注册后端推送消息监听
-              window.chrome.webview.addEventListener('message', (event) => {
+              window.chrome.webview.addEventListener("message", (event) => {
                 try {
-                  const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                  const data =
+                    typeof event.data === "string"
+                      ? JSON.parse(event.data)
+                      : event.data;
                   if (!data) return;
 
-                  if (data.action === 'initialDataLoaded') {
+                  if (data.action === "initialDataLoaded") {
                     const payload = data.payload;
                     if (payload) {
                       const pData = payload.data || payload.Data || payload;
                       const rawProject = pData.projectInfo || pData.ProjectInfo;
                       if (rawProject) {
-                        projectInfo.value.projectName = rawProject.projectName || rawProject.ProjectName || projectInfo.value.projectName;
-                        projectInfo.value.quotationNumber = rawProject.quotationNumber || rawProject.QuotationNumber || '';
-                        projectInfo.value.quotationDate = rawProject.quotationDate || rawProject.QuotationDate || '';
-                        projectInfo.value.customerName = rawProject.customerName || rawProject.CustomerName || '';
-                        projectInfo.value.customerContact = rawProject.customerContact || rawProject.CustomerContact || '';
-                        projectInfo.value.customerPhone = rawProject.customerPhone || rawProject.CustomerPhone || '';
-                        projectInfo.value.factoryName = rawProject.factoryName || rawProject.FactoryName || '';
-                        projectInfo.value.factoryContact = rawProject.factoryContact || rawProject.FactoryContact || '';
-                        projectInfo.value.factoryPhone = rawProject.factoryPhone || rawProject.FactoryPhone || '';
-                        projectInfo.value.bidder = rawProject.bidder || rawProject.Bidder || '';
-                        projectInfo.value.projectRemark = rawProject.projectRemark || rawProject.ProjectRemark || '';
+                        projectInfo.value.projectName =
+                          rawProject.projectName ||
+                          rawProject.ProjectName ||
+                          projectInfo.value.projectName;
+                        projectInfo.value.quotationNumber =
+                          rawProject.quotationNumber ||
+                          rawProject.QuotationNumber ||
+                          "";
+                        projectInfo.value.quotationDate =
+                          rawProject.quotationDate ||
+                          rawProject.QuotationDate ||
+                          "";
+                        projectInfo.value.customerName =
+                          rawProject.customerName ||
+                          rawProject.CustomerName ||
+                          "";
+                        projectInfo.value.customerContact =
+                          rawProject.customerContact ||
+                          rawProject.CustomerContact ||
+                          "";
+                        projectInfo.value.customerPhone =
+                          rawProject.customerPhone ||
+                          rawProject.CustomerPhone ||
+                          "";
+                        projectInfo.value.factoryName =
+                          rawProject.factoryName ||
+                          rawProject.FactoryName ||
+                          "";
+                        projectInfo.value.factoryContact =
+                          rawProject.factoryContact ||
+                          rawProject.FactoryContact ||
+                          "";
+                        projectInfo.value.factoryPhone =
+                          rawProject.factoryPhone ||
+                          rawProject.FactoryPhone ||
+                          "";
+                        projectInfo.value.bidder =
+                          rawProject.bidder || rawProject.Bidder || "";
+                        projectInfo.value.projectRemark =
+                          rawProject.projectRemark ||
+                          rawProject.ProjectRemark ||
+                          "";
                       }
-                      const rawCategories = pData.categories || pData.Categories;
+                      const rawCategories =
+                        pData.categories || pData.Categories;
                       if (Array.isArray(rawCategories)) {
-                        categories.value = rawCategories.map(c => ({
-                          categoryName: c.categoryName || c.CategoryName || '',
-                          totalCabinetCount: c.totalCabinetCount !== undefined ? c.totalCabinetCount : (c.TotalCabinetCount || 0),
-                          totalAmount: c.totalAmount !== undefined ? c.totalAmount : (c.TotalAmount || 0),
+                        categories.value = rawCategories.map((c) => ({
+                          categoryName: c.categoryName || c.CategoryName || "",
+                          totalCabinetCount:
+                            c.totalCabinetCount !== undefined
+                              ? c.totalCabinetCount
+                              : c.TotalCabinetCount || 0,
+                          totalAmount:
+                            c.totalAmount !== undefined
+                              ? c.totalAmount
+                              : c.TotalAmount || 0,
                           isSelected: true,
-                          cabinets: c.cabinets || c.Cabinets || []
+                          cabinets: c.cabinets || c.Cabinets || [],
                         }));
                       }
                       // 回填本地持久化的自由配置设置
@@ -712,51 +937,55 @@
                         Object.assign(reportSettings.value, rawSettings);
                       }
                     }
-                  } else if (data.action === 'exportReportResult') {
+                  } else if (data.action === "exportReportResult") {
                     isExporting.value = false;
                     const res = data.payload || {};
-                    console.log('[TenderReport] 收到导出响应 payload:', res);
+                    console.log("[TenderReport] 收到导出响应 payload:", res);
 
                     // 兼容后端 camelCase (小写驼峰) 与 PascalCase (大写首字母) 字段命名
                     const isSuccess = Boolean(res.success || res.Success);
-                    const msg = res.message || res.Message || (isSuccess ? '常规样式投标报表导出成功！' : '报表导出失败');
-                    const filePath = res.outputFilePath || res.OutputFilePath || '';
+                    const msg =
+                      res.message ||
+                      res.Message ||
+                      (isSuccess
+                        ? "常规样式投标报表导出成功！"
+                        : "报表导出失败");
+                    const filePath =
+                      res.outputFilePath || res.OutputFilePath || "";
 
                     if (isSuccess) {
-                      ElementPlus.ElMessageBox.confirm(
-                        msg,
-                        '导出完成',
-                        {
-                          confirmButtonText: '打开文件所在文件夹',
-                          cancelButtonText: '完成并关闭',
-                          type: 'success'
-                        }
-                      ).then(() => {
-                        if (filePath) {
-                          postToCSharp({
-                            action: 'openExportedFileLocation',
-                            filePath: filePath
-                          });
-                        }
-                        closeWindow();
-                      }).catch(() => {
-                        closeWindow();
-                      });
+                      ElementPlus.ElMessageBox.confirm(msg, "导出完成", {
+                        confirmButtonText: "打开文件所在文件夹",
+                        cancelButtonText: "完成并关闭",
+                        type: "success",
+                      })
+                        .then(() => {
+                          if (filePath) {
+                            postToCSharp({
+                              action: "openExportedFileLocation",
+                              filePath: filePath,
+                            });
+                          }
+                          closeWindow();
+                        })
+                        .catch(() => {
+                          closeWindow();
+                        });
                     } else {
                       ElementPlus.ElMessage.error({
                         message: msg,
                         duration: 5000,
-                        showClose: true
+                        showClose: true,
                       });
                     }
                   }
                 } catch (e) {
-                  console.error('解析后端消息异常:', e);
+                  console.error("解析后端消息异常:", e);
                 }
               });
 
               // 请求初始化数据
-              postToCSharp({ action: 'getInitialData' });
+              postToCSharp({ action: "getInitialData" });
             }
           });
 
@@ -779,13 +1008,15 @@
             startExport,
             reportSettings,
             isPaginatedPrint,
-            hasAnyMergeChecked
+            hasAnyMergeChecked,
+            onMergeCopperToAuxChange,
+            onMergeCopperBarsChange,
           };
-        }
+        },
       });
 
       app.use(ElementPlus);
-      app.mount('#app');
+      app.mount("#app");
     </script>
   </body>
 </html>

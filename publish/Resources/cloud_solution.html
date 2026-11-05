@@ -3055,6 +3055,11 @@
               </div>
 
               <div class="ap-footer-right">
+                <!-- 在活动行插入按钮 -->
+                <el-button size="small" @click="insertApSchemeToExcel('activeRow')" :loading="isInsertingBom"
+                  title="将勾选的物料从当前选中的活动行位置插入">
+                  <i class="fa-solid fa-arrow-down-to-bracket" style="margin-right: 4px;"></i> 在活动行插入
+                </el-button>
                 <!-- 追加写入按钮 -->
                 <el-button size="small" @click="insertApSchemeToExcel('append')" :loading="isInsertingBom"
                   title="将勾选的物料追加写入当前选中的活动箱柜元器件区">
@@ -5525,7 +5530,8 @@
             schemeId: String(apActiveScheme.value.id || ""),
             schemeName: String(apActiveScheme.value.name || apActiveScheme.value.schemeName || "利驰方案"),
             loopMultiplier: Number(apLoopMultiplier.value) || 1,
-            insertMode: mode === "append" ? "currentCabinet" : "newCabinet",
+            // 插入模式: 'append' 为追加到当前箱柜, 'activeRow' 为在活动行插入, 否则为新建箱柜
+            insertMode: mode === "append" ? "currentCabinet" : (mode === "activeRow" ? "activeRow" : "newCabinet"),
             selectedBomItems: normalizedItems,
           };
 

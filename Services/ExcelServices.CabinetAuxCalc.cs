@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -470,6 +470,168 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 将计算得出的总模数位数向上靠拢至最近的标准 PZ30 模数箱体规格
+        /// </summary>
+        /// <param name="totalModules">包含预留后的总模数位数</param>
+        /// <param name="standardSizes">标准 PZ30 模数阶梯列表</param>
+        /// <returns>最接近的标准 PZ30 模数规格</returns>
+        public static int MatchNearestPz30Digit(int totalModules, List<int>? standardSizes)
+        {
+            // 兜底规格阶梯 (若用户配置为空则使用国标常规阶梯) --硬编码: 兜底阶梯--
+            var sizes = (standardSizes != null && standardSizes.Count > 0)
+                ? standardSizes
+                : new List<int> { 8, 12, 15, 18, 20, 24, 30, 36, 40, 45, 54, 60 };
+
+            // 升序遍历标准模数规格阶梯
+            foreach (int s in sizes.OrderBy(x => x))
+            {
+                // 寻找大于等于总模数的最小标称规格
+                if (s >= totalModules) return s;
+            }
+
+            // 超出最大档位返回阶梯最大值
+            return sizes.Max();
+        }
+
+        /// <summary>
+        /// 纯 CAD 图块真实宽度驱动的模数计算方法：
+        /// 判定整柜元器件是否 100% 全为模数化元器件；
+        /// 依次提取 AA/AB 列对应图纸在 AutoCAD/SQLite 中的真实物理宽度，除以 18 得到模数位数并累加；
+        /// 累加后叠加最小预留模数 N，最终向上靠拢匹配最接近的标准 PZ30 规格。
+        /// 遵循规则 9：若图纸缺失或 CAD 未测出宽度，记录明确告警，严禁私下猜尺寸兜底。
+        /// </summary>
+        public static bool TryCalculateModularCabinetDigitsFromCad(
+            CabinetScanData scanData,
+            Pz30Config pzConfig,
+            Dictionary<string, DwgDimensionItem> dwgDimMap,
+            List<string> calcWarnings,
+            out int matchedPzDigits,
+            out int rawSumDigits,
+            out int reservedModules)
+        {
+            // 初始化返回变量
+            matchedPzDigits = 0;
+            // 原始模数和初始化
+            rawSumDigits = 0;
+            // 提取最小预留模数配置
+            reservedModules = pzConfig?.MinReservedModules ?? 0;
+
+            // 基础空值排查
+            if (scanData?.Components == null || scanData.Components.Count == 0) return false;
+
+            // 提取约定模数化元器件名称库 --硬编码: 默认列表--
+            var validNames = (pzConfig?.ModularComponentNames != null && pzConfig.ModularComponentNames.Count > 0)
+                ? pzConfig.ModularComponentNames
+                : new List<string> { "微断", "微型断路器", "小型断路器", "微型漏电断路器", "微型漏电", "微漏", "小型漏电断路器", "浪涌保护器", "电涌保护器", "避雷器", "导轨式电表" };
+
+            // 1. 第一阶段：严格排查整柜元器件，检查是否“100% 全为约定模数化元器件”
+            foreach (var comp in scanData.Components)
+            {
+                // 跳过纯预留行
+                if (comp.IsReserved && string.IsNullOrWhiteSpace(comp.Model)) continue;
+                // 清洗提取元件 B 列名称
+                string cName = comp.Name?.Trim() ?? string.Empty;
+
+                // 检查名称是否匹配约定的模数元件库 (.NET Framework 4.8 兼容 IndexOf)
+                bool isModular = validNames.Any(vn => !string.IsNullOrWhiteSpace(vn) && cName.IndexOf(vn, StringComparison.OrdinalIgnoreCase) >= 0);
+                // 存在非模数元器件时一票否决
+                if (!isModular)
+                {
+                    // 存在非模数元器件 (如塑壳、刀熔、双电源等)，一票否决纯模数箱特征，退出推导
+                    return false;
+                }
+            }
+
+            // 2. 第二阶段：所有元器件均属于模数元件，严格通过 CAD 测算的图块真实宽度计算模数
+            int accumulatedDigits = 0;
+            // 标记是否存在尺寸缺失异常
+            bool hasMissingDimension = false;
+
+            // 遍历所有元件提取物理宽度
+            foreach (var comp in scanData.Components)
+            {
+                // 跳过纯预留行
+                if (comp.IsReserved && string.IsNullOrWhiteSpace(comp.Model)) continue;
+
+                // 规则 9 约束：检查 AA 列图纸名称
+                if (string.IsNullOrWhiteSpace(comp.DwgName))
+                {
+                    // 记录阻断告警：图纸名为空，拒绝估算
+                    calcWarnings.Add($"【PZ30优先阻断】第 {comp.RowIndex} 行【{comp.Name} {comp.Model}】AA列未配置CAD图纸，无法精确提取模数！");
+                    // 标记尺寸缺失
+                    hasMissingDimension = true;
+                    continue;
+                }
+
+                // 从 CAD/SQLite 尺寸字典中多维度检索物理尺寸
+                DwgDimensionItem? dimItem = null;
+                // 清洗图纸名
+                string cleanDwg = comp.DwgName.Trim();
+                // 构造带后缀文件名
+                string dwgWithExt = cleanDwg.EndsWith(".dwg", StringComparison.OrdinalIgnoreCase) ? cleanDwg : cleanDwg + ".dwg";
+                // 提取无后缀图名
+                string dwgWithoutExt = Path.GetFileNameWithoutExtension(cleanDwg);
+                // 提取目录路径
+                string dir = comp.DwgDir?.Trim() ?? string.Empty;
+                // 构造带目录相对路径
+                string relWithExt = !string.IsNullOrWhiteSpace(dir) ? $"{dir}/{dwgWithExt}" : dwgWithExt;
+                // 构造带目录无后缀相对路径
+                string relWithoutExt = !string.IsNullOrWhiteSpace(dir) ? $"{dir}/{dwgWithoutExt}" : dwgWithoutExt;
+
+                // 检索字典命中
+                if (!dwgDimMap.TryGetValue(PersonalComponentDbService.NormalizeDwgKey(relWithExt), out dimItem) &&
+                    !dwgDimMap.TryGetValue(PersonalComponentDbService.NormalizeDwgKey(relWithoutExt), out dimItem) &&
+                    !dwgDimMap.TryGetValue(dwgWithExt, out dimItem) &&
+                    !dwgDimMap.TryGetValue(dwgWithoutExt, out dimItem))
+                {
+                    // 字典未命中时尝试单条查库
+                    dimItem = PersonalComponentDbService.GetDwgDimension(relWithExt)
+                           ?? PersonalComponentDbService.GetDwgDimension(relWithoutExt);
+                }
+
+                // 校验 CAD 测算的物理宽度有效性
+                if (dimItem == null || dimItem.Width <= 0)
+                {
+                    // 规则 9 约束：尺寸未获取到，严禁私自瞎猜尺寸
+                    calcWarnings.Add($"【PZ30优先阻断】第 {comp.RowIndex} 行【{comp.Name} {comp.Model}】图纸【{comp.DwgName}】未能从CAD提取到确定宽度，无法计算模数！");
+                    // 标记尺寸缺失
+                    hasMissingDimension = true;
+                    continue;
+                }
+
+                // 核心换算：CAD真实物理宽度除以 18mm 四舍五入取整得出单台模数位
+                int singleMod = (int)Math.Round(dimItem.Width / 18.0);
+                // 保底单台至少为 1 位
+                if (singleMod <= 0) singleMod = 1;
+
+                // 单项占用模数 = 单台模数位 * 数量
+                int qty = comp.Quantity > 0 ? comp.Quantity : 1;
+                // 累加单项模数
+                accumulatedDigits += singleMod * qty;
+            }
+
+            // 若存在未获取尺寸的图纸，按规则 9 拒绝兜底，推导失败
+            if (hasMissingDimension) return false;
+
+            // 记录元件原始模数和
+            rawSumDigits = accumulatedDigits;
+
+            // 3. 第三阶段：叠加最小预留模数 N (若配置 N > 0)
+            int finalTargetDigits = accumulatedDigits;
+            // 校验预留模数有效性
+            if (reservedModules > 0)
+            {
+                // 叠加最小预留模数
+                finalTargetDigits += reservedModules;
+            }
+
+            // 4. 第四阶段：向上靠拢最接近的标准 PZ30 箱体规格
+            matchedPzDigits = MatchNearestPz30Digit(finalTargetDigits, pzConfig?.StandardModSizes);
+            // 成功返回
+            return true;
+        }
+
+        /// <summary>
         /// 当箱体型号为纯数字 (如 15, 20) 时执行 PZ30 模数箱专属计费推导计算
         /// 壳体单价 = 数字 * 壳体系数 (默认 4.0)
         /// 辅材费用 = 数字 * 辅材系数 (默认 1.2)
@@ -478,8 +640,9 @@ namespace ExcelAddInDemo
         /// </summary>
         /// <param name="scanData">箱柜扫描数据</param>
         /// <param name="rules">定额与规则配置</param>
+        /// <param name="warnings">警告与阻断提醒列表</param>
         /// <returns>CabinetCalcResult 计算结果实体</returns>
-        public static CabinetCalcResult CalculatePz30CabinetAuxAndShell(CabinetScanData scanData, QuotationRules rules)
+        public static CabinetCalcResult CalculatePz30CabinetAuxAndShell(CabinetScanData scanData, QuotationRules rules, List<string>? warnings = null)
         {
             // 基础空值保护
             if (scanData == null) return new CabinetCalcResult();
@@ -540,6 +703,12 @@ namespace ExcelAddInDemo
 
             // 综合推导描述
             string desc = $"PZ30模数箱识别完成: {digit} 位 | 壳体单价={digit}*{pzShellRate:F1}={shellUnitPrice}元, 辅材={digit}*{pzAuxRate:F1}={rawAuxCost}元, 人工={digit}*{pzLaborRate:F1}={shellLaborCost}元 (免铜排)";
+            // 若存在警示信息则追加说明
+            if (warnings != null && warnings.Count > 0)
+            {
+                // 追加警告计数提示
+                desc += $" | ⚠️ 存在 {warnings.Count} 项警示";
+            }
 
             // 构造推导结果对象
             return new CabinetCalcResult
@@ -572,7 +741,8 @@ namespace ExcelAddInDemo
                 LaborCost = laborCost,
                 LaborFormula = laborFormula,
                 PrimaryWireDetails = new List<PrimaryWireUsageItem>(),
-                SecondarySchemeDetails = new List<SecondarySchemeCalcItem>()
+                SecondarySchemeDetails = new List<SecondarySchemeCalcItem>(),
+                Warnings = warnings ?? new List<string>()
             };
         }
 
@@ -590,11 +760,12 @@ namespace ExcelAddInDemo
             if (rules == null) rules = LoadQuotationRules();
 
             // 优先检查是否为 PZ30 纯数字箱体型号 (如 15, 20)
-            if (scanData.IsPz30DigitModel && scanData.Pz30Digits > 0)
-            {
-                // 直接调度 PZ30 模数箱专属计费推导并立即返回
-                return CalculatePz30CabinetAuxAndShell(scanData, rules);
-            }
+                // 若开启了 PZ30 优先，则不在此处提前返回，后移至提取 CAD 真实图纸尺寸后重新测算模数并靠拢
+                if (scanData.IsPz30DigitModel && scanData.Pz30Digits > 0 && !(rules?.Pz30Rules?.Pz30Priority == true))
+                {
+                    // 直接调度 PZ30 模数箱专属计费推导并立即返回
+                    return CalculatePz30CabinetAuxAndShell(scanData, rules);
+                }
 
             // 提取通用系数
             double xishu = rules.General.ElementMarkupRatio;
@@ -737,6 +908,33 @@ namespace ExcelAddInDemo
 
             // 记录计算过程中的警告与未填电流提醒列表
             var calcWarnings = new List<string>();
+
+            // -------------------------------------------------------------
+            // 优先判定：若开启【PZ30优先】且未被锁定既有外形尺寸，尝试通过 CAD 图块真实宽度推导 PZ30 模数
+            // -------------------------------------------------------------
+            if (rules?.Pz30Rules?.Pz30Priority == true && !scanData.HasExistingShellSize)
+            {
+                // 检查整柜是否全为模数化元器件，提取 CAD 真实宽度除以 18 累加，叠加最小预留模数 N，靠拢最近 PZ30 规格
+                if (TryCalculateModularCabinetDigitsFromCad(scanData, rules.Pz30Rules, dwgDimMap, calcWarnings, out int matchedDigits, out int rawSumDigits, out int reservedN))
+                {
+                    // 标记当前箱柜为 PZ30 纯数字模数箱
+                    scanData.IsPz30DigitModel = true;
+                    // 更新为靠拢后的标准模数位数
+                    scanData.Pz30Digits = matchedDigits;
+                    // 规格描述为模数位数
+                    scanData.ExistingShellModel = $"{matchedDigits}位";
+
+                    // 直接调度 PZ30 模数箱专属计费推导并立即返回 (携带当前警告列表)
+                    return CalculatePz30CabinetAuxAndShell(scanData, rules, calcWarnings);
+                }
+            }
+
+            // 若原本已被识别为纯数字箱体模型，回退调度 PZ30 计算
+            if (scanData.IsPz30DigitModel && scanData.Pz30Digits > 0)
+            {
+                // 直接调度 PZ30 模数箱专属计费推导并立即返回
+                return CalculatePz30CabinetAuxAndShell(scanData, rules, calcWarnings);
+            }
 
             // 遍历所有元器件统计基础特征
             for (int i = 0; i < scanData.Components.Count; i++)
@@ -1892,15 +2090,15 @@ namespace ExcelAddInDemo
 
                             if (!matchedShellInFeeArea && isShellRow)
                             {
-                                // 若没有既有尺寸才写入推荐型号；若已有尺寸则保护原有规格不覆盖
-                                if (!scanData.HasExistingShellSize || string.IsNullOrWhiteSpace(feeMatrix[r, 3]?.ToString()))
-                                {
-                                    string shellModel = !string.IsNullOrWhiteSpace(result.RecommendedShellModel)
-                                        ? result.RecommendedShellModel
-                                        : (!string.IsNullOrWhiteSpace(result.RecommendedShellSizeFull) ? result.RecommendedShellSizeFull : result.RecommendedShellSize);
-                                    // C 列写入规格型号
-                                    feeMatrix[r, 3] = shellModel;
-                                }
+                                    // 若没有既有尺寸才写入推荐型号；若已有尺寸则保护原有规格不覆盖 (PZ30模数箱更新不受此限)
+                                    if (!scanData.HasExistingShellSize || result.IsPz30DigitModel || string.IsNullOrWhiteSpace(feeMatrix[r, 3]?.ToString()))
+                                    {
+                                        string shellModel = !string.IsNullOrWhiteSpace(result.RecommendedShellModel)
+                                            ? result.RecommendedShellModel
+                                            : (!string.IsNullOrWhiteSpace(result.RecommendedShellSizeFull) ? result.RecommendedShellSizeFull : result.RecommendedShellSize);
+                                        // C 列写入规格型号
+                                        feeMatrix[r, 3] = shellModel;
+                                    }
                                 // E 列写入单位 (默认 "台") --硬编码--
                                 feeMatrix[r, 5] = "台";
                                 // F 列检查数量 (若原数量为空或为0，则默认补 1) --硬编码--

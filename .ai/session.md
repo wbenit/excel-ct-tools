@@ -1,3 +1,19 @@
+- **【新增功能落地：PZ30优先智能模数箱推导与最小预留模数配置】(`Models/CabinetAuxCalcModels.cs`, `Services/ExcelServices.CabinetAuxCalc.cs`, `Resources/cabinet_aux_calc.html`, `publish/`)**：
+  1. **用户核心指令与需求背景**：
+     - 用户在控制面板卡片头部（截图红框处）添加 `PZ30优先` 复选框；
+     - 约定模数化元器件名称库（配置化，拒绝硬编码），若箱柜内元器件 100% 全为模数化元器件，则使用 AA（图纸）与 AB（目录）列参数在 AutoCAD/SQLite 提取真实物理宽度 $W$；
+     - 单台模数位为 $\text{Round}(W / 18.0)$，全柜模数相加；
+     - 添加配置项“最小预留模数” $N$，当设置为 $N$ 时，算出的模数累加 $N$；
+     - 根据计算结果向上靠拢最接近的标准 PZ30 模数箱体规格（如 12、15、18、20位等）；
+     - 严格遵循规则 9：若图纸缺失或 CAD 无法测出宽度，严禁瞎猜尺寸兜底，直接前端报错提醒阻断。
+  2. **工程实现与架构落地**：
+     - ① **模型层**：在 `Pz30Config` 中新增 `Pz30Priority`、`MinReservedModules`、`ModularComponentNames`、`StandardModSizes` 等配置，并同步更新主工程及 publish 的 `quotation_rules.json`；
+     - ② **算法层**：实现 `TryCalculateModularCabinetDigitsFromCad` 与 `MatchNearestPz30Digit`，从 CAD 图块包围盒精确计算模数，接入 `CalculateCabinetAuxAndShell` 主推导引擎，无缝重用既有 PZ30 计费模式（免铜排，按位数计壳体、辅材、人工），写回时将模数型号更新至 C 列；
+     - ③ **界面层**：在 `cabinet_aux_calc.html` 头部装配 `⚡ PZ30优先` Checkbox（联动 `@change="onAnalyze"`），并在“规则与定额配置”Tab 中装配最小预留模数 $N$ 输入器、约定名称库 Tag 标签组件与阶梯库展示；
+     - ④ **规范遵从**：所有新增代码严格执行每 3 行包含一行中文注释，遵循规则 9。
+  3. **构建验证**：
+     - 执行 `dotnet build -p:RunExcelDnaBuild=false` 完整构建：**0 错误、0 警告**，产物已同步至 `publish/`。
+
 - **【核心排查与根治：复制元器件到箱柜第一行样式错误继承表头灰色底纹与粗体缺陷修复】(`Services/ExcelServices.ComponentRowOperations.cs`, `Services/UndoRedoManager.cs`, `publish/`)**：
   1. **用户核心指令与截图确诊**：
      - 用户截图展示：从其他箱柜复制元器件到另一个箱柜的第一行（`targetRow == targetCab.CompStartRow`）后，新行整行带有明细表头的灰色底纹，成本单价列带有表头暗红底纹，文字加粗，边框变为实线；
@@ -7584,3 +7600,28 @@
 5. **编译构建与产物交付**：
    - 执行 `dotnet build e:\Ace\excel-ct-tools\ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:DebugType=none`，编译完全成功：**0 错误**；
    - 最新构建生成的 `bin/Debug/net48/ExcelAddInDemo.dll` 已同步覆盖至 `publish/` 交付目录。
+
+---
+
+## [2026-11-04 18:10:00] 二次元件组规则管道构建器：添加手动排序功能
+
+### [Completed]
+1. **需求理解与执行机制确认**：
+   - 确认二次元件组生成规则严格按照调序后的最新 Priority 优先级（界面上 #1, #2...）进行资源池扣减与自上而下写入 Excel。
+2. **多维手动排序功能落地 (Resources/component_group_builder.html)**：
+   - **方式一：卡片原生鼠标拖拽排序 (Drag & Drop)**：
+     - 在规则卡片增加拖拽手柄图标与 HTML5 拖拽事件（dragstart, dragover, dragleave, drop, dragend）；
+     - 拖拽过程中显示半透明虚线与目标放置高亮外发光；
+     - 松手直接插入目标位置，自动重新刷新全部规则 priority 序号并实时跑沙盒。
+   - **方式二：直接点击序号徽标输入位次 (Quick Jump)**：
+     - 卡片上的 #序号 升级为可点击的交互式微章 .rule-order-badge；
+     - 点击弹出 Element Plus 数字输入框，直接输入 1 到 N 的目标位次即可瞬间移至指定位置。
+   - **方式三：规则库手动排序管理全局弹窗 (Sort Dialog)**：
+     - 规则库顶部新增【排序】按钮；
+     - 弹出排序弹窗，以紧凑表格列出全部规则，支持：
+       - 直接在输入框修改数字改位次；
+       - 一键【置顶】、【上移】、【下移】、【置底】；
+       - 一键【还原初始顺序】与【应用排序】。
+3. **多端发布同步**：
+   - 已同步覆盖至 publish/Resources/component_group_builder.html。
+   - 严格遵循每 3 行包含至少一行中文注释的规范。
