@@ -3621,8 +3621,13 @@
       - 执行 `dotnet build` 验证：**0 错误**。
   14. **方案定位与架构对齐 (全面对标二次方案)**：
       - 完全遵循二次方案的设计范式与工程实践，打通“本地 DWG 图纸目录扫描 + SQLite 方案持久化 + Excel 当前柜一键提取入库 + 前端卡片双列参数网格 + 高质感电气主接线图矢量降级 + BOM 选型与复制继承”的全流程；
-  15. **数据模型与配置持久化 (`PrimaryCircuitModels.cs`, `AppConfig.cs`, `ConfigManager.cs`)**：
-      - 新建 `PrimaryCircuitModels.cs`，包含 `PrimarySchemeEntity`、`PrimaryFolderItemDto`、`PrimaryFolderDwgCardDto` 等模型；
-      - 在 `AppConfig.cs` 中扩展 `PrimaryCircuitSettings.CircuitDwgDirectory`，由 `ConfigManager.UpdatePrimaryDwgDirectory` 统一维护，实现目录配置重启自动记忆；
-  16
-... [truncated for diff preview]
+  15. **数据模型与配置持久化 (`PrimaryCircuitModels.cs`, `AppConfig.cs`, `ConfigManager.cs`)**：- 新建 `PrimaryCircuitModels.cs`，包含 `PrimarySchemeEntity`、`PrimaryFolderItemDto`、`PrimaryFolderDwgCardDto` 等模型；- 在 `AppConfig.cs` 中扩展 `PrimaryCircuitSettings.CircuitDwgDirectory`，由 `ConfigManager.UpdatePrimaryDwgDirectory` 统一维护，实现目录配置重启自动记忆；
+      16
+      ... [truncated for diff preview]
+  16. **【项目信息】预留空行不删除规范与自愈保护实施**：
+      - 彻底修复 `AlignProjectInfoAllCategories`（修复全部）中误删分类表下方预留空行的缺陷；
+      - 废弃第二阶段与第五阶段中对空白行的 `Rows[r].EntireRow.Delete()` 操作；
+      - 增加可用槽位容量安全检查，仅当分类表总数超过可用槽位数时才向小计行前插入新行；
+      - 对未被占用的预留空行严格执行母版标准化重置：A 列重置序号公式 `=ROW()-ROW(A$28)` 并清理超链接，B~H 列清空内容与超链接，确保母版 24 行预留结构完好，第 53 行“小计”行号稳固保持；
+      - 同步优化 `RemoveProjectInfoCategorySummary` 与 `DeleteCategoriesInternal`，删除分类时清空内容并重排，保留物理行不删除；
+      - 经自动化脚本测试：修复全部与新建分类后，Row 33~52 的 20 行预留空行 100% 完好保留，第 53 行“小计”未发生任何上移。编译 0 错误并同步至 `publish/`。

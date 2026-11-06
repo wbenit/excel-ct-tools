@@ -1458,18 +1458,24 @@ namespace ExcelAddInDemo
                             }
                         }
 
-                        // 从大到小倒序整行物理删除，保证序号公式自愈且不产生行号错位
-                        foreach (int r in rowsToDelete.OrderByDescending(x => x))
-                        {
-                            try
+                            // 清理待删除分类所在行的超链接与单元格内容，保留物理行不删除以保护母版预留空行
+                            foreach (int r in rowsToDelete)
                             {
-                                infoSheet.Rows[r].EntireRow.Delete();
+                                try
+                                {
+                                    // 清除 A 列超链接
+                                    infoSheet.Range[$"A{r}"].Hyperlinks.Delete();
+                                    // 清空 B~H 列内容
+                                    infoSheet.Range[$"B{r}:H{r}"].ClearContents();
+                                    // 清空残留超链接
+                                    infoSheet.Range[$"B{r}:H{r}"].Hyperlinks.Delete();
+                                }
+                                catch (Exception exRow)
+                                {
+                                    // 记录清空单行异常日志
+                                    LogHelper.WriteLog($"清空项目信息表第 {r} 行异常: {exRow.Message}");
+                                }
                             }
-                            catch (Exception exRow)
-                            {
-                                LogHelper.WriteLog($"整行物理删除项目信息表第 {r} 行异常: {exRow.Message}");
-                            }
-                        }
                     }
 
                     // 3. 统一全量自愈并校准剩余分类汇总行正向与反向超链接
@@ -1929,19 +1935,26 @@ namespace ExcelAddInDemo
                 // 遍历寻找匹配该分类名的物理行
                 for (int r = startRow; r < startRow + maxScan; r++)
                 {
+                    // 读取 B 列分类名称
                     string cellB = Convert.ToString(infoSheet.Cells[r, 2].Value)?.Trim() ?? "";
+                    // 匹配目标待移除分类
                     if (string.Equals(cellB, categorySheetName, StringComparison.OrdinalIgnoreCase))
                     {
-                        // 找到该分类汇总行，执行整行物理删除 (后方行自动上移，序号公式自愈，小计动态包裹)
-                        infoSheet.Rows[r].EntireRow.Delete();
-                        // 重新全量校准剩余分类汇总行正反向超链接，避免删行引发物理行错位
-                        NormalizeCategorySummaryLinks(targetWb);
-
-                        // 同步清空项目分类工作表白名单缓存
-                        Tool.InvalidateProjectCategorySheetCache();
+                        // 清理该分类汇总行超链接与单元格内容，保留物理行不删除以保护母版预留空行
+                        infoSheet.Range[$"A{r}"].Hyperlinks.Delete();
+                        // 清空 B~H 列单元格内容
+                        infoSheet.Range[$"B{r}:H{r}"].ClearContents();
+                        // 清理残留超链接
+                        infoSheet.Range[$"B{r}:H{r}"].Hyperlinks.Delete();
                         break;
                     }
                 }
+
+                // 重新全量校准剩余分类汇总行正反向超链接，并保留全部预留空行
+                NormalizeCategorySummaryLinks(targetWb);
+
+                // 同步清空项目分类工作表白名单缓存
+                Tool.InvalidateProjectCategorySheetCache();
             }
             catch (Exception ex)
             {
@@ -2494,83 +2507,16 @@ namespace ExcelAddInDemo
                 int maxScan = cfg.ProjectInfoCategorySummaryMaxScanRows;
                 int headerRowIndex = startRow - 1;
 
-                // 记录已在【项目信息】中匹配到物理行的分类表名称
-                var matchedSheets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                // 记录待整行物理删除的无效/死链行号列表
-                var rowsToDelete = new List<int>();
-
-                // 第一阶段：扫描现有分类汇总行，标记失效行与有效行
+                // 第一阶段：扫描定位【小计】汇总行的物理行号 (杜绝误判死链删行)
                 int currentSubtotalRow = -1;
+                // 从配置的起始行开始向下扫描
                 for (int r = startRow; r < startRow + maxScan; r++)
                 {
-                    // 读取 B 列单元格值、文本与公式
-                    string cellBVal = Convert.ToString(infoSheet.Cells[r, 2].Value)?.Trim() ?? "";
-                    string cellBFormula = Convert.ToString(infoSheet.Cells[r, 2].Formula)?.Trim() ?? "";
-                    string cellBText = "";
-                    try { cellBText = Convert.ToString(infoSheet.Cells[r, 2].Text)?.Trim() ?? ""; } catch { }
-
-                    // 若命中“小计”行，记录小计行号并停止扫描
-                    if (cellBVal.Contains("小计") || cellBText.Contains("小计"))
-                    {
-                        currentSubtotalRow = r;
-                        break;
-                    }
-
-                    // 检查是否包含 #REF! 断链错误
-                    bool isRefError = cellBVal.Contains("#REF") || cellBFormula.Contains("#REF") || cellBText.Contains("#REF") ||
-                                      cellBVal.StartsWith("#") || cellBVal == "-2146826288";
-
-                    // 尝试从该行匹配对应的现存分类表
-                    string matchedSheetName = string.Empty;
-                    if (!string.IsNullOrEmpty(cellBVal) && existingSheetMap.ContainsKey(cellBVal))
-                    {
-                        matchedSheetName = cellBVal;
-                    }
-                    else
-                    {
-                        // 尝试从 A 列超链接解析
-                        try
-                        {
-                            dynamic aCell = infoSheet.Cells[r, 1];
-                            if (aCell.Hyperlinks != null && aCell.Hyperlinks.Count > 0)
-                            {
-                                string subAddr = Convert.ToString(aCell.Hyperlinks[1].SubAddress) ?? "";
-                                matchedSheetName = ExtractSheetNameFromSubAddress(subAddr, existingCategorySheets);
-                            }
-                        }
-                        catch { }
-                    }
-
-                    // 若为 #REF! 错误或底表已不存在的死链行
-                    if (isRefError || (!string.IsNullOrEmpty(cellBVal) && string.IsNullOrEmpty(matchedSheetName)))
-                    {
-                        // 标记整行删除
-                        rowsToDelete.Add(r);
-                    }
-                    else if (!string.IsNullOrEmpty(matchedSheetName))
-                    {
-                        // 记录已匹配
-                        matchedSheets.Add(matchedSheetName);
-                    }
-                }
-
-                // 第二阶段：倒序整行物理删除所有失效/死链行 (自下而上删除，杜绝行号偏移)
-                for (int i = rowsToDelete.Count - 1; i >= 0; i--)
-                {
-                    try
-                    {
-                        infoSheet.Rows[rowsToDelete[i]].EntireRow.Delete();
-                    }
-                    catch { }
-                }
-
-                // 重新定位小计行号
-                currentSubtotalRow = -1;
-                for (int r = startRow; r < startRow + maxScan; r++)
-                {
+                    // 读取 B 列单元格值与格式化文本
                     string cellBVal = Convert.ToString(infoSheet.Cells[r, 2].Value)?.Trim() ?? "";
                     string cellBText = "";
                     try { cellBText = Convert.ToString(infoSheet.Cells[r, 2].Text)?.Trim() ?? ""; } catch { }
+                    // 若命中“小计”行，记录小计物理行号并停止扫描
                     if (cellBVal.Contains("小计") || cellBText.Contains("小计"))
                     {
                         currentSubtotalRow = r;
@@ -2578,22 +2524,24 @@ namespace ExcelAddInDemo
                     }
                 }
 
-                // 第三阶段：为尚未在【项目信息】中登记的有效分类表插入新行
-                foreach (string sheetName in existingCategorySheets)
-                {
-                    if (!matchedSheets.Contains(sheetName))
+                    // 第二阶段：槽位容量保护，仅当有效分类表总数超出可用槽位时才在小计行前插入新行
+                    if (currentSubtotalRow > startRow)
                     {
-                        if (currentSubtotalRow > 0)
+                    // 计算小计行上方当前可用总槽位数
+                    int availableSlots = currentSubtotalRow - startRow;
+                        // 计算需要额外补充插入的新行数量
+                        int neededSlots = existingCategorySheets.Count - availableSlots;
+                        // 若分类数量大于可用槽位数，循环插入新物理行
+                        for (int i = 0; i < neededSlots; i++)
                         {
-                            // 在小计行前插入一个物理行
+                            // 在小计行前插入一个物理行 (向下推移 -4121)
                             infoSheet.Rows[currentSubtotalRow].Insert(-4121);
-                            // 小计行物理后移
+                            // 小计行行号随之递增
                             currentSubtotalRow++;
                         }
                     }
-                }
 
-                // 第四阶段：全量格式化并对齐每一个分类汇总行
+                // 第三阶段：全量格式化并对齐每一个分类汇总行
                 int currentRow = startRow;
                 int alignedCount = 0;
                 foreach (string sheetName in existingCategorySheets)
@@ -2656,21 +2604,25 @@ namespace ExcelAddInDemo
                     alignedCount++;
                 }
 
-                // 第五阶段：若分类表后方有多余的空白行或死行直到小计行，清理多余空行保持紧凑
+                // 第四阶段：规范化并完整保留分类表后方直到小计行的预留空行 (杜绝删除空行，确保母版预留行完整)
                 if (currentSubtotalRow > currentRow)
                 {
-                    for (int r = currentSubtotalRow - 1; r >= currentRow; r--)
-                    {
-                        try
+                        // 遍历所有未被占用的预留空行
+                        for (int r = currentRow; r < currentSubtotalRow; r++)
                         {
-                            string checkB = Convert.ToString(infoSheet.Cells[r, 2].Value)?.Trim() ?? "";
-                            if (string.IsNullOrEmpty(checkB) || checkB.StartsWith("#"))
+                            try
                             {
-                                infoSheet.Rows[r].EntireRow.Delete();
+                                // 1. 清理 A 列残留超链接
+                                infoSheet.Range[$"A{r}"].Hyperlinks.Delete();
+                                // 2. 写入/对齐序号动态公式
+                                infoSheet.Cells[r, 1].Formula = $"=ROW()-ROW(A${headerRowIndex})";
+                                // 3. 清空 B~H 列所有单元格残留内容，还原为空白
+                                infoSheet.Range[$"B{r}:H{r}"].ClearContents();
+                                // 4. 清理 B~H 列可能存在的残留超链接
+                                infoSheet.Range[$"B{r}:H{r}"].Hyperlinks.Delete();
                             }
+                            catch { }
                         }
-                        catch { }
-                    }
                 }
 
                 // 第六阶段：刷新项目分类工作表白名单缓存
