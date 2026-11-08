@@ -271,6 +271,8 @@ namespace ExcelAddInDemo.Forms
                 // 1. 优先策略：从当前路径逐级向上探测是否存在 projectJsonFile 工程目录
                 string currentDir = Path.GetDirectoryName(fullPath) ?? string.Empty;
                 string? projectJsonDir = null;
+                // 记录包含 projectJsonFile 的项目基准根目录节点数，防止向上误匹配根目录自身
+                int rootPartCount = 0;
                 DirectoryInfo? cur = new DirectoryInfo(currentDir);
                 // 向上遍历至根驱动器
                 while (cur != null)
@@ -279,25 +281,50 @@ namespace ExcelAddInDemo.Forms
                     string candidate = Path.Combine(cur.FullName, "projectJsonFile");
                     if (Directory.Exists(candidate))
                     {
+                        // 记录命中的工程 JSON 文件夹路径
                         projectJsonDir = candidate;
+                        // 计算项目基准根目录的节点深度（仅允许在根目录以下的子层级提取工程名）
+                        rootPartCount = cur.FullName.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries).Length;
                         break;
                     }
                     cur = cur.Parent;
                 }
 
-                // 若探测到 projectJsonFile 目录，从路径节点倒序比对是否存在对应的 {工程名}.json
+                // 若探测到 projectJsonFile 目录，仅在基准根目录以下的子目录节点中比对是否存在对应的 {工程名}.json
                 if (!string.IsNullOrWhiteSpace(projectJsonDir) && Directory.Exists(projectJsonDir))
                 {
-                    // 倒序比对各级目录名称
-                    for (int i = dirParts.Count - 1; i >= 0; i--)
-                    {
-                        string seg = dirParts[i];
-                        // 校验磁盘上是否存在对应的工程 JSON
-                        if (File.Exists(Path.Combine(projectJsonDir, $"{seg}.json")))
+                        // 从基准根目录的下一级开始倒序比对，严禁向上越界把基准根目录自身当成工程名
+                        for (int i = dirParts.Count - 1; i >= rootPartCount; i--)
                         {
-                            // 100% 精确命中已存在的工程代号 (如 GZ366)
-                            return seg;
+                            string seg = dirParts[i];
+                            // 排除 4 位年份目录与 6-8 位纯数字日期目录，防止误匹配年份命名的异常 JSON
+                            if (System.Text.RegularExpressions.Regex.IsMatch(seg, @"^\d{4}$") ||
+                                System.Text.RegularExpressions.Regex.IsMatch(seg, @"^\d{6,8}$"))
+                            {
+                                // 跳过年份或纯数字日期层级
+                                continue;
+                            }
+                            // 校验磁盘上是否存在对应的工程 JSON
+                            if (File.Exists(Path.Combine(projectJsonDir, $"{seg}.json")))
+                            {
+                                // 100% 精确命中已存在的工程代号 (如 GZ366)
+                                return seg;
+                            }
                         }
+
+                    // 若为尚未建档的新工程，按基准根目录正向层级提取（若第 1 层是 4 位年份则取第 2 层，否则取第 1 层）
+                    if (rootPartCount < dirParts.Count)
+                    {
+                        // 提取基准根目录下的第一级子目录名
+                        string firstSub = dirParts[rootPartCount];
+                        // 若第一级为 4 位年份（如 2026）且存在第二级子目录，则第二级即为标准工程目录
+                        if (System.Text.RegularExpressions.Regex.IsMatch(firstSub, @"^\d{4}$") && rootPartCount + 1 < dirParts.Count)
+                        {
+                            // 返回年份目录紧跟的工程目录名称
+                            return dirParts[rootPartCount + 1];
+                        }
+                        // 否则直接返回基准根目录下的第一级项目目录名称（避免把内部“图纸”等深层子文件夹当成工程名）
+                        return firstSub;
                     }
                 }
 

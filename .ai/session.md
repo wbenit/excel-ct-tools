@@ -1,3 +1,14 @@
+- **【根因排查与修复落地：projectJsonFile 目录中工程 JSON 文件被覆盖原因深度溯源与双端防覆盖加固】(`e:/Ace/draw-code-pcui/src/views/project/fileCtrol.vue`, `Forms/LocalProjectForm.cs`, `Services/ExcelServices.Project.cs`, `publish/`)**：
+  1. **核心机制与路由映射确认**：
+     - 浏览器网页端路由 `/project/fileCtrol` 与 Excel 插件【本机项目】内嵌路由 `/embed/fileCtrol` 在 [`staticRouter.ts`](file:///e:/Ace/draw-code-pcui/src/routers/modules/staticRouter.ts#L22-L26) 中共用同一个 Vue 组件 [`fileCtrol.vue`](file:///e:/Ace/draw-code-pcui/src/views/project/fileCtrol.vue)；
+     - Excel 插件端（`Services/ExcelServices.Project.cs` 与 `Forms/LocalProjectForm.cs`）在 C# 侧对 `projectJsonFile` 目录下的 `.json` 文件均为只读扫描，所有的物理文件写入均发生在 `fileCtrol.vue`。
+  2. **5 大覆盖漏洞修复闭环（前端 `fileCtrol.vue` + Excel 插件 `LocalProjectForm.cs`）**：
+     - ① **修复备注框 `@blur` / `@keyup.enter` 误传 `FocusEvent` 触发全量工程覆写 Bug**：改为 `@blur="saveLocalStore(row.projectName)"` 与 `@keyup.enter="saveLocalStore(row.projectName)"`，并在 `saveLocalStore` 中校验字符串类型、废除全量遍历覆写 `else` 分支；
+     - ② **新增“写前必先读盘合并”双重保护**：在 `openAddDialog` 与 `submitForm` 中若发现内存 `allProjectsData` 为空，先利用点击手势获取权限并调用 `readAllJsonFromXingrenDir()` 读盘；同时在 `autoSyncProjectJsonFile` 写盘前先读取磁盘同名 `{projName}.json`，合并保留磁盘中已有且非本次 `deletedId` 删除的记录；
+     - ③ **修复 `/embed/fileCtrol` 下新增记录拖入/粘贴新文件路径不更新工程名与文件名的 Bug**：移除 `parseAndFillFileInfo` 中的 `if (!form.fileName)` 与 `if (!form.projectName)` 阻断限制，使每次拖入、粘贴或修改文件路径时实时提取并更新所属工程名与文件名，防止将新工程文件误写入 Excel 初始传入的旧工程 JSON；
+     - ④ **修复 `LocalProjectForm.cs` 路径提取工程代号越界匹配根目录与深层子目录 Bug**：在 `ExtractProjectNameFromPath` 中记录 `projectJsonFile` 所在基准根目录深度 `rootPartCount`，严格只对基准根目录以下的子目录层级比对 `{工程名}.json`（并排除 4 位年份与日期目录），对尚未建档的新工程精准按基准根目录下第一/二级目录提取工程名；
+     - ⑤ **跨端焦点切换与 `SELECT_PROJECT` 自动静默刷新 + 工程名忽略大小写归并**：新增 `syncFromDiskSilently` 挂载至 `window` 的 `focus` 事件与 `SELECT_PROJECT` 消息监听；在 `submitForm` 中忽略大小写匹配已有工程 Key；严格遵守每 3 行至少 1 行中文注释规范。
+
 - **【全量闭环交付：Ribbon 修复按钮重构为只修复当前表 + 下拉菜单修复全部 + 项目信息表与分类表双向深度对齐】(`RibbonController.cs`, `Services/ExcelServices.cs`, `Services/ExcelServices.Category.cs`, `publish/`)**：
   1. **用户核心指令与需求落地**：
      - 用户指令：“把ribbon的修复按钮功能修改为只修复当前活动表分类。添加下拉：修复全部，则修复所有分类表。修复的时候要修复项目信息表和分类表对齐。理解表述需求”；
