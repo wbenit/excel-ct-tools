@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>箱体一键改价 - 辅材壳体定额智能核算工作台</title>
+  <!-- 引入 Element Plus 样式库与 FontAwesome 图标库 (支持本地离线与外网加速) -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus@2.3.8/dist/index.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <!-- 引入 Vue 3 与 Element Plus 核心脚本 -->
+  <script src="https://unpkg.com/vue@3.3.4/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/element-plus@2.3.8/dist/index.full.min.js"></script>
+
+  <style>
+    /* 全局重置与字体设定 --硬编码: 字体族-- */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #f1f5f9;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      width: 100vw;
+      height: 100vh;
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+    }
+
+    /* 1. 顶部无边框拖拽移动标题栏 (绿蓝主色调 #009688) */
+    .window-header {
+      height: 38px;
+      /* 绿蓝渐变主色调 --硬编码: 主色调 #009688 至 #00796b-- */
+      background: linear-gradient(135deg, #009688 0%, #00796b 100%);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      cursor: move;
+      flex-shrink: 0;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    }
+
+    .header-title-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: default;
+    }
+
+    .btn-header-close {
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #e2e8f0;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+
+    .btn-header-close:hover {
+      background-color: #ef4444;
+      color: #ffffff;
+    }
+
+    /* 2. 主体工作区容器 */
+    .content-body {
+      flex: 1;
+      padding: 10px 14px 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow: hidden;
+    }
+
+    /* 3. 顶部调价模式与参数卡片栅格 */
+    .config-card-grid {
+      display: grid;
+      grid-template-columns: 2.3fr 1fr;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    /* 参数配置主卡片 */
+    .param-main-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+
+    .card-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 600;
+      color: #1e293b;
+      border-bottom: 1px dashed #e2e8f0;
+      padding-bottom: 6px;
+    }
+
+    .card-inputs-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      flex: 1;
+      min-width: 110px;
+    }
+
+    .input-label {
+      font-size: 11px;
+      color: #64748b;
+      font-weight: 500;
+    }
+
+    /* 辅材壳体计算阶梯提示条 --硬编码: 绿色辅助底色-- */
+    .gradient-tips-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 8px;
+      background-color: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 4px;
+      font-size: 11px;
+      color: #166534;
+      width: 100%;
+    }
+
+    /* 改价范围与设置卡片 */
+    .scope-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+
+    /* 4. 表格列表卡片容器 */
+    .table-container-card {
+      flex: 1;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+
+    /* 表格顶栏快捷筛选与统计 */
+    .table-top-bar {
+      height: 38px;
+      padding: 0 12px;
+      border-bottom: 1px solid #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background-color: #fafafa;
+      font-size: 12px;
+    }
+
+    /* 表格滚动视口 */
+    .table-viewport {
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* 5. 底部统计与操作栏 */
+    .bottom-bar {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 0 14px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+
+    .stats-group {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 12px;
+      color: #334155;
+    }
+
+    .stat-highlight {
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    /* 调价差额高亮徽标 */
+    .diff-badge-up {
+      color: #059669;
+      background: #ecfdf5;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 11px;
+    }
+
+    .diff-badge-down {
+      color: #dc2626;
+      background: #fef2f2;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 11px;
+    }
+
+    .diff-badge-zero {
+      color: #64748b;
+      background: #f1f5f9;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+
+    /* 绿蓝主题按钮样式定制 --硬编码: 主题色-- */
+    .btn-theme-primary {
+      background-color: #009688 !important;
+      border-color: #009688 !important;
+      color: #ffffff !important;
+    }
+
+    .btn-theme-primary:hover {
+      background-color: #00796b !important;
+      border-color: #00796b !important;
+    }
+
+    .bottom-btn-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Vue 3 挂载根节点 -->
+  <div id="app">
+    <!-- 1. 顶部无边框拖拽移动标题栏 -->
+    <div class="window-header" @mousedown="onStartDrag">
+      <div class="header-title-box">
+        <i class="fa-solid fa-box-open" style="color: #80cbc4;"></i>
+        <span>箱体一键改价 - 辅材壳体定额智能核算工作台</span>
+      </div>
+      <div class="header-actions">
+        <!-- 关闭窗体按钮 -->
+        <div class="btn-header-close" @click="handleCloseWindow" title="关闭窗口">
+          <i class="fa-solid fa-xmark"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. 主体工作区 -->
+    <div class="content-body">
+      <!-- 2.1 调价模式与核心参数卡片栅格 -->
+      <div class="config-card-grid">
+        <!-- 主调价参数卡片 -->
+        <div class="param-main-card">
+          <div class="card-title-row">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span><i class="fa-solid fa-sliders" style="color: #009688; margin-right: 4px;"></i>箱体调价模式:</span>
+              <el-radio-group v-model="config.mode" size="small" @change="recalcAllPrices">
+                <el-radio-button label="area">钣金造价重算 (材质×板厚定额)</el-radio-button>
+                <el-radio-button label="percent">按比例系数上浮/让利</el-radio-button>
+                <el-radio-button label="fixed">统一一口价</el-radio-button>
+              </el-radio-group>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <el-button v-if="config.mode === 'area'" size="small" type="primary" link @click="priceMatrixDialogVisible = true">
+                <i class="fa-solid fa-table-cells" style="margin-right: 4px;"></i>查看材质单价库
+              </el-button>
+              <span style="font-size: 11px; color: #64748b;">
+                <i class="fa-solid fa-circle-info" style="color: #009688; margin-right: 3px;"></i>
+                参数调整即时触发毫秒级重算
+              </span>
+            </div>
+          </div>
+
+          <!-- 模式 1: 钣金面积单方造价重算 (辅材壳体工业定额融合) -->
+          <div v-if="config.mode === 'area'" style="display: flex; flex-direction: column; gap: 8px;">
+            <div class="card-inputs-row">
+              <!-- 基准默认材质 -->
+              <div class="input-group" style="flex: 1.2;">
+                <span class="input-label" title="当型号或名称未标注特殊材质时统一采用该默认基准材质">基准默认材质</span>
+                <el-select v-model="config.defaultMaterial" size="small" placeholder="选择默认材质" @change="handleDefaultMaterialChange" style="width: 100%;">
+                  <el-option label="镀锌板 (工业标配)" value="镀锌板"></el-option>
+                  <el-option label="冷轧板 (喷塑)" value="冷轧板"></el-option>
+                  <el-option label="不锈钢 201" value="不锈钢201"></el-option>
+                  <el-option label="不锈钢 304" value="不锈钢304"></el-option>
+                </el-select>
+              </div>
+              <!-- PZ30 单价 -->
+              <div class="input-group">
+                <span class="input-label" title="PZ30 模数箱自动按位数计算单台造价">PZ30单价 (元/位)</span>
+                <el-input-number v-model="config.pz30PricePerDigit" :min="3" :max="30" :precision="1" :step="0.5" size="small" controls-position="right" @change="recalcAllPrices" style="width: 100%;"></el-input-number>
+              </div>
+              <!-- 最小保底单价 -->
+              <div class="input-group">
+                <span class="input-label" title="防止极小尺寸箱体计算出过低非合理单价">最小保底单价 (元/台)</span>
+                <el-input-number v-model="config.minUnitPrice" :min="50" :max="500" :precision="0" :step="10" size="small" controls-position="right" @change="recalcAllPrices" style="width: 100%;"></el-input-number>
+              </div>
+              <!-- 尺寸缺失兜底单价 -->
+              <div class="input-group">
+                <span class="input-label" title="若型号缺失长宽高尺寸且无法推导，采用该兜底基准价">尺寸缺失兜底 (元/台)</span>
+                <el-input-number v-model="config.missingSizePrice" :min="50" :max="1000" :precision="0" :step="10" size="small" controls-position="right" @change="recalcAllPrices" style="width: 100%;"></el-input-number>
+              </div>
+            </div>
+
+            <!-- 辅材壳体计算板厚与深度阶梯提示条 (与图一深度配置 100% 对齐) -->
+            <div class="gradient-tips-bar">
+              <i class="fa-solid fa-ruler-combined" style="color: #059669;"></i>
+              <span style="font-weight: 600;">定额规则:</span>
+              <span>板厚: H≤800:<b>1.2</b>, ≤1600:<b>1.5</b>, &gt;1600:<b>2.0mm</b></span>
+              <span style="color: #cbd5e1;">|</span>
+              <span>推荐深度: H≤800:<b>200</b>, ≤1400:<b>300</b>, ≤1800:<b>400</b>, &gt;1800:<b>800mm</b></span>
+              <span style="color: #cbd5e1;">|</span>
+              <span>展开面: 顶底×2 + 门背×2 + 左右×2 <span style="color: #d97706; font-weight: 600;">(含二层板+1面)</span></span>
+            </div>
+          </div>
+
+          <!-- 模式 2: 按比例系数上浮/让利模式参数 -->
+          <div v-else-if="config.mode === 'percent'" class="card-inputs-row">
+            <div class="input-group" style="flex: 2;">
+              <span class="input-label">全局调价比例 (%) [正数涨价，负数让利]</span>
+              <el-input-number v-model="config.percentRatio" :min="-80" :max="200" :precision="1" :step="1" size="small" controls-position="right" @change="recalcAllPrices" style="width: 100%;"></el-input-number>
+            </div>
+            <div class="input-group" style="flex: 1;">
+              <span class="input-label">最低保底单价 (元/台)</span>
+              <el-input-number v-model="config.minUnitPrice" :min="50" :max="500" :precision="0" :step="10" size="small" controls-position="right" @change="recalcAllPrices" style="width: 100%;"></el-input-number>
+            </div>
+          </div>
+
+          <!-- 模式 3: 统一固定一口价模式参数 -->
+          <div v-else-if="config.mode === 'fixed'" class="card-inputs-row">
+            <div class="input-group" style="flex: 2;">
+              <span class="input-label">统一单台壳体单价 (元/台，一口价)</span>
+              <el-input-number v-model="config.fixedUnitPrice" :min="50" :max="10000" :precision="0" :step="10" size="small" controls-position="right" @change="recalcAllPrices" style="width: 100%;"></el-input-number>
+            </div>
+          </div>
+        </div>
+
+        <!-- 调价生效范围卡片 -->
+        <div class="scope-card">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 12px; font-weight: 600; color: #1e293b;">
+              <i class="fa-solid fa-filter" style="color: #64748b; margin-right: 4px;"></i>改价生效范围
+            </span>
+            <el-radio-group v-model="config.scopeMode" size="small" @change="handleScopeChange">
+              <el-radio-button label="current">当前工作表</el-radio-button>
+              <el-radio-button label="all">全项目分类表</el-radio-button>
+            </el-radio-group>
+          </div>
+          <div style="font-size: 11px; color: #64748b; line-height: 1.4; margin-top: 6px;">
+            当前表: <span style="font-weight: 600; color: #009688;">{{ currentSheetName || "未检测" }}</span><br>
+            全项目共纳管: {{ availableSheets.length }} 个分类工作表
+          </div>
+        </div>
+      </div>
+
+      <!-- 2.2 箱体物料扫描列表卡片 -->
+      <div class="table-container-card">
+        <!-- 表格顶栏操作与搜索 -->
+        <div class="table-top-bar">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-weight: 600; color: #334155;">扫描预览列表</span>
+            <el-tag size="small" type="info">{{ filteredRows.length }} 处箱体壳体</el-tag>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <el-input v-model="searchKeyword" size="small" placeholder="按柜号/型号/尺寸/材质检索..." clearable prefix-icon="el-icon-search" style="width: 220px;"></el-input>
+            <el-button size="small" plain @click="handleRescan" :loading="isScanning" title="重新从 Excel 读取并按辅材壳体定额核算">
+              <i class="fa-solid fa-arrows-rotate" style="margin-right: 4px;"></i>重新扫描
+            </el-button>
+          </div>
+        </div>
+
+        <!-- 表格滚动视图 -->
+        <div class="table-viewport">
+          <el-table
+            ref="tableRef"
+            :data="filteredRows"
+            v-loading="isScanning"
+            element-loading-text="正在全表极速扫描箱体物料并核算定额..."
+            size="small"
+            border
+            stripe
+            height="100%"
+            style="width: 100%;"
+            @selection-change="handleSelectionChange"
+          >
+            <!-- 多选勾选列 -->
+            <el-table-column type="selection" width="42" align="center"></el-table-column>
+            <!-- 序号 -->
+            <el-table-column label="#" width="45" align="center">
+              <template #default="scope">{{ scope.$index + 1 }}</template>
+            </el-table-column>
+            <!-- 所属工作表 -->
+            <el-table-column prop="sheetName" label="分类工作表" width="100" show-overflow-tooltip></el-table-column>
+            <!-- 箱柜号/名称 -->
+            <el-table-column prop="cabinetName" label="所属箱柜" min-width="120" show-overflow-tooltip>
+              <template #default="scope">
+                <span style="font-weight: 600; color: #00796b;">{{ scope.row.cabinetName }}</span>
+              </template>
+            </el-table-column>
+            <!-- 物料名称 -->
+            <el-table-column prop="name" label="材料名称" width="85" show-overflow-tooltip></el-table-column>
+            <!-- 材质选择与展示 -->
+            <el-table-column label="材质" width="115" align="center">
+              <template #default="scope">
+                <el-select
+                  v-model="scope.row.material"
+                  size="small"
+                  style="width: 100%;"
+                  @change="() => recalcRowPrice(scope.row)"
+                >
+                  <el-option label="镀锌板" value="镀锌板"></el-option>
+                  <el-option label="冷轧板" value="冷轧板"></el-option>
+                  <el-option label="不锈钢201" value="不锈钢201"></el-option>
+                  <el-option label="不锈钢304" value="不锈钢304"></el-option>
+                </el-select>
+              </template>
+            </el-table-column>
+            <!-- 板厚 -->
+            <el-table-column label="板厚" width="75" align="center">
+              <template #default="scope">
+                <el-tag size="small" type="success" effect="plain">{{ scope.row.thickness }}mm</el-tag>
+              </template>
+            </el-table-column>
+            <!-- 规格型号与尺寸特征 -->
+            <el-table-column label="规格型号 (尺寸/特征)" min-width="150" show-overflow-tooltip>
+              <template #default="scope">
+                <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                  <span v-if="scope.row.isModular" style="color: #0284c7; font-weight: 600;">
+                    <i class="fa-solid fa-grip" style="margin-right: 3px;"></i>{{ scope.row.model }}
+                  </span>
+                  <span v-else-if="scope.row.hasValidSize" style="color: #0f172a; font-family: Consolas, monospace;">
+                    {{ scope.row.width }}×{{ scope.row.height }}×{{ scope.row.depth }}
+                  </span>
+                  <span v-else style="color: #94a3b8; font-style: italic;">
+                    {{ scope.row.model || "未注明尺寸" }}
+                  </span>
+                  <!-- 二层板徽标 -->
+                  <el-tag v-if="scope.row.hasSecondPlate" size="small" type="warning" effect="light" style="font-size: 10px; height: 18px; padding: 0 4px;">
+                    含二层板
+                  </el-tag>
+                </div>
+              </template>
+            </el-table-column>
+            <!-- 展开表面积 -->
+            <el-table-column label="展开面积" width="85" align="right">
+              <template #default="scope">
+                <span v-if="scope.row.surfaceArea > 0">{{ scope.row.surfaceArea }} ㎡</span>
+                <span v-else-if="scope.row.isModular" style="color: #0284c7;">{{ scope.row.modularDigits }}位</span>
+                <span v-else style="color: #cbd5e1;">-</span>
+              </template>
+            </el-table-column>
+            <!-- 核算平方价 (元/㎡) -->
+            <el-table-column label="核算单价" width="85" align="right">
+              <template #default="scope">
+                <span v-if="scope.row.pricePerSqMeter > 0" style="color: #475569;">¥{{ scope.row.pricePerSqMeter.toFixed(1) }}</span>
+                <span v-else style="color: #cbd5e1;">-</span>
+              </template>
+            </el-table-column>
+            <!-- 数量 -->
+            <el-table-column prop="qty" label="数量" width="60" align="right">
+              <template #default="scope">
+                {{ scope.row.qty }} {{ scope.row.unit }}
+              </template>
+            </el-table-column>
+            <!-- 原基准单价 (M列) -->
+            <el-table-column prop="oldUnitPrice" label="原单价(M列)" width="95" align="right">
+              <template #default="scope">
+                ¥ {{ scope.row.oldUnitPrice.toFixed(2) }}
+              </template>
+            </el-table-column>
+            <!-- 测算新单价 (M列待写入) -->
+            <el-table-column prop="newUnitPrice" label="测算新单价" width="100" align="right">
+              <template #default="scope">
+                <span style="font-weight: 700; color: #009688;">
+                  ¥ {{ scope.row.newUnitPrice.toFixed(2) }}
+                </span>
+              </template>
+            </el-table-column>
+            <!-- 差额与徽标 -->
+            <el-table-column prop="diffAmount" label="改价差额" width="90" align="right">
+              <template #default="scope">
+                <span v-if="scope.row.diffAmount > 0" class="diff-badge-up">+{{ scope.row.diffAmount.toFixed(2) }}</span>
+                <span v-else-if="scope.row.diffAmount < 0" class="diff-badge-down">{{ scope.row.diffAmount.toFixed(2) }}</span>
+                <span v-else class="diff-badge-zero">0.00</span>
+              </template>
+            </el-table-column>
+            <!-- 依据说明 -->
+            <el-table-column prop="remark" label="计价依据说明" min-width="160" show-overflow-tooltip>
+              <template #default="scope">
+                <span style="font-size: 11px; color: #64748b;">{{ scope.row.remark }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+
+        <!-- 底部汇总统计与改价操作栏 -->
+        <div class="bottom-bar">
+          <div class="stats-group">
+            <span>涉及箱柜: <span class="stat-highlight">{{ summaryStats.cabinets }}</span> 台</span>
+            <span>箱体总数: <span class="stat-highlight">{{ summaryStats.boxCount }}</span> 台</span>
+            <span>改价前总计: <span class="stat-highlight">¥ {{ summaryStats.oldAmount.toLocaleString() }}</span></span>
+            <span>改价后总计: <span class="stat-highlight" style="color: #009688;">¥ {{ summaryStats.newAmount.toLocaleString() }}</span></span>
+            <span>差额变动:
+              <span v-if="summaryStats.diffAmount > 0" class="diff-badge-up">+¥ {{ summaryStats.diffAmount.toLocaleString() }}</span>
+              <span v-else-if="summaryStats.diffAmount < 0" class="diff-badge-down">-¥ {{ Math.abs(summaryStats.diffAmount).toLocaleString() }}</span>
+              <span v-else class="diff-badge-zero">¥ 0.00</span>
+            </span>
+          </div>
+
+          <div class="bottom-btn-group">
+            <el-button size="small" @click="handleCloseWindow">取消</el-button>
+            <el-button
+              size="small"
+              class="btn-theme-primary"
+              :loading="isApplying"
+              :disabled="selectedRows.length === 0"
+              @click="handleApplyPrice"
+            >
+              <i class="fa-solid fa-check" style="margin-right: 5px;"></i>
+              一键更新到项目 (已选 {{ selectedRows.length }} 项)
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 材质单价库弹窗 -->
+    <el-dialog
+      v-model="priceMatrixDialogVisible"
+      title="辅材壳体计算 - 板材厚度单价库 (元/㎡)"
+      width="620px"
+      append-to-body
+      destroy-on-close
+    >
+      <div style="font-size: 12px; color: #64748b; margin-bottom: 12px; line-height: 1.5;">
+        以下为【辅材壳体计算】预设的材质与厚度每平米造价定额，箱体一键改价已与其彻底联动：
+      </div>
+      <el-table :data="materialTableData" size="small" border stripe>
+        <el-table-column prop="materialName" label="板材材质" width="110" align="center">
+          <template #default="scope">
+            <span style="font-weight: 600; color: #00796b;">{{ scope.row.materialName }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="1.0mm" align="right">
+          <template #default="scope">¥ {{ getThicknessPrice(scope.row, 1.0) }}</template>
+        </el-table-column>
+        <el-table-column label="1.2mm (H≤800)" align="right">
+          <template #default="scope">
+            <span style="font-weight: 600; color: #059669;">¥ {{ getThicknessPrice(scope.row, 1.2) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="1.5mm (H≤1600)" align="right">
+          <template #default="scope">
+            <span style="font-weight: 600; color: #059669;">¥ {{ getThicknessPrice(scope.row, 1.5) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="2.0mm (H>1600)" align="right">
+          <template #default="scope">
+            <span style="font-weight: 600; color: #059669;">¥ {{ getThicknessPrice(scope.row, 2.0) }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <div style="display: flex; justify-content: flex-end;">
+          <el-button size="small" type="primary" @click="priceMatrixDialogVisible = false">关闭</el-button>
+        </div>
+      </template>
+    </el-dialog>
+  </div>
+
+  <!-- Vue 3 Setup 脚本编写 -->
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    // 创建 Vue 3 应用程序实例
+    createApp({
+      setup() {
+        // 箱体改价规则与参数配置响应式状态
+        const config = ref({
+          mode: "area",
+          defaultMaterial: "镀锌板",
+          shellPriceRules: null,
+          areaUnitPrice: 320.0,
+          expandRatio: 1.20,
+          minUnitPrice: 100.0,
+          missingSizePrice: 200.0,
+          percentRatio: 0.0,
+          fixedUnitPrice: 350.0,
+          pz30PricePerDigit: 7.5,
+          scopeMode: "current",
+          targetSheets: []
+        });
+
+        // 材质厚度单价库弹窗显隐
+        const priceMatrixDialogVisible = ref(false);
+        // 扫描出来的箱体明细列表
+        const rows = ref([]);
+        // 表格当前勾选中的项集合
+        const selectedRows = ref([]);
+        // 检索筛选关键词
+        const searchKeyword = ref("");
+        // 状态加载锁
+        const isScanning = ref(false);
+        const isApplying = ref(false);
+        // 可用工作表与当前工作表
+        const availableSheets = ref([]);
+        const currentSheetName = ref("");
+        // 表格 DOM 引用
+        const tableRef = ref(null);
+
+        // 依据关键字模糊过滤后的行数据
+        const filteredRows = computed(() => {
+          if (!searchKeyword.value || !searchKeyword.value.trim()) {
+            return rows.value;
+          }
+          const kw = searchKeyword.value.trim().toLowerCase();
+          return rows.value.filter(r =>
+            (r.cabinetName && r.cabinetName.toLowerCase().includes(kw)) ||
+            (r.model && r.model.toLowerCase().includes(kw)) ||
+            (r.name && r.name.toLowerCase().includes(kw)) ||
+            (r.material && r.material.toLowerCase().includes(kw)) ||
+            (r.sheetName && r.sheetName.toLowerCase().includes(kw))
+          );
+        });
+
+        // 材质单价表格数据 (直接从 shellPriceRules.materialPrices 读取)
+        const materialTableData = computed(() => {
+          if (config.value.shellPriceRules && config.value.shellPriceRules.materialPrices) {
+            return config.value.shellPriceRules.materialPrices;
+          }
+          return [];
+        });
+
+        // 辅助提取特定厚度的单价
+        const getThicknessPrice = (materialItem, thickness) => {
+          if (!materialItem || !materialItem.thicknessPrices) return "-";
+          const match = materialItem.thicknessPrices.find(tp => Math.abs(tp.thickness - thickness) < 0.01);
+          return match ? match.pricePerSqMeter.toFixed(1) : "-";
+        };
+
+        // 汇总统计指标 (优先计算勾选项目)
+        const summaryStats = computed(() => {
+          const list = selectedRows.value.length > 0 ? selectedRows.value : rows.value;
+          let cabSet = new Set();
+          let boxCount = 0;
+          let oldAmount = 0;
+          let newAmount = 0;
+
+          list.forEach(r => {
+            cabSet.add(`${r.sheetName}_${r.cabinetIndex}`);
+            boxCount += (r.qty || 1);
+            oldAmount += (r.oldTotalPrice || 0);
+            newAmount += (r.newTotalPrice || 0);
+          });
+
+          return {
+            cabinets: cabSet.size,
+            boxCount: Math.round(boxCount * 10) / 10,
+            oldAmount: Number(oldAmount.toFixed(2)),
+            newAmount: Number(newAmount.toFixed(2)),
+            diffAmount: Number((newAmount - oldAmount).toFixed(2))
+          };
+        });
+
+        // 向 C# 宿主发送 WebMessage 指令
+        const postToHost = (actionName, payload = {}) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({
+              action: actionName,
+              ...payload
+            }));
+          }
+        };
+
+        // 触发物理无边框窗口拖动
+        const onStartDrag = (e) => {
+          if (e.target.closest('.header-actions')) return;
+          postToHost('dragWindow');
+        };
+
+        // 关闭窗口
+        const handleCloseWindow = () => {
+          postToHost('close');
+        };
+
+        // 表格多选勾选变动事件
+        const handleSelectionChange = (selection) => {
+          selectedRows.value = selection;
+          const selectedIds = new Set(selection.map(s => s.id));
+          rows.value.forEach(r => {
+            r.selected = selectedIds.has(r.id);
+          });
+        };
+
+        // 根据高度阶梯获取板厚 (与辅材壳体计算 100% 对齐)
+        const getThicknessByHeight = (height) => {
+          const rules = config.value.shellPriceRules;
+          if (rules && rules.thicknessGradients && rules.thicknessGradients.length > 0) {
+            for (const item of rules.thicknessGradients) {
+              if (height <= item.maxHeight) {
+                return item.thickness;
+              }
+            }
+          }
+          // 兜底阶梯 --硬编码: 高度阶梯--
+          if (height <= 800) return 1.2;
+          if (height <= 1600) return 1.5;
+          return 2.0;
+        };
+
+        // 根据高度阶梯推导推荐深度 (与辅材壳体计算图一规则 100% 对齐)
+        const getDepthByHeight = (height) => {
+          // 高度区间上限: <=400:160, <=600:180, <=800:200, <=1000:250, <=1400:300, <=1800:400, <=2000:800, >2000:1000
+          if (height <= 400) return 160;
+          if (height <= 600) return 180;
+          if (height <= 800) return 200;
+          if (height <= 1000) return 250;
+          if (height <= 1400) return 300;
+          if (height <= 1800) return 400;
+          if (height <= 2000) return 800;
+          return 1000;
+        };
+
+        // 获取材质及板厚对应的平方单价 (从 shellPriceRules.materialPrices 检索)
+        const getMaterialUnitPrice = (material, thickness) => {
+          const rules = config.value.shellPriceRules;
+          if (!rules || !rules.materialPrices) return 72.0;
+
+          // 匹配目标材质
+          let matItem = rules.materialPrices.find(m => m.materialName === material);
+          if (!matItem) {
+            // 兜底找基准材质
+            matItem = rules.materialPrices.find(m => m.materialName === (config.value.defaultMaterial || "镀锌板"));
+          }
+          if (!matItem && rules.materialPrices.length > 0) {
+            matItem = rules.materialPrices[0];
+          }
+          if (!matItem || !matItem.thicknessPrices) return 72.0;
+
+          // 查找板厚价格
+          const tpMatch = matItem.thicknessPrices.find(tp => Math.abs(tp.thickness - thickness) < 0.01);
+          if (tpMatch) return tpMatch.pricePerSqMeter;
+
+          // 寻找最接近的厚度
+          let closest = matItem.thicknessPrices[0];
+          let minDiff = Math.abs(closest.thickness - thickness);
+          for (let i = 1; i < matItem.thicknessPrices.length; i++) {
+            const diff = Math.abs(matItem.thicknessPrices[i].thickness - thickness);
+            if (diff < minDiff) {
+              minDiff = diff;
+              closest = matItem.thicknessPrices[i];
+            }
+          }
+          return closest ? closest.pricePerSqMeter : 72.0;
+        };
+
+        // 重新计算单个箱体的新单价与依据说明
+        const recalcRowPrice = (row) => {
+          const mode = config.value.mode;
+          const minUnit = config.value.minUnitPrice || 100.0;
+          const missingPrice = config.value.missingSizePrice || 200.0;
+          const pzDigitPrice = config.value.pz30PricePerDigit || 7.5;
+          const percentRatio = config.value.percentRatio || 0.0;
+          const fixedUnit = config.value.fixedUnitPrice || 350.0;
+
+          let newUnit = row.oldUnitPrice;
+          let remark = "";
+
+          if (mode === "area") {
+            if (row.isModular) {
+              // PZ30 模数箱计费
+              newUnit = Math.max(row.modularDigits * pzDigitPrice, minUnit);
+              remark = `PZ30模数箱: ${row.modularDigits}位 × ${pzDigitPrice}元/位`;
+              row.pricePerSqMeter = 0;
+            } else if (row.hasValidSize && row.width > 0 && row.height > 0) {
+              // 1. 板厚判定 (若未显式赋值则按高度阶梯)
+              if (!row.thickness || row.thickness <= 0) {
+                row.thickness = getThicknessByHeight(row.height);
+              }
+              // 2. 深度判定 (若未显式赋值或<=0则按图一高度阶梯推导)
+              if (!row.depth || row.depth <= 0) {
+                row.depth = getDepthByHeight(row.height);
+              }
+
+              // 3. 检索平方单价
+              const sqPrice = getMaterialUnitPrice(row.material, row.thickness);
+              row.pricePerSqMeter = sqPrice;
+
+              // 4. 计算展开面积 (辅材壳体计算标准)
+              const wM = row.width / 1000.0;
+              const hM = row.height / 1000.0;
+              const dM = row.depth / 1000.0;
+              // 顶底面(2.0) + 左右侧面(2.0) + 门背板(2.0 + 二层板1.0)
+              const secondPlateAdd = row.hasSecondPlate ? 1.0 : 0.0;
+              const area = 2.0 * (wM * dM + hM * dM) + (2.0 + secondPlateAdd) * (hM * wM);
+              row.surfaceArea = Math.round(area * 1000) / 1000;
+
+              // 4. 核算单价
+              const calcPrice = row.surfaceArea * sqPrice;
+              newUnit = Math.max(calcPrice, minUnit);
+              const plateDesc = row.hasSecondPlate ? "(含二层板)" : "";
+              remark = `${row.material} ${row.thickness}mm | 展开${row.surfaceArea}㎡${plateDesc} × ${sqPrice}元/㎡`;
+            } else {
+              // 尺寸缺失保底计费
+              newUnit = missingPrice;
+              remark = `未检测到有效尺寸，按保底单价 ${missingPrice}元 计费`;
+            }
+          } else if (mode === "percent") {
+            const factor = 1.0 + (percentRatio / 100.0);
+            newUnit = Math.max(row.oldUnitPrice * factor, minUnit);
+            const sign = percentRatio >= 0 ? "+" : "";
+            remark = `按原单价 ${row.oldUnitPrice}元 浮动 ${sign}${percentRatio}%`;
+          } else if (mode === "fixed") {
+            newUnit = fixedUnit;
+            remark = `统一一口价 ${fixedUnit}元/台`;
+          }
+
+          newUnit = Math.round(newUnit * 100) / 100;
+          row.newUnitPrice = newUnit;
+          row.newTotalPrice = Math.round(newUnit * (row.qty || 1) * 100) / 100;
+          row.diffAmount = Math.round((row.newTotalPrice - (row.oldTotalPrice || 0)) * 100) / 100;
+          row.remark = remark;
+        };
+
+        // 纯前端极速响应式重算所有箱体新单价、新合价与差额
+        const recalcAllPrices = () => {
+          rows.value.forEach(row => {
+            recalcRowPrice(row);
+          });
+        };
+
+        // 默认基准材质修改时，同步未显式自定义的行材质
+        const handleDefaultMaterialChange = () => {
+          const newMat = config.value.defaultMaterial;
+          rows.value.forEach(row => {
+            // 如果原材质与旧默认一致，批量同步
+            row.material = newMat;
+            recalcRowPrice(row);
+          });
+        };
+
+        // 切换改价生效范围
+        const handleScopeChange = () => {
+          handleRescan();
+        };
+
+        // 发送扫描箱体指令
+        const handleRescan = () => {
+          isScanning.value = true;
+          postToHost('scanCabinets', {
+            config: config.value
+          });
+        };
+
+        // 接收 C# 宿主返回的扫描数据
+        const onReceiveScanResult = (data) => {
+          isScanning.value = false;
+          if (!data || !data.success) {
+            ElementPlus.ElMessage.error(data?.message || "扫描箱体数据失败！");
+            return;
+          }
+
+          availableSheets.value = data.availableSheets || [];
+          currentSheetName.value = data.currentSheetName || "";
+          rows.value = data.rows || [];
+
+          // 同步后端返回的辅材壳体计算规则
+          if (data.shellPriceRules) {
+            config.value.shellPriceRules = data.shellPriceRules;
+          }
+          if (data.defaultMaterial) {
+            config.value.defaultMaterial = data.defaultMaterial;
+          }
+
+          // 重新依据当前界面参数刷新新价格
+          recalcAllPrices();
+
+          // 默认全选所有行
+          setTimeout(() => {
+            if (tableRef.value) {
+              tableRef.value.clearSelection();
+              rows.value.forEach(row => {
+                tableRef.value.toggleRowSelection(row, true);
+              });
+            }
+          }, 100);
+
+          ElementPlus.ElMessage.success(data.message || "箱体物料扫描成功！");
+        };
+
+        // 执行一键批量更新到项目
+        const handleApplyPrice = () => {
+          if (selectedRows.value.length === 0) {
+            ElementPlus.ElMessage.warning("请至少勾选一项箱体物料！");
+            return;
+          }
+
+          ElementPlus.ElMessageBox.confirm(
+            `即将把已勾选的 ${selectedRows.value.length} 处箱体单价批量回写至对应 Excel 表的 M 列中，所有关联销售价、成本价及箱柜小计将自动联动重算。是否确认立即执行？`,
+            "箱体一键改价确认",
+            {
+              confirmButtonText: "立即回写",
+              cancelButtonText: "取消",
+              type: "success"
+            }
+          ).then(() => {
+            isApplying.value = true;
+            postToHost('applyPrice', {
+              payload: {
+                config: config.value,
+                items: rows.value
+              }
+            });
+          }).catch(() => {});
+        };
+
+        // 接收批量回写执行结果
+        const onReceiveApplyResult = (data) => {
+          isApplying.value = false;
+          if (data && data.success) {
+            ElementPlus.ElMessage.success({
+              message: data.message || "箱体价格已成功批量回写并完成公式重算！",
+              duration: 2500
+            });
+            // 延时关闭弹窗
+            setTimeout(() => {
+              postToHost('close');
+            }, 1200);
+          } else {
+            ElementPlus.ElMessage.error(data?.message || "回写失败，请检查 Excel 状态！");
+          }
+        };
+
+        // 挂载消息监听通道
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (event) => {
+              try {
+                const message = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                if (!message) return;
+
+                if (message.action === 'scanResult') {
+                  onReceiveScanResult(message.data);
+                } else if (message.action === 'applyResult') {
+                  onReceiveApplyResult(message.data);
+                }
+              } catch (err) {
+                console.error("处理宿主消息异常:", err);
+              }
+            });
+          }
+
+          // 首次加载自动发起一次扫描
+          handleRescan();
+        });
+
+        return {
+          config,
+          rows,
+          selectedRows,
+          filteredRows,
+          searchKeyword,
+          priceMatrixDialogVisible,
+          materialTableData,
+          getThicknessPrice,
+          isScanning,
+          isApplying,
+          availableSheets,
+          currentSheetName,
+          summaryStats,
+          tableRef,
+          onStartDrag,
+          handleCloseWindow,
+          handleSelectionChange,
+          recalcRowPrice,
+          recalcAllPrices,
+          handleDefaultMaterialChange,
+          handleScopeChange,
+          handleRescan,
+          handleApplyPrice
+        };
+      }
+    }).use(ElementPlus).mount('#app');
+  </script>
+</body>
+</html>

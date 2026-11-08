@@ -620,6 +620,18 @@ namespace ExcelAddInDemo
                 // 弹出基于 WebView2 + Vue 3 的智能母排/铜排计算器工作台
                 ExcelServices.OpenCopperBusbarCalcDialog();
             }
+            // 响应“母排一键改价”按钮指令 (元件批调下拉子项)
+            else if (controlId == "btnBusbarBatchPrice")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“母排一键改价”工作台
+                ExcelServices.ShowBusbarBatchPriceDialog();
+            }
+            // 响应“箱体一键改价”按钮指令 (元件批调下拉子项)
+            else if (controlId == "btnCabinetBatchPrice")
+            {
+                // 弹出基于 WebView2 + Vue 3 的“箱体一键改价”工作台
+                ExcelServices.ShowCabinetBatchPriceDialog();
+            }
             // 响应“智能输入”按钮指令
             else if (controlId == "btnSmartInput")
             {

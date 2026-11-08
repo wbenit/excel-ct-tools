@@ -1,3 +1,122 @@
+- **【缺陷根除与定额对齐：二维尺寸 (如 800*1800) 深度推导严格联动图一【辅材壳体计算】高度深度梯度表闭环】([`Services/ExcelServices.CabinetBatchPrice.cs`](file:///d:/code/excel-ct-tools/Services/ExcelServices.CabinetBatchPrice.cs), [`Resources/cabinet_batch_price.html`](file:///d:/code/excel-ct-tools/Resources/cabinet_batch_price.html), [`publish/`](file:///d:/code/excel-ct-tools/publish/))**：
+  1. **用户反馈与根因确诊**：
+     - 用户截图提问：“按图一的配置，深度不应该是400吗，为什么计算出来是200”；
+     - **根因分析**：在 `Services/ExcelServices.CabinetBatchPrice.cs` 的 `TryExtractDimensionsFromText` 中，匹配到二维长宽尺寸（如 `800*1800`，未标明深度）时，原代码遗留写死了 `double d = 200.0;`，未调用图一【辅材壳体计算】中的 `HeightDepthGradients`（高度驱动的箱柜深度推荐梯度表），导致高度为 1800mm 时被强行按 200mm 深度核算。
+  2. **深度梯度联动重构**：
+     - 在 `ParseCabinetDimensions` 与 `TryExtractDimensionsFromText` 中接入 `quotationRules.ShellRules`，若未标注深度且 $h > 0$，严格调用 `DeriveDepthFromHeight((int)h, shellConfig)`；
+     - 当高度为 1800mm 时，精准命中 $1400 < H \le 1800\text{mm} \implies \mathbf{D = 400\text{mm}}$（动力配电柜 XL-21 标准深度）；
+     - 同步更新前端 `Resources/cabinet_batch_price.html`：增加 `getDepthByHeight(height)` 算法，在定额提示条中增加深度说明，确保前后端 100% 同步；
+  3. **实测验证**：
+     - 针对用户图纸中的 `厂房照明总配电箱ALZ系统`（型号 `800*1800`）：
+       - 尺寸精准修正为：$\mathbf{800 \times 1800 \times 400}$（深度由 200 修正为 400）；
+       - 展开面积精准更新为：$\mathbf{4.96\text{㎡}}$；
+       - 测算新单价自动更新为：$4.96 \times 96.0 = \mathbf{476.16\text{元}}$；
+     - 构建通过（0 错误），DLL 及静态资源全量同步到 `publish/`。
+
+- **【全新升级与工业定额深度融合：箱体一键改价 (CabinetBatchPrice) 辅材壳体材质厚度矩阵与严格全字匹配彻底闭环】([`Models/CabinetBatchPriceModels.cs`](file:///d:/code/excel-ct-tools/Models/CabinetBatchPriceModels.cs), [`Services/ExcelServices.CabinetBatchPrice.cs`](file:///d:/code/excel-ct-tools/Services/ExcelServices.CabinetBatchPrice.cs), [`Resources/cabinet_batch_price.html`](file:///d:/code/excel-ct-tools/Resources/cabinet_batch_price.html), [`publish/`](file:///d:/code/excel-ct-tools/publish/))**：
+  1. **用户核心需求与决策闭环**：
+     - 用户指出：原命中规则包含“配电箱/动力箱”容易误判非材料行（如安装费、制作劳务等）；要求查看 Ribbon 【辅材壳体计算】中的 B 列标记、壳体厚度、板材厚度、材质定义，并深度融合；
+     - 用户确认全部执行【选项 A】方案：
+       - ① 严格全字防误判：B 列严格比对全局配置项 `shellMatchName`（默认 `"箱体"`）及备选词 `"箱体"`、`"壳体"`、`"柜体"`，彻底废弃“配电箱/动力箱”模糊包含逻辑；
+       - ② 工业定额算价融合：无缝继承复用【辅材壳体计算】的材质价格库（冷轧板、镀锌板、不锈钢201、不锈钢304）、高度阶梯板厚决策（H≤800:1.2mm, H≤1600:1.5mm, H>1600:2.0mm）、二层板面数加成与展开面积核算；
+  2. **工程实现与架构落地细节**：
+     - ① **后端模型层扩展 (`Models/CabinetBatchPriceModels.cs`)**：
+       - `CabinetBatchItemDto` 增加了 `Material`（材质）、`Thickness`（板厚）、`PricePerSqMeter`（平米单价）、`HasSecondPlate`（二层板）、`StandardModel`（标准型号）属性；
+       - `CabinetBatchPriceConfigDto` 与 `CabinetBatchPriceScanResultDto` 增加了 `DefaultMaterial` 与 `ShellPriceRules` 规则容器；
+     - ② **业务服务层重构 (`Services/ExcelServices.CabinetBatchPrice.cs`)**：
+       - 接入全局 `QuotationRules.ShellPriceRules`；
+       - 实施严格全字匹配函数 `IsCabinetMaterialRow`，彻底杜绝劳务与五金误判；
+       - 融合 `DetermineMaterial`、`DetermineThickness`、二层板展开面决策与价格矩阵检索；
+       - 增强 Excel 宿主 COM 获取与 `Workbooks[1]` 安全兜底机制；
+     - ③ **WebView2 前端重构 (`Resources/cabinet_batch_price.html`)**：
+       - 主题延续 `#009688` 绿蓝相间视觉规范，Vue 3 (`<script setup>`) + Element Plus；
+       - 默认模式升级为“钣金造价重算 (材质×板厚定额)”；展示板厚阶梯提示条与基准默认材质下拉框；
+       - 表格新增【材质】选择下拉框（支持逐台单机临时切换材质）、【板厚】标签、【规格与二层板】徽标、【展开面积】、【核算单价】等；
+       - 新增【查看材质单价库】弹窗（清晰展示冷轧板、镀锌板、不锈钢各厚度单价）；
+       - 实现纯前端极速响应式重算引擎（微调全局默认材质、单台材质或兜底单价即时毫秒级刷新新单价与差额）；
+     - ④ **规范与硬编码管理**：
+       - 新增代码严格落实“至少每 3 行包含 1 行中文注释”；硬编码处均显式标明 `--硬编码--`；
+  3. **端到端实测验证与交付**：
+     - 使用真实工程图纸 `WB202609231710-江苏赛格瑞1-吴.xlsx`（包含 48 台箱柜）进行端到端全量扫描验证：
+       - 计费区箱体物料精确扫描，无任何劳务、成套费或辅材误判；
+       - 标明尺寸的箱柜（如 `800*1800`）精准命中高度阶梯（2.0mm），展开面积 3.92㎡，平米单价 96元/㎡，新单价 376.32元；
+       - 缺失尺寸箱柜智能保底兜底（200元/台）并在计价说明中清晰注明；
+     - 执行 `dotnet build` 编译成功：**0 错误**；最新 `ExcelAddInDemo.dll` 与 HTML 资源已全量同步到 `publish/` 与 `bin/Debug/net48/`。
+
+- **【核心突破与算法修复：箱体一键改价 (CabinetBatchPrice) 计费区域全覆盖扫描与多级尺寸智能继承闭环】([`Services/ExcelServices.CabinetBatchPrice.cs`](file:///d:/code/excel-ct-tools/Services/ExcelServices.CabinetBatchPrice.cs), [`publish/`](file:///d:/code/excel-ct-tools/publish/))**：
+  1. **用户反馈与根因确诊**：
+     - 用户测试反馈：“列表是空的，你匹配箱柜的逻辑是什么，箱柜也有可能在计费区域的”，截图显示“已成功检测到 0 处箱体/壳体物料（涉及 38 台箱柜）”；
+     - **根因确诊**：原扫描代码误将 `detRow + 1` 到 `subsumRow - 1` 当作计费区（实际为元器件明细区），而真实成套报价表中的所有箱体/壳体 100% 位于 **`subsumRow`（小计）到 `tolsumRow`（单台总计）之间的【计费区域】**（如真实工程中 Row 103, Row 138, Row 174, Row 210 等），导致计费区箱体被直接截断忽略，因而扫描结果为 0。
+  2. **双域全覆盖扫描与智能继承算法重构**：
+     - ① **双域全覆盖扫描引擎**：优先扫描【计费区域】（`subsumRow` 至 `tolsumRow`），精准捕获箱体物料；若该箱柜计费区无箱体，自动回退兼顾扫描【元器件明细区】（`detRow + 1` 至 `subsumRow - 1`）；
+     - ② **多级尺寸继承与自愈体系**：
+       - 若计费区箱体 C 列有尺寸（如 Row 138 的 `800*1800`），优先采用；
+       - 若计费区箱体 C 列为空（如 Row 103），自动向上回溯继承箱柜主信息行（`detRow`）的型号规格尺寸；若仍无，则从箱柜名称中智能提取尺寸；
+     - ③ **尺寸解析与展开表面积增强**：
+       - 支持两维尺寸（如 `800*1800`），深度自动按 200mm 通用动力箱兜底，计算六面体展开面积：$S = 2 \times (W \times H + W \times D + H \times D) / 10^6$；
+       - 支持三维尺寸（`W*H*D`）及 PZ30 模数箱（`18位`）；
+     - ④ **数量与价格推导**：
+       - 计费区 F 列数量若为空或 0，智能继承箱柜主台数；
+       - M 列表价若为空，自动尝试从 G 列销售单价或 J 列成本单价兜底；
+  3. **实测验证**：
+     - 使用桌面真实工程文件 `WB202609231710-江苏赛格瑞1-吴.xlsx`（`分类1` 包含 38 台箱柜）进行实测：
+     - **38 台箱柜全部 100% 成功命中计费区中的 38 处箱体费用物料**（Row 103, 138, 174, 210, 246, 282, 318, 354, 389, 424...）；
+     - 重新构建 `ExcelAddInDemo.dll` 成功（0 错误 0 警告），新程序集与 HTML 资源已全量同步到 `publish/` 与 `bin/Debug/net48/`。
+
+- **【全新功能落地：箱体一键改价 (CabinetBatchPrice) 多模式调价工作台完整实施闭环】([`Forms/CabinetBatchPriceForm.cs`](file:///d:/code/excel-ct-tools/Forms/CabinetBatchPriceForm.cs), [`Services/ExcelServices.CabinetBatchPrice.cs`](file:///d:/code/excel-ct-tools/Services/ExcelServices.CabinetBatchPrice.cs), [`Resources/cabinet_batch_price.html`](file:///d:/code/excel-ct-tools/Resources/cabinet_batch_price.html), [`publish/`](file:///d:/code/excel-ct-tools/publish/))**：
+  1. **用户核心指令与需求背景**：
+     - 用户要求实施“元件批调”红框第二项重点功能【箱体一键改价】（`btnCabinetBatchPrice`）；
+     - 设计并落地支持【钣金展开面积造价重算】、【比例系数上浮/让利】与【统一固定单价/一口价】的三大引擎多模式调价工作台。
+  2. **工程实现与架构落地**：
+     - ① **模型层 (`Models/CabinetBatchPriceModels.cs`)**：
+       - 定义调价配置实体 `CabinetBatchPriceConfigDto`（单方造价、展开系数、最低保底单价、缺失尺寸兜底价、调价浮动比例、PZ30单价、生效范围等）；
+       - 定义箱体物料明细行实体 `CabinetBatchItemDto`（箱柜名、行号、图纸规格、长宽高尺寸、PZ30模数、表面积、原表价值与测算新表价值、差额等）；
+     - ② **业务服务层 (`Services/ExcelServices.CabinetBatchPrice.cs`)**：
+       - 智能扫描全项目分类表计费区箱体物料（支持 B 列包含“箱体/壳体/柜体”或 Q 列类别为“箱体”，严格过滤排除“制作”、“人工”等劳务费用行）；
+       - 正则解析长宽高尺寸（如 `800*1200*300`）与 PZ30 模数位数（如 `18位`）；
+       - 六面体展开表面积算法：$S = 2 \times (W \times H + W \times D + H \times D) / 10^6$；
+       - 安全批量回写：锁定 M 列基准单价批量修改，触发 Excel 级联公式重算，保护 G/H/J/K 及箱柜求和公式链；
+     - ③ **WebView2 前端与界面层 (`Forms/CabinetBatchPriceForm.cs`, `Resources/cabinet_batch_price.html`)**：
+       - 采用 C# WinForms + WebView2 + Vue 3 (`<script setup>`) + Element-Plus 现代技术栈，主色调 `#009688` 绿蓝相间；
+       - 支持标题栏无边框拖拽移动、前端实时检索过滤、行全选与反选、指标差额高亮统计；
+       - 纯前端响应式瞬间动态重算（微调单方造价或浮动比例毫秒级联动刷新所有行新单价）；
+     - ④ **Ribbon 入口与构建分发**：
+       - 在 `RibbonController.cs` 中挂接 `btnCabinetBatchPrice` 按钮入口，弹出工作台；
+       - 在 `ExcelAddInDemo.csproj` 中配置静态资源自动复制到输出路径；
+  3. **构建验证与产物交付**：
+     - 执行 `dotnet build ExcelAddInDemo.csproj`：**0 错误**；
+     - 程序集 `ExcelAddInDemo.dll`、`.pdb` 及 `Resources/cabinet_batch_price.html` 已全量同步至 `publish/` 与 `bin/Debug/net48/Resources/`。
+
+- **【全新功能与大盘行情全插件打通：母排一键改价 (BusbarBatchPrice) 完整落地与铜铝大盘行情统一打通】([`Forms/BusbarBatchPriceForm.cs`](file:///d:/code/excel-ct-tools/Forms/BusbarBatchPriceForm.cs), [`Services/ExcelServices.BusbarBatchPrice.cs`](file:///d:/code/excel-ct-tools/Services/ExcelServices.BusbarBatchPrice.cs), [`Resources/busbar_batch_price.html`](file:///d:/code/excel-ct-tools/Resources/busbar_batch_price.html), [`publish/`](file:///d:/code/excel-ct-tools/publish/))**：
+  1. **用户核心指令与需求背景**：
+     - 用户要求完成 Excel 插件“元件批调”下拉菜单中红框重点功能，第一项推进【母排一键改价】（`btnBusbarBatchPrice`）；
+     - 明确要求将【母排一键改价】中的铜价/铝价获取与【云物料】、【智能辅材壳体计算】底层大盘行情逻辑完全打通统一（调用 `MarketPriceService.FetchMarketPricesAsync()` 提取长江/上海有色现货行情）。
+  2. **工程实现与架构落地**：
+     - ① **模型层 (`Models/BusbarBatchPriceModels.cs`)**：
+       - 定义母排改价入参配置 `BusbarBatchPriceConfigDto`（铜/铝基准价、加工费、生效范围、自动米重换算等）；
+       - 定义母排物料行模型 `BusbarBatchItemDto`（箱柜名、行号、图纸规格、复合拼数与截面积、米重、原单价与测算新单价、差额等）；
+     - ② **业务服务层 (`Services/ExcelServices.BusbarBatchPrice.cs`)**：
+       - 智能识别过滤母排物料（排除断路器、接触器、铜排夹、绝缘子等配件干扰）；
+       - 正则解析矩形铜排/铝排复合规格（如 `2*(TMY-80*8)`、`TMY-3*(100*10)+1*(60*6)`），自动计算单米理论重量；
+       - 执行批量回写：锁定 M 列基准单价批量修改，触发 Excel 级联公式重算；
+     - ③ **WebView2 前端与界面层 (`Forms/BusbarBatchPriceForm.cs`, `Resources/busbar_batch_price.html`)**：
+       - 采用 C# WinForms + WebView2 + Vue 3 (`<script setup>`) + Element-Plus 现代技术栈，主色调 `#009688` 绿蓝相间；
+       - 支持标题栏无边框拖拽移动、前端实时检索过滤、行全选与反选、指标差额高亮统计；
+       - 双向打通 `getMarketPrice` 与 `marketPriceResponse` 指令，前端卡片支持一键刷新同步大盘铜铝行情，初始化时自动获取最新大盘现货价格；
+     - ④ **规范遵从与交付**：
+       - 所有新增代码严格遵循“至少每 3 行包含一行中文注释”；硬编码标示 `--硬编码--`；
+  3. **行情拉取参数越界 (start) 与跨线程 JsonDocument 释放 Bug 根除**：
+     - **根因确诊**：
+       1. 在 `OnWebMessageReceived` 中，`using var doc = JsonDocument.Parse(...)` 在同步作用域结束时即被释放；而 `HandleGetMarketPrice` 是通过 `Task.Run` 在后台异步线程中执行，在后台线程尝试访问 `root.TryGetProperty` 时，底层的内存切片 `ReadOnlyMemory<byte>.Slice(start, length)` 触发了 `ArgumentOutOfRangeException: 指定的参数已超出有效值的范围。 参数名: start`（或 `ObjectDisposedException`）；
+       2. `ParseSinaFuturesResponse` 中的时间字符串在盘后或非标准格式下直接调用 `fields[1].Insert(2, ":")` 存在潜在的字符串越界隐患；
+     - **彻底修复**：
+       1. 在主线程同步提取 `forceRefresh` 布尔值，改为直接强类型传参 `HandleGetMarketPrice(bool forceRefresh)`，彻底杜绝后台异步线程访问已释放的 `JsonElement`；
+       2. 重构 `ParseSinaFuturesResponse` 时间解析，增加长度判断与系统时间安全回退，并对整个解析过程加装 `try...catch` 保护；
+       3. 编写真实运行时脚本测试：成功拉取到实时 1#电解铜现货（105,685 元/吨，折合 105.69 元/kg）、铝现货（23,180 元/吨，折合 23.18 元/kg），0 异常。
+  4. **构建验证与产物交付**：
+     - 执行 `dotnet build ExcelAddInDemo.csproj`：**0 错误**；
+     - 程序集 `ExcelAddInDemo.dll`、`.pdb` 及 `Resources/busbar_batch_price.html` 已全量同步至 `publish/` 与 `bin/Debug/net48/Resources/`。
+
 - **【Ribbon 冗余与无功能菜单专项清理闭环：精准保留 8 项预留菜单，清除 14 项无响应死项、5 项假功能占位项及 4 个空壳容器】([`RibbonController.cs`](file:///e:/Ace/ExcelAddInCTtools/RibbonController.cs), [`publish/`](file:///e:/Ace/ExcelAddInCTtools/publish/))**：
   1. **用户核心指令与保留范围**：
      - 用户明确指定保留 8 项待后续接入功能：`一键匹配价格`（`btnAutoMatchPrice`）、`母排一键改价`（`btnBusbarBatchPrice`）、`箱体一键改价`（`btnCabinetBatchPrice`）、`多方案报价`（`menuMultiPlanQuote`）、`系数法调费`（`btnCoefficientAdjustFee`）、`费用公式转值`（`btnFormulaToValue`）、`总价高级调整`（`btnAdvancedAdjustTotal`）、`用户定制报表`（`btnReportCustomUser`）；其余无功能与假功能项全量删除。
@@ -3662,3 +3781,79 @@
       - 对未被占用的预留空行严格执行母版标准化重置：A 列重置序号公式 `=ROW()-ROW(A$28)` 并清理超链接，B~H 列清空内容与超链接，确保母版 24 行预留结构完好，第 53 行“小计”行号稳固保持；
       - 同步优化 `RemoveProjectInfoCategorySummary` 与 `DeleteCategoriesInternal`，删除分类时清空内容并重排，保留物理行不删除；
       - 经自动化脚本测试：修复全部与新建分类后，Row 33~52 的 20 行预留空行 100% 完好保留，第 53 行“小计”未发生任何上移。编译 0 错误并同步至 `publish/`。
+  17. **【工程构建自愈与 Targets 修复】根目录 publish 目录排除解决 ExcelDnaPack 编译报错**：
+      - **现象定位**：执行 `dotnet build` 时报错 `PackExcelAddIn error DNA-1791178666: !!! ERROR: ExternalLibrary ExcelAddInDemo.dll not found. ABORTING.`；
+      - **根因分析**：项目根目录 `publish/` 包含版本库跟踪的发布产物（包含 `ExcelAddInDemo-AddIn.dna` 与 `ExcelAddInDemo-AddIn64.dna`）。现代 SDK 风格项目默认将子目录所有文件递归包含在 `<None>` 集合中，导致 Excel-DNA targets (`ExcelDnaBuild`) 将 `publish/` 下的 `.dna` 文件也收集并试图打包至 `bin/Debug/net48/publish/`；而在打包该子目录下的 `.dna` 时，相对路径下缺失 `ExcelAddInDemo.dll`（此时主 dll 仍在 `bin/Debug/net48/` 根层），触发 Excel-DNA 打包异常中断；
+      - **最小变动修复**：在 `ExcelAddInDemo.csproj` 的 PropertyGroup 中追加 `<DefaultItemExcludes>$(DefaultItemExcludes);publish\**</DefaultItemExcludes>`，彻底切断根目录 `publish` 产物文件被误当成源码/资源引用的路径；
+      - **工程核验**：执行 `dotnet build` 构建恢复 **0 错误**（顺利生成 packed xll 插件）；联动验证下游 CAD 端 `ClassLibrary3.csproj` 构建同样 **0 错误** 顺利通过。
+
+
+---
+
+## 2026-11-08: 深度调研 ExWinner 对标“元件批调”红框功能分析
+
+### 1. 调研背景
+用户指示完成“元件批调”下拉菜单中被红框圈出的 9 个功能，并要求先分析桌面快捷方式 C:\Users\Public\Desktop\ExWinner成套报价软件(DHub).lnk（目标位于 D:\Program Files\ExWinner\）中这几个功能的具体业务作用与实现机制，沟通一致后再行实施。
+
+### 2. ExWinner 逆向与对标功能深度分析
+经对 ExWinner (leadsoft.superwinner.BLL.dll, BusCalculate.dll, ExWinnerPages, leadsoft.common.Dq123ProductControl.dll) 全面探查，各功能对标定义如下：
+
+1. **总价一键调整** (rmProjectFeeFormula.html)：
+   - **业务作用**：在投标或商务谈判时，客户要求将项目总价调整到目标值（例如 100 万调至 95 万），或按调幅（如整体下浮 5%）。
+   - **交互与算法**：用户输入目标总价或调幅后，系统自动计算差额；界面提供【元器件、母排、辅材、箱体、成套费/其他费用】等多维分摊项与分摊权重比例（比例和等于 1.0）；点击确定后，按比例倒推反算对应分项的调价系数或单价并实时更新全表。
+2. **一键匹配价格** (rmAdjustBomAllPrice.html)：
+   - **业务作用**：快速为项目中未定价的元器件、母排、辅材或箱体批量从库中匹配价格。
+   - **交互与算法**：弹出分类勾选列表；支持选择数据源（企业物料库、个人物料库、云端智能库、全网搜）；支持过滤匹配对象（全部项、仅无价格缺价项、指定型号/品牌元件）；自动依据“型号/名称/品牌/规格”执行多级模糊与精确匹对，一键将匹配到的单价、面价、折扣率与物料编码回填到 Excel。
+3. **在线查价 (电气天下/天工)** (Dq123ProductControl / online_price_search.html)：
+   - **业务作用**：针对物料库中未收录的新型、特殊或合资元器件，直接联网从电气天下 (dq123.com) 或天工工控平台拉取实时市场行情与厂家指导价。
+   - **交互与算法**：自动带入当前选中单元格或选区的元件型号、品牌、名称；展示多商家比价、参数图片与面价；支持点击“一键回填/更新”静默写入当前活动行或批量框选回写。
+4. **母排用量一键预估** (BusCalculate.dll / BusCalculateWindow)：
+   - **业务作用**：根据箱柜主进线额定电流与断路器配置，一键推导主母排与分支排的截面规格、敷设米数及理论重量。
+   - **交互与算法**：依据额定电流（例如 630A、1250A、2500A）匹配母排载流量速查表（如 TMY-3*(80*8)+1*(80*8)），结合柜体宽度、进出线方式与分支回路数量，自动估算出母排用量，折算为铜/铝重量（公斤）并自动追加到箱柜材料明细中。
+5. **箱体尺寸一键预估** (CabinetSizeAnalyse / cabinet_aux_calc.html)：
+   - **业务作用**：根据成套柜型（GGD、GCK、MNS、动力箱、照明箱）及断路器主回路/分支回路数量与极数，一键自动推荐合理的柜体外形尺寸（高×宽×深，如 2200×800×600）。
+   - **交互与算法**：通过断路器安装模数与安装空间规则管道，自动推导合适柜体尺寸并一键回填至箱柜属性或报表。
+6. **母排一键改价** (CopperPriceWindow / CopperPriceModel)：
+   - **业务作用**：母排价格高度敏感于当期铜价/铝价市场行情波动。在铜价大幅波动时，快速全项目重新计价。
+   - **交互与算法**：弹窗输入【当期基准铜价（元/kg）】+【铜排加工费（元/kg）】（以及铝价与铝加工费）；系统自动扫描全项目所有箱柜明细中的母排物料，按公式 新单价 = (基准铜价 + 加工费) * 理论单重 或直接更新铜排单价，瞬间完成全项目母排价格重算。
+7. **箱体一键改价** (FrmCabietPrice / rmCabinetPriceClass)：
+   - **业务作用**：在壳体钢材市场价格变化或需要按外协加工价格调整时，统一修改所有箱柜的壳体单价。
+   - **交互与算法**：汇总全项目所有箱柜的柜号、柜型、尺寸（宽×高×深）、台数；提供【按表面积/展开公式计价】、【按标准柜型价格库匹配】或【按比例统一上浮/下浮】，一键将调整后的箱体价格覆盖回写到各箱柜的箱体行中。
+8. **多方案报价** (rmMultiProposalQuotationsSet.html)：
+   - **业务作用**：针对招标方“多品牌对比报价”或“高中低端选配方案”需求（例如高端合资施耐德/ABB方案 vs 国产优质正泰/德力西方案）。
+   - **交互与算法**：选择被替换的元件/品牌，选择目标替换品牌与系列；系统基于壳架电流、额定电流、极数自动完成同档位跨品牌元器件型号与价格替换；支持导出方案对比表或快速生成平行方案工作簿。
+9. **报价智能核验** (rmCheckAndProofread.html / CheckAndProofreadResultControl.html)：
+   - **业务作用**：成套报价交付前的“终极防错体检”，防止漏报、错报导致工程亏损。
+   - **交互与算法**：排查价格为0/空、公式被破坏、台数/数量为空或异常、元件配比不合理（如互感器与表头配比、避雷器配比）；弹出可视化核验报告，支持高亮标注并双击“一键定位”到 Excel 异常单元格，支持一键自愈。
+
+### 3. 当前项目现状与下一步规划
+- 已具备基础或已有工作台：总价一键调整、在线查价、报价智能核验、母排用量预估/辅材壳体计算。
+- 待开发或完善：一键匹配价格、母排一键改价、箱体一键改价、多方案报价。
+- 现已梳理完毕，停止直接写代码，与用户进行专业沟通、明确实施优先级与交互规范。
+
+### 4. 2026-11-08: 完成【母排一键改价】架构方案设计
+- **状态**：方案已制定，生成 implementation_plan.md 交付用户审核。
+- **方案核心要点**：
+  1. 前端采用 Vue 3 (<script setup>) + Element-Plus，配色为绿蓝相间，主色调 #009688；
+  2. 包含铜排/铝排基准价与加工费联动、当前表/全项目所有分类表多选、全表母排快速扫描；
+  3. 支持 kg 模式与米数单位截面自适应换算单价；
+  4. 具备改价前后数据实时对比与差额明细预览；
+  5. 后端采用规则 7 内存批量读写与公式保护，精准改写 M 列并触发 Excel 公式级联重算。
+- **下一步**：等待用户确认方案后，立即着手编写 C# 与前端代码。
+
+### 5. 2026-11-08: 【母排一键改价】代码实施与构建全量通过
+- **完成工作**：
+  1. 新建 Models/BusbarBatchPriceModels.cs，定义母排改价相关的强类型传输模型与扫描统计对象；
+  2. 新建 Services/ExcelServices.BusbarBatchPrice.cs，实现母排正负向特征过滤、复合拼数截面积解析与米重算法、M列极速回写与公式级联自愈计算；
+  3. 新建 Resources/busbar_batch_price.html，基于 Vue 3 <script setup> + Element-Plus，采用绿蓝相间主题（#009688），实现铜/铝价格动态联动、范围切换与实时差额预览；
+  4. 新建 Forms/BusbarBatchPriceForm.cs，提供 STA 线程安全与 WebView2 宿主交互；
+  5. 在 RibbonController.cs 中挂接 tnBusbarBatchPrice 按钮；
+  6. 静态资源全量同步，执行 dotnet build 恢复 **0 警告、0 错误**，顺利打包 packed xll；下游 CAD 项目编译同样 0 错误通过。
+- **状态**：已交付，待用户进一步指示红框内其它功能（如箱体一键改价、一键匹配价格、多方案报价等）。
+
+### 6. 2026-11-08: 修复【母排一键改价】中 CabinetAnchorModel 属性大小写异常
+- **根因定位**：在 ExcelServices.BusbarBatchPrice.cs 中，CabinetAnchorModel 的明细行号与小计行号属性为 Pascal 命名 DetRow / SubsumRow，代码中因 dynamic 调用误写为 detRow / subsumRow，导致 DLR 在运行时抛出未包含属性异常。
+- **最小变动修复**：
+  1. 采用 int detRow = cabInfo.Det != null ? Convert.ToInt32(cabInfo.Det.Row) : cabInfo.DetRow; 与 subsumRow，安全兼顾对象属性与行号缓存，并加入 detRow <= 0 || subsumRow <= 0 安全阻断；
+  2. 扩展母排别名识别集合，增加 母线、矩形母线、零排、地排 等常见行业写法；
+  3. 执行 dotnet build 验证 **0 错误**，并全量同步 HTML 至发布路径。

@@ -156,82 +156,100 @@ namespace ExcelAddInDemo.Services
         {
             if (string.IsNullOrWhiteSpace(rawText)) return null;
 
-            double copperPrice = 0.0;
-            double aluminumPrice = 0.0;
-            string timeStr = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-
-            // 提取目标合约代码标识 (大写)
-            string cuSymbol = (settings.CopperContractCode ?? "CU").ToUpperInvariant();
-            string alSymbol = (settings.AluminumContractCode ?? "AL").ToUpperInvariant();
-
-            // 按分号切分多品种行情行
-            string[] lines = rawText.Split(new[] { ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (var line in lines)
+            try
             {
-                // 匹配 hq_str_nf_CU0="数据" (兼容带下划线标识)
-                var match = Regex.Match(line, @"hq_str_([a-zA-Z0-9_]+)\s*=\s*""([^""]+)""");
-                if (!match.Success) continue;
+                double copperPrice = 0.0;
+                double aluminumPrice = 0.0;
+                string timeStr = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
 
-                string symbol = match.Groups[1].Value.ToUpperInvariant();
-                string[] fields = match.Groups[2].Value.Split(',');
+                // 提取目标合约代码标识 (大写)
+                string cuSymbol = (settings.CopperContractCode ?? "CU").ToUpperInvariant();
+                string alSymbol = (settings.AluminumContractCode ?? "AL").ToUpperInvariant();
 
-                // 新浪国内期货标准字段: 
-                // 0=名称, 1=时间, 2=今开盘, 3=最高价, 4=最低价, 5=昨收盘, 6=买价, 7=卖价, 8=最新价, 17=日期
-                if (fields.Length > 8)
+                // 按分号切分多品种行情行
+                string[] lines = rawText.Split(new[] { ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var line in lines)
                 {
-                    double curVal = 0.0;
-                    // 优先解析最新成交价
-                    if (double.TryParse(fields[8], NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedVal) && parsedVal > 1000)
-                    {
-                        curVal = parsedVal;
-                    }
-                    // 盘前若最新价为0，则回退解析昨收价或今开价
-                    else if (double.TryParse(fields[2], NumberStyles.Any, CultureInfo.InvariantCulture, out double openVal) && openVal > 1000)
-                    {
-                        curVal = openVal;
-                    }
+                    // 匹配 hq_str_nf_CU0="数据" (兼容带下划线标识)
+                    var match = Regex.Match(line, @"hq_str_([a-zA-Z0-9_]+)\s*=\s*""([^""]+)""");
+                    if (!match.Success) continue;
 
-                    if (curVal > 1000)
-                    {
-                        // 动态匹配铜合约标识
-                        if (symbol.Contains("CU") || symbol.Contains(cuSymbol))
-                        {
-                            // 盘面期货价加上配置的现货升水基差
-                            copperPrice = (curVal >= 40000 && curVal <= 150000)
-                                ? curVal + settings.CopperSpotPremium
-                                : settings.DefaultCopperPrice;
-                        }
-                        // 动态匹配铝合约标识
-                        else if (symbol.Contains("AL") || symbol.Contains(alSymbol))
-                        {
-                            aluminumPrice = curVal;
-                        }
-                    }
+                    string symbol = match.Groups[1].Value.ToUpperInvariant();
+                    string[] fields = match.Groups[2].Value.Split(',');
 
-                    // 提取日期时间
-                    if (fields.Length > 17 && !string.IsNullOrWhiteSpace(fields[17]))
+                    // 新浪国内期货标准字段: 
+                    // 0=名称, 1=时间, 2=今开盘, 3=最高价, 4=最低价, 5=昨收盘, 6=买价, 7=卖价, 8=最新价, 17=日期
+                    if (fields.Length > 8)
                     {
-                        timeStr = $"{fields[17]} {fields[1].Insert(2, ":").Insert(5, ":")}";
+                        double curVal = 0.0;
+                        // 优先解析最新成交价
+                        if (double.TryParse(fields[8], NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedVal) && parsedVal > 1000)
+                        {
+                            curVal = parsedVal;
+                        }
+                        // 盘前若最新价为0，则回退解析昨收价或今开价
+                        else if (double.TryParse(fields[2], NumberStyles.Any, CultureInfo.InvariantCulture, out double openVal) && openVal > 1000)
+                        {
+                            curVal = openVal;
+                        }
+
+                        if (curVal > 1000)
+                        {
+                            // 动态匹配铜合约标识
+                            if (symbol.Contains("CU") || symbol.Contains(cuSymbol))
+                            {
+                                // 盘面期货价加上配置的现货升水基差
+                                copperPrice = (curVal >= 40000 && curVal <= 150000)
+                                    ? curVal + settings.CopperSpotPremium
+                                    : settings.DefaultCopperPrice;
+                            }
+                            // 动态匹配铝合约标识
+                            else if (symbol.Contains("AL") || symbol.Contains(alSymbol))
+                            {
+                                aluminumPrice = curVal;
+                            }
+                        }
+
+                        // 提取日期时间，进行边界安全防护
+                        if (fields.Length > 17 && !string.IsNullOrWhiteSpace(fields[17]))
+                        {
+                            string rawTime = fields.Length > 1 ? fields[1].Trim() : "";
+                            // 当时间字符串长度达到 6 位时执行标准格式化 (HH:mm:ss)
+                            if (rawTime.Length >= 6)
+                            {
+                                timeStr = $"{fields[17]} {rawTime.Substring(0, 2)}:{rawTime.Substring(2, 2)}:{rawTime.Substring(4, 2)}";
+                            }
+                            else
+                            {
+                                // 不足 6 位时使用当前系统时间兜底，杜绝字符串越界
+                                timeStr = $"{fields[17]} {DateTime.Now:HH:mm:ss}";
+                            }
+                        }
                     }
                 }
-            }
 
-            // 校验铜价是否成功提取到有效数值 (>10000 元/吨)
-            if (copperPrice > 10000)
-            {
-                // 若铝价未能正常识别，则兜底为配置的合理均价
-                if (aluminumPrice <= 1000) aluminumPrice = settings.DefaultAluminumPrice;
-
-                return new MarketPriceResult
+                // 校验铜价是否成功提取到有效数值 (>10000 元/吨)
+                if (copperPrice > 10000)
                 {
-                    Success = true,
-                    CopperPrice = Math.Round(copperPrice, 2),
-                    AluminumPrice = Math.Round(aluminumPrice, 2),
-                    Source = "1#电解铜现货 (长江/上海有色)",
-                    UpdateTime = timeStr,
-                    IsFallback = false,
-                    Message = $"已成功同步 1#电解铜现货行情：铜 {copperPrice:N0} 元/吨，铝 {aluminumPrice:N0} 元/吨"
-                };
+                    // 若铝价未能正常识别，则兜底为配置的合理均价
+                    if (aluminumPrice <= 1000) aluminumPrice = settings.DefaultAluminumPrice;
+
+                    return new MarketPriceResult
+                    {
+                        Success = true,
+                        CopperPrice = Math.Round(copperPrice, 2),
+                        AluminumPrice = Math.Round(aluminumPrice, 2),
+                        Source = "1#电解铜现货 (长江/上海有色)",
+                        UpdateTime = timeStr,
+                        IsFallback = false,
+                        Message = $"已成功同步 1#电解铜现货行情：铜 {copperPrice:N0} 元/吨，铝 {aluminumPrice:N0} 元/吨"
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录文本解析异常并返回空以触发默认配置兜底
+                LogHelper.WriteLog($"[MarketPriceService] ParseSinaFuturesResponse 异常: {ex.Message}");
             }
 
             return null;

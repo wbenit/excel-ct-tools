@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <!-- 设置页面编码为 UTF-8 格式 -->
+  <meta charset="UTF-8">
+  <!-- 视口设置与禁止缩放 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 页面标题 -->
+  <title>母排一键改价</title>
+  <!-- 引入 Element Plus 基础样式库 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <!-- 引入 FontAwesome 图标库 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- 引入 Vue 3 核心运行时 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入 Element Plus 脚本库 -->
+  <script src="https://unpkg.com/element-plus"></script>
+  <!-- 引入全局主题样式 -->
+  <link rel="stylesheet" href="theme.css">
+
+  <style>
+    /* 全局根重置，禁止最外层滚动条溢出 */
+    html, body {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      height: 100%;
+      width: 100%;
+      overflow: hidden !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Microsoft YaHei", sans-serif;
+      background-color: #f8fafc;
+      user-select: none;
+    }
+
+    /* 主应用弹性盒容器 */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      background-color: #ffffff;
+      overflow: hidden;
+    }
+
+    /* 顶部拖拽标题栏：绿蓝相间渐变主题规范 --硬编码: #009688 到 #00796b-- */
+    .window-header {
+      height: 38px;
+      background: linear-gradient(135deg, #009688 0%, #00796b 100%);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: move;
+      flex-shrink: 0;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+    }
+
+    /* 标题图标与文本组 */
+    .header-title-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 窗口控制按钮组 */
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* 关闭小胶囊按钮 */
+    .btn-header-close {
+      cursor: pointer;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      color: #ffffff;
+      transition: background-color 0.2s;
+    }
+
+    .btn-header-close:hover {
+      background-color: rgba(255, 255, 255, 0.25);
+    }
+
+    /* 主内容区纵向自适应排列 */
+    .content-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 12px 14px 10px 14px;
+      gap: 10px;
+      overflow: hidden;
+      background-color: #f8fafc;
+    }
+
+    /* 顶部调价配置卡片栅格 */
+    .config-card-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 1.1fr 1fr;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    /* 单个金属价格配置卡片 */
+    .metal-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+
+    /* 卡片顶部标题行 */
+    .card-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+      color: #1e293b;
+    }
+
+    /* 综合单价醒目徽章 */
+    .price-badge-cu {
+      /* 铜排主题绿背景 --硬编码: #e6fffa-- */
+      background: #e6fffa;
+      color: #009688;
+      border: 1px solid #80cbc4;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .price-badge-al {
+      /* 铝排主题蓝背景 --硬编码: #ebf8ff-- */
+      background: #ebf8ff;
+      color: #0284c7;
+      border: 1px solid #90cdf4;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    /* 双输入框横向排布行 */
+    .card-inputs-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 单个参数输入项组合 */
+    .input-group {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .input-label {
+      font-size: 11px;
+      color: #64748b;
+    }
+
+    /* 改价范围与选项卡片 */
+    .scope-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+
+    /* 表格容器区卡片 */
+    .table-container-card {
+      flex: 1;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+
+    /* 表格顶栏快捷筛选与统计摘要 */
+    .table-top-bar {
+      height: 36px;
+      padding: 0 12px;
+      border-bottom: 1px solid #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background-color: #fafafa;
+      font-size: 12px;
+    }
+
+    /* 表格自适应视口 */
+    .table-viewport {
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* 底部统计卡片与操作栏容器 */
+    .bottom-bar {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 0 14px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+
+    /* 底部指标卡片组 */
+    .stats-group {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 12px;
+      color: #334155;
+    }
+
+    /* 重点数值高亮样式 */
+    .stat-highlight {
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    /* 调价差额高亮 (绿色涨价，红色降价) */
+    .diff-badge-up {
+      color: #059669;
+      background: #ecfdf5;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+    }
+
+    .diff-badge-down {
+      color: #dc2626;
+      background: #fef2f2;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+    }
+
+    /* 底部右侧主操作按钮组 */
+    .bottom-btn-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* 主题绿色主动作按钮 --硬编码: #009688-- */
+    .btn-theme-primary {
+      background-color: #009688 !important;
+      border-color: #009688 !important;
+      color: #ffffff !important;
+      font-weight: 600;
+    }
+
+    .btn-theme-primary:hover {
+      background-color: #00796b !important;
+      border-color: #00796b !important;
+    }
+  </style>
+</head>
+<body>
+  <!-- Vue 3 挂载根节点 -->
+  <div id="app">
+    <!-- 1. 顶部无边框拖拽标题栏 -->
+    <div class="window-header" @mousedown="onStartDrag">
+      <div class="header-title-box">
+        <i class="fa-solid fa-calculator" style="color: #80cbc4;"></i>
+        <span>母排一键改价 - 全项目快速调价工作台</span>
+      </div>
+      <div class="header-actions">
+        <!-- 关闭弹窗小按钮 -->
+        <div class="btn-header-close" @click="handleCloseWindow" title="关闭窗口">
+          <i class="fa-solid fa-xmark"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. 主体工作区 -->
+    <div class="content-body">
+      <!-- 2.1 调价参数卡片栅格 (铜排、铝排、范围配置) -->
+      <div class="config-card-grid">
+        <!-- 铜排价格配置卡片 -->
+        <div class="metal-card">
+          <div class="card-title-row">
+            <span><i class="fa-solid fa-layer-group" style="color: #009688; margin-right: 4px;"></i>铜母线 (TMY)</span>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span class="price-badge-cu">综合: ¥ {{ cuTotalUnitPrice.toFixed(2) }} /kg</span>
+              <el-button size="mini" type="success" plain circle :loading="isFetchingMarketPrice" @click="fetchLiveMarketPrice(true)" title="一键同步长江/上海有色1#电解铜现货大盘最新价">
+                <i class="fa-solid fa-arrows-rotate"></i>
+              </el-button>
+            </div>
+          </div>
+          <div class="card-inputs-row">
+            <div class="input-group">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span class="input-label">基准铜价 (元/kg)</span>
+                <span v-if="marketPriceInfo.copper > 0" style="font-size: 10px; color: #009688;" :title="marketPriceInfo.source + ' ' + marketPriceInfo.time">
+                  大盘: {{ marketPriceInfo.copper }}
+                </span>
+              </div>
+              <el-input-number v-model="config.cuBasePrice" :min="10" :max="300" :precision="2" :step="1" size="small" controls-position="right" @change="recalcAllPrices" style="width: 100%;"></el-input-number>
+            </div>
+            <div class="input-group">
+              <span class="input-label">铜加工费 (元/kg)</span>
+              <el-input-number v-model="config.cuProcessPrice" :min="0" :max="50" :precision="2" :step="0.5" size="small" controls-position="right" @change="recalcAllPrices" style="width: 100%;"></el-input-number>
+            </div>
+          </div>
+        </div>
+
+        <!-- 铝排价格配置卡片 -->
+        <div class="metal-card">
+          <div class="card-title-row">
+            <span><i class="fa-solid fa-cubes" style="color: #0284c7; margin-right: 4px;"></i>铝母线 (LMY)</span>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span class="price-badge-al">综合: ¥ {{ alTotalUnitPrice.toFixed(2) }} /kg</span>
+              <el-button size="mini" type="primary" plain circle :loading="isFetchingMarketPrice" @click="fetchLiveMarketPrice(true)" title="一键同步长江/上海有色铝现货大盘最新价">
+                <i class="fa-solid fa-arrows-rotate"></i>
+              </el-button>
+            </div>
+          </div>
+          <div class="card-inputs-row">
+            <div class="input-group">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span class="input-label">基准铝价 (元/kg)</span>
+                <span v-if="marketPriceInfo.aluminum > 0" style="font-size: 10px; color: #0284c7;" :title="marketPriceInfo.source + ' ' + marketPriceInfo.time">
+                  大盘: {{ marketPriceInfo.aluminum }}
+                </span>
+              </div>
+              <el-input-number v-model="config.alBasePrice" :min="5" :max="100" :precision="2" :step="0.5" size="small" controls-position="right" @change="recalcAllPrices" style="width: 100%;"></el-input-number>
+            </div>
+            <div class="input-group">
+              <span class="input-label">铝加工费 (元/kg)</span>
+              <el-input-number v-model="config.alProcessPrice" :min="0" :max="30" :precision="2" :step="0.5" size="small" controls-position="right" @change="recalcAllPrices" style="width: 100%;"></el-input-number>
+            </div>
+          </div>
+        </div>
+
+        <!-- 范围与规则设定卡片 -->
+        <div class="scope-card">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 12px; font-weight: 600; color: #1e293b;">
+              <i class="fa-solid fa-filter" style="color: #64748b; margin-right: 4px;"></i>改价生效范围
+            </span>
+            <el-radio-group v-model="config.scopeMode" size="small" @change="handleScopeChange">
+              <el-radio-button label="current">当前工作表</el-radio-button>
+              <el-radio-button label="all">全项目分类表</el-radio-button>
+            </el-radio-group>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
+            <span style="font-size: 11px; color: #64748b;" title="对按米计价的母排，系统按型号规格截面积自动换算每米理论单价">
+              米制母排自动换算米单价
+            </span>
+            <el-switch v-model="config.autoConvertMeter" size="small" active-color="#009688" @change="recalcAllPrices"></el-switch>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2.2 母排物料扫描列表卡片 -->
+      <div class="table-container-card">
+        <!-- 表格顶栏操作与搜索 -->
+        <div class="table-top-bar">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-weight: 600; color: #334155;">扫描预览列表</span>
+            <el-tag size="small" type="info">{{ filteredRows.length }} 处母排物料</el-tag>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <el-input v-model="searchKeyword" size="small" placeholder="按柜号/型号/名称检索..." clearable prefix-icon="el-icon-search" style="width: 220px;"></el-input>
+            <el-button size="small" plain @click="handleRescan" :loading="isScanning">
+              <i class="fa-solid fa-arrows-rotate" style="margin-right: 4px;"></i>重新扫描
+            </el-button>
+          </div>
+        </div>
+
+        <!-- 表格滚动视图 -->
+        <div class="table-viewport">
+          <el-table
+            ref="tableRef"
+            :data="filteredRows"
+            v-loading="isScanning"
+            element-loading-text="正在全表极速扫描母排物料..."
+            size="small"
+            border
+            stripe
+            height="100%"
+            style="width: 100%;"
+            @selection-change="handleSelectionChange"
+          >
+            <!-- 多选勾选列 -->
+            <el-table-column type="selection" width="42" align="center"></el-table-column>
+            <!-- 序号 -->
+            <el-table-column label="#" width="45" align="center">
+              <template #default="scope">{{ scope.$index + 1 }}</template>
+            </el-table-column>
+            <!-- 所属工作表 -->
+            <el-table-column prop="sheetName" label="分类工作表" width="110" show-overflow-tooltip></el-table-column>
+            <!-- 箱柜号/名称 -->
+            <el-table-column prop="cabinetName" label="所属箱柜" width="120" show-overflow-tooltip>
+              <template #default="scope">
+                <span style="font-weight: 600; color: #0284c7;">{{ scope.row.cabinetName }}</span>
+              </template>
+            </el-table-column>
+            <!-- 材料名称 -->
+            <el-table-column prop="name" label="材料名称" width="110" show-overflow-tooltip></el-table-column>
+            <!-- 规格型号 -->
+            <el-table-column prop="model" label="规格型号" min-width="150" show-overflow-tooltip>
+              <template #default="scope">
+                <span style="font-family: Consolas, monospace; font-weight: 600;">{{ scope.row.model }}</span>
+              </template>
+            </el-table-column>
+            <!-- 材质类型标签 -->
+            <el-table-column label="材质" width="65" align="center">
+              <template #default="scope">
+                <el-tag size="small" :type="scope.row.materialType === 'aluminum' ? '' : 'success'">
+                  {{ scope.row.materialType === 'aluminum' ? '铝排' : '铜排' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <!-- 单位 -->
+            <el-table-column prop="unit" label="单位" width="55" align="center"></el-table-column>
+            <!-- 用量数量 -->
+            <el-table-column prop="qty" label="数量" width="70" align="right">
+              <template #default="scope">
+                <span>{{ scope.row.qty.toFixed(2) }}</span>
+              </template>
+            </el-table-column>
+            <!-- 原基准单价 -->
+            <el-table-column prop="oldUnitPrice" label="原单价(M列)" width="90" align="right">
+              <template #default="scope">
+                <span style="color: #64748b;">¥ {{ scope.row.oldUnitPrice.toFixed(2) }}</span>
+              </template>
+            </el-table-column>
+            <!-- 新基准单价 (高亮呈现) -->
+            <el-table-column prop="newUnitPrice" label="新单价(M列)" width="95" align="right">
+              <template #default="scope">
+                <span style="font-weight: 700; color: #009688;">¥ {{ scope.row.newUnitPrice.toFixed(2) }}</span>
+              </template>
+            </el-table-column>
+            <!-- 原合价 -->
+            <el-table-column prop="oldTotalPrice" label="原合价" width="90" align="right">
+              <template #default="scope">
+                <span style="color: #64748b;">¥ {{ scope.row.oldTotalPrice.toFixed(2) }}</span>
+              </template>
+            </el-table-column>
+            <!-- 新合价 -->
+            <el-table-column prop="newTotalPrice" label="新合价" width="95" align="right">
+              <template #default="scope">
+                <span style="font-weight: 700; color: #0f172a;">¥ {{ scope.row.newTotalPrice.toFixed(2) }}</span>
+              </template>
+            </el-table-column>
+            <!-- 浮动差额 (微标) -->
+            <el-table-column prop="diffAmount" label="变动差额" width="95" align="right">
+              <template #default="scope">
+                <span :class="scope.row.diffAmount >= 0 ? 'diff-badge-up' : 'diff-badge-down'">
+                  {{ scope.row.diffAmount >= 0 ? '+' : '' }}{{ scope.row.diffAmount.toFixed(2) }}
+                </span>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </div>
+
+      <!-- 2.3 底部统计汇总与主动作按钮栏 -->
+      <div class="bottom-bar">
+        <!-- 统计指标项 -->
+        <div class="stats-group">
+          <div>涉及箱柜: <span class="stat-highlight">{{ summaryStats.cabinets }}</span> 台</div>
+          <div>总重量: <span class="stat-highlight">铜 {{ summaryStats.cuWeight.toFixed(1) }} kg / 铝 {{ summaryStats.alWeight.toFixed(1) }} kg</span></div>
+          <div>改价前总计: <span class="stat-highlight">¥ {{ summaryStats.oldAmount.toFixed(2) }}</span></div>
+          <div>改价后总计: <span class="stat-highlight" style="color: #009688;">¥ {{ summaryStats.newAmount.toFixed(2) }}</span></div>
+          <div>
+            差额:
+            <span :class="summaryStats.diffAmount >= 0 ? 'diff-badge-up' : 'diff-badge-down'">
+              {{ summaryStats.diffAmount >= 0 ? '+' : '' }}¥ {{ summaryStats.diffAmount.toFixed(2) }}
+            </span>
+          </div>
+        </div>
+
+        <!-- 操作按钮组 -->
+        <div class="bottom-btn-group">
+          <el-button size="small" @click="handleCloseWindow">取消</el-button>
+          <el-button
+            size="small"
+            class="btn-theme-primary"
+            :loading="isApplying"
+            :disabled="selectedRows.length === 0"
+            @click="handleApplyPrice"
+          >
+            <i class="fa-solid fa-check" style="margin-right: 5px;"></i>
+            一键更新到项目 (已选 {{ selectedRows.length }} 项)
+          </el-button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vue 3 Setup 脚本编写 -->
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    // 创建 Vue 3 应用程序实例
+    createApp({
+      setup() {
+        // 改价配置状态
+        const config = ref({
+          cuBasePrice: 72.0,
+          cuProcessPrice: 8.5,
+          alBasePrice: 20.0,
+          alProcessPrice: 4.0,
+          scopeMode: "current",
+          autoConvertMeter: true,
+          targetSheets: []
+        });
+
+        // 铜排综合单价 (计算属性)
+        const cuTotalUnitPrice = computed(() => {
+          return Number((config.value.cuBasePrice + config.value.cuProcessPrice).toFixed(2));
+        });
+
+        // 铝排综合单价 (计算属性)
+        const alTotalUnitPrice = computed(() => {
+          return Number((config.value.alBasePrice + config.value.alProcessPrice).toFixed(2));
+        });
+
+        // 扫描出来的母排明细数据
+        const rows = ref([]);
+        // 表格勾选中的项集合
+        const selectedRows = ref([]);
+        // 搜索检索关键字
+        const searchKeyword = ref("");
+        // 状态加载锁
+        const isScanning = ref(false);
+        const isApplying = ref(false);
+        // 大盘行情拉取加载状态锁
+        const isFetchingMarketPrice = ref(false);
+        // 缓存大盘行情源信息与更新时间戳
+        const marketPriceInfo = ref({
+          copper: 0,
+          aluminum: 0,
+          source: "",
+          time: ""
+        });
+        // 可用工作表与当前表
+        const availableSheets = ref([]);
+        const currentSheetName = ref("");
+        // 表格组件 DOM 引用
+        const tableRef = ref(null);
+
+        // 过滤后的行集合
+        const filteredRows = computed(() => {
+          if (!searchKeyword.value || !searchKeyword.value.trim()) {
+            return rows.value;
+          }
+          const kw = searchKeyword.value.trim().toLowerCase();
+          return rows.value.filter(r =>
+            (r.cabinetName && r.cabinetName.toLowerCase().includes(kw)) ||
+            (r.model && r.model.toLowerCase().includes(kw)) ||
+            (r.name && r.name.toLowerCase().includes(kw)) ||
+            (r.sheetName && r.sheetName.toLowerCase().includes(kw))
+          );
+        });
+
+        // 汇总统计指标 (基于用户勾选的条目，若未勾选则显示全表)
+        const summaryStats = computed(() => {
+          const list = selectedRows.value.length > 0 ? selectedRows.value : rows.value;
+          let cabSet = new Set();
+          let cuWeight = 0;
+          let alWeight = 0;
+          let oldAmount = 0;
+          let newAmount = 0;
+
+          list.forEach(r => {
+            cabSet.add(`${r.sheetName}_${r.cabinetIndex}`);
+            // 计算单行理论重量
+            const w = r.isMeterMode ? (r.qty * (r.theoreticalKgPerMeter || 0)) : r.qty;
+            if (r.materialType === 'aluminum') {
+              alWeight += w;
+            } else {
+              cuWeight += w;
+            }
+            oldAmount += (r.oldTotalPrice || 0);
+            newAmount += (r.newTotalPrice || 0);
+          });
+
+          return {
+            cabinets: cabSet.size,
+            cuWeight: Math.round(cuWeight * 10) / 10,
+            alWeight: Math.round(alWeight * 10) / 10,
+            oldAmount: Number(oldAmount.toFixed(2)),
+            newAmount: Number(newAmount.toFixed(2)),
+            diffAmount: Number((newAmount - oldAmount).toFixed(2))
+          };
+        });
+
+        // 向 C# 宿主发送 WebMessage 交互指令
+        const postToHost = (actionName, payload = {}) => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage(JSON.stringify({
+              action: actionName,
+              ...payload
+            }));
+          }
+        };
+
+        // 触发拖拽无边框窗体
+        const onStartDrag = (e) => {
+          if (e.target.closest('.header-actions')) return;
+          postToHost('dragWindow');
+        };
+
+        // 关闭窗口
+        const handleCloseWindow = () => {
+          postToHost('close');
+        };
+
+        // 表格勾选变动事件
+        const handleSelectionChange = (selection) => {
+          selectedRows.value = selection;
+          // 同步每行 Selected 属性
+          const selectedIds = new Set(selection.map(s => s.id));
+          rows.value.forEach(r => {
+            r.selected = selectedIds.has(r.id);
+          });
+        };
+
+        // 重新测算当前表格所有母排的新单价、新合价与差额 (响应式纯前端瞬间计算)
+        const recalcAllPrices = () => {
+          const cuPrice = cuTotalUnitPrice.value;
+          const alPrice = alTotalUnitPrice.value;
+          const convertMeter = config.value.autoConvertMeter;
+
+          rows.value.forEach(row => {
+            const baseMetalPrice = (row.materialType === 'aluminum') ? alPrice : cuPrice;
+            let newUnit = baseMetalPrice;
+
+            // 若为米制且配置允许米重换算
+            if (row.isMeterMode && convertMeter && row.theoreticalKgPerMeter > 0) {
+              newUnit = Math.round(baseMetalPrice * row.theoreticalKgPerMeter * 100) / 100;
+            } else {
+              newUnit = baseMetalPrice;
+            }
+
+            row.newUnitPrice = newUnit;
+            row.newTotalPrice = Math.round(newUnit * row.qty * 100) / 100;
+            row.diffAmount = Math.round((row.newTotalPrice - row.oldTotalPrice) * 100) / 100;
+          });
+        };
+
+        // 切换改价范围
+        const handleScopeChange = () => {
+          handleRescan();
+        };
+
+        // 发送扫描请求
+        const handleRescan = () => {
+          isScanning.value = true;
+          postToHost('scanBusbars', {
+            config: {
+              cuBasePrice: config.value.cuBasePrice,
+              cuProcessPrice: config.value.cuProcessPrice,
+              alBasePrice: config.value.alBasePrice,
+              alProcessPrice: config.value.alProcessPrice,
+              scopeMode: config.value.scopeMode,
+              autoConvertMeter: config.value.autoConvertMeter,
+              targetSheets: config.value.targetSheets
+            }
+          });
+        };
+
+        // 接收 C# 宿主推送的扫描数据
+        const onReceiveScanResult = (data) => {
+          isScanning.value = false;
+          if (!data || !data.success) {
+            ElementPlus.ElMessage.error(data?.message || "扫描母排数据失败！");
+            return;
+          }
+
+          availableSheets.value = data.availableSheets || [];
+          currentSheetName.value = data.currentSheetName || "";
+          rows.value = data.rows || [];
+
+          // 重新依据当前设定刷新一遍新价格
+          recalcAllPrices();
+
+          // 默认将表格所有行全部勾选
+          setTimeout(() => {
+            if (tableRef.value) {
+              tableRef.value.clearSelection();
+              rows.value.forEach(row => {
+                tableRef.value.toggleRowSelection(row, true);
+              });
+            }
+          }, 100);
+
+          ElementPlus.ElMessage.success(data.message || "母排物料扫描成功！");
+        };
+
+        // 执行一键更新到项目
+        const handleApplyPrice = () => {
+          if (selectedRows.value.length === 0) {
+            ElementPlus.ElMessage.warning("请至少勾选一项母排物料！");
+            return;
+          }
+
+          ElementPlus.ElMessageBox.confirm(
+            `即将把已勾选的 ${selectedRows.value.length} 处母排单价批量回写至对应 Excel 表的 M 列中，所有关联销售价、成本价及箱柜小计将自动联动重算。是否确认立即执行？`,
+            "一键改价确认",
+            {
+              confirmButtonText: "立即回写",
+              cancelButtonText: "取消",
+              type: "success"
+            }
+          ).then(() => {
+            isApplying.value = true;
+            postToHost('applyPrice', {
+              payload: {
+                config: config.value,
+                items: rows.value
+              }
+            });
+          }).catch(() => {});
+        };
+
+        // 接收改价执行结果
+        const onReceiveApplyResult = (data) => {
+          isApplying.value = false;
+          if (data && data.success) {
+            ElementPlus.ElMessage.success({
+              message: data.message || "母排价格已成功批量回写并完成公式重算！",
+              duration: 2500
+            });
+            // 延迟关闭窗口
+            setTimeout(() => {
+              postToHost('close');
+            }, 1200);
+          } else {
+            ElementPlus.ElMessage.error(data?.message || "回写失败，请检查 Excel 状态！");
+          }
+        };
+
+        // 发起大盘实时行情请求 (统一使用长江/上海有色大盘现货同源接口)
+        const fetchLiveMarketPrice = (force = false) => {
+          // 开启行情加载中动画
+          isFetchingMarketPrice.value = true;
+          // 向宿主发送获取行情指令
+          postToHost('getMarketPrice', { forceRefresh: force });
+        };
+
+        // 接收 C# 宿主回传的大盘实时行情数据
+        const onReceiveMarketPrice = (data) => {
+          // 关闭行情加载中动画
+          isFetchingMarketPrice.value = false;
+          // 判断返回状态
+          if (data && data.success) {
+            // 更新大盘行情展示信息
+            marketPriceInfo.value = {
+              copper: data.copperPricePerKg,
+              aluminum: data.aluminumPricePerKg,
+              source: data.source || "长江/上海有色",
+              time: data.updateTime || ""
+            };
+            // 自动填入基准铜价与铝价
+            if (data.copperPricePerKg > 0) {
+              config.value.cuBasePrice = data.copperPricePerKg;
+            }
+            // 铝价有效时同步填入
+            if (data.aluminumPricePerKg > 0) {
+              config.value.alBasePrice = data.aluminumPricePerKg;
+            }
+            // 触发全表响应式差额与合价重算
+            recalcAllPrices();
+            // 提示用户同步成功
+            ElementPlus.ElMessage.success(`已同步大盘行情：1#铜 ${data.copperPricePerKg} 元/kg，铝 ${data.aluminumPricePerKg} 元/kg`);
+          } else {
+            // 获取异常时友情提示
+            ElementPlus.ElMessage.warning(data?.message || "获取大盘行情失败，已保持当前设置");
+          }
+        };
+
+        // 监听 C# 宿主通过 WebView2 发送的消息通道
+        onMounted(() => {
+          if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.addEventListener('message', (event) => {
+              try {
+                const message = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                if (!message) return;
+
+                if (message.action === 'scanResult') {
+                  onReceiveScanResult(message.data);
+                } else if (message.action === 'applyResult') {
+                  onReceiveApplyResult(message.data);
+                } else if (message.action === 'marketPriceResponse') {
+                  // 处理大盘实时行情数据响应
+                  onReceiveMarketPrice(message);
+                }
+              } catch (err) {
+                console.error("处理宿主消息异常:", err);
+              }
+            });
+          }
+
+          // 首次挂载自动发起扫描
+          handleRescan();
+          // 首次挂载自动拉取最新大盘现货铜铝行情 (优先走缓存，不卡顿)
+          fetchLiveMarketPrice(false);
+        });
+
+        return {
+          config,
+          cuTotalUnitPrice,
+          alTotalUnitPrice,
+          rows,
+          selectedRows,
+          filteredRows,
+          searchKeyword,
+          isScanning,
+          isApplying,
+          isFetchingMarketPrice,
+          marketPriceInfo,
+          fetchLiveMarketPrice,
+          summaryStats,
+          tableRef,
+          onStartDrag,
+          handleCloseWindow,
+          handleSelectionChange,
+          recalcAllPrices,
+          handleScopeChange,
+          handleRescan,
+          handleApplyPrice
+        };
+      }
+    }).use(ElementPlus).mount('#app');
+  </script>
+</body>
+</html>
+
