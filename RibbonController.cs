@@ -47,25 +47,8 @@ namespace ExcelAddInDemo
           <menu id='menuUser' label='我的' imageMso='AccountMenu' size='large'>
             <!-- 企业设置按钮 (使用标准企业组织架构图标) -->
             <button id='btnEnterprise' label='企业设置' imageMso='OrganizationChartLayoutStandard' onAction='OnMenuAction' />
-            <!-- 上传头像按钮 (使用标准本地插入图片图标) -->
-            <button id='btnUploadAvatar' label='上传头像' imageMso='PictureInsertFromFile' onAction='OnMenuAction' />
             <!-- 我的资料按钮 (使用标准个人资料名片图标) -->
             <button id='btnProfile' label='我的资料' imageMso='GroupPersonalInfo' onAction='OnMenuAction' />
-            <!-- 一周小结按钮 (使用标准日历周程图标) -->
-            <button id='btnWeekly' label='一周小结' imageMso='CalendarInsert' onAction='OnMenuAction' />
-            <!-- 查看排行榜按钮 (使用金色星级徽章图标) -->
-            <button id='btnRanking' label='查看排行榜' imageMso='StarRatedFull' onAction='OnMenuAction' />
-            <!-- 会员中心(订单发票) 按钮 (使用金色星级徽章图标，精准匹配VIP会员语义) -->
-            <button id='btnVip' label='会员中心(订单发票)' imageMso='StarRatedFull' onAction='OnMenuAction' />
-            <!-- ExWinner官网 按钮 -->
-            <button id='btnOfficialSite' label='ExWinner官网' imageMso='WebPagePreview' onAction='OnMenuAction' />
-            <!-- 分享 菜单项 (使用标准共享工作簿协作图标) -->
-            <menu id='menuShare' label='分享' imageMso='ReviewShareWorkbook'>
-              <!-- 分享链接按钮 (使用标准插入超链接图标) -->
-              <button id='btnShareLink' label='分享链接' imageMso='HyperlinkInsert' onAction='OnMenuAction' />
-            </menu>
-            <!-- 退出登录按钮 (使用标准退出系统程序图标) -->
-            <button id='btnLogout' label='退出' imageMso='FileExit' onAction='OnMenuAction' />
           </menu>
         </group>
         <!-- “我的项目” 功能分组 -->
@@ -78,19 +61,12 @@ namespace ExcelAddInDemo
             <button id='btnBindCloudProject' label='绑定云端项目...' imageMso='ServerConnection' onAction='OnMenuAction' screentip='绑定云端项目' supertip='将当前 Excel 工作簿绑定至 DrawCode 云端工程项目，实现数据互联互通。' />
             <!-- 推送箱柜至云端按钮 -->
             <button id='btnSyncCabinetsToCloud' label='推送到云端箱柜...' imageMso='ExportTextFile' onAction='OnMenuAction' screentip='推送到云端箱柜' supertip='将当前工程所有箱柜提取并直推同步至 DrawCode 云端系统图箱柜库，支持按 2-1 复合序号精准匹配并可选择覆盖。' />
-            <!-- 云项目列表项 (配置服务器网络连接标准图标) -->
-            <button id='btnCloudProj1' label='默认云项目' imageMso='ServerConnection' onAction='OnMenuAction' />
           </menu>
         </group>
         <!-- ①建项目→ 功能分组 -->
         <group id='grpBuildProject' label='①建项目→'>
           <!-- 新建项目按钮 -->
           <button id='btnNewProject' label='新建项目' imageMso='FileNew' size='large' onAction='OnMenuAction' />
-          <!-- 国网报价下拉菜单 -->
-          <menu id='menuStateGridQuote' label='国网报价' imageMso='WebPagePreview' size='large'>
-            <!-- 国网报价项 (配置地球网页预览标准图标) -->
-            <button id='btnStateGridQuoteSub' label='国网报价' imageMso='WebPagePreview' onAction='OnMenuAction' />
-          </menu>
           <!-- 分类功能按钮 (SplitButton 支持大图标与下拉菜单，完整对齐 ExWinner 布局) -->
           <splitButton id='splitCategory' size='large'>
             <!-- 顶部大图标一键直接触发新建分类 -->
@@ -145,11 +121,6 @@ namespace ExcelAddInDemo
         </group>
         <!-- ②录元件 功能分组 -->
         <group id='grpInputComponents' label='②录元件'>
-          <!-- 智能识图下拉菜单 -->
-          <menu id='menuSmartOCR' label='智能识图' imageMso='FindDialog' size='large'>
-            <!-- 智能识图项 (配置照相机识图图标) -->
-            <button id='btnSmartOCRSub' label='智能识图' imageMso='Camera' onAction='OnMenuAction' />
-          </menu>
           <!-- 云方案按钮 -->
           <button id='btnCloudSolution' label='云方案' imageMso='ServerProperties' size='large' onAction='OnMenuAction' />
           <!-- 云物料功能按钮 (SplitButton 支持大图标一键直达与下拉菜单高级项，完整对齐 ExWinner 布局) -->
@@ -183,8 +154,6 @@ namespace ExcelAddInDemo
             <button id='btnDistributedAdjustPrice' label='分布调价' imageMso='PivotTableInsert' onAction='OnMenuAction' />
             <!-- 2.5 总价一键调整按钮 (与费用设定双向联动入口) -->
             <button id='btnOneKeyAdjustTotalBatch' label='总价一键调整' imageMso='CalculateNow' screentip='总价一键调整' supertip='按目标总价倒推反算，支持元件加价/报出系数与计费区域比例系数按权重联动调整' onAction='OnMenuAction' />
-            <!-- 3. 筛选调价按钮 -->
-            <button id='btnFilterAdjustPrice' label='筛选调价' imageMso='Filter' onAction='OnMenuAction' />
             <!-- 4. 一键匹配价格按钮 (使用官方标准箭头选择指针图标) -->
             <button id='btnAutoMatchPrice' label='一键匹配价格' imageMso='ObjectsSelect' onAction='OnMenuAction' />
             <!-- 5. 在线查价按钮 (电气天下/天工矩阵) -->
@@ -252,19 +221,9 @@ namespace ExcelAddInDemo
             <menu id='menuPartyAReport' label='甲方投标报表' imageMso='FileSaveAsExcelXlsx'>
               <!-- 常规样式报表 (核心实施项，使用官方标准电子表格图标) -->
               <button id='btnReportRegular' label='常规样式报表' imageMso='TableExcelSpreadsheetInsert' onAction='OnMenuAction' screentip='常规样式报表' supertip='生成标准甲方商务投标报表，包含《封面》、《屏柜汇总表》及《屏柜分项表》' />
-              <!-- 高级样式报表 -->
-              <button id='btnReportAdvanced' label='高级样式报表' imageMso='ChartInsert' onAction='OnMenuAction' screentip='高级样式报表' supertip='包含外形尺寸、CAD图号等高级工程技术规格的分栏投标报表' />
-              <!-- 国网报表 -->
-              <button id='btnReportSGCC' label='国网报表' imageMso='WebPagePreview' onAction='OnMenuAction' screentip='国网招标报表' supertip='生成符合国家电网标准的货物清单汇总表与单价分析表' />
               <!-- 用户定制报表 (暂未配置模板) -->
               <button id='btnReportCustomUser' label='用户定制报表' imageMso='FileNew' enabled='false' onAction='OnMenuAction' />
             </menu>
-            <!-- 原始样式报表 -->
-            <button id='btnReportOriginal' label='原始样式报表' imageMso='TableInsertRowsAbove' onAction='OnMenuAction' screentip='原始样式报表' supertip='导出当前工程各分类表脱敏脱壳的原始清单副本' />
-            <!-- 内部审核报表 -->
-            <button id='btnReportInternalAudit' label='内部审核报表' imageMso='ReviewAcceptChange' onAction='OnMenuAction' screentip='内部审核报表' supertip='对内核算物料底价成本、辅材壳体定额、二次元件工价及真实毛利率' />
-            <!-- 报表市场(原自定义报表) -->
-            <button id='btnReportMarket' label='报表市场(原自定义报表)' imageMso='DesignMode' onAction='OnMenuAction' screentip='报表市场' supertip='管理报表模板库与自定义字段映射规则' />
           </menu>
           <!-- 材料统计下拉菜单 -->
           <menu id='menuMaterialStat' label='材料统计' imageMso='ChartInsert' size='large'>
@@ -327,23 +286,11 @@ namespace ExcelAddInDemo
             <button id='btnCabinetModelPipeline' label='三箱型号添写' imageMso='TableProperties' screentip='三箱型号添写' supertip='根据箱体高度、深度及内部元器件特征，在管道中智能推导并批量添写三箱型号(PZ30/JXF/XL-21/ATS等)' onAction='OnMenuAction' />
             <!-- 报价智能核验按钮 -->
             <button id='btnQuotationCheckTools' label='报价智能核验' imageMso='ReviewAcceptChange' screentip='报价智能核验与防错' supertip='全面排查全表同型号价格冲突、公式覆写破坏、面价漏填、AA/AB图纸参数缺失及价格倒挂，支持一键自愈修复' onAction='OnMenuAction' />
-            <!-- 项目工具项 (配置标准工具箱图标) -->
             <!-- 图纸参数匹配按钮 (元器件图纸参数匹配 200x800 伴随式侧边浮窗) -->
-              <button id='btnComponentParamMatch' label='图纸参数匹配' imageMso='ShapesInsertGallery' screentip='图纸参数匹配' supertip='打开元器件图纸参数匹配伴随式侧边浮窗，浏览或自动扫描DWG图纸几何尺寸与安装进深并回写' onAction='OnMenuAction' />
-            <button id='btnProjectToolsSub' label='项目工具' imageMso='ControlToolboxOutlook' onAction='OnMenuAction' />
+            <button id='btnComponentParamMatch' label='图纸参数匹配' imageMso='ShapesInsertGallery' screentip='图纸参数匹配' supertip='打开元器件图纸参数匹配伴随式侧边浮窗，浏览或自动扫描DWG图纸几何尺寸与安装进深并回写' onAction='OnMenuAction' />
           </menu>
-          <!-- 企业DHub按钮 (使用服务器连接中枢图标 ServerConnection，支持清晰大图标渲染) -->
-          <button id='btnEnterpriseDHub' label='企业DHub' imageMso='ServerConnection' size='large' onAction='OnMenuAction' />
           <!-- 设置按钮 (使用标准应用程序选项齿轮图标 ApplicationOptionsDialog，彻底解决大图标空白) -->
           <button id='btnSettings' label='设置' imageMso='ApplicationOptionsDialog' size='large' onAction='OnMenuAction' />
-        </group>
-        <!-- 服务 功能分组 -->
-        <group id='grpService' label='服务'>
-          <!-- 服务下拉菜单 -->
-          <menu id='menuService' label='服务中心' imageMso='Help' size='large'>
-            <!-- 在线客服按钮 (配置技术支持/在线客服标准图标) -->
-            <button id='btnServiceSub' label='在线客服' imageMso='TechnicalSupport' onAction='OnMenuAction' />
-          </menu>
         </group>
       </tab>
     </tabs>
@@ -813,16 +760,7 @@ namespace ExcelAddInDemo
                 // 弹出基于 WebView2 + Vue 3 的“常规样式投标报表导出向导”窗口
                 ExcelServices.ShowTenderReportRegularDialog();
             }
-            // 响应“内部审核报表”指令 (预留直达)
-            else if (controlId == "btnReportInternalAudit")
-            {
-                System.Windows.Forms.MessageBox.Show("内部审核报表功能正在接入中，敬请期待！", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
-            }
-            // 响应“高级样式报表”/“国网报表”/“原始样式报表”/“报表市场”指令 (友好提示)
-            else if (controlId == "btnReportAdvanced" || controlId == "btnReportSGCC" || controlId == "btnReportOriginal" || controlId == "btnReportMarket")
-            {
-                System.Windows.Forms.MessageBox.Show("该报表样式正在迁移流水线中，可先使用【常规样式报表】导出！", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
-            }
+
             // 响应“材料统计”按钮与菜单指令 (弹出分类明细选择向导窗口并生成【采购清单】)
             else if (controlId == "btnMaterialStatSub" || controlId == "menuMaterialStat")
             {

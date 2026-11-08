@@ -1,3 +1,23 @@
+- **【Ribbon 冗余与无功能菜单专项清理闭环：精准保留 8 项预留菜单，清除 14 项无响应死项、5 项假功能占位项及 4 个空壳容器】([`RibbonController.cs`](file:///e:/Ace/ExcelAddInCTtools/RibbonController.cs), [`publish/`](file:///e:/Ace/ExcelAddInCTtools/publish/))**：
+  1. **用户核心指令与保留范围**：
+     - 用户明确指定保留 8 项待后续接入功能：`一键匹配价格`（`btnAutoMatchPrice`）、`母排一键改价`（`btnBusbarBatchPrice`）、`箱体一键改价`（`btnCabinetBatchPrice`）、`多方案报价`（`menuMultiPlanQuote`）、`系数法调费`（`btnCoefficientAdjustFee`）、`费用公式转值`（`btnFormulaToValue`）、`总价高级调整`（`btnAdvancedAdjustTotal`）、`用户定制报表`（`btnReportCustomUser`）；其余无功能与假功能项全量删除。
+  2. **工程落地与精细化清理**：
+     - ① **清除 14 项完全无代码响应死项**：
+       - 【账户】：`btnUploadAvatar`（上传头像）、`btnWeekly`（一周小结）、`btnRanking`（查看排行榜）、`btnVip`（会员中心）、`btnOfficialSite`（ExWinner官网）、`btnLogout`（退出）；
+       - 【我的项目】：`btnCloudProj1`（默认云项目）；
+       - 【③调价格→】：`btnFilterAdjustPrice`（筛选调价）；
+       - 【辅助项】：`btnProjectToolsSub`（项目工具内冗余项）、`btnEnterpriseDHub`（企业DHub）；
+     - ② **清除 5 项仅弹提示的假功能占位项及后台对应代码**：
+       - 【④出报表】：`btnReportAdvanced`（高级样式报表）、`btnReportSGCC`（国网报表）、`btnReportOriginal`（原始样式报表）、`btnReportInternalAudit`（内部审核报表）、`btnReportMarket`（报表市场）；同步从 `OnMenuAction` 回调中安全移除弹窗占位分支；
+     - ③ **清理 4 大空壳容器**：
+       - 彻底移除【服务】大分组（`<group id='grpService' label='服务'>`，原仅包含在线客服）；
+       - 移除【国网报价】大下拉菜单（`<menu id='menuStateGridQuote'>`）；
+       - 移除【智能识图】大下拉菜单（`<menu id='menuSmartOCR'>`）；
+       - 移除【账户】下的【分享】二级菜单（`<menu id='menuShare'>`）；
+  3. **构建验证与产物交付**：
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 产物 `ExcelAddInDemo.dll` 与 `.pdb` 已全量同步覆盖至 `publish/` 交付目录。
+
 - **【根因排查与修复落地：projectJsonFile 目录中工程 JSON 文件被覆盖原因深度溯源与双端防覆盖加固】(`e:/Ace/draw-code-pcui/src/views/project/fileCtrol.vue`, `Forms/LocalProjectForm.cs`, `Services/ExcelServices.Project.cs`, `publish/`)**：
   1. **核心机制与路由映射确认**：
      - 浏览器网页端路由 `/project/fileCtrol` 与 Excel 插件【本机项目】内嵌路由 `/embed/fileCtrol` 在 [`staticRouter.ts`](file:///e:/Ace/draw-code-pcui/src/routers/modules/staticRouter.ts#L22-L26) 中共用同一个 Vue 组件 [`fileCtrol.vue`](file:///e:/Ace/draw-code-pcui/src/views/project/fileCtrol.vue)；
