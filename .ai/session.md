@@ -1,4 +1,4 @@
-- **【缺陷根除与定额对齐：二维尺寸 (如 800*1800) 深度推导严格联动图一【辅材壳体计算】高度深度梯度表闭环】([`Services/ExcelServices.CabinetBatchPrice.cs`](file:///d:/code/excel-ct-tools/Services/ExcelServices.CabinetBatchPrice.cs), [`Resources/cabinet_batch_price.html`](file:///d:/code/excel-ct-tools/Resources/cabinet_batch_price.html), [`publish/`](file:///d:/code/excel-ct-tools/publish/))**：
+- **【缺陷根除与定额对齐：二维尺寸 (如 800\*1800) 深度推导严格联动图一【辅材壳体计算】高度深度梯度表闭环】([`Services/ExcelServices.CabinetBatchPrice.cs`](file:///d:/code/excel-ct-tools/Services/ExcelServices.CabinetBatchPrice.cs), [`Resources/cabinet_batch_price.html`](file:///d:/code/excel-ct-tools/Resources/cabinet_batch_price.html), [`publish/`](file:///d:/code/excel-ct-tools/publish/))**：
   1. **用户反馈与根因确诊**：
      - 用户截图提问：“按图一的配置，深度不应该是400吗，为什么计算出来是200”；
      - **根因分析**：在 `Services/ExcelServices.CabinetBatchPrice.cs` 的 `TryExtractDimensionsFromText` 中，匹配到二维长宽尺寸（如 `800*1800`，未标明深度）时，原代码遗留写死了 `double d = 200.0;`，未调用图一【辅材壳体计算】中的 `HeightDepthGradients`（高度驱动的箱柜深度推荐梯度表），导致高度为 1800mm 时被强行按 200mm 深度核算。
@@ -3641,9 +3641,8 @@
      - **编辑附件**：对应底层专属窗体 `leadsoft.superwinner.BLL.frmAppendixDiscount`（资源位于 `附件设置.frmAppendixDiscount.resources`），包含 `_marked_Price`、`_discountString`、`_model`、`_bomString` 等字段，交互式配置附件后执行型号规格拼接（`+附件规格`）与价格/成本自动累加回写。
 - **【需求与架构分析】电小二右键功能体系与 Excel 文件底层结构深度解析 (`session.md`)**：
   1. **文件底层结构解析**：通过对电小二导出的标准化成套报价工作簿（如 `WB202609151454-新建项目-吴磊(2).xlsx`）底层 XML（OpenXML `workbook.xml`, `sheet2.xml`, `customProperty3.bin`）的逆向与结构比对，明确了箱柜 4 个核心定义名称锚点体系（`Cab_Sum_k` 汇总行、`Cab_Det_k` 明细信息行、`Cab_Subsum_k` 小计行、`Cab_Tolsum_k` 总计行），以及元器件明细区域（前台 A~T 列，后台 U~AF 列存储电气参数及 CAD 图元 Handle `AD` 列）；
-  2. **红框核心功能定位与作用**：
-     - **剪切/复制/插入/删除元件**：以成套业务对象实体为最小颗粒度，进行整行数据、公式与图元 Handle 关联的移动、克隆、安全插入与删除，自动维护 A 列序号连续性、自适应动态延伸/收缩小计行 `SUM` 公式边界（杜绝 `#REF!` 缺陷），并联动维护箱柜各定义名称行号；
-     - **编辑附件**：针对主元器件（如避雷器配浪涌后备保护器 SCB、断路器配分励/辅助触头等）进行选配件的交互式配置，实现 C 列型号文本标准格式拼接（如 `+分励辅助 AC220V`）、价格自动叠加上浮与隐藏列选配状态持久化存储。
+  2. **红框核心功能定位与作用**：- **剪切/复制/插入/删除元
+     ... [truncated for diff preview] - **剪切/复制/插入/删除元件**：以成套业务对象实体为最小颗粒度，进行整行数据、公式与图元 Handle 关联的移动、克隆、安全插入与删除，自动维护 A 列序号连续性、自适应动态延伸/收缩小计行 `SUM` 公式边界（杜绝 `#REF!` 缺陷），并联动维护箱柜各定义名称行号；- **编辑附件\*\*：针对主元器件（如避雷器配浪涌后备保护器 SCB、断路器配分励/辅助触头等）进行选配件的交互式配置，实现 C 列型号文本标准格式拼接（如 `+分励辅助 AC220V`）、价格自动叠加上浮与隐藏列选配状态持久化存储。
 - **【Bug 修复与闭环交付】二次元件组批量生成提示成功但 Excel 单元格全空缺陷彻底根治 (`ExcelServices.ComponentGroup.cs`)**：
   1. **问题根因**：`ExecuteBatchComponentGroup` 中，构建写入矩阵时将 `batchValues` 和 `formulaA` 声明为 `[reqCount + 1, batchWriteCols + 1]` 并在循环中从 `r = 1`（1-based）开始赋值，且列相对偏移多加了 1；但 C# 数组实质为 0-based，当单箱柜生成 1 行（`reqCount = 1`）赋给 1 行的 Range 时，Excel COM 仅从下标 `[0, 0]` 提取数据，导致第 0 行全为 null 的数据被写入，真正有数据的第 1 行直接被 Excel 截断抛弃；A 列公式同样因赋在第 1 列被截断全空；
   2. **彻底修复**：严格改用标准 0-based 矩阵 `object[,] batchValues = new object[reqCount, batchWriteCols]` 与公式向量 `object[,] formulaA = new object[reqCount, 1]`；循环中基于 `mIdx`（0 到 `reqCount - 1`）索引行，列相对偏移改为 `map.Col - colStart`；
@@ -3787,15 +3786,16 @@
       - **最小变动修复**：在 `ExcelAddInDemo.csproj` 的 PropertyGroup 中追加 `<DefaultItemExcludes>$(DefaultItemExcludes);publish\**</DefaultItemExcludes>`，彻底切断根目录 `publish` 产物文件被误当成源码/资源引用的路径；
       - **工程核验**：执行 `dotnet build` 构建恢复 **0 错误**（顺利生成 packed xll 插件）；联动验证下游 CAD 端 `ClassLibrary3.csproj` 构建同样 **0 错误** 顺利通过。
 
-
 ---
 
 ## 2026-11-08: 深度调研 ExWinner 对标“元件批调”红框功能分析
 
 ### 1. 调研背景
+
 用户指示完成“元件批调”下拉菜单中被红框圈出的 9 个功能，并要求先分析桌面快捷方式 C:\Users\Public\Desktop\ExWinner成套报价软件(DHub).lnk（目标位于 D:\Program Files\ExWinner\）中这几个功能的具体业务作用与实现机制，沟通一致后再行实施。
 
 ### 2. ExWinner 逆向与对标功能深度分析
+
 经对 ExWinner (leadsoft.superwinner.BLL.dll, BusCalculate.dll, ExWinnerPages, leadsoft.common.Dq123ProductControl.dll) 全面探查，各功能对标定义如下：
 
 1. **总价一键调整** (rmProjectFeeFormula.html)：
@@ -3815,7 +3815,7 @@
    - **交互与算法**：通过断路器安装模数与安装空间规则管道，自动推导合适柜体尺寸并一键回填至箱柜属性或报表。
 6. **母排一键改价** (CopperPriceWindow / CopperPriceModel)：
    - **业务作用**：母排价格高度敏感于当期铜价/铝价市场行情波动。在铜价大幅波动时，快速全项目重新计价。
-   - **交互与算法**：弹窗输入【当期基准铜价（元/kg）】+【铜排加工费（元/kg）】（以及铝价与铝加工费）；系统自动扫描全项目所有箱柜明细中的母排物料，按公式 新单价 = (基准铜价 + 加工费) * 理论单重 或直接更新铜排单价，瞬间完成全项目母排价格重算。
+   - **交互与算法**：弹窗输入【当期基准铜价（元/kg）】+【铜排加工费（元/kg）】（以及铝价与铝加工费）；系统自动扫描全项目所有箱柜明细中的母排物料，按公式 新单价 = (基准铜价 + 加工费) \* 理论单重 或直接更新铜排单价，瞬间完成全项目母排价格重算。
 7. **箱体一键改价** (FrmCabietPrice / rmCabinetPriceClass)：
    - **业务作用**：在壳体钢材市场价格变化或需要按外协加工价格调整时，统一修改所有箱柜的壳体单价。
    - **交互与算法**：汇总全项目所有箱柜的柜号、柜型、尺寸（宽×高×深）、台数；提供【按表面积/展开公式计价】、【按标准柜型价格库匹配】或【按比例统一上浮/下浮】，一键将调整后的箱体价格覆盖回写到各箱柜的箱体行中。
@@ -3827,11 +3827,13 @@
    - **交互与算法**：排查价格为0/空、公式被破坏、台数/数量为空或异常、元件配比不合理（如互感器与表头配比、避雷器配比）；弹出可视化核验报告，支持高亮标注并双击“一键定位”到 Excel 异常单元格，支持一键自愈。
 
 ### 3. 当前项目现状与下一步规划
+
 - 已具备基础或已有工作台：总价一键调整、在线查价、报价智能核验、母排用量预估/辅材壳体计算。
 - 待开发或完善：一键匹配价格、母排一键改价、箱体一键改价、多方案报价。
 - 现已梳理完毕，停止直接写代码，与用户进行专业沟通、明确实施优先级与交互规范。
 
 ### 4. 2026-11-08: 完成【母排一键改价】架构方案设计
+
 - **状态**：方案已制定，生成 implementation_plan.md 交付用户审核。
 - **方案核心要点**：
   1. 前端采用 Vue 3 (<script setup>) + Element-Plus，配色为绿蓝相间，主色调 #009688；
@@ -3842,6 +3844,7 @@
 - **下一步**：等待用户确认方案后，立即着手编写 C# 与前端代码。
 
 ### 5. 2026-11-08: 【母排一键改价】代码实施与构建全量通过
+
 - **完成工作**：
   1. 新建 Models/BusbarBatchPriceModels.cs，定义母排改价相关的强类型传输模型与扫描统计对象；
   2. 新建 Services/ExcelServices.BusbarBatchPrice.cs，实现母排正负向特征过滤、复合拼数截面积解析与米重算法、M列极速回写与公式级联自愈计算；
@@ -3852,6 +3855,7 @@
 - **状态**：已交付，待用户进一步指示红框内其它功能（如箱体一键改价、一键匹配价格、多方案报价等）。
 
 ### 6. 2026-11-08: 修复【母排一键改价】中 CabinetAnchorModel 属性大小写异常
+
 - **根因定位**：在 ExcelServices.BusbarBatchPrice.cs 中，CabinetAnchorModel 的明细行号与小计行号属性为 Pascal 命名 DetRow / SubsumRow，代码中因 dynamic 调用误写为 detRow / subsumRow，导致 DLR 在运行时抛出未包含属性异常。
 - **最小变动修复**：
   1. 采用 int detRow = cabInfo.Det != null ? Convert.ToInt32(cabInfo.Det.Row) : cabInfo.DetRow; 与 subsumRow，安全兼顾对象属性与行号缓存，并加入 detRow <= 0 || subsumRow <= 0 安全阻断；
@@ -3859,6 +3863,7 @@
   3. 执行 dotnet build 验证 **0 错误**，并全量同步 HTML 至发布路径。
 
 ### 7. 2026-11-10: 汇总调价中分类明细 Z 列 (配套附件) 与元件汇总表 W 列 (附件) 同步逻辑排查
+
 - **排查背景**：用户核实 Ribbon 中“汇总调价”是否未将分类明细中的 Z 列内容生成到元件汇总表的 W 列。
 - **排查结果确认**：**是的，确实没有生成到 W 列，存在逻辑遗漏**。
 - **详细代码定位**：
@@ -3879,3 +3884,35 @@
   - 修改位置：第 1290 行
   - 改动说明：将 `paramMatrix[i, 3] = string.Empty;` 替换为 `paramMatrix[i, 3] = comp.Accessory;`，确保分类明细表 Z 列提取的配套附件正确输出至元件汇总表的 W 列，打通生成与一键更新的完整数据链路。
   - 编译验证：执行 `dotnet build` 编译成功，**0 警告、0 错误**（当前用户的 Excel 进程正持有 xll，用户重启 Excel 或重新加载插件即可生效）。
+
+### 8. 2026-11-10: 【智能辅材与壳体计算中心】全柜报警监控看板实施 (方案 B: 居中弹窗)
+
+- **需求背景**：用户反映黄色告警提醒条幅（如 W 列电流为空、CAD 真实尺寸未提取拒用经验兜底等）原先只有定位到特定箱柜才能看到，缺乏全局掌控能力。用户要求在界面增加按钮/Tag，有报警与无报警状态清晰区分，点击后展开居中弹窗查看所有箱柜报警汇总，并支持一键定位切换到对应箱柜。
+- **实施架构与代码变动**：
+  1. **数据模型层 (`Models/CabinetAuxCalcModels.cs`)**：
+     - 新增 `CabinetWarningSummaryItem`（包含 sheetName, detName, cabinetName, seqNo, displayName, detRow, warnings）；
+     - 新增 `CabinetWarningReportDto`（汇总当前工作表总箱柜台数、异常箱柜台数、总警报项数及各柜明细列表）；
+     - 严格遵循每 3 行包含一行中文注释规范。
+  2. **业务服务层 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+     - 新增 `ScanCategoryAllCabinetWarnings(Worksheet ws, QuotationRules rules)` 静态服务方法；
+     - 内存纯只读扫描当前工作表所有已注册有效箱柜（自上而下物理排序），执行推导计算并提取警告列表，不产生任何 Excel 单元格回写与物理变动，耗时极短。
+  3. **控制器层 (`Controllers/CabinetAuxCalcController.cs`)**：
+     - 新增 `ScanAllCabinetWarnings(string sheetName, QuotationRules rules)` 方法，调度只读扫描服务。
+  4. **窗口宿主层 (`Forms/CabinetAuxCalcForm.cs`)**：
+     - 在 `OnWebMessageReceived` 挂载 `scanAllCabinetWarnings` 动作路由，通过 `ExcelAsyncUtil.QueueAsMacro` 异步调度，保障 WinForms/WebView2 UI 消息泵流畅无卡顿，回传 `scanAllCabinetWarningsResult`。
+  5. **前端界面 (`Resources/cabinet_aux_calc.html`)**：
+     - **状态 Tag 与入口按钮**：在【智能推导分析预览】标题栏新增全局报警 Tag 与【📋 全柜报警监控】按钮：
+       - **有报警**：显示红/橙色 `type="danger"` 标签与闪烁呼吸动画，文案呈现 `⚠️ 存在 N 项报警 (M台箱柜) 🔍点击展开`；入口按钮呈现红白警示风格 `🚨 全柜报警监控 (N)`；
+       - **无报警**：显示绿色 `type="success"` 标签，文案呈现 `✓ 全柜无报警 (共 N 台正常) 🔍点击查看`；
+       - **扫描中**：显示 `⏳ 正在全检各箱柜报警...`；
+     - **居中弹窗 (方案 B)**：采用 Element-Plus `el-dialog` 垂直水平绝对居中：
+       - 顶部指标卡片：清晰统计当前工作表、箱柜总数、异常箱柜、报警总数；
+       - 过滤模式切换：支持“仅看报警箱柜”与“全部箱柜”单选切换；
+       - 【🔄 重新全检】按钮：支持 Excel 补齐数据后一键重新扫描；
+       - 箱柜卡片明细列表：左侧状态边框（红/绿），罗列具体警告条目与物理行号；
+       - 【📍 定位并切换至此柜】按钮：点击自动切换主界面选中的箱柜并在 Excel 中滚动高亮至该行；
+       - 弹性伸缩布局，杜绝水平滚动条，主色调严格遵循绿蓝相间（#009688）；
+     - **联动机制**：在 `initContext` 上下文加载、分类表切换 `onSheetChange` 以及弹窗点击全检时自动触发后台极速扫描。
+  6. **编译与产物同步**：
+     - 全量同步 HTML 至 `bin/Debug/net48/Resources/`、`publish/Resources/`、`bin/Debug/net48/publish/Resources/`；
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false` 验证 **0 警告、0 错误** 成功生成 `ExcelAddInDemo.dll`。

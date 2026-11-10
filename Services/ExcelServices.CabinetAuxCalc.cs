@@ -760,12 +760,12 @@ namespace ExcelAddInDemo
             if (rules == null) rules = LoadQuotationRules();
 
             // 优先检查是否为 PZ30 纯数字箱体型号 (如 15, 20)
-                // 若开启了 PZ30 优先，则不在此处提前返回，后移至提取 CAD 真实图纸尺寸后重新测算模数并靠拢
-                if (scanData.IsPz30DigitModel && scanData.Pz30Digits > 0 && !(rules?.Pz30Rules?.Pz30Priority == true))
-                {
-                    // 直接调度 PZ30 模数箱专属计费推导并立即返回
-                    return CalculatePz30CabinetAuxAndShell(scanData, rules);
-                }
+            // 若开启了 PZ30 优先，则不在此处提前返回，后移至提取 CAD 真实图纸尺寸后重新测算模数并靠拢
+            if (scanData.IsPz30DigitModel && scanData.Pz30Digits > 0 && !(rules?.Pz30Rules?.Pz30Priority == true))
+            {
+                // 直接调度 PZ30 模数箱专属计费推导并立即返回
+                return CalculatePz30CabinetAuxAndShell(scanData, rules);
+            }
 
             // 提取通用系数
             double xishu = rules.General.ElementMarkupRatio;
@@ -2090,15 +2090,15 @@ namespace ExcelAddInDemo
 
                             if (!matchedShellInFeeArea && isShellRow)
                             {
-                                    // 若没有既有尺寸才写入推荐型号；若已有尺寸则保护原有规格不覆盖 (PZ30模数箱更新不受此限)
-                                    if (!scanData.HasExistingShellSize || result.IsPz30DigitModel || string.IsNullOrWhiteSpace(feeMatrix[r, 3]?.ToString()))
-                                    {
-                                        string shellModel = !string.IsNullOrWhiteSpace(result.RecommendedShellModel)
-                                            ? result.RecommendedShellModel
-                                            : (!string.IsNullOrWhiteSpace(result.RecommendedShellSizeFull) ? result.RecommendedShellSizeFull : result.RecommendedShellSize);
-                                        // C 列写入规格型号
-                                        feeMatrix[r, 3] = shellModel;
-                                    }
+                                // 若没有既有尺寸才写入推荐型号；若已有尺寸则保护原有规格不覆盖 (PZ30模数箱更新不受此限)
+                                if (!scanData.HasExistingShellSize || result.IsPz30DigitModel || string.IsNullOrWhiteSpace(feeMatrix[r, 3]?.ToString()))
+                                {
+                                    string shellModel = !string.IsNullOrWhiteSpace(result.RecommendedShellModel)
+                                        ? result.RecommendedShellModel
+                                        : (!string.IsNullOrWhiteSpace(result.RecommendedShellSizeFull) ? result.RecommendedShellSizeFull : result.RecommendedShellSize);
+                                    // C 列写入规格型号
+                                    feeMatrix[r, 3] = shellModel;
+                                }
                                 // E 列写入单位 (默认 "台") --硬编码--
                                 feeMatrix[r, 5] = "台";
                                 // F 列检查数量 (若原数量为空或为0，则默认补 1) --硬编码--
@@ -3801,6 +3801,169 @@ namespace ExcelAddInDemo
                 System.Diagnostics.Debug.WriteLine($"[LocateCabinetDetail] 定位异常: {ex.Message}");
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 扫描指定分类工作表下所有箱柜的警告信息 (只读内存推导，不产生任何单元格回写与物理修改)
+        /// </summary>
+        /// <param name="ws">目标分类工作表</param>
+        /// <param name="rules">推导规则配置实体</param>
+        /// <returns>全表箱柜报警汇总实体</returns>
+        public static CabinetWarningReportDto ScanCategoryAllCabinetWarnings(Worksheet ws, QuotationRules rules)
+        {
+            // 初始化返回报文数据模型
+            var report = new CabinetWarningReportDto
+            {
+                SheetName = ws?.Name ?? string.Empty
+            };
+            // 基础非空校验，若工作表为空则直接返回
+            if (ws == null) return report;
+
+            try
+            {
+                // 获取当前工作表所属的工作簿引用
+                Workbook wb = ws.Parent as Workbook;
+                // 探测提取当前分类表下所有已注册的箱柜锚点映射
+                var validCabinets = Tool.GetSheetValidCabinets(ws, wb);
+
+                // 若未识别到箱柜锚点，尝试执行一次定义名称自愈探测补齐
+                if (validCabinets.Count == 0)
+                {
+                    // 修复补齐定义名称
+                    Tool.FixAndFillCabinetNamesForSheet(ws);
+                    // 重新提取有效箱柜映射
+                    validCabinets = Tool.GetSheetValidCabinets(ws, wb);
+                }
+
+                // 筛选包含 Det 明细行的有效箱柜集合
+                var targetCabinets = new List<KeyValuePair<int, CabinetAnchorModel>>();
+                // 遍历全部已探测的箱柜
+                foreach (var kvp in validCabinets)
+                {
+                    // 仅收录具备明细块有效锚点的箱柜
+                    if (kvp.Value?.Det != null)
+                    {
+                        // 添加至待扫描列表
+                        targetCabinets.Add(kvp);
+                    }
+                }
+
+                // 按照明细行号从小到大正序排列，保证列表排布与表格自上而下物理顺序一致
+                targetCabinets.Sort((a, b) =>
+                {
+                    // 提取箱柜 A 的明细行号
+                    int rowA = Convert.ToInt32(a.Value.Det.Row);
+                    // 提取箱柜 B 的明细行号
+                    int rowB = Convert.ToInt32(b.Value.Det.Row);
+                    // 执行从小到大正序比较
+                    return rowA.CompareTo(rowB);
+                });
+
+                // 记录当前分类表下的有效箱柜总台数
+                report.TotalCabinets = targetCabinets.Count;
+
+                // 遍历每一个有效箱柜执行内存只读推导与告警提取
+                foreach (var kvp in targetCabinets)
+                {
+                    // 获取箱柜唯一序号
+                    int cabIndex = kvp.Key;
+                    // 获取箱柜锚点模型
+                    var anchor = kvp.Value;
+                    // 提取明细行物理行号
+                    int detRow = Convert.ToInt32(anchor.Det.Row);
+
+                    // 优先从明细行 B 列读取箱柜名称 (例如 AL1)
+                    string cabTitle = ws.Range[$"B{detRow}"].Value?.ToString()?.Trim() ?? string.Empty;
+                    // 初始化汇总行 A 列序号
+                    string seqNo = string.Empty;
+                    // 若存在汇总行锚点，读取序号与备用柜名
+                    if (anchor.Sum != null)
+                    {
+                        // 提取汇总行物理行号
+                        int sumRow = Convert.ToInt32(anchor.Sum.Row);
+                        // 从汇总行 A 列提取序号
+                        seqNo = ws.Range[$"A{sumRow}"].Value?.ToString()?.Trim() ?? string.Empty;
+                        // 若明细行 B 列为空，兜底从汇总行 B 列读取柜号
+                        if (string.IsNullOrWhiteSpace(cabTitle))
+                        {
+                            // 读取汇总行柜名
+                            cabTitle = ws.Range[$"B{sumRow}"].Value?.ToString()?.Trim() ?? string.Empty;
+                        }
+                    }
+
+                    // 若仍未获取到柜号，采用规范默认兜底名称
+                    if (string.IsNullOrWhiteSpace(cabTitle))
+                    {
+                        // 生成规范兜底柜名
+                        cabTitle = $"箱柜{cabIndex}";
+                    }
+                    // 若未提取到汇总行 A 列序号，兜底采用当前箱柜索引号
+                    if (string.IsNullOrWhiteSpace(seqNo))
+                    {
+                        // 生成兜底序号
+                        seqNo = cabIndex.ToString();
+                    }
+                    // 按照“柜号(序号)”格式拼接显示全称
+                    string displayName = $"{cabTitle}({seqNo})";
+
+                    // 内存扫描元器件数据 (纯只读提取，透传当前最新规则配置)
+                    var scanData = ScanCabinetData(ws, cabIndex, anchor, rules);
+                    // 初始化该箱柜的告警信息列表
+                    var warnings = new List<string>();
+
+                    // 若扫描数据有效，执行内存智能推导
+                    if (scanData != null)
+                    {
+                        // 执行只读内存推导计算 (提取计算中拦截并生成的全部警告信息)
+                        var result = CalculateCabinetAuxAndShell(scanData, rules);
+                        // 校验并收集计算结果中的警告列表
+                        if (result?.Warnings != null && result.Warnings.Count > 0)
+                        {
+                            // 将所有警告加入当前箱柜警告列表
+                            warnings.AddRange(result.Warnings);
+                        }
+                    }
+
+                    // 构建单个箱柜报警明细条目模型
+                    var item = new CabinetWarningSummaryItem
+                    {
+                        // 所属工作表
+                        SheetName = ws.Name,
+                        // 箱柜定义名称
+                        DetName = $"Cab_Det_{cabIndex}",
+                        // 箱柜基础名称
+                        CabinetName = cabTitle,
+                        // 汇总序号
+                        SeqNo = seqNo,
+                        // 显示全称
+                        DisplayName = displayName,
+                        // 明细物理行号
+                        DetRow = detRow,
+                        // 警告内容列表
+                        Warnings = warnings
+                    };
+
+                    // 若该箱柜存在告警项，累加统计指标
+                    if (warnings.Count > 0)
+                    {
+                        // 递增异常箱柜计数
+                        report.WarnCabinetCount++;
+                        // 累加总报警项数
+                        report.TotalWarnings += warnings.Count;
+                    }
+
+                    // 添加至汇总条目列表中
+                    report.Items.Add(item);
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录扫描异常日志
+                System.Diagnostics.Debug.WriteLine($"[ScanCategoryAllCabinetWarnings] 扫描箱柜报警异常: {ex.Message}");
+            }
+
+            // 返回全表报警汇总实体
+            return report;
         }
     }
 }

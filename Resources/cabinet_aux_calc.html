@@ -83,6 +83,36 @@
         background-color: #ccfbf1 !important;
       }
 
+      /* 全柜报警居中弹窗样式优化 */
+      .all-warnings-dialog .el-dialog__header {
+        padding: 12px 18px !important;
+        margin-right: 0 !important;
+        border-bottom: 1px solid #e2e8f0;
+        background: #f8fafc;
+      }
+      .all-warnings-dialog .el-dialog__title {
+        font-size: 14px !important;
+        font-weight: 700 !important;
+        color: #0f172a !important;
+      }
+      .all-warnings-dialog .el-dialog__body {
+        padding: 14px 18px !important;
+        background: #ffffff;
+      }
+      .all-warnings-dialog .el-dialog__footer {
+        padding: 10px 18px !important;
+        border-top: 1px solid #e2e8f0;
+        background: #f8fafc;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.3; transform: scale(1.25); }
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+
       /* 核心加固：强制锁定 Element Plus 遮罩层与弹窗居中 */
       .el-overlay {
         overflow: hidden !important;
@@ -1111,14 +1141,58 @@
             box-sizing: border-box;
           "
         >
-          <div class="cfg-card-header">
-            <span
-              >📊 智能推导分析预览 ({{ selectedCabinetDet ? selectedCabinetDet :
-              '全部箱柜' }})</span
-            >
-            <button type="button" class="btn-flat" @click="onAnalyze">
-              🔍 重新分析
-            </button>
+          <div class="cfg-card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span
+                >📊 智能推导分析预览 ({{ selectedCabinetDet ? selectedCabinetDet :
+                '全部箱柜' }})</span
+              >
+              <!-- 全柜报警感知 Tag (有报警与无报警严格区分) -->
+              <el-tag
+                v-if="warningReport"
+                :type="warningReport.totalWarnings > 0 ? 'danger' : 'success'"
+                effect="light"
+                size="small"
+                style="cursor: pointer; font-weight: 600; user-select: none; border-radius: 4px;"
+                @click="openAllWarningsDialog"
+                :title="warningReport.totalWarnings > 0 ? '点击展开查看全部分类箱柜报警明细' : '全部分类箱柜数据核验通过，点击查看汇总'"
+              >
+                <span v-if="warningReport.totalWarnings > 0" style="display: inline-flex; align-items: center; gap: 4px;">
+                  <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background-color: #ef4444; animation: pulse 1.5s infinite;"></span>
+                  ⚠️ 存在 {{ warningReport.totalWarnings }} 项报警 ({{ warningReport.warnCabinetCount }}台箱柜) 🔍点击展开
+                </span>
+                <span v-else style="display: inline-flex; align-items: center; gap: 4px; color: #00796b;">
+                  ✓ 全柜无报警 ({{ warningReport.totalCabinets }}台正常) 🔍点击查看
+                </span>
+              </el-tag>
+              <!-- 扫描检测中状态标签 -->
+              <el-tag
+                v-else-if="isScanningWarnings"
+                type="info"
+                size="small"
+                effect="plain"
+                style="border-radius: 4px;"
+              >
+                ⏳ 正在全检各箱柜报警...
+              </el-tag>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <!-- 全柜报警监控入口按钮 (有报警和无报警区分样式与文案) -->
+              <el-button
+                size="small"
+                :type="warningReport && warningReport.totalWarnings > 0 ? 'danger' : 'primary'"
+                plain
+                style="font-size: 11.5px; height: 26px; padding: 0 10px; font-weight: 500;"
+                @click="openAllWarningsDialog"
+                :title="warningReport && warningReport.totalWarnings > 0 ? '检测到存在报警，点击查看全柜报警详情' : '点击查看全柜报警监控汇总'"
+              >
+                <span v-if="warningReport && warningReport.totalWarnings > 0">🚨 全柜报警监控 ({{ warningReport.totalWarnings }})</span>
+                <span v-else>📋 全柜报警监控</span>
+              </el-button>
+              <button type="button" class="btn-flat" @click="onAnalyze">
+                🔍 重新分析
+              </button>
+            </div>
           </div>
 
           <!-- ⚠️ 未填电流告警提醒条幅 (只提醒，不做自动提取) -->
@@ -5390,6 +5464,229 @@
           </div>
         </template>
       </el-dialog>
+
+      <!-- 🔔 全部分类箱柜异常与报警监控汇总居中弹窗 (方案 B: 居中弹窗) -->
+      <el-dialog
+        v-model="allWarningsDialogVisible"
+        title="🔔 全部分类箱柜异常与报警监控看板"
+        width="820px"
+        align-center
+        destroy-on-close
+        :close-on-click-modal="false"
+        class="all-warnings-dialog"
+      >
+        <div style="display: flex; flex-direction: column; gap: 12px; max-height: 540px; min-width: 0;">
+          <!-- 顶部状态统计栏 -->
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 6px;
+              padding: 10px 14px;
+              flex-wrap: wrap;
+              gap: 10px;
+            "
+          >
+            <!-- 左侧指标卡片 -->
+            <div style="display: flex; align-items: center; gap: 14px; font-size: 13px;">
+              <div>
+                <span style="color: #64748b;">当前工作表:</span>
+                <span style="font-weight: 700; color: #009688; margin-left: 4px;">{{ selectedSheet || '--' }}</span>
+              </div>
+              <div style="width: 1px; height: 16px; background: #cbd5e1;"></div>
+              <div>
+                <span style="color: #64748b;">箱柜总数:</span>
+                <span style="font-weight: 700; color: #334155; margin-left: 4px;">{{ warningReport ? warningReport.totalCabinets : 0 }} 台</span>
+              </div>
+              <div style="width: 1px; height: 16px; background: #cbd5e1;"></div>
+              <div>
+                <span style="color: #64748b;">异常箱柜:</span>
+                <span :style="{ fontWeight: 700, color: (warningReport && warningReport.warnCabinetCount > 0) ? '#dc2626' : '#16a34a', marginLeft: '4px' }">
+                  {{ warningReport ? warningReport.warnCabinetCount : 0 }} 台
+                </span>
+              </div>
+              <div style="width: 1px; height: 16px; background: #cbd5e1;"></div>
+              <div>
+                <span style="color: #64748b;">报警总数:</span>
+                <span :style="{ fontWeight: 700, color: (warningReport && warningReport.totalWarnings > 0) ? '#dc2626' : '#16a34a', marginLeft: '4px' }">
+                  {{ warningReport ? warningReport.totalWarnings : 0 }} 项
+                </span>
+              </div>
+            </div>
+
+            <!-- 右侧过滤与刷新按钮 -->
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <el-radio-group v-model="warningFilterMode" size="small">
+                <el-radio-button label="warnOnly">仅看报警箱柜 ({{ warningReport ? warningReport.warnCabinetCount : 0 }})</el-radio-button>
+                <el-radio-button label="all">全部箱柜 ({{ warningReport ? warningReport.totalCabinets : 0 }})</el-radio-button>
+              </el-radio-group>
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                :loading="isScanningWarnings"
+                @click="fetchAllCabinetWarnings"
+                style="border-color: #009688; color: #009688;"
+              >
+                🔄 重新全检
+              </el-button>
+            </div>
+          </div>
+
+          <!-- 中间列表展示区域 (弹性滚动，禁止水平滚动条) -->
+          <div
+            style="
+              overflow-y: auto;
+              overflow-x: hidden;
+              max-height: 420px;
+              padding-right: 4px;
+              display: flex;
+              flex-direction: column;
+              gap: 10px;
+            "
+          >
+            <!-- 正在全检加载骨架/提示 -->
+            <div
+              v-if="isScanningWarnings"
+              style="padding: 30px; text-align: center; color: #64748b; font-size: 13px;"
+            >
+              <span style="display: inline-block; animation: spin 1s linear infinite; margin-right: 6px;">⏳</span>
+              正在快速扫描当前分类表所有箱柜数据与异常警报，请稍候...
+            </div>
+
+            <!-- 空列表状态 -->
+            <div
+              v-else-if="!filteredCabinetWarnings || filteredCabinetWarnings.length === 0"
+              style="
+                padding: 40px;
+                text-align: center;
+                background: #f0fdf4;
+                border: 1px dashed #86efac;
+                border-radius: 6px;
+                color: #166534;
+              "
+            >
+              <div style="font-size: 26px; margin-bottom: 6px;">🎉</div>
+              <div style="font-weight: 700; font-size: 14px;">太棒了！当前分类表未检测到任何报警与阻断</div>
+              <div style="font-size: 12px; color: #15803d; margin-top: 4px;">
+                所有元器件电流、CAD 尺寸及定额配置均已就绪，可安全进行全表计算与回写。
+              </div>
+            </div>
+
+            <!-- 箱柜卡片条目 -->
+            <div
+              v-else
+              v-for="cab in filteredCabinetWarnings"
+              :key="cab.detName"
+              style="
+                background: #ffffff;
+                border: 1px solid #e2e8f0;
+                border-radius: 6px;
+                overflow: hidden;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+                transition: border-color 0.2s;
+              "
+              :style="{ borderLeft: (cab.warnings && cab.warnings.length > 0) ? '4px solid #ef4444' : '4px solid #10b981' }"
+            >
+              <!-- 箱柜条目头部 -->
+              <div
+                style="
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  padding: 8px 12px;
+                  background: #f8fafc;
+                  border-bottom: 1px solid #f1f5f9;
+                "
+              >
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-weight: 700; color: #0f172a; font-size: 13px;">
+                    【{{ cab.displayName }}】
+                  </span>
+                  <span style="font-size: 11.5px; color: #64748b;">
+                    {{ cab.detName }} (第 {{ cab.detRow }} 行)
+                  </span>
+                  <el-tag
+                    v-if="cab.warnings && cab.warnings.length > 0"
+                    type="danger"
+                    size="small"
+                    effect="plain"
+                    style="font-weight: 600;"
+                  >
+                    ⚠️ {{ cab.warnings.length }} 项报警
+                  </el-tag>
+                  <el-tag
+                    v-else
+                    type="success"
+                    size="small"
+                    effect="plain"
+                  >
+                    ✓ 正常
+                  </el-tag>
+                </div>
+
+                <!-- 定位按钮 -->
+                <el-button
+                  size="small"
+                  type="primary"
+                  plain
+                  style="border-color: #009688; color: #009688; padding: 4px 8px; font-size: 11.5px; height: 24px;"
+                  @click="jumpToCabinetFromReport(cab)"
+                  title="切换主界面到该箱柜并在 Excel 中滚动高亮至该行"
+                >
+                  📍 定位并切换至此柜
+                </el-button>
+              </div>
+
+              <!-- 箱柜条目报警内容 -->
+              <div style="padding: 10px 12px; font-size: 12px;">
+                <div
+                  v-if="cab.warnings && cab.warnings.length > 0"
+                  style="display: flex; flex-direction: column; gap: 6px;"
+                >
+                  <div
+                    v-for="(warn, wIdx) in cab.warnings"
+                    :key="wIdx"
+                    style="
+                      display: flex;
+                      align-items: flex-start;
+                      gap: 6px;
+                      line-height: 1.5;
+                      color: #b91c1c;
+                      background: #fef2f2;
+                      border: 1px solid #fee2e2;
+                      padding: 6px 10px;
+                      border-radius: 4px;
+                    "
+                  >
+                    <span style="flex-shrink: 0; font-weight: 700;">•</span>
+                    <span style="word-break: break-all;">{{ warn }}</span>
+                  </div>
+                </div>
+                <div
+                  v-else
+                  style="color: #10b981; display: flex; align-items: center; gap: 6px;"
+                >
+                  <span>✓</span>
+                  <span>该箱柜元器件数据完整，无任何警示。</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <template #footer>
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <div style="font-size: 12px; color: #64748b; text-align: left;">
+              💡 提示：点击“定位并切换至此柜”可直接在主界面与 Excel 中同步高亮该箱柜明细行，便于快速核实与补齐数据。
+            </div>
+            <el-button @click="allWarningsDialogVisible = false">关闭</el-button>
+          </div>
+        </template>
+      </el-dialog>
     </div>
 
     <script>
@@ -5439,6 +5736,72 @@
           const selectedSheet = ref("");
           const cabinets = ref([]);
           const selectedCabinetDet = ref("");
+
+          // ==================== 🔔 全柜报警监控看板状态与响应式逻辑 ====================
+          // 全表箱柜报警报告数据实体
+          const warningReport = ref(null);
+          // 是否正在全检扫描箱柜报警
+          const isScanningWarnings = ref(false);
+          // 全柜报警监控居中弹窗显隐状态 (方案 B: 居中弹窗)
+          const allWarningsDialogVisible = ref(false);
+          // 报警列表过滤模式 ('warnOnly' | 'all')
+          const warningFilterMode = ref("warnOnly");
+
+          // 全柜报警过滤计算属性 (按仅看报警或查看全部过滤)
+          const filteredCabinetWarnings = computed(() => {
+            // 校验报警报告有效性
+            if (!warningReport.value || !warningReport.value.items) return [];
+            // 若选择仅看报警箱柜
+            if (warningFilterMode.value === "warnOnly") {
+              // 过滤出 warnings 数量大于 0 的箱柜
+              return warningReport.value.items.filter(
+                (item) => item.warnings && item.warnings.length > 0,
+              );
+            }
+            // 否则返回所有箱柜列表
+            return warningReport.value.items;
+          });
+
+          // 触发全柜箱柜报警检测
+          const fetchAllCabinetWarnings = () => {
+            // 校验当前工作表有效性
+            if (!selectedSheet.value) return;
+            // 激活扫描中状态
+            isScanningWarnings.value = true;
+            // 向 C# 后端发送 scanAllCabinetWarnings 扫描指令
+            postToCSharp({
+              action: "scanAllCabinetWarnings",
+              sheetName: selectedSheet.value,
+              rules: rules,
+            });
+          };
+
+          // 打开全柜报警监控看板弹窗
+          const openAllWarningsDialog = () => {
+            // 打开居中弹窗
+            allWarningsDialogVisible.value = true;
+            // 若当前尚未获取过报告且未在扫描中，自动触发一次全检
+            if (!warningReport.value && !isScanningWarnings.value) {
+              fetchAllCabinetWarnings();
+            }
+          };
+
+          // 从全柜报警看板中一键跳转定位到特定箱柜
+          const jumpToCabinetFromReport = (cab) => {
+            // 校验条目有效性
+            if (!cab) return;
+            // 若所属工作表不同，先联动切换工作表
+            if (cab.sheetName && cab.sheetName !== selectedSheet.value) {
+              selectedSheet.value = cab.sheetName;
+              onSheetChange();
+            }
+            // 切换主界面当前选中的箱柜
+            selectedCabinetDet.value = cab.detName;
+            // 联动触发推导分析与 Excel 物理行高亮置顶滚动
+            onCabinetChange();
+            // 弹出轻量成功通知
+            ElementPlus.ElMessage.success(`已切换并定位至箱柜【${cab.displayName}】`);
+          };
 
           // ==================== 💡 DWG 本地图纸目录与即刻预览驱动状态 ====================
           // 二次排布图 DWG 本地图纸目录路径
@@ -6896,6 +7259,8 @@
                   }
                 }
                 triggerAutoAnalyze();
+                // 联动触发全柜报警检测
+                fetchAllCabinetWarnings();
               } else if (msg.action === "cabinetsList") {
                 cabinets.value = msg.data || [];
                 if (cabinets.value.length > 0) {
@@ -6904,6 +7269,8 @@
                   selectedCabinetDet.value = "";
                 }
                 triggerAutoAnalyze();
+                // 联动触发全柜报警检测
+                fetchAllCabinetWarnings();
               } else if (msg.action === "marketPriceResponse") {
                 // 清除未触发的看门狗超时定时器
                 if (copperPriceTimeoutTimer) {
@@ -7280,11 +7647,26 @@
                     msg.message || "回写壳体至计费区失败，请检查工作表",
                   );
                 }
+              } else if (msg.action === "scanAllCabinetWarningsResult") {
+                // 结束全检扫描状态
+                isScanningWarnings.value = false;
+                if (msg.success && msg.data) {
+                  // 赋值全局报警报告实体
+                  warningReport.value = msg.data;
+                  // 若存在异常箱柜，默认切换为“仅看报警箱柜”，否则切换为“全部箱柜”
+                  if (msg.data.warnCabinetCount === 0) {
+                    warningFilterMode.value = "all";
+                  } else {
+                    warningFilterMode.value = "warnOnly";
+                  }
+                }
               }
             });
           }
 
           const onSheetChange = () => {
+            // 清空旧工作表报警状态
+            warningReport.value = null;
             if (window.chrome && window.chrome.webview) {
               window.chrome.webview.postMessage({
                 action: "getCabinetsBySheet",
@@ -8747,6 +9129,15 @@
             onCabinetChange,
             // 箱柜底部明细区域定位函数
             locateCurrentCabinetDetail,
+            // ==================== 🔔 全柜报警监控看板状态与方法导出 ====================
+            warningReport,
+            isScanningWarnings,
+            allWarningsDialogVisible,
+            warningFilterMode,
+            filteredCabinetWarnings,
+            fetchAllCabinetWarnings,
+            openAllWarningsDialog,
+            jumpToCabinetFromReport,
           };
         },
       });

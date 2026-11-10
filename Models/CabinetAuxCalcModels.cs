@@ -1410,4 +1410,64 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("writeMode")]
         public string WriteMode { get; set; } = "auto";
     }
+
+    /// <summary>
+    /// 单个箱柜报警汇总条目 DTO
+    /// </summary>
+    public class CabinetWarningSummaryItem
+    {
+        // 所属分类工作表名称
+        [JsonPropertyName("sheetName")]
+        public string SheetName { get; set; } = string.Empty;
+
+        // 箱柜定义名称 (如 Cab_Det_28)
+        [JsonPropertyName("detName")]
+        public string DetName { get; set; } = string.Empty;
+
+        // 箱柜基础名称 (如 AAG6)
+        [JsonPropertyName("cabinetName")]
+        public string CabinetName { get; set; } = string.Empty;
+
+        // 汇总表序号 (如 28)
+        [JsonPropertyName("seqNo")]
+        public string SeqNo { get; set; } = string.Empty;
+
+        // 显示全称 (如 AAG6(28))
+        [JsonPropertyName("displayName")]
+        public string DisplayName { get; set; } = string.Empty;
+
+        // 箱柜物理行号 (Cab_Det 信息行)
+        [JsonPropertyName("detRow")]
+        public int DetRow { get; set; }
+
+        // 警告与阻断提醒列表
+        [JsonPropertyName("warnings")]
+        public List<string> Warnings { get; set; } = new List<string>();
+    }
+
+    /// <summary>
+    /// 全局或分类表箱柜报警汇总报告 DTO
+    /// </summary>
+    public class CabinetWarningReportDto
+    {
+        // 目标分类工作表名称
+        [JsonPropertyName("sheetName")]
+        public string SheetName { get; set; } = string.Empty;
+
+        // 当前分类表下的总箱柜台数
+        [JsonPropertyName("totalCabinets")]
+        public int TotalCabinets { get; set; }
+
+        // 存在报警的箱柜台数
+        [JsonPropertyName("warnCabinetCount")]
+        public int WarnCabinetCount { get; set; }
+
+        // 报警项总条数
+        [JsonPropertyName("totalWarnings")]
+        public int TotalWarnings { get; set; }
+
+        // 各箱柜明细警告列表
+        [JsonPropertyName("items")]
+        public List<CabinetWarningSummaryItem> Items { get; set; } = new List<CabinetWarningSummaryItem>();
+    }
 }

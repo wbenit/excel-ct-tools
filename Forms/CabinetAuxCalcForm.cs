@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -339,6 +339,52 @@ namespace ExcelAddInDemo.Forms
                         // 线程安全回送前端
                         PostWebMessageSafe(resJson);
                     }
+                }
+                // 响应扫描分类表所有箱柜报警汇总 (异步宏调度，杜绝阻塞 UI 消息泵)
+                else if (action == "scanAllCabinetWarnings")
+                {
+                    // 提取目标分类表名称
+                    string sheetName = root.TryGetProperty("sheetName", out var sn) ? sn.GetString() ?? string.Empty : string.Empty;
+                    QuotationRules? rules = null;
+                    // 反序列化规则配置
+                    if (root.TryGetProperty("rules", out var rulesElem))
+                    {
+                        // 解析为强类型规则对象
+                        rules = JsonSerializer.Deserialize<QuotationRules>(rulesElem.GetRawText(), JsonOptions);
+                    }
+                    // 获取生效的规则实例
+                    var effectiveRules = rules ?? new QuotationRules();
+
+                    // 调度 Excel 异步宏队列执行，保证 COM 线程安全性
+                    ExcelAsyncUtil.QueueAsMacro(() =>
+                    {
+                        try
+                        {
+                            // 调度业务控制器扫描全表箱柜报警报告
+                            var report = _controller.ScanAllCabinetWarnings(sheetName, effectiveRules);
+                            // 序列化扫描结果报文
+                            string resJson = JsonSerializer.Serialize(new
+                            {
+                                action = "scanAllCabinetWarningsResult",
+                                success = report != null,
+                                data = report
+                            }, JsonOptions);
+                            // 线程安全回送前端 WebView2 渲染
+                            SafeInvoke(() => PostWebMessageSafe(resJson));
+                        }
+                        catch (Exception exScan)
+                        {
+                            // 记录异常日志
+                            System.Diagnostics.Debug.WriteLine($"[CabinetAuxCalcForm] scanAllCabinetWarnings 异步异常: {exScan.Message}");
+                            // 失败安全反馈
+                            SafeInvoke(() => PostWebMessageSafe(JsonSerializer.Serialize(new
+                            {
+                                action = "scanAllCabinetWarningsResult",
+                                success = false,
+                                data = (CabinetWarningReportDto?)null
+                            }, JsonOptions)));
+                        }
+                    });
                 }
                 // 响应单个箱柜推导分析 (采用 ExcelAsyncUtil.QueueAsMacro 异步宏调度，释放 WinForms UI 消息泵)
                 else if (action == "analyzeCabinet")

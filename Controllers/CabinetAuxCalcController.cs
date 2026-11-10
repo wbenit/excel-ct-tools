@@ -370,5 +370,38 @@ namespace ExcelAddInDemo.Controllers
                 return (false, 0, 0, $"更新所有分类发生错误: {ex.Message}");
             }
         }
+
+        /// <summary>
+        /// 扫描指定分类工作表下所有箱柜的警告信息 (内存只读推导)
+        /// </summary>
+        /// <param name="sheetName">工作表名称</param>
+        /// <param name="rules">推导规则配置</param>
+        /// <returns>CabinetWarningReportDto 汇总实体</returns>
+        public CabinetWarningReportDto ScanAllCabinetWarnings(string sheetName, QuotationRules rules)
+        {
+            try
+            {
+                // 获取 Excel COM 实例
+                var app = ExcelDnaSafeAccessor.GetApplication();
+                if (app == null) return new CabinetWarningReportDto { SheetName = sheetName };
+
+                // 获取活动工作簿
+                Workbook wb = app.ActiveWorkbook;
+                if (wb == null) return new CabinetWarningReportDto { SheetName = sheetName };
+
+                // 获取目标分类工作表
+                Worksheet ws = wb.Worksheets[sheetName] as Worksheet;
+                if (ws == null) return new CabinetWarningReportDto { SheetName = sheetName };
+
+                // 调用服务层只读扫描全表箱柜报警
+                return ExcelServices.ScanCategoryAllCabinetWarnings(ws, rules);
+            }
+            catch (Exception ex)
+            {
+                // 捕获并记录扫描异常
+                System.Diagnostics.Debug.WriteLine($"[ScanAllCabinetWarnings] 控制器扫描异常: {ex.Message}");
+                return new CabinetWarningReportDto { SheetName = sheetName };
+            }
+        }
     }
 }
