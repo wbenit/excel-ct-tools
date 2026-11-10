@@ -1287,7 +1287,8 @@ namespace ExcelAddInDemo
                         paramMatrix[i, 0] = comp.Current;  // T 列: 额定电流
                         paramMatrix[i, 1] = comp.Poles;    // U 列: 极数
                         paramMatrix[i, 2] = comp.Tripping; // V 列: 脱扣方式
-                        paramMatrix[i, 3] = string.Empty;  // W 列: 附件 (默认留空供选附件时写入脱扣方式)
+                        // W 列: 附件 (回写分类明细表 Z 列提取的配套附件 Accessory，防止遗漏与一键更新误清空)
+                        paramMatrix[i, 3] = comp.Accessory;
                         paramMatrix[i, 4] = comp.Param1;   // X 列: 参数1
                         paramMatrix[i, 5] = comp.Param2;   // Y 列: 参数2
 

@@ -3857,3 +3857,25 @@
   1. 采用 int detRow = cabInfo.Det != null ? Convert.ToInt32(cabInfo.Det.Row) : cabInfo.DetRow; 与 subsumRow，安全兼顾对象属性与行号缓存，并加入 detRow <= 0 || subsumRow <= 0 安全阻断；
   2. 扩展母排别名识别集合，增加 母线、矩形母线、零排、地排 等常见行业写法；
   3. 执行 dotnet build 验证 **0 错误**，并全量同步 HTML 至发布路径。
+
+### 7. 2026-11-10: 汇总调价中分类明细 Z 列 (配套附件) 与元件汇总表 W 列 (附件) 同步逻辑排查
+- **排查背景**：用户核实 Ribbon 中“汇总调价”是否未将分类明细中的 Z 列内容生成到元件汇总表的 W 列。
+- **排查结果确认**：**是的，确实没有生成到 W 列，存在逻辑遗漏**。
+- **详细代码定位**：
+  1. **提取阶段** (`ExcelServices.SummaryAdjustPrice.cs` L902-903)：
+     代码已正确读取了明细表的 Z 列（索引 26，Accessory）并存储到 `AggregatedComponent.Accessory`。
+  2. **聚合阶段** (`ExcelServices.SummaryAdjustPrice.cs` L1046)：
+     聚合逻辑中也保留了 `Accessory = g.Select(x => x.Accessory).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty`。
+  3. **表头定义** (`ExcelServices.SummaryAdjustPrice.cs` L1199-1201)：
+     第 23 列（W 列）明确定义为“附件”。
+  4. **回写数据矩阵阶段 (遗漏根因)** (`ExcelServices.SummaryAdjustPrice.cs` L1290)：
+     `paramMatrix[i, 3] = string.Empty; // W 列: 附件 (默认留空供选附件时写入脱扣方式)`
+     直接硬编码留空，导致分类明细表提取到的 `comp.Accessory` 从未被写入汇总表 W 列。
+  5. **潜在连锁影响 (一键更新)** (`ExcelServices.SummaryAdjustPrice.cs` L1779 & L2095)：
+     一键更新时从汇总表 W 列读取 Accessory，并回写覆盖到分类明细表的 Z 列。若汇总表 W 列生成时为空，反向同步时可能导致分类明细表的原有 Z 列附件信息被覆盖清空。
+- **状态**：完成代码审计与精准定位，向用户清晰汇报结果与成因，等待用户指示后续修复操作。
+- **修复实施 (2026-11-10)**：
+  - 文件：`Services/ExcelServices.SummaryAdjustPrice.cs`
+  - 修改位置：第 1290 行
+  - 改动说明：将 `paramMatrix[i, 3] = string.Empty;` 替换为 `paramMatrix[i, 3] = comp.Accessory;`，确保分类明细表 Z 列提取的配套附件正确输出至元件汇总表的 W 列，打通生成与一键更新的完整数据链路。
+  - 编译验证：执行 `dotnet build` 编译成功，**0 警告、0 错误**（当前用户的 Excel 进程正持有 xll，用户重启 Excel 或重新加载插件即可生效）。
