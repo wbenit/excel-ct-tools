@@ -223,6 +223,14 @@ namespace ExcelAddInDemo.Forms
                 // 注册 Web 消息接收处理函数
                 _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
 
+                // 彻底清除 WebView2 磁盘与内存缓存，保证绝对加载磁盘最新 HTML 页面代码
+                try
+                {
+                    // 异步清空所有类型的浏览器缓存数据
+                    await _webView.CoreWebView2.Profile.ClearBrowsingDataAsync();
+                }
+                catch { }
+
                 // 检索 HTML 页面资源路径 (多重备选路径检测)
                 string appDir = Tool.GetAppDirectory();
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
@@ -256,8 +264,10 @@ namespace ExcelAddInDemo.Forms
                         resDir,
                         Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
 
+                    // 附加动态时间戳参数防缓存，确保每次加载均读取最新 HTML 前端代码
+                    string navUrl = $"https://appassets.local/cabinet_aux_calc.html?_t={DateTime.UtcNow.Ticks}";
                     // 导航至虚拟主机安全页面
-                    _webView.Source = new Uri("https://appassets.local/cabinet_aux_calc.html");
+                    _webView.Source = new Uri(navUrl);
                 }
                 else
                 {

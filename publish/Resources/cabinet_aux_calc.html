@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 彻底禁用本地与代理缓存，确保每次加载均读取物理磁盘最新前端代码 -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>智能辅材与壳体计算中心</title>
 
     <!-- 引入本地基础样式库 -->
@@ -5575,18 +5579,18 @@
         </template>
       </el-dialog>
 
-      <!-- 🔔 全部分类箱柜异常与报警监控汇总居中弹窗 (方案 B: 居中弹窗) -->
+      <!-- 🔔 分类箱柜异常与报警监控汇总居中弹窗 (去除全部箱柜单选，直达报警箱柜与故障明细) -->
       <el-dialog
         v-model="allWarningsDialogVisible"
-        title="🔔 全部分类箱柜异常与报警监控看板"
-        width="820px"
+        title="🔔 分类箱柜异常与报警监控看板"
+        width="860px"
         align-center
         destroy-on-close
         :close-on-click-modal="false"
         class="all-warnings-dialog"
       >
-        <div style="display: flex; flex-direction: column; gap: 12px; max-height: 540px; min-width: 0;">
-          <!-- 顶部状态统计栏 -->
+        <div style="display: flex; flex-direction: column; gap: 12px; max-height: 560px; min-width: 0;">
+          <!-- 顶部状态统计栏：直达报警监控，去除全部箱柜单选切换 -->
           <div
             style="
               display: flex;
@@ -5600,74 +5604,84 @@
               gap: 10px;
             "
           >
-            <!-- 左侧指标卡片 -->
+            <!-- 左侧指标卡片：清晰展示当前分类表、异常箱柜与报警项数 -->
             <div style="display: flex; align-items: center; gap: 14px; font-size: 13px;">
               <div>
+                <!-- 当前工作表名称标签 -->
                 <span style="color: #64748b;">当前工作表:</span>
+                <!-- 动态渲染当前工作表名 -->
                 <span style="font-weight: 700; color: #009688; margin-left: 4px;">{{ selectedSheet || '--' }}</span>
               </div>
+              <!-- 竖线分隔条 -->
               <div style="width: 1px; height: 16px; background: #cbd5e1;"></div>
               <div>
+                <!-- 箱柜总数标签 -->
                 <span style="color: #64748b;">箱柜总数:</span>
+                <!-- 动态渲染当前工作表箱柜总台数 -->
                 <span style="font-weight: 700; color: #334155; margin-left: 4px;">{{ warningReport ? warningReport.totalCabinets : 0 }} 台</span>
               </div>
+              <!-- 竖线分隔条 -->
               <div style="width: 1px; height: 16px; background: #cbd5e1;"></div>
               <div>
+                <!-- 异常箱柜数量标签 -->
                 <span style="color: #64748b;">异常箱柜:</span>
+                <!-- 动态高亮异常箱柜台数 (大于0标红，0标绿) -->
                 <span :style="{ fontWeight: 700, color: (warningReport && warningReport.warnCabinetCount > 0) ? '#dc2626' : '#16a34a', marginLeft: '4px' }">
                   {{ warningReport ? warningReport.warnCabinetCount : 0 }} 台
                 </span>
               </div>
+              <!-- 竖线分隔条 -->
               <div style="width: 1px; height: 16px; background: #cbd5e1;"></div>
               <div>
+                <!-- 报警总数标签 -->
                 <span style="color: #64748b;">报警总数:</span>
+                <!-- 动态高亮报警总条数 (大于0标红，0标绿) -->
                 <span :style="{ fontWeight: 700, color: (warningReport && warningReport.totalWarnings > 0) ? '#dc2626' : '#16a34a', marginLeft: '4px' }">
                   {{ warningReport ? warningReport.totalWarnings : 0 }} 项
                 </span>
               </div>
             </div>
 
-            <!-- 右侧过滤与刷新按钮 -->
+            <!-- 右侧仅保留重新全检操作，去除查看全部单选切换 -->
             <div style="display: flex; align-items: center; gap: 10px;">
-              <el-radio-group v-model="warningFilterMode" size="small">
-                <el-radio-button label="warnOnly">仅看报警箱柜 ({{ warningReport ? warningReport.warnCabinetCount : 0 }})</el-radio-button>
-                <el-radio-button label="all">全部箱柜 ({{ warningReport ? warningReport.totalCabinets : 0 }})</el-radio-button>
-              </el-radio-group>
+              <!-- 重新全检触发按钮 -->
               <el-button
                 size="small"
                 type="primary"
                 plain
                 :loading="isScanningWarnings"
                 @click="fetchAllCabinetWarnings"
-                style="border-color: #009688; color: #009688;"
+                style="border-color: #009688; color: #009688; font-weight: 500;"
               >
                 🔄 重新全检
               </el-button>
             </div>
           </div>
 
-          <!-- 中间列表展示区域 (弹性滚动，禁止水平滚动条) -->
+          <!-- 中间列表展示区域 (弹性垂直滚动，无水平滚动条) -->
           <div
             style="
               overflow-y: auto;
               overflow-x: hidden;
-              max-height: 420px;
+              max-height: 440px;
               padding-right: 4px;
               display: flex;
               flex-direction: column;
-              gap: 10px;
+              gap: 12px;
             "
           >
-            <!-- 正在全检加载骨架/提示 -->
+            <!-- 正在全检扫描中加载提示 -->
             <div
               v-if="isScanningWarnings"
               style="padding: 30px; text-align: center; color: #64748b; font-size: 13px;"
             >
+              <!-- 旋转沙漏图标 -->
               <span style="display: inline-block; animation: spin 1s linear infinite; margin-right: 6px;">⏳</span>
+              <!-- 扫描等待文案 -->
               正在快速扫描当前分类表所有箱柜数据与异常警报，请稍候...
             </div>
 
-            <!-- 空列表状态 -->
+            <!-- 空列表状态：无任何报警箱柜时展示通关绿色卡片 -->
             <div
               v-else-if="!filteredCabinetWarnings || filteredCabinetWarnings.length === 0"
               style="
@@ -5679,29 +5693,33 @@
                 color: #166534;
               "
             >
+              <!-- 庆祝彩花图标 -->
               <div style="font-size: 26px; margin-bottom: 6px;">🎉</div>
+              <!-- 无报警通关提示大字 -->
               <div style="font-weight: 700; font-size: 14px;">太棒了！当前分类表未检测到任何报警与阻断</div>
+              <!-- 辅材壳体计算就绪提示 -->
               <div style="font-size: 12px; color: #15803d; margin-top: 4px;">
                 所有元器件电流、CAD 尺寸及定额配置均已就绪，可安全进行全表计算与回写。
               </div>
             </div>
 
-            <!-- 箱柜卡片条目 -->
+            <!-- 报警箱柜卡片条目：直接展示，展开全部故障明细 -->
             <div
               v-else
               v-for="cab in filteredCabinetWarnings"
               :key="cab.detName"
               style="
                 background: #ffffff;
-                border: 1px solid #e2e8f0;
+                border: 1px solid #fecaca;
+                border-left: 4px solid #ef4444;
                 border-radius: 6px;
                 overflow: hidden;
+                /* 禁止卡片在 flex 列容器中被压缩，保证故障明细完整展开 */
+                flex-shrink: 0;
                 box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-                transition: border-color 0.2s;
               "
-              :style="{ borderLeft: (cab.warnings && cab.warnings.length > 0) ? '4px solid #ef4444' : '4px solid #10b981' }"
             >
-              <!-- 箱柜条目头部 -->
+              <!-- 箱柜卡片条目头部 -->
               <div
                 style="
                   display: flex;
@@ -5712,36 +5730,32 @@
                   border-bottom: 1px solid #f1f5f9;
                 "
               >
+                <!-- 箱柜基础信息与报警数量徽章 -->
                 <div style="display: flex; align-items: center; gap: 8px;">
+                  <!-- 箱柜显示全称 -->
                   <span style="font-weight: 700; color: #0f172a; font-size: 13px;">
                     【{{ cab.displayName }}】
                   </span>
+                  <!-- 箱柜明细物理行号信息 -->
                   <span style="font-size: 11.5px; color: #64748b;">
                     {{ cab.detName }} (第 {{ cab.detRow }} 行)
                   </span>
+                  <!-- 报警数量红色危险 Tag (双重兼容 warnings 与 Warnings) -->
                   <el-tag
-                    v-if="cab.warnings && cab.warnings.length > 0"
                     type="danger"
                     size="small"
                     effect="plain"
                     style="font-weight: 600;"
                   >
-                    ⚠️ {{ cab.warnings.length }} 项报警
-                  </el-tag>
-                  <el-tag
-                    v-else
-                    type="success"
-                    size="small"
-                    effect="plain"
-                  >
-                    ✓ 正常
+                    ⚠️ {{ (cab.warnings || cab.Warnings || []).length }} 项报警
                   </el-tag>
                 </div>
 
-                <!-- 定位按钮组 -->
+                <!-- 箱柜定位与切换操作按钮 -->
                 <div style="display: flex; align-items: center; gap: 6px;">
+                  <!-- 前往 Excel 编辑按钮 (快速定位首个报警) -->
                   <el-button
-                    v-if="cab.warnings && cab.warnings.length > 0"
+                    v-if="(cab.warnings || cab.Warnings || []).length > 0"
                     size="small"
                     type="warning"
                     plain
@@ -5751,6 +5765,7 @@
                   >
                     🚀 前往 Excel 编辑
                   </el-button>
+                  <!-- 定位并切换当前活动箱柜按钮 -->
                   <el-button
                     size="small"
                     type="primary"
@@ -5764,61 +5779,72 @@
                 </div>
               </div>
 
-              <!-- 箱柜条目报警内容 -->
-              <div style="padding: 10px 12px; font-size: 12px;">
-                <div
-                  v-if="cab.warnings && cab.warnings.length > 0"
-                  style="display: flex; flex-direction: column; gap: 6px;"
-                >
+              <!-- 箱柜故障明细展示区域：直接平铺外露各故障项 -->
+              <div
+                v-if="(cab.warnings || cab.Warnings || []).length > 0"
+                style="padding: 10px 12px; font-size: 12px; background: #ffffff;"
+              >
+                <!-- 弹性垂直故障条目容器 -->
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <!-- 循环渲染每个具体故障项 (双重兼容器) -->
                   <div
-                    v-for="(warn, wIdx) in cab.warnings"
+                    v-for="(warn, wIdx) in (cab.warnings || cab.Warnings || [])"
                     :key="wIdx"
                     style="
                       display: flex;
                       align-items: center;
                       justify-content: space-between;
-                      gap: 8px;
+                      gap: 10px;
                       line-height: 1.5;
-                      color: #b91c1c;
+                      color: #991b1b;
                       background: #fef2f2;
                       border: 1px solid #fee2e2;
-                      padding: 6px 10px;
+                      border-left: 3px solid #ef4444;
+                      padding: 8px 10px;
                       border-radius: 4px;
                     "
                   >
+                    <!-- 故障明细文本：支持自动换行，禁止水平溢出 -->
                     <div style="display: flex; align-items: flex-start; gap: 6px; min-width: 0; flex: 1;">
-                      <span style="flex-shrink: 0; font-weight: 700;">•</span>
-                      <span style="word-break: break-all;">{{ warn }}</span>
+                      <!-- 警告醒目标识 -->
+                      <span style="flex-shrink: 0; font-weight: 700; color: #dc2626;">⚠️</span>
+                      <!-- 故障文本内容描述 (直观展示元器件名称、型号与缺失电流等细节) -->
+                      <span style="word-break: break-all; white-space: normal;">{{ warn }}</span>
                     </div>
+
+                    <!-- 针对单项故障一键跳转 Excel 让位编辑 -->
                     <el-button
                       size="small"
                       type="danger"
                       plain
-                      style="flex-shrink: 0; padding: 3px 8px; font-size: 11px; height: 22px; font-weight: 600; border-color: #f87171;"
+                      style="flex-shrink: 0; padding: 3px 8px; font-size: 11px; height: 24px; font-weight: 600; border-color: #f87171;"
                       @click="startMiniBarEditing(cab, warn, wIdx)"
                       title="收缩大窗体为极简悬浮小胶囊，并在 Excel 中直接选中此行/列单元格，无需关闭软件"
                     >
-                      前往 Excel 编辑 ✍️
+                      🚀 前往 Excel 编辑 ✍️
                     </el-button>
                   </div>
                 </div>
-                <div
-                  v-else
-                  style="color: #10b981; display: flex; align-items: center; gap: 6px;"
-                >
-                  <span>✓</span>
-                  <span>该箱柜元器件数据完整，无任何警示。</span>
-                </div>
+              </div>
+              <!-- 容错保底：若存在异常标记但无具体文本时友好提示 -->
+              <div
+                v-else
+                style="padding: 8px 12px; font-size: 12px; color: #64748b; background: #fafafa;"
+              >
+                ⚠️ 暂无详细错误描述，请点击上方“定位并切换”检查箱柜元器件行。
               </div>
             </div>
           </div>
         </div>
 
         <template #footer>
+          <!-- 弹窗底栏操作与提示 -->
           <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <!-- 胶囊模式让位编辑使用提示 -->
             <div style="font-size: 12px; color: #64748b; text-align: left;">
               💡 提示：点击“前往 Excel 编辑”将自动收缩为极简悬浮小胶囊，彻底让位 Excel 视口，并自动选中缺失单元格供您直接键盘录入！
             </div>
+            <!-- 关闭弹窗按钮 -->
             <el-button @click="allWarningsDialogVisible = false">关闭</el-button>
           </div>
         </template>
@@ -5881,22 +5907,17 @@
           const isScanningWarnings = ref(false);
           // 全柜报警监控居中弹窗显隐状态 (方案 B: 居中弹窗)
           const allWarningsDialogVisible = ref(false);
-          // 报警列表过滤模式 ('warnOnly' | 'all')
-          const warningFilterMode = ref("warnOnly");
-
-          // 全柜报警过滤计算属性 (按仅看报警或查看全部过滤)
+          // 全柜报警过滤计算属性 (直接仅查看存在报警的箱柜，去除全部箱柜切换)
           const filteredCabinetWarnings = computed(() => {
-            // 校验报警报告有效性
+            // 校验报警报告及条目有效性
             if (!warningReport.value || !warningReport.value.items) return [];
-            // 若选择仅看报警箱柜
-            if (warningFilterMode.value === "warnOnly") {
-              // 过滤出 warnings 数量大于 0 的箱柜
-              return warningReport.value.items.filter(
-                (item) => item.warnings && item.warnings.length > 0,
-              );
-            }
-            // 否则返回所有箱柜列表
-            return warningReport.value.items;
+            // 直接过滤出 warnings 数量大于 0 的异常报警箱柜 (兼容大小写 warnings / Warnings)
+            return warningReport.value.items.filter((item) => {
+              // 提取当前箱柜警告列表实体
+              const list = item.warnings || item.Warnings || [];
+              // 判定警告条目数量是否大于 0
+              return list && list.length > 0;
+            });
           });
 
           // 触发全柜箱柜报警检测
@@ -5953,8 +5974,11 @@
             const list = [];
             // 遍历每个箱柜提取条目
             warningReport.value.items.forEach((cab) => {
-              if (cab.warnings && cab.warnings.length > 0) {
-                cab.warnings.forEach((wText) => {
+              // 兼容读取大小写警告数组
+              const cabWarns = cab.warnings || cab.Warnings || [];
+              if (cabWarns && cabWarns.length > 0) {
+                // 遍历各具体警告文本
+                cabWarns.forEach((wText) => {
                   // 正则表达式智能解析行号 (例如: "第 1072 行【..." -> 1072)
                   let rowNum = 0;
                   const match = wText.match(/第\s*(\d+)\s*行/);
@@ -7931,15 +7955,20 @@
               } else if (msg.action === "scanAllCabinetWarningsResult") {
                 // 结束全检扫描状态
                 isScanningWarnings.value = false;
+                // 若扫描成功并携带有效数据实体
                 if (msg.success && msg.data) {
-                  // 赋值全局报警报告实体
-                  warningReport.value = msg.data;
-                  // 若存在异常箱柜，默认切换为“仅看报警箱柜”，否则切换为“全部箱柜”
-                  if (msg.data.warnCabinetCount === 0) {
-                    warningFilterMode.value = "all";
-                  } else {
-                    warningFilterMode.value = "warnOnly";
+                  // 规范化清洗各箱柜明细警告列表，防范大小写或空值导致的渲染异常
+                  if (msg.data.items && Array.isArray(msg.data.items)) {
+                    // 遍历每个箱柜条目规范化 warnings 数组
+                    msg.data.items.forEach((it) => {
+                      // 双重兼容大小写 warnings / Warnings
+                      const list = it.warnings || it.Warnings || [];
+                      // 确保转化为标准字符串数组实体
+                      it.warnings = Array.isArray(list) ? list.map((w) => String(w)) : [];
+                    });
                   }
+                  // 赋值全局报警报告实体 (直接按报警箱柜驱动列表展示)
+                  warningReport.value = msg.data;
                 }
               }
             });
@@ -9414,7 +9443,6 @@
             warningReport,
             isScanningWarnings,
             allWarningsDialogVisible,
-            warningFilterMode,
             filteredCabinetWarnings,
             fetchAllCabinetWarnings,
             openAllWarningsDialog,

@@ -1,3 +1,51 @@
+- **【全新功能落地：报价智能核验与防错体检 (QuotationCheck) 型号规格智能下拉筛选与行内一键钻取闭环】([`Resources/quotation_check.html`](file:///e:/Ace/ExcelAddInCTtools/Resources/quotation_check.html), [`publish/Resources/quotation_check.html`](file:///e:/Ace/ExcelAddInCTtools/publish/Resources/quotation_check.html), [`bin/Debug/net48/Resources/quotation_check.html`](file:///e:/Ace/ExcelAddInCTtools/bin/Debug/net48/Resources/quotation_check.html))**：
+  1. **用户核心需求与决策确认**：
+     - 用户原指令：“需求是对型号规格做筛选查看，你怎么设计呢”并附带“成套设备报价智能核验与防错体检”界面截图；
+     - 需求分析论证后，用户确认执行【方案 1（顶部智能下拉）】。
+  2. **工程实现与架构落地细节**：
+     - ① **顶部工具栏新增【型号规格智能筛选下拉框】**：
+       - 在 `selectedSheet` 与 `currentCategoryFilter` 旁边新增 `<el-select v-model="selectedModel" ...>`；
+       - 支持 `filterable`（输入关键字模糊联想搜索）、`clearable`（一键还原全量）以及防横向溢出弹性布局；
+       - 下拉选项智能渲染：通过 `modelOptions` 计算属性自动提炼去重全量异常问题中的型号规格，按“严重错误优先 -> 警告次之 -> 问题数降序”科学排列，右侧以红/黄/蓝状态 Tag 标明各型号涉及的问题数量；
+     - ② **表格行内“点击一键钻取”交互联动**：
+       - 在表格【元器件 / 规格型号】列中，型号文本配置高亮色 `#009688` 与 `cursor: pointer`，并搭配小漏斗图标 `fa-filter`；
+       - 支持点击任意型号文本（`@click.stop="quickFilterModel(scope.row.model)"`）直接切换筛选该型号，实现“指哪看哪”，无需手动打字；
+     - ③ **状态栏实时联动与防缓存保障**：
+       - 右侧提示实时显示当前过滤上下文：如 `显示 4 / 104 项问题 [型号: TMY-30*4]`；
+       - `<head>` 注入 `Cache-Control: no-cache` 防缓存 Meta 标头，保证 WebView2 实时加载最新界面；
+     - ④ **规范遵从与最小改动**：
+       - 所有新增代码严格落实“至少每 3 行包含一行中文注释”规范；未改动后端 COM 扫描服务，遵循最小改动法则；
+  3. **构建验证与产物交付**：
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 警告、0 错误**；
+     - `Resources/quotation_check.html` 已全量同步覆盖至 `publish/`、`bin/Debug/net48/Resources/` 与 `bin/Debug/net48/publish/Resources/`，经 SHA256 校验哈希完全一致。
+
+- **【缺陷根治与前端外露：辅材与壳体全柜异常监控看板直达报警列表与故障细节完整外露闭环】([`Forms/CabinetAuxCalcForm.cs`](file:///e:/Ace/ExcelAddInCTtools/Forms/CabinetAuxCalcForm.cs), [`Resources/cabinet_aux_calc.html`](file:///e:/Ace/ExcelAddInCTtools/Resources/cabinet_aux_calc.html), [`publish/`](file:///e:/Ace/ExcelAddInCTtools/publish/))**：
+  1. **用户反馈与核心痛点**：
+     - 用户原指令：“去除查看全部箱柜功能，直接查看报警箱柜，列表里面需要把故障明细展示，理解表述需求”；
+     - 用户执行后反馈：“列表没有日志细节，如***元器件缺少电流”并附图，指出看板卡片虽已识别报警（显示“⚠️ 1 项报警”），但卡片下方未展示具体的元器件故障文字；
+     - 用户连续提问：“为什么还是没有显示内容”、“为什么还是老样子呢”。
+  2. **根因深度溯源与排查**：
+     - ① **DOM 容器缺失根因**：原版本代码在每个卡片内只定义了顶部基础信息条目，根本未放置遍历渲染 `cab.warnings` 列表的 DOM 容器，导致即使后端成功推导出故障明细，前端也无节点可供呈现；
+     - ② **WebView2 虚拟主机强缓存拦截**：`CabinetAuxCalcForm.cs` 加载页面时采用固定 URI `https://appassets.local/cabinet_aux_calc.html`，且未配置防缓存 Meta 与清理 API。WebView2 Chromium 引擎直接命中磁盘强缓存，未读取磁盘物理更新的 HTML；
+     - ③ **前端属性大小写与空值保护**：后端 DTO 序列化及部分环境下的属性名可能存在大小写偏差（`warnings` vs `Warnings`），模板中若未作双重兼容处理易导致 `v-for` 循环条件受阻；
+     - ④ **数据清洗管道健全**：在前端消息接收监听器中针对 `scanAllCabinetWarningsResult` 新增专门的数据规范化清洗管道，将大小写 `warnings / Warnings` 统一提取并显式转化清洗为强类型字符串数组。
+  3. **落地实施细节**：
+     - ① **`Forms/CabinetAuxCalcForm.cs` 导航与缓存根治升级**：
+       - 将加载 URI 升级为 `$"https://appassets.local/cabinet_aux_calc.html?_t={DateTime.UtcNow.Ticks}"`，彻底规避 WebView2 内部 HTTP 缓存机制；
+       - 在 `EnsureCoreWebView2Async` 之后显式注入 `await _webView.CoreWebView2.Profile.ClearBrowsingDataAsync();`，从内核层面彻底清空本地缓存；
+     - ② **`Resources/cabinet_aux_calc.html` 前端看板与明细外露**：
+       - `<head>` 中新增 `<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />` 等标头；
+       - 消息监听数据清洗：在接收 `scanAllCabinetWarningsResult` 时，显式提取 `it.warnings = (it.warnings || it.Warnings || []).map(w => String(w))`；
+       - `filteredCabinetWarnings` 计算属性增强：双重兼容 `item.warnings || item.Warnings || []`，直接过滤仅展示报警条目数 > 0 的异常箱柜；
+       - `flatWarningList` 扁平化列表增强：双重兼容大小写字段，精准提取缺失行号（如第 63 行）与目标列（W 列电流）；
+       - 卡片内容区平铺外露：新增具体的故障描述容器，红白条框 `#fef2f2` 呈现元器件名称、型号与缺失电流描述，配备单独的“🚀 前往 Excel 编辑 ✍️”按钮；
+       - 弹性布局：文本换行 `word-break: break-all;`，禁止出现水平滚动条，主色调对齐 `#009688` 绿蓝相间规范；
+     - ③ **规范遵循**：
+       - 所有新增与修改代码严格落实“至少每 3 行包含一行中文注释”规范；
+     - ④ **产物同步与构建验证**：
+       - 执行 `dotnet build /p:RunExcelDnaBuild=false` 验证通过：**0 错误**；
+       - 将更新后的 `cabinet_aux_calc.html` 与编译好的 `ExcelAddInDemo.dll` 全量同步至 `publish/`、`bin/Debug/net48/` 与 `bin/Debug/net48/publish/`，经 SHA256 校验 4 处文件哈希完全一致。
+
 - **【全新升级与全量闭环交付：智能输入全字段自动回填（排除AD句柄/A序号/F数量）与元器件区+计费区全域C列入库】([`Models/SmartInputModels.cs`](file:///e:/Ace/excel-ct-tools/Models/SmartInputModels.cs), [`Services/ExcelServices.SmartInput.cs`](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.SmartInput.cs), [`Forms/SmartInputOverlayForm.cs`](file:///e:/Ace/excel-ct-tools/Forms/SmartInputOverlayForm.cs), [`Resources/smart_input.html`](file:///e:/Ace/excel-ct-tools/Resources/smart_input.html), [`publish/`](file:///e:/Ace/excel-ct-tools/publish/))**：
   1. **用户核心指令与决策确认**：
      - 用户指令：“AD 句柄列绝对不回填，A 序号列保持公式不回填；数量不回填，其他列都回填”；
@@ -4060,3 +4108,24 @@
      - 将上述两个按钮移动至 `grpAdjustPrice`（③调价格→）组中，放置在 `menuBatchAdjust`（元件批调）下拉菜单之后、`btnCabinetAuxCalc`（辅材壳体计算）之前。
   2. **编译验证**：
      - 执行 `dotnet build /p:RunExcelDnaBuild=false`，验证 0 错误顺利编译通过。
+
+
+### 14. 2026-11-11: 【智能辅材与壳体计算中心】异常监控看板去除“全部箱柜”单选并直接外露展开故障明细
+
+- **需求背景**：用户要求在【全部分类箱柜异常与报警监控看板】弹窗中，去除“全部箱柜”单选切换功能，直接查看报警箱柜，并在列表各个箱柜卡片内部直接展示故障明细。
+- **实施架构与代码变动**：
+  1. **前端模板重构 (`Resources/cabinet_aux_calc.html`)**：
+     - **去除全部箱柜单选组**：移除原顶部的 `el-radio-group`（去除 `仅看报警箱柜` / `全部箱柜` 切换按钮），右侧仅保留 `[ 🔄 重新全检 ]` 刷新操作；
+     - **指标栏优化**：保留分类工作表、箱柜总数、异常箱柜与报警项数清晰统计；
+     - **故障明细平铺呈现**：重构箱柜卡片模板，去除原有卡片紧凑无内容问题，在每个报警箱柜卡片下方直接平铺外露其捕获到的全部告警列表；
+     - **报警项独立快捷编辑**：每个故障明细条目采用浅红高亮边框排版，文字清晰展示元器件行号与具体阻断原因（AA列CAD图纸缺失、W列电流缺失等），右侧配备 `[ 🚀 前往 Excel 编辑 ✍️ ]` 微型按钮，点击直接启动悬浮胶囊定位让位编辑；
+     - **纯弹性布局**：严格维持纵向弹性滚动，设置 `overflow-x: hidden`，坚决不出现水平滚动条。
+  2. **Vue 3 响应式逻辑简化 (`Resources/cabinet_aux_calc.html`)**：
+     - 彻底移除 `warningFilterMode` 状态与对应导出；
+     - `filteredCabinetWarnings` 计算属性直接过滤返回 `item.warnings && item.warnings.length > 0` 的异常箱柜；
+     - 接收到 `scanAllCabinetWarningsResult` 后直接驱动响应式渲染；
+     - 至少每 3 行新增代码添加中文注释。
+  3. **产物多目录同源同步与编译验证**：
+     - 全量同步更新后的 HTML 至 `publish/Resources`、`bin/Debug/net48/Resources` 及 `bin/Debug/net48/publish/Resources`；
+     - 验证各输出目录文件 SHA256 哈希值 100% 一致；
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false` 验证 **0 警告、0 错误** 顺利编译通过。

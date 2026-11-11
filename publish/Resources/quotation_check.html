@@ -3,6 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 禁用 WebView2 本地 HTTP 缓存，确保界面物理更新实时生效 -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <!-- HTTP 1.0 兼容防缓存标头 -->
+  <meta http-equiv="Pragma" content="no-cache" />
+  <!-- 页面立即过期标头 -->
+  <meta http-equiv="Expires" content="0" />
   <title>报价智能核验与防错体检</title>
   <!-- 引入 Element Plus 样式库 -->
   <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
@@ -488,14 +494,14 @@
     <!-- 过滤与快速定位栏 -->
     <div class="filter-action-bar">
       <div class="filter-left-group">
-        <!-- 分类表选择 -->
-        <el-select v-model="selectedSheet" placeholder="全部工作表" size="small" style="width: 150px;" clearable>
+        <!-- 分类表选择下拉框 -->
+        <el-select v-model="selectedSheet" placeholder="全部工作表" size="small" style="width: 135px;" clearable>
           <el-option label="全部工作表" value=""></el-option>
           <el-option v-for="s in sheetNames" :key="s" :label="s" :value="s"></el-option>
         </el-select>
 
         <!-- 异常分类过滤下拉框 -->
-        <el-select v-model="currentCategoryFilter" placeholder="全部问题分类" size="small" style="width: 170px;" clearable>
+        <el-select v-model="currentCategoryFilter" placeholder="全部问题分类" size="small" style="width: 155px;" clearable>
           <el-option label="全部问题 ({{ issues.length }})" value=""></el-option>
           <el-option label="同型号价格冲突" value="PriceConflict"></el-option>
           <el-option label="公式损毁/断链" value="FormulaBroken"></el-option>
@@ -504,16 +510,51 @@
           <el-option label="价格倒挂(亏本报价)" value="PriceInverted"></el-option>
         </el-select>
 
-        <!-- 搜索输入框 -->
-        <el-input v-model="searchKeyword" placeholder="搜索型号 / 元件名称 / 箱柜..." size="small" prefix-icon="el-icon-search" style="width: 220px;" clearable></el-input>
+        <!-- 型号规格智能筛选下拉框 (支持模糊检索、去重聚合与异常条数统计) -->
+        <el-select
+          v-model="selectedModel"
+          placeholder="全部型号规格"
+          size="small"
+          style="width: 180px;"
+          filterable
+          clearable>
+          <!-- 默认全部型号规格项 -->
+          <el-option label="全部型号规格" value=""></el-option>
+          <!-- 遍历渲染聚合去重后的型号规格选项列表 -->
+          <el-option
+            v-for="item in modelOptions"
+            :key="item.model"
+            :label="item.label"
+            :value="item.model">
+            <!-- 自定义下拉选项展示：型号名称与异常徽章左右对齐 -->
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+              <!-- 型号名称文本（严重错误标红加粗） -->
+              <span :style="{ fontWeight: item.hasError ? '600' : 'normal', color: item.hasError ? '#dc2626' : '#1e293b' }">
+                {{ item.model }}
+              </span>
+              <!-- 该型号涉及的问题条目数量徽章 -->
+              <el-tag size="small" :type="item.hasError ? 'danger' : (item.hasWarning ? 'warning' : 'info')" style="margin-left: 8px;">
+                {{ item.count }} 项
+              </el-tag>
+            </div>
+          </el-option>
+        </el-select>
 
-        <!-- 仅展示可自动修复项 -->
+        <!-- 综合关键字搜索输入框 -->
+        <el-input v-model="searchKeyword" placeholder="搜索型号 / 元件名称 / 箱柜..." size="small" prefix-icon="el-icon-search" style="width: 180px;" clearable></el-input>
+
+        <!-- 仅展示可自动修复项复选框 -->
         <el-checkbox v-model="onlyAutoFixable" size="small">仅看可自愈项</el-checkbox>
       </div>
 
       <div class="filter-right-group">
+        <!-- 统计筛选结果条目数与当前过滤型号状态 -->
         <span style="font-size: 12px; color: #64748b;">
           显示 {{ filteredIssues.length }} / {{ issues.length }} 项问题
+          <!-- 当处于型号筛选状态时高亮提示当前选中的型号 -->
+          <span v-if="selectedModel" style="color: #009688; font-weight: 600; margin-left: 4px;">
+            [型号: {{ selectedModel }}]
+          </span>
         </span>
       </div>
     </div>
@@ -543,12 +584,22 @@
                 </template>
               </el-table-column>
 
-              <!-- 元器件与型号 -->
+              <!-- 元器件与型号 (型号支持点击一键钻取筛选) -->
               <el-table-column label="元器件 / 规格型号" min-width="190">
                 <template #default="scope">
                   <div style="display: flex; flex-direction: column;">
+                    <!-- 元器件名称 (B列) -->
                     <span style="font-weight: 600; color: #1e293b;">{{ scope.row.componentName || '-' }}</span>
-                    <span style="font-size: 11px; color: #475569;">{{ scope.row.model || '-' }}</span>
+                    <!-- 规格型号 (C列，支持点击快捷切换筛选) -->
+                    <span
+                      style="font-size: 11px; color: #009688; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; width: fit-content;"
+                      @click.stop="quickFilterModel(scope.row.model)"
+                      :title="'点击快捷按此型号【' + (scope.row.model || '-') + '】筛选'">
+                      <!-- 型号文本展示 -->
+                      <span>{{ scope.row.model || '-' }}</span>
+                      <!-- 小漏斗图标指示可筛选 -->
+                      <i class="fa-solid fa-filter" style="font-size: 9px; opacity: 0.7;"></i>
+                    </span>
                   </div>
                 </template>
               </el-table-column>
@@ -710,6 +761,63 @@
         const currentCategoryFilter = ref('');
         const searchKeyword = ref('');
         const onlyAutoFixable = ref(false);
+        // 当前选中的型号规格 (空字符串表示查看全部型号规格)
+        const selectedModel = ref('');
+
+        // 动态聚合去重的型号规格选项列表（统计每个型号对应的问题数与最高严重等级）
+        const modelOptions = computed(() => {
+          // 初始化用于型号聚合统计的字典映射
+          const map = new Map();
+          // 遍历全量扫描出的异常问题集合
+          issues.value.forEach(item => {
+            // 提取型号字符串并清理前后空白字符
+            const rawModel = (item.model || '').trim();
+            // 若型号为空字符串则归为无型号标识
+            const key = rawModel || '(无型号)';
+            // 若当前型号尚未在字典中登记则创建初始节点
+            if (!map.has(key)) {
+              map.set(key, {
+                model: key,
+                count: 0,
+                hasError: false,
+                hasWarning: false,
+                componentName: item.componentName || ''
+              });
+            }
+            // 获取当前型号的聚合条目
+            const entry = map.get(key);
+            // 累加该型号在异常问题列表中的出现频次
+            entry.count++;
+            // 检查并记录该型号是否存在严重错误级别问题
+            if (item.severity === 'error') entry.hasError = true;
+            // 检查并记录该型号是否存在警告级别问题
+            if (item.severity === 'warning') entry.hasWarning = true;
+          });
+
+          // 将字典转为数组并按严重程度和数量降序排列
+          return Array.from(map.values())
+            .sort((a, b) => {
+              // 优先让存在严重错误的型号排在前方
+              if (a.hasError !== b.hasError) return a.hasError ? -1 : 1;
+              // 其次让存在警告的型号排在前方
+              if (a.hasWarning !== b.hasWarning) return a.hasWarning ? -1 : 1;
+              // 最后按该型号包含的问题数量降序排布
+              return b.count - a.count;
+            })
+            .map(m => ({
+              ...m,
+              // 下拉框中直观呈现的标签文本：型号名称 (数量项)
+              label: `${m.model} (${m.count}项)`
+            }));
+        });
+
+        // 快捷根据指定型号切换筛选（在表格中点击型号文字或标签时触发）
+        const quickFilterModel = (model) => {
+          // 规范化目标型号字符串
+          const targetModel = (model || '').trim() || '(无型号)';
+          // 若当前已处于该型号筛选状态则再次点击取消筛选，否则选中该型号
+          selectedModel.value = selectedModel.value === targetModel ? '' : targetModel;
+        };
 
         // 同型号对齐弹窗状态
         const alignDialogVisible = ref(false);
@@ -868,6 +976,14 @@
             // 仅自愈
             if (onlyAutoFixable.value && !item.canAutoFix) return false;
 
+            // 型号规格筛选过滤（若用户选定了特定型号）
+            if (selectedModel.value) {
+              // 提取当前条目的型号名称
+              const curModel = (item.model || '').trim() || '(无型号)';
+              // 若与当前选中的型号不一致则过滤排除
+              if (curModel !== selectedModel.value) return false;
+            }
+
             // 关键词模糊搜索
             if (searchKeyword.value) {
               const kw = searchKeyword.value.trim().toLowerCase();
@@ -945,6 +1061,9 @@
           sheetNames,
           selectedSheet,
           currentCategoryFilter,
+          selectedModel,
+          modelOptions,
+          quickFilterModel,
           searchKeyword,
           onlyAutoFixable,
           filteredIssues,
