@@ -483,6 +483,49 @@ namespace ExcelAddInDemo.Controllers
                             existingItem.UnitPrice = price;
                             hasChanged = true;
                         }
+                        // 补充面价/表价
+                        if (existingItem.CatalogPrice <= 0 && newItem.CatalogPrice > 0)
+                        {
+                            existingItem.CatalogPrice = newItem.CatalogPrice;
+                            hasChanged = true;
+                        }
+                        // 补充加价系数
+                        if (string.IsNullOrEmpty(existingItem.QuoteCoefficient) && !string.IsNullOrEmpty(newItem.QuoteCoefficient))
+                        {
+                            existingItem.QuoteCoefficient = newItem.QuoteCoefficient;
+                            hasChanged = true;
+                        }
+                        // 补充折扣系数
+                        if (string.IsNullOrEmpty(existingItem.DiscountCoefficient) && !string.IsNullOrEmpty(newItem.DiscountCoefficient))
+                        {
+                            existingItem.DiscountCoefficient = newItem.DiscountCoefficient;
+                            hasChanged = true;
+                        }
+                        // 补充备注
+                        if (string.IsNullOrEmpty(existingItem.Remark) && !string.IsNullOrEmpty(newItem.Remark))
+                        {
+                            existingItem.Remark = newItem.Remark;
+                            hasChanged = true;
+                        }
+                        // 补充类别
+                        if (string.IsNullOrEmpty(existingItem.Category) && !string.IsNullOrEmpty(newItem.Category))
+                        {
+                            existingItem.Category = newItem.Category;
+                            hasChanged = true;
+                        }
+                        // 增量合并整行原始映射字典
+                        if (newItem.RowCells != null && newItem.RowCells.Count > 0)
+                        {
+                            if (existingItem.RowCells == null) existingItem.RowCells = new Dictionary<int, string>();
+                            foreach (var kvp in newItem.RowCells)
+                            {
+                                if (!existingItem.RowCells.ContainsKey(kvp.Key) || string.IsNullOrEmpty(existingItem.RowCells[kvp.Key]))
+                                {
+                                    existingItem.RowCells[kvp.Key] = kvp.Value;
+                                    hasChanged = true;
+                                }
+                            }
+                        }
                     }
                     else
                     {
@@ -494,9 +537,15 @@ namespace ExcelAddInDemo.Controllers
                             Manufacturer = mfr,
                             Unit = unit,
                             UnitPrice = price,
+                            CostUnitPrice = newItem.CostUnitPrice,
+                            CatalogPrice = newItem.CatalogPrice,
+                            QuoteCoefficient = newItem.QuoteCoefficient ?? string.Empty,
+                            DiscountCoefficient = newItem.DiscountCoefficient ?? string.Empty,
+                            Remark = newItem.Remark ?? string.Empty,
                             Category = newItem.Category ?? string.Empty,
                             SheetName = targetSheetName,
-                            CabinetNo = newItem.CabinetNo ?? "新增学习"
+                            CabinetNo = newItem.CabinetNo ?? "新增学习",
+                            RowCells = newItem.RowCells ?? new Dictionary<int, string>()
                         };
                         // 加入列表
                         targetSheetData.Components.Add(itemToAdd);

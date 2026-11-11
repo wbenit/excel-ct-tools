@@ -327,10 +327,10 @@ namespace ExcelAddInDemo
 
                         if (!isSummarySheet)
                         {
-                            // 校验是否落在箱柜元器件有效行区间 (规则 6: Cab_Det+2 至 Cab_Subsum-1)
+                            // 校验是否落在箱柜元器件有效行或计费区域有效行区间 (涵盖 Cab_Det+2 至 Cab_Tolsum)
                             dynamic curSheet = target.Worksheet;
                             int targetRow = target.Row;
-                            if (ExcelServices.IsCategoryComponentRow(curSheet, targetRow))
+                            if (ExcelServices.IsCategoryComponentOrFeeRow(curSheet, targetRow))
                             {
                                 // 优先读取元器件物料匹配与品牌规则配置 (包含“搜索”开关状态)
                                 var matchCfg = ExcelServices.LoadComponentMatchFilterConfig();

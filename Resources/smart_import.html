@@ -200,7 +200,7 @@
         color: #2e7d32;
       }
 
-      /* 5 列快速映射工具条 */
+      /* 5 核心列与动态扩展列快速映射工具条 (弹性自适应换行，严禁水平滚动条) */
       .col-mapping-bar {
         display: flex;
         align-items: center;
@@ -210,6 +210,8 @@
         color: #606266;
         background: #fcfcfc;
         border-radius: 4px;
+        flex-wrap: wrap;
+        gap: 6px;
       }
 
       .col-map-item {
@@ -642,29 +644,50 @@
                   </el-select>
                 </div>
 
-                <!-- 方案 B：扩展列 1 联动组 (原表源列 ➜ 导入表目标列) -->
-                <div class="col-map-item" v-if="config.columnMapping.extraCol1" style="background: #eef7f6; padding: 2px 6px; border-radius: 4px; border: 1px dashed #80cbc4;">
-                  <span class="col-map-label" style="color: #00796b; font-weight: 600;">扩展1:</span>
-                  <el-select v-model="config.columnMapping.extraCol1.sourceCol" size="small" style="width: 68px;" @change="onColumnMappingChange" title="原表来源列">
+                <!-- 动态扩展列联动组集合 (最多支持 8 列，默认无需保留) -->
+                <div
+                  v-for="(ec, idx) in config.columnMapping.extraColumns"
+                  :key="idx"
+                  class="col-map-item"
+                  style="background: #eef7f6; padding: 2px 6px; border-radius: 4px; border: 1px dashed #80cbc4; display: flex; align-items: center; gap: 4px;"
+                >
+                  <!-- 扩展列动态编号或自定义标签 -->
+                  <span class="col-map-label" style="color: #00796b; font-weight: 600;">扩展{{ idx + 1 }}:</span>
+                  <!-- 来源列下拉框 (支持 0:无 到 AF 列及以上) -->
+                  <el-select v-model="ec.sourceCol" size="small" style="width: 68px;" @change="onColumnMappingChange" title="原表来源列 (支持至AF列)">
                     <el-option v-for="c in availableColumns" :key="c.value" :label="c.label" :value="c.value"></el-option>
                   </el-select>
+                  <!-- 映射流向指示箭头 -->
                   <span style="color: #00796b; margin: 0 2px;">➜</span>
-                  <el-select v-model="config.columnMapping.extraCol1.targetCol" size="small" style="width: 108px;" @change="onColumnMappingChange" title="写入导入表目标列">
+                  <!-- 写入目标列下拉框 (完整支持 A~AF 列即 1~32 列) -->
+                  <el-select v-model="ec.targetCol" size="small" style="width: 108px;" @change="onColumnMappingChange" title="写入导入表目标列 (支持至AF列)">
                     <el-option v-for="tc in availableTargetColumns" :key="tc.value" :label="tc.label" :value="tc.value"></el-option>
                   </el-select>
+                  <!-- 移除该扩展列按钮 -->
+                  <el-button
+                    type="danger"
+                    link
+                    size="small"
+                    style="padding: 0 2px; margin-left: 2px; color: #f56c6c; font-size: 11px;"
+                    title="移除此扩展列"
+                    @click="removeExtraColumn(idx)"
+                  >
+                    ✕
+                  </el-button>
                 </div>
 
-                <!-- 方案 B：扩展列 2 联动组 (原表源列 ➜ 导入表目标列) -->
-                <div class="col-map-item" v-if="config.columnMapping.extraCol2" style="background: #eef7f6; padding: 2px 6px; border-radius: 4px; border: 1px dashed #80cbc4;">
-                  <span class="col-map-label" style="color: #00796b; font-weight: 600;">扩展2:</span>
-                  <el-select v-model="config.columnMapping.extraCol2.sourceCol" size="small" style="width: 68px;" @change="onColumnMappingChange" title="原表来源列">
-                    <el-option v-for="c in availableColumns" :key="c.value" :label="c.label" :value="c.value"></el-option>
-                  </el-select>
-                  <span style="color: #00796b; margin: 0 2px;">➜</span>
-                  <el-select v-model="config.columnMapping.extraCol2.targetCol" size="small" style="width: 108px;" @change="onColumnMappingChange" title="写入导入表目标列">
-                    <el-option v-for="tc in availableTargetColumns" :key="tc.value" :label="tc.label" :value="tc.value"></el-option>
-                  </el-select>
-                </div>
+                <!-- 动态添加扩展列按钮 (上限 8 列) -->
+                <el-button
+                  v-if="(config.columnMapping.extraColumns || []).length < 8"
+                  size="small"
+                  type="primary"
+                  plain
+                  style="border-style: dashed; padding: 0 8px; height: 24px; font-size: 11px;"
+                  @click="addExtraColumn"
+                  title="添加自定义扩展列 (最多支持 8 列)"
+                >
+                  <i class="fa-solid fa-plus" style="margin-right: 2px;"></i>扩展列
+                </el-button>
               </div>
               <el-button size="small" type="primary" link @click="showKeywordDialog = true" style="color: #009688; font-size: 12px; margin-left: auto;">
                 <i class="fa-solid fa-gear" style="margin-right: 4px;"></i>关键字设置
@@ -800,11 +823,11 @@
                   >
                   <span style="color: #909399; display: flex; align-items: center; gap: 4px;">
                     <span>{{ comp.quantity }} {{ comp.unit }} | ¥{{ comp.markedPrice }}</span>
-                    <!-- 方案 B：若提取到扩展列数据则呈现曲别针提示图标 -->
+                    <!-- 方案 B：若提取到动态扩展列数据则呈现曲别针提示图标 -->
                     <span
-                      v-if="comp.extraValue1 || comp.extraValue2"
+                      v-if="hasExtraValues(comp)"
                       style="color: #009688; cursor: pointer;"
-                      :title="'【扩展1】: ' + (comp.extraValue1 || '空') + '\n【扩展2】: ' + (comp.extraValue2 || '空')"
+                      :title="formatExtraValuesTitle(comp)"
                     >
                       <i class="fa-solid fa-paperclip"></i>
                     </span>
@@ -909,14 +932,37 @@
           <el-form-item label="品牌/厂家列:">
             <el-input v-model="config.columnMapping.brandKeywords" placeholder="如: 品牌,厂家,生产厂商,制造厂商,制造商" clearable></el-input>
           </el-form-item>
-          <!-- 6. 扩展列 1 关键字 (方案 B) -->
-          <el-form-item label="扩展列1关键字:" v-if="config.columnMapping.extraCol1">
-            <el-input v-model="config.columnMapping.extraCol1.keywords" placeholder="如: 单位,计量单位,单位名称" clearable></el-input>
-          </el-form-item>
-          <!-- 7. 扩展列 2 关键字 (方案 B) -->
-          <el-form-item label="扩展列2关键字:" v-if="config.columnMapping.extraCol2">
-            <el-input v-model="config.columnMapping.extraCol2.keywords" placeholder="如: 备注,说明,参数,要求,位号" clearable></el-input>
-          </el-form-item>
+          <!-- 动态扩展列智能匹配关键字编辑表单 -->
+          <template v-if="config.columnMapping.extraColumns && config.columnMapping.extraColumns.length > 0">
+            <!-- 动态扩展列分组分割线 -->
+            <el-divider content-position="left" style="margin: 14px 0 10px 0; font-size: 11px; color: #00796b;">
+              动态扩展列智能匹配关键字 (最多 8 列)
+            </el-divider>
+            <!-- 循环渲染所有已配置的动态扩展列 -->
+            <el-form-item
+              v-for="(ec, eIdx) in config.columnMapping.extraColumns"
+              :key="eIdx"
+              :label="'扩展' + (eIdx + 1) + '关键字:'"
+            >
+              <div style="display: flex; gap: 8px; width: 100%;">
+                <!-- 允许自定义扩展列的业务标签 -->
+                <el-input
+                  v-model="ec.customLabel"
+                  placeholder="标签如: 备注/位号"
+                  size="small"
+                  style="width: 130px;"
+                ></el-input>
+                <!-- 匹配关键字输入框 -->
+                <el-input
+                  v-model="ec.keywords"
+                  placeholder="输入嗅探同义词，支持逗号分隔"
+                  size="small"
+                  style="flex: 1;"
+                  clearable
+                ></el-input>
+              </div>
+            </el-form-item>
+          </template>
         </el-form>
         <!-- 对话框底部按钮区 -->
         <template #footer>
@@ -968,10 +1014,6 @@
             priceKeywords: "单价,面价,价格,综合单价,信息价,成本价",
             // 品牌/厂家默认高频关键词
             brandKeywords: "品牌,厂家,生产厂商,制造厂商,制造商",
-            // 方案 B：扩展列 1 默认关键词 (如单位)
-            extraCol1Keywords: "单位,计量单位,单位名称",
-            // 方案 B：扩展列 2 默认关键词 (如备注)
-            extraCol2Keywords: "备注,说明,参数,要求,位号",
           };
 
           // 关键字设置对话框显隐状态
@@ -1010,44 +1052,52 @@
               quantityKeywords: DEFAULT_KEYWORDS.quantityKeywords,
               priceKeywords: DEFAULT_KEYWORDS.priceKeywords,
               brandKeywords: DEFAULT_KEYWORDS.brandKeywords,
-              // 方案 B：扩展列 1 映射 (默认源列未指定，默认写入第 5 列 E 列计量单位)
-              extraCol1: {
-                sourceCol: 0,
-                targetCol: 5,
-                customLabel: "扩展列1",
-                keywords: DEFAULT_KEYWORDS.extraCol1Keywords,
-              },
-              // 方案 B：扩展列 2 映射 (默认源列未指定，默认写入第 9 列 I 列备注)
-              extraCol2: {
-                sourceCol: 0,
-                targetCol: 9,
-                customLabel: "扩展列2",
-                keywords: DEFAULT_KEYWORDS.extraCol2Keywords,
-              },
+              // 动态扩展列集合 (用户明确指示：无需默认保留，初始为空数组；最多支持 8 列)
+              extraColumns: [],
             },
           });
+
+          // 动态扩展列最大允许添加数量
+          const MAX_EXTRA_COLUMNS = 8;
+
+          // 将 1-based 数字列号安全转换为标准 Excel 列标字符串 (如 1->A, 26->Z, 27->AA, 32->AF)
+          const toColLetter = (num) => {
+            // 非法列号安全兜底
+            if (!num || num <= 0) return "无";
+            let col = "";
+            let temp = num;
+            // 循环进位换算 Excel 26 进制字母列标
+            while (temp > 0) {
+              let mod = (temp - 1) % 26;
+              col = String.fromCharCode(65 + mod) + col;
+              temp = Math.floor((temp - 1) / 26);
+            }
+            return col;
+          };
 
           // 模板与解析结果
           const savedTemplates = ref([]);
           const selectedTemplate = ref("");
           const parsedCabinets = ref([]);
 
-          // 方案 B：导入表目标列选项集合 (推荐安全列优先，支持全量 A~Z)
+          // 导入表目标列选项集合 (推荐标准列优先，完整支持 A~AF 列即 1~32 列)
           const availableTargetColumns = computed(() => {
             const list = [
               { label: "0: 不导入", value: 0 },
               { label: "E 列 (计量单位)", value: 5 },
               { label: "I 列 (备注说明)", value: 9 },
               { label: "D 列 (生产厂家)", value: 4 },
+              { label: "W 列 (额定电流)", value: 23 },
               { label: "O 列 (预留扩展1)", value: 15 },
               { label: "P 列 (预留扩展2)", value: 16 },
               { label: "R 列 (加工费)", value: 18 },
             ];
             // 常用列去重集合
-            const commonCols = new Set([0, 5, 9, 4, 15, 16, 18]);
-            for (let i = 1; i <= 26; i++) {
+            const commonCols = new Set([0, 5, 9, 4, 23, 15, 16, 18]);
+            // 循环生成标准 A~AF 列 (1~32 列)
+            for (let i = 1; i <= 32; i++) {
               if (!commonCols.has(i)) {
-                let letter = String.fromCharCode(64 + i);
+                let letter = toColLetter(i);
                 let tag = "";
                 if (i === 1) tag = " (序号)";
                 else if (i === 2) tag = " (名称)";
@@ -1070,40 +1120,36 @@
             return list;
           });
 
-          // 5 列下拉选择器的可选列集合 (包含 0:无，以及 A 列、B 列...)
+          // 来源列可选集合 (包含 0:无，以及 A 列至 AF 列即至少 32 列及以上)
           const availableColumns = computed(() => {
             // 首项支持未指定/无
             const list = [{ label: "0: 无", value: 0 }];
-            // 依据当前已加载网格实际列数或保证至少 26 列
-            const maxCol = Math.max(
-              gridData.value.length > 0 && gridData.value[0] ? gridData.value[0].length : 0,
-              26
-            );
+            // 依据当前已加载网格实际列数或保证至少 32 列 (AF 列)
+            const gridCols =
+              gridData.value.length > 0 && gridData.value[0]
+                ? gridData.value[0].length
+                : 0;
+            const maxCol = Math.max(gridCols, 32);
             // 循环生成标准 Excel 列标字符串
             for (let i = 1; i <= maxCol; i++) {
-              let colLetter = "";
-              let num = i;
-              while (num > 0) {
-                let mod = (num - 1) % 26;
-                colLetter = String.fromCharCode(65 + mod) + colLetter;
-                num = Math.floor((num - 1) / 26);
-              }
-              // 压入可选列表选项
               list.push({
-                label: `${colLetter} 列`,
+                label: `${toColLetter(i)} 列`,
                 value: i,
               });
             }
             return list;
           });
 
-          // 列标字母生成 (A, B, C...)
+          // 列标字母生成 (完整支持 A~Z, AA~AF 等多字母列标)
           const columnHeaders = computed(() => {
             const count =
-              gridData.value.length > 0 ? gridData.value[0].length : 15;
+              gridData.value.length > 0 && gridData.value[0]
+                ? gridData.value[0].length
+                : 32;
             const headers = [];
-            for (let i = 0; i < count; i++) {
-              headers.push(String.fromCharCode(65 + i));
+            // 循环换算并压入表头列名
+            for (let i = 1; i <= count; i++) {
+              headers.push(toColLetter(i));
             }
             return headers;
           });
@@ -1183,21 +1229,85 @@
             return keywords.some((kw) => lowerText.includes(kw.toLowerCase()));
           };
 
-          // 将列号安全转换为 A, B, C... 列标
-          const toColLetter = (num) => {
-            if (!num || num <= 0) return "无";
-            let col = "";
-            let temp = num;
-            // 循环进位换算 Excel 字母列标
-            while (temp > 0) {
-              let mod = (temp - 1) % 26;
-              col = String.fromCharCode(65 + mod) + col;
-              temp = Math.floor((temp - 1) / 26);
+          // 动态添加一个扩展列 (最多支持 8 列，默认无需保留)
+          const addExtraColumn = () => {
+            // 校验扩展列集合合法性
+            if (!config.value.columnMapping.extraColumns) {
+              config.value.columnMapping.extraColumns = [];
             }
-            return col;
+            // 校验是否已达到最多 8 列上限
+            if (config.value.columnMapping.extraColumns.length >= MAX_EXTRA_COLUMNS) {
+              ElementPlus.ElMessage.warning(`最多支持添加 ${MAX_EXTRA_COLUMNS} 个扩展列！`);
+              return;
+            }
+
+            const nextIdx = config.value.columnMapping.extraColumns.length + 1;
+            // 智能推荐默认目标列：第 1 个扩展默认 E列(5)单位，第 2 个默认 I列(9)备注，其余默认 0
+            let defaultTargetCol = 0;
+            let defaultKeywords = "";
+            if (nextIdx === 1) {
+              defaultTargetCol = 5;
+              defaultKeywords = "单位,计量单位";
+            } else if (nextIdx === 2) {
+              defaultTargetCol = 9;
+              defaultKeywords = "备注,说明,参数,要求,位号";
+            }
+
+            // 动态压入扩展列配置对象
+            config.value.columnMapping.extraColumns.push({
+              sourceCol: 0,
+              targetCol: defaultTargetCol,
+              customLabel: `扩展列${nextIdx}`,
+              keywords: defaultKeywords,
+            });
+
+            // 触发全表重新推导
+            triggerAutoParse();
           };
 
-          // 核心：从表头行智能启发式嗅探 5 列目标列号并回写下拉框
+          // 动态移除指定索引的扩展列
+          const removeExtraColumn = (index) => {
+            // 校验索引有效性
+            if (
+              config.value.columnMapping.extraColumns &&
+              config.value.columnMapping.extraColumns.length > index
+            ) {
+              // 从数组中精确剔除该项
+              config.value.columnMapping.extraColumns.splice(index, 1);
+              // 触发全表重新推导
+              triggerAutoParse();
+            }
+          };
+
+          // 判断元器件是否提取到动态扩展列数据
+          const hasExtraValues = (comp) => {
+            // 校验组件有效性与扩展列提取值列表
+            if (!comp || !comp.extraValues) return false;
+            // 校验是否存在非空扩展文本
+            return comp.extraValues.some((v) => v && v.toString().trim().length > 0);
+          };
+
+          // 格式化当前元器件所有动态扩展列的悬浮提示文本
+          const formatExtraValuesTitle = (comp) => {
+            if (!comp) return "";
+            const lines = [];
+            const extraCols = config.value?.columnMapping?.extraColumns || [];
+            // 遍历所有已配置的动态扩展列
+            if (extraCols.length > 0) {
+              extraCols.forEach((ec, idx) => {
+                const label = ec.customLabel || `扩展${idx + 1}`;
+                let val = "";
+                // 从动态数组中获取对应槽位提取值
+                if (comp.extraValues && comp.extraValues.length > idx) {
+                  val = comp.extraValues[idx];
+                }
+                lines.push(`【${label}】: ${val || "空"}`);
+              });
+            }
+            return lines.join("\n");
+          };
+
+          // 核心：从表头行智能启发式嗅探 5 核心列与动态扩展列并回写下拉框
           const detectColumnsFromHeaderRow = (rowNum) => {
             if (!gridData.value || gridData.value.length < rowNum) return;
             // 获取表头行的原始单元格数组
@@ -1220,13 +1330,6 @@
             );
             const brandKeys = parseKeywordsList(
               map.brandKeywords || DEFAULT_KEYWORDS.brandKeywords,
-            );
-            // 方案 B：获取扩展列 1 与 2 的关键词列表
-            const extra1Keys = parseKeywordsList(
-              (map.extraCol1 && map.extraCol1.keywords) || DEFAULT_KEYWORDS.extraCol1Keywords,
-            );
-            const extra2Keys = parseKeywordsList(
-              (map.extraCol2 && map.extraCol2.keywords) || DEFAULT_KEYWORDS.extraCol2Keywords,
             );
 
             let matchedCount = 0;
@@ -1260,50 +1363,44 @@
                 // 匹配元件名称列
                 map.itemNameCol = colIdx;
                 matchedCount++;
-              } else if (textMatchesAny(text, extra1Keys) && map.extraCol1) {
-                // 匹配扩展列 1
-                map.extraCol1.sourceCol = colIdx;
-                matchedCount++;
-              } else if (textMatchesAny(text, extra2Keys) && map.extraCol2) {
-                // 匹配扩展列 2
-                map.extraCol2.sourceCol = colIdx;
-                matchedCount++;
+              } else if (map.extraColumns && Array.isArray(map.extraColumns)) {
+                // 遍历匹配所有动态扩展列关键字
+                for (let ei = 0; ei < map.extraColumns.length; ei++) {
+                  const ec = map.extraColumns[ei];
+                  const extraKeys = parseKeywordsList(ec.keywords);
+                  if (textMatchesAny(text, extraKeys)) {
+                    ec.sourceCol = colIdx;
+                    matchedCount++;
+                    break;
+                  }
+                }
               }
             }
 
             // 若命中任意匹配列，给出友好提示
             if (matchedCount > 0) {
               let msg = `已智能定位：名称[${toColLetter(map.itemNameCol)}] 型号[${toColLetter(map.itemSpecCol)}] 数量[${toColLetter(map.quantityCol)}] 单价[${toColLetter(map.priceCol)}] 品牌[${toColLetter(map.brandCol)}]`;
-              if (map.extraCol1 && map.extraCol1.sourceCol > 0) {
-                msg += ` 扩展1[${toColLetter(map.extraCol1.sourceCol)}➜${toColLetter(map.extraCol1.targetCol)}]`;
-              }
-              if (map.extraCol2 && map.extraCol2.sourceCol > 0) {
-                msg += ` 扩展2[${toColLetter(map.extraCol2.sourceCol)}➜${toColLetter(map.extraCol2.targetCol)}]`;
+              if (map.extraColumns && Array.isArray(map.extraColumns)) {
+                map.extraColumns.forEach((ec, idx) => {
+                  if (ec.sourceCol > 0) {
+                    msg += ` 扩展${idx + 1}[${toColLetter(ec.sourceCol)}➜${toColLetter(ec.targetCol)}]`;
+                  }
+                });
               }
               ElementPlus.ElMessage.success(msg);
             }
           };
 
-          // 确保配置对象具备完整的扩展列结构 (防范旧模板缺字段报错)
+          // 确保配置对象具备合规的动态扩展列集合结构
           const normalizeConfig = (cfg) => {
+            // 校验配置对象有效性
             if (!cfg) return;
+            // 校验列映射字典
             if (!cfg.columnMapping) cfg.columnMapping = {};
             const cm = cfg.columnMapping;
-            if (!cm.extraCol1) {
-              cm.extraCol1 = {
-                sourceCol: 0,
-                targetCol: 5,
-                customLabel: "扩展列1",
-                keywords: DEFAULT_KEYWORDS.extraCol1Keywords,
-              };
-            }
-            if (!cm.extraCol2) {
-              cm.extraCol2 = {
-                sourceCol: 0,
-                targetCol: 9,
-                customLabel: "扩展列2",
-                keywords: DEFAULT_KEYWORDS.extraCol2Keywords,
-              };
+            // 确保 extraColumns 始终为有效数组
+            if (!cm.extraColumns || !Array.isArray(cm.extraColumns)) {
+              cm.extraColumns = [];
             }
           };
 
@@ -1312,7 +1409,7 @@
             triggerAutoParse();
           };
 
-          // 恢复 7 列匹配关键字为系统默认预设
+          // 恢复匹配关键字为系统默认预设
           const resetKeywordsToDefault = () => {
             config.value.columnMapping.itemNameKeywords =
               DEFAULT_KEYWORDS.itemNameKeywords;
@@ -1324,13 +1421,12 @@
               DEFAULT_KEYWORDS.priceKeywords;
             config.value.columnMapping.brandKeywords =
               DEFAULT_KEYWORDS.brandKeywords;
-            if (config.value.columnMapping.extraCol1) {
-              config.value.columnMapping.extraCol1.keywords =
-                DEFAULT_KEYWORDS.extraCol1Keywords;
-            }
-            if (config.value.columnMapping.extraCol2) {
-              config.value.columnMapping.extraCol2.keywords =
-                DEFAULT_KEYWORDS.extraCol2Keywords;
+            // 遍历恢复动态扩展列默认关键字
+            if (config.value.columnMapping.extraColumns && Array.isArray(config.value.columnMapping.extraColumns)) {
+              config.value.columnMapping.extraColumns.forEach((ec, idx) => {
+                if (idx === 0) ec.keywords = "单位,计量单位";
+                else if (idx === 1) ec.keywords = "备注,说明,参数,要求,位号";
+              });
             }
             ElementPlus.ElMessage.info("已恢复默认匹配关键字");
           };
@@ -1619,13 +1715,20 @@
             doExecuteImport,
             saveCurrentTemplate,
             applyTemplate,
-            // 暴露 5 核心列与方案 B 扩展列映射相关响应式状态与交互方法
+            // 暴露 5 核心列与动态扩展列映射相关响应式状态与交互方法
             availableColumns,
             availableTargetColumns,
             showKeywordDialog,
             onColumnMappingChange,
             resetKeywordsToDefault,
             saveAndRedetectKeywords,
+            // 暴露动态增删扩展列方法
+            addExtraColumn,
+            removeExtraColumn,
+            // 暴露扩展列数据提示工具方法
+            hasExtraValues,
+            formatExtraValuesTitle,
+            toColLetter,
           };
         },
       });

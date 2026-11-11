@@ -21,13 +21,15 @@ namespace ExcelAddInDemo
         /// <param name="cabinetK">新箱柜序号 K（<=0 时自动计算下一个独立序号）</param>
         /// <param name="initialCabName">可选传入的初始箱柜名称（为空时默认为“箱柜K”）</param>
         /// <param name="explicitApp">可选传入的 Excel Application COM 实例</param>
+        /// <param name="forceAppendToEnd">是否强制在工作表末尾顺次追加 (为 true 时彻底忽略光标位置，杜绝逆序插入)</param>
         /// <returns>新建/复制成功的箱柜行号信息对象（CabinetCreatedInfo），失败返回 null</returns>
         public static Models.CabinetCreatedInfo? CopyCabinetDetailFromTemplate(
             dynamic? targetSheet = null,
             int targetStartRow = 0,
             int cabinetK = 0,
             string? initialCabName = null,
-            dynamic? explicitApp = null)
+            dynamic? explicitApp = null,
+            bool forceAppendToEnd = false)
         {
             try
             {
@@ -118,11 +120,13 @@ namespace ExcelAddInDemo
                         }
                     }
 
-                    // 5.3 核心状态判定：光标是否落在已有箱柜范围之外的空白行/表头区域 (判定是否属于末尾追加)
-                    // 当光标在表头(1-5行)、落在已有箱柜汇总行下方的空白区域(例如B9)、或全表尚无箱柜时，均为末尾追加
-                    bool isAppendToEnd = (validCabinets == null || validCabinets.Count == 0 ||
-                                          cursorRow < 6 ||
-                                          (cursorRow > maxValidSumRow && cursorRow < minDetRow));
+                    // 5.3 核心状态判定：是否属于末尾追加
+                    // 当显式指定 forceAppendToEnd 为 true 时强制末尾追加 (彻底杜绝程序化批处理时因活动选区光标导致逆序插入)；
+                    // 否则当光标在表头(1-5行)、落在已有箱柜汇总行下方的空白区域(例如B9)、或全表尚无箱柜时，判定为末尾追加
+                    bool isAppendToEnd = forceAppendToEnd ||
+                                          (validCabinets == null || validCabinets.Count == 0 ||
+                                           cursorRow < 6 ||
+                                           (cursorRow > maxValidSumRow && cursorRow < minDetRow));
 
                     // 6. 智能识别当前光标命中的箱柜实体
                     // 核心防御：当明确处于末尾追加模式时，坚决禁止 fallbackSingle 回退已有箱柜，彻底杜绝空白处点击误判为选中已有箱柜

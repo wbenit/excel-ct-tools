@@ -1,3 +1,32 @@
+- **【全新升级与全量闭环交付：智能输入全字段自动回填（排除AD句柄/A序号/F数量）与元器件区+计费区全域C列入库】([`Models/SmartInputModels.cs`](file:///e:/Ace/excel-ct-tools/Models/SmartInputModels.cs), [`Services/ExcelServices.SmartInput.cs`](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.SmartInput.cs), [`Forms/SmartInputOverlayForm.cs`](file:///e:/Ace/excel-ct-tools/Forms/SmartInputOverlayForm.cs), [`Resources/smart_input.html`](file:///e:/Ace/excel-ct-tools/Resources/smart_input.html), [`publish/`](file:///e:/Ace/excel-ct-tools/publish/))**：
+  1. **用户核心指令与决策确认**：
+     - 用户指令：“AD 句柄列绝对不回填，A 序号列保持公式不回填；数量不回填，其他列都回填”；
+     - “另外只要C列有值，不管是在元器件区域还是计费区域都加入源数据”；
+  2. **工程实现与架构落地细节**：
+     - ① **实体与数据契约扩展 (`Models/SmartInputModels.cs`)**：
+       - `SmartComponentItem` 扩展 `CatalogPrice`（M 列表价）、`QuoteCoefficient`（L 列加价系数）、`DiscountCoefficient`（N 列折扣系数）、`Remark`（I 列备注）以及 `RowCells`（Dictionary<int, string> 整行原始列映射字典，覆盖第 2 至 29 列，严格排除第 1 列 A、第 6 列 F、第 30 列 AD）；
+       - `SmartInputConfigModel` 新增 `FillAllColumns`（默认 true），实现配置化全字段安全自动回填；
+     - ② **全域源数据提取重构 (`Services/ExcelServices.SmartInput.cs` -> `ExtractComponentsFromAllSheets`)**：
+       - 扫描区间由原单一元器件区 `[detRow + 2, subsumRow - 1]` 扩展至计费区 `[detRow + 2, tolsumRow]`；
+       - 以“C 列有效且非纯小计/总计统计文本”为唯一核心准则，一次性内存数组读取 A 列至 AC 列（第 1 至 29 列，绝不读取第 30 列 AD 句柄列）；
+       - 第三级兜底扫描（UsedRange）同步支持整行 AC 列读取与属性沉淀；
+       - 智能自愈去重合并字典，补充完整各列属性与 RowCells；
+     - ③ **安全回填与公式链自愈保护 (`FillComponentToActiveRow` & `SmartInputOverlayForm.Addfuzhu`)**：
+       - 严格落实用户三大约束：第 1 列 A 序号绝不触碰（保持原生序号公式）；第 6 列 F 数量绝不触碰（保留当前行实际用量）；第 30 列 AD 句柄列绝不触碰（彻底杜绝 CAD 句柄污染）；
+       - 其余所有列（B 名称、C 型号、D 厂家、E 单位、I 备注、M 表价、L 加价系数、N 折扣系数、Q 类别以及 RowCells 扩展列）全量自动回填；
+       - 公式链保护：回填 M 列表价驱动原生 `=M*L*N` 级联公式重算；G 列单价仅在当前单元格无公式时回填单价，杜绝公式被静态数字破坏；
+       - `SmartInputOverlayForm.Addfuzhu` 彻底委托调用 `ExcelServices.FillComponentToActiveRow`，实现业务单点解耦与行为 100% 对齐；
+     - ④ **计费区智能联想与自动学习闭环 (`IsCategoryComponentOrFeeRow` & `ExcelEventManager.cs`)**：
+       - 新增 `IsCategoryComponentOrFeeRow` 判定，使计费区域（Subsum ~ Tolsum）输入 C 列时同样唤起覆盖联想浮窗；
+       - `CheckAndLearnComponentFromRow` 扩展支持计费区，一次性读取 B~AC 列全量属性并存入候选库；
+     - ⑤ **WebView2 前端更新 (`Resources/smart_input.html`)**：
+       - 主色调 `#009688`，卡片 2 装配“全字段自动回填”提示与切换开关；
+       - 预览表格增加“所属区域”标签（明细区/计费区）；
+       - 所有新增代码严格落实“至少每 3 行包含一行中文注释”；硬编码标示 `--硬编码--`；
+  3. **构建验证与产物交付**：
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 程序集 `ExcelAddInDemo.dll` (3,623,936 bytes)、`.pdb` 与 `Resources/smart_input.html` 已全量同步覆盖至 `publish/` 与 `bin/Debug/net48/` 交付目录。
+
 - **【缺陷根除与定额对齐：二维尺寸 (如 800\*1800) 深度推导严格联动图一【辅材壳体计算】高度深度梯度表闭环】([`Services/ExcelServices.CabinetBatchPrice.cs`](file:///d:/code/excel-ct-tools/Services/ExcelServices.CabinetBatchPrice.cs), [`Resources/cabinet_batch_price.html`](file:///d:/code/excel-ct-tools/Resources/cabinet_batch_price.html), [`publish/`](file:///d:/code/excel-ct-tools/publish/))**：
   1. **用户反馈与根因确诊**：
      - 用户截图提问：“按图一的配置，深度不应该是400吗，为什么计算出来是200”；
@@ -3950,3 +3979,73 @@
   4. **编译与产物验证**：
      - 全量同步静态文件至各构建目录；
      - 执行 `dotnet build /p:RunExcelDnaBuild=false` 验证 **0 警告、0 错误** 顺利生成 `ExcelAddInDemo.dll`。
+
+
+### 10. 2026-11-11: 【智能导入箱柜 BOM 工作台】动态添加扩展列(最多8列)及全链路AF列(32列)支持实施
+
+- **需求背景**：用户反馈智能导入箱柜 BOM 工作台原先固定写死 2 个扩展列（扩展1与扩展2），无法满足用户导入回路/位号、技术参数等自定义列的诉求；且源列和目标列受限于 15 列截断与 26 列 ASCII 算法，无法支持到 AF 列（第 32 列）。用户决策确认：初始无需默认保留扩展列（初始为空数组），支持动态添加，上限最多 8 列，且源列和目标列均完整支持到 AF 列。
+- **实施架构与代码变动**：
+  1. **数据模型层 (`Models/SmartImportModels.cs`)**：
+     - `SmartImportColumnMapping`：升级引入 `List<ExtraColumnMapping> ExtraColumns` 动态集合；保留 `ExtraCol1`/`ExtraCol2` 兼容字段，并提供 `GetEffectiveExtraColumns()` 保证老模板向动态列表无缝迁移；
+     - `ParsedComponentModel`：新增 `List<string> ExtraValues` 存储任意数量扩展列提取的字符串值，兼容保留 `ExtraValue1`/`ExtraValue2`；
+     - 每 3 行新增代码添加中文注释。
+  2. **后台解析与控制层 (`Services/SmartImportParserService.cs` & `Controllers/SmartImportController.cs`)**：
+     - `ReadPreviewGrid` / `LoadPreviewGrid`：突破原先 `maxCols = 15` 的截断硬编码，默认列数放宽至 40 列，彻底解决标书在 O 列（15列）之后内容被截断丢失的根本问题；
+     - `ScanCabinetsFromMatrix`：通过 `colMap.GetEffectiveExtraColumns()` 循环遍历所有已添加的扩展列，从二维矩阵批量提取文本存入 `ExtraValues`，并针对单位（第 5 列）与备注（第 9 列）保持联动校准。
+  3. **分类表批量写入层 (`Services/ExcelServices.SmartImport.cs`)**：
+     - 升级 `WriteExtraColumnIfConfigured` 方法：支持接收任意扩展列槽位索引（0~7），优先从 `ExtraValues[colSlotIndex]` 获取数据；
+     - 结合公共静态 `GetExcelColumnLetter` 方法，利用 26 进制双字母转换算法计算目标列英文字母（完整支持 1~32 列，如 27->AA, 32->AF）；
+     - 通过单列二维数组一次性批量写入 `newSheet.Range[$"{colLetter}{compStartRow}:{colLetter}{compEndRow}"].Value2`，严格符合规则 7 内存批量读写规范。
+  4. **前端界面与交互层 (`Resources/smart_import.html`)**：
+     - **快捷列映射条**：移除原先写死的扩展 1/2 静态 DOM，改为 `v-for="(ec, idx) in config.columnMapping.extraColumns"` 动态渲染，提供 `✕` 移除按钮与 `【➕ 扩展列】` 动态追加按钮（最多支持 8 列，达到 8 列自动隐藏并保护）；
+     - **AF 列全链路支持**：
+       - `toColLetter`：封装通用 26 进制转换函数，完美支持 1~32 列及以上；
+       - `availableColumns`：源列下拉集合保底生成至 AF 列（32 列），若原表数据列数更多则自适应扩展；
+       - `availableTargetColumns`：目标列完整扩充生成至 AF 列（1~32 列），并标注标准业务列名；
+       - `columnHeaders`：网格表头支持渲染多字母列标（A~Z, AA~AF）；
+     - **关键字弹窗动态联动**：根据当前动态扩展列表，动态渲染各扩展列的自定义标签与关键字配置表单；
+     - **卡片曲别针提示**：`hasExtraValues` 与 `formatExtraValuesTitle` 动态展示所有已提取扩展列标签与取值；
+     - **模板兼容迁移**：`normalizeConfig` 自动将历史模板中的 `extraCol1`/`extraCol2` 迁移至 `extraColumns` 动态数组。
+  5. **构建与产物同步**：
+     - 同步 `smart_import.html` 至所有输出目录；
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false` 验证 **0 警告、0 错误** 成功编译生成。
+
+
+### 11. 2026-11-11: 【智能导入箱柜 BOM 工作台】彻底清理历史模板兼容逻辑
+
+- **需求背景**：用户指示无需保留历史兼容逻辑，要求彻底移除针对旧版模板过渡处理的冗余字段与代码，保持架构极简与纯粹。
+- **实施架构与代码变动**：
+  1. **数据模型层 (`Models/SmartImportModels.cs`)**：
+     - `SmartImportColumnMapping`：彻底移除 `ExtraCol1`、`ExtraCol2` 属性以及 `GetEffectiveExtraColumns()` 过渡方法，扩展列唯一由 `ExtraColumns` 动态集合管理；
+     - `ParsedComponentModel`：彻底移除 `ExtraValue1` 与 `ExtraValue2` 属性，元件扩展数据唯一由 `ExtraValues` 列表管理。
+  2. **解析推导层 (`Services/SmartImportParserService.cs`)**：
+     - 去除对 `GetEffectiveExtraColumns()` 与旧版槽位 1/2 的赋值代码，直接根据 `colMap.ExtraColumns` 读取并将提取值存入 `ExtraValues`。
+  3. **控制器层 (`Controllers/SmartImportController.cs`)**：
+     - 去除在 `GetTemplates` 反序列化后向动态列表迁移老字段的逻辑，直接返回模板实体列表。
+  4. **Excel 批量写入服务 (`Services/ExcelServices.SmartImport.cs`)**：
+     - 直接读取 `request.Config?.ColumnMapping?.ExtraColumns`，并在 `WriteExtraColumnIfConfigured` 中彻底移除对 `ExtraValue1`/`ExtraValue2` 的回退逻辑，仅依据 `ExtraValues[colSlotIndex]` 批量赋值。
+  5. **前端界面层 (`Resources/smart_import.html`)**：
+     - 去除 `DEFAULT_KEYWORDS` 中关于 `extraCol1Keywords`、`extraCol2Keywords` 的旧常量；
+     - `normalizeConfig`：仅保留 `cfg.columnMapping.extraColumns = cfg.columnMapping.extraColumns || []` 数组兜底，移除所有从老字段迁移映射的代码；
+     - `hasExtraValues` 与 `formatExtraValuesTitle`：彻底移除对 `extraValue1` / `extraValue2` 的兼容回退；
+     - 全量同步更新后的静态 HTML 至各输出目录。
+  6. **编译验证**：
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false` 验证 **0 警告、0 错误** 顺利编译通过。
+
+
+### 12. 2026-11-11: 【智能导入箱柜 BOM 工作台】修复导入箱柜顺序倒置 Bug
+
+- **问题现象**：用户反馈智能导入箱柜后，第一台箱柜位置与内容正确，但后续第 2~N 台箱柜的顺序全部呈现倒序（后导入的排在前面，先导入的被一路向下挤）。
+- **根本原因**：
+  - `CopyCabinetDetailFromTemplate` 原本为右键“插入箱柜”设计，默认逻辑为“在当前光标选中箱柜的上方插入”；
+  - 在批处理循环导入中，上一台箱柜的明细块复制与数据写入导致 Excel 当前活动选区（`ActiveCell`）焦点自动停留在明细区域内部；
+  - 后续箱柜执行时，内部光标嗅探误将当前箱柜判定为“选中目标”，将新箱柜的汇总行与明细块依次插在“上方”，导致第 2~N 台箱柜整体倒置。
+- **实施架构与代码变动**：
+  1. **箱柜底层复制方法 (`Services/ExcelServices.Cabinet.cs`)**：
+     - 为 `CopyCabinetDetailFromTemplate` 新增显式布尔参数 `bool forceAppendToEnd = false`；
+     - 当 `forceAppendToEnd: true` 时，`isAppendToEnd` 强制为 `true`，彻底脱离对活动光标选区的误判；
+     - 汇总行强制追加至全表最后一个有效汇总行之后（`+1`），明细块强制紧随全表最后一个明细落款行之后（`+1`）。
+  2. **智能导入服务调度 (`Services/ExcelServices.SmartImport.cs`)**：
+     - 在第 2~N 柜循环调用 `CopyCabinetDetailFromTemplate` 时，显式传入 `forceAppendToEnd: true`，确保 100% 顺次追加至末尾。
+  3. **编译验证**：
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false`，**0 警告、0 错误** 编译通过。

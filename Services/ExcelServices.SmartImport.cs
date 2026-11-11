@@ -143,9 +143,10 @@ namespace ExcelAddInDemo
                         }
                         else
                         {
-                            // 第 2~N 柜：依次在当前新工作表追加新箱柜明细区域 (编号平滑连续自增)
+                            // 第 2~N 柜：依次在当前新工作表末尾顺次追加新箱柜明细区域 (编号平滑连续自增)
                             cabinetK = baseCabinetK + i;
-                            cabInfo = CopyCabinetDetailFromTemplate(newSheet, 0, cabinetK, cab.CabinetName, app);
+                            // 显式指定 forceAppendToEnd: true，彻底脱离光标依赖，确保 100% 顺次追加到底部，杜绝逆序
+                            cabInfo = CopyCabinetDetailFromTemplate(newSheet, 0, cabinetK, cab.CabinetName, app, forceAppendToEnd: true);
                         }
 
                         if (cabInfo == null)
@@ -236,10 +237,18 @@ namespace ExcelAddInDemo
                             newSheet.Range[$"A{compStartRow}:U{compEndRow}"].Formula = compMatrix;
                             importedCompTotal += actualCompCount;
 
-                            // 方案 B：根据用户配置将扩展列 1 批量安全写入导入表任意指定目标列
-                            WriteExtraColumnIfConfigured(newSheet, compStartRow, actualCompCount, cab.Components, request.Config?.ColumnMapping?.ExtraCol1, 1);
-                            // 方案 B：根据用户配置将扩展列 2 批量安全写入导入表任意指定目标列
-                            WriteExtraColumnIfConfigured(newSheet, compStartRow, actualCompCount, cab.Components, request.Config?.ColumnMapping?.ExtraCol2, 2);
+                            // 提取已配置的动态扩展列集合 (支持最多 8 列动态扩展写入)
+                            var extraCols = request.Config?.ColumnMapping?.ExtraColumns;
+                            // 若存在已配置的动态扩展列，逐列批量写入指定的分类表目标列
+                            if (extraCols != null && extraCols.Count > 0)
+                            {
+                                // 遍历所有扩展列配置 (槽位 0~7)
+                                for (int ei = 0; ei < extraCols.Count; ei++)
+                                {
+                                    // 批量将当前槽位扩展数据写入分类表对应目标列 (支持写入 A~AF 任意目标列)
+                                    WriteExtraColumnIfConfigured(newSheet, compStartRow, actualCompCount, cab.Components, extraCols[ei], ei);
+                                }
+                            }
                         }
 
                         // 10. 检查计费区域 (SubsumRow 到 TolsumRow-1) 是否存在空行，确保公式紧凑闭环 (规则 6)
@@ -394,13 +403,14 @@ namespace ExcelAddInDemo
 
         /// <summary>
         /// 方案 B：根据用户配置的扩展列映射，将额外提取的数据批量写入导入表目标列 (规则 7 数组极速覆写)
+        /// 支持写入 A~AF 等任意目标列
         /// </summary>
         /// <param name="sheet">目标工作表句柄</param>
         /// <param name="startRow">元器件起始物理行号</param>
         /// <param name="compCount">实际有效元器件数量</param>
         /// <param name="components">已解析的元器件明细集合</param>
         /// <param name="extraCol">扩展列映射配置对象</param>
-        /// <param name="colSlotIndex">扩展列槽位 (1: ExtraCol1, 2: ExtraCol2)</param>
+        /// <param name="colSlotIndex">扩展列槽位索引 (0-based，最多支持 8 列)</param>
         private static void WriteExtraColumnIfConfigured(
             dynamic sheet,
             int startRow,
@@ -424,9 +434,16 @@ namespace ExcelAddInDemo
                 // 遍历提取每个元件在当前槽位的数据
                 for (int r = 0; r < writeRows; r++)
                 {
+                    // 获取当前行元器件模型
                     var pc = components[r];
-                    // 依据当前槽位索引获取提取的文本
-                    string val = (colSlotIndex == 1) ? pc.ExtraValue1 : pc.ExtraValue2;
+                    string val = string.Empty;
+
+                    // 从动态扩展值列表 ExtraValues 中提取对应槽位的值
+                    if (pc.ExtraValues != null && colSlotIndex < pc.ExtraValues.Count)
+                    {
+                        val = pc.ExtraValues[colSlotIndex];
+                    }
+
                     // 若槽位暂无直接提取值，根据目标列意图回退取值
                     if (string.IsNullOrEmpty(val))
                     {
@@ -439,18 +456,18 @@ namespace ExcelAddInDemo
                     colMatrix[r, 0] = val ?? string.Empty;
                 }
 
-                // 计算目标列对应的标准 Excel 字母列标 (例如 5->E, 9->I, 15->O)
+                // 计算目标列对应的标准 Excel 字母列标 (例如 5->E, 9->I, 15->O, 27->AA, 32->AF)
                 string colLetter = GetExcelColumnLetter(extraCol.TargetCol);
                 // 计算截止写入行号
                 int endRow = startRow + writeRows - 1;
 
-                // 数组一次性写入目标列指定范围 (规则 7)
+                // 数组一次性写入目标列指定范围 (规则 7 杜绝单元格逐格写入)
                 sheet.Range[$"{colLetter}{startRow}:{colLetter}{endRow}"].Value2 = colMatrix;
             }
             catch (Exception ex)
             {
                 // 记录异常日志，保障导入主流程不中断
-                LogHelper.WriteLog($"[WriteExtraColumnIfConfigured] 槽位 {colSlotIndex} 写入目标列 {extraCol.TargetCol} 异常: {ex.Message}");
+                LogHelper.WriteLog($"[WriteExtraColumnIfConfigured] 槽位 {colSlotIndex + 1} 写入目标列 {extraCol.TargetCol} 异常: {ex.Message}");
             }
         }
     }

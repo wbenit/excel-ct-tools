@@ -17,9 +17,9 @@ namespace ExcelAddInDemo.Services
         /// <param name="filePath">外部 Excel 物理路径</param>
         /// <param name="sheetName">指定的工作表名称 (可为空，默认取第一个)</param>
         /// <param name="maxRows">最大读取行数 (预览模式限制行数，0为全量)</param>
-        /// <param name="maxCols">最大读取列数 (限制列数以节省内存)</param>
+        /// <param name="maxCols">最大读取列数 (默认设为 40 列，完整覆盖到 AF 列第 32 列)</param>
         /// <returns>网格预览数据包</returns>
-        public static SmartImportPreviewResult ReadPreviewGrid(string filePath, string sheetName = "", int maxRows = 40, int maxCols = 15)
+        public static SmartImportPreviewResult ReadPreviewGrid(string filePath, string sheetName = "", int maxRows = 40, int maxCols = 40)
         {
             var result = new SmartImportPreviewResult();
             // 校验文件是否存在
@@ -308,29 +308,38 @@ namespace ExcelAddInDemo.Services
                                 string brand = (colMap.BrandCol > 0) ? GetMatrixString(matrix, compRow, colMap.BrandCol) : "";
                                 string remark = (colMap.RemarkCol > 0) ? GetMatrixString(matrix, compRow, colMap.RemarkCol) : "";
 
-                                // 方案 B：提取扩展列 1 对应文本
-                                string extraVal1 = "";
-                                if (colMap.ExtraCol1 != null && colMap.ExtraCol1.SourceCol > 0)
-                                {
-                                    // 从矩阵指定源列中安全读取字符串文本
-                                    extraVal1 = GetMatrixString(matrix, compRow, colMap.ExtraCol1.SourceCol);
-                                    // 若扩展列 1 的目标列恰好为单位列 (第 5 列) 且值有效，同步校准 unit
-                                    if (colMap.ExtraCol1.TargetCol == 5 && !string.IsNullOrWhiteSpace(extraVal1))
-                                    {
-                                        unit = extraVal1.Trim();
-                                    }
-                                }
+                                // 提取动态扩展列文本集合 (最多 8 列)
+                                var extraValues = new List<string>();
+                                // 获取配置的动态扩展列集合
+                                var extraCols = colMap.ExtraColumns;
 
-                                // 方案 B：提取扩展列 2 对应文本
-                                string extraVal2 = "";
-                                if (colMap.ExtraCol2 != null && colMap.ExtraCol2.SourceCol > 0)
+                                // 若已配置动态扩展列，逐列安全读取
+                                if (extraCols != null && extraCols.Count > 0)
                                 {
-                                    // 从矩阵指定源列中安全读取字符串文本
-                                    extraVal2 = GetMatrixString(matrix, compRow, colMap.ExtraCol2.SourceCol);
-                                    // 若扩展列 2 的目标列恰好为备注列 (第 9 列) 且值有效，同步校准 remark
-                                    if (colMap.ExtraCol2.TargetCol == 9 && !string.IsNullOrWhiteSpace(extraVal2))
+                                    // 遍历扩展列配置集合
+                                    for (int ei = 0; ei < extraCols.Count; ei++)
                                     {
-                                        remark = extraVal2.Trim();
+                                        // 获取当前扩展列配置
+                                        var extraCol = extraCols[ei];
+                                        string currentVal = "";
+                                        // 当来源列大于 0 时从矩阵提取文本
+                                        if (extraCol != null && extraCol.SourceCol > 0)
+                                        {
+                                            // 从二维矩阵安全提取文本
+                                            currentVal = GetMatrixString(matrix, compRow, extraCol.SourceCol);
+                                            // 若目标列为单位列 (第 5 列) 且值有效，同步校准 unit
+                                            if (extraCol.TargetCol == 5 && !string.IsNullOrWhiteSpace(currentVal))
+                                            {
+                                                unit = currentVal.Trim();
+                                            }
+                                            // 若目标列为备注列 (第 9 列) 且值有效，同步校准 remark
+                                            else if (extraCol.TargetCol == 9 && !string.IsNullOrWhiteSpace(currentVal))
+                                            {
+                                                remark = currentVal.Trim();
+                                            }
+                                        }
+                                        // 存入当前元件的动态扩展值列表
+                                        extraValues.Add(currentVal);
                                     }
                                 }
 
@@ -344,10 +353,8 @@ namespace ExcelAddInDemo.Services
                                     MarkedPrice = price,
                                     Brand = brand,
                                     Remark = remark,
-                                    // 记录方案 B 扩展列 1 提取的值
-                                    ExtraValue1 = extraVal1,
-                                    // 记录方案 B 扩展列 2 提取的值
-                                    ExtraValue2 = extraVal2
+                                    // 记录所有动态扩展列提取的值集合 (最多 8 列)
+                                    ExtraValues = extraValues
                                 });
 
                                 totalMarked += (qty * price);

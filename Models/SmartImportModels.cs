@@ -121,31 +121,46 @@ namespace ExcelAddInDemo.Models
         // 品牌/厂家匹配关键字词典
         public string BrandKeywords { get; set; } = "品牌,厂家";
 
-        // 方案 B：通用任意扩展列 1 (默认目标列为 5，即 E 列计量单位)
-        public ExtraColumnMapping ExtraCol1 { get; set; } = new ExtraColumnMapping
-        {
-            // 默认源列未指定
-            SourceCol = 0,
-            // 目标列预设为第 5 列 (E 列计量单位)
-            TargetCol = 5,
-            // 自定义标签名称
-            CustomLabel = "扩展列1",
-            // 预设嗅探关键字
-            Keywords = "单位,计量单位"
-        };
+        // 动态扩展列集合 (支持最多 8 列动态添加，默认无需保留)
+        public List<ExtraColumnMapping> ExtraColumns { get; set; } = new List<ExtraColumnMapping>();
 
-        // 方案 B：通用任意扩展列 2 (默认目标列为 9，即 I 列备注说明)
-        public ExtraColumnMapping ExtraCol2 { get; set; } = new ExtraColumnMapping
+        // 兼容旧版扩展列 1 (保留用于反序列化兼容历史模板)
+        public ExtraColumnMapping? ExtraCol1 { get; set; }
+
+        // 兼容旧版扩展列 2 (保留用于反序列化兼容历史模板)
+        public ExtraColumnMapping? ExtraCol2 { get; set; }
+
+        /// <summary>
+        /// 获取所有已配置的有效扩展列集合 (自动兼顾动态列表与老模板数据)
+        /// </summary>
+        /// <returns>扩展列配置列表</returns>
+        public List<ExtraColumnMapping> GetEffectiveExtraColumns()
         {
-            // 默认源列未指定
-            SourceCol = 0,
-            // 目标列预设为第 9 列 (I 列备注)
-            TargetCol = 9,
-            // 自定义标签名称
-            CustomLabel = "扩展列2",
-            // 预设嗅探关键字
-            Keywords = "备注,说明,参数,要求,位号"
-        };
+            // 若新版动态扩展列集合已有配置，优先使用新集合
+            if (ExtraColumns != null && ExtraColumns.Count > 0)
+            {
+                // 直接返回动态配置列表
+                return ExtraColumns;
+            }
+
+            // 若动态集合为空，尝试兼容老版模板中的 ExtraCol1 与 ExtraCol2
+            var fallbackList = new List<ExtraColumnMapping>();
+            // 兼容迁移老版本 ExtraCol1
+            if (ExtraCol1 != null && (ExtraCol1.SourceCol > 0 || ExtraCol1.TargetCol > 0))
+            {
+                // 加入兼容迁移列表
+                fallbackList.Add(ExtraCol1);
+            }
+            // 兼容迁移老版本 ExtraCol2
+            if (ExtraCol2 != null && (ExtraCol2.SourceCol > 0 || ExtraCol2.TargetCol > 0))
+            {
+                // 加入兼容迁移列表
+                fallbackList.Add(ExtraCol2);
+            }
+
+            // 返回最终合并的扩展列集合
+            return fallbackList;
+        }
     }
 
     /// <summary>
@@ -195,6 +210,8 @@ namespace ExcelAddInDemo.Models
         public string ExtraValue1 { get; set; } = string.Empty;
         // 方案 B：扩展列 2 提取的文本值
         public string ExtraValue2 { get; set; } = string.Empty;
+        // 动态扩展列提取的文本值列表 (对应 ExtraColumns 各项，最多 8 项)
+        public List<string> ExtraValues { get; set; } = new List<string>();
     }
 
     /// <summary>

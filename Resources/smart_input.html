@@ -425,11 +425,30 @@
                 <i class="fa-solid fa-sliders card-title-icon"></i>
                 <span>2. 回填字段范围设置</span>
               </div>
-              <span style="font-size: 11px; color: #94a3b8">C列输入时联动</span>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-size: 11px; color: #009688; font-weight: 600;">全字段自动回填</span>
+                <el-switch
+                  v-model="config.fillAllColumns"
+                  size="small"
+                  active-color="#009688"
+                  @change="autoSaveConfig"
+                ></el-switch>
+              </div>
             </div>
 
-            <!-- 回填字段多选 -->
-            <div class="fields-group">
+            <!-- 全字段回填模式提示 (遵循用户铁律: AD句柄列绝对不回填，A序号列保持公式不回填，数量不回填，其他列全量回填) -->
+            <div v-if="config.fillAllColumns" style="padding: 6px 0; font-size: 11.5px; color: #334155; line-height: 1.5;">
+              <div style="display: flex; align-items: center; gap: 5px; color: #009688; font-weight: 600; margin-bottom: 3px;">
+                <i class="fa-solid fa-shield-halved"></i>
+                <span>安全保护：A列(序号)、F列(数量)、AD列(CAD句柄)绝对不回填</span>
+              </div>
+              <div style="color: #64748b; font-size: 11px;">
+                其余整行物料属性 (名称B、厂家D、单位E、单价G、面价M、系数L/N、备注I、类别Q及扩展列) 均自动全量回填并保护公式链条。
+              </div>
+            </div>
+
+            <!-- 自定义字段多选 (在关闭全字段回填时展示) -->
+            <div v-else class="fields-group">
               <el-checkbox v-model="config.fillName" @change="autoSaveConfig">
                 <span style="font-size: 12px; font-weight: 500">B 列 (元件名称)</span>
               </el-checkbox>
@@ -447,7 +466,7 @@
               </el-checkbox>
             </div>
             <div style="font-size: 11px; color: #64748b; margin-top: 4px">
-              提示：在 Excel 中输入/选择 C 列型号后，将自动带出勾选的同行属性。
+              提示：在 Excel 中输入/选择 C 列型号后，将自动带出同行的物料属性。
             </div>
           </div>
         </div>
@@ -541,6 +560,19 @@
                 </template>
               </el-table-column>
 
+              <el-table-column
+                prop="cabinetNo"
+                label="所属区域"
+                width="95"
+                align="center"
+              >
+                <template #default="{ row }">
+                  <el-tag size="small" :type="row.cabinetNo && row.cabinetNo.includes('计费') ? 'warning' : 'success'">
+                    {{ row.cabinetNo && row.cabinetNo.includes('计费') ? '计费区' : '明细区' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+
               <el-table-column label="操作" width="95" align="center">
                 <template #default="{ row }">
                   <el-button
@@ -594,6 +626,7 @@
           // 智能输入配置对象
           const config = ref({
             selectedSheets: [],
+            fillAllColumns: true,
             fillName: true,
             fillManufacturer: true,
             fillUnit: true,
@@ -641,6 +674,9 @@
 
           // 已激活联动字段描述文本
           const activeFieldsText = computed(() => {
+            if (config.value.fillAllColumns) {
+              return "全字段自动回填 (安全排除AD句柄/A序号/F数量)";
+            }
             const fields = [];
             if (config.value.fillName) fields.push("B列(名称)");
             if (config.value.fillManufacturer) fields.push("D列(厂家)");

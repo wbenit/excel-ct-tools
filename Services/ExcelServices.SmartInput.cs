@@ -71,13 +71,13 @@ namespace ExcelAddInDemo
                         continue;
                     }
 
-                    // 收集当前工作表中的所有箱柜元器件有效行区间 (startRow, endRow)
+                    // 收集当前工作表中的所有箱柜元器件有效行与计费区域有效行区间 (startRow, endRow)
                     var cabinetRanges = new List<(int startRow, int endRow)>();
 
                     // 1. 获取当前工作表有效箱柜映射 (复用 Tool 公共方法，内置空值自动智能补齐重建)
                     var validCabinets = Tool.GetSheetValidCabinets(sheet, activeWb);
 
-                    // 若解析到有效箱柜锚点，计算各箱柜元器件有效插槽行 (规则 6)
+                    // 若解析到有效箱柜锚点，计算各箱柜元器件有效插槽行与计费区域 (规则 6 扩展)
                     if (validCabinets.Count > 0)
                     {
                         foreach (var cab in validCabinets)
@@ -86,10 +86,13 @@ namespace ExcelAddInDemo
                             {
                                 int detRow = Convert.ToInt32(cab.Value.Det.Row);
                                 int subsumRow = Convert.ToInt32(cab.Value.Subsum.Row);
+                                // 提取总计行号 (TolsumRow)
+                                int tolsumRow = cab.Value.Tolsum != null ? Convert.ToInt32(cab.Value.Tolsum.Row) : 0;
 
-                                // 依据规则 6: Cab_Det + 2 为元器件起始行，Cab_Subsum - 1 为元器件终止行
+                                // 依据用户指令：无论在元器件区域还是计费区域，只要 C 列有值均加入源数据
                                 int startRow = detRow + 2;
-                                int endRow = subsumRow - 1;
+                                // 计费区域延续至总计行 tolsumRow；若未定义 tolsumRow 则向下探测 10 行
+                                int endRow = (tolsumRow > subsumRow) ? tolsumRow : (subsumRow + 10);
 
                                 if (startRow <= endRow)
                                 {
@@ -103,13 +106,13 @@ namespace ExcelAddInDemo
                     var sheetComponents = new List<SmartComponentItem>();
                     int rawTotalCount = 0;
 
-                    // 3. 【执行元器件数据读取：优先从箱柜区域批量读取，规则 7 数组入内存】
+                    // 3. 【执行物料数据读取：优先从箱柜区域批量读取，规则 7 数组入内存】
                     if (cabinetRanges.Count > 0)
                     {
                         foreach (var (startRow, endRow) in cabinetRanges)
                         {
-                            // 规则 7: 一次性读取二维数据矩阵
-                            dynamic range = sheet.Range[$"A{startRow}:Q{endRow}"];
+                            // 规则 7: 一次性读取二维数据矩阵 (A 列至 AC 列共 29 列，绝对排除第 30 列 AD 句柄列)
+                            dynamic range = sheet.Range[$"A{startRow}:AC{endRow}"];
                             object[,] data = range.Value2 as object[,];
 
                             if (data != null)
@@ -122,8 +125,10 @@ namespace ExcelAddInDemo
                                     // 读取 C 列 (规格型号, 列索引 3)
                                     string model = colCount >= 3 ? Convert.ToString(data[r, 3])?.Trim() ?? string.Empty : string.Empty;
 
-                                    // 过滤规格型号为空的行
-                                    if (!string.IsNullOrWhiteSpace(model))
+                                    // 核心过滤：C 列非空且排除小计、总计纯汇总统计文字
+                                    if (!string.IsNullOrWhiteSpace(model) &&
+                                        !model.Equals("小计") && !model.Equals("总计") && !model.Equals("合计") &&
+                                        !model.StartsWith("小计") && !model.StartsWith("总计"))
                                     {
                                         rawTotalCount++;
 
@@ -143,6 +148,9 @@ namespace ExcelAddInDemo
                                             unitPrice = pVal;
                                         }
 
+                                        // 读取 I 列 (规格备注, 列索引 9)
+                                        string remark = colCount >= 9 ? Convert.ToString(data[r, 9])?.Trim() ?? string.Empty : string.Empty;
+
                                         // 读取 J 列 (成本单价, 列索引 10)
                                         decimal costPrice = 0;
                                         if (colCount >= 10 && decimal.TryParse(Convert.ToString(data[r, 10]), out decimal cVal))
@@ -150,8 +158,34 @@ namespace ExcelAddInDemo
                                             costPrice = cVal;
                                         }
 
+                                        // 读取 L 列 (加价系数, 列索引 12)
+                                        string quoteCoeff = colCount >= 12 ? Convert.ToString(data[r, 12])?.Trim() ?? string.Empty : string.Empty;
+
+                                        // 读取 M 列 (表价值/基准面价, 列索引 13)
+                                        decimal catalogPrice = 0;
+                                        if (colCount >= 13 && decimal.TryParse(Convert.ToString(data[r, 13]), out decimal mVal))
+                                        {
+                                            catalogPrice = mVal;
+                                        }
+
+                                        // 读取 N 列 (采购折扣系数, 列索引 14)
+                                        string discountCoeff = colCount >= 14 ? Convert.ToString(data[r, 14])?.Trim() ?? string.Empty : string.Empty;
+
                                         // 读取 Q 列 (元件类别, 列索引 17)
                                         string category = colCount >= 17 ? Convert.ToString(data[r, 17])?.Trim() ?? string.Empty : string.Empty;
+
+                                        // 提取第 2 列至第 29 列完整单元格属性 (跳过第 6 列 F 数量列，绝不包含第 30 列 AD 句柄列)
+                                        var rowCells = new Dictionary<int, string>();
+                                        for (int c = 2; c <= Math.Min(colCount, 29); c++)
+                                        {
+                                            // 绝对排除第 6 列 (F 列数量，保留当前行已有数量不回填)
+                                            if (c == 6) continue;
+                                            string cellVal = Convert.ToString(data[r, c])?.Trim() ?? string.Empty;
+                                            if (!string.IsNullOrEmpty(cellVal))
+                                            {
+                                                rowCells[c] = cellVal;
+                                            }
+                                        }
 
                                         var item = new SmartComponentItem
                                         {
@@ -161,9 +195,14 @@ namespace ExcelAddInDemo
                                             Unit = unit,
                                             UnitPrice = unitPrice,
                                             CostUnitPrice = costPrice,
+                                            CatalogPrice = catalogPrice,
+                                            QuoteCoefficient = quoteCoeff,
+                                            DiscountCoefficient = discountCoeff,
+                                            Remark = remark,
                                             Category = category,
                                             SheetName = sheetName,
-                                            CabinetNo = $"箱柜_{startRow}"
+                                            CabinetNo = $"箱柜_{startRow}",
+                                            RowCells = rowCells
                                         };
 
                                         sheetComponents.Add(item);
@@ -192,6 +231,7 @@ namespace ExcelAddInDemo
                                 int mfrColIndex = 4;   // 默认 D 列
                                 int unitColIndex = 5;  // 默认 E 列
                                 int priceColIndex = 7; // 默认 G 列
+                                int catalogPriceColIndex = 13; // 默认 M 列
 
                                 for (int r = 1; r <= Math.Min(uRows, 15); r++)
                                 {
@@ -226,6 +266,24 @@ namespace ExcelAddInDemo
                                             unitPrice = pVal;
                                         }
 
+                                        decimal catalogPrice = 0;
+                                        if (uCols >= catalogPriceColIndex && decimal.TryParse(Convert.ToString(data[r, catalogPriceColIndex]), out decimal mVal))
+                                        {
+                                            catalogPrice = mVal;
+                                        }
+
+                                        // 收集全行属性映射 (排除第 1 列 A、第 6 列 F 数量、第 30 列 AD 句柄)
+                                        var rowCells = new Dictionary<int, string>();
+                                        for (int c = 2; c <= Math.Min(uCols, 29); c++)
+                                        {
+                                            if (c == 6) continue;
+                                            string cellVal = Convert.ToString(data[r, c])?.Trim() ?? string.Empty;
+                                            if (!string.IsNullOrEmpty(cellVal))
+                                            {
+                                                rowCells[c] = cellVal;
+                                            }
+                                        }
+
                                         sheetComponents.Add(new SmartComponentItem
                                         {
                                             Model = model,
@@ -233,8 +291,10 @@ namespace ExcelAddInDemo
                                             Manufacturer = mfr,
                                             Unit = unit,
                                             UnitPrice = unitPrice,
+                                            CatalogPrice = catalogPrice,
                                             SheetName = sheetName,
-                                            CabinetNo = "明细表"
+                                            CabinetNo = "明细表",
+                                            RowCells = rowCells
                                         });
                                     }
                                 }
@@ -264,9 +324,40 @@ namespace ExcelAddInDemo
                                 {
                                     existing.UnitPrice = comp.UnitPrice;
                                 }
+                                if (existing.CatalogPrice <= 0 && comp.CatalogPrice > 0)
+                                {
+                                    existing.CatalogPrice = comp.CatalogPrice;
+                                }
+                                if (string.IsNullOrEmpty(existing.QuoteCoefficient) && !string.IsNullOrEmpty(comp.QuoteCoefficient))
+                                {
+                                    existing.QuoteCoefficient = comp.QuoteCoefficient;
+                                }
+                                if (string.IsNullOrEmpty(existing.DiscountCoefficient) && !string.IsNullOrEmpty(comp.DiscountCoefficient))
+                                {
+                                    existing.DiscountCoefficient = comp.DiscountCoefficient;
+                                }
+                                if (string.IsNullOrEmpty(existing.Remark) && !string.IsNullOrEmpty(comp.Remark))
+                                {
+                                    existing.Remark = comp.Remark;
+                                }
+                                if (string.IsNullOrEmpty(existing.Category) && !string.IsNullOrEmpty(comp.Category))
+                                {
+                                    existing.Category = comp.Category;
+                                }
                                 if (string.IsNullOrEmpty(existing.Name) && !string.IsNullOrEmpty(comp.Name))
                                 {
                                     existing.Name = comp.Name;
+                                }
+                                if (comp.RowCells != null && comp.RowCells.Count > 0)
+                                {
+                                    if (existing.RowCells == null) existing.RowCells = new Dictionary<int, string>();
+                                    foreach (var kvp in comp.RowCells)
+                                    {
+                                        if (!existing.RowCells.ContainsKey(kvp.Key) || string.IsNullOrEmpty(existing.RowCells[kvp.Key]))
+                                        {
+                                            existing.RowCells[kvp.Key] = kvp.Value;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -402,7 +493,7 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 将选中的元器件属性数据回填至当前活动单元格所在行
+        /// 将选中的元器件属性数据回填至当前活动单元格所在行 (用户铁律: AD句柄列绝对不回填，A序号列保持公式不回填，F数量不回填，其他列全量回填)
         /// </summary>
         /// <param name="item">元器件数据实体</param>
         /// <param name="config">回填字段配置选项</param>
@@ -434,28 +525,118 @@ namespace ExcelAddInDemo
                     // 1. 回填 C 列 (规格型号, 永远写入)
                     activeSheet.Cells[row, 3].Value = item.Model;
 
-                    // 2. 依据配置决定是否回填 B 列 (元件名称)
-                    if (config.FillName && !string.IsNullOrEmpty(item.Name))
+                    // 2. 检查是否开启全字段自动回填 (默认开启)
+                    if (config.FillAllColumns)
                     {
-                        activeSheet.Cells[row, 2].Value = item.Name;
-                    }
+                        // 铁律 A: 绝对不回填第 1 列 (A 列序号公式保持不变)
+                        // 铁律 B: 绝对不回填第 6 列 (F 列数量，保留当前行已有数量)
+                        // 铁律 C: 绝对不回填第 30 列 (AD 列 CAD 实体句柄与图纸坐标绝对保护)
 
-                    // 3. 依据配置决定是否回填 D 列 (生产厂家)
-                    if (config.FillManufacturer && !string.IsNullOrEmpty(item.Manufacturer))
-                    {
-                        activeSheet.Cells[row, 4].Value = item.Manufacturer;
-                    }
+                        // 回填 B 列 (元件名称)
+                        if (!string.IsNullOrEmpty(item.Name))
+                        {
+                            activeSheet.Cells[row, 2].Value = item.Name;
+                        }
 
-                    // 4. 依据配置决定是否回填 E 列 (计量单位)
-                    if (config.FillUnit && !string.IsNullOrEmpty(item.Unit))
-                    {
-                        activeSheet.Cells[row, 5].Value = item.Unit;
-                    }
+                        // 回填 D 列 (生产厂家)
+                        if (!string.IsNullOrEmpty(item.Manufacturer))
+                        {
+                            activeSheet.Cells[row, 4].Value = item.Manufacturer;
+                        }
 
-                    // 5. 依据配置决定是否回填 G 列 (销售单价)
-                    if (config.FillUnitPrice && item.UnitPrice > 0)
+                        // 回填 E 列 (计量单位)
+                        if (!string.IsNullOrEmpty(item.Unit))
+                        {
+                            activeSheet.Cells[row, 5].Value = item.Unit;
+                        }
+
+                        // 回填 I 列 (规格备注)
+                        if (!string.IsNullOrEmpty(item.Remark))
+                        {
+                            activeSheet.Cells[row, 9].Value = item.Remark;
+                        }
+
+                        // 回填 M 列 (表价值/基准面价，公式链条核心基石)
+                        if (item.CatalogPrice > 0)
+                        {
+                            activeSheet.Cells[row, 13].Value = item.CatalogPrice;
+                        }
+                        else if (item.UnitPrice > 0)
+                        {
+                            // 若仅有单价无面价，存入 M 列表价以驱动 Excel 级联公式重算
+                            activeSheet.Cells[row, 13].Value = item.UnitPrice;
+                        }
+
+                        // 回填 L 列 (报出加价系数)
+                        if (!string.IsNullOrEmpty(item.QuoteCoefficient))
+                        {
+                            activeSheet.Cells[row, 12].Value = item.QuoteCoefficient;
+                        }
+
+                        // 回填 N 列 (采购折扣系数)
+                        if (!string.IsNullOrEmpty(item.DiscountCoefficient))
+                        {
+                            activeSheet.Cells[row, 14].Value = item.DiscountCoefficient;
+                        }
+
+                        // 回填 Q 列 (元件类别)
+                        if (!string.IsNullOrEmpty(item.Category))
+                        {
+                            activeSheet.Cells[row, 17].Value = item.Category;
+                        }
+
+                        // 安全回填 G 列 (销售单价): 优先保护已有公式，仅在无公式或静态值时写入单价
+                        string gFormula = string.Empty;
+                        try { gFormula = Convert.ToString(activeSheet.Cells[row, 7].Formula)?.Trim() ?? string.Empty; } catch { }
+                        if (!gFormula.StartsWith("=") && item.UnitPrice > 0)
+                        {
+                            activeSheet.Cells[row, 7].Value = item.UnitPrice;
+                        }
+
+                        // 回填其余第 2 至 29 列自定义扩展属性 (跳过已处理核心列与受保护列)
+                        if (item.RowCells != null && item.RowCells.Count > 0)
+                        {
+                            foreach (var kvp in item.RowCells)
+                            {
+                                int col = kvp.Key;
+                                string val = kvp.Value;
+
+                                // 严格过滤受保护列：第 1 列(A序号)、第 6 列(F数量)、第 30 列及以上(AD句柄及扩展)
+                                if (col == 1 || col == 3 || col == 6 || col >= 30) continue;
+                                // 过滤已在上文精准处理的核心列与公式列 (H 列为总价公式, J/K 列为成本公式)
+                                if (col == 2 || col == 4 || col == 5 || col == 7 || col == 8 ||
+                                    col == 9 || col == 10 || col == 11 || col == 12 || col == 13 || col == 14 || col == 17)
+                                {
+                                    continue;
+                                }
+
+                                if (!string.IsNullOrEmpty(val))
+                                {
+                                    // 写入该单元格
+                                    activeSheet.Cells[row, col].Value = val;
+                                }
+                            }
+                        }
+                    }
+                    else
                     {
-                        activeSheet.Cells[row, 7].Value = item.UnitPrice;
+                        // 用户显式关闭全回填时回退为按需字段勾选回填
+                        if (config.FillName && !string.IsNullOrEmpty(item.Name))
+                        {
+                            activeSheet.Cells[row, 2].Value = item.Name;
+                        }
+                        if (config.FillManufacturer && !string.IsNullOrEmpty(item.Manufacturer))
+                        {
+                            activeSheet.Cells[row, 4].Value = item.Manufacturer;
+                        }
+                        if (config.FillUnit && !string.IsNullOrEmpty(item.Unit))
+                        {
+                            activeSheet.Cells[row, 5].Value = item.Unit;
+                        }
+                        if (config.FillUnitPrice && item.UnitPrice > 0)
+                        {
+                            activeSheet.Cells[row, 7].Value = item.UnitPrice;
+                        }
                     }
                 }
                 finally
@@ -475,15 +656,71 @@ namespace ExcelAddInDemo
             }
         }
 
+        /// <summary>
+        /// 判定当前行是否属于分类表的有效元器件行或有效计费区域行 (涵盖 Cab_Det+2 至 Cab_Tolsum)
+        /// 确保元器件明细区与计费区域均能触发智能输入与新物料学习
+        /// </summary>
+        /// <param name="sheet">目标工作表 COM 句柄</param>
+        /// <param name="row">目标物理行号</param>
+        /// <returns>若处于元器件区或计费区返回 true</returns>
+        public static bool IsCategoryComponentOrFeeRow(dynamic sheet, int row)
+        {
+            if (sheet == null || row <= 0) return false;
+
+            try
+            {
+                string sheetName = Convert.ToString(sheet.Name)?.Trim() ?? string.Empty;
+                if (string.IsNullOrEmpty(sheetName) || sheetName.StartsWith("_") ||
+                    string.Equals(sheetName, "选择表", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(sheetName, ComponentMatchDefaults.ComponentSummarySheetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                // 优先检查是否命中元器件行长效缓存 (0ms)
+                if (IsCategoryComponentRow(sheet, row)) return true;
+
+                // 若未命中元器件行，进一步判定是否处于计费区域 (Subsum 至 Tolsum)
+                var validCabinets = Tool.GetSheetValidCabinets((object)sheet, wb: null, allowAutoRebuild: false);
+                if (validCabinets != null && validCabinets.Count > 0)
+                {
+                    foreach (var kvp in validCabinets)
+                    {
+                        var anc = kvp.Value;
+                        if (anc?.Subsum == null) continue;
+                        int subR = 0, tolR = 0;
+                        try
+                        {
+                            subR = Convert.ToInt32(anc.Subsum.Row);
+                            tolR = anc.Tolsum != null ? Convert.ToInt32(anc.Tolsum.Row) : (subR + 10);
+                        }
+                        catch { continue; }
+
+                        // 计费区域：从小计行 subsumRow 到总计行 tolsumRow
+                        if (row >= subR && row <= tolR)
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.WriteLog($"IsCategoryComponentOrFeeRow 判定异常: {ex.Message}");
+            }
+
+            return false;
+        }
+
         // 方案 B: 单元格覆盖式智能输入窗体静态单例
         private static SmartInputOverlayForm? _overlayForm;
 
         /// <summary>
-        /// 方案 B: 当活动单元格变化时，智能判断并在 C 列元器件行精确覆盖原生 TextBox+ListBox 输入控件 (规则 6 & 规则 7)
+        /// 方案 B: 当活动单元格变化时，智能判断并在 C 列元器件行或计费区域行精确覆盖原生 TextBox+ListBox 输入控件 (规则 6 & 规则 7)
         /// 100% 还原 ZhiNengEn.ShuRu(Target) 的业务逻辑与交互行为
         /// </summary>
         /// <param name="activeCell">当前选中的活动单元格 COM 实例</param>
-        /// <param name="isCategoryRowValidated">是否已经前置校验过属于有效元器件行 (默认 false，为 true 时跳过二次判定)</param>
+        /// <param name="isCategoryRowValidated">是否已经前置校验过属于有效元器件或计费区行 (默认 false，为 true 时跳过二次判定)</param>
         public static void ShuRu(dynamic activeCell, bool isCategoryRowValidated = false)
         {
             if (activeCell == null) return;
@@ -526,17 +763,17 @@ namespace ExcelAddInDemo
                     return;
                 }
 
-                // 4. 判定当前单元格行是否处于当前表箱柜元器件插槽行 (Cab_Det+2 至 Cab_Subsum-1)
-                bool isComponentRow = isCategoryRowValidated;
-                if (!isComponentRow)
+                // 4. 判定当前单元格行是否处于当前表箱柜元器件行或计费区域行 (涵盖 Cab_Det+2 至 Cab_Tolsum)
+                bool isComponentOrFeeRow = isCategoryRowValidated;
+                if (!isComponentOrFeeRow)
                 {
-                    // 优先复用带 10 分钟长效内存缓存的 IsCategoryComponentRow 判定，0ms 极速响应
-                    isComponentRow = IsCategoryComponentRow(sheet, row);
+                    // 复用 IsCategoryComponentOrFeeRow 判定，涵盖元器件明细区与计费区域
+                    isComponentOrFeeRow = IsCategoryComponentOrFeeRow(sheet, row);
                 }
 
-                if (!isComponentRow)
+                if (!isComponentOrFeeRow)
                 {
-                    // 离开元器件行时隐藏覆盖输入框
+                    // 离开元器件行或计费行时隐藏覆盖输入框
                     HideSmartInputOverlay();
                     return;
                 }
@@ -593,8 +830,8 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 从分类明细表指定物理行中智能提取并学习新录入的元器件数据 (规则 6 & 规则 7)
-        /// 遵循规则 7 向量批量读入内存数组，遵循规则 6 严格限定在元器件行插槽
+        /// 从分类明细表指定物理行中智能提取并学习新录入的物料数据 (元器件区与计费区全域覆盖)
+        /// 遵循规则 7 向量批量读入内存数组，涵盖 B 列至 AC 列全量属性 (排除 AD 列句柄与 F 列数量)
         /// </summary>
         /// <param name="sheet">目标工作表 COM 句柄</param>
         /// <param name="row">发生变动的物理行号</param>
@@ -616,37 +853,68 @@ namespace ExcelAddInDemo
                     return false;
                 }
 
-                // 规则 6 架构门控: 必须处于有效箱柜元器件行 (Cab_Det+2 至 Cab_Subsum-1)
-                if (!IsCategoryComponentRow(sheet, row))
+                // 规则 6 架构门控扩展: 处于有效箱柜元器件行或计费区域行 (Cab_Det+2 至 Cab_Tolsum)
+                if (!IsCategoryComponentOrFeeRow(sheet, row))
                 {
                     return false;
                 }
 
-                // 规则 7: 一次性读取该行 B~G 列 (第 2 列至第 7 列，共 6 列) 注入二维数据矩阵
-                dynamic range = sheet.Range[$"B{row}:G{row}"];
+                // 规则 7: 一次性读取该行 B~AC 列 (第 2 列至第 29 列，共 28 列，绝不读取第 30 列 AD 句柄)
+                dynamic range = sheet.Range[$"B{row}:AC{row}"];
                 // 转换为 object[,] 二维数组
                 object[,] data = range.Value2 as object[,];
                 // 校验数据矩阵非空
                 if (data == null) return false;
 
+                int cols = data.GetLength(1);
                 // 提取 C 列 (规格型号, 对应相对列索引 2: 3-2+1=2)
-                string model = Convert.ToString(data[1, 2])?.Trim() ?? string.Empty;
+                string model = cols >= 2 ? Convert.ToString(data[1, 2])?.Trim() ?? string.Empty : string.Empty;
                 // 型号为空直接返回
                 if (string.IsNullOrWhiteSpace(model)) return false;
 
+                // 排除小计/总计纯文字行
+                if (model.Equals("小计") || model.Equals("总计") || model.Equals("合计")) return false;
+
                 // 提取 B 列 (元件名称, 对应相对列索引 1: 2-2+1=1)
-                string name = Convert.ToString(data[1, 1])?.Trim() ?? string.Empty;
+                string name = cols >= 1 ? Convert.ToString(data[1, 1])?.Trim() ?? string.Empty : string.Empty;
                 // 提取 D 列 (生产厂家, 对应相对列索引 3: 4-2+1=3)
-                string mfr = Convert.ToString(data[1, 3])?.Trim() ?? string.Empty;
+                string mfr = cols >= 3 ? Convert.ToString(data[1, 3])?.Trim() ?? string.Empty : string.Empty;
                 // 提取 E 列 (计量单位, 对应相对列索引 4: 5-2+1=4)
-                string unit = Convert.ToString(data[1, 4])?.Trim() ?? string.Empty;
+                string unit = cols >= 4 ? Convert.ToString(data[1, 4])?.Trim() ?? string.Empty : string.Empty;
 
                 // 提取 G 列 (销售单价, 对应相对列索引 6: 7-2+1=6)
                 decimal unitPrice = 0;
-                if (decimal.TryParse(Convert.ToString(data[1, 6]), out decimal pVal))
+                if (cols >= 6 && decimal.TryParse(Convert.ToString(data[1, 6]), out decimal pVal))
                 {
-                    // 记录有效单价
                     unitPrice = pVal;
+                }
+
+                // 提取 I 列 (规格备注, 对应相对列索引 8: 9-2+1=8)
+                string remark = cols >= 8 ? Convert.ToString(data[1, 8])?.Trim() ?? string.Empty : string.Empty;
+                // 提取 L 列 (加价系数, 对应相对列索引 11: 12-2+1=11)
+                string quoteCoeff = cols >= 11 ? Convert.ToString(data[1, 11])?.Trim() ?? string.Empty : string.Empty;
+                // 提取 M 列 (表价值, 对应相对列索引 12: 13-2+1=12)
+                decimal catalogPrice = 0;
+                if (cols >= 12 && decimal.TryParse(Convert.ToString(data[1, 12]), out decimal mVal))
+                {
+                    catalogPrice = mVal;
+                }
+                // 提取 N 列 (折扣系数, 对应相对列索引 13: 14-2+1=13)
+                string discountCoeff = cols >= 13 ? Convert.ToString(data[1, 13])?.Trim() ?? string.Empty : string.Empty;
+                // 提取 Q 列 (元件类别, 对应相对列索引 16: 17-2+1=16)
+                string category = cols >= 16 ? Convert.ToString(data[1, 16])?.Trim() ?? string.Empty : string.Empty;
+
+                // 收集整行有效属性映射 (排除第 1 列 A、第 6 列 F 数量、第 30 列 AD 句柄)
+                var rowCells = new Dictionary<int, string>();
+                for (int c = 1; c <= cols; c++)
+                {
+                    int absCol = c + 1; // 转换为工作表绝对列号 (B 列对应 2)
+                    if (absCol == 6 || absCol >= 30) continue; // 跳过 F 数量列与 AD 句柄列
+                    string cellVal = Convert.ToString(data[1, c])?.Trim() ?? string.Empty;
+                    if (!string.IsNullOrEmpty(cellVal))
+                    {
+                        rowCells[absCol] = cellVal;
+                    }
                 }
 
                 // 构造智能元器件实体对象
@@ -657,8 +925,14 @@ namespace ExcelAddInDemo
                     Manufacturer = mfr,
                     Unit = unit,
                     UnitPrice = unitPrice,
+                    CatalogPrice = catalogPrice,
+                    QuoteCoefficient = quoteCoeff,
+                    DiscountCoefficient = discountCoeff,
+                    Remark = remark,
+                    Category = category,
                     SheetName = sheetName,
-                    CabinetNo = $"行_{row}"
+                    CabinetNo = $"行_{row}",
+                    RowCells = rowCells
                 };
 
                 // 调用控制器执行增量学习与防抖持久化

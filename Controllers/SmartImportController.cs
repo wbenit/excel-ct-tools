@@ -76,8 +76,8 @@ namespace ExcelAddInDemo.Controllers
         /// </summary>
         public SmartImportPreviewResult LoadPreviewGrid(string filePath, string sheetName = "")
         {
-            // 调用静默引擎读取工作表与全量矩阵
-            var preview = SmartImportParserService.ReadPreviewGrid(filePath, sheetName, maxRows: 40, maxCols: 15);
+            // 调用静默引擎读取工作表与全量矩阵，默认列数放宽到 40 列以完整覆盖 AF 列 (第 32 列)
+            var preview = SmartImportParserService.ReadPreviewGrid(filePath, sheetName, maxRows: 40, maxCols: 40);
             if (preview != null && preview.Success && preview.FullMatrix != null)
             {
                 // 将整表二维矩阵安全缓存在控制器内存中

@@ -26,6 +26,18 @@ namespace ExcelAddInDemo.Models
         // 成本单价 (J 列)
         public decimal CostUnitPrice { get; set; }
 
+        // M 列表价 / 基准价 (第 13 列，价格计算链条源头)
+        public decimal CatalogPrice { get; set; }
+
+        // L 列报出加价系数 (第 12 列)
+        public string QuoteCoefficient { get; set; } = string.Empty;
+
+        // N 列采购折扣系数 (第 14 列)
+        public string DiscountCoefficient { get; set; } = string.Empty;
+
+        // I 列规格备注说明 (第 9 列)
+        public string Remark { get; set; } = string.Empty;
+
         // 元件类别 (Q 列)
         public string Category { get; set; } = string.Empty;
 
@@ -34,6 +46,9 @@ namespace ExcelAddInDemo.Models
 
         // 所属箱柜编号或名称
         public string CabinetNo { get; set; } = string.Empty;
+
+        // 整行原始单元格映射 (Key: 1-based 列号 2~29 即 B列到AC列，严禁含 A列序号/F列数量/AD列句柄)
+        public Dictionary<int, string> RowCells { get; set; } = new Dictionary<int, string>();
     }
 
     /// <summary>
@@ -85,6 +100,9 @@ namespace ExcelAddInDemo.Models
 
         // 回填字段范围: 是否回填 G 列 (销售单价)
         public bool FillUnitPrice { get; set; } = true;
+
+        // 是否启用全字段自动回填 (除了 AD 句柄列、A 序号列、F 数量列之外的所有列均自动回填，默认开启)
+        public bool FillAllColumns { get; set; } = true;
 
         // 是否自动在 Excel 中启用原生下拉列表
         public bool AutoDropdownEnabled { get; set; } = true;

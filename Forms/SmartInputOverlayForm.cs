@@ -463,7 +463,7 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 自动执行同行多列属性辅助联动带入 (100% 还原 ZhiNengEn.Addfuzhu)
+        /// 自动执行同行多列属性辅助联动带入 (调用公共服务层，严格遵循用户铁律: 排除AD列/A列/F列，其余全量回填)
         /// </summary>
         private void Addfuzhu(SmartComponentItem item)
         {
@@ -471,49 +471,12 @@ namespace ExcelAddInDemo
 
             try
             {
-                dynamic sheet = _currentTargetCell.Worksheet;
-                int row = Convert.ToInt32(_currentTargetCell.Row);
-                dynamic app = _currentTargetCell.Application;
-
-                // 暂停屏幕刷新加速写入
-                app.ScreenUpdating = false;
-                app.EnableEvents = false;
-
-                try
-                {
-                    // 联动 B 列 (元件名称)
-                    if (_config.FillName && !string.IsNullOrEmpty(item.Name))
-                    {
-                        sheet.Cells[row, 2].Value = item.Name;
-                    }
-
-                    // 联动 D 列 (生产厂家)
-                    if (_config.FillManufacturer && !string.IsNullOrEmpty(item.Manufacturer))
-                    {
-                        sheet.Cells[row, 4].Value = item.Manufacturer;
-                    }
-
-                    // 联动 E 列 (计量单位)
-                    if (_config.FillUnit && !string.IsNullOrEmpty(item.Unit))
-                    {
-                        sheet.Cells[row, 5].Value = item.Unit;
-                    }
-
-                    // 联动 G 列 (销售单价)
-                    if (_config.FillUnitPrice && item.UnitPrice > 0)
-                    {
-                        sheet.Cells[row, 7].Value = item.UnitPrice;
-                    }
-                }
-                finally
-                {
-                    // 恢复刷新与事件
-                    app.ScreenUpdating = true;
-                    app.EnableEvents = true;
-                }
+                // 调度核心业务服务统一回填，保证覆盖浮窗与配置窗体回填逻辑 100% 严格一致
+                ExcelServices.FillComponentToActiveRow(item, _config);
             }
             catch (Exception ex)
             {
+                // 记录回填异常日志
                 LogHelper.WriteLog($"Addfuzhu 联动回填属性异常: {ex.Message}");
             }
         }
