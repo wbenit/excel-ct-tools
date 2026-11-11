@@ -139,10 +139,6 @@ namespace ExcelAddInDemo
               <button id='btnCloudComponentAttachment' label='选配配套附件...' imageMso='AccessFormWizard' screentip='选配配套附件' supertip='打开当前元器件选配配套附件工作台' onAction='OnMenuAction' />
             </menu>
           </splitButton>
-          <!-- 型号识别(提取极数与电流) 按钮 (使用标准筛选过滤漏斗图标) -->
-          <button id='btnModelParamParser' label='识别极数电流' imageMso='Filter' size='large' screentip='型号识别极数电流' supertip='自动从型号中识别并提取电流和极数，支持双通道顺位流水线与白名单过滤' onAction='OnMenuAction' />
-          <!-- 二次元件组规则管道(生成二次) 按钮 -->
-          <button id='btnComponentGroupRule' label='生成二次元件' imageMso='TableFormulaDialog' size='large' screentip='二次元件组规则管道' supertip='基于可视化动态规则管道自动识别箱柜元件特征，生成二次元件组并自动写入套数' onAction='OnMenuAction' />
         </group>
         <!-- ③调价格→ 功能分组 -->
         <group id='grpAdjustPrice' label='③调价格→'>
@@ -177,6 +173,10 @@ namespace ExcelAddInDemo
             <!-- 11. 报价智能核验项 (排查同型号价格冲突、公式破坏、AA/AB图纸参数缺失与价格倒挂) -->
             <button id='btnQuotationCheckSub' label='报价智能核验' imageMso='ReviewAcceptChange' onAction='OnMenuAction' screentip='报价智能核验' supertip='全面排查全表同型号价格冲突、公式覆写破坏、面价漏填、AA/AB图纸参数缺失及价格倒挂，支持一键自愈修复' />
           </menu>
+          <!-- 型号识别(提取极数与电流) 按钮 (移动至元件批调之后) -->
+          <button id='btnModelParamParser' label='识别极数电流' imageMso='Filter' size='large' screentip='型号识别极数电流' supertip='自动从型号中识别并提取电流和极数，支持双通道顺位流水线与白名单过滤' onAction='OnMenuAction' />
+          <!-- 二次元件组规则管道(生成二次) 按钮 (移动至元件批调之后) -->
+          <button id='btnComponentGroupRule' label='生成二次元件' imageMso='TableFormulaDialog' size='large' screentip='二次元件组规则管道' supertip='基于可视化动态规则管道自动识别箱柜元件特征，生成二次元件组并自动写入套数' onAction='OnMenuAction' />
 
           <!-- 智能算料/辅材壳体计算 按钮 (大图标直达) -->
           <button id='btnCabinetAuxCalc' label='辅材壳体计算' imageMso='CalculateNow' size='large' screentip='辅材壳体与配电智能计算' supertip='智能推导匹配壳体尺寸、计算铜排母线用量、一次及二次接线辅材与装配人工费，支持全参数动态配置' onAction='OnMenuAction' />

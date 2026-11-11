@@ -4049,3 +4049,14 @@
      - 在第 2~N 柜循环调用 `CopyCabinetDetailFromTemplate` 时，显式传入 `forceAppendToEnd: true`，确保 100% 顺次追加至末尾。
   3. **编译验证**：
      - 执行 `dotnet build /p:RunExcelDnaBuild=false`，**0 警告、0 错误** 编译通过。
+
+
+### 13. 2026-11-11: 【功能区 Ribbon 布局调整】移动“识别极数电流”与“生成二次元件”按钮至“元件批调”后
+
+- **需求背景**：用户要求将功能区中原“②录元件”组的红框内容（“识别极数电流”与“生成二次元件”大按钮）移动至“③调价格→”组的“元件批调”之后。
+- **实施架构与代码变动**：
+  1. **功能区控制层 (`RibbonController.cs`)**：
+     - 从 `grpInputComponents`（②录元件）组中移除 `btnModelParamParser`（识别极数电流）与 `btnComponentGroupRule`（生成二次元件）定义；
+     - 将上述两个按钮移动至 `grpAdjustPrice`（③调价格→）组中，放置在 `menuBatchAdjust`（元件批调）下拉菜单之后、`btnCabinetAuxCalc`（辅材壳体计算）之前。
+  2. **编译验证**：
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false`，验证 0 错误顺利编译通过。
