@@ -3641,8 +3641,11 @@
      - **编辑附件**：对应底层专属窗体 `leadsoft.superwinner.BLL.frmAppendixDiscount`（资源位于 `附件设置.frmAppendixDiscount.resources`），包含 `_marked_Price`、`_discountString`、`_model`、`_bomString` 等字段，交互式配置附件后执行型号规格拼接（`+附件规格`）与价格/成本自动累加回写。
 - **【需求与架构分析】电小二右键功能体系与 Excel 文件底层结构深度解析 (`session.md`)**：
   1. **文件底层结构解析**：通过对电小二导出的标准化成套报价工作簿（如 `WB202609151454-新建项目-吴磊(2).xlsx`）底层 XML（OpenXML `workbook.xml`, `sheet2.xml`, `customProperty3.bin`）的逆向与结构比对，明确了箱柜 4 个核心定义名称锚点体系（`Cab_Sum_k` 汇总行、`Cab_Det_k` 明细信息行、`Cab_Subsum_k` 小计行、`Cab_Tolsum_k` 总计行），以及元器件明细区域（前台 A~T 列，后台 U~AF 列存储电气参数及 CAD 图元 Handle `AD` 列）；
-  2. **红框核心功能定位与作用**：- **剪切/复制/插入/删除元
-     ... [truncated for diff preview] - **剪切/复制/插入/删除元件**：以成套业务对象实体为最小颗粒度，进行整行数据、公式与图元 Handle 关联的移动、克隆、安全插入与删除，自动维护 A 列序号连续性、自适应动态延伸/收缩小计行 `SUM` 公式边界（杜绝 `#REF!` 缺陷），并联动维护箱柜各定义名称行号；- **编辑附件\*\*：针对主元器件（如避雷器配浪涌后备保护器 SCB、断路器配分励/辅助触头等）进行选配件的交互式配置，实现 C 列型号文本标准格式拼接（如 `+分励辅助 AC220V`）、价格自动叠加上浮与隐藏列选配状态持久化存储。
+  2. **红框核心功能定位与作用**：- \*\*剪切/复制/插入/删除元
+
+... [truncated for diff preview]
+... [truncated for diff preview] - **剪切/复制/插入/删除元件**：以成套业务对象实体为最小颗粒度，进行整行数据、公式与图元 Handle 关联的移动、克隆、安全插入与删除，自动维护 A 列序号连续性、自适应动态延伸/收缩小计行 `SUM` 公式边界（杜绝 `#REF!` 缺陷），并联动维护箱柜各定义名称行号；- \*\*编辑附件\*\*：针对主元器件（如避雷器配浪涌后备保护器 SCB、断路器配分励/辅助触头等）进行选配件的交互式配置，实现 C 列型号文本标准格式拼接（如 `+分励辅助 AC220V`）、价格自动叠加上浮与隐藏列选配状态持久化存储。
+
 - **【Bug 修复与闭环交付】二次元件组批量生成提示成功但 Excel 单元格全空缺陷彻底根治 (`ExcelServices.ComponentGroup.cs`)**：
   1. **问题根因**：`ExecuteBatchComponentGroup` 中，构建写入矩阵时将 `batchValues` 和 `formulaA` 声明为 `[reqCount + 1, batchWriteCols + 1]` 并在循环中从 `r = 1`（1-based）开始赋值，且列相对偏移多加了 1；但 C# 数组实质为 0-based，当单箱柜生成 1 行（`reqCount = 1`）赋给 1 行的 Range 时，Excel COM 仅从下标 `[0, 0]` 提取数据，导致第 0 行全为 null 的数据被写入，真正有数据的第 1 行直接被 Excel 截断抛弃；A 列公式同样因赋在第 1 列被截断全空；
   2. **彻底修复**：严格改用标准 0-based 矩阵 `object[,] batchValues = new object[reqCount, batchWriteCols]` 与公式向量 `object[,] formulaA = new object[reqCount, 1]`；循环中基于 `mIdx`（0 到 `reqCount - 1`）索引行，列相对偏移改为 `map.Col - colStart`；
@@ -3916,3 +3919,34 @@
   6. **编译与产物同步**：
      - 全量同步 HTML 至 `bin/Debug/net48/Resources/`、`publish/Resources/`、`bin/Debug/net48/publish/Resources/`；
      - 执行 `dotnet build /p:RunExcelDnaBuild=false` 验证 **0 警告、0 错误** 成功生成 `ExcelAddInDemo.dll`。
+
+### 9. 2026-11-11: 【智能辅材与壳体计算中心】定位让位极简悬浮胶囊工具条实施 (方案 2)
+
+- **需求背景**：用户反馈在全柜报警列表中点击定位按钮后，由于大窗体和遮罩层遮挡，且焦点被大窗口捕获，导致用户无法直接在 Excel 中打字编辑补齐 W 列电流或修改元件。用户明确指示采用【方案 2：定位让位，收缩为悬浮胶囊】。
+- **实施架构与代码变动**：
+  1. **公共服务层 (`Services/ExcelServices.CabinetAuxCalc.cs`)**：
+     - 升级 `LocateCabinetDetail(string sheetName, string detName, int targetRow = 0, string targetCol = "W")` 方法；
+     - 当传入 `targetRow > 0`（如第 1072 行）时，自动向上预留 3 行上下文视野，视口精准滚动并直接选中对应单元格（例如 `W1072`），让用户无需手动寻址；
+     - 至少每 3 行新增代码添加中文注释。
+  2. **窗体控制层 (`Forms/CabinetAuxCalcForm.cs`)**：
+     - 引入 Win32 `SetForegroundWindow` API，封装 `ActivateExcelWindow()` 方法，在定位时主动将键盘输入焦点交还 Excel 主程序；
+     - 新增 `SwitchToMiniBar(width, height)` 方法：记录 `_normalBounds`，窗体瞬时收缩至 580x52 像素极简小胶囊，开启 `TopMost = true`，自动停靠在屏幕顶部居中偏右（避开 Excel 工具栏与主体区域）；
+     - 新增 `RestoreFromMiniBar()` 方法：恢复大窗口正常 Bounds 并关闭强制置顶；
+     - 在 `OnWebMessageReceived` 中挂载 `shrinkToMiniBar` 与 `restoreFromMiniBar` 消息路由，并在 `locateCabinetDetail` 时联动处理 `targetRow`/`targetCol` 与键盘焦点。
+  3. **前端界面 (`Resources/cabinet_aux_calc.html`)**：
+     - **极简悬浮胶囊工具条 UI**：采用 `#0f172a ~ #1e293b` 深色高级质感配 `#009688` 顶边，包含：
+       - `⋮⋮` 可拖动把手（支持在屏幕任意位置无感拖动停靠）；
+       - `⚠️ 当前序号/总项数` 状态徽章；
+       - `【箱柜名】第 XXX 行 (W列)` 当前定位信息及警告内容；
+       - `【◀ 上一处】` 与 `【下一处 ▶】` 快捷步进按钮（带边界禁用保护，点击自动在 Excel 中跳转并高亮选中下一处单元格）；
+       - `【🔄 重检】` 快捷刷新按钮；
+       - `【📋 还原大窗】` 一键还原大界面并自动重新打开报警看板；
+       - `【✕】` 关闭窗口按钮；
+     - **报警看板弹窗升级**：
+       - 箱柜卡片头部新增 `【🚀 前往 Excel 编辑】` 按钮；
+       - 每个报警条目右侧新增 `【前往 Excel 编辑 ✍️】` 按钮；
+       - 点击立即优雅收起大看板、缩小为悬浮小胶囊并在 Excel 中高亮选中对应单元格，将舞台 100% 留给 Excel；
+     - **响应式计算**：新增 `flatWarningList` 扁平化报警集合，通过正则自动提取行号和目标列；提供 `startMiniBarEditing`、`prevWarning`、`nextWarning`、`restoreToNormalWindow` 等完整状态控制。
+  4. **编译与产物验证**：
+     - 全量同步静态文件至各构建目录；
+     - 执行 `dotnet build /p:RunExcelDnaBuild=false` 验证 **0 警告、0 错误** 顺利生成 `ExcelAddInDemo.dll`。

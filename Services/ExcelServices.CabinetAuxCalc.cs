@@ -3707,12 +3707,14 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
-        /// 根据工作表名称与箱柜定义名称（如 Cab_Det_1），在 Excel 中自动定位并置顶滚动至底部明细区域
+        /// 在 Excel 中自动滚动并选中指定箱柜明细行或具体元器件单元格
         /// </summary>
-        /// <param name="sheetName">工作表名称</param>
-        /// <param name="detName">箱柜定义名称（例如 Cab_Det_1）</param>
-        /// <returns>是否成功定位</returns>
-        public static bool LocateCabinetDetail(string sheetName, string detName)
+        /// <param name="sheetName">目标分类工作表名称</param>
+        /// <param name="detName">箱柜 Det 名称 (如 Cab_Det_1)</param>
+        /// <param name="targetRow">具体待定位修改的元器件物理行号 (0 表示定位箱柜头行)</param>
+        /// <param name="targetCol">具体单元格列名 (如 "W" 列电流，默认 "W")</param>
+        /// <returns>是否定位成功</returns>
+        public static bool LocateCabinetDetail(string sheetName, string detName, int targetRow = 0, string targetCol = "W")
         {
             // 校验输入参数合法性
             if (string.IsNullOrWhiteSpace(sheetName) || string.IsNullOrWhiteSpace(detName))
@@ -3773,18 +3775,34 @@ namespace ExcelAddInDemo
                 }
 
                 // 校验定位行有效性
-                if (targetDetRow <= 0) return false;
+                if (targetDetRow <= 0 && targetRow <= 0) return false;
 
-                // 视口垂直滚动置顶到该箱柜明细行 (首行展示)
-                app.ActiveWindow.ScrollRow = Math.Max(1, targetDetRow);
-                // 视口水平滚动回 A 列
-                app.ActiveWindow.ScrollColumn = 1;
-
-                // 显式选中目标明细行的 B 列 (箱柜名称单元格)
-                Range targetCell = ws.Range[$"B{targetDetRow}"];
-                if (targetCell != null)
+                // 判断是否指定了具体的元器件行号 (如具体的 W 列缺失行)
+                if (targetRow > 0)
                 {
-                    targetCell.Select();
+                    // 视口垂直滚动到目标行上方第 3 行，预留上下文视野
+                    app.ActiveWindow.ScrollRow = Math.Max(1, targetRow - 3);
+                    // 视口水平滚动回 A 列
+                    app.ActiveWindow.ScrollColumn = 1;
+
+                        // 规范化列名 (默认 W 列)
+                        string colName = string.IsNullOrWhiteSpace(targetCol) ? "W" : targetCol.Trim();
+                    // 显式精准选中目标单元格 (例如 W1072)
+                    Range targetCell = ws.Range[$"{colName}{targetRow}"];
+                    // 激活选中单元格
+                    targetCell?.Select();
+                }
+                else
+                {
+                    // 未指定具体行时，视口垂直滚动置顶到该箱柜明细行 (首行展示)
+                    app.ActiveWindow.ScrollRow = Math.Max(1, targetDetRow);
+                    // 视口水平滚动回 A 列
+                    app.ActiveWindow.ScrollColumn = 1;
+
+                    // 显式选中目标明细行的 B 列 (箱柜名称单元格)
+                    Range targetCell = ws.Range[$"B{targetDetRow}"];
+                    // 激活选中单元格
+                    targetCell?.Select();
                 }
 
                 // 若 Excel 窗口处于最小化，自动恢复为正常窗口

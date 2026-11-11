@@ -113,6 +113,28 @@
         100% { transform: rotate(360deg); }
       }
 
+      /* 悬浮胶囊工具条样式 (让位 Excel 视口) */
+      .mini-floating-dock {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100vw;
+        height: 100vh;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        border: 1px solid #334155;
+        border-top: 3px solid #009688;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        color: #f8fafc;
+        padding: 0 10px;
+        box-sizing: border-box;
+        user-select: none;
+        overflow: hidden;
+      }
+      .mini-mode-body {
+        background: transparent !important;
+        overflow: hidden !important;
+      }
+
       /* 核心加固：强制锁定 Element Plus 遮罩层与弹窗居中 */
       .el-overlay {
         overflow: hidden !important;
@@ -920,7 +942,95 @@
   </head>
 
   <body>
-    <div id="app">
+    <div id="app" :class="{ 'mini-mode-body': isMiniBarMode }">
+      <!-- 悬浮胶囊工具条模式 (方案 B: 定位让位 Excel 视口，解除遮挡) -->
+      <div
+        v-if="isMiniBarMode"
+        class="mini-floating-dock"
+        @pointerdown="onHeaderPointerDown"
+      >
+        <!-- 左侧拖拽把手与当前定位信息 -->
+        <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;">
+          <span style="color: #64748b; font-size: 14px; cursor: move; line-height: 1;" title="按住可拖动悬浮胶囊位置">⋮⋮</span>
+          <el-tag type="danger" size="small" effect="dark" style="font-weight: 700; border-radius: 4px; padding: 0 6px;">
+            ⚠️ {{ currentWarningIndex + 1 }}/{{ flatWarningList.length }}
+          </el-tag>
+          <div style="display: flex; flex-direction: column; min-width: 0; justify-content: center;">
+            <div style="display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: #38bdf8;">
+              <span style="white-space: nowrap;">【{{ currentWarningItem ? currentWarningItem.displayName : '--' }}】</span>
+              <span style="color: #cbd5e1; font-weight: 600; white-space: nowrap;">第 {{ currentWarningItem ? currentWarningItem.targetRow : '--' }} 行</span>
+              <span style="background: #009688; color: #fff; font-size: 10px; padding: 0 4px; border-radius: 2px;">{{ currentWarningItem ? currentWarningItem.targetCol : 'W' }}列</span>
+            </div>
+            <div
+              style="font-size: 11px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px;"
+              :title="currentWarningItem ? currentWarningItem.warningText : ''"
+            >
+              {{ currentWarningItem ? currentWarningItem.warningText : '无报警' }}
+            </div>
+          </div>
+        </div>
+
+        <!-- 中间导航按钮组 -->
+        <div style="display: flex; align-items: center; gap: 6px;" @pointerdown.stop @mousedown.stop>
+          <el-button
+            size="small"
+            :disabled="currentWarningIndex <= 0"
+            @click="prevWarning"
+            style="background: #334155; border-color: #475569; color: #f8fafc; padding: 4px 8px; height: 26px; font-size: 11.5px;"
+            title="在 Excel 中定位跳转上一处报警"
+          >
+            ◀ 上一处
+          </el-button>
+          <el-button
+            size="small"
+            type="primary"
+            :disabled="currentWarningIndex >= flatWarningList.length - 1"
+            @click="nextWarning"
+            style="background: #009688; border-color: #009688; color: #fff; padding: 4px 8px; height: 26px; font-size: 11.5px; font-weight: 600;"
+            title="在 Excel 中定位跳转下一处报警"
+          >
+            下一处 ▶
+          </el-button>
+        </div>
+
+        <!-- 右侧操作与还原大窗口按钮 -->
+        <div style="display: flex; align-items: center; gap: 6px; margin-left: 8px;" @pointerdown.stop @mousedown.stop>
+          <el-button
+            size="small"
+            type="info"
+            plain
+            :loading="isScanningWarnings"
+            @click="fetchAllCabinetWarnings"
+            style="background: transparent; border-color: #475569; color: #cbd5e1; padding: 4px 8px; height: 26px; font-size: 11px;"
+            title="重新快速全检当前分类表"
+          >
+            🔄 重检
+          </el-button>
+          <el-button
+            size="small"
+            type="success"
+            @click="restoreToNormalWindow"
+            style="background: #059669; border-color: #059669; color: #fff; padding: 4px 10px; height: 26px; font-size: 11.5px; font-weight: 600;"
+            title="恢复大视口计算中心看板"
+          >
+            📋 还原大窗
+          </el-button>
+          <div
+            class="win-btn close"
+            title="关闭窗口"
+            @click="closeWindow"
+            style="cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; color: #94a3b8; border-radius: 4px;"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- 正常大视口工作中心视图容器 -->
+      <div v-show="!isMiniBarMode" style="display: flex; flex-direction: column; width: 100%; height: 100%;">
       <!-- 顶部标题栏 (采用 PointerEvents 平滑位移，绝无模态死锁) -->
       <div class="window-header" @pointerdown="onHeaderPointerDown">
         <div class="window-title-box">
@@ -5628,17 +5738,30 @@
                   </el-tag>
                 </div>
 
-                <!-- 定位按钮 -->
-                <el-button
-                  size="small"
-                  type="primary"
-                  plain
-                  style="border-color: #009688; color: #009688; padding: 4px 8px; font-size: 11.5px; height: 24px;"
-                  @click="jumpToCabinetFromReport(cab)"
-                  title="切换主界面到该箱柜并在 Excel 中滚动高亮至该行"
-                >
-                  📍 定位并切换至此柜
-                </el-button>
+                <!-- 定位按钮组 -->
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <el-button
+                    v-if="cab.warnings && cab.warnings.length > 0"
+                    size="small"
+                    type="warning"
+                    plain
+                    style="padding: 4px 8px; font-size: 11.5px; height: 24px; font-weight: 600;"
+                    @click="startMiniBarEditing(cab)"
+                    title="收缩为悬浮胶囊工具条，让位 Excel 视口并高亮选中目标单元格供您直接编辑"
+                  >
+                    🚀 前往 Excel 编辑
+                  </el-button>
+                  <el-button
+                    size="small"
+                    type="primary"
+                    plain
+                    style="border-color: #009688; color: #009688; padding: 4px 8px; font-size: 11.5px; height: 24px;"
+                    @click="jumpToCabinetFromReport(cab)"
+                    title="切换主界面到该箱柜并在 Excel 中滚动高亮至该行"
+                  >
+                    📍 定位并切换
+                  </el-button>
+                </div>
               </div>
 
               <!-- 箱柜条目报警内容 -->
@@ -5652,8 +5775,9 @@
                     :key="wIdx"
                     style="
                       display: flex;
-                      align-items: flex-start;
-                      gap: 6px;
+                      align-items: center;
+                      justify-content: space-between;
+                      gap: 8px;
                       line-height: 1.5;
                       color: #b91c1c;
                       background: #fef2f2;
@@ -5662,8 +5786,20 @@
                       border-radius: 4px;
                     "
                   >
-                    <span style="flex-shrink: 0; font-weight: 700;">•</span>
-                    <span style="word-break: break-all;">{{ warn }}</span>
+                    <div style="display: flex; align-items: flex-start; gap: 6px; min-width: 0; flex: 1;">
+                      <span style="flex-shrink: 0; font-weight: 700;">•</span>
+                      <span style="word-break: break-all;">{{ warn }}</span>
+                    </div>
+                    <el-button
+                      size="small"
+                      type="danger"
+                      plain
+                      style="flex-shrink: 0; padding: 3px 8px; font-size: 11px; height: 22px; font-weight: 600; border-color: #f87171;"
+                      @click="startMiniBarEditing(cab, warn, wIdx)"
+                      title="收缩大窗体为极简悬浮小胶囊，并在 Excel 中直接选中此行/列单元格，无需关闭软件"
+                    >
+                      前往 Excel 编辑 ✍️
+                    </el-button>
                   </div>
                 </div>
                 <div
@@ -5681,12 +5817,13 @@
         <template #footer>
           <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
             <div style="font-size: 12px; color: #64748b; text-align: left;">
-              💡 提示：点击“定位并切换至此柜”可直接在主界面与 Excel 中同步高亮该箱柜明细行，便于快速核实与补齐数据。
+              💡 提示：点击“前往 Excel 编辑”将自动收缩为极简悬浮小胶囊，彻底让位 Excel 视口，并自动选中缺失单元格供您直接键盘录入！
             </div>
             <el-button @click="allWarningsDialogVisible = false">关闭</el-button>
           </div>
         </template>
       </el-dialog>
+      </div>
     </div>
 
     <script>
@@ -5801,6 +5938,150 @@
             onCabinetChange();
             // 弹出轻量成功通知
             ElementPlus.ElMessage.success(`已切换并定位至箱柜【${cab.displayName}】`);
+          };
+
+          // ==================== 🚀 方案 B: 悬浮小胶囊让位编辑模式 ====================
+          // 是否正处于悬浮胶囊工具条极简模式 (定位让位 Excel 视口)
+          const isMiniBarMode = ref(false);
+          // 当前定位报警项在全局扁平列表中的索引
+          const currentWarningIndex = ref(0);
+
+          // 扁平化全局报警条目列表 (带具体目标元器件物理行号与推荐目标列名)
+          const flatWarningList = computed(() => {
+            // 校验报告有效性
+            if (!warningReport.value || !warningReport.value.items) return [];
+            const list = [];
+            // 遍历每个箱柜提取条目
+            warningReport.value.items.forEach((cab) => {
+              if (cab.warnings && cab.warnings.length > 0) {
+                cab.warnings.forEach((wText) => {
+                  // 正则表达式智能解析行号 (例如: "第 1072 行【..." -> 1072)
+                  let rowNum = 0;
+                  const match = wText.match(/第\s*(\d+)\s*行/);
+                  if (match && match[1]) {
+                    rowNum = parseInt(match[1], 10);
+                  } else {
+                    rowNum = cab.detRow || 0;
+                  }
+                  // 判断缺失的目标列 (W列电流 / AA列图纸)
+                  let col = "W";
+                  if (wText.includes("AA列") || wText.includes("CAD图纸")) {
+                    col = "AA";
+                  } else if (!wText.includes("电流") && !wText.includes("W列")) {
+                    col = "B";
+                  }
+                  // 压入扁平化列表
+                  list.push({
+                    sheetName: cab.sheetName,
+                    detName: cab.detName,
+                    displayName: cab.displayName,
+                    detRow: cab.detRow,
+                    targetRow: rowNum,
+                    targetCol: col,
+                    warningText: wText,
+                  });
+                });
+              }
+            });
+            return list;
+          });
+
+          // 当前选中的单个报警项计算属性
+          const currentWarningItem = computed(() => {
+            if (flatWarningList.value.length === 0) return null;
+            const idx = Math.max(
+              0,
+              Math.min(flatWarningList.value.length - 1, currentWarningIndex.value),
+            );
+            return flatWarningList.value[idx];
+          });
+
+          // 启动悬浮胶囊模式前往 Excel 进行单元格编辑
+          const startMiniBarEditing = (cab, warnText, wIdx) => {
+            // 先关闭居中大看板弹窗
+            allWarningsDialogVisible.value = false;
+            // 寻找对应的全局条目索引
+            let targetIdx = 0;
+            if (warnText) {
+              targetIdx = flatWarningList.value.findIndex(
+                (item) => item.detName === cab.detName && item.warningText === warnText,
+              );
+              if (targetIdx < 0) targetIdx = 0;
+            } else if (cab) {
+              targetIdx = flatWarningList.value.findIndex(
+                (item) => item.detName === cab.detName,
+              );
+              if (targetIdx < 0) targetIdx = 0;
+            }
+            // 设定当前索引
+            currentWarningIndex.value = targetIdx;
+            // 激活胶囊模式
+            isMiniBarMode.value = true;
+
+            // 获取定位目标
+            const cur = currentWarningItem.value || {
+              sheetName: cab?.sheetName || selectedSheet.value,
+              detName: cab?.detName || selectedCabinetDet.value,
+              targetRow: cab?.detRow || 0,
+              targetCol: "W",
+            };
+
+            // 发送 shrinkToMiniBar 指令给 C#
+            postToCSharp({
+              action: "shrinkToMiniBar",
+              sheetName: cur.sheetName,
+              detName: cur.detName,
+              targetRow: cur.targetRow,
+              targetCol: cur.targetCol,
+            });
+          };
+
+          // 悬浮胶囊定位跳转到当前索引的报警项
+          const gotoCurrentWarning = () => {
+            const cur = currentWarningItem.value;
+            if (!cur) return;
+            // 若工作表不同先同步
+            if (cur.sheetName && cur.sheetName !== selectedSheet.value) {
+              selectedSheet.value = cur.sheetName;
+            }
+            if (cur.detName) {
+              selectedCabinetDet.value = cur.detName;
+            }
+            // 发送 locateCabinetDetail 指令
+            postToCSharp({
+              action: "locateCabinetDetail",
+              sheetName: cur.sheetName,
+              detName: cur.detName,
+              targetRow: cur.targetRow,
+              targetCol: cur.targetCol,
+            });
+          };
+
+          // 上一个报警项
+          const prevWarning = () => {
+            if (currentWarningIndex.value > 0) {
+              currentWarningIndex.value--;
+              gotoCurrentWarning();
+            }
+          };
+
+          // 下一个报警项
+          const nextWarning = () => {
+            if (currentWarningIndex.value < flatWarningList.value.length - 1) {
+              currentWarningIndex.value++;
+              gotoCurrentWarning();
+            }
+          };
+
+          // 从极简悬浮胶囊恢复为大视口窗体
+          const restoreToNormalWindow = () => {
+            isMiniBarMode.value = false;
+            // 通知 C# 恢复窗口尺寸
+            postToCSharp({ action: "restoreFromMiniBar" });
+            // 自动重新打开报警看板，方便用户确认修改成果
+            allWarningsDialogVisible.value = true;
+            // 触发重新检测全柜报警
+            fetchAllCabinetWarnings();
           };
 
           // ==================== 💡 DWG 本地图纸目录与即刻预览驱动状态 ====================
@@ -9138,6 +9419,16 @@
             fetchAllCabinetWarnings,
             openAllWarningsDialog,
             jumpToCabinetFromReport,
+            // ==================== 🚀 方案 B: 悬浮小胶囊让位编辑模式导出 ====================
+            isMiniBarMode,
+            currentWarningIndex,
+            flatWarningList,
+            currentWarningItem,
+            startMiniBarEditing,
+            gotoCurrentWarning,
+            prevWarning,
+            nextWarning,
+            restoreToNormalWindow,
           };
         },
       });

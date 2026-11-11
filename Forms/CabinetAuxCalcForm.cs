@@ -27,6 +27,15 @@ namespace ExcelAddInDemo.Forms
         // 二次回路图纸对齐与绑定业务控制器
         private readonly SecondaryCircuitController _secController;
 
+        // 暂存正常展开模式下的窗体几何坐标与尺寸
+        private Rectangle _normalBounds;
+        // 是否正处于悬浮胶囊工具条极简模式
+        private bool _isMiniBar = false;
+
+        // 引入 Windows API 将键盘输入焦点切换回 Excel 主程序窗口
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
         // JSON 序列化选项
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
@@ -54,6 +63,81 @@ namespace ExcelAddInDemo.Forms
 
             // 配置并挂载 WebView2 控件
             InitializeWebViewControl();
+
+            // 记录大窗体初始化正常尺寸与位置
+            _normalBounds = this.Bounds;
+        }
+
+        /// <summary>
+        /// 切换为顶部极简悬浮胶囊条模式 (让位 Excel 视口，解除遮挡)
+        /// </summary>
+        /// <param name="width">胶囊宽度 (默认 580px)</param>
+        /// <param name="height">胶囊高度 (默认 52px)</param>
+        public void SwitchToMiniBar(int width = 580, int height = 52)
+        {
+            SafeInvoke(() =>
+            {
+                // 仅在首次从大窗体缩小时记录原尺寸
+                if (!_isMiniBar)
+                {
+                    _normalBounds = this.Bounds;
+                    _isMiniBar = true;
+                }
+
+                // 获取主屏幕工作区
+                var screen = Screen.FromControl(this);
+                var workArea = screen.WorkingArea;
+
+                // 设为置顶，悬浮在 Excel 视口上空
+                this.TopMost = true;
+
+                // 设置极小胶囊尺寸
+                this.Size = new Size(width, height);
+
+                // 停靠于屏幕顶部居中偏右，彻底释放 Excel 中间与左侧排版区域
+                int targetLeft = workArea.Right - width - 30;
+                int targetTop = workArea.Top + 16;
+                this.Location = new Point(targetLeft, targetTop);
+            });
+        }
+
+        /// <summary>
+        /// 从极简悬浮胶囊恢复为原正常大视口窗体
+        /// </summary>
+        public void RestoreFromMiniBar()
+        {
+            SafeInvoke(() =>
+            {
+                // 取消强制置顶
+                this.TopMost = false;
+                // 若处于胶囊模式，恢复原有几何尺寸与位置
+                if (_isMiniBar)
+                {
+                    this.Bounds = _normalBounds;
+                    _isMiniBar = false;
+                }
+            });
+        }
+
+        /// <summary>
+        /// 将 Windows 键盘输入焦点主动归还给 Excel 主程序窗口
+        /// </summary>
+        public void ActivateExcelWindow()
+        {
+            try
+            {
+                // 获取 Excel 主窗口 HWND 句柄
+                IntPtr excelHwnd = ExcelDnaSafeAccessor.GetWindowHandle();
+                if (excelHwnd != IntPtr.Zero)
+                {
+                    // 调用 Win32 API 激活 Excel 窗口，使用户能立即打字编辑
+                    SetForegroundWindow(excelHwnd);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ActivateExcelWindow] 激活焦点异常: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -305,15 +389,57 @@ namespace ExcelAddInDemo.Forms
                     // 线程安全回送前端
                     PostWebMessageSafe(resJson);
                 }
-                // 响应自动定位箱柜底部明细区域动作
+                // 响应收缩为悬浮胶囊工具条模式 (定位让位 Excel 视口，解除模态遮挡)
+                else if (action == "shrinkToMiniBar")
+                {
+                    // 提取目标工作表名称
+                    string sheetName = root.TryGetProperty("sheetName", out var sn) ? sn.GetString() ?? string.Empty : string.Empty;
+                    // 提取目标箱柜定义名称
+                    string detName = root.TryGetProperty("detName", out var dn) ? dn.GetString() ?? string.Empty : string.Empty;
+                    // 提取元器件行号与目标列
+                    int targetRow = root.TryGetProperty("targetRow", out var tr) ? tr.GetInt32() : 0;
+                    string targetCol = root.TryGetProperty("targetCol", out var tc) ? tc.GetString() ?? "W" : "W";
+
+                    // 1. 将 Form 切换为顶部极简悬浮小胶囊
+                    SwitchToMiniBar();
+
+                    // 2. 调度 Excel 异步宏队列定位单元格
+                    ExcelAsyncUtil.QueueAsMacro(() =>
+                    {
+                        // 滚动并精准高亮选中指定行与列单元格 (如 W1072)
+                        ExcelServices.LocateCabinetDetail(sheetName, detName, targetRow, targetCol);
+                        // 激活 Excel 窗口将键盘输入焦点交回
+                        ActivateExcelWindow();
+                    });
+                }
+                // 响应从悬浮胶囊恢复为大视口窗体
+                else if (action == "restoreFromMiniBar")
+                {
+                    // 恢复正常展开模式
+                    RestoreFromMiniBar();
+                }
+                // 响应自动定位箱柜底部明细区域或指定元器件行动作
                 else if (action == "locateCabinetDetail")
                 {
                     // 提取目标工作表名称
                     string sheetName = root.TryGetProperty("sheetName", out var sn) ? sn.GetString() ?? string.Empty : string.Empty;
                     // 提取目标箱柜定义名称 (如 Cab_Det_1)
                     string detName = root.TryGetProperty("detName", out var dn) ? dn.GetString() ?? string.Empty : string.Empty;
-                    // 调度 ExcelServices 公共服务在 Excel 中定位并置顶滚动至明细行
-                    ExcelServices.LocateCabinetDetail(sheetName, detName);
+                    // 提取目标行号与列名
+                    int targetRow = root.TryGetProperty("targetRow", out var tr) ? tr.GetInt32() : 0;
+                    string targetCol = root.TryGetProperty("targetCol", out var tc) ? tc.GetString() ?? "W" : "W";
+
+                    // 调度 ExcelServices 公共服务在 Excel 中定位并置顶滚动至明细行或指定单元格
+                    ExcelAsyncUtil.QueueAsMacro(() =>
+                    {
+                        // 滚动并选中目标单元格
+                        ExcelServices.LocateCabinetDetail(sheetName, detName, targetRow, targetCol);
+                        // 若处于胶囊模式，激活 Excel 键盘焦点
+                        if (_isMiniBar)
+                        {
+                            ActivateExcelWindow();
+                        }
+                    });
                 }
                 // 响应保存规则配置
                 else if (action == "saveRules")
