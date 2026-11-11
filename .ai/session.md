@@ -1,3 +1,22 @@
+- **【缺陷修复与最小改动落地：报价智能核验与防错体检 (QuotationCheck) 红框卡片点击漏价过滤丢失根治闭环】([`Resources/quotation_check.html`](file:///e:/Ace/ExcelAddInCTtools/Resources/quotation_check.html), [`publish/Resources/quotation_check.html`](file:///e:/Ace/ExcelAddInCTtools/publish/Resources/quotation_check.html), [`bin/Debug/net48/Resources/quotation_check.html`](file:///e:/Ace/ExcelAddInCTtools/bin/Debug/net48/Resources/quotation_check.html))**：
+  1. **用户反馈与核心痛点**：
+     - 用户截图红框指出：“点击红框内容（价格倒挂/严重漏价）后，只显示了倒挂的内容，没显示漏价内容，你怎么修改”。
+  2. **根因深度溯源**：
+     - ① **卡片事件单向传递单一编码**：卡片展示数量为 `invertedPriceCount + missingPriceCount`，但点击事件 `@click="setCategoryFilter('PriceInverted')"` 写死了只传 `'PriceInverted'`（价格倒挂）；
+     - ② **过滤管道严格单一匹配阻断**：在 `filteredIssues` 计算属性中，由于过滤条件被设置为 `'PriceInverted'`，`item.category !== currentCategoryFilter.value` 将所有严重漏价问题（如 `MissingPrice` 面价漏填、`MissingDiscount` 折扣缺失）全部强行排除过滤；
+  3. **落地实施细节**：
+     - ① **卡片激活与传参升级为聚合模式 (`PriceFatal`)**：
+       - 红框卡片升级为 `@click="setCategoryFilter('PriceFatal')"`，高亮激活态支持 `PriceFatal / PriceInverted / MissingPrice`；
+     - ② **前端过滤管道复合决策支持 (`filteredIssues`)**：
+       - 当过滤模式为 `'PriceFatal'` 时，同时匹配 `item.category === 'PriceInverted'`（价格倒挂）与 `item.category === 'MissingPrice' || item.category === 'MissingDiscount'`（严重漏价与折扣缺失），一次性把全部价格致命漏洞完整拉出；
+     - ③ **下拉框选项对齐**：
+       - 下拉框新增【价格倒挂/严重漏价 (`PriceFatal`)】综合选项，同时保留单项细查能力；
+     - ④ **规范遵从与最小改动**：
+       - 严格遵守最小变动法则，仅在前端视图与过滤管道做高内聚微调；所有新增/变更代码严格落实“至少每 3 行包含一行中文注释”；
+  4. **构建验证与产物交付**：
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**；
+     - 同步更新覆盖至 `publish/` 与 `bin/Debug/net48/`，SHA256 哈希完全一致。
+
 - **【全新功能落地：报价智能核验与防错体检 (QuotationCheck) 型号规格智能下拉筛选与行内一键钻取闭环】([`Resources/quotation_check.html`](file:///e:/Ace/ExcelAddInCTtools/Resources/quotation_check.html), [`publish/Resources/quotation_check.html`](file:///e:/Ace/ExcelAddInCTtools/publish/Resources/quotation_check.html), [`bin/Debug/net48/Resources/quotation_check.html`](file:///e:/Ace/ExcelAddInCTtools/bin/Debug/net48/Resources/quotation_check.html))**：
   1. **用户核心需求与决策确认**：
      - 用户原指令：“需求是对型号规格做筛选查看，你怎么设计呢”并附带“成套设备报价智能核验与防错体检”界面截图；

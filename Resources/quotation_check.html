@@ -481,12 +481,18 @@
         <i class="fa-solid fa-file-lines stat-icon" style="color:#0284c7;"></i>
       </div>
 
-      <!-- 严重价格倒挂/漏价卡片 -->
-      <div class="stat-metric-card" :class="{ active: currentCategoryFilter === 'PriceInverted' }" @click="setCategoryFilter('PriceInverted')">
+      <!-- 严重价格倒挂/漏价卡片 (点击触发价格倒挂与严重漏价聚合筛选) -->
+      <div
+        class="stat-metric-card"
+        :class="{ active: currentCategoryFilter === 'PriceFatal' || currentCategoryFilter === 'PriceInverted' || currentCategoryFilter === 'MissingPrice' }"
+        @click="setCategoryFilter('PriceFatal')">
         <div class="stat-text">
+          <!-- 卡片名称：价格倒挂/严重漏价 -->
           <span class="stat-label"><i class="fa-solid fa-triangle-exclamation" style="color:#ef4444;"></i>价格倒挂/严重漏价</span>
+          <!-- 合计显示倒挂总数与漏价总数之和 -->
           <span class="stat-num" style="color:#ef4444;">{{ summary.invertedPriceCount + summary.missingPriceCount }}</span>
         </div>
+        <!-- 警示图标 -->
         <i class="fa-solid fa-circle-exclamation stat-icon" style="color:#ef4444;"></i>
       </div>
     </div>
@@ -501,12 +507,16 @@
         </el-select>
 
         <!-- 异常分类过滤下拉框 -->
-        <el-select v-model="currentCategoryFilter" placeholder="全部问题分类" size="small" style="width: 155px;" clearable>
+        <el-select v-model="currentCategoryFilter" placeholder="全部问题分类" size="small" style="width: 175px;" clearable>
           <el-option label="全部问题 ({{ issues.length }})" value=""></el-option>
+          <!-- 价格倒挂/严重漏价综合选项 (对应红框卡片) -->
+          <el-option :label="'价格倒挂/严重漏价 (' + (summary.invertedPriceCount + summary.missingPriceCount) + ')'" value="PriceFatal"></el-option>
           <el-option label="同型号价格冲突" value="PriceConflict"></el-option>
           <el-option label="公式损毁/断链" value="FormulaBroken"></el-option>
           <el-option label="AA/AB图纸参数缺失" value="CadMissing"></el-option>
+          <!-- 细分单项筛选：仅面价/采购折扣漏填 -->
           <el-option label="面价/采购折扣漏填" value="MissingPrice"></el-option>
+          <!-- 细分单项筛选：仅单价倒挂亏本报价 -->
           <el-option label="价格倒挂(亏本报价)" value="PriceInverted"></el-option>
         </el-select>
 
@@ -966,9 +976,19 @@
 
             // 分类过滤
             if (currentCategoryFilter.value) {
-              if (currentCategoryFilter.value === 'CadMissing') {
+              // 价格倒挂与严重漏价综合模式 (对应红框卡片，同时捕获价格倒挂与漏填价格问题)
+              if (currentCategoryFilter.value === 'PriceFatal') {
+                // 判定是否属于价格倒挂(PriceInverted)或严重漏价(MissingPrice/MissingDiscount)
+                const isPriceRisk = item.category === 'PriceInverted' ||
+                                    item.category === 'MissingPrice' ||
+                                    item.category === 'MissingDiscount';
+                // 若不属于上述价格致命缺陷则过滤排除
+                if (!isPriceRisk) return false;
+              } else if (currentCategoryFilter.value === 'CadMissing') {
+                // CAD 图纸参数缺失模式：包含图纸或图块缺失类别
                 if (!item.category.includes('Cad') && !item.category.includes('Block')) return false;
               } else if (item.category !== currentCategoryFilter.value) {
+                // 其他单类别精确全等比对过滤
                 return false;
               }
             }
