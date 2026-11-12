@@ -1,3 +1,16 @@
+- **【功能升级与性能优化：顶部汇总与底部明细/总计双向同步支持多单元格拖动填充与批量修改闭环】([`ExcelEventManager.cs`](file:///e:/Ace/excel-ct-tools/ExcelEventManager.cs), [`publish/`](file:///e:/Ace/excel-ct-tools/publish/))**：
+  1. **用户反馈与核心痛点**：
+     - 顶部汇总单元格 `SheetChange` 事件原先仅取 `target.Row` / `target.Column` 并把 `target.Value` 视作标量处理，客户拖动填充、批量粘贴或批量清空多个箱柜的型号、名称、柜号、数量时无法联动底部明细与总计行；
+     - 用户明确指示：“只改造顶部汇总”、“数量 F 列不会存在公式”。
+  2. **根因与架构改造落地 (`ExcelEventManager.cs`)**：
+     - ① **支持多选区 (`Areas`) 与内存二维数组批量读取**：重构 `TryHandleCabinetBiDirectionalSync`，遍历 `target.Areas`，按 `[1..MaxRow, 2..17]` 裁剪边界（防止整行/整列选中扫描海量空单元格），一次性读取 `ReadAreaValueBlock` 内存标量/二维数组 (`object[,]`)，通过 `ExtractBlockCellValue` 按真实下界安全寻址；
+     - ② **O(1) 内存映射表取代逐格全表遍历 `Names`**：新增 `BuildSheetCabinetRowLookup`，一次性调用 `Tool.GetSheetValidCabinets`（未在项目信息登记时兜底 `CollectAllDefinedNames` + `BuildCabinetMap`），读取实时 `Range.Row` 建立 `SumMap / DetMap / TolsumMap / ByIndex` 内存索引，并保留 A 列超链接同行缓存兜底 (`TryResolveSumAnchorByHyperlink`)；删除原逐格扫描 `FindRangeByTag` 与 `FindCabinetIndexByRowAndPrefix`；
+     - ③ **合并单元格从属列防护与批量事务写入**：在 `CollectSumRowWrites`（含 F 列数量直接覆写无公式依赖）与 `CollectDetRowWrites` 中按 `(Row, Col)` 去重，防止 `Det D:E` / `G:H` 合并从属列空值反向覆写；新增 `BatchSyncCellValues`，在外层统一挂起 `EnableEvents`（多格时同步挂起 `ScreenUpdating`）后批量写回并成对恢复；
+     - ④ **规范遵从与范围控制**：未改动 C 列元器件智能联想逻辑；所有新增代码严格落实“至少每 3 行包含一行中文注释”，固定列号映射已标注 `--硬编码--`。
+  3. **构建验证与产物交付**：
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 错误**，且 `ExcelEventManager.cs` 新增改动 0 警告（直接全量构建时因外部进程占用 `bin\Debug\net48\ExcelAddInDemo-AddIn64.xll` 未重新打包 `.xll`）；
+     - `ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 已同步复制至 `publish\`，与 `bin\Debug\net48\` SHA256 哈希一致；待用户关闭 Excel 重新加载插件进行实操验证。
+
 - **【缺陷修复与最小改动落地：报价智能核验与防错体检 (QuotationCheck) 红框卡片点击漏价过滤丢失根治闭环】([`Resources/quotation_check.html`](file:///e:/Ace/ExcelAddInCTtools/Resources/quotation_check.html), [`publish/Resources/quotation_check.html`](file:///e:/Ace/ExcelAddInCTtools/publish/Resources/quotation_check.html), [`bin/Debug/net48/Resources/quotation_check.html`](file:///e:/Ace/ExcelAddInCTtools/bin/Debug/net48/Resources/quotation_check.html))**：
   1. **用户反馈与核心痛点**：
      - 用户截图红框指出：“点击红框内容（价格倒挂/严重漏价）后，只显示了倒挂的内容，没显示漏价内容，你怎么修改”。
