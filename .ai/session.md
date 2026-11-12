@@ -4161,3 +4161,53 @@
      - 全量同步更新后的 HTML 至 `publish/Resources`、`bin/Debug/net48/Resources` 及 `bin/Debug/net48/publish/Resources`；
      - 验证各输出目录文件 SHA256 哈希值 100% 一致；
      - 执行 `dotnet build /p:RunExcelDnaBuild=false` 验证 **0 警告、0 错误** 顺利编译通过。
+
+
+### 15. 2026-11-12: 【智能导入箱柜 BOM 工作台】全链路性能根因排查与深度提速优化
+
+- **卡顿根因诊断**：
+  1. **导入前/后各调用 1 次全工作簿 `RepairAllDefinedNames()`**：扫描所有已有分类表并弹出 2 次阻塞主线程的修复报告弹窗；
+  2. **未关闭 Excel 自动重算 (`xlCalculationManual`)**：每写入/插删行即触发全工作簿公式重算，耗时呈 $O(N^2)$ 增长；
+  3. **`CopyCabinetDetailFromTemplate` 破坏静默状态并循环开关磁盘文件**：每台箱柜都打开/关闭一次 `CabinetTemplate.xlsx`，且其 `finally` 块强制将 `ScreenUpdating`、`DisplayAlerts`、`EnableEvents` 恢复为 `true`，导致第 2 柜起全程实时重绘与触发事件；
+  4. **末尾全表逐单元格清洗公式**：`Tool.CleanRangeFormulas(newSheet.UsedRange)` 对全表数千公式逐格 COM 读写；
+  5. **外部标书读取未关闭重算与未裁剪 `UsedRange` 空白格式化尾行**，且前后端来回传输并深拷贝全量明细 JSON。
+- **实施架构与代码变动**：
+  1. **导入写入引擎重构 (`Services/ExcelServices.SmartImport.cs`)**：
+     - 全程压栈关闭 `ScreenUpdating`、`DisplayAlerts`、`EnableEvents`、`AskToUpdateLinks` 并锁定 `app.Calculation = -4135` (`xlCalculationManual`)，彻底移除两次 `RepairAllDefinedNames()` 与末尾逐格 `CleanRangeFormulas`；
+     - 顶部汇总区一次探测可复用空行并最多执行 1 次 `Rows.Insert` + 1 次 `Copy` + 1 次二维数组 `Formula = sumMatrix` 批量回写（同步修正台数写入 F 列第 6 列、单位 `"台"` 写入 E 列第 5 列）；若触发插行仅刷新新建表的 `UpdateProjectInfoCategorySummary`；
+     - 底部明细区采用“本表纯净模板接力棒复制”实现线性 $O(N)$ 写入（0 次循环打开模板文件），配合 `Tool.BuildFeeMatrix` 一次性批量刷新计费区公式、数组化 `CleanEmptyRowsInBillingZone`；
+     - 预加载名称字典 `BatchRegisterSheetDefinedNames` 零异常批量注册定义名称并重挂双向超链接，支持向前端实时推送导入进度。
+  2. **外部文件读取与缓存 (`Services/SmartImportParserService.cs`, `Controllers/SmartImportController.cs`, `Models/SmartImportModels.cs`)**：
+     - 提取公共静默读取引擎 `ReadSheetMatrixSilently`，打开外部工作簿期间同步禁用重算/刷新/事件，并通过 `GetEffectiveSheetBounds` (`Cells.Find`) 精准收敛有效边界避免 `UsedRange` 膨胀；
+     - 循环外预拆分表头关键字；控制器新增多 Sheet 矩阵缓存、全量解析结果缓存 `_cachedCabinets` 以及前端精简预览摘要（`TotalComponentCount` + 前 3 项元件）。
+  3. **窗体异步调度与前端轻量渲染 (`Forms/SmartImportForm.cs`, `Resources/smart_import.html`)**：
+     - 命中内存矩阵缓存的 `parsePreview` 移入后台线程池异步推导；导入时实时向前端推送 `importProgress` 并泵送绘制消息；
+     - 前端 `gridData` 与 `parsedCabinets` 改用 `shallowRef` 消除深层 Proxy 开销，`triggerAutoParse` 增加 `60ms` 防抖，导入请求不再回传海量明细 JSON。
+- **验证与同步**：
+  - 同步 `Resources/smart_import.html` 至 `publish/Resources/` 及 `bin/Debug/net48/` 下输出目录且校验 SHA256 一致；
+  - 执行 `dotnet build "e:\Ace\excel-ct-tools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 验证 **0 Error(s)**，修改文件 0 新增警告。
+
+### 16. 2026-11-12: 【智能导入箱柜 BOM 工作台】修复顶部汇总区 A 列边框被清除的问题
+
+- **问题原因**：在 Excel COM 中调用 `Range.Hyperlinks.Delete()` 会连带将单元格样式重置为常规样式并清除原有边框。此前在 `ExecuteSmartImportToNewCategory` 与 `EnsureTopSummaryCapacityAndStyle` 中对第 1 柜和复制后的汇总行 A 列调用了 `Hyperlinks.Delete()`，导致第 7 行（`A7`）边框被清除并随整行复制扩散至所有汇总行 `A8~AN`。
+- **修复措施 (`Services/ExcelServices.SmartImport.cs`)**：
+  - 移除 `ExecuteSmartImportToNewCategory` 与 `EnsureTopSummaryCapacityAndStyle` 中全部 `Hyperlinks.Delete()` 调用；
+  - 新增 `SetCellHyperlinkPreserveStyle` 辅助方法：当单元格已存在超链接时直接原地更新 `SubAddress`、`ScreenTip` 与 `TextToDisplay`，彻底保留 A 列原有边框样式。
+- **验证**：`dotnet build "e:\Ace\excel-ct-tools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 验证 `0 Error(s)` 编译通过。
+
+### 17. 2026-11-12: 【智能导入箱柜 BOM 工作台】新增箱柜名称、型号与备注可选双基线定位及双向回写
+
+- **需求内容**：在现有【柜号】【台数】双基线定位的基础上，新增【箱柜名称】【箱柜型号】【箱柜备注】3 个可选箱柜级定位锚点，同时写入顶部汇总行对应列与底部明细 `det` 行对应列，且保持老模板 100% 向后兼容：
+  - **箱柜名称**：顶部汇总 **C 列 (col 3)** + 底部明细 `detRow` **G 列 (col 7)**；
+  - **箱柜型号**：顶部汇总 **D 列 (col 4)** + 底部明细 `detRow` **D 列 (col 4)**；
+  - **箱柜备注**：顶部汇总 **I 列 (col 9)** + 底部明细 `detRow` **I 列 (col 9)**；
+  - 3 项均为可选（`TargetCol = 0` 时不覆写，保留模板原列或默认处理）。
+- **代码变动**：
+  1. **数据模型 (`Models/SmartImportModels.cs`)**：`SmartImportTemplateConfig` 新增 `CabinetNameAnchor`、`CabinetModelAnchor`、`CabinetRemarkAnchor`（默认 `TargetCol = 0`）；`ParsedCabinetModel` 新增 `CabinetDisplayName`、`CabinetModel`、`CabinetRemark`。
+  2. **解析引擎 (`Services/SmartImportParserService.cs`)**：新增 `ExtractAnchorText` 复用 `CleanCabinetName` 统一按可选锚点提取并剥离冒号/前缀，赋值至 `ParsedCabinetModel`。
+  3. **控制器 (`Controllers/SmartImportController.cs`)**：`ParsePreview` 预览摘要模型透传 `CabinetDisplayName`、`CabinetModel`、`CabinetRemark`。
+  4. **Excel 写入服务 (`Services/ExcelServices.SmartImport.cs`)**：提取私有记录类 `CabinetWriteRecord` 替代元组；明细循环按需向 `detRow` 的 G/D/I 列写入名称/型号/备注；`BatchWriteTopSummaryMatrix` 按 `HasName`/`HasModel`/`HasRemark` 选择性覆写汇总矩阵 C(idx 2)、D(idx 3)、I(idx 8) 列。
+  5. **前端交互 (`Resources/smart_import.html`)**：扩展 7 步向导标签（⑤ 锁名称格 / ⑥ 锁型号格 / ⑦ 锁备注格），`.step-pills` 支持 `flex-wrap: wrap` 防止水平溢出，支持 `×` 一键清除可选定位、单元格分色高亮、模板自动兼容补齐 `normalizeConfig` 以及右侧卡片元数据标签预览。
+- **验证与同步**：
+  - `dotnet build "e:\Ace\excel-ct-tools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 通过（`0 Error(s)`，修改文件无新增警告）；
+  - 同步 `Resources/smart_import.html` 至 `publish/Resources/`、`bin/Debug/net48/Resources/` 及 `bin/Debug/net48/publish/Resources/`，4 处 SHA256 校验一致（`7060A92D0D17C1B457312B11141310C6AF3045820DEBF53F058CB621E52E57FA`）。

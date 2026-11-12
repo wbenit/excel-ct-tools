@@ -244,42 +244,84 @@ namespace ExcelAddInDemo.Forms
                             string path = pFp.GetString() ?? "";
                             string sheet = pSn.GetString() ?? "";
                             var cfg = JsonSerializer.Deserialize<SmartImportTemplateConfig>(pCfg.GetRawText(), JsonOptions);
-                            var cabinets = _controller.ParsePreview(path, sheet, cfg);
 
-                            PostWebMessageSafe(JsonSerializer.Serialize(new
+                            // 若已命中内存矩阵缓存，直接放入后台线程池零阻塞纯内存推导
+                            if (_controller.HasCachedMatrix(path, sheet))
                             {
-                                action = "parsePreviewResult",
-                                success = true,
-                                cabinets = cabinets
-                            }, JsonOptions));
+                                System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+                                {
+                                    var cabinets = _controller.ParsePreview(path, sheet, cfg!);
+                                    // 线程安全切回 UI 线程投递精简预览结果
+                                    PostWebMessageSafe(JsonSerializer.Serialize(new
+                                    {
+                                        action = "parsePreviewResult",
+                                        success = true,
+                                        cabinets = cabinets
+                                    }, JsonOptions));
+                                });
+                            }
+                            else
+                            {
+                                // 未命中缓存时在主线程通过 COM 读取并推导
+                                var cabinets = _controller.ParsePreview(path, sheet, cfg!);
+                                PostWebMessageSafe(JsonSerializer.Serialize(new
+                                {
+                                    action = "parsePreviewResult",
+                                    success = true,
+                                    cabinets = cabinets
+                                }, JsonOptions));
+                            }
                         }
                         break;
 
-                    // 4. 执行一键导入 (新建分类表并写入数据)
+                    // 4. 执行一键导入 (新建分类表并写入数据，附带实时进度条推送)
                     case "executeImport":
                         if (root.TryGetProperty("data", out var dataProp))
                         {
                             var req = JsonSerializer.Deserialize<SmartImportExecuteRequest>(dataProp.GetRawText(), JsonOptions);
-                            var result = _controller.ExecuteImport(req);
-
-                            PostWebMessageSafe(JsonSerializer.Serialize(new
+                            // 委托给异步调度执行，避免在 WebMessageReceived 同步阻塞导致前端 Loading 动画无法绘制
+                            SafeInvoke(() =>
                             {
-                                action = "executeImportResult",
-                                result = result
-                            }, JsonOptions));
-
-                            // 若导入成功，延迟 1.5 秒自动关闭弹窗
-                            if (result != null && result.Success)
-                            {
-                                var timer = new System.Windows.Forms.Timer { Interval = 1500 };
-                                timer.Tick += (s, args) =>
+                                var result = _controller.ExecuteImport(req!, (cur, total, cabName) =>
                                 {
-                                    timer.Stop();
-                                    timer.Dispose();
-                                    SafeInvoke(() => this.Close());
-                                };
-                                timer.Start();
-                            }
+                                    // 实时向前端推送当前箱柜导入进度
+                                    try
+                                    {
+                                        if (_webView != null && _webView.CoreWebView2 != null)
+                                        {
+                                            _webView.CoreWebView2.PostWebMessageAsString(JsonSerializer.Serialize(new
+                                            {
+                                                action = "importProgress",
+                                                current = cur,
+                                                total = total,
+                                                cabinetName = cabName
+                                            }, JsonOptions));
+                                            // 轻量泵送窗口绘制消息，确保前端进度条即时刷新
+                                            Application.DoEvents();
+                                        }
+                                    }
+                                    catch { }
+                                });
+
+                                PostWebMessageSafe(JsonSerializer.Serialize(new
+                                {
+                                    action = "executeImportResult",
+                                    result = result
+                                }, JsonOptions));
+
+                                // 若导入成功，延迟 1.2 秒自动关闭弹窗
+                                if (result != null && result.Success)
+                                {
+                                    var timer = new System.Windows.Forms.Timer { Interval = 1200 };
+                                    timer.Tick += (s, args) =>
+                                    {
+                                        timer.Stop();
+                                        timer.Dispose();
+                                        SafeInvoke(() => this.Close());
+                                    };
+                                    timer.Start();
+                                }
+                            });
                         }
                         break;
 

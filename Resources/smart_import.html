@@ -169,21 +169,38 @@
 
       .step-pills {
         display: flex;
-        gap: 8px;
+        /* 允许步骤标签在窄屏时自动换行，严禁产生水平滚动条 */
+        flex-wrap: wrap;
+        gap: 6px;
       }
 
       .step-pill {
-        flex: 1;
-        padding: 5px 10px;
+        /* 弹性自适应宽度并防溢出 */
+        flex: 1 1 120px;
+        min-width: 0;
+        padding: 4px 8px;
         border-radius: 6px;
         font-size: 12px;
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: space-between;
+        gap: 4px;
         border: 1px solid #dcdfe6;
         background: #fdfdfd;
         transition: all 0.2s;
+      }
+
+      /* 可选锚点右上角一键清除小图标样式 */
+      .step-pill-clear {
+        color: #909399;
+        margin-left: 4px;
+        cursor: pointer;
+        font-size: 11px;
+      }
+
+      .step-pill-clear:hover {
+        color: #f56c6c;
       }
 
       .step-pill.active {
@@ -324,6 +341,30 @@
         color: #0d47a1 !important;
         font-weight: bold;
         border: 2px solid #1976d2 !important;
+      }
+
+      /* 橙色箱柜名称定位格 */
+      .cell-highlight-name {
+        background-color: #ffe0b2 !important;
+        color: #e65100 !important;
+        font-weight: bold;
+        border: 2px solid #fb8c00 !important;
+      }
+
+      /* 紫色箱柜型号定位格 */
+      .cell-highlight-model {
+        background-color: #e1bee7 !important;
+        color: #4a148c !important;
+        font-weight: bold;
+        border: 2px solid #8e24aa !important;
+      }
+
+      /* 琥珀灰箱柜备注定位格 */
+      .cell-highlight-remark {
+        background-color: #d7ccc8 !important;
+        color: #3e2723 !important;
+        font-weight: bold;
+        border: 2px solid #6d4c41 !important;
       }
 
       .excel-table td:hover {
@@ -561,7 +602,7 @@
                   class="fa-solid fa-wand-magic-sparkles"
                   style="color: #009688"
                 ></i>
-                样本柜点选指认 (在第 1 个柜子上顺着点击 4 下)：</span
+                样本柜点选指认 (前 4 步必选，⑤⑥⑦ 可按需选点)：</span
               >
               <span style="color: #e6a23c"
                 >当前步骤: 【{{ currentStepTitle }}】</span
@@ -607,6 +648,51 @@
               >
                 <span>④ 锁台数格</span>
                 <span v-if="sampleQuantity">{{ sampleQuantity }}台</span>
+              </div>
+              <!-- 步骤 5 (可选)：箱柜名称写入汇总 C 列与明细 det 行 G 列 -->
+              <div
+                class="step-pill"
+                :class="{ active: currentStep === 5, completed: config.cabinetNameAnchor.targetCol > 0 }"
+                @click="currentStep = 5"
+                title="可选：点击样本柜的名称格，将导入汇总C列及明细G列"
+              >
+                <span>⑤ 锁名称格</span>
+                <span style="display: inline-flex; align-items: center;">
+                  <span style="max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    {{ config.cabinetNameAnchor.targetCol > 0 ? (sampleCabDisplayName || (toColLetter(config.cabinetNameAnchor.targetCol) + '列')) : '可选' }}
+                  </span>
+                  <i v-if="config.cabinetNameAnchor.targetCol > 0" class="fa-solid fa-xmark step-pill-clear" @click.stop="clearOptionalAnchor('cabinetNameAnchor', '箱柜名称')"></i>
+                </span>
+              </div>
+              <!-- 步骤 6 (可选)：箱柜型号写入汇总 D 列与明细 det 行 D 列 -->
+              <div
+                class="step-pill"
+                :class="{ active: currentStep === 6, completed: config.cabinetModelAnchor.targetCol > 0 }"
+                @click="currentStep = 6"
+                title="可选：点击样本柜的型号格，将导入汇总D列及明细D列"
+              >
+                <span>⑥ 锁型号格</span>
+                <span style="display: inline-flex; align-items: center;">
+                  <span style="max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    {{ config.cabinetModelAnchor.targetCol > 0 ? (sampleCabModel || (toColLetter(config.cabinetModelAnchor.targetCol) + '列')) : '可选' }}
+                  </span>
+                  <i v-if="config.cabinetModelAnchor.targetCol > 0" class="fa-solid fa-xmark step-pill-clear" @click.stop="clearOptionalAnchor('cabinetModelAnchor', '箱柜型号')"></i>
+                </span>
+              </div>
+              <!-- 步骤 7 (可选)：箱柜备注写入汇总 I 列与明细 det 行 I 列 -->
+              <div
+                class="step-pill"
+                :class="{ active: currentStep === 7, completed: config.cabinetRemarkAnchor.targetCol > 0 }"
+                @click="currentStep = 7"
+                title="可选：点击样本柜的备注格，将导入汇总I列及明细I列"
+              >
+                <span>⑦ 锁备注格</span>
+                <span style="display: inline-flex; align-items: center;">
+                  <span style="max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    {{ config.cabinetRemarkAnchor.targetCol > 0 ? (sampleCabRemark || (toColLetter(config.cabinetRemarkAnchor.targetCol) + '列')) : '可选' }}
+                  </span>
+                  <i v-if="config.cabinetRemarkAnchor.targetCol > 0" class="fa-solid fa-xmark step-pill-clear" @click.stop="clearOptionalAnchor('cabinetRemarkAnchor', '箱柜备注')"></i>
+                </span>
               </div>
             </div>
 
@@ -783,13 +869,22 @@
                   <span class="cab-tag"
                     >数量: {{ cab.cabinetQuantity }} 台</span
                   >
-                  <!-- 安全读取元器件列表长度，防范空引用异常 -->
+                  <!-- 安全读取元器件真实总长度，防范空引用异常 -->
                   <span
                     class="cab-tag"
                     style="background: #e3f2fd; color: #1565c0"
-                    >{{ (cab.components || []).length }} 项元件</span
+                    >{{ cab.totalComponentCount || (cab.components || []).length }} 项元件</span
                   >
                 </div>
+              </div>
+              <!-- 展示已提取的箱柜名称、型号与备注属性摘要 -->
+              <div
+                v-if="cab.cabinetDisplayName || cab.cabinetModel || cab.cabinetRemark"
+                style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; font-size: 11px;"
+              >
+                <span v-if="cab.cabinetDisplayName" class="cab-tag" style="background: #fff3e0; color: #e65100;">名称: {{ cab.cabinetDisplayName }}</span>
+                <span v-if="cab.cabinetModel" class="cab-tag" style="background: #f3e5f5; color: #6a1b9a;">型号: {{ cab.cabinetModel }}</span>
+                <span v-if="cab.cabinetRemark" class="cab-tag" style="background: #efebe9; color: #4e342e;">备注: {{ cab.cabinetRemark }}</span>
               </div>
               <!-- 元器件简略清单 -->
               <div
@@ -833,12 +928,12 @@
                     </span>
                   </span>
                 </div>
-                <!-- 超出 3 项展示折叠提示 -->
+                <!-- 超出 3 项展示折叠提示 (优先读取 totalComponentCount 真实总项数) -->
                 <div
-                  v-if="(cab.components || []).length > 3"
+                  v-if="(cab.totalComponentCount || (cab.components || []).length) > 3"
                   style="color: #909399; font-style: italic"
                 >
-                  ... 及其他 {{ (cab.components || []).length - 3 }} 项元件
+                  ... 及其他 {{ (cab.totalComponentCount || (cab.components || []).length) - 3 }} 项元件
                 </div>
               </div>
             </div>
@@ -877,21 +972,25 @@
           "
         >
           <i class="fa-solid fa-circle-info" style="color: #009688"></i>
-          <span
+          <!-- 导入过程中展示实时进度文本，常态展示法则说明 -->
+          <span v-if="importing && importProgressText" style="color: #00796b; font-weight: 600;">
+            {{ importProgressText }}
+          </span>
+          <span v-else
             >双基线依附法则：柜号与台数自动根据天花板与地板位移，全表毫秒级推导。</span
           >
         </div>
         <div style="display: flex; gap: 10px">
-          <el-button size="small" @click="closeWindow">取消</el-button>
+          <el-button size="small" :disabled="importing" @click="closeWindow">取消</el-button>
           <el-button
             class="btn-main-action"
             size="small"
-            :disabled="parsedCabinets.length === 0"
+            :disabled="parsedCabinets.length === 0 || importing"
             :loading="importing"
             @click="doExecuteImport"
           >
             <i class="fa-solid fa-bolt" style="margin-right: 6px"></i
-            >一键创建分类表并导入 ({{ parsedCabinets.length }} 台箱柜)
+            >{{ importing ? (importProgressText || "正在极速导入...") : `一键创建分类表并导入 (${parsedCabinets.length} 台箱柜)` }}
           </el-button>
         </div>
       </div>
@@ -983,24 +1082,30 @@
     </div>
 
     <script>
-      const { createApp, ref, computed, onMounted } = Vue;
+      const { createApp, ref, shallowRef, computed, onMounted } = Vue;
 
       // 创建 Vue 3 根应用实例
       const app = createApp({
         setup() {
-          // 基本状态
+          // 基本状态 (gridData 采用 shallowRef 彻底免除深层 Proxy 代理开销)
           const filePath = ref("");
           const sheetNames = ref([]);
           const currentSheet = ref("");
           const newCategoryName = ref("导入_箱柜清单");
-          const gridData = ref([]);
+          const gridData = shallowRef([]);
           const loadingFile = ref(false);
           const importing = ref(false);
+          // 实时导入进度提示文本
+          const importProgressText = ref("");
 
-          // 4 步向导状态
-          const currentStep = ref(1); // 1:表头, 2:结束行, 3:柜号, 4:台数
+          // 7 步向导状态 (1~4必选，5~7可选：名称/型号/备注)
+          const currentStep = ref(1); // 1:表头, 2:结束行, 3:柜号, 4:台数, 5:名称, 6:型号, 7:备注
           const sampleCabinetName = ref("");
           const sampleQuantity = ref("");
+          // 可选扩展字段的样本单元格预览文本
+          const sampleCabDisplayName = ref("");
+          const sampleCabModel = ref("");
+          const sampleCabRemark = ref("");
 
           // 5 列匹配关键字系统默认预设常量
           const DEFAULT_KEYWORDS = {
@@ -1035,6 +1140,27 @@
               targetCol: 5,
               attachToHeader: false,
               rowOffset: 5,
+              prefixKeyword: "",
+            },
+            // 可选箱柜名称锚点 (targetCol 为 0 表示未启用)
+            cabinetNameAnchor: {
+              targetCol: 0,
+              attachToHeader: true,
+              rowOffset: -1,
+              prefixKeyword: "",
+            },
+            // 可选箱柜型号锚点 (targetCol 为 0 表示未启用)
+            cabinetModelAnchor: {
+              targetCol: 0,
+              attachToHeader: true,
+              rowOffset: -1,
+              prefixKeyword: "",
+            },
+            // 可选箱柜备注锚点 (targetCol 为 0 表示未启用)
+            cabinetRemarkAnchor: {
+              targetCol: 0,
+              attachToHeader: true,
+              rowOffset: -1,
               prefixKeyword: "",
             },
             columnMapping: {
@@ -1075,10 +1201,10 @@
             return col;
           };
 
-          // 模板与解析结果
+          // 模板与解析结果 (parsedCabinets 采用 shallowRef 避免几百台箱柜对象深度 Proxy 劫持卡顿)
           const savedTemplates = ref([]);
           const selectedTemplate = ref("");
-          const parsedCabinets = ref([]);
+          const parsedCabinets = shallowRef([]);
 
           // 导入表目标列选项集合 (推荐标准列优先，完整支持 A~AF 列即 1~32 列)
           const availableTargetColumns = computed(() => {
@@ -1163,6 +1289,13 @@
               return "点击第 1 柜的【柜号】所在单元格";
             if (currentStep.value === 4)
               return "点击第 1 柜的【箱柜台数】所在数字格";
+            // 步骤 5~7 为可选箱柜扩展字段定位提示
+            if (currentStep.value === 5)
+              return "可选：点击第 1 柜的【箱柜名称】所在单元格";
+            if (currentStep.value === 6)
+              return "可选：点击第 1 柜的【箱柜型号】所在单元格";
+            if (currentStep.value === 7)
+              return "可选：点击第 1 柜的【备注】所在单元格";
             return "";
           });
 
@@ -1395,6 +1528,14 @@
           const normalizeConfig = (cfg) => {
             // 校验配置对象有效性
             if (!cfg) return;
+            // 统一补齐历史模板缺失的可选箱柜名称/型号/备注锚点，默认 targetCol=0 保持关闭
+            const optionalKeys = ["cabinetNameAnchor", "cabinetModelAnchor", "cabinetRemarkAnchor"];
+            optionalKeys.forEach((key) => {
+              // 仅在缺失该属性时初始化默认空锚点结构
+              if (!cfg[key]) {
+                cfg[key] = { targetCol: 0, attachToHeader: true, rowOffset: -1, prefixKeyword: "" };
+              }
+            });
             // 校验列映射字典
             if (!cfg.columnMapping) cfg.columnMapping = {};
             const cm = cfg.columnMapping;
@@ -1466,6 +1607,79 @@
             triggerAutoParse();
           };
 
+          // 根据锚点与样本双基线计算实际行号
+          const calcAnchorRow = (anchor) => {
+            // 锚点无效或未配置列号时返回 0
+            if (!anchor || anchor.targetCol <= 0) return 0;
+            // 依据依附方向加上相对偏移行
+            return anchor.attachToHeader
+              ? config.value.sampleHeaderRow + anchor.rowOffset
+              : config.value.sampleEndRow + anchor.rowOffset;
+          };
+
+          // 剥离前端单元格预览文本的中英文冒号标签前缀
+          const extractAnchorPreview = (text) => {
+            if (!text) return "";
+            const trimmed = String(text).trim();
+            // 兼容全角与半角冒号分割取值
+            const match = trimmed.split(/[：:]/);
+            return match.length > 1 && match[1].trim() ? match[1].trim() : trimmed;
+          };
+
+          // 统一将点击坐标绑定到指定锚点对象
+          const bindAnchorPosition = (anchor, row, col) => {
+            anchor.targetCol = col;
+            // 表头及以上行依附天花板，以下行依附地板结束行
+            if (row <= config.value.sampleHeaderRow) {
+              anchor.attachToHeader = true;
+              anchor.rowOffset = row - config.value.sampleHeaderRow;
+            } else {
+              anchor.attachToHeader = false;
+              anchor.rowOffset = row - config.value.sampleEndRow;
+            }
+          };
+
+          // 可选扩展锚点配置元信息表 (统一步骤、预览 ref、名称与清除逻辑)
+          const OPTIONAL_ANCHOR_META = {
+            cabinetNameAnchor: { step: 5, label: "箱柜名称", previewRef: sampleCabDisplayName, cls: "cell-highlight-name" },
+            cabinetModelAnchor: { step: 6, label: "箱柜型号", previewRef: sampleCabModel, cls: "cell-highlight-model" },
+            cabinetRemarkAnchor: { step: 7, label: "箱柜备注", previewRef: sampleCabRemark, cls: "cell-highlight-remark" },
+          };
+
+          // 依据当前网格和规则配置刷新样本预览文本 (用于切换表或套用模板后回显)
+          const refreshSamplePreviews = () => {
+            const readCell = (anchor) => {
+              const r = calcAnchorRow(anchor);
+              // 越界或未激活锚点返回空
+              if (r <= 0 || r > gridData.value.length) return "";
+              const rowArr = gridData.value[r - 1];
+              return rowArr && anchor.targetCol <= rowArr.length ? (rowArr[anchor.targetCol - 1] || "") : "";
+            };
+            // 同步更新柜号、台数与 3 个可选字段样本显示文本
+            const cabTxt = readCell(config.value.cabinetAnchor);
+            sampleCabinetName.value = cabTxt ? extractAnchorPreview(cabTxt) : "";
+            const qtyTxt = readCell(config.value.quantityAnchor);
+            sampleQuantity.value = qtyTxt ? String(qtyTxt).replace(/[^0-9]/g, "") : "";
+            // 遍历刷新可选扩展锚点样本标签
+            Object.keys(OPTIONAL_ANCHOR_META).forEach((key) => {
+              const raw = readCell(config.value[key]);
+              OPTIONAL_ANCHOR_META[key].previewRef.value = extractAnchorPreview(raw);
+            });
+          };
+
+          // 一键清除指定可选锚点并重新触发解析
+          const clearOptionalAnchor = (anchorKey, label) => {
+            const anchor = config.value[anchorKey];
+            if (!anchor) return;
+            // 将列号置 0 关闭该可选字段提取
+            anchor.targetCol = 0;
+            if (OPTIONAL_ANCHOR_META[anchorKey]) {
+              OPTIONAL_ANCHOR_META[anchorKey].previewRef.value = "";
+            }
+            ElementPlus.ElMessage.info(`已清除【${label}】定位，将保留模板原列`);
+            triggerAutoParse();
+          };
+
           // 点击单元格根据当前步骤打标
           const onCellClick = (row, col, text) => {
             if (currentStep.value === 1) {
@@ -1482,17 +1696,8 @@
               );
               currentStep.value = 3;
             } else if (currentStep.value === 3) {
-              // 绑定柜号
-              config.value.cabinetAnchor.targetCol = col;
-              if (row <= config.value.sampleHeaderRow) {
-                config.value.cabinetAnchor.attachToHeader = true;
-                config.value.cabinetAnchor.rowOffset =
-                  row - config.value.sampleHeaderRow;
-              } else {
-                config.value.cabinetAnchor.attachToHeader = false;
-                config.value.cabinetAnchor.rowOffset =
-                  row - config.value.sampleEndRow;
-              }
+              // 绑定必选柜号锚点
+              bindAnchorPosition(config.value.cabinetAnchor, row, col);
               sampleCabinetName.value = text
                 ? text.replace(/柜号[：:]/g, "").trim()
                 : `箱柜_${row}`;
@@ -1501,22 +1706,30 @@
               );
               currentStep.value = 4;
             } else if (currentStep.value === 4) {
-              // 绑定台数
-              config.value.quantityAnchor.targetCol = col;
-              if (row <= config.value.sampleHeaderRow) {
-                config.value.quantityAnchor.attachToHeader = true;
-                config.value.quantityAnchor.rowOffset =
-                  row - config.value.sampleHeaderRow;
-              } else {
-                config.value.quantityAnchor.attachToHeader = false;
-                config.value.quantityAnchor.rowOffset =
-                  row - config.value.sampleEndRow;
-              }
+              // 绑定必选台数锚点
+              bindAnchorPosition(config.value.quantityAnchor, row, col);
               sampleQuantity.value = text ? text.replace(/[^0-9]/g, "") : "1";
               ElementPlus.ElMessage.success(
                 `已锁定【台数格】(提取: ${sampleQuantity.value}台)`,
               );
-              currentStep.value = 1; // 循环完成
+              currentStep.value = 1; // 必选 4 步循环完成
+            } else {
+              // 统一匹配处理可选步骤 5(名称)、6(型号)、7(备注)
+              const matchedKey = Object.keys(OPTIONAL_ANCHOR_META).find(
+                (k) => OPTIONAL_ANCHOR_META[k].step === currentStep.value,
+              );
+              if (matchedKey) {
+                const meta = OPTIONAL_ANCHOR_META[matchedKey];
+                bindAnchorPosition(config.value[matchedKey], row, col);
+                // 提取并刷新对应样本字段预览
+                const cleaned = extractAnchorPreview(text);
+                meta.previewRef.value = cleaned;
+                ElementPlus.ElMessage.success(
+                  `已锁定【${meta.label}格】(${cleaned || (toColLetter(col) + "列")})`,
+                );
+                // 若按顺序点击⑤->⑥->⑦则自动推进，⑦点完回归步骤 1
+                currentStep.value = currentStep.value < 7 ? currentStep.value + 1 : 1;
+              }
             }
             triggerAutoParse();
           };
@@ -1529,53 +1742,64 @@
             return "";
           };
 
-          // 单元格高亮判定
+          // 单元格高亮判定 (统一遍历必选与可选锚点表)
           const getCellClass = (r, c) => {
-            const cabR = config.value.cabinetAnchor.attachToHeader
-              ? config.value.sampleHeaderRow +
-                config.value.cabinetAnchor.rowOffset
-              : config.value.sampleEndRow +
-                config.value.cabinetAnchor.rowOffset;
-            if (r === cabR && c === config.value.cabinetAnchor.targetCol)
-              return "cell-highlight-cab";
-
-            const qtyR = config.value.quantityAnchor.attachToHeader
-              ? config.value.sampleHeaderRow +
-                config.value.quantityAnchor.rowOffset
-              : config.value.sampleEndRow +
-                config.value.quantityAnchor.rowOffset;
-            if (r === qtyR && c === config.value.quantityAnchor.targetCol)
-              return "cell-highlight-qty";
+            // 必选与可选锚点按优先级依次匹配高亮类名
+            const anchorHighlightRules = [
+              { anchor: config.value.cabinetAnchor, cls: "cell-highlight-cab" },
+              { anchor: config.value.quantityAnchor, cls: "cell-highlight-qty" },
+              { anchor: config.value.cabinetNameAnchor, cls: "cell-highlight-name" },
+              { anchor: config.value.cabinetModelAnchor, cls: "cell-highlight-model" },
+              { anchor: config.value.cabinetRemarkAnchor, cls: "cell-highlight-remark" },
+            ];
+            for (const rule of anchorHighlightRules) {
+              // 仅对 targetCol > 0 的有效锚点渲染单元格高亮
+              if (rule.anchor && rule.anchor.targetCol > 0) {
+                const targetR = calcAnchorRow(rule.anchor);
+                if (r === targetR && c === rule.anchor.targetCol) return rule.cls;
+              }
+            }
 
             return "";
           };
 
-          // 触发自动推导解析
+          // 防抖定时器句柄 (避免连续操作高频派发 IPC 请求)
+          let autoParseTimer = null;
+
+          // 触发自动推导解析 (带 60ms 轻量防抖保护)
           const triggerAutoParse = () => {
             if (!filePath.value) return;
-            sendMessage("parsePreview", {
-              filePath: filePath.value,
-              sheetName: currentSheet.value,
-              config: JSON.parse(JSON.stringify(config.value)),
-            });
+            // 清除未执行的挂起定时器
+            if (autoParseTimer) clearTimeout(autoParseTimer);
+            autoParseTimer = setTimeout(() => {
+              sendMessage("parsePreview", {
+                filePath: filePath.value,
+                sheetName: currentSheet.value,
+                config: JSON.parse(JSON.stringify(config.value)),
+              });
+            }, 60);
           };
 
-          // 执行一键导入
+          // 执行一键导入 (不回传冗余全量明细，直接由后端缓存极速写入；先让出 1 帧渲染 Loading 状态)
           const doExecuteImport = () => {
             if (!newCategoryName.value || !newCategoryName.value.trim()) {
               ElementPlus.ElMessage.warning("请输入新建分类表名称！");
               return;
             }
             importing.value = true;
-            sendMessage("executeImport", {
-              data: {
-                filePath: filePath.value,
-                sheetName: currentSheet.value,
-                newCategoryName: newCategoryName.value.trim(),
-                config: JSON.parse(JSON.stringify(config.value)),
-                cabinets: JSON.parse(JSON.stringify(parsedCabinets.value)),
-              },
-            });
+            importProgressText.value = "正在创建分类表并准备批量写入...";
+            // 延迟 30ms 确保浏览器完成 Loading UI 与进度条首次重绘后再执行 COM 写入
+            setTimeout(() => {
+              sendMessage("executeImport", {
+                data: {
+                  filePath: filePath.value,
+                  sheetName: currentSheet.value,
+                  newCategoryName: newCategoryName.value.trim(),
+                  config: JSON.parse(JSON.stringify(config.value)),
+                  cabinets: [],
+                },
+              });
+            }, 30);
           };
 
           // 保存模板
@@ -1600,7 +1824,7 @@
               .catch(() => {});
           };
 
-          // 套用模板 (自动补齐老模板可能缺失的扩展列配置)
+          // 套用模板 (自动补齐老模板可能缺失的扩展列与可选锚点配置)
           const applyTemplate = (name) => {
             const t = savedTemplates.value.find(
               (item) => item.templateName === name,
@@ -1609,6 +1833,8 @@
               const loaded = JSON.parse(JSON.stringify(t));
               normalizeConfig(loaded);
               config.value = loaded;
+              // 同步刷新样本柜号、台数及名称/型号/备注的单元格预览标签
+              refreshSamplePreviews();
               ElementPlus.ElMessage.success(`已套用模板: ${name}`);
               triggerAutoParse();
             }
@@ -1637,6 +1863,8 @@
                   if (config.value.sampleHeaderRow > 0 && gridData.value.length >= config.value.sampleHeaderRow) {
                     detectColumnsFromHeaderRow(config.value.sampleHeaderRow);
                   }
+                  // 刷新当前配置在表格中的样本定位预览标签
+                  refreshSamplePreviews();
                   // 触发一次推导并刷新右侧解析列表
                   triggerAutoParse();
                 }
@@ -1650,14 +1878,20 @@
                   if (config.value.sampleHeaderRow > 0 && gridData.value.length >= config.value.sampleHeaderRow) {
                     detectColumnsFromHeaderRow(config.value.sampleHeaderRow);
                   }
+                  // 刷新当前配置在新工作表中的样本预览
+                  refreshSamplePreviews();
                   triggerAutoParse();
                 }
               } else if (data.action === "parsePreviewResult") {
                 if (data.success) {
                   parsedCabinets.value = data.cabinets || [];
                 }
+              } else if (data.action === "importProgress") {
+                // 实时刷新底部导入进度显示
+                importProgressText.value = `正在极速导入第 ${data.current} / ${data.total} 台箱柜: ${data.cabinetName || ""}`;
               } else if (data.action === "executeImportResult") {
                 importing.value = false;
+                importProgressText.value = "";
                 if (data.result && data.result.success) {
                   ElementPlus.ElMessage.success({
                     message:
@@ -1693,9 +1927,15 @@
             gridData,
             loadingFile,
             importing,
+            importProgressText,
             currentStep,
             sampleCabinetName,
             sampleQuantity,
+            // 暴露可选箱柜名称/型号/备注预览状态及一键清除方法
+            sampleCabDisplayName,
+            sampleCabModel,
+            sampleCabRemark,
+            clearOptionalAnchor,
             config,
             savedTemplates,
             selectedTemplate,

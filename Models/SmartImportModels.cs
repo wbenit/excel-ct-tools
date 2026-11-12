@@ -181,6 +181,12 @@ namespace ExcelAddInDemo.Models
         public DynamicFieldAnchor CabinetAnchor { get; set; } = new DynamicFieldAnchor();
         // 台数依附锚点
         public DynamicFieldAnchor QuantityAnchor { get; set; } = new DynamicFieldAnchor();
+        // 箱柜名称依附锚点 (可选，TargetCol=0 表示未启用；写入汇总C列及明细G列)
+        public DynamicFieldAnchor CabinetNameAnchor { get; set; } = new DynamicFieldAnchor { TargetCol = 0 };
+        // 箱柜型号依附锚点 (可选，TargetCol=0 表示未启用；写入汇总D列及明细D列)
+        public DynamicFieldAnchor CabinetModelAnchor { get; set; } = new DynamicFieldAnchor { TargetCol = 0 };
+        // 箱柜备注依附锚点 (可选，TargetCol=0 表示未启用；写入汇总I列及明细I列)
+        public DynamicFieldAnchor CabinetRemarkAnchor { get; set; } = new DynamicFieldAnchor { TargetCol = 0 };
         // 列映射关系
         public SmartImportColumnMapping ColumnMapping { get; set; } = new SmartImportColumnMapping();
     }
@@ -223,12 +229,20 @@ namespace ExcelAddInDemo.Models
         public int SourceStartRow { get; set; } = 0;
         // 箱柜在源表中的物理结束行
         public int SourceEndRow { get; set; } = 0;
-        // 箱柜编号/名称 (如 QSAC1)
+        // 箱柜编号 (如 QSAC1，写入汇总B列及明细B列)
         public string CabinetName { get; set; } = string.Empty;
+        // 箱柜名称 (如 照明配电箱，写入汇总C列及明细G列)
+        public string CabinetDisplayName { get; set; } = string.Empty;
+        // 箱柜型号 (如 XL-21，写入汇总D列及明细D列)
+        public string CabinetModel { get; set; } = string.Empty;
+        // 箱柜备注 (如 安装方式等，写入汇总I列及明细I列)
+        public string CabinetRemark { get; set; } = string.Empty;
         // 箱柜台数 (如 2台)
         public decimal CabinetQuantity { get; set; } = 1;
         // 该箱柜包含的元器件明细集合
         public List<ParsedComponentModel> Components { get; set; } = new List<ParsedComponentModel>();
+        // 元器件真实总数量 (用于前端精简预览时展示真实数量，避免传输全量明细引发 IPC 卡顿)
+        public int TotalComponentCount { get; set; } = 0;
         // 表价总计预估 (便于前端卡片核对展示)
         public decimal TotalMarkedPrice { get; set; } = 0;
     }

@@ -22,63 +22,133 @@ namespace ExcelAddInDemo.Services
         public static SmartImportPreviewResult ReadPreviewGrid(string filePath, string sheetName = "", int maxRows = 40, int maxCols = 40)
         {
             var result = new SmartImportPreviewResult();
-            // 校验文件是否存在
-            if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath))
+            // 调用静默读取辅助引擎一次性拉取有效边界矩阵
+            object[,]? fullMatrix = ReadSheetMatrixSilently(
+                filePath,
+                sheetName,
+                out List<string> sheetNames,
+                out string currentSheet,
+                out int totalRows,
+                out int totalCols,
+                out string errorMessage);
+
+            // 校验读取结果
+            if (fullMatrix == null && !string.IsNullOrEmpty(errorMessage))
             {
                 result.Success = false;
-                result.Message = "指定的 Excel 标书文件不存在！";
+                result.Message = errorMessage;
                 return result;
+            }
+
+            result.SheetNames = sheetNames;
+            result.CurrentSheet = currentSheet;
+            // 计算前端预览网格的截取行列上限 (仅传前 maxRows 行至前端渲染，降低 IPC 与 DOM 开销)
+            int limitRows = maxRows > 0 ? Math.Min(totalRows, maxRows) : totalRows;
+            int limitCols = maxCols > 0 ? Math.Min(totalCols, maxCols) : totalCols;
+
+            result.RowCount = limitRows;
+            result.ColCount = limitCols;
+            // 规则 7：保存全量内存二维矩阵，用于后续零 I/O 毫秒级推导
+            result.FullMatrix = fullMatrix;
+            result.FullRowCount = totalRows;
+            result.FullColCount = totalCols;
+
+            // 转化为前端轻量字符串二维网格
+            for (int r = 1; r <= limitRows; r++)
+            {
+                var rowList = new List<string>(limitCols);
+                // 逐列提取预览文本
+                for (int c = 1; c <= limitCols; c++)
+                {
+                    string cellStr = string.Empty;
+                    if (fullMatrix != null && r <= totalRows && c <= totalCols)
+                    {
+                        object val = fullMatrix[r, c];
+                        cellStr = val?.ToString()?.Trim() ?? string.Empty;
+                    }
+                    rowList.Add(cellStr);
+                }
+                result.GridData.Add(rowList);
+            }
+
+            result.Success = true;
+            return result;
+        }
+
+        /// <summary>
+        /// 统一静默读取外部 Excel 工作表的真实有效数据二维矩阵 (复用公共引擎，杜绝重复代码与 UsedRange 空白行膨胀卡顿)
+        /// </summary>
+        private static object[,]? ReadSheetMatrixSilently(
+            string filePath,
+            string sheetName,
+            out List<string> sheetNames,
+            out string currentSheet,
+            out int totalRows,
+            out int totalCols,
+            out string errorMessage)
+        {
+            sheetNames = new List<string>();
+            currentSheet = string.Empty;
+            totalRows = 0;
+            totalCols = 0;
+            errorMessage = string.Empty;
+
+            // 校验物理文件是否存在
+            if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath))
+            {
+                errorMessage = "指定的 Excel 标书文件不存在！";
+                return null;
             }
 
             dynamic? app = null;
             dynamic? tempWb = null;
-            // 备份原 Excel 弹窗与更新链接配置状态
+            // 备份 Excel 宿主原始环境配置 (包含自动计算状态，防止打开复杂标书触发全量计算卡顿)
             bool origDisplayAlerts = true;
             bool origAskToUpdateLinks = true;
+            bool origScreenUpdating = true;
+            bool origEnableEvents = true;
+            int origCalculation = -4105; // 默认 xlCalculationAutomatic
+
             try
             {
                 // 获取 Excel COM Application 接口实例
                 app = ExcelDnaSafeAccessor.GetApplication();
                 if (app == null)
                 {
-                    result.Success = false;
-                    result.Message = "无法连接当前 Excel 应用程序实例！";
-                    return result;
+                    errorMessage = "无法连接当前 Excel 应用程序实例！";
+                    return null;
                 }
 
-                // 备份当前 Excel 提示与弹窗设置
-                try
-                {
-                    origDisplayAlerts = app.DisplayAlerts;
-                    origAskToUpdateLinks = app.AskToUpdateLinks;
-                }
-                catch { }
+                // 备份原始属性
+                try { origDisplayAlerts = app.DisplayAlerts; } catch { }
+                try { origAskToUpdateLinks = app.AskToUpdateLinks; } catch { }
+                try { origScreenUpdating = app.ScreenUpdating; } catch { }
+                try { origEnableEvents = app.EnableEvents; } catch { }
+                try { origCalculation = Convert.ToInt32(app.Calculation); } catch { }
 
-                // 强制静默禁用任何弹窗与外部链接更新询问，彻底杜绝“不安全外界源链接”弹窗
-                try
-                {
-                    app.DisplayAlerts = false;
-                    app.AskToUpdateLinks = false;
-                }
-                catch { }
+                // 开启全静默极速模式：禁用弹窗、链接询问、屏幕刷新、事件以及自动重算
+                try { app.DisplayAlerts = false; } catch { }
+                try { app.AskToUpdateLinks = false; } catch { }
+                try { app.ScreenUpdating = false; } catch { }
+                try { app.EnableEvents = false; } catch { }
+                try { app.Calculation = -4135; /* xlCalculationManual */ } catch { }
 
                 // 静默只读打开外部 Excel 工作簿，UpdateLinks: 0 彻底忽略外部链接更新
                 tempWb = app.Workbooks.Open(filePath, UpdateLinks: 0, ReadOnly: true);
                 if (tempWb == null)
                 {
-                    result.Success = false;
-                    result.Message = "无法打开外部工作簿！";
-                    return result;
+                    errorMessage = "无法打开外部工作簿！";
+                    return null;
                 }
 
                 // 收集所有有效工作表名称
                 foreach (dynamic ws in tempWb.Worksheets)
                 {
-                    try { result.SheetNames.Add(Convert.ToString(ws.Name) ?? "Sheet"); } catch { }
+                    try { sheetNames.Add(Convert.ToString(ws.Name) ?? "Sheet"); } catch { }
                 }
 
                 // 确定目标读取的工作表
-                dynamic targetSheet = null;
+                dynamic? targetSheet = null;
                 if (!string.IsNullOrWhiteSpace(sheetName))
                 {
                     try { targetSheet = tempWb.Worksheets[sheetName]; } catch { }
@@ -90,54 +160,42 @@ namespace ExcelAddInDemo.Services
 
                 if (targetSheet == null)
                 {
-                    result.Success = false;
-                    result.Message = "未找到有效的工作表！";
-                    return result;
+                    errorMessage = "未找到有效的工作表！";
+                    return null;
                 }
 
-                result.CurrentSheet = Convert.ToString(targetSheet.Name) ?? "";
+                currentSheet = Convert.ToString(targetSheet.Name) ?? "";
 
-                // 获取已使用数据区域
-                dynamic usedRange = targetSheet.UsedRange;
-                int totalRows = Convert.ToInt32(usedRange.Rows.Count);
-                int totalCols = Convert.ToInt32(usedRange.Columns.Count);
-
-                int limitRows = maxRows > 0 ? Math.Min(totalRows, maxRows) : totalRows;
-                int limitCols = maxCols > 0 ? Math.Min(totalCols, maxCols) : totalCols;
-
-                result.RowCount = limitRows;
-                result.ColCount = limitCols;
-
-                // 规则 7：一次性将整表数据全量读入内存二维数组，用于后续零 I/O 毫秒级推导
-                object[,] fullMatrix = usedRange.Value2 as object[,];
-                result.FullMatrix = fullMatrix;
-                result.FullRowCount = totalRows;
-                result.FullColCount = totalCols;
-
-                // 转化为前端轻量字符串二维网格 (仅截取前 40 行展示，节省传输与渲染开销)
-                for (int r = 1; r <= limitRows; r++)
+                // 精准探测真实非空数据边界，防范空白格式化导致 UsedRange 膨胀到数十万行引起卡死
+                (int effRows, int effCols) = GetEffectiveSheetBounds((object)targetSheet);
+                totalRows = effRows;
+                totalCols = effCols;
+                if (totalRows <= 0 || totalCols <= 0)
                 {
-                    var rowList = new List<string>();
-                    for (int c = 1; c <= limitCols; c++)
-                    {
-                        string cellStr = string.Empty;
-                        if (fullMatrix != null && r <= totalRows && c <= totalCols)
-                        {
-                            object val = fullMatrix[r, c];
-                            cellStr = val?.ToString()?.Trim() ?? string.Empty;
-                        }
-                        rowList.Add(cellStr);
-                    }
-                    result.GridData.Add(rowList);
+                    // 空工作表直接返回 1x1 占位矩阵
+                    totalRows = 0;
+                    totalCols = 0;
+                    return new object[0, 0];
                 }
 
-                result.Success = true;
+                // 规则 7：从 A1 起一次性将有效矩形数据全量读入内存二维数组，保持 1-based 行列坐标严格对齐
+                dynamic readRange = targetSheet.Range[targetSheet.Cells[1, 1], targetSheet.Cells[totalRows, totalCols]];
+                object? rawVal = readRange.Value2;
+                if (rawVal is object[,] mat)
+                {
+                    return mat;
+                }
+
+                // 单单元格 (1x1) 兼容包装为 1-based 二维数组
+                object[,] singleMat = (object[,])Array.CreateInstance(typeof(object), new int[] { 1, 1 }, new int[] { 1, 1 });
+                singleMat[1, 1] = rawVal!;
+                return singleMat;
             }
             catch (Exception ex)
             {
-                result.Success = false;
-                result.Message = $"读取外部 Excel 发生异常: {ex.Message}";
-                LogHelper.WriteLog($"[SmartImportParser] ReadPreviewGrid 异常: {ex.Message}");
+                errorMessage = $"读取外部 Excel 发生异常: {ex.Message}";
+                LogHelper.WriteLog($"[SmartImportParser] ReadSheetMatrixSilently 异常: {ex.Message}");
+                return null;
             }
             finally
             {
@@ -146,19 +204,75 @@ namespace ExcelAddInDemo.Services
                 {
                     try { tempWb.Close(false); } catch { }
                 }
-                // 安全恢复用户原有的 Excel 弹窗与设置
+                // 安全恢复用户原有的 Excel 运行环境设置
                 if (app != null)
                 {
-                    try
-                    {
-                        app.DisplayAlerts = origDisplayAlerts;
-                        app.AskToUpdateLinks = origAskToUpdateLinks;
-                    }
-                    catch { }
+                    try { app.Calculation = origCalculation; } catch { }
+                    try { app.ScreenUpdating = origScreenUpdating; } catch { }
+                    try { app.EnableEvents = origEnableEvents; } catch { }
+                    try { app.DisplayAlerts = origDisplayAlerts; } catch { }
+                    try { app.AskToUpdateLinks = origAskToUpdateLinks; } catch { }
                 }
             }
+        }
 
-            return result;
+        /// <summary>
+        /// 精准探测工作表中实际存在非空数据的最大行列边界，避免 UsedRange 含巨量空白格式化行导致读取卡死
+        /// </summary>
+        private static (int maxRow, int maxCol) GetEffectiveSheetBounds(dynamic sheet)
+        {
+            try
+            {
+                // 先读取 UsedRange 基础尺寸作为参考
+                dynamic usedRange = sheet.UsedRange;
+                int usedRows = Convert.ToInt32(usedRange.Row) + Convert.ToInt32(usedRange.Rows.Count) - 1;
+                int usedCols = Convert.ToInt32(usedRange.Column) + Convert.ToInt32(usedRange.Columns.Count) - 1;
+
+                // 当 UsedRange 尺寸在合理可控范围内时直接使用，减少额外的 Find COM 调用
+                if (usedRows <= 2000 && usedCols <= 80)
+                {
+                    return (usedRows, usedCols);
+                }
+
+                // 超出常规尺寸时，使用 Excel 原生 Find 逆向探测最后一个真实非空单元格
+                int lastRow = 0;
+                int lastCol = 0;
+                try
+                {
+                    // 按行逆向查找最后一个非空单元格 (xlValues=-4163, xlPart=2, xlByRows=1, xlPrevious=2)
+                    dynamic? lastRowCell = sheet.Cells.Find(
+                        What: "*",
+                        LookIn: -4163,
+                        LookAt: 2,
+                        SearchOrder: 1,
+                        SearchDirection: 2);
+                    if (lastRowCell != null) lastRow = Convert.ToInt32(lastRowCell.Row);
+
+                    // 按列逆向查找最后一个非空单元格 (xlByColumns=2, xlPrevious=2)
+                    dynamic? lastColCell = sheet.Cells.Find(
+                        What: "*",
+                        LookIn: -4163,
+                        LookAt: 2,
+                        SearchOrder: 2,
+                        SearchDirection: 2);
+                    if (lastColCell != null) lastCol = Convert.ToInt32(lastColCell.Column);
+                }
+                catch
+                {
+                    // Find 失败时对超大区域做安全兜底截断，防止内存溢出
+                    lastRow = Math.Min(usedRows, 20000);
+                    lastCol = Math.Min(usedCols, 100);
+                }
+
+                // 若工作表完全为空
+                if (lastRow <= 0 || lastCol <= 0) return (0, 0);
+                // 返回收敛后的真实数据边界 (列数最多保底 100 列)
+                return (lastRow, Math.Min(lastCol, 100));
+            }
+            catch
+            {
+                return (0, 0);
+            }
         }
 
         /// <summary>
@@ -176,74 +290,23 @@ namespace ExcelAddInDemo.Services
                 return cabinetList;
             }
 
-            dynamic? app = null;
-            dynamic? tempWb = null;
-            // 备份原 Excel 弹窗与更新链接配置状态
-            bool origDisplayAlerts = true;
-            bool origAskToUpdateLinks = true;
-            try
+            // 复用统一静默矩阵读取引擎
+            object[,]? matrix = ReadSheetMatrixSilently(
+                filePath,
+                sheetName,
+                out _,
+                out _,
+                out int totalRows,
+                out int totalCols,
+                out _);
+
+            if (matrix == null || totalRows <= 0 || totalCols <= 0)
             {
-                app = ExcelDnaSafeAccessor.GetApplication();
-                if (app == null) return cabinetList;
-
-                // 备份当前状态
-                try
-                {
-                    origDisplayAlerts = app.DisplayAlerts;
-                    origAskToUpdateLinks = app.AskToUpdateLinks;
-                }
-                catch { }
-
-                // 强制静默禁用任何弹窗与外部链接更新询问
-                try
-                {
-                    app.DisplayAlerts = false;
-                    app.AskToUpdateLinks = false;
-                }
-                catch { }
-
-                // 静默只读打开外部工作簿
-                tempWb = app.Workbooks.Open(filePath, UpdateLinks: 0, ReadOnly: true);
-                dynamic targetSheet = string.IsNullOrWhiteSpace(sheetName) ? tempWb.Worksheets[1] : tempWb.Worksheets[sheetName];
-                if (targetSheet == null) return cabinetList;
-
-                // 获取全量已用区域
-                dynamic usedRange = targetSheet.UsedRange;
-                int totalRows = Convert.ToInt32(usedRange.Rows.Count);
-                int totalCols = Convert.ToInt32(usedRange.Columns.Count);
-
-                // 一次性读取整表内存二维数组 (规则 7)
-                object[,] matrix = usedRange.Value2 as object[,];
-
-                if (matrix == null) return cabinetList;
-
-                // 核心推导算法：定位所有箱柜的表头行与结束行
-                cabinetList = ScanCabinetsFromMatrix(matrix, totalRows, totalCols, config);
-            }
-            catch (Exception ex)
-            {
-                LogHelper.WriteLog($"[SmartImportParser] ParseAllCabinets 异常: {ex.Message}");
-            }
-            finally
-            {
-                // 关闭外部临时工作簿
-                if (tempWb != null)
-                {
-                    try { tempWb.Close(false); } catch { }
-                }
-                // 安全恢复用户原有的 Excel 弹窗与设置
-                if (app != null)
-                {
-                    try
-                    {
-                        app.DisplayAlerts = origDisplayAlerts;
-                        app.AskToUpdateLinks = origAskToUpdateLinks;
-                    }
-                    catch { }
-                }
+                return cabinetList;
             }
 
-            return cabinetList;
+            // 核心推导算法：定位所有箱柜的表头行与结束行
+            return ScanCabinetsFromMatrix(matrix, totalRows, totalCols, config);
         }
 
         /// <summary>
@@ -258,13 +321,16 @@ namespace ExcelAddInDemo.Services
             string sampleItemNameHeader = GetMatrixString(matrix, config.SampleHeaderRow, colMap.ItemNameCol);
             string sampleItemSpecHeader = GetMatrixString(matrix, config.SampleHeaderRow, colMap.ItemSpecCol);
             string endKeyword = string.IsNullOrWhiteSpace(config.EndKeyword) ? "小计" : config.EndKeyword.Trim();
+            // 提前在扫描循环外一次性预处理表头匹配关键字，避免逐行扫描时反复切割字符串分配内存
+            List<string> nameKeys = SplitKeywords(colMap.ItemNameKeywords);
+            List<string> specKeys = SplitKeywords(colMap.ItemSpecKeywords);
 
             // 2. 扫描整张二维表，寻找各个箱柜块
             int r = 1;
             while (r <= totalRows)
             {
                 // 判断当前行是否匹配【表头行】特征
-                if (IsMatchingHeaderPattern(matrix, r, colMap, sampleItemNameHeader, sampleItemSpecHeader))
+                if (IsMatchingHeaderPattern(matrix, r, colMap, sampleItemNameHeader, sampleItemSpecHeader, nameKeys, specKeys))
                 {
                     int currentHeaderRow = r;
                     // 从表头下一行开始向下寻找【元器件结束行 (如小计)】
@@ -285,6 +351,13 @@ namespace ExcelAddInDemo.Services
                         int qtyRow = config.QuantityAnchor.CalculateRow(currentHeaderRow, currentEndRow);
                         string rawQtyText = GetMatrixString(matrix, qtyRow, config.QuantityAnchor.TargetCol);
                         decimal cabQuantity = ParseQuantity(rawQtyText, 1);
+
+                        // 5. 提取可选箱柜属性：名称、型号、备注 (TargetCol <= 0 时自动跳过并返回空字符串)
+                        string cabDisplayName = ExtractAnchorText(matrix, currentHeaderRow, currentEndRow, config.CabinetNameAnchor);
+                        // 提取箱柜型号文本
+                        string cabModel = ExtractAnchorText(matrix, currentHeaderRow, currentEndRow, config.CabinetModelAnchor);
+                        // 提取箱柜备注文本
+                        string cabRemark = ExtractAnchorText(matrix, currentHeaderRow, currentEndRow, config.CabinetRemarkAnchor);
 
                         // 5. 提取元器件明细：从 [表头行 + 1] 到 [结束行 - 1]
                         var components = new List<ParsedComponentModel>();
@@ -367,8 +440,14 @@ namespace ExcelAddInDemo.Services
                             SourceStartRow = Math.Min(cabNameRow, currentHeaderRow),
                             SourceEndRow = Math.Max(qtyRow, currentEndRow),
                             CabinetName = cleanCabName,
+                            // 写入可选箱柜扩展字段（名称、型号、备注）
+                            CabinetDisplayName = cabDisplayName,
+                            CabinetModel = cabModel,
+                            CabinetRemark = cabRemark,
                             CabinetQuantity = cabQuantity,
                             Components = components,
+                            // 显式记录元器件真实总项数
+                            TotalComponentCount = components.Count,
                             TotalMarkedPrice = totalMarked
                         });
 
@@ -385,9 +464,16 @@ namespace ExcelAddInDemo.Services
 
         /// <summary>
         /// 判断某一行是否为箱柜的表头行
-        /// 优先比对样本表头原文本，其次结合配置的名称与规格关键字动态匹配
+        /// 优先比对样本表头原文本，其次结合预处理后的名称与规格关键字动态匹配
         /// </summary>
-        private static bool IsMatchingHeaderPattern(object[,] matrix, int row, SmartImportColumnMapping colMap, string sampleNameHeader, string sampleSpecHeader)
+        private static bool IsMatchingHeaderPattern(
+            object[,] matrix,
+            int row,
+            SmartImportColumnMapping colMap,
+            string sampleNameHeader,
+            string sampleSpecHeader,
+            List<string> nameKeys,
+            List<string> specKeys)
         {
             // 提取当前行在配置的名称列与型号列的文本
             string nameVal = GetMatrixString(matrix, row, colMap.ItemNameCol);
@@ -399,11 +485,7 @@ namespace ExcelAddInDemo.Services
                 return true;
             }
 
-            // 读取自定义关键字列表
-            var nameKeys = SplitKeywords(colMap.ItemNameKeywords);
-            var specKeys = SplitKeywords(colMap.ItemSpecKeywords);
-
-            // 检查当前行单元格是否同时满足名称与型号关键词特征
+            // 检查当前行单元格是否同时满足名称与型号关键词特征 (直接使用预拆分的列表，零内存重复分配)
             bool nameMatched = MatchesAny(nameVal, nameKeys);
             bool specMatched = MatchesAny(specVal, specKeys);
 
@@ -519,6 +601,21 @@ namespace ExcelAddInDemo.Services
 
             // 未找到明确小计，返回总行数防呆
             return totalRows;
+        }
+
+        /// <summary>
+        /// 统一根据可选动态锚点提取并清洗文本字段
+        /// </summary>
+        private static string ExtractAnchorText(object[,] matrix, int headerRow, int endRow, DynamicFieldAnchor? anchor)
+        {
+            // 未配置锚点或目标列号无效时，直接返回空字符串
+            if (anchor == null || anchor.TargetCol <= 0) return string.Empty;
+            // 计算当前箱柜对应的源表行号
+            int targetRow = anchor.CalculateRow(headerRow, endRow);
+            // 从内存二维数组中安全读取原始字符串
+            string rawText = GetMatrixString(matrix, targetRow, anchor.TargetCol);
+            // 复用柜号清洗逻辑剥离冒号及指定前缀
+            return CleanCabinetName(rawText, anchor.PrefixKeyword);
         }
 
         /// <summary>

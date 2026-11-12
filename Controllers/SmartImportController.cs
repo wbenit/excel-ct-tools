@@ -35,6 +35,14 @@ namespace ExcelAddInDemo.Controllers
         private string _cachedFilePath = string.Empty;
         // 缓存关联的工作表名称
         private string _cachedSheetName = string.Empty;
+        // 同文件多 Sheet 预览结果缓存池 (切回看过的 Sheet 零 COM 开销瞬切)
+        private readonly Dictionary<string, SmartImportPreviewResult> _sheetCache = new Dictionary<string, SmartImportPreviewResult>(StringComparer.OrdinalIgnoreCase);
+        // 缓存最近一次全量推导解析出的箱柜列表，避免前后端之间来回传输数 MB 全量明细 JSON
+        private List<ParsedCabinetModel>? _cachedCabinets = null;
+        // 缓存最近一次全量解析的配置快照键
+        private string _cachedParseKey = string.Empty;
+        // 内存缓存访问锁，确保多线程异步读取安全
+        private readonly object _cacheLock = new object();
 
         /// <summary>
         /// 异步 STA 线程中弹出文件选择对话框选择外部 Excel 标书
@@ -76,44 +84,154 @@ namespace ExcelAddInDemo.Controllers
         /// </summary>
         public SmartImportPreviewResult LoadPreviewGrid(string filePath, string sheetName = "")
         {
+            lock (_cacheLock)
+            {
+                // 若切换了物理文件路径，清空旧文件的工作表缓存与解析缓存
+                if (!string.Equals(filePath, _cachedFilePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    _sheetCache.Clear();
+                    _cachedCabinets = null;
+                    _cachedParseKey = string.Empty;
+                }
+                // 若命中同文件下的同工作表缓存，直接秒级切换当前矩阵指针并返还预览，零 COM 开销
+                else if (!string.IsNullOrWhiteSpace(sheetName) && _sheetCache.TryGetValue(sheetName, out var cachedPreview))
+                {
+                    _cachedMatrix = cachedPreview.FullMatrix;
+                    _cachedRows = cachedPreview.FullRowCount;
+                    _cachedCols = cachedPreview.FullColCount;
+                    _cachedSheetName = cachedPreview.CurrentSheet;
+                    _cachedCabinets = null;
+                    _cachedParseKey = string.Empty;
+                    return cachedPreview;
+                }
+            }
+
             // 调用静默引擎读取工作表与全量矩阵，默认列数放宽到 40 列以完整覆盖 AF 列 (第 32 列)
             var preview = SmartImportParserService.ReadPreviewGrid(filePath, sheetName, maxRows: 40, maxCols: 40);
             if (preview != null && preview.Success && preview.FullMatrix != null)
             {
-                // 将整表二维矩阵安全缓存在控制器内存中
-                _cachedMatrix = preview.FullMatrix;
-                _cachedRows = preview.FullRowCount;
-                _cachedCols = preview.FullColCount;
-                _cachedFilePath = filePath;
-                _cachedSheetName = preview.CurrentSheet;
+                lock (_cacheLock)
+                {
+                    // 将整表二维矩阵安全缓存在控制器内存中
+                    _cachedMatrix = preview.FullMatrix;
+                    _cachedRows = preview.FullRowCount;
+                    _cachedCols = preview.FullColCount;
+                    _cachedFilePath = filePath;
+                    _cachedSheetName = preview.CurrentSheet;
+                    _cachedCabinets = null;
+                    _cachedParseKey = string.Empty;
+                    // 存入当前工作表缓存池
+                    if (!string.IsNullOrWhiteSpace(preview.CurrentSheet))
+                    {
+                        _sheetCache[preview.CurrentSheet] = preview;
+                    }
+                }
             }
-            return preview;
+            return preview!;
         }
 
         /// <summary>
-        /// 根据用户在样本柜上点选确立的规则，全量解析并返回结构化箱柜卡片数据 (优先内存矩阵零 I/O 极速推导)
+        /// 判断指定文件与工作表是否已经命中内存矩阵缓存 (命中即可在后台线程毫秒级纯内存解析，零 COM 调用)
+        /// </summary>
+        public bool HasCachedMatrix(string filePath, string sheetName)
+        {
+            lock (_cacheLock)
+            {
+                return _cachedMatrix != null &&
+                    string.Equals(filePath, _cachedFilePath, StringComparison.OrdinalIgnoreCase) &&
+                    (string.IsNullOrWhiteSpace(sheetName) || string.Equals(sheetName, _cachedSheetName, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+
+        /// <summary>
+        /// 根据用户在样本柜上点选确立的规则，全量解析并返回精简预览卡片数据 (同时在后端缓存全量箱柜明细)
         /// </summary>
         public List<ParsedCabinetModel> ParsePreview(string filePath, string sheetName, SmartImportTemplateConfig config)
         {
-            // 若当前点选操作针对已缓存的文件与 Sheet，直接使用内存矩阵秒级推导，绝不重复触发 COM 打开文件
-            if (_cachedMatrix != null &&
-                string.Equals(filePath, _cachedFilePath, StringComparison.OrdinalIgnoreCase) &&
-                (string.IsNullOrWhiteSpace(sheetName) || string.Equals(sheetName, _cachedSheetName, StringComparison.OrdinalIgnoreCase)))
+            object[,]? matrix = null;
+            int rows = 0;
+            int cols = 0;
+            string activeSheetName = sheetName;
+
+            lock (_cacheLock)
             {
-                // 直接内存扫描推导，耗时仅 1ms，零弹窗、零延迟
-                return SmartImportParserService.ScanCabinetsFromMatrix(_cachedMatrix, _cachedRows, _cachedCols, config);
+                // 若当前点选操作针对已缓存的文件与 Sheet，直接使用内存矩阵秒级推导，绝不重复触发 COM 打开文件
+                if (_cachedMatrix != null &&
+                    string.Equals(filePath, _cachedFilePath, StringComparison.OrdinalIgnoreCase) &&
+                    (string.IsNullOrWhiteSpace(sheetName) || string.Equals(sheetName, _cachedSheetName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    matrix = _cachedMatrix;
+                    rows = _cachedRows;
+                    cols = _cachedCols;
+                    activeSheetName = _cachedSheetName;
+                }
             }
 
-            // 缓存未命中时执行全量读取与解析 (带全局静默防弹窗保护)
-            return SmartImportParserService.ParseAllCabinets(filePath, sheetName, config);
+            // 执行全量内存扫描 (未命中缓存时回退 COM 读取)
+            List<ParsedCabinetModel> fullCabinets = (matrix != null)
+                ? SmartImportParserService.ScanCabinetsFromMatrix(matrix, rows, cols, config)
+                : SmartImportParserService.ParseAllCabinets(filePath, sheetName, config);
+
+            // 构建配置指纹，将全量解析结果缓存于后端控制器，供点击导入时直接读取
+            string parseKey = $"{filePath}|{activeSheetName}|{JsonSerializer.Serialize(config, JsonOptions)}";
+            lock (_cacheLock)
+            {
+                _cachedCabinets = fullCabinets;
+                _cachedParseKey = parseKey;
+            }
+
+            // 构造轻量级预览摘要集合返回给前端 (每台箱柜仅传前 3 项元件用于卡片展示，大幅减少 IPC 载荷与 Vue Proxy 开销)
+            var summaries = new List<ParsedCabinetModel>(fullCabinets.Count);
+            foreach (var cab in fullCabinets)
+            {
+                int totalCount = cab.Components?.Count ?? 0;
+                // 仅截取前 3 项元器件用于前端卡片预览展示
+                var previewComps = totalCount > 3 ? cab.Components!.GetRange(0, 3) : (cab.Components ?? new List<ParsedComponentModel>());
+                summaries.Add(new ParsedCabinetModel
+                {
+                    SourceStartRow = cab.SourceStartRow,
+                    SourceEndRow = cab.SourceEndRow,
+                    CabinetName = cab.CabinetName,
+                    // 透传箱柜名称、型号与备注供前端卡片预览
+                    CabinetDisplayName = cab.CabinetDisplayName,
+                    CabinetModel = cab.CabinetModel,
+                    CabinetRemark = cab.CabinetRemark,
+                    CabinetQuantity = cab.CabinetQuantity,
+                    Components = previewComps,
+                    TotalComponentCount = totalCount,
+                    TotalMarkedPrice = cab.TotalMarkedPrice
+                });
+            }
+            return summaries;
         }
 
         /// <summary>
-        /// 执行一键创建新分类表并批量写入数据
+        /// 执行一键创建新分类表并批量写入数据 (优先复用后端缓存的全量解析结果与内存矩阵，支持实时进度回调)
         /// </summary>
-        public SmartImportExecuteResult ExecuteImport(SmartImportExecuteRequest request)
+        public SmartImportExecuteResult ExecuteImport(SmartImportExecuteRequest request, Action<int, int, string>? progressCallback = null)
         {
-            return ExcelServices.ExecuteSmartImportToNewCategory(request);
+            if (request != null && (request.Cabinets == null || request.Cabinets.Count == 0))
+            {
+                // 计算请求指纹比对后端缓存
+                string reqKey = $"{request.FilePath}|{request.SheetName}|{JsonSerializer.Serialize(request.Config, JsonOptions)}";
+                lock (_cacheLock)
+                {
+                    // 命中缓存直接复用完整箱柜明细
+                    if (_cachedCabinets != null && _cachedCabinets.Count > 0 && string.Equals(reqKey, _cachedParseKey, StringComparison.Ordinal))
+                    {
+                        request.Cabinets = _cachedCabinets;
+                    }
+                    // 缓存配置有微小差异但矩阵仍在内存中，直接 1ms 纯内存重新推导，避免再次打开外部文件
+                    else if (_cachedMatrix != null &&
+                        string.Equals(request.FilePath, _cachedFilePath, StringComparison.OrdinalIgnoreCase) &&
+                        (string.IsNullOrWhiteSpace(request.SheetName) || string.Equals(request.SheetName, _cachedSheetName, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        request.Cabinets = SmartImportParserService.ScanCabinetsFromMatrix(_cachedMatrix, _cachedRows, _cachedCols, request.Config);
+                    }
+                }
+            }
+
+            return ExcelServices.ExecuteSmartImportToNewCategory(request!, progressCallback);
         }
 
         /// <summary>
