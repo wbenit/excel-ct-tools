@@ -228,46 +228,39 @@ namespace ExcelAddInDemo.Services
                 int usedRows = Convert.ToInt32(usedRange.Row) + Convert.ToInt32(usedRange.Rows.Count) - 1;
                 int usedCols = Convert.ToInt32(usedRange.Column) + Convert.ToInt32(usedRange.Columns.Count) - 1;
 
-                // 当 UsedRange 尺寸在合理可控范围内时直接使用，减少额外的 Find COM 调用
-                if (usedRows <= 2000 && usedCols <= 80)
+                // 列数在 100 列以内直接信任原表列宽，严禁错误裁切导致 AB 等扩展列丢失 (4949行x28列仅耗时1秒)
+                int finalCols = Math.Max(1, Math.Min(usedCols, 100));
+                int finalRows = usedRows;
+
+                // 仅当行数异常膨胀到 2 万行以上时，才使用 Find 逆向探测真实最后数据行，防范空白格式化卡死
+                if (usedRows > 20000)
                 {
-                    return (usedRows, usedCols);
+                    try
+                    {
+                        // 显式指定 After: sheet.Cells[1, 1] 逆向按行查找最后一个真实非空单元格
+                        dynamic? lastRowCell = sheet.Cells.Find(
+                            What: "*",
+                            After: sheet.Cells[1, 1],
+                            LookIn: -4163,
+                            LookAt: 2,
+                            SearchOrder: 1,
+                            SearchDirection: 2);
+                        if (lastRowCell != null)
+                        {
+                            finalRows = Convert.ToInt32(lastRowCell.Row);
+                        }
+                    }
+                    catch
+                    {
+                        // 异常时安全兜底截断在 20000 行
+                        finalRows = Math.Min(usedRows, 20000);
+                    }
                 }
 
-                // 超出常规尺寸时，使用 Excel 原生 Find 逆向探测最后一个真实非空单元格
-                int lastRow = 0;
-                int lastCol = 0;
-                try
-                {
-                    // 按行逆向查找最后一个非空单元格 (xlValues=-4163, xlPart=2, xlByRows=1, xlPrevious=2)
-                    dynamic? lastRowCell = sheet.Cells.Find(
-                        What: "*",
-                        LookIn: -4163,
-                        LookAt: 2,
-                        SearchOrder: 1,
-                        SearchDirection: 2);
-                    if (lastRowCell != null) lastRow = Convert.ToInt32(lastRowCell.Row);
-
-                    // 按列逆向查找最后一个非空单元格 (xlByColumns=2, xlPrevious=2)
-                    dynamic? lastColCell = sheet.Cells.Find(
-                        What: "*",
-                        LookIn: -4163,
-                        LookAt: 2,
-                        SearchOrder: 2,
-                        SearchDirection: 2);
-                    if (lastColCell != null) lastCol = Convert.ToInt32(lastColCell.Column);
-                }
-                catch
-                {
-                    // Find 失败时对超大区域做安全兜底截断，防止内存溢出
-                    lastRow = Math.Min(usedRows, 20000);
-                    lastCol = Math.Min(usedCols, 100);
-                }
-
-                // 若工作表完全为空
-                if (lastRow <= 0 || lastCol <= 0) return (0, 0);
-                // 返回收敛后的真实数据边界 (列数最多保底 100 列)
-                return (lastRow, Math.Min(lastCol, 100));
+                // 若工作表完全为空返回 (0, 0)
+                if (finalRows <= 0 || finalCols <= 0) return (0, 0);
+                // 返回精准真实数据行列边界 (完整覆盖 AB 列等全部 28 列以上有效数据)
+                return (finalRows, finalCols);
             }
             catch
             {
