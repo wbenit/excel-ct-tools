@@ -230,6 +230,7 @@ namespace ExcelAddInDemo.Services
                             bom_json            TEXT NOT NULL DEFAULT '[]',
                             brand               TEXT DEFAULT '',
                             description         TEXT DEFAULT '',
+                            only_once           INTEGER DEFAULT 0,
                             created_at          TEXT,
                             updated_at          TEXT
                         );
@@ -336,6 +337,15 @@ namespace ExcelAddInDemo.Services
                     using var alterCmd = new SQLiteCommand("ALTER TABLE secondary_circuit_schemes ADD COLUMN description TEXT DEFAULT '';", conn); // --硬编码: 迁移DDL--
                     alterCmd.ExecuteNonQuery();
                     LogHelper.WriteLog("[PersonalDb] 成功为 secondary_circuit_schemes 表追加 description 列");
+                }
+
+                // 若缺少 only_once 列，执行热迁移追加
+                if (!existingCols.Contains("only_once"))
+                {
+                    // 执行追加只调一次开关列指令
+                    using var alterCmd = new SQLiteCommand("ALTER TABLE secondary_circuit_schemes ADD COLUMN only_once INTEGER DEFAULT 0;", conn); // --硬编码: 迁移DDL--
+                    alterCmd.ExecuteNonQuery();
+                    LogHelper.WriteLog("[PersonalDb] 成功为 secondary_circuit_schemes 表追加 only_once 列");
                 }
             }
             catch (Exception ex)

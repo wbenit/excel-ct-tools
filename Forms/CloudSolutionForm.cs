@@ -481,6 +481,13 @@ namespace ExcelAddInDemo.Forms
                         PostMessageSafe("searchMaterialComponentsResult", compList);
                         break;
 
+                    // 18.5 读取 CAD 与 Excel 共用的开孔组与圆孔元器件配置
+                    case "getEboxExportConfig":
+                        // 从控制器获取共享配置字典并回发前端
+                        var sharedCfg = _controller.GetSharedEboxExportConfig();
+                        PostMessageSafe("getEboxExportConfigResult", sharedCfg);
+                        break;
+
                     // 19. 获取所有二次回路方案列表 (供“复制其他方案”选择使用)
                     case "getSecondarySchemesForCopy":
                         string copyKw = GetStringProp("keyword");

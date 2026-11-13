@@ -958,6 +958,18 @@ namespace ExcelAddInDemo.Forms
                         data = schemesForCopy
                     }, JsonOptions));
                 }
+                // 12.5 读取 CAD 与 Excel 共用的开孔组与圆孔元器件配置
+                else if (action == "getEboxExportConfig")
+                {
+                    // 通过云方案控制器统一读取共享配置
+                    var sharedCfg = new Controllers.CloudSolutionController().GetSharedEboxExportConfig();
+                    // 异步回发共享配置给前端预览器使用
+                    PostWebMessageSafe(JsonSerializer.Serialize(new
+                    {
+                        action = "getEboxExportConfigResult",
+                        data = sharedCfg
+                    }, JsonOptions));
+                }
                 // 13. 保存板材材质价格列表与加工预留配置
                 else if (action == "saveMaterialPrices")
                 {

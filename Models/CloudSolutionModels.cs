@@ -411,6 +411,9 @@ namespace ExcelAddInDemo.Models
         // 二次排布图名称 (直接对应 secondary_circuit_schemes 的 group_name，如: "FA", "通用排布图")
         public string GroupName { get; set; } = string.Empty;
 
+        // 是否勾选“只调一次”（F 列数量强制按 1 计算）
+        public bool OnlyOnce { get; set; } = false;
+
         // DWG 缩略图 Base64 图像流
         public string PreviewBase64 { get; set; } = string.Empty;
 

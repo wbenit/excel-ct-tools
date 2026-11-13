@@ -111,7 +111,7 @@ namespace ExcelAddInDemo.Services
                     // 构建参数化查询 SQL 语句
                     var sb = new StringBuilder(@"
                         SELECT id, group_name, scheme_name, applicable_codes, cad_drawing_name, 
-                               cross_door_count, hole_spec, labor_cost, bom_json, brand, description, created_at, updated_at
+                               cross_door_count, hole_spec, labor_cost, bom_json, brand, description, only_once, created_at, updated_at
                         FROM secondary_circuit_schemes
                         WHERE 1=1 
                     ");
@@ -197,7 +197,7 @@ namespace ExcelAddInDemo.Services
                     // 查询单条方案 SQL
                     string sql = @"
                         SELECT id, group_name, scheme_name, applicable_codes, cad_drawing_name, 
-                               cross_door_count, hole_spec, labor_cost, bom_json, brand, description, created_at, updated_at
+                               cross_door_count, hole_spec, labor_cost, bom_json, brand, description, only_once, created_at, updated_at
                         FROM secondary_circuit_schemes
                         WHERE id = @id LIMIT 1;
                     ";
@@ -375,9 +375,9 @@ namespace ExcelAddInDemo.Services
                         // 插入新方案 SQL
                         string insertSql = @"
                             INSERT INTO secondary_circuit_schemes 
-                            (group_name, scheme_name, applicable_codes, cad_drawing_name, cross_door_count, hole_spec, labor_cost, bom_json, brand, description, created_at, updated_at)
+                            (group_name, scheme_name, applicable_codes, cad_drawing_name, cross_door_count, hole_spec, labor_cost, bom_json, brand, description, only_once, created_at, updated_at)
                             VALUES 
-                            (@group, @name, @codes, @cad, @cross, @hole, @labor, @bom, @brand, @desc, @created, @updated);
+                            (@group, @name, @codes, @cad, @cross, @hole, @labor, @bom, @brand, @desc, @onlyOnce, @created, @updated);
                             SELECT last_insert_rowid();
                         ";
 
@@ -394,6 +394,8 @@ namespace ExcelAddInDemo.Services
                         cmd.Parameters.AddWithValue("@bom", bomJson);
                         cmd.Parameters.AddWithValue("@brand", scheme.Brand?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@desc", scheme.Description?.Trim() ?? string.Empty);
+                        // 绑定“只调一次”开关值
+                        cmd.Parameters.AddWithValue("@onlyOnce", scheme.OnlyOnce ? 1 : 0);
                         cmd.Parameters.AddWithValue("@created", nowTime);
                         cmd.Parameters.AddWithValue("@updated", nowTime);
 
@@ -418,6 +420,7 @@ namespace ExcelAddInDemo.Services
                                 bom_json = @bom,
                                 brand = @brand,
                                 description = @desc,
+                                only_once = @onlyOnce,
                                 updated_at = @updated
                             WHERE id = @id;
                         ";
@@ -436,6 +439,8 @@ namespace ExcelAddInDemo.Services
                         cmd.Parameters.AddWithValue("@bom", bomJson);
                         cmd.Parameters.AddWithValue("@brand", scheme.Brand?.Trim() ?? string.Empty);
                         cmd.Parameters.AddWithValue("@desc", scheme.Description?.Trim() ?? string.Empty);
+                        // 绑定“只调一次”开关值
+                        cmd.Parameters.AddWithValue("@onlyOnce", scheme.OnlyOnce ? 1 : 0);
                         cmd.Parameters.AddWithValue("@updated", nowTime);
 
                         // 执行更新
@@ -653,6 +658,8 @@ namespace ExcelAddInDemo.Services
                 Brand = SafeGetColumnString(reader, "brand"),
                 // 读取方案描述
                 Description = SafeGetColumnString(reader, "description"),
+                // 读取是否“只调一次”（兼容整型/布尔值）
+                OnlyOnce = SafeGetColumnString(reader, "only_once") == "1" || string.Equals(SafeGetColumnString(reader, "only_once"), "true", StringComparison.OrdinalIgnoreCase),
                 // 读取创建时间
                 CreatedAt = reader.IsDBNull(reader.GetOrdinal("created_at")) ? string.Empty : reader.GetString(reader.GetOrdinal("created_at")),
                 // 读取更新时间
@@ -711,10 +718,10 @@ namespace ExcelAddInDemo.Services
                 }
             }
 
-            // 字典缓存物料库 ID 到最新单价的映射
-            var priceMap = new Dictionary<int, double>();
-            // 字典缓存型号到物料实体信息的映射
-            var modelMap = new Dictionary<string, (int id, double price, string name, string brand)>(StringComparer.OrdinalIgnoreCase);
+            // 字典缓存物料库 ID 到最新单价与参数信息(param1=块名, param2=分类)的映射
+            var idInfoMap = new Dictionary<int, (double price, string param1, string param2)>();
+            // 字典缓存型号到物料实体信息（含 param1, param2）的映射
+            var modelMap = new Dictionary<string, (int id, double price, string name, string brand, string param1, string param2)>(StringComparer.OrdinalIgnoreCase);
 
             try
             {
@@ -729,13 +736,13 @@ namespace ExcelAddInDemo.Services
                     // 打开连接
                     conn.Open();
 
-                    // 1. 若存在特定 ID 则批量查询 ID 对应的最新价格
+                    // 1. 若存在特定 ID 则批量查询 ID 对应的最新价格及 param1/param2
                     if (componentIds.Count > 0)
                     {
                         // 构造 IN 查询语句
                         string inClause = string.Join(",", componentIds);
-                        // 查询 SQL
-                        string idSql = $"SELECT id, price FROM components WHERE id IN ({inClause});";
+                        // 查询 SQL（同步读取 param1=块名, param2=分类）
+                        string idSql = $"SELECT id, price, param1, param2 FROM components WHERE id IN ({inClause});";
                         // 创建命令
                         using var idCmd = new SQLiteCommand(idSql, conn);
                         // 执行读取
@@ -743,13 +750,16 @@ namespace ExcelAddInDemo.Services
                         // 填充映射表
                         while (idReader.Read())
                         {
+                            // 提取物料 ID、价格与 param1/param2
                             int cid = idReader.GetInt32(0);
                             double cPrice = idReader.IsDBNull(1) ? 0.0 : idReader.GetDouble(1);
-                            priceMap[cid] = cPrice;
+                            string cParam1 = idReader.IsDBNull(2) ? string.Empty : idReader.GetString(2);
+                            string cParam2 = idReader.IsDBNull(3) ? string.Empty : idReader.GetString(3);
+                            idInfoMap[cid] = (cPrice, cParam1, cParam2);
                         }
                     }
 
-                    // 2. 对未绑定 ID 的项，按型号从物料库模糊匹配
+                    // 2. 对未绑定 ID 的项，按型号从物料库精准匹配
                     if (pendingMatches.Count > 0)
                     {
                         // 提取不重复型号集合
@@ -757,33 +767,42 @@ namespace ExcelAddInDemo.Services
                         // 遍历型号查询物料库
                         foreach (var m in models)
                         {
-                            // 查询单条最新物料
-                            string mSql = "SELECT id, price, name, brand FROM components WHERE model = @model LIMIT 1;";
+                            // 查询单条最新物料（含 param1=块名, param2=分类）
+                            string mSql = "SELECT id, price, name, brand, param1, param2 FROM components WHERE model = @model LIMIT 1;";
                             using var mCmd = new SQLiteCommand(mSql, conn);
                             mCmd.Parameters.AddWithValue("@model", m);
                             using var mReader = mCmd.ExecuteReader();
                             if (mReader.Read())
                             {
+                                // 提取匹配到的物料字段
                                 int mid = mReader.GetInt32(0);
                                 double mPrice = mReader.IsDBNull(1) ? 0.0 : mReader.GetDouble(1);
                                 string mName = mReader.IsDBNull(2) ? string.Empty : mReader.GetString(2);
                                 string mBrand = mReader.IsDBNull(3) ? string.Empty : mReader.GetString(3);
-                                modelMap[m] = (mid, mPrice, mName, mBrand);
+                                string mParam1 = mReader.IsDBNull(4) ? string.Empty : mReader.GetString(4);
+                                string mParam2 = mReader.IsDBNull(5) ? string.Empty : mReader.GetString(5);
+                                modelMap[m] = (mid, mPrice, mName, mBrand, mParam1, mParam2);
                             }
                         }
                     }
                 }
 
-                // 回填最新单价到方案实体中
+                // 回填最新单价与图块分类信息到方案实体中
                 foreach (var scheme in schemes)
                 {
                     foreach (var item in scheme.BomItems)
                     {
-                        // 若 ID 在价格映射中存在
-                        if (item.ComponentId > 0 && priceMap.TryGetValue(item.ComponentId, out double latestPrice))
+                        // 若 ID 在物料映射中存在
+                        if (item.ComponentId > 0 && idInfoMap.TryGetValue(item.ComponentId, out var latestInfo))
                         {
                             // 刷新为物料库最新价格
-                            item.UnitPrice = latestPrice;
+                            item.UnitPrice = latestInfo.price;
+                            // 若未手动指定块名且物料库 param1 非空，自动补全块名
+                            if (string.IsNullOrWhiteSpace(item.BlockName) && !string.IsNullOrWhiteSpace(latestInfo.param1))
+                                item.BlockName = latestInfo.param1.Trim();
+                            // 若未手动指定分类且物料库 param2 非空，自动补全分类
+                            if (string.IsNullOrWhiteSpace(item.Category) && !string.IsNullOrWhiteSpace(latestInfo.param2))
+                                item.Category = latestInfo.param2.Trim();
                         }
                         // 若通过型号命中了物料库
                         else if (!string.IsNullOrWhiteSpace(item.Model) && modelMap.TryGetValue(item.Model.Trim(), out var hit))
@@ -793,6 +812,11 @@ namespace ExcelAddInDemo.Services
                             item.UnitPrice = hit.price;
                             if (string.IsNullOrWhiteSpace(item.Name)) item.Name = hit.name;
                             if (string.IsNullOrWhiteSpace(item.Brand)) item.Brand = hit.brand;
+                            // 自动补齐块名(param1)与分类(param2)
+                            if (string.IsNullOrWhiteSpace(item.BlockName) && !string.IsNullOrWhiteSpace(hit.param1))
+                                item.BlockName = hit.param1.Trim();
+                            if (string.IsNullOrWhiteSpace(item.Category) && !string.IsNullOrWhiteSpace(hit.param2))
+                                item.Category = hit.param2.Trim();
                         }
                     }
                 }

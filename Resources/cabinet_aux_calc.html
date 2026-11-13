@@ -4600,7 +4600,7 @@
       <!-- ② 编辑二次回路方案与 BOM 弹窗 (参考附件高保真还原) -->
       <el-dialog
         v-model="secEditDialogOpen"
-        width="1000px"
+        width="1120px"
         :close-on-click-modal="false"
         append-to-body
         top="3vh"
@@ -4764,6 +4764,9 @@
               <span style="font-size: 16px">🍀</span>
               <!-- 标题文本 -->
               <span>二次 BOM 子物料清单:</span>
+              <!-- 方案级“只调一次”开关：勾选后读取 Excel 明细 F 列数量时强制按 1 计算 -->
+              <el-checkbox v-model="editingSecScheme.onlyOnce" size="small" style="margin-left: 16px;"
+                title="勾选后读取 Excel 明细 F 列数量时，此方案强制按 1 计算">只调一次</el-checkbox>
             </div>
             <!-- 操作按钮组 -->
             <div style="display: flex; gap: 8px">
@@ -4796,21 +4799,27 @@
               <thead>
                 <tr>
                   <!-- 序号列 -->
-                  <th style="width: 46px; text-align: center">序</th>
+                  <th style="width: 42px; text-align: center">序</th>
                   <!-- 元件名称列 -->
-                  <th style="min-width: 130px">元件名称</th>
+                  <th style="min-width: 115px">元件名称</th>
                   <!-- 型号规格列 -->
-                  <th style="min-width: 200px">型号规格</th>
+                  <th style="min-width: 150px">型号规格</th>
+                  <!-- 分类列（对应 SQLite param2） -->
+                  <th style="width: 115px">分类</th>
+                  <!-- 块名列（对应 SQLite param1） -->
+                  <th style="width: 115px">块名</th>
+                  <!-- 门板标签列 -->
+                  <th style="min-width: 145px">门板标签</th>
                   <!-- 数量列 -->
-                  <th style="width: 70px; text-align: center">数量</th>
+                  <th style="width: 65px; text-align: center">数量</th>
                   <!-- 单位列 -->
-                  <th style="width: 60px; text-align: center">单位</th>
+                  <th style="width: 55px; text-align: center">单位</th>
                   <!-- 物料库单价列 -->
-                  <th style="width: 100px; text-align: right">物料库单价</th>
+                  <th style="width: 90px; text-align: right">物料库单价</th>
                   <!-- 材料费合价列 -->
-                  <th style="width: 100px; text-align: right">材料费合价</th>
+                  <th style="width: 90px; text-align: right">材料费合价</th>
                   <!-- 操作列 -->
-                  <th style="width: 55px; text-align: center">操作</th>
+                  <th style="width: 50px; text-align: center">操作</th>
                 </tr>
               </thead>
               <!-- 表体数据行 -->
@@ -4837,6 +4846,34 @@
                       v-model="item.model"
                       size="small"
                       placeholder="型号规格"
+                    ></el-input>
+                  </td>
+                  <!-- 分类选择/输入单元格 -->
+                  <td>
+                    <el-select v-model="item.category" allow-create filterable default-first-option clearable size="small" placeholder="分类" style="width: 100%">
+                      <el-option label="门上元器件" value="门上元器件"></el-option>
+                      <el-option label="二次" value="二次"></el-option>
+                      <el-option label="熔断器" value="熔断器"></el-option>
+                      <el-option label="多功能表" value="多功能表"></el-option>
+                      <el-option label="时控开关" value="时控开关"></el-option>
+                      <el-option label="接触器" value="接触器"></el-option>
+                    </el-select>
+                  </td>
+                  <!-- 块名输入单元格 -->
+                  <td>
+                    <el-input
+                      v-model="item.blockName"
+                      size="small"
+                      placeholder="参数1/图块名"
+                    ></el-input>
+                  </td>
+                  <!-- 门板标签输入单元格 -->
+                  <td>
+                    <el-input
+                      v-model="item.doorLabels"
+                      size="small"
+                      :class="item.category === '门上元器件' ? 'door-label-active' : ''"
+                      placeholder="逗号分隔,如:低速启,高速启"
                     ></el-input>
                   </td>
                   <!-- 数量单元格 -->
@@ -4901,7 +4938,7 @@
                 <tr v-if="secBomList.length === 0">
                   <!-- 跨整行占位提示 -->
                   <td
-                    colspan="8"
+                    colspan="11"
                     style="text-align: center; padding: 24px; color: #94a3b8"
                   >
                     暂无 BOM
@@ -4910,6 +4947,46 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <!-- 门板元器件排布预览与槽位调序区 -->
+          <div v-if="doorPreviewData.hasDoorItems" style="margin-top: 12px; padding: 12px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-weight: 600; color: #0f172a; font-size: 13px;">🎛️ 门板元器件排布预览与槽位调序</span>
+              <span style="font-size: 12px; color: #64748b;">
+                当前匹配组: <strong style="color: #009688;">{{ doorPreviewData.groupKey || '默认排布' }}</strong>
+                <span v-if="doorPreviewData.patternStr"> ({{ doorPreviewData.patternStr }})</span>
+              </span>
+            </div>
+            <!-- 非圆孔元器件水平居中区（如多功能表等） -->
+            <div v-if="doorPreviewData.centerItems.length > 0" style="margin-bottom: 10px; padding: 8px; background: #ffffff; border: 1px dashed #94a3b8; border-radius: 4px;">
+              <div style="font-size: 11px; color: #64748b; margin-bottom: 6px; text-align: center;">上方居中区（非圆孔门上元器件，固定水平居中）</div>
+              <div style="display: flex; justify-content: center; flex-wrap: wrap; gap: 10px;">
+                <div v-for="(cItem, cIdx) in doorPreviewData.centerItems" :key="'center-' + cIdx"
+                  style="padding: 6px 12px; background: #ecfeff; border: 1px solid #0891b2; border-radius: 4px; text-align: center; min-width: 90px;">
+                  <div style="font-size: 12px; font-weight: 600; color: #0e7490;">{{ cItem.label || cItem.blockName || cItem.name }}</div>
+                  <div style="font-size: 11px; color: #64748b;">图块: {{ cItem.blockName || '未填' }}</div>
+                </div>
+              </div>
+            </div>
+            <!-- 圆孔元器件按开孔组多行槽位区 -->
+            <div v-if="doorPreviewData.roundRows.length > 0" style="display: flex; flex-direction: column; gap: 8px;">
+              <div v-for="(rowSlots, rIdx) in doorPreviewData.roundRows" :key="'row-' + rIdx"
+                style="display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; padding: 8px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px;">
+                <div v-for="slot in rowSlots" :key="slot.uid"
+                  style="display: flex; flex-direction: column; align-items: center; padding: 6px 8px; background: #f0fdfa; border: 1px solid #009688; border-radius: 4px; min-width: 96px;">
+                  <div style="font-size: 11px; color: #64748b; margin-bottom: 2px;">槽位 #{{ slot.slotIndex + 1 }}</div>
+                  <div style="font-size: 12px; font-weight: 600; color: #0f172a; margin-bottom: 2px;">{{ slot.label || slot.blockName || slot.name }}</div>
+                  <div style="font-size: 11px; color: #008477; margin-bottom: 6px;">{{ slot.blockName || slot.name }}</div>
+                  <div style="display: flex; gap: 4px;">
+                    <button type="button" :disabled="slot.slotIndex === 0" @click="moveDoorSlot(slot.slotIndex, -1)"
+                      style="cursor: pointer; padding: 1px 6px; font-size: 11px; border: 1px solid #cbd5e1; background: #fff; border-radius: 3px;">◀</button>
+                    <button type="button" :disabled="slot.slotIndex === doorPreviewData.totalRoundSlots - 1" @click="moveDoorSlot(slot.slotIndex, 1)"
+                      style="cursor: pointer; padding: 1px 6px; font-size: 11px; border: 1px solid #cbd5e1; background: #fff; border-radius: 3px;">▶</button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- BOM 费用与综合成本汇总统计栏 -->
@@ -7890,6 +7967,16 @@
                 materialLoading.value = false;
                 // 赋值物料列表
                 materialSearchResults.value = msg.data || [];
+              } else if (msg.action === "getEboxExportConfigResult") {
+                // 接收共享开孔组与圆孔元器件名称配置
+                if (msg.data) {
+                  sharedEboxConfig.value = {
+                    groupDefinitions: msg.data.groupDefinitions || sharedEboxConfig.value.groupDefinitions,
+                    roundHoleNames: Array.isArray(msg.data.roundHoleNames) && msg.data.roundHoleNames.length > 0
+                      ? msg.data.roundHoleNames
+                      : sharedEboxConfig.value.roundHoleNames,
+                  };
+                }
               } else if (msg.action === "getSecondarySchemesForCopyResult") {
                 // 处理方案复制库列表获取结果
                 copySchemeLoading.value = false;
@@ -8732,8 +8819,161 @@
           };
 
           // ==================== 二次回路方案与 BOM 编辑业务交互逻辑 ====================
+          // --硬编码-- 共享开孔组与圆孔元器件默认配置（打开弹窗时会向后端请求 ebox_export_config.json 覆盖）
+          const sharedEboxConfig = ref({
+            groupDefinitions: {
+              "圆5": "L2, 3",
+              "圆9": "1, 4, 4",
+            },
+            roundHoleNames: ["按钮", "指示灯", "旋钮", "蜂鸣器", "信号灯", "转换开关", "急停", "钥匙开关"],
+          });
+
+          // 判断 BOM 项是否属于圆孔门上元器件（名称或块名命中 RoundHoleNames）
+          const isRoundHoleDoorItem = (item) => {
+            // 仅处理门上元器件分类
+            if (!item || (item.category || "").trim() !== "门上元器件") return false;
+            // 取出配置的圆孔名称关键词列表
+            const names = sharedEboxConfig.value.roundHoleNames || [];
+            // 合并元件名称与块名用于关键词匹配
+            const text = ((item.blockName || "") + " " + (item.name || "")).trim();
+            // 任意关键词命中即视为圆孔元器件
+            return names.some((kw) => kw && text.includes(kw));
+          };
+
+          // 解析门板标签列表（按英文或中文逗号拆分，保留斜杠如 "手动/自动"）
+          const splitDoorLabels = (doorLabels) => {
+            // 空标签返回空数组
+            if (!doorLabels) return [];
+            // 按逗号拆分并去除首尾空白
+            return String(doorLabels).split(/[,，]/).map((s) => s.trim());
+          };
+
+          // 构建圆孔槽位列表并按已保存的 doorSlotIndices 恢复顺序
+          const buildOrderedRoundSlots = (bomItems) => {
+            // 收集所有圆孔门上元器件展开的实例
+            const rawSlots = [];
+            (bomItems || []).forEach((item, bomIdx) => {
+              // 跳过非圆孔门上元器件
+              if (!isRoundHoleDoorItem(item)) return;
+              // 数量至少为 1
+              const qty = Math.max(1, parseInt(item.quantity, 10) || 1);
+              // 拆分逗号分隔的标签
+              const labels = splitDoorLabels(item.doorLabels);
+              // 读取已保存的槽位索引
+              const savedIndices = Array.isArray(item.doorSlotIndices) ? item.doorSlotIndices : [];
+              // 按数量展开每个实例
+              for (let k = 0; k < qty; k++) {
+                rawSlots.push({
+                  uid: `${bomIdx}-${k}`,
+                  bomIdx: bomIdx,
+                  instanceIdx: k,
+                  name: item.name || "",
+                  blockName: item.blockName || "",
+                  label: labels[k] || labels[0] || "",
+                  savedOrder: typeof savedIndices[k] === "number" ? savedIndices[k] : 999999 + rawSlots.length,
+                });
+              }
+            });
+            // 按 savedOrder 稳定排序以还原用户调整后的槽位顺序
+            rawSlots.sort((a, b) => a.savedOrder - b.savedOrder);
+            // 赋予连续的 slotIndex
+            return rawSlots.map((s, idx) => ({ ...s, slotIndex: idx }));
+          };
+
+          // 解析开孔组规则字符串（如 "L2, 3" 或 "1, 4, 4"）为每行数量数组
+          const parseGroupPatternRows = (patternStr, totalCount) => {
+            // 若无规则字符串，单行展示全部圆孔
+            if (!patternStr) return totalCount > 0 ? [totalCount] : [];
+            // 解析每行数量（兼容前缀 L 或纯数字）
+            const parts = String(patternStr).split(/[,，]/).map((p) => {
+              const m = p.trim().match(/(\d+)/);
+              return m ? parseInt(m[1], 10) : 0;
+            }).filter((n) => n > 0);
+            // 无有效数字时单行兜底
+            if (parts.length === 0) return totalCount > 0 ? [totalCount] : [];
+            return parts;
+          };
+
+          // 门板元器件排布预览计算属性
+          const doorPreviewData = computed(() => {
+            // 提取非圆孔门上元器件（写死水平居中）
+            const centerItems = [];
+            (secBomList.value || []).forEach((item) => {
+              // 属于门上元器件但未命中圆孔名称集合
+              if ((item.category || "").trim() === "门上元器件" && !isRoundHoleDoorItem(item)) {
+                const qty = Math.max(1, parseInt(item.quantity, 10) || 1);
+                const labels = splitDoorLabels(item.doorLabels);
+                for (let k = 0; k < qty; k++) {
+                  centerItems.push({
+                    name: item.name || "",
+                    blockName: item.blockName || "",
+                    label: labels[k] || labels[0] || "",
+                  });
+                }
+              }
+            });
+            // 获取排序后的圆孔槽位
+            const roundSlots = buildOrderedRoundSlots(secBomList.value);
+            // 匹配开孔组（先按圆孔总数匹配 "圆{N}"，再回退 scheme.groupName）
+            const defs = sharedEboxConfig.value.groupDefinitions || {};
+            const countKey = `圆${roundSlots.length}`;
+            // 优先命中圆孔数量对应的组名
+            const matchedKey = defs[countKey] ? countKey : (defs[editingSecScheme.value.groupName] ? editingSecScheme.value.groupName : "");
+            const patternStr = matchedKey ? defs[matchedKey] : "";
+            // 按行切分槽位
+            const rowCounts = parseGroupPatternRows(patternStr, roundSlots.length);
+            const roundRows = [];
+            let cursor = 0;
+            rowCounts.forEach((cnt) => {
+              // 从 cursor 截取本行槽位
+              if (cursor < roundSlots.length) {
+                roundRows.push(roundSlots.slice(cursor, cursor + cnt));
+                cursor += cnt;
+              }
+            });
+            // 若开孔组定义总数小于实际圆孔数，剩余槽位追加到最后一行
+            if (cursor < roundSlots.length) {
+              roundRows.push(roundSlots.slice(cursor));
+            }
+            return {
+              hasDoorItems: centerItems.length > 0 || roundSlots.length > 0,
+              centerItems: centerItems,
+              roundRows: roundRows,
+              totalRoundSlots: roundSlots.length,
+              groupKey: matchedKey,
+              patternStr: patternStr,
+            };
+          });
+
+          // 左右调整圆孔槽位顺序，并将新顺序写回 secBomList 的 doorSlotIndices
+          const moveDoorSlot = (slotIdx, delta) => {
+            // 构建当前槽位序列
+            const slots = buildOrderedRoundSlots(secBomList.value);
+            const targetIdx = slotIdx + delta;
+            // 越界保护
+            if (targetIdx < 0 || targetIdx >= slots.length) return;
+            // 交换相邻两个槽位
+            const temp = slots[slotIdx];
+            slots[slotIdx] = slots[targetIdx];
+            slots[targetIdx] = temp;
+            // 清空所有 BOM 项的旧槽位索引
+            (secBomList.value || []).forEach((item) => {
+              item.doorSlotIndices = [];
+            });
+            // 按新顺序把全局槽位索引写回对应 BOM 项
+            slots.forEach((s, newIdx) => {
+              const bomItem = secBomList.value[s.bomIdx];
+              if (bomItem) {
+                if (!Array.isArray(bomItem.doorSlotIndices)) bomItem.doorSlotIndices = [];
+                bomItem.doorSlotIndices[s.instanceIdx] = newIdx;
+              }
+            });
+          };
+
           // 打开二次方案与 BOM 编辑弹窗
           const openEditSchemeModal = (scheme) => {
+            // 每次打开编辑弹窗时请求最新的共享开孔组配置
+            postToCSharp({ action: "getEboxExportConfig" });
             // 若未传入已有方案，则基于当前视口正在预览的 DWG 图纸建立新方案上下文
             const currentDwg = currentVectorDwg.value;
             // 提取图纸代号/名称 (无后缀)
@@ -8779,6 +9019,8 @@
                 laborCost: Number(scheme.laborCost) || 0,
                 // 二次排布图：直接读取方案实体的 groupName 字段
                 groupName: scheme.groupName || "",
+                // 方案级“只调一次”开关
+                onlyOnce: Boolean(scheme.onlyOnce),
               };
             } else {
               // 新建空白方案参数初始化
@@ -8801,6 +9043,8 @@
                 laborCost: 0,
                 // 默认二次排布图
                 groupName: "",
+                // 默认“只调一次”为关闭
+                onlyOnce: false,
               };
             }
 
@@ -8819,6 +9063,16 @@
                 id: b.id || Date.now() + idx,
                 name: name,
                 model: model,
+                // 图块分类（对应 SQLite param2）
+                category: b.category || b.Category || "",
+                // CAD 图块名称（对应 SQLite param1）
+                blockName: b.blockName || b.BlockName || "",
+                // 门板标签（多数量用逗号分隔）
+                doorLabels: b.doorLabels || b.DoorLabels || "",
+                // 门板槽位排序索引数组
+                doorSlotIndices: Array.isArray(b.doorSlotIndices || b.DoorSlotIndices)
+                  ? [...(b.doorSlotIndices || b.DoorSlotIndices)]
+                  : [],
                 brand: b.brand || b.Brand || editingSecScheme.value.brand || "",
                 quantity: Number(b.quantity ?? b.Quantity ?? 1) || 1,
                 unit: b.unit || b.Unit || "只",
@@ -8863,6 +9117,11 @@
               id: Date.now(),
               name: "新元件",
               model: "",
+              // 初始化图块分类、块名、门板标签及槽位索引
+              category: "",
+              blockName: "",
+              doorLabels: "",
+              doorSlotIndices: [],
               quantity: 1,
               unit: "只",
               price: 0.0,
@@ -8911,6 +9170,11 @@
             const bomArray = (secBomList.value || []).map((item) => ({
               name: item.name || "元件",
               model: item.model || "",
+              // 持久化分类、块名、门板标签及槽位排序索引
+              category: item.category || "",
+              blockName: item.blockName || "",
+              doorLabels: item.doorLabels || "",
+              doorSlotIndices: Array.isArray(item.doorSlotIndices) ? item.doorSlotIndices : [],
               brand: item.brand || editingSecScheme.value.brand || "",
               quantity: Number(item.quantity) || 1,
               unit: item.unit || "只",
@@ -8945,6 +9209,8 @@
                 Number(editingSecScheme.value.crossDoorCount) || 0,
               holeSpec: editingSecScheme.value.holeSpec || "",
               laborCost: Number(editingSecScheme.value.laborCost) || 0,
+              // 持久化“只调一次”开关状态
+              onlyOnce: Boolean(editingSecScheme.value.onlyOnce),
               bomItems: bomArray,
               bomJson: JSON.stringify(bomArray),
             };
@@ -8989,6 +9255,11 @@
               id: Date.now(),
               name: n,
               model: m,
+              // 从物料库 param2 自动带入分类，param1 自动带入块名
+              category: item.param2 || item.category || "",
+              blockName: item.param1 || item.blockName || "",
+              doorLabels: "",
+              doorSlotIndices: [],
               brand: item.brand || "",
               quantity: 1,
               unit: item.unit || "只",
@@ -9284,6 +9555,10 @@
             getBomItemCount,
             // 打开编辑方案弹窗
             openEditSchemeModal,
+            // 门板排布预览与槽位调序导出
+            sharedEboxConfig,
+            doorPreviewData,
+            moveDoorSlot,
             // 添加自定义 BOM 行
             addCustomBomRow,
             // 删除指定 BOM 行

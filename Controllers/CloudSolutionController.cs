@@ -352,6 +352,8 @@ namespace ExcelAddInDemo.Controllers
                     card.TotalCost = matchedScheme.TotalCost;
                     // 二次排布图正确对应方案实体的 GroupName (group_name)
                     card.GroupName = matchedScheme.GroupName ?? string.Empty;
+                    // 同步方案级“只调一次”状态至卡片 DTO
+                    card.OnlyOnce = matchedScheme.OnlyOnce;
                     card.SchemeData = matchedScheme;
                     if (!string.IsNullOrWhiteSpace(matchedScheme.UpdatedAt))
                     {
@@ -479,6 +481,75 @@ namespace ExcelAddInDemo.Controllers
                 LogHelper.WriteLog($"[CloudSolutionController] SearchMaterialComponents 异常: {ex.Message}");
                 return new List<ComponentApiDto>();
             }
+        }
+
+        /// <summary>
+        /// 读取 CAD 与 Excel 共享的开孔组与圆孔元器件配置 (ebox_export_config.json)
+        /// </summary>
+        public object GetSharedEboxExportConfig()
+        {
+            // 定义默认开孔组字典，便于文件未生成时直接返回统一规则
+            var defaultGroups = new Dictionary<string, List<string>>
+            {
+                { "圆2", new List<string> { "2" } },
+                { "圆3", new List<string> { "3" } },
+                { "圆5", new List<string> { "L2", "3" } },
+                { "圆6", new List<string> { "3", "3" } },
+                { "圆7", new List<string> { "3", "4" } },
+                { "圆9", new List<string> { "1", "4", "4" } }
+            };
+            // 定义默认圆孔元器件名称集合
+            var defaultRoundHoleNames = new List<string>
+            {
+                "按钮", "指示灯", "旋钮", "蜂鸣器", "信号灯", "转换开关", "急停", "钥匙开关" // --硬编码: 默认圆孔名称--
+            };
+
+            try
+            {
+                // 候选共享配置文件路径列表（优先公共报价设置目录，其次 CAD 插件本地输出目录）
+                string[] candidatePaths = new string[]
+                {
+                    @"E:\BaiduNetdiskWorkspace\BaseData\报价设置\ebox_export_config.json", // --硬编码: 公共共享配置路径--
+                    @"E:\Ace\cad-net_1\cad1\ClassLibrary3\bin\Debug\data\ebox_export_config.json" // --硬编码: CAD插件默认配置路径--
+                };
+
+                // 依次探测物理文件
+                foreach (var cfgPath in candidatePaths)
+                {
+                    // 检查文件是否存在
+                    if (!System.IO.File.Exists(cfgPath)) continue;
+                    // 读取 JSON 文本并解析文档
+                    string rawJson = System.IO.File.ReadAllText(cfgPath);
+                    using var doc = JsonDocument.Parse(rawJson);
+                    var rootEl = doc.RootElement;
+                    // 提取 GroupDefinitions（不区分大小写兼容）
+                    var groups = defaultGroups;
+                    if (rootEl.TryGetProperty("GroupDefinitions", out var gdEl) || rootEl.TryGetProperty("groupDefinitions", out gdEl))
+                    {
+                        // 反序列化字典
+                        var parsedGd = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(gdEl.GetRawText(), JsonOptions);
+                        if (parsedGd != null && parsedGd.Count > 0) groups = parsedGd;
+                    }
+                    // 提取 RoundHoleNames（不区分大小写兼容）
+                    var roundNames = defaultRoundHoleNames;
+                    if (rootEl.TryGetProperty("RoundHoleNames", out var rnEl) || rootEl.TryGetProperty("roundHoleNames", out rnEl))
+                    {
+                        // 反序列化名称列表
+                        var parsedRn = JsonSerializer.Deserialize<List<string>>(rnEl.GetRawText(), JsonOptions);
+                        if (parsedRn != null && parsedRn.Count > 0) roundNames = parsedRn;
+                    }
+                    // 返回完整共享配置
+                    return new { groupDefinitions = groups, roundHoleNames = roundNames };
+                }
+            }
+            catch (Exception ex)
+            {
+                // 记录读取异常日志但不中断前端渲染
+                LogHelper.WriteLog($"[CloudSolutionController] GetSharedEboxExportConfig 异常: {ex.Message}");
+            }
+
+            // 未命中物理文件时返回内置标准默认配置
+            return new { groupDefinitions = defaultGroups, roundHoleNames = defaultRoundHoleNames };
         }
 
         /// <summary>

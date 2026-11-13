@@ -4211,3 +4211,11 @@
 - **验证与同步**：
   - `dotnet build "e:\Ace\excel-ct-tools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 通过（`0 Error(s)`，修改文件无新增警告）；
   - 同步 `Resources/smart_import.html` 至 `publish/Resources/`、`bin/Debug/net48/Resources/` 及 `bin/Debug/net48/publish/Resources/`，4 处 SHA256 校验一致（`7060A92D0D17C1B457312B11141310C6AF3045820DEBF53F058CB621E52E57FA`）。
+
+## 2026-11-13 二次回路方案 BOM 图块/标签绑定、门板预览调序与共享配置联动
+- **Completed**:
+  - `Models/SecondaryCircuitModels.cs`: `SecondaryBomItem` 新增 `Category`、`BlockName`、`DoorLabels`、`DoorSlotIndices`。
+  - `Services/PersonalComponentDbService.SecondaryCircuit.cs`: 升级 `SyncBomPricesFromMaterialDb` SQL 查询 `param1` / `param2` 并自动回填。
+  - `Controllers/CloudSolutionController.cs`、`Forms/CloudSolutionForm.cs`、`Forms/CabinetAuxCalcForm.cs`: 新增 `GetSharedEboxExportConfig()` 与 `getEboxExportConfig` 消息路由，读取共享 `ebox_export_config.json`。
+  - `Resources/cloud_solution.html` & `Resources/cabinet_aux_calc.html`: BOM 表新增分类/块名/门板标签 3 列，从物料库选型自动带入 `param1`/`param2`，新增【门板元器件排布预览与槽位调序】区；已同步至 `publish/Resources/`、`bin/Debug/net48/Resources/`、`bin/Debug/net48/publish/Resources/`。
+  - 验证 `dotnet build "E:\Ace\ExcelAddInCTtools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 通过（0 个错误）。

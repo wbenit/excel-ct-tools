@@ -71,6 +71,10 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("description")]
         public string Description { get; set; } = string.Empty;
 
+        // 是否启用“只调一次”（勾选后 Excel 明细 F 列数量不管为几，此方案均强制按 1 计算）
+        [JsonPropertyName("onlyOnce")]
+        public bool OnlyOnce { get; set; } = false;
+
         // 方案创建时间戳
         [JsonPropertyName("createdAt")]
         public string CreatedAt { get; set; } = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
@@ -113,6 +117,22 @@ namespace ExcelAddInDemo.Models
         // 元器件单价 (动态从本地物料库关联读取，保持全局一致性)
         [JsonPropertyName("unitPrice")]
         public double UnitPrice { get; set; } = 0.0;
+
+        // 元器件图块分类目录（对应 SQLite components 表的 param2，如: "门上元器件", "二次", "熔断器"）
+        [JsonPropertyName("category")]
+        public string Category { get; set; } = string.Empty;
+
+        // 元器件绑定的 CAD 图块名称（对应 SQLite components 表的 param1，如: "旋钮", "指示灯", "按钮", "RT18-1P", "K4"）
+        [JsonPropertyName("blockName")]
+        public string BlockName { get; set; } = string.Empty;
+
+        // 门板嵌入安装类元器件绑定的标签（多数量用逗号分隔，如: "低速运行, 高速运行" 或 "手动/自动"）
+        [JsonPropertyName("doorLabels")]
+        public string DoorLabels { get; set; } = string.Empty;
+
+        // 门板元件各实例在槽位中的排序索引列表（如数量为2的红按钮排在第2、第4槽位则为 [2, 4]）
+        [JsonPropertyName("doorSlotIndices")]
+        public List<int> DoorSlotIndices { get; set; } = new List<int>();
 
         // 子项材料费合价计算属性：数量 * 单价，动态计算不存静态死值
         [JsonPropertyName("subtotalCost")]
