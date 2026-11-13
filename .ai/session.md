@@ -54,7 +54,7 @@
 - **【缺陷根治与前端外露：辅材与壳体全柜异常监控看板直达报警列表与故障细节完整外露闭环】([`Forms/CabinetAuxCalcForm.cs`](file:///e:/Ace/ExcelAddInCTtools/Forms/CabinetAuxCalcForm.cs), [`Resources/cabinet_aux_calc.html`](file:///e:/Ace/ExcelAddInCTtools/Resources/cabinet_aux_calc.html), [`publish/`](file:///e:/Ace/ExcelAddInCTtools/publish/))**：
   1. **用户反馈与核心痛点**：
      - 用户原指令：“去除查看全部箱柜功能，直接查看报警箱柜，列表里面需要把故障明细展示，理解表述需求”；
-     - 用户执行后反馈：“列表没有日志细节，如***元器件缺少电流”并附图，指出看板卡片虽已识别报警（显示“⚠️ 1 项报警”），但卡片下方未展示具体的元器件故障文字；
+     - 用户执行后反馈：“列表没有日志细节，如\*\*\*元器件缺少电流”并附图，指出看板卡片虽已识别报警（显示“⚠️ 1 项报警”），但卡片下方未展示具体的元器件故障文字；
      - 用户连续提问：“为什么还是没有显示内容”、“为什么还是老样子呢”。
   2. **根因深度溯源与排查**：
      - ① **DOM 容器缺失根因**：原版本代码在每个卡片内只定义了顶部基础信息条目，根本未放置遍历渲染 `cab.warnings` 列表的 DOM 容器，导致即使后端成功推导出故障明细，前端也无节点可供呈现；
@@ -4060,7 +4060,6 @@
      - 全量同步静态文件至各构建目录；
      - 执行 `dotnet build /p:RunExcelDnaBuild=false` 验证 **0 警告、0 错误** 顺利生成 `ExcelAddInDemo.dll`。
 
-
 ### 10. 2026-11-11: 【智能导入箱柜 BOM 工作台】动态添加扩展列(最多8列)及全链路AF列(32列)支持实施
 
 - **需求背景**：用户反馈智能导入箱柜 BOM 工作台原先固定写死 2 个扩展列（扩展1与扩展2），无法满足用户导入回路/位号、技术参数等自定义列的诉求；且源列和目标列受限于 15 列截断与 26 列 ASCII 算法，无法支持到 AF 列（第 32 列）。用户决策确认：初始无需默认保留扩展列（初始为空数组），支持动态添加，上限最多 8 列，且源列和目标列均完整支持到 AF 列。
@@ -4090,7 +4089,6 @@
      - 同步 `smart_import.html` 至所有输出目录；
      - 执行 `dotnet build /p:RunExcelDnaBuild=false` 验证 **0 警告、0 错误** 成功编译生成。
 
-
 ### 11. 2026-11-11: 【智能导入箱柜 BOM 工作台】彻底清理历史模板兼容逻辑
 
 - **需求背景**：用户指示无需保留历史兼容逻辑，要求彻底移除针对旧版模板过渡处理的冗余字段与代码，保持架构极简与纯粹。
@@ -4112,7 +4110,6 @@
   6. **编译验证**：
      - 执行 `dotnet build /p:RunExcelDnaBuild=false` 验证 **0 警告、0 错误** 顺利编译通过。
 
-
 ### 12. 2026-11-11: 【智能导入箱柜 BOM 工作台】修复导入箱柜顺序倒置 Bug
 
 - **问题现象**：用户反馈智能导入箱柜后，第一台箱柜位置与内容正确，但后续第 2~N 台箱柜的顺序全部呈现倒序（后导入的排在前面，先导入的被一路向下挤）。
@@ -4130,7 +4127,6 @@
   3. **编译验证**：
      - 执行 `dotnet build /p:RunExcelDnaBuild=false`，**0 警告、0 错误** 编译通过。
 
-
 ### 13. 2026-11-11: 【功能区 Ribbon 布局调整】移动“识别极数电流”与“生成二次元件”按钮至“元件批调”后
 
 - **需求背景**：用户要求将功能区中原“②录元件”组的红框内容（“识别极数电流”与“生成二次元件”大按钮）移动至“③调价格→”组的“元件批调”之后。
@@ -4140,7 +4136,6 @@
      - 将上述两个按钮移动至 `grpAdjustPrice`（③调价格→）组中，放置在 `menuBatchAdjust`（元件批调）下拉菜单之后、`btnCabinetAuxCalc`（辅材壳体计算）之前。
   2. **编译验证**：
      - 执行 `dotnet build /p:RunExcelDnaBuild=false`，验证 0 错误顺利编译通过。
-
 
 ### 14. 2026-11-11: 【智能辅材与壳体计算中心】异常监控看板去除“全部箱柜”单选并直接外露展开故障明细
 
@@ -4161,7 +4156,6 @@
      - 全量同步更新后的 HTML 至 `publish/Resources`、`bin/Debug/net48/Resources` 及 `bin/Debug/net48/publish/Resources`；
      - 验证各输出目录文件 SHA256 哈希值 100% 一致；
      - 执行 `dotnet build /p:RunExcelDnaBuild=false` 验证 **0 警告、0 错误** 顺利编译通过。
-
 
 ### 15. 2026-11-12: 【智能导入箱柜 BOM 工作台】全链路性能根因排查与深度提速优化
 
@@ -4212,7 +4206,64 @@
   - `dotnet build "e:\Ace\excel-ct-tools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 通过（`0 Error(s)`，修改文件无新增警告）；
   - 同步 `Resources/smart_import.html` 至 `publish/Resources/`、`bin/Debug/net48/Resources/` 及 `bin/Debug/net48/publish/Resources/`，4 处 SHA256 校验一致（`7060A92D0D17C1B457312B11141310C6AF3045820DEBF53F058CB621E52E57FA`）。
 
+### 18. 2026-11-13: 【智能导入箱柜 BOM 工作台】右侧全表解析面板宽度减半并支持 Excel 网格横向滑动点选
+
+- **问题根因分析**：
+  1. **右侧解析面板占比较宽**：原布局采用 `flex: 62` 与 `flex: 38` 分配，右侧全表解析卡片占了近 40% 视口，导致左侧 Excel 表格展示区受挤压；
+  2. **水平滚动条被全局隐藏**：在公共主题样式 `theme.css` 中配置了全局 `::-webkit-scrollbar { height: 0px !important; }`，导致仿真 Excel 表格视口（`.grid-container`）即便产生横向内容溢出，也无法显示水平滚动条，鼠标无法拖拽滑动；
+  3. **滚轮滑动仅纵向触发**：鼠标滚轮上下滚动默认只能驱动纵向滚动，用户在没有外接左右滚轮或不按住 Shift 的情况下无法自如滑动查看并点选右侧列。
+- **实施措施与代码变动 (`Resources/smart_import.html`)**：
+  1. **右侧面板宽度减半与弹性调整**：
+     - 将 `.right-panel` 的宽度占比从原有的 `flex: 38` 缩减为原来的一半 `flex: 19`；
+     - 左侧 Excel 预览区相应扩展至 `flex: 81`，直接释放出近 20% 的可用视口空间；
+     - 同步微调卡片标题、外边距、内边距与物料行弹性文本截断，确保在半宽下紧凑精致、不破裂。
+  2. **仿真网格横向滚动条定制显式开放**：
+     - 为 `.grid-container` 专属定制覆盖样式：`::-webkit-scrollbar { width: 8px !important; height: 10px !important; }`，滑块采用主题绿蓝过渡色 `#80cbc4`（悬停 `#009688`），使水平滚动条清晰可见、易拖拽。
+  3. **交互体验增强**：
+     - 在表头 `thead` 区域绑定智能滚轮监听 `onGridWheel`，当鼠标在表头 A、B、C 列标上滚动时，自动转换为横向平滑滚动；
+     - 支持用户随时点击右侧任意列单元格执行锚点点选与打标。
+- **验证与同步**：
+  - 同步 `Resources/smart_import.html` 至 `publish/Resources/`、`bin/Debug/net48/Resources/` 及 `bin/Debug/net48/publish/Resources/`，4 处 SHA256 校验完全一致（`E3F8858AD9A4ACDC4BCECB4FFDFFD9FFF2276C3E0AF26C22790189AFF51BBFBA`）；
+  - 执行 `dotnet build "e:\Ace\excel-ct-tools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 顺利编译通过（`0 Error(s)`）。
+
+### 19. 2026-11-13: 【智能导入箱柜 BOM 工作台】彻底解决未产生水平滚动条的根本原因（补齐 32 列与滚动条强制常驻）
+
+- **现象与深层根因定位**：
+  1. **表格列数受制于数据边界，总宽度未超出视口**：用户的标书 Excel 只有 8 列非空数据（A~H 列），后端静默探测仅读取了 8 列；前端原 `columnHeaders` 判定 `gridData[0].length` 导致只循环生成了 8 个表头列和 8 个单元格，表格总宽度仅约 700px。在右侧宽度减半后，左侧视口达 900px，表格在视口内未发生任何横向溢出（`scrollWidth <= clientWidth`），浏览器引擎因而不会渲染水平滚动条；
+  2. **缺少最小列宽约束**：空列未设定 `min-width`，即使扩展也可能收缩；
+  3. **滚动条未常驻**：缺少 `overflow-x: scroll !important`，未超出时系统自动收回滚动条；同时 Chromium 中类选择器伪元素权重易受父级影响。
+- **实施措施与代码变动 (`Resources/smart_import.html`)**：
+  1. **实体仿真 Excel 视口列数保底 32 列 (A~AF 列)**：
+     - 新增计算属性 `totalDisplayCols = Math.max(actualCols, 32)`，表头 `columnHeaders` 始终生成至少 32 列；
+     - 每一行 `tr` 遍历 `totalDisplayCols` 并通过 `getCellValue(rIndex, cIndex)` 安全提取单元格或补齐仿真 Excel 空格，单元格设定 `min-width: 80px`，总宽度达 2560px 以上，绝对产生平滑横向滚动空间；
+     - 用户可自如向右拖拽滑动，查看并点选 I、J、K... AF 列。
+  2. **水平滚动条强制常驻与高特异性渲染**：
+     - `.grid-container` 显式设置 `overflow-x: scroll !important; overflow-y: auto !important;`；
+     - `.left-panel` 增加 `min-height: 0; height: 100%;`，`.grid-container` 增加 `min-height: 0; min-width: 0;` 防止 flex 尺寸撑破；
+     - 双层特异性选择器覆盖滚动条：`div.grid-container::-webkit-scrollbar` 开启 `height: 12px !important; display: block !important;`，滑块颜色采用鲜明的 `#009688` 配合 `#e2e8f0` 轨道。
+- **验证与同步**：
+  - 同步 4 处 `smart_import.html`，SHA256 哈希值 100% 一致（`61AA5407F2D339746EAED4D6588CD5CB9C1DAE9E0CA687C8B3421F1FFD4A7E30`）；
+  - 执行 `dotnet build /p:RunExcelDnaBuild=false` 顺利编译通过（`0 Warning(s)`, `0 Error(s)`）。
+
+### 20. 2026-11-13: 【智能导入箱柜 BOM 工作台】修复大文件列边界收敛导致扩展列（AB列等）数据截断置空的深层 Bug
+
+- **问题现象**：
+  用户在智能导入中配置扩展列（源列 AB 列 ➜ 写入新表 AE 列），导入后新表 AE 列为空，未能成功写入。
+- **底层根因排查**：
+  在 `Services/SmartImportParserService.cs` 中，`GetEffectiveSheetBounds` 曾设有一段防卡死逻辑：当源表行数较多（`usedRows > 2000`）时，调用了 Excel COM 原生 `Cells.Find(SearchOrder: 2 /* xlByColumns */, SearchDirection: 2 /* xlPrevious */)` 逆向探测最大列数；但因未传 `After: Cells[1, 1]` 且局部表头影响，该方法直接误返回了 `lastCol = 8`（H列）！
+  这导致后台 `ReadSheetMatrixSilently` 只读取了 A~H（共 8 列）的数据矩阵存入内存；当推导元器件扩展列（AB列即第 28 列）时，由于 `28 > matrix.GetLength(1)` 直接触发越界安全防护返回空文本 `""`，导致整表无论有值还是为空，均提取为空值并写入空文本。
+- **实施措施与代码修复**：
+  1. **修正列边界探测与防卡死策略 (`Services/SmartImportParserService.cs`)**：
+     - 列数在 100 列以内属于绝对轻量级内存范围（实测 4949 行 x 28 列矩阵读取仅耗时 1.2 秒），彻底移除有缺陷的列级逆向 `Find` 截断，直接信任 `finalCols = Math.Max(1, Math.Min(usedCols, 100))`；
+     - 仅在行数大于 20000 行时才针对行数单独执行行级防膨胀探测；
+  2. **精确对齐用户意图“有值填入，为空则不填”**：
+     - 完整保留 AB 列所有数据；对原表元器件行有值的项目（如二次组、辅材、箱体等）准确提取并写入新表 AE 列；原表元器件行 AB 列为空的项目（如常规微断）保持为空不填，绝不乱填默认值。
+- **验证与测试**：
+  - 本地测试读取 `配电箱报价清单1.xlsx` 4949 x 28 矩阵：第 16 行（二次组）AB 列 `'27579'`、第 17 行（辅材）AB 列 `'27579'` 均准确读取，第 7 行（微断）AB 列准确为空；
+  - 执行 `dotnet build /p:RunExcelDnaBuild=false` 顺利编译通过（`0 Warning(s)`, `0 Error(s)`）。
+
 ## 2026-11-13 二次回路方案 BOM 图块/标签绑定、门板预览调序与共享配置联动
+
 - **Completed**:
   - `Models/SecondaryCircuitModels.cs`: `SecondaryBomItem` 新增 `Category`、`BlockName`、`DoorLabels`、`DoorSlotIndices`。
   - `Services/PersonalComponentDbService.SecondaryCircuit.cs`: 升级 `SyncBomPricesFromMaterialDb` SQL 查询 `param1` / `param2` 并自动回填。
