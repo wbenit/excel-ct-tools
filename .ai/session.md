@@ -4288,7 +4288,6 @@
   - `Resources/cloud_solution.html` & `Resources/cabinet_aux_calc.html`: BOM 表新增分类/块名/门板标签 3 列，从物料库选型自动带入 `param1`/`param2`，新增【门板元器件排布预览与槽位调序】区；已同步至 `publish/Resources/`、`bin/Debug/net48/Resources/`、`bin/Debug/net48/publish/Resources/`。
   - 验证 `dotnet build "E:\Ace\ExcelAddInCTtools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 通过（0 个错误）。
 
-
 ## 2026-11-14 门板元器件 L/R/C 网格排布规则修复、分类下拉精简与详情 BOM 展示优化
 
 - **Completed**:
