@@ -27,6 +27,9 @@ namespace ExcelAddInDemo.Forms
         // 二次回路图纸对齐与绑定业务控制器
         private readonly SecondaryCircuitController _secController;
 
+        // 通用迷你悬浮条辅助器
+        private readonly MiniWindowHelper _miniHelper;
+
         // 暂存正常展开模式下的窗体几何坐标与尺寸
         private Rectangle _normalBounds;
         // 是否正处于悬浮胶囊工具条极简模式
@@ -66,6 +69,9 @@ namespace ExcelAddInDemo.Forms
 
             // 记录大窗体初始化正常尺寸与位置
             _normalBounds = this.Bounds;
+
+            // 绑定通用 160x30px 迷你悬浮条辅助器（隐藏任务栏并支持拖动放置）
+            _miniHelper = new MiniWindowHelper(this, _webView);
         }
 
         /// <summary>
@@ -357,11 +363,11 @@ namespace ExcelAddInDemo.Forms
                         });
                     }
                 }
-                // 响应最小化窗口
+                // 响应最小化窗口（切换为 Excel 左下角可拖动 160x30px 迷你悬浮条）
                 else if (action == "minimize")
                 {
-                    // 调度最小化状态
-                    SafeInvoke(() => this.WindowState = FormWindowState.Minimized);
+                    // 调度迷你悬浮条模式
+                    _miniHelper.EnterMiniMode();
                 }
                 // 响应关闭窗口 (使用 BeginInvoke 异步排队，彻底消除 WebMessageReceived 消息泵内部 Dispose 导致的死锁与超时)
                 else if (action == "close")

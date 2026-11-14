@@ -24,6 +24,9 @@ namespace ExcelAddInDemo.Forms
         // 业务控制器实例
         private readonly ComponentManageController _controller;
 
+        // 通用迷你悬浮条辅助器
+        private readonly MiniWindowHelper _miniHelper;
+
         // JSON 序列化通用选项
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
@@ -62,13 +65,17 @@ namespace ExcelAddInDemo.Forms
             this.ClientSize = new Size(480, 560);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.None;
-            this.ShowInTaskbar = true;
+            // 全程隐藏任务栏独立图标
+            this.ShowInTaskbar = false;
             this.TopMost = true; // 置顶悬浮，便于在 Excel 中划选单元格
             this.BackColor = Color.White;
 
             // 填充布局
             _webView.Dock = DockStyle.Fill;
             this.Controls.Add(_webView);
+
+            // 绑定通用 160x30px 迷你悬浮条辅助器（隐藏任务栏并支持拖动放置）
+            _miniHelper = new MiniWindowHelper(this, _webView);
 
             // 注册生命周期事件
             this.Load += OnFormLoadAsync;
@@ -273,9 +280,9 @@ namespace ExcelAddInDemo.Forms
                         });
                         break;
 
-                    // 8. 最小化窗口
+                    // 8. 最小化窗口（切换为可拖动 160x30px 迷你悬浮条）
                     case "minimizeWindow":
-                        SafeInvoke(() => { this.WindowState = FormWindowState.Minimized; });
+                        _miniHelper.EnterMiniMode();
                         break;
 
                     // 9. 关闭窗口

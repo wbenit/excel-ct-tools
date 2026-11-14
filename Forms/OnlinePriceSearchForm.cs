@@ -26,6 +26,9 @@ namespace ExcelAddInDemo.Forms
         // 异步查价取消令牌源
         private CancellationTokenSource? _cts;
 
+        // 通用迷你悬浮条辅助器
+        private readonly MiniWindowHelper _miniHelper;
+
         // Windows 原生 API: 用于无边框窗体拖拽移动
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern bool ReleaseCapture();
@@ -60,6 +63,9 @@ namespace ExcelAddInDemo.Forms
 
             // 挂载 WebView2 并初始化导航
             InitializeWebViewControl();
+
+            // 绑定通用 160x30px 迷你悬浮条辅助器（隐藏任务栏并支持拖动放置）
+            _miniHelper = new MiniWindowHelper(this, _webView);
         }
 
         /// <summary>
@@ -408,9 +414,9 @@ namespace ExcelAddInDemo.Forms
                         SendMessage(this.Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
                         break;
 
-                    // 8. 窗口最小化
+                    // 8. 窗口最小化（切换为可拖动 160x30px 迷你悬浮条）
                     case "minimizeWindow":
-                        this.WindowState = FormWindowState.Minimized;
+                        _miniHelper.EnterMiniMode();
                         break;
 
                     // 9. 关闭窗口 (落实最佳实践: BeginInvoke 异步脱离 IPC 消息栈，防死锁)

@@ -665,21 +665,56 @@
       --el-button-hover-border-color: var(--accent-orange-hover);
       color: #ffffff !important;
     }
+
+    /* 160x30px 左下角迷你悬浮条样式 */
+    #app.mini-mode {
+      overflow: hidden;
+      /* 迷你条圆角与边框轮廓 */
+      border-radius: 4px;
+      border: 1px solid rgba(0, 121, 107, 0.85);
+    }
+
+    #app.mini-mode .app-header {
+      /* 严格匹配 30px 迷你条高度与紧凑内边距 */
+      height: 30px;
+      padding: 0 8px;
+      border-bottom: none;
+    }
+
+    #app.mini-mode .app-title {
+      /* 迷你态紧凑字体与防换行 */
+      font-size: 12px;
+      gap: 5px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    #app.mini-mode .window-tools {
+      /* 迷你态紧凑按钮间距 */
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    #app.mini-mode .tool-btn {
+      /* 迷你态按钮尺寸适配 */
+      font-size: 12px;
+      padding: 2px 3px;
+    }
   </style>
 </head>
 <body>
-  <div id="app">
-    <!-- 顶部拖拽标题栏 -->
-    <div class="app-header" @mousedown="onHeaderMouseDown">
+  <div id="app" :class="{ 'mini-mode': isMiniMode }">
+    <!-- 顶部拖拽标题栏（迷你模式下双击可快捷还原） -->
+    <div class="app-header" @mousedown="onHeaderMouseDown" @dblclick="isMiniMode && restoreWindow()">
       <!-- 左侧图标与窗口主标题 -->
       <div class="app-title">
         <i class="fa-solid fa-cloud-bolt"></i>
         <span>云物料</span>
       </div>
 
-      <!-- 居中一级主导航胶囊切换器 (物料库 / 计算器) -->
+      <!-- 居中一级主导航胶囊切换器 (物料库 / 计算器)，迷你模式隐藏 -->
       <!-- 增加 @mousedown.stop 防止点击切换时误触窗口拖拽 -->
-      <div class="header-tab-group" @mousedown.stop>
+      <div class="header-tab-group" v-show="!isMiniMode" @mousedown.stop>
         <!-- 物料库胶囊按钮 -->
         <div class="header-tab-btn" :class="{ active: currentPrimaryTab === 'material' }" @click="currentPrimaryTab = 'material'">
           <!-- 物料库图标与文字 -->
@@ -692,11 +727,15 @@
         </div>
       </div>
 
-      <!-- 右侧窗口控制工具 (最小化与关闭) -->
+      <!-- 右侧窗口控制工具 (最小化 / 还原 与 关闭) -->
       <div class="window-tools">
-        <!-- 最小化窗体按钮 -->
-        <button class="tool-btn" title="最小化" @click="minimizeWindow">
+        <!-- 正常态显示最小化按钮 -->
+        <button v-if="!isMiniMode" class="tool-btn" title="最小化到左下角" @click="minimizeWindow">
           <i class="fa-solid fa-minus"></i>
+        </button>
+        <!-- 迷你态显示还原按钮 -->
+        <button v-else class="tool-btn" title="还原窗口" @click="restoreWindow">
+          <i class="fa-regular fa-window-restore"></i>
         </button>
         <!-- 关闭窗体按钮 -->
         <button class="tool-btn close" title="关闭" @click="closeWindow">
@@ -705,8 +744,8 @@
       </div>
     </div>
 
-    <!-- 主体视口容器 -->
-    <div class="main-viewport">
+    <!-- 主体视口容器（迷你模式隐藏但保留 Vue 组件状态） -->
+    <div v-show="!isMiniMode" class="main-viewport">
       
       <!-- ================= 视图 1：物料库 Tab (直接加载个人物料) ================= -->
       <div v-show="currentPrimaryTab === 'material'" class="view-panel">
@@ -1387,6 +1426,8 @@
       setup() {
         // 主选项卡导航: 'material' (物料库) | 'calculator' (计算器)
         const currentPrimaryTab = ref('material');
+        // 是否处于左下角 160x30px 迷你悬浮条模式
+        const isMiniMode = ref(false);
         // 物料库分类子 Tab: '全部' | '元件' | '母排' | '柜体' | '辅料'
         const currentCategoryTab = ref('全部');
         // 计算器二级子 Tab: 'cabinet' (柜体) | 'copper' (母排) | 'ampacity' (载流量)
@@ -2033,7 +2074,17 @@
           sendAction('dragWindow');
         };
 
-        const minimizeWindow = () => sendAction('minimizeWindow');
+        // 最小化为左下角 160x30px 迷你悬浮条
+        const minimizeWindow = () => {
+          isMiniMode.value = true;
+          sendAction('minimizeWindow');
+        };
+        // 从迷你悬浮条还原为正常窗口
+        const restoreWindow = () => {
+          isMiniMode.value = false;
+          sendAction('restoreWindow');
+        };
+        // 关闭窗口
         const closeWindow = () => sendAction('closeWindow');
 
         // 挂载消息监听
@@ -2082,6 +2133,11 @@
                     : (marketPriceInfo.aluminumPrice || 23075);
                   loadMaterials();
                   loadAmpacityTable();
+                  break;
+
+                case 'windowModeChanged':
+                  // 同步后端切换的迷你/正常窗口状态
+                  isMiniMode.value = !!data.isMinimized;
                   break;
 
                 case 'marketPriceResponse':
@@ -2241,7 +2297,9 @@
           insertCopperSingleKgToExcel,
           replaceCopperInExcel,
           onHeaderMouseDown,
+          isMiniMode,
           minimizeWindow,
+          restoreWindow,
           closeWindow
         };
       }

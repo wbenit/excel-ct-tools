@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
+using ExcelAddInDemo.Forms;
 using ExcelAddInDemo.Controllers;
 using ExcelDna.Integration;
 
@@ -20,6 +21,9 @@ namespace ExcelAddInDemo
 
         // 声明分布调价 WebAPI 控制器实例
         private readonly DistributedAdjustPriceController _controller;
+
+        // 通用迷你悬浮条辅助器
+        private readonly MiniWindowHelper _miniHelper;
 
         // 通用 JSON 序列化配置
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
@@ -45,6 +49,9 @@ namespace ExcelAddInDemo
 
             // 配置并挂载 WebView2 控件
             InitializeWebViewControl();
+
+            // 绑定通用 160x30px 迷你悬浮条辅助器（隐藏任务栏并支持拖动放置）
+            _miniHelper = new MiniWindowHelper(this, _webView);
         }
 
         /// <summary>
@@ -191,9 +198,9 @@ namespace ExcelAddInDemo
                         HandleCheckDistributionSheetExists();
                         break;
 
-                    // 5. 最小化宿主窗口
+                    // 5. 最小化宿主窗口（切换为可拖动 160x30px 迷你悬浮条）
                     case "minimizeWindow":
-                        this.WindowState = FormWindowState.Minimized;
+                        _miniHelper.EnterMiniMode();
                         break;
 
                     // 6. 关闭宿主窗口

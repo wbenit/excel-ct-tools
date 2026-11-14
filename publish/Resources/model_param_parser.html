@@ -399,6 +399,10 @@
           <span>元器件型号参数识别设置 (极数与电流)</span>
         </div>
         <div class="window-controls" @mousedown.stop>
+          <!-- 最小化到 160x30px 迷你悬浮条 -->
+          <div class="ctrl-btn" title="最小化" @click.stop="onMinimize">
+            <i class="fa-solid fa-minus"></i>
+          </div>
           <div class="ctrl-btn close" title="关闭" @click.stop="onClose">
             <i class="fa-solid fa-xmark"></i>
           </div>

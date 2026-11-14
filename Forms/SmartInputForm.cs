@@ -8,6 +8,7 @@ using ExcelAddInDemo.Controllers;
 using ExcelAddInDemo.Models;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
+using ExcelAddInDemo.Forms;
 
 namespace ExcelAddInDemo
 {
@@ -21,6 +22,9 @@ namespace ExcelAddInDemo
 
         // 声明智能输入后端 WebAPI 控制器句柄
         private readonly SmartInputController _controller;
+
+        // 通用迷你悬浮条辅助器
+        private readonly MiniWindowHelper _miniHelper;
 
         // 导入 Windows 原生 user32.dll 接口用于鼠标拖拽无边框窗口
         [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -58,6 +62,9 @@ namespace ExcelAddInDemo
 
             // 配置并挂载 WebView2 控件
             InitializeWebViewControl();
+
+            // 绑定通用 160x30px 迷你悬浮条辅助器（隐藏任务栏并支持拖动放置）
+            _miniHelper = new MiniWindowHelper(this, _webView);
         }
 
         /// <summary>
@@ -329,9 +336,9 @@ namespace ExcelAddInDemo
                         }
                         break;
 
-                    // 7. 最小化窗口
+                    // 7. 最小化窗口（切换为可拖动 160x30px 迷你悬浮条）
                     case "minimize":
-                        this.WindowState = FormWindowState.Minimized;
+                        _miniHelper.EnterMiniMode();
                         break;
 
                     // 8. 关闭窗口

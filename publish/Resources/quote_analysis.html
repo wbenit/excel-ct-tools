@@ -447,6 +447,10 @@
         <button class="header-btn" @click="exportDashboardImage">
           <span>📸 导出大屏图片</span>
         </button>
+        <!-- 最小化到 160x30px 迷你悬浮条 -->
+        <button class="header-btn" title="最小化" @click="minimizeWindow">
+          <span>➖ 最小化</span>
+        </button>
       </div>
     </header>
 
@@ -1464,6 +1468,11 @@
           ElementPlus.ElMessage.success('已准备大屏快照导出，可通过截图或导出报告交付！');
         };
 
+        // 触发窗口最小化为 160x30px 迷你悬浮条
+        const minimizeWindow = () => {
+          postToCSharp({ action: 'minimizeWindow' });
+        };
+
         // 窗口尺寸变化自适应重排
         window.addEventListener('resize', () => {
           chartCost?.resize();
@@ -1511,6 +1520,7 @@
           refreshData,
           toggleTheme,
           exportDashboardImage,
+          minimizeWindow,
           openCabinetDrawer,
           jumpToCabinet
         };

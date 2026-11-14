@@ -24,6 +24,9 @@ namespace ExcelAddInDemo.Forms
         // WebView2 浏览器控件实例
         private readonly WebView2 _webView;
 
+        // 通用迷你悬浮条辅助器
+        private readonly MiniWindowHelper _miniHelper;
+
         // JSON 序列化选项 (驼峰命名与宽松解析)
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
@@ -71,6 +74,9 @@ namespace ExcelAddInDemo.Forms
 
             // 配置并挂载 WebView2 控件
             InitializeWebViewControl();
+
+            // 绑定通用 160x30px 迷你悬浮条辅助器（隐藏任务栏并支持拖动放置）
+            _miniHelper = new MiniWindowHelper(this, _webView);
         }
 
         /// <summary>
@@ -533,10 +539,10 @@ namespace ExcelAddInDemo.Forms
                 {
                     SafeInvoke(this.Hide);
                 }
-                // 7. 最小化窗口
+                // 7. 最小化窗口（切换为可拖动 160x30px 迷你悬浮条）
                 else if (action == "minimizeWindow")
                 {
-                    SafeInvoke(() => { this.WindowState = FormWindowState.Minimized; });
+                    _miniHelper.EnterMiniMode();
                 }
             }
             catch (Exception ex)

@@ -21,6 +21,9 @@ namespace ExcelAddInDemo.Forms
         // 声明总价一键调整控制器
         private readonly TotalPriceAdjustController _controller;
 
+        // 通用迷你悬浮条辅助器
+        private readonly MiniWindowHelper _miniHelper;
+
         // 统一 JSON 解析选项
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
@@ -45,6 +48,9 @@ namespace ExcelAddInDemo.Forms
 
             // 配置并挂载 WebView2 控件
             InitializeWebViewControl();
+
+            // 绑定通用 160x30px 迷你悬浮条辅助器（隐藏任务栏并支持拖动放置）
+            _miniHelper = new MiniWindowHelper(this, _webView);
         }
 
         /// <summary>
@@ -247,10 +253,10 @@ namespace ExcelAddInDemo.Forms
                         });
                     }
                 }
-                // 响应最小化
+                // 响应最小化（切换为可拖动 160x30px 迷你悬浮条）
                 else if (action == "minimize" || action == "minimizeWindow")
                 {
-                    SafeInvoke(() => this.WindowState = FormWindowState.Minimized);
+                    _miniHelper.EnterMiniMode();
                 }
                 // 响应关闭窗体
                 else if (action == "close" || action == "closeWindow")

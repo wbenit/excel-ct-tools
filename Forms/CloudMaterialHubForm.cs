@@ -24,17 +24,8 @@ namespace ExcelAddInDemo.Forms
         // 默认激活的选项卡名称
         private readonly string _initialTab;
 
-        // Windows 原生 user32.dll 接口用于标题栏拖拽窗口
-        [System.Runtime.InteropServices.DllImport("user32.dll")]
-        private static extern bool ReleaseCapture();
-
-        // SendMessage 原生系统消息分发接口
-        [System.Runtime.InteropServices.DllImport("user32.dll")]
-        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
-
-        // 常量定义: 标题栏拖拽消息
-        private const int WM_NCLBUTTONDOWN = 0xA1;
-        private const int HTCAPTION = 0x2;
+        // 通用迷你悬浮条窗口辅助器
+        private readonly MiniWindowHelper _miniHelper;
 
         // 通用 JSON 序列化配置结构
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
@@ -60,6 +51,9 @@ namespace ExcelAddInDemo.Forms
 
             // 配置并挂载 WebView2 控件
             InitializeWebViewControl();
+
+            // 绑定通用迷你悬浮条辅助器（云物料前端已自绘迷你模式，禁用注入覆盖层）
+            _miniHelper = new MiniWindowHelper(this, _webView, useInjectedOverlay: false);
         }
 
         /// <summary>
@@ -82,8 +76,11 @@ namespace ExcelAddInDemo.Forms
             // 禁用 WinForm 原生最大化
             this.MaximizeBox = false;
 
-            // 启用最小化
-            this.MinimizeBox = true;
+            // 禁用原生最小化，改用自定义 160x30px 左下角迷你悬浮条
+            this.MinimizeBox = false;
+
+            // 全程不在 Windows 任务栏显示独立图标，依附于 Excel 主窗口
+            this.ShowInTaskbar = false;
 
             // 设置窗口背景填充色
             this.BackColor = Color.White;
@@ -256,13 +253,18 @@ namespace ExcelAddInDemo.Forms
                         break;
 
                     case "dragWindow":
-                        // 标题栏拖拽移动
-                        HandleDragWindow();
+                        // 标题栏拖拽移动（支持迷你模式下记忆相对偏移）
+                        _miniHelper.HandleDragWindow();
                         break;
 
                     case "minimizeWindow":
-                        // 最小化窗口
-                        this.WindowState = FormWindowState.Minimized;
+                        // 切换为 Excel 左下角 160x30px 迷你悬浮条模式
+                        _miniHelper.EnterMiniMode();
+                        break;
+
+                    case "restoreWindow":
+                        // 从迷你悬浮条模式还原为正常大小与位置
+                        _miniHelper.ExitMiniMode();
                         break;
 
                     case "closeWindow":
@@ -538,12 +540,6 @@ namespace ExcelAddInDemo.Forms
         /// <summary>
         /// 响应无边框窗体拖拽移动
         /// </summary>
-        private void HandleDragWindow()
-        {
-            ReleaseCapture();
-            SendMessage(this.Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
-        }
-
         /// <summary>
         /// 线程安全地向前端 WebView2 发送 JSON 格式业务数据
         /// 严格遵循 WinForms UI 线程模型，支持跨线程自动 BeginInvoke 调度

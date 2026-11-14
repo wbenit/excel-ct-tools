@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
+using ExcelAddInDemo.Forms;
 using ExcelAddInDemo.Controllers;
 
 namespace ExcelAddInDemo
@@ -19,6 +20,9 @@ namespace ExcelAddInDemo
 
         // 声明公式法调费后端 WebAPI 控制器句柄
         private readonly FormulaAdjustFeeController _controller;
+
+        // 通用迷你悬浮条辅助器
+        private readonly MiniWindowHelper _miniHelper;
 
         // 导入 Windows 原生 user32.dll 接口用于拖拽窗口
         [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -56,6 +60,9 @@ namespace ExcelAddInDemo
 
             // 配置并挂载 WebView2 控件
             InitializeWebViewControl();
+
+            // 绑定通用 160x30px 迷你悬浮条辅助器（隐藏任务栏并支持拖动放置）
+            _miniHelper = new MiniWindowHelper(this, _webView);
         }
 
         /// <summary>
@@ -303,9 +310,9 @@ namespace ExcelAddInDemo
                         PostWebMessageSafe(JsonSerializer.Serialize(applyResData, JsonOptions));
                         break;
 
-                    // 最小化窗口
+                    // 最小化窗口（切换为可拖动 160x30px 迷你悬浮条）
                     case "minimize":
-                        SafeInvoke(() => this.WindowState = FormWindowState.Minimized);
+                        _miniHelper.EnterMiniMode();
                         break;
 
                     // 关闭窗口

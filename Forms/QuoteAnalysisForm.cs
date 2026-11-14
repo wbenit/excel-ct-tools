@@ -42,6 +42,9 @@ namespace ExcelAddInDemo.Forms
         // 当前用户在前端多选的工作表名称列表 (null 时默认当前活动工作表)
         private System.Collections.Generic.List<string>? _currentSelectedSheets;
 
+        // 通用迷你悬浮条辅助器
+        private readonly MiniWindowHelper _miniHelper;
+
         /// <summary>
         /// 构造函数：初始化窗体属性与 WebView2 核心控件
         /// </summary>
@@ -55,6 +58,9 @@ namespace ExcelAddInDemo.Forms
 
             // 配置并挂载 WebView2 控件
             InitializeWebViewControl();
+
+            // 绑定通用 160x30px 迷你悬浮条辅助器（隐藏任务栏并支持拖动放置）
+            _miniHelper = new MiniWindowHelper(this, _webView);
         }
 
         /// <summary>
@@ -231,9 +237,9 @@ namespace ExcelAddInDemo.Forms
                         }
                         break;
 
-                    // 5. 窗口最小化
+                    // 5. 窗口最小化（切换为可拖动 160x30px 迷你悬浮条）
                     case "minimizeWindow":
-                        this.WindowState = FormWindowState.Minimized;
+                        _miniHelper.EnterMiniMode();
                         break;
 
                     // 6. 关闭大屏窗口

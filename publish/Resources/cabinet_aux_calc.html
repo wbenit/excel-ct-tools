@@ -1089,6 +1089,12 @@
               ></path>
             </svg>
           </div>
+          <!-- 最小化到 160x30px 迷你悬浮条 -->
+          <div class="win-btn" title="最小化" @click="minimizeWindow">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+          </div>
           <div class="win-btn close" title="关闭" @click="closeWindow">
             <svg
               width="14"
@@ -7326,6 +7332,12 @@
           // 兼容旧版调用
           const onHeaderMouseDown = onHeaderPointerDown;
 
+          // 触发窗口最小化为 160x30px 迷你悬浮条
+          const minimizeWindow = () => {
+            if (window.chrome && window.chrome.webview)
+              window.chrome.webview.postMessage({ action: "minimize" });
+          };
+
           const closeWindow = () => {
             if (window.chrome && window.chrome.webview)
               window.chrome.webview.postMessage({ action: "close" });
@@ -9473,6 +9485,7 @@
             specialComponentInputRef,
             onHeaderPointerDown,
             onHeaderMouseDown,
+            minimizeWindow,
             closeWindow,
             onSheetChange,
             onRefreshContext,

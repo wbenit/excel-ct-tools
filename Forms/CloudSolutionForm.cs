@@ -21,6 +21,9 @@ namespace ExcelAddInDemo.Forms
         // 声明云方案业务控制器
         private readonly CloudSolutionController _controller;
 
+        // 通用迷你悬浮条辅助器
+        private readonly MiniWindowHelper _miniHelper;
+
         // 导入 Windows 原生 user32.dll 接口以支持无边框窗体拖拽
         [System.Runtime.InteropServices.DllImport("user32.dll", CallingConvention = System.Runtime.InteropServices.CallingConvention.Winapi)]
         private static extern bool ReleaseCapture();
@@ -64,6 +67,9 @@ namespace ExcelAddInDemo.Forms
 
             // 初始化并挂载 WebView2 控件
             InitializeWebViewControl();
+
+            // 绑定通用 160x30px 迷你悬浮条辅助器（隐藏任务栏并支持拖动放置）
+            _miniHelper = new MiniWindowHelper(this, _webView);
         }
 
         /// <summary>
@@ -260,9 +266,9 @@ namespace ExcelAddInDemo.Forms
                         this.Invoke(new Action(() => this.Close()));
                         break;
 
-                    // 3. 最小化窗体
+                    // 3. 最小化窗体（切换为可拖动 160x30px 迷你悬浮条）
                     case "minimize":
-                        this.Invoke(new Action(() => this.WindowState = FormWindowState.Minimized));
+                        _miniHelper.EnterMiniMode();
                         break;
 
                     // 4. 最大化与还原切换
