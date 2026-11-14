@@ -1797,6 +1797,16 @@ namespace ExcelAddInDemo
                     // 记录图纸范围坐标至 AD 列 (第 30 列)
                     adHeaderCell.Value2 = string.Join("-", cab.Header.MinMaxPoints);
                 }
+                // 若包含跨图源图纸与坐标元数据则写入 AE 列 (第 31 列) --硬编码: AE列索引31--
+                if (!string.IsNullOrWhiteSpace(cab.Header.SourceDwgPath))
+                {
+                    // 提取 AE 列表头单元格
+                    dynamic aeHeaderCell = sheet.Cells[detRow, 31]; // --硬编码: AE列索引31--
+                    // 强制设置单元格格式为文本类型 "@"
+                    aeHeaderCell.NumberFormatLocal = "@"; // --硬编码: 文本格式符--
+                    // 写入源图纸路径及包围盒元数据
+                    aeHeaderCell.Value2 = cab.Header.SourceDwgPath;
+                }
 
                 // 12. 刷新计费公式与总计行数量联动 (规则 6 & 规则 7)
                 RefreshCabinetFeeAreaFormulas(sheet, detRow, compStartRow, subsumRow, tolsumRow);
@@ -2556,6 +2566,16 @@ namespace ExcelAddInDemo
                     // 记录图纸范围坐标至 AD 列 (第 30 列)
                     adHeaderCell.Value2 = string.Join("-", cab.Header.MinMaxPoints);
                 }
+                // 若包含跨图源图纸与坐标元数据则写入 AE 列 (第 31 列) --硬编码: AE列索引31--
+                if (!string.IsNullOrWhiteSpace(cab.Header.SourceDwgPath))
+                {
+                    // 提取 AE 列表头单元格
+                    dynamic aeHeaderCell = sheet.Cells[detRow, 31]; // --硬编码: AE列索引31--
+                    // 强制设置单元格格式为文本类型 "@"
+                    aeHeaderCell.NumberFormatLocal = "@"; // --硬编码: 文本格式符--
+                    // 写入源图纸路径及包围盒元数据
+                    aeHeaderCell.Value2 = cab.Header.SourceDwgPath;
+                }
 
                 // 规则：明细表头行 (detRow + 1) A 列动态自适应绑定当前箱柜汇总行序号动态公式
                 // 确保新克隆箱柜明细表头绑定 Cab_Sum_{cabinetK} 而非母版的 Cab_Sum_1
@@ -2966,9 +2986,9 @@ namespace ExcelAddInDemo
         /// </summary>
         /// <param name="sheet">Excel 工作表 COM 对象</param>
         // 多工作表箱柜区间与名称高速内存缓存 (零 COM 耗时，毫秒级瞬发)
-        // Key: 工作表名称，Value: (缓存产生时间戳, 该表所有箱柜的 (起始行, 终止行, 箱柜名称) 列表)
-        private static readonly Dictionary<string, (DateTime CacheTime, List<(int StartRow, int EndRow, string CabName)> Cabinets)> _activeCabinetSheetCache =
-            new Dictionary<string, (DateTime, List<(int, int, string)>)>(StringComparer.OrdinalIgnoreCase);
+        // Key: 工作表名称，Value: (缓存产生时间戳, 该表所有箱柜的 (起始行, 终止行, 箱柜名称, 源图纸路径) 列表)
+        private static readonly Dictionary<string, (DateTime CacheTime, List<(int StartRow, int EndRow, string CabName, string SourceDwg)> Cabinets)> _activeCabinetSheetCache =
+            new Dictionary<string, (DateTime, List<(int, int, string, string)>)>(StringComparer.OrdinalIgnoreCase);
 
         // 缓存有效期设为 5 分钟 (单元格高频切换时 100% 内存瞬发命中)
         private static readonly TimeSpan ActiveCabinetCacheExpiry = TimeSpan.FromMinutes(5);
@@ -3070,7 +3090,7 @@ namespace ExcelAddInDemo
                 if (validCabinets == null || validCabinets.Count == 0) return string.Empty;
 
                 // 一次性构建全表所有箱柜的物理范围与名称并存入内存缓存
-                var cabinetList = new List<(int StartRow, int EndRow, string CabName)>();
+                var cabinetList = new List<(int StartRow, int EndRow, string CabName, string SourceDwg)>();
                 string resultName = string.Empty;
 
                 // 遍历解析全表箱柜
@@ -3095,11 +3115,14 @@ namespace ExcelAddInDemo
                             int sumR = Convert.ToInt32(anchor.Sum.Row);
                             cName = Convert.ToString(sheet.Cells[sumR, 2].Value2)?.Trim() ?? string.Empty;
                         }
+                        // 从明细信息行 AE 列 (第 31 列) 提取源 DWG 图纸完整路径 --硬编码: AE列索引31--
+                        string srcDwg = Convert.ToString(sheet.Cells[startR, 31].Value2)?.Trim() ?? string.Empty;
 
                         // 登记有效箱柜区间
                         if (!string.IsNullOrEmpty(cName))
                         {
-                            cabinetList.Add((startR, Math.Max(startR, endR), cName));
+                            // 将箱柜起止行、名称及源图纸路径存入列表
+                            cabinetList.Add((startR, Math.Max(startR, endR), cName, srcDwg));
                             // 若当前正在查询的行刚好落在该箱柜区间，记录结果
                             if (row >= startR && row <= Math.Max(startR, endR) && string.IsNullOrEmpty(resultName))
                             {
@@ -3120,6 +3143,69 @@ namespace ExcelAddInDemo
             }
 
             // 最终未识别返回空
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// 根据当前单元格物理行号，智能解析获取其归属箱柜的源 DWG 图纸物理路径 (从 Cab_Det 行 AE 列提取)
+        /// 优先走 _activeCabinetSheetCache 0ms 内存命中，支持顶部 Cab_Sum 行与底部明细行双向反查
+        /// </summary>
+        /// <param name="sheet">活动工作表 COM 实例</param>
+        /// <param name="row">物理行号</param>
+        /// <returns>源 DWG 文件路径，若未记录则返回空字符串</returns>
+        public static string GetActiveCabinetSourceDwg(dynamic? sheet, int row)
+        {
+            // 校验工作表与行号有效性
+            if (sheet == null || row <= 0) return string.Empty;
+
+            try
+            {
+                // 获取当前工作表名称
+                string sheetName = Convert.ToString(sheet.Name)?.Trim() ?? string.Empty;
+                // 排除空表名或系统保留工作表
+                if (string.IsNullOrEmpty(sheetName) || Tool.IsReservedOrReportSheet(sheetName))
+                {
+                    // 非分类表直接返回空
+                    return string.Empty;
+                }
+
+                // 先确保全表缓存已构建或命中
+                _ = GetActiveCabinetName(sheet, row);
+
+                // 1. 优先从内存缓存区间比对 (0ms)
+                if (_activeCabinetSheetCache.TryGetValue(sheetName, out var cachedEntry))
+                {
+                    // 遍历当前工作表缓存的箱柜区间
+                    foreach (var cab in cachedEntry.Cabinets)
+                    {
+                        // 命中底部明细区间直接返回源 DWG 路径
+                        if (row >= cab.StartRow && row <= cab.EndRow)
+                        {
+                            return cab.SourceDwg;
+                        }
+                    }
+                }
+
+                // 2. 若用户点击的是顶部汇总行 (Cab_Sum)，通过 A 列超链接反查对应的 Cab_Det 行或按箱柜名匹配
+                string rowCabName = Convert.ToString(sheet.Cells[row, 2].Value2)?.Trim() ?? string.Empty;
+                // 若 B 列存在箱柜名且缓存中存在同名箱柜则直接返回其 SourceDwg
+                if (!string.IsNullOrEmpty(rowCabName) && _activeCabinetSheetCache.TryGetValue(sheetName, out var cachedForSum))
+                {
+                    // 在缓存中查找同名箱柜
+                    var matched = cachedForSum.Cabinets.FirstOrDefault(c => string.Equals(c.CabName, rowCabName, StringComparison.OrdinalIgnoreCase));
+                    // 命中则返回其源图纸路径
+                    if (!string.IsNullOrEmpty(matched.SourceDwg))
+                    {
+                        return matched.SourceDwg;
+                    }
+                }
+            }
+            catch
+            {
+                // 忽略解析异常
+            }
+
+            // 未命中返回空字符串
             return string.Empty;
         }
 

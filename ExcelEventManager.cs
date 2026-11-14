@@ -281,6 +281,8 @@ namespace ExcelAddInDemo
 
                             // 智能解析提取当前选区行所属的箱柜名称 (柜号)
                             string activeCabinetName = ExcelServices.GetActiveCabinetName(ws, startRow);
+                            // 智能解析提取当前选区行所属箱柜的源 DWG 图纸路径 (从 Cab_Det 行 AE 列读取)
+                            string activeSourceDwg = ExcelServices.GetActiveCabinetSourceDwg(ws, startRow);
 
                             // 提取当前选中行的规格型号 (支持普通分类表 C 列与元件汇总表 D/C/R 列)
                             string selectedModel = string.Empty;
@@ -306,8 +308,8 @@ namespace ExcelAddInDemo
                                 selectedModel = Convert.ToString(ws.Range[$"C{startRow}"].Value2)?.Trim() ?? string.Empty;
                             }
 
-                            // 带有 50ms 防抖与自动缩放视角推送至 CAD 管道 (附带箱柜名称与型号以实现句柄优先+型号兜底双轨联动)
-                            Services.CadSyncClient.SendHandlesDebounced(handleList, true, cabinetName: activeCabinetName, model: selectedModel);
+                            // 带有 50ms 防抖与自动缩放视角推送至 CAD 管道 (附带箱柜名称、型号及源图纸路径以支持跨图自动切换定位)
+                            Services.CadSyncClient.SendHandlesDebounced(handleList, true, cabinetName: activeCabinetName, model: selectedModel, sourceDwgPath: activeSourceDwg);
                         }
                     }
                     catch { }

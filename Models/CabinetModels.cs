@@ -47,6 +47,9 @@ namespace ExcelAddInDemo.Models
 
         // CAD 图元句柄/坐标范围
         public List<string> MinMaxPoints { get; set; } = new List<string>();
+
+        // 跨图扒图源 DWG 图纸完整物理路径 (写入 Cab_Det 行 AE 列)
+        public string SourceDwgPath { get; set; } = string.Empty;
     }
 
     /// <summary>
