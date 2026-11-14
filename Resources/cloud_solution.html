@@ -1413,7 +1413,8 @@
 
     .bom-grid-table {
       width: 100%;
-      min-width: 1560px;
+      /* 自适应容器宽度，避免常规窗口下出现水平滚动条 */
+      min-width: 100%;
       border-collapse: collapse;
       font-size: 12px;
       table-layout: fixed;
@@ -3859,38 +3860,38 @@
           </div>
         </div>
 
-        <!-- ②【BOM 明细】子面板 (原生高精度网格表格，完整还原图2与图3的18列与横向滚动) -->
+        <!-- ②【BOM 明细】子面板 (显示分类、块名、门板标签及纯展示门板元器件排布预览) -->
         <div class="bom-view-panel" v-show="detailActiveTab === 'bom'">
           <div class="bom-table-scroll-wrapper">
             <table class="bom-grid-table">
               <thead>
                 <tr>
-                  <th style="width: 75px; text-align: center">
+                  <!-- 收窄基础字段列宽，为分类、块名、门板标签留出空间 -->
+                  <th style="width: 56px; text-align: center">
                     <div class="th-select-box" @click="onToggleAllBomClick">
                       <span class="custom-chk"
                         :class="{ checked: allBomChecked, indeterminate: isBomIndeterminate }"></span>
                       <span>选择</span>
                     </div>
                   </th>
-                  <th style="width: 55px; text-align: center">序号</th>
-                  <th style="width: 140px; text-align: left">名称</th>
-                  <th style="width: 160px; text-align: left">型号</th>
-                  <th style="width: 120px; text-align: left">品牌</th>
-                  <th style="width: 55px; text-align: center">单位</th>
-                  <th style="width: 75px; text-align: right">数量</th>
-                  <th style="width: 55px; text-align: center">WL</th>
-                  <th style="width: 85px; text-align: right">表价</th>
-                  <th style="width: 65px; text-align: right">折扣</th>
-                  <th style="width: 65px; text-align: right">报出</th>
-                  <th style="width: 85px; text-align: right">单价</th>
-                  <th style="width: 95px; text-align: right">总价</th>
-                  <th style="width: 100px; text-align: left">备注</th>
-                  <th style="width: 110px; text-align: left">物料编码</th>
-                  <th style="width: 80px; text-align: left">产地</th>
-                  <th style="width: 85px; text-align: center">类别</th>
-                  <th style="width: 100px; text-align: center">块名</th>
-                  <th style="width: 140px; text-align: left">门板标签</th>
-                  <th style="width: 85px; text-align: center">操作</th>
+                  <th style="width: 42px; text-align: center">序号</th>
+                  <th style="width: 105px; text-align: left">名称</th>
+                  <th style="width: 130px; text-align: left">型号</th>
+                  <th style="width: 60px; text-align: left">品牌</th>
+                  <th style="width: 42px; text-align: center">单位</th>
+                  <th style="width: 55px; text-align: right">数量</th>
+                  <th style="width: 42px; text-align: center">WL</th>
+                  <th style="width: 58px; text-align: right">表价</th>
+                  <th style="width: 46px; text-align: right">折扣</th>
+                  <th style="width: 46px; text-align: right">报出</th>
+                  <th style="width: 58px; text-align: right">单价</th>
+                  <th style="width: 64px; text-align: right">总价</th>
+                  <th style="width: 64px; text-align: left">备注</th>
+                  <!-- 统一命名“分类”列，去除原物料编码与产地列 -->
+                  <th style="width: 76px; text-align: center">分类</th>
+                  <th style="width: 82px; text-align: center">块名</th>
+                  <th style="width: 110px; text-align: left">门板标签</th>
+                  <th style="width: 66px; text-align: center">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -3939,16 +3940,10 @@
                   <td style="text-align: left" :title="row.remark">
                     {{ row.remark }}
                   </td>
-                  <td style="text-align: left" :title="row.materialCode">
-                    {{ row.materialCode }}
-                  </td>
-                  <td style="text-align: left" :title="row.origin">
-                    {{ row.origin }}
-                  </td>
+                  <!-- 反显分类、CAD 图块名与门板标签 -->
                   <td style="text-align: center" :title="row.category">
                     {{ row.category }}
                   </td>
-                  <!-- 反显 CAD 图块名与门板标签 -->
                   <td style="text-align: center" :title="row.blockName">
                     {{ row.blockName || '-' }}
                   </td>
@@ -3967,6 +3962,46 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+          <!-- 图三门板元器件排布纯展示预览区（存在门上元器件时自动显示） -->
+          <div v-if="detailDoorPreviewData.hasDoorItems" style="margin-top: 10px; padding: 10px 12px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; max-height: 250px; overflow-y: auto; flex-shrink: 0;">
+            <!-- 排布区标题与当前匹配开孔组信息 -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-weight: 600; color: #0f172a; font-size: 13px;">🎛️ 门板元器件排布预览</span>
+              <span style="font-size: 12px; color: #64748b;">
+                当前匹配组: <strong style="color: #009688;">{{ detailDoorPreviewData.groupKey || '默认排布' }}</strong>
+                <span v-if="detailDoorPreviewData.patternStr"> ({{ detailDoorPreviewData.patternStr }})</span>
+              </span>
+            </div>
+            <!-- 非圆孔元器件水平居中区（如多功能表等） -->
+            <div v-if="detailDoorPreviewData.centerItems.length > 0" style="margin-bottom: 8px; padding: 8px; background: #ffffff; border: 1px dashed #94a3b8; border-radius: 4px;">
+              <div style="font-size: 11px; color: #64748b; margin-bottom: 6px; text-align: center;">上方居中区（非圆孔门上元器件，固定水平居中）</div>
+              <div style="display: flex; justify-content: center; flex-wrap: wrap; gap: 10px;">
+                <!-- 纯展示非圆孔门上元器件卡片 -->
+                <div v-for="(cItem, cIdx) in detailDoorPreviewData.centerItems" :key="'detail-center-' + cIdx"
+                  style="padding: 6px 12px; background: #ecfeff; border: 1px solid #0891b2; border-radius: 4px; text-align: center; min-width: 90px;">
+                  <div style="font-size: 12px; font-weight: 600; color: #0e7490;">{{ cItem.label || cItem.blockName || cItem.name }}</div>
+                  <div style="font-size: 11px; color: #64748b;">图块: {{ cItem.blockName || '未填' }}</div>
+                </div>
+              </div>
+            </div>
+            <!-- 圆孔元器件按开孔组多行网格对齐纯展示区（支持 L/R/C 对齐，无调序按钮） -->
+            <div v-if="detailDoorPreviewData.roundRows.length > 0" style="overflow-x: auto; padding-bottom: 2px;">
+              <!-- 按最大列数锁定网格基准宽度并整体居中 -->
+              <div :style="{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '0 auto', width: (detailDoorPreviewData.maxCols * 100 + Math.max(0, detailDoorPreviewData.maxCols - 1) * 8 + 18) + 'px' }">
+                <!-- 单行按 align 规则执行左/右/居中对齐 -->
+                <div v-for="(rowObj, rIdx) in detailDoorPreviewData.roundRows" :key="'detail-row-' + rIdx"
+                  :style="{ display: 'flex', flexWrap: 'nowrap', gap: '8px', justifyContent: rowObj.align === 'L' ? 'flex-start' : (rowObj.align === 'R' ? 'flex-end' : 'center'), padding: '8px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '4px', boxSizing: 'border-box', width: '100%' }">
+                  <!-- 纯展示圆孔槽位卡片 -->
+                  <div v-for="slot in rowObj.slots" :key="slot.uid"
+                    style="display: flex; flex-direction: column; align-items: center; padding: 6px 6px; background: #f0fdfa; border: 1px solid #009688; border-radius: 4px; width: 100px; flex-shrink: 0; box-sizing: border-box;">
+                    <div style="font-size: 11px; color: #64748b; margin-bottom: 2px;">槽位 #{{ slot.slotIndex + 1 }}</div>
+                    <div style="font-size: 12px; font-weight: 600; color: #0f172a; margin-bottom: 2px; text-align: center; word-break: break-all;">{{ slot.label || slot.blockName || slot.name }}</div>
+                    <div style="font-size: 11px; color: #008477; text-align: center; word-break: break-all;">{{ slot.blockName || slot.name }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="bom-footnote">
             <span>选择: 选择所需BOM,插入/导出...</span>
@@ -4271,15 +4306,12 @@
                   <!-- 型号规格：统一使用 model 字段 -->
                   <el-input v-model="item.model" size="small" placeholder="型号规格"></el-input>
                 </td>
-                <!-- 分类选择/输入列，对应 SQLite param2 -->
+                <!-- 分类选择/输入列，对应 SQLite param2（保留手动输入自定义分类） -->
                 <td>
                   <el-select v-model="item.category" allow-create filterable default-first-option clearable size="small" placeholder="分类" style="width: 100%">
+                    <!-- 仅保留门上元器件与二次两个常用预设选项 -->
                     <el-option label="门上元器件" value="门上元器件"></el-option>
                     <el-option label="二次" value="二次"></el-option>
-                    <el-option label="熔断器" value="熔断器"></el-option>
-                    <el-option label="多功能表" value="多功能表"></el-option>
-                    <el-option label="时控开关" value="时控开关"></el-option>
-                    <el-option label="接触器" value="接触器"></el-option>
                   </el-select>
                 </td>
                 <!-- 图块名列，对应 SQLite param1 -->
@@ -4348,20 +4380,26 @@
               </div>
             </div>
           </div>
-          <!-- 圆孔元器件按开孔组多行槽位区 -->
-          <div v-if="doorPreviewData.roundRows.length > 0" style="display: flex; flex-direction: column; gap: 8px;">
-            <div v-for="(rowSlots, rIdx) in doorPreviewData.roundRows" :key="'row-' + rIdx"
-              style="display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; padding: 8px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px;">
-              <div v-for="slot in rowSlots" :key="slot.uid"
-                style="display: flex; flex-direction: column; align-items: center; padding: 6px 8px; background: #f0fdfa; border: 1px solid #009688; border-radius: 4px; min-width: 96px;">
-                <div style="font-size: 11px; color: #64748b; margin-bottom: 2px;">槽位 #{{ slot.slotIndex + 1 }}</div>
-                <div style="font-size: 12px; font-weight: 600; color: #0f172a; margin-bottom: 2px;">{{ slot.label || slot.blockName || slot.name }}</div>
-                <div style="font-size: 11px; color: #008477; margin-bottom: 6px;">{{ slot.blockName || slot.name }}</div>
-                <div style="display: flex; gap: 4px;">
-                  <button type="button" :disabled="slot.slotIndex === 0" @click="moveDoorSlot(slot.slotIndex, -1)"
-                    style="cursor: pointer; padding: 1px 6px; font-size: 11px; border: 1px solid #cbd5e1; background: #fff; border-radius: 3px;">◀</button>
-                  <button type="button" :disabled="slot.slotIndex === doorPreviewData.totalRoundSlots - 1" @click="moveDoorSlot(slot.slotIndex, 1)"
-                    style="cursor: pointer; padding: 1px 6px; font-size: 11px; border: 1px solid #cbd5e1; background: #fff; border-radius: 3px;">▶</button>
+          <!-- 圆孔元器件按开孔组多行网格对齐槽位区（支持 L 左对齐 / R 右对齐 / C 居中） -->
+          <div v-if="doorPreviewData.roundRows.length > 0" style="overflow-x: auto; padding-bottom: 2px;">
+            <!-- 按最大列数锁定网格基准宽度并整体居中 -->
+            <div :style="{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '0 auto', width: (doorPreviewData.maxCols * 100 + Math.max(0, doorPreviewData.maxCols - 1) * 8 + 18) + 'px' }">
+              <!-- 单行按 align 规则执行左/右/居中对齐 -->
+              <div v-for="(rowObj, rIdx) in doorPreviewData.roundRows" :key="'row-' + rIdx"
+                :style="{ display: 'flex', flexWrap: 'nowrap', gap: '8px', justifyContent: rowObj.align === 'L' ? 'flex-start' : (rowObj.align === 'R' ? 'flex-end' : 'center'), padding: '8px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '4px', boxSizing: 'border-box', width: '100%' }">
+                <!-- 单个圆孔槽位卡片（固定 100px 列宽以保证跨行严格对齐） -->
+                <div v-for="slot in rowObj.slots" :key="slot.uid"
+                  style="display: flex; flex-direction: column; align-items: center; padding: 6px 6px; background: #f0fdfa; border: 1px solid #009688; border-radius: 4px; width: 100px; flex-shrink: 0; box-sizing: border-box;">
+                  <div style="font-size: 11px; color: #64748b; margin-bottom: 2px;">槽位 #{{ slot.slotIndex + 1 }}</div>
+                  <div style="font-size: 12px; font-weight: 600; color: #0f172a; margin-bottom: 2px; text-align: center; word-break: break-all;">{{ slot.label || slot.blockName || slot.name }}</div>
+                  <div style="font-size: 11px; color: #008477; margin-bottom: 6px; text-align: center; word-break: break-all;">{{ slot.blockName || slot.name }}</div>
+                  <!-- 左右调序按钮组 -->
+                  <div style="display: flex; gap: 4px;">
+                    <button type="button" :disabled="slot.slotIndex === 0" @click="moveDoorSlot(slot.slotIndex, -1)"
+                      style="cursor: pointer; padding: 1px 6px; font-size: 11px; border: 1px solid #cbd5e1; background: #fff; border-radius: 3px;">◀</button>
+                    <button type="button" :disabled="slot.slotIndex === doorPreviewData.totalRoundSlots - 1" @click="moveDoorSlot(slot.slotIndex, 1)"
+                      style="cursor: pointer; padding: 1px 6px; font-size: 11px; border: 1px solid #cbd5e1; background: #fff; border-radius: 3px;">▶</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -5812,8 +5850,12 @@
         // --硬编码-- 共享开孔组与圆孔元器件默认配置（打开弹窗时会向后端请求 ebox_export_config.json 覆盖）
         const sharedEboxConfig = Vue.ref({
           groupDefinitions: {
-            "圆5": "L2, 3",
-            "圆9": "1, 4, 4",
+            "圆2": ["2"],
+            "圆3": ["3"],
+            "圆5": ["L2", "3"],
+            "圆6": ["3", "3"],
+            "圆7": ["2", "2", "3"],
+            "圆9": ["1", "4", "4"],
           },
           roundHoleNames: ["按钮", "指示灯", "旋钮", "蜂鸣器", "信号灯", "转换开关", "急停", "钥匙开关"],
         });
@@ -5870,25 +5912,30 @@
           return rawSlots.map((s, idx) => ({ ...s, slotIndex: idx }));
         };
 
-        // 解析开孔组规则字符串（如 "L2, 3" 或 "1, 4, 4"）为每行数量数组
-        const parseGroupPatternRows = (patternStr, totalCount) => {
-          // 若无规则字符串，单行展示全部圆孔
-          if (!patternStr) return totalCount > 0 ? [totalCount] : [];
-          // 解析每行数量（兼容前缀 L 或纯数字）
-          const parts = String(patternStr).split(/[,，]/).map((p) => {
-            const m = p.trim().match(/(\d+)/);
-            return m ? parseInt(m[1], 10) : 0;
-          }).filter((n) => n > 0);
-          // 无有效数字时单行兜底
-          if (parts.length === 0) return totalCount > 0 ? [totalCount] : [];
+        // 解析开孔组规则（如 ["L2", "3"] 或 "L2, 3"）为带对齐方式的每行配置
+        const parseGroupPatternRows = (patternVal, totalCount) => {
+          // 若无规则定义，单行居中展示全部圆孔
+          if (!patternVal) return totalCount > 0 ? [{ count: totalCount, align: "C" }] : [];
+          // 统一兼容数组与逗号分隔字符串
+          const tokens = Array.isArray(patternVal) ? patternVal : String(patternVal).split(/[,，]/);
+          // 逐行解析对齐前缀（L 左对齐 / R 右对齐 / C 或无前缀默认居中）与孔数
+          const parts = tokens.map((raw) => {
+            const p = String(raw || "").trim().toUpperCase();
+            const m = p.match(/^([LRC])?\s*(\d+)$/);
+            if (!m) return null;
+            const cnt = parseInt(m[2], 10);
+            return cnt > 0 ? { count: cnt, align: m[1] || "C" } : null;
+          }).filter(Boolean);
+          // 无有效行定义时单行居中兜底
+          if (parts.length === 0) return totalCount > 0 ? [{ count: totalCount, align: "C" }] : [];
           return parts;
         };
 
-        // 门板元器件排布预览计算属性
-        const doorPreviewData = Vue.computed(() => {
+        // 门板元器件排布计算共享函数（供编辑弹窗调序与详情页纯展示预览复用）
+        const computeDoorPreview = (bomItems, fallbackGroupName) => {
           // 提取非圆孔门上元器件（写死水平居中）
           const centerItems = [];
-          (secBomList.value || []).forEach((item) => {
+          (bomItems || []).forEach((item) => {
             // 属于门上元器件但未命中圆孔名称集合
             if ((item.category || "").trim() === "门上元器件" && !isRoundHoleDoorItem(item)) {
               const qty = Math.max(1, parseInt(item.quantity, 10) || 1);
@@ -5903,36 +5950,57 @@
             }
           });
           // 获取排序后的圆孔槽位
-          const roundSlots = buildOrderedRoundSlots(secBomList.value);
-          // 匹配开孔组（先按圆孔总数匹配 "圆{N}"，再回退 scheme.groupName）
+          const roundSlots = buildOrderedRoundSlots(bomItems);
+          // 匹配开孔组（先按圆孔总数匹配 "圆{N}"，再回退方案分组名）
           const defs = sharedEboxConfig.value.groupDefinitions || {};
           const countKey = `圆${roundSlots.length}`;
           // 优先命中圆孔数量对应的组名
-          const matchedKey = defs[countKey] ? countKey : (defs[editingSecScheme.value.groupName] ? editingSecScheme.value.groupName : "");
-          const patternStr = matchedKey ? defs[matchedKey] : "";
-          // 按行切分槽位
-          const rowCounts = parseGroupPatternRows(patternStr, roundSlots.length);
+          const matchedKey = defs[countKey] ? countKey : (defs[fallbackGroupName] ? fallbackGroupName : "");
+          const rawPattern = matchedKey ? defs[matchedKey] : "";
+          // 格式化展示用规则文本
+          const patternStr = Array.isArray(rawPattern) ? rawPattern.join(", ") : String(rawPattern || "");
+          // 解析各行孔数与对齐方式
+          const rowDefs = parseGroupPatternRows(rawPattern, roundSlots.length);
           const roundRows = [];
           let cursor = 0;
-          rowCounts.forEach((cnt) => {
-            // 从 cursor 截取本行槽位
+          rowDefs.forEach((rowDef) => {
+            // 从 cursor 截取本行槽位并保留对齐属性
             if (cursor < roundSlots.length) {
-              roundRows.push(roundSlots.slice(cursor, cursor + cnt));
-              cursor += cnt;
+              roundRows.push({
+                align: rowDef.align,
+                targetCount: rowDef.count,
+                slots: roundSlots.slice(cursor, cursor + rowDef.count),
+              });
+              cursor += rowDef.count;
             }
           });
-          // 若开孔组定义总数小于实际圆孔数，剩余槽位追加到最后一行
+          // 若开孔组定义总数小于实际圆孔数，剩余槽位居中追加为补充行
           if (cursor < roundSlots.length) {
-            roundRows.push(roundSlots.slice(cursor));
+            const remainSlots = roundSlots.slice(cursor);
+            roundRows.push({ align: "C", targetCount: remainSlots.length, slots: remainSlots });
           }
+          // 计算整组最大列数作为 L/R/C 网格对齐基准宽度
+          const maxCols = roundRows.reduce((max, r) => Math.max(max, r.targetCount || 0, (r.slots || []).length), 1);
           return {
             hasDoorItems: centerItems.length > 0 || roundSlots.length > 0,
             centerItems: centerItems,
             roundRows: roundRows,
+            maxCols: maxCols,
             totalRoundSlots: roundSlots.length,
             groupKey: matchedKey,
             patternStr: patternStr,
           };
+        };
+
+        // 编辑弹窗门板元器件排布预览计算属性
+        const doorPreviewData = Vue.computed(() => {
+          return computeDoorPreview(secBomList.value, editingSecScheme.value.groupName);
+        });
+
+        // 图三详情页门板元器件排布纯展示预览计算属性
+        const detailDoorPreviewData = Vue.computed(() => {
+          const fallbackGroup = currentSecondaryCard.value?.groupName || currentDetail.value?.cabinetModel || "";
+          return computeDoorPreview(currentDetail.value?.bomItems, fallbackGroup);
         });
 
         // 左右调整圆孔槽位顺序，并将新顺序写回 secBomList 的 doorSlotIndices
@@ -6522,6 +6590,8 @@
         const openPrimaryDetail = (card) => {
           // 防御性校验目标卡片有效性
           if (!card) return;
+          // 同步拉取最新共享开孔组配置以支持详情页门板预览
+          postToHost("getEboxExportConfig", {});
           // 记录当前选中的一次方案卡片实体
           currentPrimaryCard.value = card;
           // 标记当前详情为一次方案模式
@@ -6941,6 +7011,8 @@
         // 打开二次回路方案详情大视口 (支持 CAD 图纸全功能漫游与 BOM 清单联动)
         const openSecondaryDetail = (card) => {
           if (!card) return;
+          // 同步拉取最新共享开孔组配置以支持详情页门板排布预览
+          postToHost("getEboxExportConfig", {});
           // 记录当前选中的二次方案卡片实体
           currentSecondaryCard.value = card;
           // 标记当前详情为二次方案模式
@@ -8290,6 +8362,7 @@
           // 门板排布预览与槽位调序导出
           sharedEboxConfig,
           doorPreviewData,
+          detailDoorPreviewData,
           moveDoorSlot,
           openMaterialSelector,
           onSearchMaterials,

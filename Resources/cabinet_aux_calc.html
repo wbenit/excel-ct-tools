@@ -4848,15 +4848,12 @@
                       placeholder="型号规格"
                     ></el-input>
                   </td>
-                  <!-- 分类选择/输入单元格 -->
+                  <!-- 分类选择/输入单元格（保留手动输入自定义分类） -->
                   <td>
                     <el-select v-model="item.category" allow-create filterable default-first-option clearable size="small" placeholder="分类" style="width: 100%">
+                      <!-- 仅保留门上元器件与二次两个常用预设选项 -->
                       <el-option label="门上元器件" value="门上元器件"></el-option>
                       <el-option label="二次" value="二次"></el-option>
-                      <el-option label="熔断器" value="熔断器"></el-option>
-                      <el-option label="多功能表" value="多功能表"></el-option>
-                      <el-option label="时控开关" value="时控开关"></el-option>
-                      <el-option label="接触器" value="接触器"></el-option>
                     </el-select>
                   </td>
                   <!-- 块名输入单元格 -->
@@ -4969,20 +4966,26 @@
                 </div>
               </div>
             </div>
-            <!-- 圆孔元器件按开孔组多行槽位区 -->
-            <div v-if="doorPreviewData.roundRows.length > 0" style="display: flex; flex-direction: column; gap: 8px;">
-              <div v-for="(rowSlots, rIdx) in doorPreviewData.roundRows" :key="'row-' + rIdx"
-                style="display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; padding: 8px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 4px;">
-                <div v-for="slot in rowSlots" :key="slot.uid"
-                  style="display: flex; flex-direction: column; align-items: center; padding: 6px 8px; background: #f0fdfa; border: 1px solid #009688; border-radius: 4px; min-width: 96px;">
-                  <div style="font-size: 11px; color: #64748b; margin-bottom: 2px;">槽位 #{{ slot.slotIndex + 1 }}</div>
-                  <div style="font-size: 12px; font-weight: 600; color: #0f172a; margin-bottom: 2px;">{{ slot.label || slot.blockName || slot.name }}</div>
-                  <div style="font-size: 11px; color: #008477; margin-bottom: 6px;">{{ slot.blockName || slot.name }}</div>
-                  <div style="display: flex; gap: 4px;">
-                    <button type="button" :disabled="slot.slotIndex === 0" @click="moveDoorSlot(slot.slotIndex, -1)"
-                      style="cursor: pointer; padding: 1px 6px; font-size: 11px; border: 1px solid #cbd5e1; background: #fff; border-radius: 3px;">◀</button>
-                    <button type="button" :disabled="slot.slotIndex === doorPreviewData.totalRoundSlots - 1" @click="moveDoorSlot(slot.slotIndex, 1)"
-                      style="cursor: pointer; padding: 1px 6px; font-size: 11px; border: 1px solid #cbd5e1; background: #fff; border-radius: 3px;">▶</button>
+            <!-- 圆孔元器件按开孔组多行网格对齐槽位区（支持 L 左对齐 / R 右对齐 / C 居中） -->
+            <div v-if="doorPreviewData.roundRows.length > 0" style="overflow-x: auto; padding-bottom: 2px;">
+              <!-- 按最大列数锁定网格基准宽度并整体居中 -->
+              <div :style="{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '0 auto', width: (doorPreviewData.maxCols * 100 + Math.max(0, doorPreviewData.maxCols - 1) * 8 + 18) + 'px' }">
+                <!-- 单行按 align 规则执行左/右/居中对齐 -->
+                <div v-for="(rowObj, rIdx) in doorPreviewData.roundRows" :key="'row-' + rIdx"
+                  :style="{ display: 'flex', flexWrap: 'nowrap', gap: '8px', justifyContent: rowObj.align === 'L' ? 'flex-start' : (rowObj.align === 'R' ? 'flex-end' : 'center'), padding: '8px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '4px', boxSizing: 'border-box', width: '100%' }">
+                  <!-- 单个圆孔槽位卡片（固定 100px 列宽以保证跨行严格对齐） -->
+                  <div v-for="slot in rowObj.slots" :key="slot.uid"
+                    style="display: flex; flex-direction: column; align-items: center; padding: 6px 6px; background: #f0fdfa; border: 1px solid #009688; border-radius: 4px; width: 100px; flex-shrink: 0; box-sizing: border-box;">
+                    <div style="font-size: 11px; color: #64748b; margin-bottom: 2px;">槽位 #{{ slot.slotIndex + 1 }}</div>
+                    <div style="font-size: 12px; font-weight: 600; color: #0f172a; margin-bottom: 2px; text-align: center; word-break: break-all;">{{ slot.label || slot.blockName || slot.name }}</div>
+                    <div style="font-size: 11px; color: #008477; margin-bottom: 6px; text-align: center; word-break: break-all;">{{ slot.blockName || slot.name }}</div>
+                    <!-- 左右调序按钮组 -->
+                    <div style="display: flex; gap: 4px;">
+                      <button type="button" :disabled="slot.slotIndex === 0" @click="moveDoorSlot(slot.slotIndex, -1)"
+                        style="cursor: pointer; padding: 1px 6px; font-size: 11px; border: 1px solid #cbd5e1; background: #fff; border-radius: 3px;">◀</button>
+                      <button type="button" :disabled="slot.slotIndex === doorPreviewData.totalRoundSlots - 1" @click="moveDoorSlot(slot.slotIndex, 1)"
+                        style="cursor: pointer; padding: 1px 6px; font-size: 11px; border: 1px solid #cbd5e1; background: #fff; border-radius: 3px;">▶</button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -8822,8 +8825,12 @@
           // --硬编码-- 共享开孔组与圆孔元器件默认配置（打开弹窗时会向后端请求 ebox_export_config.json 覆盖）
           const sharedEboxConfig = ref({
             groupDefinitions: {
-              "圆5": "L2, 3",
-              "圆9": "1, 4, 4",
+              "圆2": ["2"],
+              "圆3": ["3"],
+              "圆5": ["L2", "3"],
+              "圆6": ["3", "3"],
+              "圆7": ["2", "2", "3"],
+              "圆9": ["1", "4", "4"],
             },
             roundHoleNames: ["按钮", "指示灯", "旋钮", "蜂鸣器", "信号灯", "转换开关", "急停", "钥匙开关"],
           });
@@ -8880,17 +8887,22 @@
             return rawSlots.map((s, idx) => ({ ...s, slotIndex: idx }));
           };
 
-          // 解析开孔组规则字符串（如 "L2, 3" 或 "1, 4, 4"）为每行数量数组
-          const parseGroupPatternRows = (patternStr, totalCount) => {
-            // 若无规则字符串，单行展示全部圆孔
-            if (!patternStr) return totalCount > 0 ? [totalCount] : [];
-            // 解析每行数量（兼容前缀 L 或纯数字）
-            const parts = String(patternStr).split(/[,，]/).map((p) => {
-              const m = p.trim().match(/(\d+)/);
-              return m ? parseInt(m[1], 10) : 0;
-            }).filter((n) => n > 0);
-            // 无有效数字时单行兜底
-            if (parts.length === 0) return totalCount > 0 ? [totalCount] : [];
+          // 解析开孔组规则（如 ["L2", "3"] 或 "L2, 3"）为带对齐方式的每行配置
+          const parseGroupPatternRows = (patternVal, totalCount) => {
+            // 若无规则定义，单行居中展示全部圆孔
+            if (!patternVal) return totalCount > 0 ? [{ count: totalCount, align: "C" }] : [];
+            // 统一兼容数组与逗号分隔字符串
+            const tokens = Array.isArray(patternVal) ? patternVal : String(patternVal).split(/[,，]/);
+            // 逐行解析对齐前缀（L 左对齐 / R 右对齐 / C 或无前缀默认居中）与孔数
+            const parts = tokens.map((raw) => {
+              const p = String(raw || "").trim().toUpperCase();
+              const m = p.match(/^([LRC])?\s*(\d+)$/);
+              if (!m) return null;
+              const cnt = parseInt(m[2], 10);
+              return cnt > 0 ? { count: cnt, align: m[1] || "C" } : null;
+            }).filter(Boolean);
+            // 无有效行定义时单行居中兜底
+            if (parts.length === 0) return totalCount > 0 ? [{ count: totalCount, align: "C" }] : [];
             return parts;
           };
 
@@ -8919,26 +8931,36 @@
             const countKey = `圆${roundSlots.length}`;
             // 优先命中圆孔数量对应的组名
             const matchedKey = defs[countKey] ? countKey : (defs[editingSecScheme.value.groupName] ? editingSecScheme.value.groupName : "");
-            const patternStr = matchedKey ? defs[matchedKey] : "";
-            // 按行切分槽位
-            const rowCounts = parseGroupPatternRows(patternStr, roundSlots.length);
+            const rawPattern = matchedKey ? defs[matchedKey] : "";
+            // 格式化展示用规则文本
+            const patternStr = Array.isArray(rawPattern) ? rawPattern.join(", ") : String(rawPattern || "");
+            // 解析各行孔数与对齐方式
+            const rowDefs = parseGroupPatternRows(rawPattern, roundSlots.length);
             const roundRows = [];
             let cursor = 0;
-            rowCounts.forEach((cnt) => {
-              // 从 cursor 截取本行槽位
+            rowDefs.forEach((rowDef) => {
+              // 从 cursor 截取本行槽位并保留对齐属性
               if (cursor < roundSlots.length) {
-                roundRows.push(roundSlots.slice(cursor, cursor + cnt));
-                cursor += cnt;
+                roundRows.push({
+                  align: rowDef.align,
+                  targetCount: rowDef.count,
+                  slots: roundSlots.slice(cursor, cursor + rowDef.count),
+                });
+                cursor += rowDef.count;
               }
             });
-            // 若开孔组定义总数小于实际圆孔数，剩余槽位追加到最后一行
+            // 若开孔组定义总数小于实际圆孔数，剩余槽位居中追加为补充行
             if (cursor < roundSlots.length) {
-              roundRows.push(roundSlots.slice(cursor));
+              const remainSlots = roundSlots.slice(cursor);
+              roundRows.push({ align: "C", targetCount: remainSlots.length, slots: remainSlots });
             }
+            // 计算整组最大列数作为 L/R/C 网格对齐基准宽度
+            const maxCols = roundRows.reduce((max, r) => Math.max(max, r.targetCount || 0, (r.slots || []).length), 1);
             return {
               hasDoorItems: centerItems.length > 0 || roundSlots.length > 0,
               centerItems: centerItems,
               roundRows: roundRows,
+              maxCols: maxCols,
               totalRoundSlots: roundSlots.length,
               groupKey: matchedKey,
               patternStr: patternStr,

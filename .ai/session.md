@@ -4270,3 +4270,14 @@
   - `Controllers/CloudSolutionController.cs`、`Forms/CloudSolutionForm.cs`、`Forms/CabinetAuxCalcForm.cs`: 新增 `GetSharedEboxExportConfig()` 与 `getEboxExportConfig` 消息路由，读取共享 `ebox_export_config.json`。
   - `Resources/cloud_solution.html` & `Resources/cabinet_aux_calc.html`: BOM 表新增分类/块名/门板标签 3 列，从物料库选型自动带入 `param1`/`param2`，新增【门板元器件排布预览与槽位调序】区；已同步至 `publish/Resources/`、`bin/Debug/net48/Resources/`、`bin/Debug/net48/publish/Resources/`。
   - 验证 `dotnet build "E:\Ace\ExcelAddInCTtools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 通过（0 个错误）。
+
+
+## 2026-11-14 门板元器件 L/R/C 网格排布规则修复、分类下拉精简与详情 BOM 展示优化
+
+- **Completed**:
+  - `Resources/cabinet_aux_calc.html` & `Resources/cloud_solution.html`:
+    - 修正 `parseGroupPatternRows` 与门板排布预览渲染逻辑：解析 `L`（左对齐）、`R`（右对齐）、`C`/无前缀（居中）规则，并以组最大列数 `maxCols` 为网格基准宽锁定每张槽位卡 `100px` 宽度，确保如 `圆5 = ["L2", "3"]` 等跨行严格对齐；同步默认 `sharedEboxConfig` 为标准数组格式。
+    - 二次 BOM 编辑表分类下拉 `<el-select>` 仅保留 `门上元器件` 与 `二次` 选项，并保留 `allow-create` 允许手动输入自定义分类。
+    - 图三（`cloud_solution.html` 方案详情 `BOM 物料清单` Tab）：移除 `物料编码`、`产地` 列，将 `类别` 统一改名为 `分类`；收窄 `选择`、`序号`、`品牌`、`单位`、`表价`、`折扣`、`报出`、`单价`、`总价`、`备注` 列宽并取消 `.bom-grid-table` 的 `1560px` 强制最小宽度；复用共享函数 `computeDoorPreview` 在 BOM 表下方新增 `detailDoorPreviewData` 纯展示预览区（无调序按钮），并在 `openPrimaryDetail`/`openSecondaryDetail` 中同步请求 `getEboxExportConfig`。
+  - 同步更新 `publish/Resources/`、`bin/Debug/net48/Resources/`、`bin/Debug/net48/publish/Resources/`（SHA256 校验一致）。
+  - 验证 Node JS 语法检查全通过，且 `dotnet build "e:\Ace\ExcelAddInCTtools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 通过（0 个错误）。
