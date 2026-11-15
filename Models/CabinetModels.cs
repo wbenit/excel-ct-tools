@@ -162,6 +162,15 @@ namespace ExcelAddInDemo.Models
 
         // 辅料费
         public decimal AccessoriesFee { get; set; }
+
+        // 额定电流 (纯数值文本，对应分类明细表 W 列)
+        public string Current { get; set; } = string.Empty;
+
+        // 极数 (纯数值文本，对应分类明细表 X 列)
+        public string Poles { get; set; } = string.Empty;
+
+        // 脱扣方式 (对应分类明细表 Y 列)
+        public string TripMode { get; set; } = string.Empty;
     }
 
     /// <summary>

@@ -1101,8 +1101,38 @@ namespace ExcelAddInDemo
                 matrix[r, 16] = $"=IF(AND(B{currPhysicalRow}=\"\",C{currPhysicalRow}=\"\"),\"\",\"元件\")";
                 if (totalCols >= 20)
                 {
-                    // 覆盖写入 A 列至 Q 列完整元器件二维数组
+                    // R~T 列 (索引 17~19): 预留空白
+                    matrix[r, 17] = string.Empty;
+                    matrix[r, 18] = string.Empty;
+                    matrix[r, 19] = string.Empty;
+                    // U 列 (索引 20): 原始型号备份
                     matrix[r, 20] = spec;
+                }
+                if (totalCols >= 25)
+                {
+                    // V 列 (索引 21): 预留空白
+                    matrix[r, 21] = string.Empty;
+                    if (components != null && r < components.Count)
+                    {
+                        var comp = components[r];
+                        // W 列 (索引 22): 额定电流 (纯数字优先) --硬编码: W列索引22--
+                        matrix[r, 22] = string.IsNullOrWhiteSpace(comp.Current)
+                            ? (object)string.Empty
+                            : (double.TryParse(comp.Current, out double dw) ? (object)dw : comp.Current);
+                        // X 列 (索引 23): 极数 (纯数字优先) --硬编码: X列索引23--
+                        matrix[r, 23] = string.IsNullOrWhiteSpace(comp.Poles)
+                            ? (object)string.Empty
+                            : (int.TryParse(comp.Poles, out int px) ? (object)px : comp.Poles);
+                        // Y 列 (索引 24): 脱扣方式 --硬编码: Y列索引24--
+                        matrix[r, 24] = comp.TripMode ?? string.Empty;
+                    }
+                    else
+                    {
+                        // 预留空行 W~Y 列置空
+                        matrix[r, 22] = string.Empty;
+                        matrix[r, 23] = string.Empty;
+                        matrix[r, 24] = string.Empty;
+                    }
                 }
             }
 
@@ -3548,36 +3578,43 @@ namespace ExcelAddInDemo
         /// <summary>
         /// 安全设置/校准工作表级别的定义名称（若已存在且指向正确则跳过，避免盲目异常与跨进程往返）
         /// </summary>
-        public static void SafeSetSheetName(dynamic sheet, string sheetName, string tagName, int row)
+        /// <param name="sheet">目标工作表 COM 对象</param>
+        /// <param name="sheetName">工作表名称文本</param>
+        /// <param name="tagName">定义名称标识</param>
+        /// <param name="row">目标物理行号</param>
+        /// <param name="isBrandNew">是否为全新递增序号（为 true 时跳过 Item 查找异常试探，直接添加）</param>
+        public static void SafeSetSheetName(dynamic sheet, string sheetName, string tagName, int row, bool isBrandNew = false)
         {
             try
             {
                 // 目标绝对单元格公式引用字符串
                 string targetRef = $"='{sheetName}'!$A${row}";
-                // 检查已存在同名定义名称是否已经指向目标行
-                try
+                // 非全新序号时，检查已存在同名定义名称是否已经指向目标行
+                if (!isBrandNew)
                 {
-                    // 尝试提取同名定义名称
-                    dynamic existing = sheet.Names.Item(tagName);
-                    if (existing != null)
+                    try
                     {
-                        // 获取现有引用的公式文本
-                        string curRef = Convert.ToString(existing.RefersTo) ?? "";
-                        // 若已精准指向目标单元格，直接安全保留，跳过 Delete/Add
-                        if (curRef.EndsWith($"$A${row}", StringComparison.OrdinalIgnoreCase))
+                        // 尝试提取同名定义名称
+                        dynamic existing = sheet.Names.Item(tagName);
+                        if (existing != null)
                         {
-                            return;
+                            // 获取现有引用的公式文本
+                            string curRef = Convert.ToString(existing.RefersTo) ?? "";
+                            // 若已精准指向目标单元格，直接安全保留，跳过 Delete/Add
+                            if (curRef.EndsWith($"$A${row}", StringComparison.OrdinalIgnoreCase))
+                            {
+                                return;
+                            }
+                            // 指向不一致时安全删除旧引用
+                            LogHelper.WriteLog($"[SafeSetSheetName] 修正重设: tag={tagName}, 旧引用={curRef}, 新引用={targetRef}");
+                            existing.Delete();
                         }
-                        // 指向不一致时安全删除旧引用
-                        LogHelper.WriteLog($"[SafeSetSheetName] 修正重设: tag={tagName}, 旧引用={curRef}, 新引用={targetRef}");
-                        existing.Delete();
                     }
+                    catch { }
                 }
-                catch { }
 
-                // 添加工作表级别定义名称
+                // 添加工作表级别定义名称 (Excel Names.Add 对同名工作表级名称会自动覆盖更新)
                 sheet.Names.Add(tagName, targetRef);
-                LogHelper.WriteLog($"[SafeSetSheetName] 成功注册定义名称: {tagName} -> {targetRef}");
             }
             catch (Exception ex)
             {
