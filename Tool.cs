@@ -1751,6 +1751,93 @@ namespace ExcelAddInDemo
             return validCabinets ?? new List<KeyValuePair<int, Models.CabinetAnchorModel>>();
         }
 
+        /// <summary>
+        /// 将已构建并校验健康的箱柜映射直接写入 60 秒内存缓存，供后续流程零耗时复用
+        /// </summary>
+        internal static void CacheSheetValidCabinets(
+            dynamic sheet,
+            dynamic? wb,
+            string sheetName,
+            IEnumerable<KeyValuePair<int, Models.CabinetAnchorModel>>? cabinets)
+        {
+            // 校验工作表名称与箱柜集合有效性
+            if (string.IsNullOrEmpty(sheetName) || cabinets == null) return;
+            var list = cabinets as List<KeyValuePair<int, Models.CabinetAnchorModel>> ?? cabinets.ToList();
+            if (list.Count == 0) return;
+
+            // 构造工作簿隔离缓存键
+            string wbKey = string.Empty;
+            try { wbKey = Convert.ToString(wb?.FullName) ?? Convert.ToString(wb?.Name) ?? string.Empty; } catch { }
+            string cacheKey = string.IsNullOrEmpty(wbKey) ? sheetName : $"{wbKey}::{sheetName}";
+            var now = DateTime.UtcNow;
+
+            // 同步写入复合键与单表名缓存
+            _sheetValidCabinetsCache[cacheKey] = (now, list);
+            _sheetValidCabinetsCache[sheetName] = (now, list);
+        }
+
+        /// <summary>
+        /// 单台直通新建箱柜完成后，增量更新内存缓存（原有明细行顺延 +1 并追加新箱柜锚点），免除下一次抓系统图全表重扫
+        /// </summary>
+        internal static void AppendCabinetToCacheAfterDirectInsert(
+            dynamic sheet,
+            dynamic? wb,
+            string sheetName,
+            int newK,
+            int newSumRow,
+            int newDetRow,
+            int newSubsumRow,
+            int newTolsumRow,
+            bool insertedSummaryRow)
+        {
+            // 校验工作表名称有效性
+            if (string.IsNullOrEmpty(sheetName) || newK <= 0) return;
+
+            // 构造缓存键并尝试读取现有缓存
+            string wbKey = string.Empty;
+            try { wbKey = Convert.ToString(wb?.FullName) ?? Convert.ToString(wb?.Name) ?? string.Empty; } catch { }
+            string cacheKey = string.IsNullOrEmpty(wbKey) ? sheetName : $"{wbKey}::{sheetName}";
+
+            List<KeyValuePair<int, Models.CabinetAnchorModel>> list;
+            if ((_sheetValidCabinetsCache.TryGetValue(cacheKey, out var cached) ||
+                 _sheetValidCabinetsCache.TryGetValue(sheetName, out cached)) &&
+                cached.Cabinets != null && cached.Cabinets.Count > 0)
+            {
+                // 复制已有箱柜列表，若插入了汇总行则同步顺延所有已有箱柜明细行号 (+1)
+                list = new List<KeyValuePair<int, Models.CabinetAnchorModel>>(cached.Cabinets.Count + 1);
+                foreach (var kv in cached.Cabinets)
+                {
+                    if (kv.Key == newK || kv.Value == null) continue;
+                    if (insertedSummaryRow)
+                    {
+                        if (kv.Value.DetRow > 0) kv.Value.DetRow += 1;
+                        if (kv.Value.SubsumRow > 0) kv.Value.SubsumRow += 1;
+                        if (kv.Value.TolsumRow > 0) kv.Value.TolsumRow += 1;
+                    }
+                    list.Add(kv);
+                }
+            }
+            else
+            {
+                list = new List<KeyValuePair<int, Models.CabinetAnchorModel>>();
+            }
+
+            // 构造新箱柜纯整数锚点模型并追加至缓存
+            var newAnchor = new Models.CabinetAnchorModel
+            {
+                SumRow = newSumRow,
+                DetRow = newDetRow,
+                SubsumRow = newSubsumRow,
+                TolsumRow = newTolsumRow
+            };
+            list.Add(new KeyValuePair<int, Models.CabinetAnchorModel>(newK, newAnchor));
+
+            // 刷新缓存时间戳并写回
+            var now = DateTime.UtcNow;
+            _sheetValidCabinetsCache[cacheKey] = (now, list);
+            _sheetValidCabinetsCache[sheetName] = (now, list);
+        }
+
 
         /// <summary>
         /// 根据指定的物理行号智能匹配其所属的箱柜锚点对象 (命中汇总行或明细大标题至总计行区间)
@@ -2551,6 +2638,8 @@ namespace ExcelAddInDemo
                             // 若现有定义名称全部健康完好，耗时 0ms 直接返回现有箱柜数量，跳过后续所有 UsedRange 遍历与正则推导
                             if (isHealthy)
                             {
+                                // 顺手将已校验健康的箱柜映射写入 60 秒内存缓存，避免后续 GetSheetValidCabinets 重复全表遍历 Names
+                                CacheSheetValidCabinets(sheet, parentWb, sheetName, existingMap);
                                 return existingMap.Count;
                             }
                         }

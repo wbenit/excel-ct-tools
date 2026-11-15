@@ -241,18 +241,8 @@ namespace ExcelAddInDemo
                     int tmplEndRow = tmplTolsumRow + footerRows;
                     try
                     {
-                        // 获取模板中的源工作表
-                        dynamic templateSheet = null;
-                        try
-                        {
-                            // 尝试按配置的工作表名称获取
-                            templateSheet = templateWb.Sheets[defaultTemplateSheet];
-                        }
-                        catch
-                        {
-                            // 回退取第 2 个工作表或第 1 个工作表
-                            templateSheet = templateWb.Sheets.Count >= 2 ? templateWb.Sheets[2] : templateWb.Sheets[1];
-                        }
+                        // 获取模板中的标准分类源工作表 (优先按配置名称匹配，避免误取项目信息表)
+                        dynamic templateSheet = ResolveTemplateCategorySheet(templateWb, defaultTemplateSheet);
 
                         // 核心：动态读取模板中 Cab_Det_1 的实际行号 (兜底 44)
                         tmplDetRow = Tool.GetDefinedNameRowFromTemplate(templateSheet, templateWb, "Cab_Det_1", 44);
@@ -1337,8 +1327,8 @@ namespace ExcelAddInDemo
                 dynamic templateWb = app.Workbooks.Open(templatePath, ReadOnly: true);
                 try
                 {
-                    // 默认选取分类明细模板表 (第 2 张表或第 1 张表)
-                    dynamic templateSheet = templateWb.Sheets.Count >= 2 ? templateWb.Sheets[2] : templateWb.Sheets[1];
+                    // 优先按配置名称选取分类明细模板表 (避免索引偏移误取项目信息表)
+                    dynamic templateSheet = ResolveTemplateCategorySheet(templateWb);
                     // 复制该模板工作表至当前活动工作簿的末尾
                     templateSheet.Copy(After: activeWb.Sheets[activeWb.Sheets.Count]);
                     // 获取新拷贝进来的目标工作表实例
@@ -1443,13 +1433,84 @@ namespace ExcelAddInDemo
 
                 // 提取当前工作表纯文本名称
                 string sheetName = Convert.ToString(sheet.Name) ?? string.Empty;
-                // 新建箱柜前主动使缓存失效，确保获取当前最新物理行分布
-                Tool.InvalidateSheetCabinetsCache(sheetName);
 
-                // 3. 严格遵守规则 8：在操作当前表格前，先校验自愈当前表格的规则 6 定义名称正确性
-                Tool.FixAndFillCabinetNamesForSheet(sheet, forceRebuild: false);
-                // 扫描当前工作表已有箱柜结构 (规则 6 架构)
+                // 3. 优先尝试复用 60 秒内存缓存并做 1 次 COM 轻量健康核验，避免每次抓系统图都重复全表遍历 Names
                 var validCabinets = Tool.GetSheetValidCabinets((object)sheet, (object)activeWb);
+                bool needRebuildOrScan = (validCabinets == null || validCabinets.Count == 0);
+                if (!needRebuildOrScan)
+                {
+                    try
+                    {
+                        // 仅用 4~5 次轻量 COM 读取核对“首台表头 + 末台表头/总计 + 汇总尾行”，防中间插删行/删柜导致缓存错位
+                        var firstCab = validCabinets![0].Value;
+                        int chkDetRow = firstCab.DetRow > 0 ? firstCab.DetRow : (firstCab.Det != null ? Convert.ToInt32(firstCab.Det.Row) : 0);
+
+                        // 查找缓存中物理行号最靠后的箱柜（末台）及最大汇总行
+                        Models.CabinetAnchorModel? lastCab = null;
+                        int maxChkTolRow = 0;
+                        int maxChkSumRow = 0;
+                        foreach (var kv in validCabinets)
+                        {
+                            var anc = kv.Value;
+                            int sR = anc.SumRow > 0 ? anc.SumRow : (anc.Sum != null ? Convert.ToInt32(anc.Sum.Row) : 0);
+                            int tR = anc.TolsumRow > 0 ? anc.TolsumRow : (anc.Tolsum != null ? Convert.ToInt32(anc.Tolsum.Row) : 0);
+                            if (sR > maxChkSumRow) maxChkSumRow = sR;
+                            if (tR >= maxChkTolRow)
+                            {
+                                maxChkTolRow = tR;
+                                lastCab = anc;
+                            }
+                        }
+
+                        // 1. 核对首台箱柜表头行
+                        if (chkDetRow <= 0 || !string.Equals(Convert.ToString(sheet.Cells[chkDetRow + 1, 1].Value2)?.Trim() ?? string.Empty, "序号", StringComparison.OrdinalIgnoreCase))
+                        {
+                            needRebuildOrScan = true;
+                        }
+
+                        // 2. 核对末台箱柜表头行与总计行（任意中间箱柜增删行均会导致末台行号偏移从而被拦截）
+                        if (!needRebuildOrScan && lastCab != null)
+                        {
+                            int lastDetRow = lastCab.DetRow > 0 ? lastCab.DetRow : (lastCab.Det != null ? Convert.ToInt32(lastCab.Det.Row) : 0);
+                            if (lastDetRow <= 0 || !string.Equals(Convert.ToString(sheet.Cells[lastDetRow + 1, 1].Value2)?.Trim() ?? string.Empty, "序号", StringComparison.OrdinalIgnoreCase))
+                            {
+                                needRebuildOrScan = true;
+                            }
+                            if (!needRebuildOrScan && maxChkTolRow > 0)
+                            {
+                                string tolB = Convert.ToString(sheet.Cells[maxChkTolRow, 2].Value2)?.Trim() ?? string.Empty;
+                                string tolC = Convert.ToString(sheet.Cells[maxChkTolRow, 3].Value2)?.Trim() ?? string.Empty;
+                                if (!tolB.Contains("总计") && !tolC.Contains("总计"))
+                                {
+                                    needRebuildOrScan = true;
+                                }
+                            }
+                        }
+
+                        // 3. 核对汇总表末尾行：当前末行应有箱柜名称，且紧随下一行应为空或小计/总计（防手动增删汇总行）
+                        if (!needRebuildOrScan && maxChkSumRow > 0)
+                        {
+                            string lastSumName = Convert.ToString(sheet.Cells[maxChkSumRow, 2].Value2)?.Trim() ?? string.Empty;
+                            string nextSumName = Convert.ToString(sheet.Cells[maxChkSumRow + 1, 2].Value2)?.Trim() ?? string.Empty;
+                            if (string.IsNullOrEmpty(lastSumName) || (!string.IsNullOrEmpty(nextSumName) && !nextSumName.Contains("小计") && !nextSumName.Contains("总计")))
+                            {
+                                needRebuildOrScan = true;
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        needRebuildOrScan = true;
+                    }
+                }
+
+                if (needRebuildOrScan)
+                {
+                    // 缓存未命中或物理行已变动时，才失效缓存并执行规则 8 定义名称自愈与全表扫描
+                    Tool.InvalidateSheetCabinetsCache(sheetName);
+                    Tool.FixAndFillCabinetNamesForSheet(sheet, forceRebuild: false);
+                    validCabinets = Tool.GetSheetValidCabinets((object)sheet, (object)activeWb);
+                }
                 bool isNewSheet = (validCabinets == null || validCabinets.Count == 0);
 
                 // 计算新箱柜序号标识 K (从 1 起始或最大序号 + 1)
@@ -1821,7 +1882,8 @@ namespace ExcelAddInDemo
                 }
                 catch { }
 
-                // 14. 同步更新高速内存缓存，使后续光标移动与回车输入 0ms 纯内存命中
+                // 14. 增量更新箱柜内存缓存并失效活动元器件行缓存，使后续连续抓系统图 0ms 命中
+                Tool.AppendCabinetToCacheAfterDirectInsert(sheet, activeWb, sheetName, nextCabinetK, sumRow, detRow, subsumRow, tolsumRow, insertedSummaryRow: !isNewSheet);
                 InvalidateActiveCabinetCache(sheetName);
 
                 // 15. 返回成功结果（维度 3：携带精确物理行号，彻底免除二次全表重新扫描）
@@ -2171,6 +2233,48 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 从外部模板工作簿中精确解析标准分类模板工作表
+        /// 优先按名称匹配（避免因工作表顺序变化导致索引越位误取【项目信息】等非分类表）
+        /// </summary>
+        private static dynamic ResolveTemplateCategorySheet(dynamic templateWb, string? preferredSheetName = null)
+        {
+            // 读取配置默认分类模板表名，未指定时回退标准名 "分类1" --硬编码: 默认分类模板表名--
+            string targetName = !string.IsNullOrWhiteSpace(preferredSheetName)
+                ? preferredSheetName.Trim()
+                : (ConfigManager.Instance.Current.Excel.DefaultTemplateSheet ?? "分类1");
+
+            // 1. 优先按配置指定名称精确获取工作表
+            try
+            {
+                return templateWb.Sheets[targetName];
+            }
+            catch { }
+
+            // 2. 若配置名称未命中，尝试标准名称 "分类1" --硬编码: 标准分类模板表名--
+            if (!string.Equals(targetName, "分类1", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    return templateWb.Sheets["分类1"];
+                }
+                catch { }
+            }
+
+            // 3. 遍历工作表集合，查找名称包含“分类”的工作表
+            int count = Convert.ToInt32(templateWb.Sheets.Count);
+            for (int i = 1; i <= count; i++)
+            {
+                // 获取当前索引工作表名称
+                dynamic ws = templateWb.Sheets[i];
+                string wsName = Convert.ToString(ws.Name) ?? string.Empty;
+                if (wsName.Contains("分类")) return ws;
+            }
+
+            // 4. 最终兜底：优先第 3 张（CabinetTemplate 标准分类位置），其次第 2 或第 1 张
+            return count >= 3 ? templateWb.Sheets[3] : (count >= 2 ? templateWb.Sheets[2] : templateWb.Sheets[1]);
+        }
+
+        /// <summary>
         /// 首次进入分类工作表时初始化内存状态上下文
         /// 严格实施“纯净母版槽位隔离”策略：首槽位绝不填写数据，专供克隆，导出完毕后统一物理清除
         /// </summary>
@@ -2256,8 +2360,8 @@ namespace ExcelAddInDemo
                         dynamic templateWb = app.Workbooks.Open(templatePath, UpdateLinks: 0, ReadOnly: true);
                         try
                         {
-                            // 默认选取分类模板表
-                            dynamic templateSheet = templateWb.Sheets.Count >= 2 ? templateWb.Sheets[2] : templateWb.Sheets[1];
+                            // 优先按配置名称选取分类模板表 (修复旧索引 Sheets[2] 误取项目信息表导致底部明细错乱问题)
+                            dynamic templateSheet = ResolveTemplateCategorySheet(templateWb, cfg.DefaultTemplateSheet);
                             // 动态计算模板明细块物理行范围
                             int tmplDet = cfg.CabDetRowIndex > 0 ? cfg.CabDetRowIndex : 44;
                             int tmplTol = cfg.CabTolsumRowIndex > 0 ? cfg.CabTolsumRowIndex : 71;
