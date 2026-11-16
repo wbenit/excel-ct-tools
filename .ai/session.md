@@ -1,3 +1,8 @@
+- **【Ribbon【我的项目】分组新增 2 个小图标：`打开目录` 与 `复制`（保存并复制当前文件到剪贴板）】([`RibbonController.cs`](file:///e:/Ace/excel-ct-tools/RibbonController.cs), [`Services/ExcelServices.cs`](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.cs))**：
+  1. **Ribbon UI (`RibbonController.cs`)**：在 `grpProjects`（“我的项目”）内新增垂直排列 `<box id='boxProjectFileQuickActions' boxStyle='vertical'>`，添加 `打开目录`（`btnOpenWorkbookDir`）与 `复制`（`btnSaveAndCopyWorkbook`）2 个小图标按钮，并在 `OnMenuAction` 接入路由。
+  2. **业务解耦 (`Services/ExcelServices.cs`)**：新增 `OpenCurrentWorkbookDirectory()`（校验已保存至本地磁盘后调用 `explorer.exe /select,"{fullName}"` 打开所在目录并选中文件）与 `SaveAndCopyCurrentWorkbookToClipboard()`（校验已保存后执行 `wb.Save()`，再通过 `Clipboard.SetFileDropList` 将文件本身复制到系统剪贴板；未保存工作簿直接弹窗报错提示，不做兜底逻辑）。
+  3. **编译与产物同步**：`dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false /p:CopySQLiteInteropFiles=false` **0 错误**，已同步 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 至 `publish\`。
+
 - **【跨图扒图、跨图联动自动切图与跨图系统图静默归集协同升级】([`Models/CabinetModels.cs`](file:///e:/Ace/ExcelAddInCTtools/Models/CabinetModels.cs), [`Services/ExcelServices.Cabinet.cs`](file:///e:/Ace/ExcelAddInCTtools/Services/ExcelServices.Cabinet.cs), [`Services/CadSyncClient.cs`](file:///e:/Ace/ExcelAddInCTtools/Services/CadSyncClient.cs), [`ExcelEventManager.cs`](file:///e:/Ace/ExcelAddInCTtools/ExcelEventManager.cs))**：
   1. **`CabinetHeader.SourceDwgPath` 与 `Cab_Det` 行 `AE` 列纯路径写入**：在 `CabinetHeader` 中新增 `SourceDwgPath`，在 `ExportSingleCabinetDirect` 与 `ExportSingleCabinetOptimized` 中仅将纯 `SourceDwgPath` 以文本格式 `"@"` 写入明细表头行 `AE` 列（第 31 列），移除静态 `|minX,minY,maxX,maxY` 坐标，系统图包围盒完全通过 `AD` 列（第 30 列）`pt1Handle-pt2Handle` 对应的 2 个 `DBPoint` 实体动态获取，确保 CAD 中移动系统图位置后依然 100% 精准跟随。
   2. **0ms 内存缓存解析源图纸路径与跨图管道推送**：扩展 `_activeCabinetSheetCache` 缓存箱柜所属的 `SourceDwg`，新增 `ExcelServices.GetActiveCabinetSourceDwg(sheet, row)`；在 `ExcelEventManager` 选行联动时提取 `activeSourceDwg` 并通过 `CadSyncClient.SendHandlesDebounced` 推送至 AutoCAD，实现在 Excel 中点击不同图纸的箱柜/元器件时 AutoCAD 自动切换或打开对应 DWG 图纸并高亮定位。
@@ -4297,3 +4302,17 @@
     - 图三（`cloud_solution.html` 方案详情 `BOM 物料清单` Tab）：移除 `物料编码`、`产地` 列，将 `类别` 统一改名为 `分类`；收窄 `选择`、`序号`、`品牌`、`单位`、`表价`、`折扣`、`报出`、`单价`、`总价`、`备注` 列宽并取消 `.bom-grid-table` 的 `1560px` 强制最小宽度；复用共享函数 `computeDoorPreview` 在 BOM 表下方新增 `detailDoorPreviewData` 纯展示预览区（无调序按钮），并在 `openPrimaryDetail`/`openSecondaryDetail` 中同步请求 `getEboxExportConfig`。
   - 同步更新 `publish/Resources/`、`bin/Debug/net48/Resources/`、`bin/Debug/net48/publish/Resources/`（SHA256 校验一致）。
   - 验证 Node JS 语法检查全通过，且 `dotnet build "e:\Ace\ExcelAddInCTtools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 通过（0 个错误）。
+
+## 2026-11-16 二次元件组规则管道新增多智能匹配组（严格清零求解 + 失败回退顺序）
+
+- **Completed**:
+  - `Models/ComponentGroupRuleModels.cs`:
+    - 新增 `SmartMatchGroup`（`Id`、`Name`、`Priority`、`Enabled`），`ComponentGroupRule` 新增 `SmartGroupId`，`ComponentGroupConfig` 新增 `SmartMatchGroups` 支持多智能组。
+    - 升级 `PipelineEvaluator.EvaluateRulesWithResourcePool` 为双阶段评估：阶段 1 按智能组优先级依次试探组内规则（通过带剪枝的优先级优先 DFS 求解，满足涉及扣减元器件全部严格清零；多解按规则 `Priority` 优先），成功则提交扣减并跳过组内规则的顺序重跑；失败则保持资源池不变，组内全部规则回退至阶段 2 按全局 `Priority` 顺序评估。
+  - `Controllers/ComponentGroupBuilderController.cs`:
+    - `LoadConfig()` 对旧版 JSON 配置文件自动补齐 `SmartMatchGroups` 与规则 `SmartGroupId`。
+  - `Services/ExcelServices.ComponentGroup.cs`:
+    - `RunSandboxPipelineTest` 与 `ExecuteBatchComponentGroup` 调用 `EvaluateRulesWithResourcePool` 时传入 `config.SmartMatchGroups`。
+  - `Resources/component_group_builder.html`:
+    - 新增“多智能匹配组管理”弹窗（新建/删除/启停/调序智能组，勾选分配成员规则并联动沙盒重跑）、左侧规则卡片智能组徽标、以及“基本信息与生成策略”卡片所属智能组下拉选择；已同步至 `publish/Resources/`、`bin/Debug/net48/Resources/`、`bin/Debug/net48/publish/Resources/`（SHA256 一致）。
+  - 验证：`dotnet build "e:\Ace\excel-ct-tools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 通过（0 个错误）；Node JS 语法检查通过；使用真实 `ComponentGroupRules.json` 运行 6 组 PowerShell 集成用例验证（6/2、6/3、6/4 清零、4/2 回退、三规则多解优先级优先、多组串联）全部通过。

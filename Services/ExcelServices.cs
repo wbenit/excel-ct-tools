@@ -1015,6 +1015,90 @@ namespace ExcelAddInDemo
             // 无任何业务表特征 (如封面、技术表、空白表等)，安全放行系统原生菜单
             return false;
         }
+
+        /// <summary>
+        /// 在 Windows 资源管理器中打开当前活动工作簿所在的本地目录并选中该文件
+        /// </summary>
+        public static void OpenCurrentWorkbookDirectory()
+        {
+            try
+            {
+                // 获取当前 Excel 应用程序实例及活动工作簿
+                dynamic app = ExcelDnaUtil.Application;
+                dynamic wb = app?.ActiveWorkbook;
+                if (wb == null)
+                {
+                    // 当前无活动工作簿时直接弹窗提示
+                    System.Windows.Forms.MessageBox.Show("当前没有打开的工作簿！", "打开目录", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // 读取工作簿完整路径与所在目录路径
+                string fullName = Convert.ToString(wb.FullName) ?? string.Empty;
+                string dirPath = Convert.ToString(wb.Path) ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(dirPath) || !System.IO.File.Exists(fullName))
+                {
+                    // 未保存到本地磁盘的工作簿直接阻断并提示用户先保存
+                    System.Windows.Forms.MessageBox.Show("当前文件尚未保存到本地磁盘，无法打开所在目录！\n请先保存文件后再试。", "打开目录", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // 调用资源管理器打开目录并自动高亮选中当前工作簿文件
+                System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{fullName}\"");
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志并直接向前端报错提示
+                LogHelper.WriteLog($"[OpenCurrentWorkbookDirectory] 打开目录异常: {ex.Message}");
+                System.Windows.Forms.MessageBox.Show($"打开目录失败：{ex.Message}", "错误", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// 先保存当前活动工作簿，再将文件本身复制到系统剪贴板
+        /// </summary>
+        public static void SaveAndCopyCurrentWorkbookToClipboard()
+        {
+            try
+            {
+                // 获取当前 Excel 应用程序实例及活动工作簿
+                dynamic app = ExcelDnaUtil.Application;
+                dynamic wb = app?.ActiveWorkbook;
+                if (wb == null)
+                {
+                    // 当前无活动工作簿时直接弹窗提示
+                    System.Windows.Forms.MessageBox.Show("当前没有打开的工作簿！", "复制文件", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // 读取工作簿完整路径与所在目录路径
+                string fullName = Convert.ToString(wb.FullName) ?? string.Empty;
+                string dirPath = Convert.ToString(wb.Path) ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(dirPath) || !System.IO.File.Exists(fullName))
+                {
+                    // 未保存到本地磁盘的工作簿直接阻断并提示用户先保存
+                    System.Windows.Forms.MessageBox.Show("当前文件尚未保存到本地磁盘，请先保存后再执行复制！", "复制文件", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // 先执行保存，确保最新修改已写入磁盘文件
+                wb.Save();
+
+                // 构造文件列表集合并写入系统剪贴板
+                var fileList = new System.Collections.Specialized.StringCollection();
+                fileList.Add(fullName);
+                System.Windows.Forms.Clipboard.SetFileDropList(fileList);
+
+                // 弹窗反馈保存并复制成功
+                System.Windows.Forms.MessageBox.Show($"已保存并将文件复制到剪贴板：\n{fullName}", "复制成功", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志并直接向前端报错提示
+                LogHelper.WriteLog($"[SaveAndCopyCurrentWorkbookToClipboard] 保存复制文件异常: {ex.Message}");
+                System.Windows.Forms.MessageBox.Show($"保存并复制文件失败：{ex.Message}", "错误", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+            }
+        }
     }
 }
 

@@ -62,6 +62,13 @@ namespace ExcelAddInDemo
             <!-- 推送箱柜至云端按钮 -->
             <button id='btnSyncCabinetsToCloud' label='推送到云端箱柜...' imageMso='ExportTextFile' onAction='OnMenuAction' screentip='推送到云端箱柜' supertip='将当前工程所有箱柜提取并直推同步至 DrawCode 云端系统图箱柜库，支持按 2-1 复合序号精准匹配并可选择覆盖。' />
           </menu>
+          <!-- 快捷文件操作小按钮组 (垂直堆叠 2 个小图标：打开目录、复制) -->
+          <box id='boxProjectFileQuickActions' boxStyle='vertical'>
+            <!-- 打开目录小按钮 -->
+            <button id='btnOpenWorkbookDir' label='打开目录' imageMso='Folder' screentip='打开目录' supertip='在 Windows 资源管理器中打开当前打开文件的所在目录并选中该文件' onAction='OnMenuAction' />
+            <!-- 保存并复制文件到剪贴板小按钮 -->
+            <button id='btnSaveAndCopyWorkbook' label='复制' imageMso='Copy' screentip='保存并复制文件' supertip='先保存当前打开的文件，再将文件本身复制到系统剪贴板' onAction='OnMenuAction' />
+          </box>
         </group>
         <!-- ①建项目→ 功能分组 -->
         <group id='grpBuildProject' label='①建项目→'>
@@ -846,6 +853,18 @@ namespace ExcelAddInDemo
                 InvalidateRibbon();
                 // 弹出清空成功提示
                 System.Windows.Forms.MessageBox.Show("已成功清空所有撤销与还原历史记录！", "系统提示", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+            }
+            // 响应“打开目录”小图标按钮指令
+            else if (controlId == "btnOpenWorkbookDir")
+            {
+                // 调用公共业务服务打开当前活动工作簿所在目录
+                ExcelServices.OpenCurrentWorkbookDirectory();
+            }
+            // 响应“复制”小图标按钮指令
+            else if (controlId == "btnSaveAndCopyWorkbook")
+            {
+                // 调用公共业务服务保存并复制当前活动工作簿到系统剪贴板
+                ExcelServices.SaveAndCopyCurrentWorkbookToClipboard();
             }
         }
 

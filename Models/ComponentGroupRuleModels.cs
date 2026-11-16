@@ -282,6 +282,37 @@ namespace ExcelAddInDemo.Models
         /// 对应导出的经典文本表达式 (如: "双电源# 电流:>1000 型号:WATSG 附件:1")
         /// </summary>
         public string RawExpression { get; set; } = "";
+
+        /// <summary>
+        /// 所属智能匹配组 ID (为空表示不加入任何智能组，仅按优先级顺序匹配)
+        /// </summary>
+        public string SmartGroupId { get; set; } = "";
+    }
+
+    /// <summary>
+    /// 智能匹配组配置实体 (支持多组，组内规则优先组合求解以实现涉及元器件严格清零)
+    /// </summary>
+    public class SmartMatchGroup
+    {
+        /// <summary>
+        /// 智能匹配组唯一 ID
+        /// </summary>
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
+        /// <summary>
+        /// 智能匹配组名称 (如: "风机接触器智能组")
+        /// </summary>
+        public string Name { get; set; } = "";
+
+        /// <summary>
+        /// 多组试探执行优先级 (数值越小越优先)
+        /// </summary>
+        public int Priority { get; set; } = 1;
+
+        /// <summary>
+        /// 是否启用该智能匹配组
+        /// </summary>
+        public bool Enabled { get; set; } = true;
     }
 
     /// <summary>
@@ -349,6 +380,11 @@ namespace ExcelAddInDemo.Models
         /// 规则管道列表
         /// </summary>
         public List<ComponentGroupRule> Rules { get; set; } = new List<ComponentGroupRule>();
+
+        /// <summary>
+        /// 智能匹配组列表 (支持多组独立试探与回退)
+        /// </summary>
+        public List<SmartMatchGroup> SmartMatchGroups { get; set; } = new List<SmartMatchGroup>();
 
         /// <summary>
         /// 默认单位文本 (如 "套")
@@ -1050,19 +1086,37 @@ namespace ExcelAddInDemo.Models
     /// </summary>
     public static class PipelineEvaluator
     {
+        // 智能匹配组合回溯搜索最大步数保护阈值，防止极端大规模输入导致界面卡顿
+        private const int MaxSmartSearchNodes = 50000;
+
         /// <summary>
-        /// 针对整个箱柜元件集合，按规则优先级依次进行带【前置守卫检查】与【动态资源池扣减】的完整评估
+        /// 单个智能匹配组求解分配项 (记录规则、分配套数与待扣减计划)
+        /// </summary>
+        private sealed class SmartRuleAssignment
+        {
+            // 命中的规则对象
+            public ComponentGroupRule Rule { get; set; } = new ComponentGroupRule();
+            // 分配的生成套数
+            public int Quantity { get; set; }
+            // 对应的扣减计划列表
+            public List<DeductionPlanItem> PlanItems { get; set; } = new List<DeductionPlanItem>();
+        }
+
+        /// <summary>
+        /// 针对整个箱柜元件集合，先按智能匹配组优先试探严格清零匹配，失败则回退按优先级顺序进行带【前置守卫检查】与【动态资源池扣减】的完整评估
         /// </summary>
         /// <param name="rules">启用的规则管道列表 (已按优先级排序)</param>
         /// <param name="components">箱柜一次元件集合</param>
         /// <param name="executionLogs">执行与扣减过程诊断日志列表</param>
         /// <param name="remainingComponents">执行完毕后剩余元件库存列表</param>
+        /// <param name="smartGroups">可选的多智能匹配组配置列表</param>
         /// <returns>命中的规则匹配结果列表</returns>
         public static List<RuleMatchResult> EvaluateRulesWithResourcePool(
             List<ComponentGroupRule> rules,
             List<EleComponentDto> components,
             out List<string> executionLogs,
-            out List<EleComponentDto> remainingComponents)
+            out List<EleComponentDto> remainingComponents,
+            List<SmartMatchGroup>? smartGroups = null)
         {
             // 初始化命中结果集合
             var matchedResults = new List<RuleMatchResult>();
@@ -1081,46 +1135,9 @@ namespace ExcelAddInDemo.Models
             }
 
             // 1. 克隆一份深拷贝作为当前箱柜的动态工作资源池 (按序消耗扣减)
-            var workingPool = components.Select(c => new EleComponentDto
-            {
-                // 复制所在行号
-                RowIndex = c.RowIndex,
-                // 复制元件名称
-                EleName = c.EleName,
-                // 复制型号规格
-                EleNorms = c.EleNorms,
-                // 复制数量
-                EleNums = c.EleNums,
-                // 复制电流参数
-                EleCurrent = c.EleCurrent,
-                // 复制极数参数
-                ElePoles = c.ElePoles,
-                // 复制脱扣参数
-                EleTripping = c.EleTripping,
-                // 复制附件参数
-                EleAppendix = c.EleAppendix
-            }).ToList();
-
+            var workingPool = CloneComponentPool(components);
             // 2. 同时克隆一份原始库存镜像 (用于前置守卫比对两元件的原始数量，不受前面规则扣减影响)
-            var originalPool = components.Select(c => new EleComponentDto
-            {
-                // 复制所在行号
-                RowIndex = c.RowIndex,
-                // 复制元件名称
-                EleName = c.EleName,
-                // 复制型号规格
-                EleNorms = c.EleNorms,
-                // 复制数量
-                EleNums = c.EleNums,
-                // 复制电流参数
-                EleCurrent = c.EleCurrent,
-                // 复制极数参数
-                ElePoles = c.ElePoles,
-                // 复制脱扣参数
-                EleTripping = c.EleTripping,
-                // 复制附件参数
-                EleAppendix = c.EleAppendix
-            }).ToList();
+            var originalPool = CloneComponentPool(components);
 
             // 打印初始元件库存明细
             var initialCompSummary = workingPool
@@ -1129,65 +1146,86 @@ namespace ExcelAddInDemo.Models
             // 记录初始库存池快照至日志
             executionLogs.Add($"📦 【初始元件库存池】: {string.Join(", ", initialCompSummary)}");
 
+            // 筛选并按优先级排序全部已启用规则
+            var orderedEnabledRules = rules.Where(r => r.Enabled).OrderBy(r => r.Priority).ToList();
+            // 记录已在智能匹配阶段成功消耗并处理完毕的规则 ID 集合
+            var handledRuleIds = new HashSet<string>();
             // 规则评估步骤序号计数器
             int step = 1;
-            // 3. 依次按规则优先级从上到下遍历评估已启用的规则
-            foreach (var rule in rules.Where(r => r.Enabled).OrderBy(r => r.Priority))
+
+            // 阶段 1: 优先执行已启用的智能匹配组 (按组优先级顺序依次试探，支持多组)
+            if (smartGroups != null && smartGroups.Count > 0)
             {
-                // 1. 前置生效与跳过守卫判断 (基于原始元件池 originalPool 对比两元件数量)
-                var guards = rule.Guards;
-                // 判断是否存在守卫配置
-                if (guards != null && guards.Count > 0)
+                // 遍历所有已启用的智能匹配组
+                foreach (var group in smartGroups.Where(g => g.Enabled).OrderBy(g => g.Priority))
                 {
-                    // 标记是否被守卫拦截跳过
-                    bool isGuardedOut = false;
-                    // 记录守卫拦截原因
-                    string guardLogReason = "";
+                    // 提取属于当前智能组的已启用规则 (严格保持优先级顺序，满足多解时选项2偏好)
+                    var groupRules = orderedEnabledRules
+                        .Where(r => !string.IsNullOrEmpty(r.SmartGroupId) && r.SmartGroupId == group.Id)
+                        .ToList();
+                    // 若该组下没有任何启用规则则跳过
+                    if (groupRules.Count == 0) continue;
 
-                    // 遍历所有已启用的守卫项
-                    foreach (var guard in guards.Where(g => g.Enabled && !string.IsNullOrWhiteSpace(g.SourceElement) && !string.IsNullOrWhiteSpace(g.TargetElement)))
+                    // 尝试对当前智能匹配组执行严格清零组合求解
+                    if (TrySolveSmartGroup(group, groupRules, workingPool, originalPool, out var assignments, out string failReason))
                     {
-                        // 统计源元件在原始箱柜中的总数
-                        int srcCount = originalPool.Where(c => c.EleNums > 0 && MatchSingleComponentProperties(c, guard.SourceElement)).Sum(c => c.EleNums);
-                        // 统计目标元件在原始箱柜中的总数
-                        int tgtCount = originalPool.Where(c => c.EleNums > 0 && MatchSingleComponentProperties(c, guard.TargetElement)).Sum(c => c.EleNums);
-                        // 进行数值关系比较
-                        bool isConditionTrue = EvaluateNumberComparison(srcCount, guard.Operator, tgtCount);
-
-                        // 满足时跳过模式
-                        if (guard.ActionMode == GuardActionMode.SkipIfMatched && isConditionTrue)
+                        // 求解成功: 记录智能组命中标题日志
+                        executionLogs.Add($"🧠 【智能匹配组 [{group.Name}]】匹配成功 (涉及扣减元器件已全部严格清零)!");
+                        // 按规则优先级依次提交扣减并写入结果集
+                        foreach (var item in assignments)
                         {
-                            // 标记拦截
-                            isGuardedOut = true;
-                            // 构造拦截日志
-                            guardLogReason = $"原始[{guard.SourceElement}]数量({srcCount}件) {guard.Operator} 原始[{guard.TargetElement}]数量({tgtCount}件) -> 触发跳过";
-                            // 跳出守卫循环
-                            break;
+                            // 提交资源池扣减并生成匹配结果对象
+                            var matchRes = CommitRuleMatch(
+                                item.Rule,
+                                item.Quantity,
+                                item.PlanItems,
+                                workingPool,
+                                $"智能组:{group.Name}",
+                                out var deductSummary);
+                            // 加入总命中结果集合
+                            matchedResults.Add(matchRes);
+                            // 输出单条规则命中日志
+                            executionLogs.Add($"[步骤 {step}] 🧠✅ 智能命中 [{item.Rule.Name}]! 生成 {item.Quantity} 套 [{item.Rule.TargetGroup}]");
+                            // 输出扣减明细或无扣减提示
+                            executionLogs.Add(deductSummary.Count > 0
+                                ? $"    └── 🔻 智能组元件扣减: {string.Join("; ", deductSummary)}"
+                                : $"    └── 条件满足 (无主控/比例扣减项)");
+                            // 步进日志步骤号
+                            step++;
                         }
-                        // 满足时才生效模式
-                        else if (guard.ActionMode == GuardActionMode.ExecuteIfMatched && !isConditionTrue)
+
+                        // 将本组内全部启用规则标记为已处理，避免阶段 2 重复匹配
+                        foreach (var gr in groupRules)
                         {
-                            // 标记拦截
-                            isGuardedOut = true;
-                            // 构造前提不成立日志
-                            guardLogReason = $"原始[{guard.SourceElement}]数量({srcCount}件) 不满足 {guard.Operator} 原始[{guard.TargetElement}]数量({tgtCount}件) -> 前提不成立跳过";
-                            // 跳出守卫循环
-                            break;
+                            // 加入已处理规则集合
+                            handledRuleIds.Add(gr.Id);
                         }
                     }
-
-                    // 若判定跳过，记录日志并直接处理下一规则
-                    if (isGuardedOut)
+                    else
                     {
-                        // 输出守卫跳过日志
-                        executionLogs.Add($"[步骤 {step}] ⏭️ 规则 [{rule.Name}] 被前置守卫跳过");
-                        // 输出守卫决策细节
-                        executionLogs.Add($"    └── 守卫决策: {guardLogReason}");
-                        // 步进序号
-                        step++;
-                        // 继续下一规则
-                        continue;
+                        // 求解失败: 保持工作资源池不变，释放组内全部规则回退至阶段 2 按顺序匹配
+                        executionLogs.Add($"🧠 【智能匹配组 [{group.Name}]】未采用 ({failReason}) -> 组内 {groupRules.Count} 条规则回退按顺序匹配");
                     }
+                }
+            }
+
+            // 阶段 2: 依次按规则优先级从上到下遍历评估剩余规则 (含未入组规则及智能匹配失败回退规则)
+            foreach (var rule in orderedEnabledRules)
+            {
+                // 若该规则已在智能匹配组中成功采用，则直接跳过
+                if (handledRuleIds.Contains(rule.Id)) continue;
+
+                // 1. 前置生效与跳过守卫判断 (基于原始元件池 originalPool 对比两元件数量)
+                if (!CheckRuleGuards(rule, originalPool, out string guardLogReason))
+                {
+                    // 输出守卫跳过日志
+                    executionLogs.Add($"[步骤 {step}] ⏭️ 规则 [{rule.Name}] 被前置守卫跳过");
+                    // 输出守卫决策细节
+                    executionLogs.Add($"    └── 守卫决策: {guardLogReason}");
+                    // 步进序号
+                    step++;
+                    // 继续下一规则
+                    continue;
                 }
 
                 // 2. 基于强类型条件树直接在当前工作资源池中进行精准求值与扣减计划推导
@@ -1197,95 +1235,18 @@ namespace ExcelAddInDemo.Models
                 if (isMatched && driverQuantity > 0)
                 {
                     // 确定最终生成套数 (依据套数策略确定)
-                    int finalQty = driverQuantity;
-                    // 若配置了固定套数策略且数值合法
-                    if (rule.Policy == QuantityPolicy.Fixed && rule.FixedQuantity > 0)
-                    {
-                        // 采用固定套数
-                        finalQty = rule.FixedQuantity;
-                    }
-                    // 兜底保证至少 1 套
-                    if (finalQty <= 0) finalQty = 1;
-
-                    // 提交扣减: 正式从工作资源池中扣除消耗的元件数量 (严格按 finalQty * BaseCountPerSet 扣减)
-                    var deductSummary = new List<string>();
-                    // 遍历所有的待扣减项
-                    foreach (var plan in planItems)
-                    {
-                        // 计算该项需要扣减的总件数 (生成套数 * 每套消耗件数)
-                        int requiredDeduct = finalQty * plan.BaseCountPerSet;
-                        // 追踪剩余待扣减件数
-                        int remainingToDeduct = requiredDeduct;
-                        // 追踪本次实际扣减的件数
-                        int totalDeductedForThis = 0;
-
-                        // 遍历工作资源池中的元件行
-                        foreach (var comp in workingPool)
-                        {
-                            // 跳过已耗尽库存的元件行
-                            if (comp.EleNums <= 0) continue;
-                            // 校验元件是否满足扣减匹配谓词
-                            if (plan.MatchPredicate(comp))
-                            {
-                                // 计算当前行可扣减数量
-                                int deductThis = Math.Min(comp.EleNums, remainingToDeduct);
-                                // 从工作池扣除库存
-                                comp.EleNums -= deductThis;
-                                // 减少剩余待扣减额度
-                                remainingToDeduct -= deductThis;
-                                // 累加实际扣减数
-                                totalDeductedForThis += deductThis;
-                                // 满足扣减额度后提前退出遍历
-                                if (remainingToDeduct <= 0) break;
-                            }
-                        }
-
-                        // 统计扣减后该类元件在当前工作池中的剩余总数
-                        int poolRemaining = workingPool
-                            .Where(c => plan.MatchPredicate(c))
-                            .Sum(c => c.EleNums);
-
-                        // 记录单项扣减汇总摘要
-                        deductSummary.Add($"{plan.Description} 消耗 {totalDeductedForThis}件 (池剩余 {poolRemaining}件)");
-                    }
-
-                    // 构造匹配详情说明
-                    string detailStr = deductSummary.Count > 0
-                        ? $"匹配成功! 生成 {finalQty} 套 [{rule.TargetGroup}] (消耗: {string.Join(", ", deductSummary)})"
-                        : $"匹配成功! 生成 {finalQty} 套 [{rule.TargetGroup}] (关联条件满足，无扣减)";
-
-                    // 统计当前规则匹配结果
-                    var matchRes = new RuleMatchResult
-                    {
-                        // 记录规则 ID
-                        RuleId = rule.Id,
-                        // 记录规则名称
-                        RuleName = rule.Name,
-                        // 记录目标二次元件组名称
-                        TargetGroup = rule.TargetGroup,
-                        // 记录生成的套数
-                        Quantity = finalQty,
-                        // 记录匹配状态为成功
-                        IsMatched = true,
-                        // 记录详细信息
-                        DetailInfo = detailStr
-                    };
+                    int finalQty = ResolveFinalRuleQuantity(rule, driverQuantity);
+                    // 提交资源池扣减并生成标准匹配结果
+                    var matchRes = CommitRuleMatch(rule, finalQty, planItems, workingPool, null, out var deductSummary);
                     // 加入匹配结果集
                     matchedResults.Add(matchRes);
 
                     // 输出命中日志
                     executionLogs.Add($"[步骤 {step}] ✅ 规则 [{rule.Name}] 命中! 生成 {finalQty} 套 [{rule.TargetGroup}]");
                     // 输出扣减明细日志
-                    if (deductSummary.Count > 0)
-                    {
-                        // 打印扣减项明细
-                        executionLogs.Add($"    └── 🔻 主控/比例元件扣减: {string.Join("; ", deductSummary)}");
-                    }
-                    else
-                    {
-                        // 打印无扣减项提示
-                        executionLogs.Add($"    └── 条件满足 (无主控/比例扣减项)");
-                    }
+                    executionLogs.Add(deductSummary.Count > 0
+                        ? $"    └── 🔻 主控/比例元件扣减: {string.Join("; ", deductSummary)}"
+                        : $"    └── 条件满足 (无主控/比例扣减项)");
                 }
                 else
                 {
@@ -1306,6 +1267,425 @@ namespace ExcelAddInDemo.Models
 
             // 返回全部命中的规则列表
             return matchedResults;
+        }
+
+        /// <summary>
+        /// 深拷贝元件资源池列表 (用于动态扣减与回溯试探)
+        /// </summary>
+        private static List<EleComponentDto> CloneComponentPool(List<EleComponentDto> source)
+        {
+            // 逐行复制全部元件属性生成独立副本
+            return source.Select(c => new EleComponentDto
+            {
+                RowIndex = c.RowIndex,
+                EleName = c.EleName,
+                EleNorms = c.EleNorms,
+                EleNums = c.EleNums,
+                EleCurrent = c.EleCurrent,
+                ElePoles = c.ElePoles,
+                EleTripping = c.EleTripping,
+                EleAppendix = c.EleAppendix
+            }).ToList();
+        }
+
+        /// <summary>
+        /// 校验单条规则的所有前置生效/跳过守卫条件 (基于原始元件池)
+        /// </summary>
+        private static bool CheckRuleGuards(ComponentGroupRule rule, List<EleComponentDto> originalPool, out string guardLogReason)
+        {
+            // 初始化拦截原因文本
+            guardLogReason = "";
+            // 提取守卫条件列表
+            var guards = rule.Guards;
+            // 无守卫配置直接放行
+            if (guards == null || guards.Count == 0) return true;
+
+            // 遍历所有已启用且配置完整的守卫项
+            foreach (var guard in guards.Where(g => g.Enabled && !string.IsNullOrWhiteSpace(g.SourceElement) && !string.IsNullOrWhiteSpace(g.TargetElement)))
+            {
+                // 统计源元件在原始箱柜中的总数
+                int srcCount = originalPool.Where(c => c.EleNums > 0 && MatchSingleComponentProperties(c, guard.SourceElement)).Sum(c => c.EleNums);
+                // 统计目标元件在原始箱柜中的总数
+                int tgtCount = originalPool.Where(c => c.EleNums > 0 && MatchSingleComponentProperties(c, guard.TargetElement)).Sum(c => c.EleNums);
+                // 进行数值关系比较
+                bool isConditionTrue = EvaluateNumberComparison(srcCount, guard.Operator, tgtCount);
+
+                // 满足时跳过模式
+                if (guard.ActionMode == GuardActionMode.SkipIfMatched && isConditionTrue)
+                {
+                    // 构造拦截日志
+                    guardLogReason = $"原始[{guard.SourceElement}]数量({srcCount}件) {guard.Operator} 原始[{guard.TargetElement}]数量({tgtCount}件) -> 触发跳过";
+                    // 返回拦截不通过
+                    return false;
+                }
+                // 满足时才生效模式
+                if (guard.ActionMode == GuardActionMode.ExecuteIfMatched && !isConditionTrue)
+                {
+                    // 构造前提不成立日志
+                    guardLogReason = $"原始[{guard.SourceElement}]数量({srcCount}件) 不满足 {guard.Operator} 原始[{guard.TargetElement}]数量({tgtCount}件) -> 前提不成立跳过";
+                    // 返回拦截不通过
+                    return false;
+                }
+            }
+
+            // 所有守卫均通过
+            return true;
+        }
+
+        /// <summary>
+        /// 依据规则的套数策略计算最终生成套数
+        /// </summary>
+        private static int ResolveFinalRuleQuantity(ComponentGroupRule rule, int driverQuantity)
+        {
+            // 默认采用条件推导出的驱动套数
+            int finalQty = driverQuantity;
+            // 若配置了固定套数策略且数值合法则覆写
+            if (rule.Policy == QuantityPolicy.Fixed && rule.FixedQuantity > 0)
+            {
+                // 采用固定套数
+                finalQty = rule.FixedQuantity;
+            }
+            // 兜底保证至少 1 套
+            return finalQty <= 0 ? 1 : finalQty;
+        }
+
+        /// <summary>
+        /// 将已确定的扣减计划正式写入工作资源池，并构造规则匹配结果对象
+        /// </summary>
+        private static RuleMatchResult CommitRuleMatch(
+            ComponentGroupRule rule,
+            int finalQty,
+            List<DeductionPlanItem> planItems,
+            List<EleComponentDto> workingPool,
+            string? smartGroupTag,
+            out List<string> deductSummary)
+        {
+            // 初始化扣减明细摘要集合
+            deductSummary = new List<string>();
+            // 遍历待扣减项执行库存扣减
+            foreach (var plan in planItems)
+            {
+                // 计算该项需要扣减的总件数并执行扣减
+                int requiredDeduct = finalQty * plan.BaseCountPerSet;
+                int totalDeductedForThis = DeductFromPool(workingPool, plan.MatchPredicate, requiredDeduct);
+                // 统计扣减后该类元件在工作池中的剩余总数
+                int poolRemaining = workingPool.Where(c => plan.MatchPredicate(c)).Sum(c => c.EleNums);
+                // 记录单项扣减汇总摘要
+                deductSummary.Add($"{plan.Description} 消耗 {totalDeductedForThis}件 (池剩余 {poolRemaining}件)");
+            }
+
+            // 组装智能组标记前缀
+            string prefix = string.IsNullOrEmpty(smartGroupTag) ? "" : $"[{smartGroupTag}] ";
+            // 构造匹配详情说明文本
+            string detailStr = deductSummary.Count > 0
+                ? $"{prefix}匹配成功! 生成 {finalQty} 套 [{rule.TargetGroup}] (消耗: {string.Join(", ", deductSummary)})"
+                : $"{prefix}匹配成功! 生成 {finalQty} 套 [{rule.TargetGroup}] (关联条件满足，无扣减)";
+
+            // 返回标准化匹配结果对象
+            return new RuleMatchResult
+            {
+                RuleId = rule.Id,
+                RuleName = rule.Name,
+                TargetGroup = rule.TargetGroup,
+                Quantity = finalQty,
+                IsMatched = true,
+                DetailInfo = detailStr
+            };
+        }
+
+        /// <summary>
+        /// 从指定元件池中按谓词顺序扣减指定数量，返回实际扣减总数
+        /// </summary>
+        private static int DeductFromPool(List<EleComponentDto> pool, Func<EleComponentDto, bool> predicate, int requiredDeduct)
+        {
+            // 追踪剩余待扣减件数与累计实际扣减数
+            int remainingToDeduct = requiredDeduct;
+            int totalDeducted = 0;
+
+            // 遍历资源池元件行扣减库存
+            foreach (var comp in pool)
+            {
+                // 跳过已耗尽的元件行
+                if (comp.EleNums <= 0) continue;
+                // 匹配扣减条件
+                if (predicate(comp))
+                {
+                    // 计算当前行可扣减件数并扣除
+                    int deductThis = Math.Min(comp.EleNums, remainingToDeduct);
+                    comp.EleNums -= deductThis;
+                    remainingToDeduct -= deductThis;
+                    totalDeducted += deductThis;
+                    // 扣满即停
+                    if (remainingToDeduct <= 0) break;
+                }
+            }
+
+            // 返回实际扣减件数
+            return totalDeducted;
+        }
+
+        /// <summary>
+        /// 尝试对单个智能匹配组执行组合求解 (方案 A: 涉及扣减的元器件必须全部严格清零；多解时按组内规则优先级优先)
+        /// </summary>
+        private static bool TrySolveSmartGroup(
+            SmartMatchGroup group,
+            List<ComponentGroupRule> groupRules,
+            List<EleComponentDto> workingPool,
+            List<EleComponentDto> originalPool,
+            out List<SmartRuleAssignment> assignments,
+            out string failReason)
+        {
+            // 初始化输出参数
+            assignments = new List<SmartRuleAssignment>();
+            failReason = "";
+
+            // 1. 过滤出通过前置守卫的组内候选规则 (保持 Priority 升序)
+            var candidateRules = groupRules
+                .Where(r => CheckRuleGuards(r, originalPool, out _))
+                .ToList();
+            // 若全部规则被守卫拦截，则智能匹配不可用
+            if (candidateRules.Count == 0)
+            {
+                // 设置失败原因并返回
+                failReason = "组内规则均被前置守卫拦截";
+                return false;
+            }
+
+            // 2. 收集组内各候选规则在条件树中声明的所有扣减谓词 (MainDriver 与 RatioMember)
+            var rulePredicates = new List<List<Func<EleComponentDto, bool>>>();
+            // 遍历候选规则提取扣减谓词清单
+            foreach (var cRule in candidateRules)
+            {
+                // 提取单条规则的扣减谓词列表
+                var preds = new List<Func<EleComponentDto, bool>>();
+                CollectConditionGroupDeductionPredicates(cRule.ConditionTree, preds);
+                rulePredicates.Add(preds);
+            }
+
+            // 3. 定位当前工作资源池中属于本智能组涉及扣减的元件行索引集合
+            var involvedIndices = new List<int>();
+            // 遍历工作池中的全部有库存元件行
+            for (int idx = 0; idx < workingPool.Count; idx++)
+            {
+                // 跳过已清零的元件行
+                if (workingPool[idx].EleNums <= 0) continue;
+                // 判断该元件是否命中组内任一规则的扣减谓词
+                bool isInvolved = rulePredicates.Any(preds => preds.Any(p => p(workingPool[idx])));
+                // 纳入涉及清零校验的目标元件行索引
+                if (isInvolved) involvedIndices.Add(idx);
+            }
+
+            // 若当前池中没有任何涉及该智能组扣减的元件库存，则无需智能匹配
+            if (involvedIndices.Count == 0)
+            {
+                // 设置失败原因并返回
+                failReason = "工作池中不存在本组涉及扣减的元器件";
+                return false;
+            }
+
+            // 4. 预计算剪枝矩阵: 从第 depth 条规则起，后续规则是否还有能力扣减 involvedIndices[k]
+            int ruleCount = candidateRules.Count;
+            // canRemainingDeduct[depth, invPos] 表示第 depth..末尾 的规则能否触及该涉及元件
+            bool[,] canRemainingDeduct = new bool[ruleCount + 1, involvedIndices.Count];
+            // 倒序递推计算后缀可达性
+            for (int d = ruleCount - 1; d >= 0; d--)
+            {
+                // 遍历每个涉及元件行
+                for (int k = 0; k < involvedIndices.Count; k++)
+                {
+                    // 检查第 d 条规则自身或后续规则是否匹配该元件
+                    int compIdx = involvedIndices[k];
+                    bool curMatches = rulePredicates[d].Any(p => p(workingPool[compIdx]));
+                    canRemainingDeduct[d, k] = curMatches || canRemainingDeduct[d + 1, k];
+                }
+            }
+
+            // 5. 启动带剪枝的优先级优先深度搜索 (选项 2: Priority 靠前的规则优先尝试最大套数)
+            var simPool = CloneComponentPool(workingPool);
+            // 搜索节点步数计数器与当前路径集合
+            int searchNodes = 0;
+            var currentPath = new List<SmartRuleAssignment>();
+            // 执行递归求解
+            bool solved = SolveSmartGroupZeroingDfs(
+                candidateRules,
+                0,
+                simPool,
+                involvedIndices,
+                canRemainingDeduct,
+                currentPath,
+                ref searchNodes);
+
+            // 若求得严格清零解，则输出最终分配方案
+            if (solved && currentPath.Count > 0)
+            {
+                // 返回按 Priority 排序后的有效分配列表
+                assignments = currentPath;
+                return true;
+            }
+
+            // 未求得可行解时区分是否触及搜索步数上限
+            failReason = searchNodes >= MaxSmartSearchNodes
+                ? "组合搜索达到步数上限"
+                : "无法使涉及扣减的元器件全部清零";
+            return false;
+        }
+
+        /// <summary>
+        /// 递归收集条件树中所有可能产生资源扣减的谓词 (MainDriver 与 RatioMember)
+        /// </summary>
+        private static void CollectConditionGroupDeductionPredicates(
+            RuleConditionGroup? group,
+            List<Func<EleComponentDto, bool>> predicates)
+        {
+            // 空条件组直接返回
+            if (group == null) return;
+
+            // 遍历当前组下的原子条件节点
+            if (group.Nodes != null)
+            {
+                // 逐个提取主驱动与比例成员的匹配谓词
+                foreach (var node in group.Nodes)
+                {
+                    // 主驱动节点 (#)
+                    if (node.Mode == ElementMatchMode.MainDriver)
+                    {
+                        // 捕获当前节点引用避免闭包污染
+                        var capturedNode = node;
+                        predicates.Add(c => MatchSingleNode(c, capturedNode));
+                    }
+                    // 成组比例节点 (/)
+                    else if (node.Mode == ElementMatchMode.RatioMember && node.RatioItems != null)
+                    {
+                        // 逐个添加比例子项谓词
+                        foreach (var rItem in node.RatioItems)
+                        {
+                            // 捕获比例子项引用避免闭包污染
+                            var capturedItem = rItem;
+                            predicates.Add(c => MatchRatioItem(c, capturedItem));
+                        }
+                    }
+                }
+            }
+
+            // 递归收集子条件组中的扣减谓词
+            if (group.SubGroups != null)
+            {
+                // 遍历子组继续收集
+                foreach (var subGroup in group.SubGroups)
+                {
+                    // 递归调用收集
+                    CollectConditionGroupDeductionPredicates(subGroup, predicates);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 深度优先回溯求解智能匹配组组合 (选项 2: 按规则 Priority 升序，每条规则从最大可行套数向下试探，直至所有涉及元件严格清零)
+        /// </summary>
+        private static bool SolveSmartGroupZeroingDfs(
+            List<ComponentGroupRule> candidateRules,
+            int depth,
+            List<EleComponentDto> simPool,
+            List<int> involvedIndices,
+            bool[,] canRemainingDeduct,
+            List<SmartRuleAssignment> currentPath,
+            ref int searchNodes)
+        {
+            // 步数保护: 超出搜索预算时安全终止
+            if (++searchNodes > MaxSmartSearchNodes) return false;
+
+            // 终态检查: 判断所有涉及扣减的元件是否已全部严格清零 (且至少命中 1 条规则)
+            bool allZeroed = involvedIndices.All(idx => simPool[idx].EleNums == 0);
+            // 若已全部清零且已有有效分配，立即返回首个最优解 (符合选项 2 优先级优先)
+            if (allZeroed && currentPath.Count > 0) return true;
+
+            // 越界检查: 已遍历完所有候选规则仍未全部清零则失败回溯
+            if (depth >= candidateRules.Count) return false;
+
+            // 精确剪枝: 若存在某个尚未清零的涉及元件，但后续所有规则都无法扣减它，则本分支必不可能成功
+            for (int k = 0; k < involvedIndices.Count; k++)
+            {
+                // 若该元件仍有剩余且后续规则无力触达，直接剪枝
+                if (simPool[involvedIndices[k]].EleNums > 0 && !canRemainingDeduct[depth, k])
+                {
+                    // 提前剪枝返回失败
+                    return false;
+                }
+            }
+
+            // 提取当前层待试探规则
+            var rule = candidateRules[depth];
+            // 在当前模拟资源池上求值该规则的最大可用套数与扣减计划
+            bool isMatched = EvaluateConditionGroup(rule.ConditionTree, simPool, out int driverQuantity, out List<DeductionPlanItem> planItems);
+
+            // 若当前规则在当前剩余池上可匹配，则按“套数从大到小”依次试探
+            if (isMatched && driverQuantity > 0)
+            {
+                // 构造候选尝试套数序列
+                var candidateQuantities = new List<int>();
+                // 固定套数策略仅允许尝试 [FixedQuantity] (前提是库存足以支撑完整扣减)
+                if (rule.Policy == QuantityPolicy.Fixed && rule.FixedQuantity > 0)
+                {
+                    // 校验各扣减项库存是否满足固定套数
+                    int fixedQty = rule.FixedQuantity;
+                    bool stockEnough = planItems.Count == 0 || planItems.All(p => p.MaxAvailableSets >= fixedQty);
+                    // 库存充足才加入尝试序列
+                    if (stockEnough) candidateQuantities.Add(fixedQty);
+                }
+                else
+                {
+                    // 动态套数策略: 从最大可匹配套数降序尝试至 1 (确保选项 2 优先为高优先级规则分配最多套数)
+                    for (int q = driverQuantity; q >= 1; q--)
+                    {
+                        // 加入候选套数序列
+                        candidateQuantities.Add(q);
+                    }
+                }
+
+                // 逐个试探正套数分支
+                foreach (int tryQty in candidateQuantities)
+                {
+                    // 克隆下一层模拟资源池并执行扣减
+                    var nextPool = CloneComponentPool(simPool);
+                    // 校验每项扣减均能完整扣除 (防止同一元件被同规则内多个谓词重复扣减导致超扣)
+                    bool fullDeductOk = true;
+                    // 依次扣除各项所需件数
+                    foreach (var plan in planItems)
+                    {
+                        // 计算需扣减件数并执行扣减
+                        int need = tryQty * plan.BaseCountPerSet;
+                        int actual = DeductFromPool(nextPool, plan.MatchPredicate, need);
+                        // 若未能完整扣除，标记本次试探非法
+                        if (actual < need)
+                        {
+                            fullDeductOk = false;
+                            break;
+                        }
+                    }
+
+                    // 扣减不足则跳过该套数
+                    if (!fullDeductOk) continue;
+
+                    // 记录当前规则分配并深入下一条规则
+                    currentPath.Add(new SmartRuleAssignment
+                    {
+                        Rule = rule,
+                        Quantity = tryQty,
+                        PlanItems = planItems
+                    });
+                    // 递归搜索下一深度
+                    if (SolveSmartGroupZeroingDfs(candidateRules, depth + 1, nextPool, involvedIndices, canRemainingDeduct, currentPath, ref searchNodes))
+                    {
+                        // 找到首个完整解立即返回
+                        return true;
+                    }
+                    // 回溯移除当前选择
+                    currentPath.RemoveAt(currentPath.Count - 1);
+                }
+            }
+
+            // 最后尝试“跳过当前规则 (分配 0 套)”分支，把元件留给后续规则匹配
+            return SolveSmartGroupZeroingDfs(candidateRules, depth + 1, simPool, involvedIndices, canRemainingDeduct, currentPath, ref searchNodes);
         }
 
         /// <summary>

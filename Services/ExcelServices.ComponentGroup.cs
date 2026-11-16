@@ -216,8 +216,13 @@ namespace ExcelAddInDemo
                 .OrderBy(r => r.Priority)
                 .ToList();
 
-            // 执行带动态资源池扣减的完整规则流评估
-            var matchedResults = PipelineEvaluator.EvaluateRulesWithResourcePool(activeRules, components, out var poolLogs, out var remainingComps);
+            // 执行带多智能匹配组试探与动态资源池扣减的完整规则流评估
+            var matchedResults = PipelineEvaluator.EvaluateRulesWithResourcePool(
+                activeRules,
+                components,
+                out var poolLogs,
+                out var remainingComps,
+                config.SmartMatchGroups);
 
             testResult.MatchedRules = matchedResults;
             testResult.Logs = poolLogs;
@@ -482,8 +487,13 @@ namespace ExcelAddInDemo
                         });
                     }
 
-                    // 2. 评估规则管道 (基于箱柜元件动态资源池扣减机制)
-                    var poolResults = PipelineEvaluator.EvaluateRulesWithResourcePool(activeRules, components, out var poolLogs, out _);
+                    // 2. 评估规则管道 (支持多智能匹配组优先清零求解及动态资源池扣减回退机制)
+                    var poolResults = PipelineEvaluator.EvaluateRulesWithResourcePool(
+                        activeRules,
+                        components,
+                        out var poolLogs,
+                        out _,
+                        config.SmartMatchGroups);
                     // 存储去重后最终待生成的二次元件组集合
                     var matchedList = new List<RuleMatchResult>();
 

@@ -685,6 +685,18 @@
               <i class="fa-solid fa-magnifying-glass" style="color: #94a3b8;"></i>
             </template>
           </el-input>
+          <!-- 多智能匹配组管理快捷入口按钮 -->
+          <el-button
+            size="small"
+            plain
+            @click="openSmartGroupDialog"
+            style="width: 100%; border-color: #009688; color: #009688; background: #f0fdfa; font-weight: 600;"
+            title="配置多智能匹配组，组内规则优先联合清零匹配，失败则回退按顺序匹配"
+          >
+            <!-- 闪电/智能图标与组数提示 -->
+            <i class="fa-solid fa-wand-magic-sparkles" style="margin-right: 5px;"></i>
+            智能匹配组管理 ({{ (config.smartMatchGroups || []).length }})
+          </el-button>
         </div>
 
         <!-- 规则卡片滚动容器 -->
@@ -747,8 +759,17 @@
             <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
               <!-- 条件摘要展示 -->
               <div class="rule-card-expr" :title="getRuleSummary(rule)" style="flex: 1; display: flex; align-items: center; gap: 4px;">
+                <!-- 所属智能匹配组徽标 -->
+                <el-tag
+                  v-if="getRuleSmartGroup(rule)"
+                  size="small"
+                  :type="getRuleSmartGroup(rule).enabled ? 'success' : 'info'"
+                  effect="light"
+                  style="font-size: 10px; height: 16px; padding: 0 4px; border-radius: 2px; flex-shrink: 0;"
+                  :title="'所属智能组: ' + getRuleSmartGroup(rule).name"
+                >智能:{{ getRuleSmartGroup(rule).name }}</el-tag>
                 <!-- 守卫标签 -->
-                <el-tag v-if="rule.guards && rule.guards.length > 0" size="small" type="warning" effect="plain" style="font-size: 10px; height: 16px; padding: 0 3px; border-radius: 2px;">守卫</el-tag>
+                <el-tag v-if="rule.guards && rule.guards.length > 0" size="small" type="warning" effect="plain" style="font-size: 10px; height: 16px; padding: 0 3px; border-radius: 2px; flex-shrink: 0;">守卫</el-tag>
                 <!-- 条件文本 -->
                 <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ getRuleSummary(rule) }}</span>
               </div>
@@ -807,6 +828,35 @@
               <el-col :span="12" v-if="currentRule.policy === 0">
                 <el-form-item label="固定套数:">
                   <el-input-number v-model="currentRule.fixedQuantity" :min="1" :max="999" style="width: 100%;"></el-input-number>
+                </el-form-item>
+              </el-col>
+              <!-- 所属智能匹配组选择下拉框与管理入口 -->
+              <el-col :span="currentRule.policy === 0 ? 24 : 12">
+                <el-form-item label="智能匹配组:">
+                  <div style="display: flex; align-items: center; gap: 6px; width: 100%;">
+                    <!-- 智能组选择下拉 -->
+                    <el-select
+                      v-model="currentRule.smartGroupId"
+                      clearable
+                      placeholder="不加入智能组 (按顺序匹配)"
+                      style="flex: 1;"
+                      @change="onRuleSmartGroupChanged"
+                    >
+                      <!-- 默认空选项 -->
+                      <el-option value="" label="不加入智能组 (按顺序匹配)"></el-option>
+                      <!-- 遍历所有已创建的智能匹配组 -->
+                      <el-option
+                        v-for="sg in (config.smartMatchGroups || [])"
+                        :key="sg.id"
+                        :value="sg.id"
+                        :label="sg.name + (sg.enabled ? '' : ' (已停用)')"
+                      ></el-option>
+                    </el-select>
+                    <!-- 快捷打开智能组管理弹窗按钮 -->
+                    <el-button size="small" plain @click="openSmartGroupDialog" title="新建或管理智能匹配组">
+                      <i class="fa-solid fa-gear" style="color: #009688;"></i>
+                    </el-button>
+                  </div>
                 </el-form-item>
               </el-col>
             </el-row>
@@ -1394,6 +1444,153 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 多智能匹配组管理弹窗 -->
+    <el-dialog
+      v-model="smartGroupDialogVisible"
+      title="多智能匹配组管理"
+      width="780px"
+      :close-on-click-modal="false"
+      append-to-body
+    >
+      <!-- 智能匹配机制说明横幅 -->
+      <div style="font-size: 12px; color: #0f766e; background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; line-height: 1.5;">
+        <i class="fa-solid fa-wand-magic-sparkles" style="margin-right: 5px;"></i>
+        <strong>执行机制：</strong>匹配箱柜时先按智能组顺序联合试探组内规则；仅当该智能组涉及扣减的元器件<strong>全部严格清零</strong>时采用智能匹配，否则组内规则全部回退按原优先级顺序匹配。多解时优先分配高优先级规则。
+      </div>
+
+      <!-- 主体左右分栏弹性布局 (无水平滚动条) -->
+      <div style="display: flex; gap: 12px; height: 400px; overflow: hidden;">
+        <!-- 左侧: 智能组列表 -->
+        <div style="width: 250px; flex-shrink: 0; display: flex; flex-direction: column; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; background: #ffffff;">
+          <!-- 左侧头部新增按钮栏 -->
+          <div style="padding: 8px 10px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 12px; font-weight: 600; color: #334155;">智能组 ({{ (config.smartMatchGroups || []).length }})</span>
+            <el-button size="small" type="primary" plain @click="addSmartGroup" style="padding: 4px 8px;">
+              <i class="fa-solid fa-plus" style="margin-right: 3px;"></i>新建组
+            </el-button>
+          </div>
+          <!-- 组卡片滚动列表 -->
+          <div style="flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px;">
+            <div
+              v-for="(sg, gIdx) in (config.smartMatchGroups || [])"
+              :key="sg.id"
+              @click="selectedSmartGroupId = sg.id"
+              :style="{
+                padding: '8px',
+                borderRadius: '6px',
+                border: selectedSmartGroupId === sg.id ? '1px solid #009688' : '1px solid #e2e8f0',
+                background: selectedSmartGroupId === sg.id ? '#e0f2f1' : '#ffffff',
+                cursor: 'pointer'
+              }"
+            >
+              <!-- 组卡片标题行 -->
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                <div style="display: flex; align-items: center; gap: 5px; overflow: hidden; flex: 1;">
+                  <el-switch v-model="sg.enabled" size="small" @click.stop style="--el-switch-on-color: #009688;"></el-switch>
+                  <span style="font-size: 12px; font-weight: 600; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ sg.name || '未命名组' }}</span>
+                </div>
+                <!-- 组试探顺序微调与删除按钮 -->
+                <div style="display: flex; align-items: center; gap: 2px; flex-shrink: 0;">
+                  <el-button size="small" text :disabled="gIdx === 0" @click.stop="moveSmartGroup(gIdx, -1)" style="padding: 2px;" title="上移组顺序">
+                    <i class="fa-solid fa-chevron-up"></i>
+                  </el-button>
+                  <el-button size="small" text :disabled="gIdx === (config.smartMatchGroups || []).length - 1" @click.stop="moveSmartGroup(gIdx, 1)" style="padding: 2px;" title="下移组顺序">
+                    <i class="fa-solid fa-chevron-down"></i>
+                  </el-button>
+                  <el-button size="small" text type="danger" @click.stop="deleteSmartGroup(sg)" style="padding: 2px;" title="删除该智能组">
+                    <i class="fa-solid fa-trash-can"></i>
+                  </el-button>
+                </div>
+              </div>
+              <!-- 组内已选规则计数 -->
+              <div style="font-size: 11px; color: #64748b; margin-top: 4px;">
+                已包含 {{ getSmartGroupRuleCount(sg.id) }} 条规则 · 组序 #{{ gIdx + 1 }}
+              </div>
+            </div>
+            <!-- 空状态提示 -->
+            <div v-if="!config.smartMatchGroups || config.smartMatchGroups.length === 0" style="text-align: center; color: #94a3b8; font-size: 12px; padding: 36px 10px;">
+              暂无智能匹配组<br>点击右上角“新建组”创建
+            </div>
+          </div>
+        </div>
+
+        <!-- 右侧: 组名编辑与成员规则勾选区 -->
+        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; background: #ffffff;">
+          <template v-if="activeSmartGroup">
+            <!-- 组名称编辑与成员搜索栏 -->
+            <div style="padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 12px; color: #475569; white-space: nowrap; font-weight: 600;">组名称:</span>
+              <el-input v-model="activeSmartGroup.name" size="small" placeholder="例如: 风机接触器智能组" style="width: 190px;"></el-input>
+              <el-input v-model="smartGroupRuleSearch" size="small" placeholder="筛选规则..." clearable style="flex: 1;">
+                <template #prefix><i class="fa-solid fa-magnifying-glass" style="color: #94a3b8;"></i></template>
+              </el-input>
+            </div>
+            <!-- 成员规则勾选列表 -->
+            <div style="flex: 1; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px;">
+              <div
+                v-for="rule in filteredSmartGroupRules"
+                :key="rule.id"
+                @click="toggleRuleInSmartGroup(rule, activeSmartGroup.id)"
+                :style="{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  border: rule.smartGroupId === activeSmartGroup.id ? '1px solid #009688' : '1px solid #e2e8f0',
+                  background: rule.smartGroupId === activeSmartGroup.id ? '#f0fdfa' : '#ffffff',
+                  cursor: 'pointer'
+                }"
+              >
+                <div style="display: flex; align-items: center; gap: 8px; overflow: hidden; flex: 1;">
+                  <el-checkbox
+                    :model-value="rule.smartGroupId === activeSmartGroup.id"
+                    @click.stop
+                    @change="toggleRuleInSmartGroup(rule, activeSmartGroup.id)"
+                  ></el-checkbox>
+                  <div style="overflow: hidden; flex: 1;">
+                    <!-- 规则名称与优先级序号 -->
+                    <div style="font-size: 12px; font-weight: 600; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                      #{{ rule.priority }} {{ rule.name }}
+                      <span v-if="!rule.enabled" style="color: #94a3b8; font-weight: 400;">(已停用)</span>
+                    </div>
+                    <!-- 规则条件摘要 -->
+                    <div style="font-size: 11px; color: #64748b; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                      {{ getRuleSummary(rule) }} → {{ rule.targetGroup }}
+                    </div>
+                  </div>
+                </div>
+                <!-- 若已归属其他智能组则展示提示标签 -->
+                <el-tag
+                  v-if="rule.smartGroupId && rule.smartGroupId !== activeSmartGroup.id && getRuleSmartGroup(rule)"
+                  size="small"
+                  type="warning"
+                  effect="plain"
+                  style="flex-shrink: 0;"
+                >
+                  当前属: {{ getRuleSmartGroup(rule).name }}
+                </el-tag>
+              </div>
+            </div>
+          </template>
+          <div v-else style="flex: 1; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 13px;">
+            请在左侧新建或选择一个智能匹配组进行成员配置
+          </div>
+        </div>
+      </div>
+
+      <!-- 弹窗底部确认栏 -->
+      <template #footer>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 12px; color: #64748b;">提示：调整后将自动刷新右侧沙盒试跑，别忘了点击右上角“保存配置”持久化。</span>
+          <el-button size="small" type="primary" @click="closeSmartGroupDialog" style="background-color: #009688; border-color: #009688;">
+            完成配置
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 
   <script>
@@ -1415,6 +1612,8 @@
             categoryCol: 2
           },
           rules: [],
+          // 多智能匹配组列表
+          smartMatchGroups: [],
           defaultUnitText: '套',
           defaultCategoryText: '元件组',
           enableDeduplication: true
@@ -1438,6 +1637,12 @@
         const sortDialogVisible = ref(false);
         // 手动排序弹窗临时工作列表
         const tempSortList = ref([]);
+        // 多智能匹配组管理弹窗显隐状态
+        const smartGroupDialogVisible = ref(false);
+        // 当前在管理弹窗中选中的智能匹配组 ID
+        const selectedSmartGroupId = ref('');
+        // 智能组管理弹窗内的规则搜索关键字
+        const smartGroupRuleSearch = ref('');
         // 当前正在拖拽的规则 ID
         const draggingRuleId = ref(null);
         // 当前拖拽悬停的目标卡片索引
@@ -1476,6 +1681,9 @@
             switch (data.action) {
               case 'renderConfig':
                 if (data.config) {
+                  // 兼容补齐智能匹配组数组与规则的所属智能组字段
+                  if (!Array.isArray(data.config.smartMatchGroups)) data.config.smartMatchGroups = [];
+                  (data.config.rules || []).forEach(r => { if (r.smartGroupId === undefined || r.smartGroupId === null) r.smartGroupId = ''; });
                   config.value = data.config;
                   if (config.value.rules && config.value.rules.length > 0) {
                     currentRule.value = config.value.rules[0];
@@ -1551,6 +1759,125 @@
           currentRule.value = rule;
         };
 
+        // 当前在智能组管理弹窗中激活编辑的智能组对象
+        const activeSmartGroup = computed(() => {
+          return (config.value.smartMatchGroups || []).find(g => g.id === selectedSmartGroupId.value) || null;
+        });
+
+        // 智能组管理弹窗内按关键字筛选后的全部规则列表
+        const filteredSmartGroupRules = computed(() => {
+          const allRules = config.value.rules || [];
+          const kw = smartGroupRuleSearch.value.trim().toLowerCase();
+          // 无关键字直接返回全量规则
+          if (!kw) return allRules;
+          // 匹配规则名称、目标组或条件摘要
+          return allRules.filter(r =>
+            (r.name && r.name.toLowerCase().includes(kw)) ||
+            (r.targetGroup && r.targetGroup.toLowerCase().includes(kw)) ||
+            (getRuleSummary(r) && getRuleSummary(r).toLowerCase().includes(kw))
+          );
+        });
+
+        // 获取某条规则当前所属的智能匹配组实体
+        const getRuleSmartGroup = (rule) => {
+          if (!rule || !rule.smartGroupId) return null;
+          return (config.value.smartMatchGroups || []).find(g => g.id === rule.smartGroupId) || null;
+        };
+
+        // 统计指定智能匹配组下包含的规则条数
+        const getSmartGroupRuleCount = (groupId) => {
+          return (config.value.rules || []).filter(r => r.smartGroupId === groupId).length;
+        };
+
+        // 打开多智能匹配组管理弹窗
+        const openSmartGroupDialog = () => {
+          if (!Array.isArray(config.value.smartMatchGroups)) {
+            config.value.smartMatchGroups = [];
+          }
+          // 若尚未选中组，自动默认选中第一组 (或当前规则所在组)
+          if (currentRule.value && currentRule.value.smartGroupId && getRuleSmartGroup(currentRule.value)) {
+            selectedSmartGroupId.value = currentRule.value.smartGroupId;
+          } else if (config.value.smartMatchGroups.length > 0) {
+            selectedSmartGroupId.value = config.value.smartMatchGroups[0].id;
+          } else {
+            selectedSmartGroupId.value = '';
+          }
+          smartGroupRuleSearch.value = '';
+          smartGroupDialogVisible.value = true;
+        };
+
+        // 关闭智能组管理弹窗并自动刷新沙盒测试
+        const closeSmartGroupDialog = () => {
+          smartGroupDialogVisible.value = false;
+          // 若沙盒已有测试元件，立即重跑一次验证智能匹配效果
+          if (testComponents.value && testComponents.value.length > 0) {
+            runSandboxTest();
+          }
+        };
+
+        // 新建智能匹配组
+        const addSmartGroup = () => {
+          if (!Array.isArray(config.value.smartMatchGroups)) {
+            config.value.smartMatchGroups = [];
+          }
+          const idx = config.value.smartMatchGroups.length + 1;
+          // 生成唯一智能组对象并设为当前选中
+          const newGroup = {
+            id: 'smg_' + Date.now(),
+            name: '智能匹配组 ' + idx,
+            priority: idx,
+            enabled: true
+          };
+          config.value.smartMatchGroups.push(newGroup);
+          selectedSmartGroupId.value = newGroup.id;
+        };
+
+        // 删除指定智能匹配组并清理规则引用
+        const deleteSmartGroup = (group) => {
+          ElementPlus.ElMessageBox.confirm(`确定要删除智能匹配组 [${group.name}] 吗？组内规则将恢复为普通顺序规则。`, '删除确认', {
+            confirmButtonText: '确定删除',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }).then(() => {
+            // 清理引用该组 ID 的所有规则归属
+            (config.value.rules || []).forEach(r => {
+              if (r.smartGroupId === group.id) r.smartGroupId = '';
+            });
+            config.value.smartMatchGroups = (config.value.smartMatchGroups || []).filter(g => g.id !== group.id);
+            // 重新编排剩余智能组优先级序号
+            config.value.smartMatchGroups.forEach((g, i) => { g.priority = i + 1; });
+            if (selectedSmartGroupId.value === group.id) {
+              selectedSmartGroupId.value = config.value.smartMatchGroups.length > 0 ? config.value.smartMatchGroups[0].id : '';
+            }
+          }).catch(() => {});
+        };
+
+        // 上下微调智能匹配组试探顺序
+        const moveSmartGroup = (idx, offset) => {
+          const list = config.value.smartMatchGroups || [];
+          const target = idx + offset;
+          if (target < 0 || target >= list.length) return;
+          // 交换两组位置并重编 priority
+          const temp = list[idx];
+          list[idx] = list[target];
+          list[target] = temp;
+          list.forEach((g, i) => { g.priority = i + 1; });
+        };
+
+        // 勾选或取消勾选某条规则归属到指定智能匹配组
+        const toggleRuleInSmartGroup = (rule, groupId) => {
+          if (!rule || !groupId) return;
+          // 已在当前组内则移出，否则移入当前组
+          rule.smartGroupId = (rule.smartGroupId === groupId) ? '' : groupId;
+        };
+
+        // 在基础信息栏直接切换所属智能组时即时刷新沙盒
+        const onRuleSmartGroupChanged = () => {
+          if (testComponents.value && testComponents.value.length > 0) {
+            runSandboxTest();
+          }
+        };
+
         // 新增规则
         const addNewRule = () => {
           const newRule = {
@@ -1564,6 +1891,8 @@
             fixedQuantity: 1,
             mainElementKey: '',
             guards: [],
+            // 默认不加入任何智能匹配组
+            smartGroupId: '',
             conditionTree: {
               op: 0, // And
               nodes: [
@@ -2257,6 +2586,21 @@
           sortDialogVisible,
           tempSortList,
           openSortDialog,
+          // 多智能匹配组弹窗与管理方法
+          smartGroupDialogVisible,
+          selectedSmartGroupId,
+          smartGroupRuleSearch,
+          activeSmartGroup,
+          filteredSmartGroupRules,
+          getRuleSmartGroup,
+          getSmartGroupRuleCount,
+          openSmartGroupDialog,
+          closeSmartGroupDialog,
+          addSmartGroup,
+          deleteSmartGroup,
+          moveSmartGroup,
+          toggleRuleInSmartGroup,
+          onRuleSmartGroupChanged,
           moveTempTop,
           moveTempUp,
           moveTempDown,

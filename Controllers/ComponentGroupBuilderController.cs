@@ -81,7 +81,21 @@ namespace ExcelAddInDemo.Controllers
                 }
 
                 // 若反序列化有效则返回，否则返回默认配置
-                return config ?? ComponentGroupConfig.CreateDefault();
+                if (config == null) return ComponentGroupConfig.CreateDefault();
+
+                // 兼容旧版配置文件: 补齐多智能匹配组集合及规则所属智能组标识
+                config.SmartMatchGroups ??= new List<SmartMatchGroup>();
+                if (config.Rules != null)
+                {
+                    // 遍历确保每条规则的智能组 ID 不为 null
+                    foreach (var rule in config.Rules)
+                    {
+                        rule.SmartGroupId ??= "";
+                    }
+                }
+
+                // 返回校验补齐后的配置对象
+                return config;
             }
             catch
             {
