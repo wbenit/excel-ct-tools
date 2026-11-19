@@ -4316,3 +4316,25 @@
   - `Resources/component_group_builder.html`:
     - 新增“多智能匹配组管理”弹窗（新建/删除/启停/调序智能组，勾选分配成员规则并联动沙盒重跑）、左侧规则卡片智能组徽标、以及“基本信息与生成策略”卡片所属智能组下拉选择；已同步至 `publish/Resources/`、`bin/Debug/net48/Resources/`、`bin/Debug/net48/publish/Resources/`（SHA256 一致）。
   - 验证：`dotnet build "e:\Ace\excel-ct-tools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 通过（0 个错误）；Node JS 语法检查通过；使用真实 `ComponentGroupRules.json` 运行 6 组 PowerShell 集成用例验证（6/2、6/3、6/4 清零、4/2 回退、三规则多解优先级优先、多组串联）全部通过。
+
+## 2026-11-19 【右键菜单】新增【插入空元器件】功能与闭环支持
+
+- **Completed**:
+  - `Resources/custom_context_menu.html`:
+    - 在明细区专属元器件操作组中，紧随【插入复制/剪切的元件】下方新增【插入空元器件】菜单按钮（`data-action="insertEmptyComponent"`，拥有 `detail-only` 模式保护，附带专属插行图标与“插入空行”快捷提示）。
+    - 已同步更新至 `publish/Resources/`、`bin/Debug/net48/Resources/`、`bin/Debug/net48/publish/Resources/`、`bin/Release/net48/Resources/`、`bin/Release/net48/publish/Resources/`（SHA256 哈希值保持 100% 严格一致）。
+  - `Forms/CustomContextMenuForm.cs`:
+    - 在消息路由与核心业务动作 `ExecuteMenuAction` 分支中挂接 `insertEmptyComponent` 指令，调度 `ExcelServices.InsertEmptyComponentRow()`。
+  - `ExcelEventManager.cs`:
+    - 新增 `MacroInsertEmptyComponentAction` 宏入口方法。
+  - `Services/ExcelServices.ComponentRowOperations.cs`:
+    - 实现公共服务方法 `InsertEmptyComponentRow()`：
+      1. **合规前置校验**：通过 `FindCabinetByRow` 校验并定位当前活动行所属箱柜；未识别箱柜直接报错提示，绝不防御兜底；
+      2. **插入范围规范**：光标在小计行或下方计费区时规范在小计行上方插入；光标在表头时规范在首行元件插入；支持多选选区批量插入空行；
+      3. **批量数据与自适应公式**：严格遵循规则 7，调用 `Tool.BuildComponentRowsMatrix` 一次性构建二维公式矩阵，补齐 A 列动态序号、E 列单位、F 列数量、G 列单价、H 列总价、J/K 列成本、L/N 列系数与 Q 列类别自适应公式；
+      4. **格式对齐与自愈**：从相邻有效元件行精准复制单元格边框、底色及对齐格式；同步刷新计费区与小计行 SUM 求和范围；
+      5. **交互与撤销**：光标自动激活新插入行 B 列（元件名称）；构建 `ComponentRowInsertCommand` 压入撤销栈，支持 Ctrl+Z 一键撤销与重做。
+  - `Services/UndoRedoManager.cs`:
+    - 升级 `ComponentRowInsertCommand.Redo()`，优先通过 `Formula` 批量写入矩阵，确保重做恢复时空行公式完整生效。
+- **Verification**:
+  - `dotnet build "e:\Ace\excel-ct-tools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 顺利编译通过（`0 Warning(s)`, `0 Error(s)`）。

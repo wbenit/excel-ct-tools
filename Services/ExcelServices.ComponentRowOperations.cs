@@ -574,6 +574,226 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// 插入空元器件行 (右键菜单【插入空元器件】触发)
+        /// 核心特性：自动对齐箱柜元件行格式、注入自适应公式 (A列动态序号、G列单价、H列总价、J/K列成本、E/F/L/N/Q列空行公式)、自愈小计求和范围、支持撤销重做
+        /// </summary>
+        public static void InsertEmptyComponentRow()
+        {
+            try
+            {
+                // 获取当前正在运行的 Excel Application 实例
+                dynamic? app = ExcelDnaSafeAccessor.GetApplication();
+                // 校验宿主实例有效性
+                if (app == null) return;
+
+                // 优先获取活动单元格句柄
+                dynamic? activeCell = app.ActiveCell;
+                // 若活动单元格为空则安全退出
+                if (activeCell == null) return;
+
+                // 获取当前活动选区
+                dynamic? selection = app.Selection;
+                // 获取目标工作表句柄
+                dynamic targetSheet = (selection != null) ? selection.Worksheet : activeCell.Worksheet;
+                // 获取活动单元格物理行号
+                int targetRow = Convert.ToInt32(activeCell.Row);
+                // 获取工作表名称
+                string targetSheetName = Convert.ToString(targetSheet.Name) ?? "";
+
+                // 1. 安全边界防护：快速定位当前活动行所属的目标箱柜
+                CabinetRowContext? targetCab = FindCabinetByRow(targetSheet, targetRow);
+                // 仅当首次未识别到箱柜且可能定义名称未就绪时，执行快速轻量嗅探自愈并重试
+                if (targetCab == null)
+                {
+                    // 轻量自愈定义名称
+                    Tool.FixAndFillCabinetNamesForSheet(targetSheet, forceRebuild: false);
+                    // 再次尝试根据目标行定位箱柜
+                    targetCab = FindCabinetByRow(targetSheet, targetRow);
+                }
+
+                // 合规前置校验：校验目标箱柜对象有效性
+                if (targetCab == null)
+                {
+                    // 弹出未能识别箱柜警示提示 (不写防御替代代码，不符合要求直接报错提醒)
+                    System.Windows.Forms.MessageBox.Show(
+                        "未检测到当前选区所属的箱柜信息，请在箱柜明细表内操作！",
+                        "提示",
+                        System.Windows.Forms.MessageBoxButtons.OK,
+                        System.Windows.Forms.MessageBoxIcon.Warning);
+                    // 阻断插入
+                    return;
+                }
+
+                // 规范目标插入行位置：若选中小计行或计费区域，则插入在小计行上方（作为箱柜最后一行元件）
+                if (targetRow >= targetCab.SubsumRow)
+                {
+                    // 插入在小计行上方
+                    targetRow = targetCab.SubsumRow;
+                }
+                else if (targetRow < targetCab.CompStartRow)
+                {
+                    // 若选中表头行或箱柜信息行，则插入为该箱柜的第一行元件
+                    targetRow = targetCab.CompStartRow;
+                }
+
+                // 支持选区多行批量插入空元器件 (单选单元格默认插入 1 行)
+                int rowCount = 1;
+                // 判断选区行数
+                if (selection != null)
+                {
+                    try
+                    {
+                        // 提取选区包含的物理行数
+                        int selCount = Convert.ToInt32(selection.Rows.Count);
+                        // 仅当选区多于 1 行且不超过 100 行时按多行插入
+                        if (selCount > 1 && selCount <= 100)
+                        {
+                            // 赋值待插入的空行数
+                            rowCount = selCount;
+                        }
+                    }
+                    catch { }
+                }
+
+                // 计算数据写入总列数 (覆盖 A~T 列及隐藏列)
+                int writeCols = Math.Max(DefaultComponentColumnCount, GetSheetColumnCount(targetSheet));
+
+                // 规则 7: 调用 Tool.BuildComponentRowsMatrix 一次性内存构建空元器件矩阵
+                object[,] emptyMatrix = Tool.BuildComponentRowsMatrix(
+                    compStartRow: targetRow,
+                    compEndRow: targetRow + rowCount - 1,
+                    cabDetRow: targetCab.DetRow,
+                    totalCols: writeCols,
+                    components: null);
+
+                // 判断本次插入点是否为箱柜首行元件 (DetRow + 2)
+                bool isFirstCompRow = (targetRow <= targetCab.CompStartRow);
+
+                // 构造插入结果摘要文本
+                string resultText = rowCount > 1
+                    ? $"{rowCount} 行空元件 (行 {targetRow}~{targetRow + rowCount - 1})"
+                    : $"行 {targetRow}";
+
+                // 备份原始状态以便退出时安全恢复
+                bool prevUpdating = false;
+                XlCalculation prevCalc = XlCalculation.xlCalculationAutomatic;
+                bool prevEvents = true;
+                bool prevAlerts = true;
+                try
+                {
+                    // 备份屏幕刷新状态
+                    prevUpdating = Convert.ToBoolean(app.ScreenUpdating);
+                    // 备份计算模式
+                    prevCalc = (XlCalculation)app.Calculation;
+                    // 备份系统事件响应状态
+                    prevEvents = Convert.ToBoolean(app.EnableEvents);
+                    // 备份警告提示弹窗状态
+                    prevAlerts = Convert.ToBoolean(app.DisplayAlerts);
+                }
+                catch { }
+
+                // 挂起屏幕刷新与事件分发，彻底阻断事件雪崩并获得原生秒级响应
+                app.ScreenUpdating = false;
+                app.Calculation = XlCalculation.xlCalculationManual;
+                app.EnableEvents = false;
+                app.DisplayAlerts = false;
+
+                try
+                {
+                    // 在目标位置执行物理批量整块下推插入 (Shift Down，一次性插入 rowCount 行)
+                    dynamic insertRows = targetSheet.Range[targetSheet.Rows[targetRow], targetSheet.Rows[targetRow + rowCount - 1]];
+                    // 执行原生向下平移插入行
+                    insertRows.Insert(XlInsertShiftDirection.xlShiftDown);
+
+                    // 格式对齐：无论是首行还是非首行，确保新插入的空行拥有标准元件行的格式
+                    try
+                    {
+                        // 确定参考行：首行则取下推后的原首行，否则取上一行元件
+                        int refRowIndex = isFirstCompRow ? (targetRow + rowCount) : (targetRow - 1);
+                        // 获取格式参考行
+                        dynamic refFormatRow = targetSheet.Rows[refRowIndex];
+                        // 复制参考行格式
+                        refFormatRow.Copy();
+                        // 重新圈定当前新插入的所有物理行区域
+                        dynamic insertedRowsRange = targetSheet.Range[targetSheet.Rows[targetRow], targetSheet.Rows[targetRow + rowCount - 1]];
+                        // 仅向新插入行区域粘贴单元格格式 (-4122 = xlPasteFormats)
+                        insertedRowsRange.PasteSpecial(XlPasteType.xlPasteFormats);
+                        // 清除 Excel 剪贴板复制状态
+                        app.CutCopyMode = (XlCutCopyMode)0;
+                    }
+                    catch { }
+
+                    // 一次性批量写回公式矩阵 (单次 COM 批量写入，符合规则 7)
+                    dynamic insertRange = targetSheet.Range[targetSheet.Cells[targetRow, 1], targetSheet.Cells[targetRow + rowCount - 1, writeCols]];
+                    // 批量写入公式矩阵
+                    insertRange.Formula = emptyMatrix;
+
+                    // 刷新箱柜计费区与小计行自适应求和公式，确保小计行正确覆盖新空行
+                    try
+                    {
+                        // 计算插入后小计行与总计行最新物理行号
+                        int newSubsumRow = targetCab.SubsumRow + rowCount;
+                        int newTolsumRow = targetCab.TolsumRow + rowCount;
+                        // 刷新求和公式与序号
+                        RefreshCabinetFeeAreaFormulas(targetSheet, targetCab.DetRow, targetCab.CompStartRow, newSubsumRow, newTolsumRow, skipComponentArea: true);
+                    }
+                    catch { }
+
+                    // 主动使目标表元器件行缓存失效，防止后续快速点击错位
+                    InvalidateCategoryRowCache(targetSheetName);
+
+                    // 在状态栏反馈插入空元器件成功
+                    app.StatusBar = $"[插入空元器件成功] {resultText}";
+
+                    // 交互体验优化：自动将焦点定位至新插入空行的 B 列 (元件名称)
+                    try
+                    {
+                        // 选中新空行元件名称单元格
+                        targetSheet.Cells[targetRow, 2].Select();
+                    }
+                    catch { }
+                }
+                finally
+                {
+                    // 恢复原始警告提示状态
+                    try { app.DisplayAlerts = prevAlerts; } catch { }
+                    // 恢复原始事件响应状态
+                    try { app.EnableEvents = prevEvents; } catch { }
+                    // 恢复原始公式计算模式
+                    try { app.Calculation = prevCalc; } catch { }
+                    // 恢复屏幕刷新
+                    try { app.ScreenUpdating = prevUpdating; } catch { }
+                }
+
+                // 构造可逆插入命令并压入撤销栈，支持 Ctrl+Z 一键撤销插入
+                var insertCmd = new ComponentRowInsertCommand(
+                    actionName: $"插入空元器件 ({resultText})",
+                    targetSheetName: targetSheetName,
+                    targetRow: targetRow,
+                    rowCount: rowCount,
+                    colCount: writeCols,
+                    insertedValues: emptyMatrix,
+                    isCutMode: false,
+                    sourceClipSnapshot: null,
+                    isFirstCompRow: isFirstCompRow,
+                    targetDetRow: targetCab.DetRow);
+                // 压入全局撤销栈
+                UndoRedoManager.Instance.PushCommand(insertCmd);
+            }
+            catch (Exception ex)
+            {
+                // 记录异常日志
+                LogHelper.WriteLog($"[ComponentRowOperations] 插入空元器件异常: {ex.Message}");
+                // 弹出异常提示对话框
+                System.Windows.Forms.MessageBox.Show(
+                    $"插入空元器件失败: {ex.Message}",
+                    "系统提示",
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>
         /// 删除当前选中的元器件整行 (快捷键 Ctrl+Shift+D 或右键菜单【删除元件】触发)
         /// 极速安全模式 (方案 B)：专注安全边界防护（严禁跨柜与误删表头/小计/计费区），直接执行物理位移删除，不做任何多余全表扫描与重算
         /// </summary>

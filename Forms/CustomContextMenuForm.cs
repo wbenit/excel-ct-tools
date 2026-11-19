@@ -427,6 +427,7 @@ namespace ExcelAddInDemo.Forms
                     case "cutComponent":
                     case "copyComponent":
                     case "insertCopiedComponent":
+                    case "insertEmptyComponent":
                     case "deleteComponent":
                     case "excelCut":
                     case "excelCopy":
@@ -578,6 +579,11 @@ namespace ExcelAddInDemo.Forms
                     case "insertCopiedComponent":
                         // 调度执行成套专属插入复制/剪切的元件 (跨柜自动置空CadHandle)
                         ExcelServices.InsertCopiedOrCutComponentRow();
+                        break;
+
+                    case "insertEmptyComponent":
+                        // 调度执行成套专属插入空元器件 (自适应公式与格式)
+                        ExcelServices.InsertEmptyComponentRow();
                         break;
 
                     case "deleteComponent":

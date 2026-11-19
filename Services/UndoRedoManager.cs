@@ -1177,9 +1177,20 @@ namespace ExcelAddInDemo.Services
                         app.CutCopyMode = (Microsoft.Office.Interop.Excel.XlCutCopyMode)0;
                     }
 
-                    // 一次性批量写回插入数据矩阵 (规则 7)
+                    // 一次性批量写回插入数据矩阵 (优先 Formula 写入保证公式自适应，规则 7)
                     int writeCols = InsertedValues.GetLength(1);
-                    targetSheet.Range[targetSheet.Cells[TargetRow, 1], targetSheet.Cells[TargetRow + RowCount - 1, writeCols]].Value2 = InsertedValues;
+                    // 定位待写入的完整目标矩形区域
+                    dynamic writeRange = targetSheet.Range[targetSheet.Cells[TargetRow, 1], targetSheet.Cells[TargetRow + RowCount - 1, writeCols]];
+                    try
+                    {
+                        // 优先通过 Formula 属性写入矩阵
+                        writeRange.Formula = InsertedValues;
+                    }
+                    catch
+                    {
+                        // 容错回退为 Value2 写入
+                        writeRange.Value2 = InsertedValues;
+                    }
 
                     // 恢复自适应标准计算公式 (A 列动态序号、G 列单价、H 列总价、J 列成本单价、K 列成本总价)
                     for (int i = 0; i < RowCount; i++)

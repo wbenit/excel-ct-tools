@@ -2038,6 +2038,24 @@ namespace ExcelAddInDemo
         }
 
         /// <summary>
+        /// Excel-DNA 宏入口：插入空元器件
+        /// </summary>
+        [ExcelCommand]
+        public static void MacroInsertEmptyComponentAction()
+        {
+            try
+            {
+                // 调度执行成套插入空元器件操作
+                ExcelServices.InsertEmptyComponentRow();
+            }
+            catch (Exception ex)
+            {
+                // 记录插入空元器件宏执行异常日志
+                LogHelper.WriteLog($"MacroInsertEmptyComponentAction 执行异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Excel-DNA 宏入口：删除元件 (响应快捷键 Ctrl+Shift+D)
         /// </summary>
         [ExcelCommand]
