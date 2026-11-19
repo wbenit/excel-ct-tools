@@ -458,16 +458,17 @@ namespace ExcelAddInDemo.Controllers
         }
 
         /// <summary>
-        /// 检索本地物料库元器件供编辑弹窗中选型添加使用
+        /// 检索本地物料库元器件供编辑弹窗中选型添加使用 (支持按关键字与元件名称联合检索)
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释
         /// </summary>
-        public List<ComponentApiDto> SearchMaterialComponents(string keyword)
+        public List<ComponentApiDto> SearchMaterialComponents(string keyword, string name = null)
         {
             try
             {
-                // 检索本地物料库
+                // 检索本地物料库并按名称与关键字多维匹配
                 return Services.PersonalComponentDbService.SearchComponents(
                     searchKeyword: keyword,
-                    name: null,
+                    name: name,
                     current: null,
                     pole: null,
                     tripMode: null,
@@ -478,7 +479,38 @@ namespace ExcelAddInDemo.Controllers
             }
             catch (Exception ex)
             {
+                // 捕获异常并记入日志
                 LogHelper.WriteLog($"[CloudSolutionController] SearchMaterialComponents 异常: {ex.Message}");
+                // 发生错误时安全返回空集合
+                return new List<ComponentApiDto>();
+            }
+        }
+
+        /// <summary>
+        /// 全量加载本地个人物料库数据，供前端表格行内规格型号实时联想与参数秒级自动填充
+        /// 遵循规范：每 3 行代码至少包含 1 行中文注释
+        /// </summary>
+        public List<ComponentApiDto> GetAllMaterialComponents(int maxResults = 2000)
+        {
+            try
+            {
+                // 一次性从 SQLite 个人物料库中读取元器件清单到内存
+                return Services.PersonalComponentDbService.SearchComponents(
+                    searchKeyword: null,
+                    name: null,
+                    current: null,
+                    pole: null,
+                    tripMode: null,
+                    brand: null,
+                    mustContainRules: null,
+                    maxResults: maxResults
+                );
+            }
+            catch (Exception ex)
+            {
+                // 记录错误日志
+                LogHelper.WriteLog($"[CloudSolutionController] GetAllMaterialComponents 异常: {ex.Message}");
+                // 返回空列表保障前端不报错
                 return new List<ComponentApiDto>();
             }
         }
@@ -1299,7 +1331,7 @@ namespace ExcelAddInDemo.Controllers
         /// <summary>
         /// 为一次成套方案绑定或替换 CAD DWG 图纸文件并安全复制到对应子目录
         /// </summary>
-        
+
         /// <summary>
         /// 弹出系统 Windows 文件选择框让用户选取本地 AutoCAD DWG 文件并返回绝对物理全路径
         /// </summary>
@@ -1385,8 +1417,8 @@ namespace ExcelAddInDemo.Controllers
                 }
 
                 // 优先使用方案已有的 GroupName，次之取前端传入的 folderName，最后兜底“一次进线柜”
-                string targetDirName = !string.IsNullOrWhiteSpace(scheme.GroupName) 
-                    ? scheme.GroupName 
+                string targetDirName = !string.IsNullOrWhiteSpace(scheme.GroupName)
+                    ? scheme.GroupName
                     : (!string.IsNullOrWhiteSpace(folderName) ? folderName : "一次进线柜");
                 string destDir = System.IO.Path.Combine(rootDir, targetDirName);
                 if (!System.IO.Directory.Exists(destDir))

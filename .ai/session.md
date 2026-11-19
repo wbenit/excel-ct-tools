@@ -1,3 +1,25 @@
+- **【全新功能落地：二次与一次回路方案 BOM 表格行内基于元件名称智能联想个人物料库规格并自动反填】([`Controllers/CloudSolutionController.cs`](file:///e:/Ace/ExcelAddInCTtools/Controllers/CloudSolutionController.cs), [`Forms/CloudSolutionForm.cs`](file:///e:/Ace/ExcelAddInCTtools/Forms/CloudSolutionForm.cs), [`Resources/cloud_solution.html`](file:///e:/Ace/ExcelAddInCTtools/Resources/cloud_solution.html), [`publish/`](file:///e:/Ace/ExcelAddInCTtools/publish/))**：
+  1. **用户核心痛点与需求**：
+     - 用户原操作（图2）：必须点击“从本地物料库选型添加”弹出全屏模态框，逐个输入关键字搜索、选用、关闭弹窗，10 个物料需要频繁弹窗/关窗 10 次，操作割裂；
+     - 用户新需求（图1）：在方案编辑主界面的 BOM 表格中，直接在第一列输入元件名称（如“熔断器”），焦点切到“型号规格”列即可直接从个人物料库联想候选规格，选中后整行自动填充单价、单位、分类、图块名等，实现 Excel 式沉浸填表体验。
+  2. **工程实现与架构落地细节**：
+     - ① **后端控制器与 IPC 通信扩展 (`CloudSolutionController.cs` & `CloudSolutionForm.cs`)**：
+       - `CloudSolutionController.cs` 扩充 `SearchMaterialComponents(keyword, name)` 支持元件名称精确过滤；
+       - 控制器新增 `GetAllMaterialComponents(maxResults: 2000)` 接口，一次性将 SQLite 个人物料库载入内存供前端毫秒级联想检索；
+       - `Forms/CloudSolutionForm.cs` 新增 `case "loadAllMaterialComponents":` 分支，全量物料安全回传前端。
+     - ② **前端响应式联想与级联反填 (`Resources/cloud_solution.html`)**：
+       - 在 `secBomList`（二次方案）与 `primBomList`（一次成套）表格中，将【型号规格】从普通 `el-input` 升级为 `el-autocomplete`（`trigger-on-focus` 获焦即弹），输入框占满列宽无滚动条；
+       - 下拉浮层设计（`.bom-auto-sug-item`）：左侧显示规格型号与品牌 Tag，右侧高亮绿蓝相间主色调 `#009688` 呈现单价与单位；
+       - 智能联动逻辑（`queryModelSuggestions`）：行内填有元件名称时，优先匹配属于该元件的所有规格（空输入时展示全部属于该元件的型号，键入字符时增量模糊缩小）；未填名称时支持全局型号模糊搜；
+       - 多属性级联自动填充（`onSelectModelSuggestion`）：选中规格瞬间回填型号、品牌、单位、物料库参考单价（`quotePrice / unitPrice` 联动合价计算）、分类（`category`）及 CAD 图块名（`blockName`），名称为空时反向补全；元件只有唯一规格时支持智能填充。
+     - ③ **首屏静默预热与无缝兜底**：
+       - `onMounted` 钩子中执行 `ensureAllMaterialsLoaded()` 预热拉取物料库，达到 0ms 本地瞬时响应；若未就绪自动无缝降级走后端查询。
+     - ④ **规范遵从与最小改动**：
+       - 新增与修改代码严格落实“至少每 3 行包含一行中文注释”；主色调对齐 `#009688` 绿蓝相间规范。
+  3. **构建验证与产物交付**：
+     - `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false` 完整构建：**0 警告、0 错误**；
+     - `Resources/cloud_solution.html`、`ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 已同步至 `publish/` 与 `bin/Debug/net48/`，经 SHA256 校验一致。
+
 - **【Ribbon【我的项目】分组新增 2 个小图标：`打开目录` 与 `复制`（保存并复制当前文件到剪贴板）】([`RibbonController.cs`](file:///e:/Ace/excel-ct-tools/RibbonController.cs), [`Services/ExcelServices.cs`](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.cs))**：
   1. **Ribbon UI (`RibbonController.cs`)**：在 `grpProjects`（“我的项目”）内新增垂直排列 `<box id='boxProjectFileQuickActions' boxStyle='vertical'>`，添加 `打开目录`（`btnOpenWorkbookDir`）与 `复制`（`btnSaveAndCopyWorkbook`）2 个小图标按钮，并在 `OnMenuAction` 接入路由。
   2. **业务解耦 (`Services/ExcelServices.cs`)**：新增 `OpenCurrentWorkbookDirectory()`（校验已保存至本地磁盘后调用 `explorer.exe /select,"{fullName}"` 打开所在目录并选中文件）与 `SaveAndCopyCurrentWorkbookToClipboard()`（校验已保存后执行 `wb.Save()`，再通过 `Clipboard.SetFileDropList` 将文件本身复制到系统剪贴板；未保存工作簿直接弹窗报错提示，不做兜底逻辑）。
@@ -3932,31 +3954,32 @@
 
 经对 ExWinner (leadsoft.superwinner.BLL.dll, BusCalculate.dll, ExWinnerPages, leadsoft.common.Dq123ProductControl.dll) 全面探查，各功能对标定义如下：
 
+1. **总价一键调整** (
 1. **总价一键调整** (rmProjectFeeFormula.html)：
    - **业务作用**：在投标或商务谈判时，客户要求将项目总价调整到目标值（例如 100 万调至 95 万），或按调幅（如整体下浮 5%）。
    - **交互与算法**：用户输入目标总价或调幅后，系统自动计算差额；界面提供【元器件、母排、辅材、箱体、成套费/其他费用】等多维分摊项与分摊权重比例（比例和等于 1.0）；点击确定后，按比例倒推反算对应分项的调价系数或单价并实时更新全表。
-2. **一键匹配价格** (rmAdjustBomAllPrice.html)：
+1. **一键匹配价格** (rmAdjustBomAllPrice.html)：
    - **业务作用**：快速为项目中未定价的元器件、母排、辅材或箱体批量从库中匹配价格。
    - **交互与算法**：弹出分类勾选列表；支持选择数据源（企业物料库、个人物料库、云端智能库、全网搜）；支持过滤匹配对象（全部项、仅无价格缺价项、指定型号/品牌元件）；自动依据“型号/名称/品牌/规格”执行多级模糊与精确匹对，一键将匹配到的单价、面价、折扣率与物料编码回填到 Excel。
-3. **在线查价 (电气天下/天工)** (Dq123ProductControl / online_price_search.html)：
+1. **在线查价 (电气天下/天工)** (Dq123ProductControl / online_price_search.html)：
    - **业务作用**：针对物料库中未收录的新型、特殊或合资元器件，直接联网从电气天下 (dq123.com) 或天工工控平台拉取实时市场行情与厂家指导价。
    - **交互与算法**：自动带入当前选中单元格或选区的元件型号、品牌、名称；展示多商家比价、参数图片与面价；支持点击“一键回填/更新”静默写入当前活动行或批量框选回写。
-4. **母排用量一键预估** (BusCalculate.dll / BusCalculateWindow)：
+1. **母排用量一键预估** (BusCalculate.dll / BusCalculateWindow)：
    - **业务作用**：根据箱柜主进线额定电流与断路器配置，一键推导主母排与分支排的截面规格、敷设米数及理论重量。
    - **交互与算法**：依据额定电流（例如 630A、1250A、2500A）匹配母排载流量速查表（如 TMY-3*(80*8)+1*(80*8)），结合柜体宽度、进出线方式与分支回路数量，自动估算出母排用量，折算为铜/铝重量（公斤）并自动追加到箱柜材料明细中。
-5. **箱体尺寸一键预估** (CabinetSizeAnalyse / cabinet_aux_calc.html)：
+1. **箱体尺寸一键预估** (CabinetSizeAnalyse / cabinet_aux_calc.html)：
    - **业务作用**：根据成套柜型（GGD、GCK、MNS、动力箱、照明箱）及断路器主回路/分支回路数量与极数，一键自动推荐合理的柜体外形尺寸（高×宽×深，如 2200×800×600）。
    - **交互与算法**：通过断路器安装模数与安装空间规则管道，自动推导合适柜体尺寸并一键回填至箱柜属性或报表。
-6. **母排一键改价** (CopperPriceWindow / CopperPriceModel)：
+1. **母排一键改价** (CopperPriceWindow / CopperPriceModel)：
    - **业务作用**：母排价格高度敏感于当期铜价/铝价市场行情波动。在铜价大幅波动时，快速全项目重新计价。
    - **交互与算法**：弹窗输入【当期基准铜价（元/kg）】+【铜排加工费（元/kg）】（以及铝价与铝加工费）；系统自动扫描全项目所有箱柜明细中的母排物料，按公式 新单价 = (基准铜价 + 加工费) \* 理论单重 或直接更新铜排单价，瞬间完成全项目母排价格重算。
-7. **箱体一键改价** (FrmCabietPrice / rmCabinetPriceClass)：
+1. **箱体一键改价** (FrmCabietPrice / rmCabinetPriceClass)：
    - **业务作用**：在壳体钢材市场价格变化或需要按外协加工价格调整时，统一修改所有箱柜的壳体单价。
    - **交互与算法**：汇总全项目所有箱柜的柜号、柜型、尺寸（宽×高×深）、台数；提供【按表面积/展开公式计价】、【按标准柜型价格库匹配】或【按比例统一上浮/下浮】，一键将调整后的箱体价格覆盖回写到各箱柜的箱体行中。
-8. **多方案报价** (rmMultiProposalQuotationsSet.html)：
+1. **多方案报价** (rmMultiProposalQuotationsSet.html)：
    - **业务作用**：针对招标方“多品牌对比报价”或“高中低端选配方案”需求（例如高端合资施耐德/ABB方案 vs 国产优质正泰/德力西方案）。
    - **交互与算法**：选择被替换的元件/品牌，选择目标替换品牌与系列；系统基于壳架电流、额定电流、极数自动完成同档位跨品牌元器件型号与价格替换；支持导出方案对比表或快速生成平行方案工作簿。
-9. **报价智能核验** (rmCheckAndProofread.html / CheckAndProofreadResultControl.html)：
+1. **报价智能核验** (rmCheckAndProofread.html / CheckAndProofreadResultControl.html)：
    - **业务作用**：成套报价交付前的“终极防错体检”，防止漏报、错报导致工程亏损。
    - **交互与算法**：排查价格为0/空、公式被破坏、台数/数量为空或异常、元件配比不合理（如互感器与表头配比、避雷器配比）；弹出可视化核验报告，支持高亮标注并双击“一键定位”到 Excel 异常单元格，支持一键自愈。
 

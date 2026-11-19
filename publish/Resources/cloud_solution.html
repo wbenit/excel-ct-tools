@@ -2699,6 +2699,63 @@
       background: #f8fafc;
     }
 
+    /* BOM 表格型号联想与自动填充下拉建议项样式 */
+    .bom-auto-sug-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      padding: 3px 0;
+      box-sizing: border-box;
+    }
+
+    .bom-auto-sug-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 65%;
+    }
+
+    .bom-auto-sug-model {
+      font-weight: 600;
+      color: #1e293b;
+      font-family: monospace;
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .bom-auto-sug-tag {
+      font-size: 11px;
+      height: 18px;
+      line-height: 18px;
+      padding: 0 4px;
+      flex-shrink: 0;
+    }
+
+    .bom-auto-sug-right {
+      text-align: right;
+      margin-left: 8px;
+      flex-shrink: 0;
+    }
+
+    .bom-auto-sug-price {
+      color: #009688;
+      font-weight: 600;
+      font-family: monospace;
+      font-size: 12px;
+    }
+
+    .bom-auto-sug-unit {
+      color: #94a3b8;
+      font-size: 11px;
+      margin-left: 2px;
+    }
+
     .sec-bom-summary-bar {
       display: flex;
       align-items: center;
@@ -4299,12 +4356,34 @@
                   {{ idx + 1 }}
                 </td>
                 <td>
-                  <!-- 元件名称：统一使用 name 字段 -->
-                  <el-input v-model="item.name" size="small" placeholder="元件名称"></el-input>
+                  <!-- 元件名称：统一使用 name 字段，改动时触发智能关联预备 -->
+                  <el-input v-model="item.name" size="small" placeholder="元件名称" @change="onBomItemNameChange(item)"></el-input>
                 </td>
                 <td>
-                  <!-- 型号规格：统一使用 model 字段 -->
-                  <el-input v-model="item.model" size="small" placeholder="型号规格"></el-input>
+                  <!-- 型号规格：根据元件名称智能联想并支持从物料库自动填充 -->
+                  <el-autocomplete
+                    v-model="item.model"
+                    :fetch-suggestions="(qs, cb) => queryModelSuggestions(qs, cb, item)"
+                    placeholder="型号规格(自动联想)"
+                    size="small"
+                    style="width: 100%"
+                    @select="(sel) => onSelectModelSuggestion(sel, item)"
+                    trigger-on-focus
+                    clearable
+                  >
+                    <template #default="{ item: sug }">
+                      <div class="bom-auto-sug-item">
+                        <div class="bom-auto-sug-left">
+                          <span class="bom-auto-sug-model">{{ sug.model }}</span>
+                          <el-tag v-if="sug.brand" size="small" type="info" effect="plain" class="bom-auto-sug-tag">{{ sug.brand }}</el-tag>
+                        </div>
+                        <div class="bom-auto-sug-right">
+                          <span class="bom-auto-sug-price">¥{{ (Number(sug.price ?? sug.quotePrice) || 0).toFixed(2) }}</span>
+                          <span class="bom-auto-sug-unit">/{{ sug.unit || (currentMaterialTarget === 'prim' ? '台' : '只') }}</span>
+                        </div>
+                      </div>
+                    </template>
+                  </el-autocomplete>
                 </td>
                 <!-- 分类选择/输入列，对应 SQLite param2（保留手动输入自定义分类） -->
                 <td>
@@ -4799,10 +4878,34 @@
                   {{ idx + 1 }}
                 </td>
                 <td>
-                  <el-input v-model="item.name" size="small" placeholder="元件名称"></el-input>
+                  <!-- 元件名称：统一使用 name 字段，改动时触发智能关联预备 -->
+                  <el-input v-model="item.name" size="small" placeholder="元件名称" @change="onBomItemNameChange(item)"></el-input>
                 </td>
                 <td>
-                  <el-input v-model="item.model" size="small" placeholder="型号规格"></el-input>
+                  <!-- 型号规格：根据元件名称智能联想并支持从物料库自动填充 -->
+                  <el-autocomplete
+                    v-model="item.model"
+                    :fetch-suggestions="(qs, cb) => queryModelSuggestions(qs, cb, item)"
+                    placeholder="型号规格(自动联想)"
+                    size="small"
+                    style="width: 100%"
+                    @select="(sel) => onSelectModelSuggestion(sel, item)"
+                    trigger-on-focus
+                    clearable
+                  >
+                    <template #default="{ item: sug }">
+                      <div class="bom-auto-sug-item">
+                        <div class="bom-auto-sug-left">
+                          <span class="bom-auto-sug-model">{{ sug.model }}</span>
+                          <el-tag v-if="sug.brand" size="small" type="info" effect="plain" class="bom-auto-sug-tag">{{ sug.brand }}</el-tag>
+                        </div>
+                        <div class="bom-auto-sug-right">
+                          <span class="bom-auto-sug-price">¥{{ (Number(sug.price ?? sug.quotePrice) || 0).toFixed(2) }}</span>
+                          <span class="bom-auto-sug-unit">/{{ sug.unit || '台' }}</span>
+                        </div>
+                      </div>
+                    </template>
+                  </el-autocomplete>
                 </td>
                 <td>
                   <el-input-number v-model="item.quantity" :min="1" size="small" :controls="false"
@@ -5074,6 +5177,9 @@
         const materialSearchKw = ref(""); // 物料库搜索词
         const materialSearchResults = ref([]); // 物料库搜索结果
         const materialLoading = ref(false); // 物料库加载状态
+        // 全量本地物料库响应式缓存 (供表格行内规格型号实时联想与参数秒级自动填充)
+        const allMaterialList = ref([]);
+        const isAllMaterialsLoaded = ref(false);
 
         // ===== 复制其他方案专属响应式状态与计算逻辑 =====
         const copySchemeModalVisible = ref(false); // 复制方案选择弹窗可见性
@@ -6253,6 +6359,149 @@
           });
           ElementPlus.ElMessage.success(`已添加【${n}】至 BOM 清单`);
           materialSelectorVisible.value = false;
+        };
+
+        // 确保全量本地物料库已载入 (供表格行内规格型号实时联想)
+        const ensureAllMaterialsLoaded = () => {
+          // 如果已载入且列表非空，则跳过
+          if (isAllMaterialsLoaded.value && allMaterialList.value.length > 0) return;
+          // 向 C# 宿主发出全量加载物料库请求
+          postToHost("loadAllMaterialComponents");
+        };
+
+        // 元件名称变更时的监听联动 (若型号为空，尝试在缓存中匹配预备)
+        const onBomItemNameChange = (item) => {
+          // 预先保证物料库已加载
+          ensureAllMaterialsLoaded();
+          // 若当前型号为空，且有输入元件名称，预加载匹配
+          if (item && !item.model && item.name) {
+            const rawName = item.name.trim().toLowerCase();
+            const matches = (allMaterialList.value || []).filter((m) => {
+              const mName = (m.name || "").toLowerCase();
+              return mName === rawName || mName.includes(rawName) || rawName.includes(mName);
+            });
+            // 若该元件仅有唯一型号，且单价有效，自动进行贴心填充
+            if (matches.length === 1) {
+              onSelectModelSuggestion(matches[0], item);
+            }
+          }
+        };
+
+        // 规格型号输入建议过滤方法 (根据当前行已填写的元件名称智能联动并精准匹配物料库)
+        const queryModelSuggestions = (queryString, callback, rowItem) => {
+          // 确保物料库数据在内存中就绪
+          ensureAllMaterialsLoaded();
+
+          // 提取当前行输入的元件名称与型号检索关键字
+          const rowName = (rowItem?.name || "").trim().toLowerCase();
+          const q = (queryString || "").trim().toLowerCase();
+          const allList = allMaterialList.value || [];
+
+          let candidates = [];
+
+          if (rowName) {
+            // 1. 若当前行已填写元件名称，优先筛选属于该元件名称的物料库条目
+            candidates = allList.filter((m) => {
+              const mName = (m.name || "").toLowerCase();
+              return mName.includes(rowName) || rowName.includes(mName);
+            });
+
+            // 2. 若根据元件名称匹配到候选物料
+            if (candidates.length > 0) {
+              if (q) {
+                // 用户在型号输入框键入了字符，在该元件候选中进一步按型号或品牌缩小范围
+                candidates = candidates.filter((m) => {
+                  const mModel = (m.model || "").toLowerCase();
+                  const mBrand = (m.brand || "").toLowerCase();
+                  return mModel.includes(q) || mBrand.includes(q);
+                });
+              }
+            } else {
+              // 3. 若当前名称在物料库未命中，且用户输入了型号，降级使用全局模糊匹配
+              if (q) {
+                candidates = allList.filter((m) => {
+                  const mModel = (m.model || "").toLowerCase();
+                  const mName = (m.name || "").toLowerCase();
+                  return mModel.includes(q) || mName.includes(q);
+                });
+              }
+            }
+          } else {
+            // 4. 当前行尚未填写元件名称，按用户输入的型号或名称全局匹配
+            if (q) {
+              candidates = allList.filter((m) => {
+                const mModel = (m.model || "").toLowerCase();
+                const mName = (m.name || "").toLowerCase();
+                return mModel.includes(q) || mName.includes(q);
+              });
+            } else {
+              // 名称与型号均为空时展示前 30 条常用物料
+              candidates = allList.slice(0, 30);
+            }
+          }
+
+          // 截取前 50 条匹配结果避免海量 DOM 渲染卡顿
+          const sliced = candidates.slice(0, 50);
+
+          // 格式化为 el-autocomplete 所需结构 (必须具备 value 属性供选中反填)
+          const results = sliced.map((m) => ({
+            value: m.model || "",
+            model: m.model || "",
+            name: m.name || "",
+            brand: m.brand || "",
+            unit: m.unit || "",
+            price: Number(m.price ?? m.unitPrice ?? 0) || 0,
+            quotePrice: Number(m.price ?? m.unitPrice ?? 0) || 0,
+            param1: m.param1 || m.blockName || "",
+            param2: m.param2 || m.category || "",
+            blockName: m.param1 || m.blockName || "",
+            category: m.param2 || m.category || "",
+          }));
+
+          // 执行回调输出下拉建议清单
+          callback(results);
+        };
+
+        // 选中规格型号下拉项后，触发当前行多属性级联自动填充
+        const onSelectModelSuggestion = (sel, item) => {
+          if (!sel || !item) return;
+
+          // 1. 回填型号规格
+          item.model = sel.model || item.model;
+
+          // 2. 若当前行元件名称为空，反向从物料库自动补充名称
+          if (!item.name && sel.name) {
+            item.name = sel.name;
+          }
+
+          // 3. 回填品牌
+          if (sel.brand) {
+            item.brand = sel.brand;
+          }
+
+          // 4. 回填参考单价与报价 (联动触发合价响应式计算)
+          const p = Number(sel.price ?? sel.quotePrice ?? 0) || 0;
+          item.price = p;
+          item.unitPrice = p;
+          item.quotePrice = p;
+
+          // 5. 回填物料单位
+          if (sel.unit) {
+            item.unit = sel.unit;
+          } else if (!item.unit) {
+            item.unit = currentMaterialTarget.value === "prim" ? "台" : "只";
+          }
+
+          // 6. 二次方案自动带入预设图块名与分类
+          if (sel.param1 || sel.blockName) {
+            item.blockName = sel.param1 || sel.blockName;
+          }
+          if (sel.param2 || sel.category) {
+            item.category = sel.param2 || sel.category;
+          }
+
+          // 提示用户填充成功
+          ElementPlus.ElMessage.success(`已自动填充【${item.name || ''} ${item.model}】的单价与参数`);
         };
 
         // 打开复制已有方案选择弹窗
@@ -7864,6 +8113,11 @@
                 materialLoading.value = false;
                 materialSearchResults.value = data || [];
               }
+              // 12.0 全量物料库数据回传 (存入前端内存响应式缓存)
+              else if (action === "loadAllMaterialComponentsResult") {
+                allMaterialList.value = data || [];
+                isAllMaterialsLoaded.value = true;
+              }
               // 12.1 共享开孔组与圆孔元器件配置回传
               else if (action === "getEboxExportConfigResult") {
                 if (data) {
@@ -8257,6 +8511,8 @@
         onMounted(() => {
           // 防御性再次确保 WebView2 消息监听器就绪
           initWebMessageListener();
+          // 预先静默拉取本地物料库，提升方案编辑中行内联想的秒级响应体验
+          ensureAllMaterialsLoaded();
           // 读取已持久化的一次方案本地图纸根目录 (首屏默认呈现一次成套方案)
           loadPrimaryCircuitConfig();
           // 预读取已持久化的二次方案本地图纸根目录 (便于无缝切换)
@@ -8367,6 +8623,12 @@
           openMaterialSelector,
           onSearchMaterials,
           selectMaterialToBom,
+          allMaterialList,
+          isAllMaterialsLoaded,
+          ensureAllMaterialsLoaded,
+          onBomItemNameChange,
+          queryModelSuggestions,
+          onSelectModelSuggestion,
           // 复制其他方案相关导出项
           copySchemeModalVisible,
           copySchemeLoading,

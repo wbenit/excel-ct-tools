@@ -480,11 +480,22 @@ namespace ExcelAddInDemo.Forms
                         PostMessageSafe("saveSecondarySchemeResult", new { success = secOk, schemeId = secId, message = secMsg });
                         break;
 
-                    // 18. 搜索物料库 (供编辑弹窗中的物料选择器使用)
+                    // 18. 搜索物料库 (供编辑弹窗中的物料选择器或前端行内选型使用)
                     case "searchMaterialComponents":
+                        // 提取检索关键字与可选的元件名称
                         string mKw = GetStringProp("keyword");
-                        var compList = _controller.SearchMaterialComponents(mKw);
+                        string mName = GetStringProp("name");
+                        // 检索物料清单并安全回传前端
+                        var compList = _controller.SearchMaterialComponents(mKw, mName);
                         PostMessageSafe("searchMaterialComponentsResult", compList);
+                        break;
+
+                    // 18.2 全量加载物料库数据 (供表格行内规格型号智能联想与参数秒级自动填充)
+                    case "loadAllMaterialComponents":
+                        // 从控制器读取全量物料库列表
+                        var allMaterials = _controller.GetAllMaterialComponents();
+                        // 异步回传前端响应式缓存
+                        PostMessageSafe("loadAllMaterialComponentsResult", allMaterials);
                         break;
 
                     // 18.5 读取 CAD 与 Excel 共用的开孔组与圆孔元器件配置
