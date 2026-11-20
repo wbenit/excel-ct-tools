@@ -538,7 +538,7 @@ namespace ExcelAddInDemo.Forms
 
                 // 核心修复：执行筛选类动作前，强制解除挂起的复制剪切状态 (清除跑马灯虚线框)
                 // 彻底避免用户在复制状态下直接筛选导致 Excel 状态机处于等待粘贴挂起模式、卡住无法输入
-                if (actionName == "excelFilterByValueNative" || actionName == "excelFilterByValue" || actionName == "filterDistributionRows")
+                if (actionName == "excelFilterByValueNative" || actionName == "excelFilterByValue" || actionName == "filterDistributionRows" || actionName == "excelClearFilter")
                 {
                     try
                     {

@@ -1194,6 +1194,13 @@ namespace ExcelAddInDemo
                 // 校验工作表有效性
                 if (targetSheet == null) return;
 
+                // 核心加固：清除筛选前解除可能挂起的复制剪切状态 (消除跑马灯虚线框)
+                if (app.CutCopyMode != 0)
+                {
+                    // 强制清空复制剪切状态机
+                    app.CutCopyMode = (Microsoft.Office.Interop.Excel.XlCutCopyMode)0;
+                }
+
                 // 挂起屏幕刷新以保证瞬发恢复
                 bool prevUpdating = true;
                 try

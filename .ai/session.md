@@ -1,3 +1,15 @@
+- **【修复复制粘贴被取消缺陷：移除 SelectionChange 与 BeforeRightClick 宽泛清除逻辑，落实仅在执行筛选动作前清空 CutCopyMode】([`ExcelEventManager.cs`](file:///e:/Ace/excel-ct-tools/ExcelEventManager.cs), [`Forms/CustomContextMenuForm.cs`](file:///e:/Ace/excel-ct-tools/Forms/CustomContextMenuForm.cs), [`Services/ExcelServices.ComponentFilter.cs`](file:///e:/Ace/excel-ct-tools/Services/ExcelServices.ComponentFilter.cs), [`publish/`](file:///e:/Ace/excel-ct-tools/publish/))**：
+  1. **问题根因分析**：
+     - 在“元器件数据管理”等开启了自动筛选的工作表中，选区变更（`OnSheetSelectionChange`）检测到 `FilterMode == true` 时会盲目将 `CutCopyMode` 重置为 0，导致复制后点击目标单元格准备粘贴时，跑马灯虚线框被清空，粘贴指令被取消；
+     - `OnSheetBeforeRightClick` 中亦存在在源单元格上右击时提前清除 `CutCopyMode` 的过度防御代码。
+  2. **最小改动落地细节**：
+     - ① **`ExcelEventManager.cs`**：彻底移除 `OnSheetSelectionChange` 中仅凭 `FilterMode == true` 抹除 `CutCopyMode` 的逻辑，彻底移除 `OnSheetBeforeRightClick` 中右击选区内部提前清除 `CutCopyMode` 的多余拦截；
+     - ② **`Forms/CustomContextMenuForm.cs`**：确保仅在用户明确执行筛选类动作（`excelFilterByValueNative`、`excelFilterByValue`、`filterDistributionRows` 及 `excelClearFilter`）时才前置解除 `CutCopyMode`；
+     - ③ **`Services/ExcelServices.ComponentFilter.cs`**：在 `ClearComponentFilter` 取消筛选入口补齐解除 `CutCopyMode` 状态保护，所有业务筛选入口形成闭环。
+  3. **构建与产物交付**：
+     - 执行 `dotnet build ExcelAddInDemo.csproj /p:RunExcelDnaBuild=false /p:RunExcelDnaPack=false /p:CopySQLiteInteropFiles=false` 完整编译：**0 警告、0 错误**；
+     - 已同步最新 `ExcelAddInDemo.dll` 与 `ExcelAddInDemo.pdb` 至 `publish\` 目录。
+
 - **【全新功能落地：二次与一次回路方案 BOM 表格行内基于元件名称智能联想个人物料库规格并自动反填】([`Controllers/CloudSolutionController.cs`](file:///e:/Ace/ExcelAddInCTtools/Controllers/CloudSolutionController.cs), [`Forms/CloudSolutionForm.cs`](file:///e:/Ace/ExcelAddInCTtools/Forms/CloudSolutionForm.cs), [`Resources/cloud_solution.html`](file:///e:/Ace/ExcelAddInCTtools/Resources/cloud_solution.html), [`publish/`](file:///e:/Ace/ExcelAddInCTtools/publish/))**：
   1. **用户核心痛点与需求**：
      - 用户原操作（图2）：必须点击“从本地物料库选型添加”弹出全屏模态框，逐个输入关键字搜索、选用、关闭弹窗，10 个物料需要频繁弹窗/关窗 10 次，操作割裂；
@@ -4361,3 +4373,17 @@
     - 升级 `ComponentRowInsertCommand.Redo()`，优先通过 `Formula` 批量写入矩阵，确保重做恢复时空行公式完整生效。
 - **Verification**:
   - `dotnet build "e:\Ace\excel-ct-tools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 顺利编译通过（`0 Warning(s)`, `0 Error(s)`）。
+
+## 2026-11-20 【在线查价】电小二/电气天下增加 WAF 风控识别、自动熔断与请求降速防封保护
+
+- **问题根因**:
+  - 实测 `https://www.dq123.com/view/price/search/element` 在高频请求后返回 HTTP 405 阿里云 WAF 拦截页；
+  - 原 `QueryDq123RawListAsync` 静默吞掉了非 2xx 状态码，`ExecuteBatchSearchAsync` 日志仅输出“未查得”，且默认并发为 6、无请求间隔延时，电小二模式单条型号还会多轮重试放大请求数。
+- **Completed**:
+  - `Models/OnlinePriceModels.cs`: 将 `OnlinePriceConfig.MaxConcurrency` 默认并发由 `6` 下调至 `2`。
+  - `Services/OnlinePriceSearchClient.cs`:
+    - 新增 `ThrottleDq123Async`（350~750ms 随机抖动延时）与 `TryBuildDq123BlockMessage`（识别 HTTP 403/405/429 及阿里云 HTML 拦截页）；
+    - 升级 `SearchDq123Async`、`QueryDq123RawListAsync` 与 `SearchDx2Async`：支持 `CancellationToken`，一旦触发风控阻断立即返回明确风控提示，不再继续候选词重试或回退；
+    - 升级 `ExecuteBatchSearchAsync`：针对 `Dx2` / `Dq123` 强制将并发上限收敛至 `2`；引入联动 `CancellationTokenSource` 在检测到风控阻断时自动熔断停止后续请求（已查得条目仍正常回写），并在实时日志中透传真实失败原因与风控熔断告警。
+- **Verification**:
+  - `dotnet build "e:\Ace\excel-ct-tools\ExcelAddInDemo.csproj" /p:RunExcelDnaBuild=false` 编译通过（`0 Error(s)`，修改行无新增警告）。

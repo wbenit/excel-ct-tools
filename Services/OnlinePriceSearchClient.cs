@@ -451,16 +451,68 @@ namespace ExcelAddInDemo.Services
 
         #region 电气天下 (dq123.com) 查询引擎
 
+        // 电气天下请求节流随机种子与同步锁 (避免并发突发请求触发阿里云 WAF)
+        private static readonly Random _dq123JitterRandom = new Random();
+        private static readonly object _dq123JitterLock = new object();
+
+        /// <summary>
+        /// 电气天下请求随机降速延时，降低高频并发触发 WAF 风控的概率
+        /// </summary>
+        private static async Task ThrottleDq123Async(CancellationToken ct)
+        {
+            // 生成 350~750ms 随机抖动间隔 --硬编码: 请求防封延时--
+            int delayMs;
+            lock (_dq123JitterLock)
+            {
+                delayMs = _dq123JitterRandom.Next(350, 751);
+            }
+            // 异步等待并响应取消令牌
+            await Task.Delay(delayMs, ct).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// 判断 HTTP 状态码或响应文本是否属于 WAF 风控阻断 (403/405/429 或拦截 HTML 页)
+        /// </summary>
+        private static bool TryBuildDq123BlockMessage(HttpStatusCode statusCode, string? responseBody, out string blockMsg)
+        {
+            // 1. 优先判定典型风控/限流 HTTP 状态码
+            int code = (int)statusCode;
+            if (code == 403 || code == 405 || code == 429)
+            {
+                blockMsg = $"接口触发风控阻断 (HTTP {code})，请暂停查询或更换网络后重试";
+                return true;
+            }
+
+            // 2. 判定状态码 200 但返回阿里云/HTML 拦截页的场景
+            if (!string.IsNullOrWhiteSpace(responseBody))
+            {
+                string trimmed = responseBody.TrimStart();
+                if (trimmed.StartsWith("<") || responseBody.IndexOf("errors.aliyun.com", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    blockMsg = "接口触发风控拦截页面，请暂停查询或更换网络后重试";
+                    return true;
+                }
+            }
+
+            // 未命中风控特征
+            blockMsg = string.Empty;
+            return false;
+        }
+
         /// <summary>
         /// 异步向电气天下接口查询单个元器件价格
         /// </summary>
         /// <param name="model">检索型号</param>
         /// <param name="brand">指定品牌(为空或全部时不限)</param>
+        /// <param name="ct">取消令牌</param>
         /// <returns>查价结果元组 (状态, 匹配型号, 价格, 厂商, 订货号, 描述)</returns>
-        public static async Task<(bool success, string matchedModel, double price, string vendor, string orderNo, string message)> SearchDq123Async(string model, string brand)
+        public static async Task<(bool success, string matchedModel, double price, string vendor, string orderNo, string message)> SearchDq123Async(string model, string brand, CancellationToken ct = default)
         {
             try
             {
+                // 发起请求前执行防封降速延时
+                await ThrottleDq123Async(ct).ConfigureAwait(false);
+
                 // 解析厂商 ID (自适应从动态合并映射表中查找)
                 int? factoryId = null;
                 // 若指定了具体品牌且命中映射，则指定对应厂商 ID
@@ -489,16 +541,27 @@ namespace ExcelAddInDemo.Services
                 string apiUrl = !string.IsNullOrWhiteSpace(configuredDq123Url)
                     ? configuredDq123Url
                     : "https://www.dq123.com/view/price/search/element";
-                var response = await _httpClient.PostAsync(apiUrl, content).ConfigureAwait(false);
+                var response = await _httpClient.PostAsync(apiUrl, content, ct).ConfigureAwait(false);
 
-                // 校验 HTTP 响应状态码
+                // 校验 HTTP 响应状态码与风控拦截
                 if (!response.IsSuccessStatusCode)
                 {
+                    // 识别是否被 WAF 阻断
+                    if (TryBuildDq123BlockMessage(response.StatusCode, null, out string blockMsg))
+                    {
+                        return (false, string.Empty, 0.0, string.Empty, string.Empty, blockMsg);
+                    }
                     return (false, string.Empty, 0.0, string.Empty, string.Empty, $"HTTP 响应异常: {response.StatusCode}");
                 }
 
                 // 读取响应文本流
                 string responseJson = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+                // 检查是否返回 HTML 风控拦截页
+                if (TryBuildDq123BlockMessage(response.StatusCode, responseJson, out string htmlBlockMsg))
+                {
+                    return (false, string.Empty, 0.0, string.Empty, string.Empty, htmlBlockMsg);
+                }
 
                 // 解析 JSON DOM 节点
                 using var doc = JsonDocument.Parse(responseJson);
@@ -590,15 +653,19 @@ namespace ExcelAddInDemo.Services
         #region 电小二 (Dx2 智能查价引擎)
 
         /// <summary>
-        /// 底层私有辅助方法: 向利驰电气数据库发送原始检索请求
+        /// 底层私有辅助方法: 向利驰电气数据库发送原始检索请求 (支持降速防封与风控拦截识别)
         /// </summary>
         /// <param name="keyword">检索关键词</param>
         /// <param name="factoryId">厂商代号过滤</param>
-        /// <returns>返回反序列化的条目集合</returns>
-        private static async Task<List<JsonElement>> QueryDq123RawListAsync(string keyword, int? factoryId)
+        /// <param name="ct">取消令牌</param>
+        /// <returns>返回 (反序列化的条目集合, 是否触发风控拦截, 异常提示信息)</returns>
+        private static async Task<(List<JsonElement> items, bool isBlocked, string errorMsg)> QueryDq123RawListAsync(string keyword, int? factoryId, CancellationToken ct = default)
         {
             // 空关键词直接返回空列表
-            if (string.IsNullOrWhiteSpace(keyword)) return new List<JsonElement>();
+            if (string.IsNullOrWhiteSpace(keyword)) return (new List<JsonElement>(), false, string.Empty);
+
+            // 发起请求前执行防封降速延时
+            await ThrottleDq123Async(ct).ConfigureAwait(false);
 
             // 构造请求载荷对象
             var payload = new
@@ -621,13 +688,28 @@ namespace ExcelAddInDemo.Services
             // 远端接口终结点地址
             const string apiUrl = "https://www.dq123.com/view/price/search/element";
             // 发起异步 POST 请求
-            var response = await _httpClient.PostAsync(apiUrl, content).ConfigureAwait(false);
+            var response = await _httpClient.PostAsync(apiUrl, content, ct).ConfigureAwait(false);
 
-            // 若响应不成功则返回空列表
-            if (!response.IsSuccessStatusCode) return new List<JsonElement>();
+            // 若响应不成功则识别是否为风控拦截并透传原因
+            if (!response.IsSuccessStatusCode)
+            {
+                // 判定是否属于 WAF 阻断状态码
+                if (TryBuildDq123BlockMessage(response.StatusCode, null, out string blockMsg))
+                {
+                    return (new List<JsonElement>(), true, blockMsg);
+                }
+                return (new List<JsonElement>(), false, $"HTTP 响应异常: {response.StatusCode}");
+            }
 
             // 异步读取响应内容
             string responseJson = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+            // 检查是否返回了 HTML 风控拦截页
+            if (TryBuildDq123BlockMessage(response.StatusCode, responseJson, out string htmlBlockMsg))
+            {
+                return (new List<JsonElement>(), true, htmlBlockMsg);
+            }
+
             // 解析 JSON 根文档
             using var doc = JsonDocument.Parse(responseJson);
             // 获取根元素
@@ -639,7 +721,7 @@ namespace ExcelAddInDemo.Services
                 listProp.ValueKind != JsonValueKind.Array)
             {
                 // 节点不存在返回空
-                return new List<JsonElement>();
+                return (new List<JsonElement>(), false, string.Empty);
             }
 
             // 克隆结果项以安全返回
@@ -652,7 +734,7 @@ namespace ExcelAddInDemo.Services
             }
 
             // 返回提取的条目集合
-            return resultList;
+            return (resultList, false, string.Empty);
         }
 
         /// <summary>
@@ -855,8 +937,9 @@ namespace ExcelAddInDemo.Services
         /// </summary>
         /// <param name="model">检索型号</param>
         /// <param name="brand">指定品牌</param>
+        /// <param name="ct">取消令牌</param>
         /// <returns>查价结果元组 (状态, 匹配型号, 价格, 厂商, 订货号, 描述)</returns>
-        public static async Task<(bool success, string matchedModel, double price, string vendor, string orderNo, string message)> SearchDx2Async(string model, string brand)
+        public static async Task<(bool success, string matchedModel, double price, string vendor, string orderNo, string message)> SearchDx2Async(string model, string brand, CancellationToken ct = default)
         {
             try
             {
@@ -892,8 +975,18 @@ namespace ExcelAddInDemo.Services
                 // 依次检索各个候选序列
                 foreach (var candidateWord in searchCandidates)
                 {
+                    // 检查是否已触发取消或熔断
+                    ct.ThrowIfCancellationRequested();
+
                     // 发起远端检索
-                    var rawList = await QueryDq123RawListAsync(candidateWord, factoryId).ConfigureAwait(false);
+                    var rawRes = await QueryDq123RawListAsync(candidateWord, factoryId, ct).ConfigureAwait(false);
+                    // 若已触发风控阻断，立即中止所有后续候选词尝试与回退请求
+                    if (rawRes.isBlocked)
+                    {
+                        return (false, string.Empty, 0.0, string.Empty, string.Empty, rawRes.errorMsg);
+                    }
+
+                    var rawList = rawRes.items;
                     // 校验条目列表
                     if (rawList != null && rawList.Count > 0)
                     {
@@ -967,7 +1060,10 @@ namespace ExcelAddInDemo.Services
                     string poles = pMatch.Success ? pMatch.Groups[1].Value : "2P";
 
                     // 异步检索主开关
-                    var mainBreakerResult = await QueryDq123RawListAsync(mainBreakerModel, factoryId).ConfigureAwait(false);
+                    var mainRes = await QueryDq123RawListAsync(mainBreakerModel, factoryId, ct).ConfigureAwait(false);
+                    // 若主开关检索触发风控阻断，立即中止
+                    if (mainRes.isBlocked) return (false, string.Empty, 0.0, string.Empty, string.Empty, mainRes.errorMsg);
+                    var mainBreakerResult = mainRes.items;
                     // 查找合适的主开关
                     var mainMatch = mainBreakerResult?.FirstOrDefault(x =>
                     {
@@ -979,7 +1075,10 @@ namespace ExcelAddInDemo.Services
 
                     // 异步检索对应的漏电附件 (如 Vigi iC65 ELE 2P 30mA A)
                     string vigiAccKeyword = $"Vigi iC65 ELE {poles} 30mA A";
-                    var vigiAccResult = await QueryDq123RawListAsync(vigiAccKeyword, factoryId).ConfigureAwait(false);
+                    var vigiRes = await QueryDq123RawListAsync(vigiAccKeyword, factoryId, ct).ConfigureAwait(false);
+                    // 若漏电附件检索触发风控阻断，立即中止
+                    if (vigiRes.isBlocked) return (false, string.Empty, 0.0, string.Empty, string.Empty, vigiRes.errorMsg);
+                    var vigiAccResult = vigiRes.items;
                     // 寻找价格大于 0 的漏电附件
                     var vigiMatch = vigiAccResult?.FirstOrDefault(x =>
                     {
@@ -1016,7 +1115,7 @@ namespace ExcelAddInDemo.Services
                 }
 
                 // 阶段 4: 若智能流程均未果，回退至基础查询
-                return await SearchDq123Async(model, brand).ConfigureAwait(false);
+                return await SearchDq123Async(model, brand, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -1273,10 +1372,21 @@ namespace ExcelAddInDemo.Services
             // 选区为空时直接返回
             if (items == null || items.Count == 0) return;
 
-            // 限制并发数量 (最小 1，最大 12)
+            // 限制并发数量 (最小 1，最大 12；电气天下/电小二强制上限为 2 以防触发 WAF 封禁)
             int concurrency = Math.Max(1, Math.Min(12, config.MaxConcurrency));
+            if (config.Platform == OnlinePricePlatform.Dx2 || config.Platform == OnlinePricePlatform.Dq123)
+            {
+                concurrency = Math.Min(concurrency, 2);
+            }
             // 实例化信号量以控制并发池
             using var semaphore = new SemaphoreSlim(concurrency);
+
+            // 联动取消令牌，用于在检测到 WAF 风控阻断时立即熔断后续请求
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var linkedToken = linkedCts.Token;
+            // 风控熔断标记与拦截原因
+            bool isWafBlocked = false;
+            string wafBlockMsg = string.Empty;
 
             // 总待处理计数
             int totalCount = items.Count;
@@ -1289,19 +1399,27 @@ namespace ExcelAddInDemo.Services
             // 遍历每个条目分发并发任务
             foreach (var item in items)
             {
-                // 检查取消请求
-                if (ct.IsCancellationRequested) break;
+                // 检查用户取消或风控熔断请求
+                if (linkedToken.IsCancellationRequested) break;
 
-                // 异步等待获取信号量配额
-                await semaphore.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    // 异步等待获取信号量配额
+                    await semaphore.WaitAsync(linkedToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // 触发取消或风控熔断时退出分发循环
+                    break;
+                }
 
                 // 投递并发任务至线程池
                 tasks.Add(Task.Run(async () =>
                 {
                     try
                     {
-                        // 再次检查取消状态
-                        if (ct.IsCancellationRequested) return;
+                        // 再次检查取消或风控熔断状态
+                        if (linkedToken.IsCancellationRequested) return;
 
                         // 根据平台分流调用接口
                         (bool success, string matchedModel, double price, string vendor, string orderNo, string msg) result;
@@ -1313,12 +1431,20 @@ namespace ExcelAddInDemo.Services
                         else if (config.Platform == OnlinePricePlatform.Dx2)
                         {
                             // 调用电小二智能查价引擎
-                            result = await SearchDx2Async(item.SearchModel, config.Brand).ConfigureAwait(false);
+                            result = await SearchDx2Async(item.SearchModel, config.Brand, linkedToken).ConfigureAwait(false);
                         }
                         else
                         {
                             // 默认调用电气天下基础查询
-                            result = await SearchDq123Async(item.SearchModel, config.Brand).ConfigureAwait(false);
+                            result = await SearchDq123Async(item.SearchModel, config.Brand, linkedToken).ConfigureAwait(false);
+                        }
+
+                        // 若命中风控阻断，立即触发熔断停止后续请求
+                        if (!result.success && !string.IsNullOrWhiteSpace(result.msg) && result.msg.IndexOf("风控", StringComparison.Ordinal) >= 0)
+                        {
+                            isWafBlocked = true;
+                            wafBlockMsg = result.msg;
+                            linkedCts.Cancel();
                         }
 
                         // 回写至数据项传输实体
@@ -1342,15 +1468,16 @@ namespace ExcelAddInDemo.Services
                         // 计算百分比
                         int percent = (int)Math.Round((double)currentDone / totalCount * 100);
 
-                        // 组装订货号附注文字
+                        // 组装订货号附注文字与失败原因透传
                         string orderInfo = !string.IsNullOrWhiteSpace(item.OrderNo) ? $" [{item.OrderNo}]" : "";
+                        string failReason = !string.IsNullOrWhiteSpace(result.msg) ? result.msg : "未查得";
                         // 汇报实时进度
                         progress?.Report(new OnlinePriceProgressDto
                         {
                             Current = currentDone,
                             Total = totalCount,
                             Percent = percent,
-                            LogText = $"[{currentDone}/{totalCount}] 行 {item.Row}: {item.SearchModel} -> {(result.success ? $"{item.Price:F2}元{orderInfo}" : "未查得")}",
+                            LogText = $"[{currentDone}/{totalCount}] 行 {item.Row}: {item.SearchModel} -> {(result.success ? $"{item.Price:F2}元{orderInfo}" : failReason)}",
                             Item = item
                         });
                     }
@@ -1359,11 +1486,33 @@ namespace ExcelAddInDemo.Services
                         // 无论成功失败，释放信号量席位
                         semaphore.Release();
                     }
-                }, ct));
+                }, CancellationToken.None));
             }
 
-            // 等待全部并发任务执行收尾
+            // 等待全部已投递并发任务执行收尾
             await Task.WhenAll(tasks).ConfigureAwait(false);
+
+            // 若因风控熔断提前中止且非用户主动取消，标记剩余条目并输出醒目告警日志
+            if (isWafBlocked && !ct.IsCancellationRequested)
+            {
+                // 将未执行的 Pending 条目标记为阻断失败
+                foreach (var pendingItem in items)
+                {
+                    if (pendingItem.Status == "Pending")
+                    {
+                        pendingItem.Status = "NotFound";
+                        pendingItem.Message = wafBlockMsg;
+                    }
+                }
+                // 向前端实时日志推送风控熔断提示
+                progress?.Report(new OnlinePriceProgressDto
+                {
+                    Current = completedCount,
+                    Total = totalCount,
+                    Percent = (int)Math.Round((double)completedCount / totalCount * 100),
+                    LogText = $"⚠️ {wafBlockMsg}（已自动熔断停止后续请求，已查得的数据仍会正常回写）"
+                });
+            }
         }
 
         #endregion

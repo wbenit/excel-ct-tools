@@ -48,9 +48,9 @@ namespace ExcelAddInDemo.Models
         [JsonPropertyName("orderNoTargetCol")]
         public string OrderNoTargetCol { get; set; } = "NONE";
 
-        // 最大异步网络并发数 (默认 6，防止被远端平台限流) --硬编码: 并发阈值--
+        // 最大异步网络并发数 (默认 2，防止高频触发远端 WAF 风控限流) --硬编码: 并发阈值--
         [JsonPropertyName("maxConcurrency")]
-        public int MaxConcurrency { get; set; } = 6;
+        public int MaxConcurrency { get; set; } = 2;
 
         // 是否仅更新价格而不覆盖原有型号文本
         [JsonPropertyName("onlyUpdatePrice")]
